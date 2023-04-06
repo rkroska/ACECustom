@@ -32,6 +32,36 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
             }
 
+            int iType = 0;
+            int amount = -1;
+
+            if (parameters[1] != null)
+            {
+                if (parameters[1] == "pyreals" || parameters[1] == "p")
+                {
+                    //pyreals
+                    iType = 1;
+                }
+                if (parameters[1] == "luminance" || parameters[1] == "l")
+                {
+                    //lum
+                    iType = 2;
+                }
+                if (parameters[1] == "notes" || parameters[1] == "n")
+                {
+                    //trade notes
+                    iType= 3;
+                }
+            }
+
+            if (parameters[2] != null)
+            {
+                if (!int.TryParse(parameters[2], out amount))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
+                }
+            }
+
             if (parameters[0] == "deposit" || parameters[0] == "d")
             {
                 //deposit
@@ -39,9 +69,53 @@ namespace ACE.Server.Command.Handlers
                 {
                     //deposit all
                 }
-
+                switch (iType)
+                {
+                    case 1:
+                        //deposit pyreals
+                        break;
+                    case 2:
+                        //deposit lum
+                        break;
+                    case 3:
+                        //deposit notes
+                        break;
+                    default:
+                        break;
+                }
             }
 
+            if (parameters[0] == "withdraw" || parameters[0] == "w")
+            {
+                //withdraw
+                switch (iType)
+                {
+                    case 1:
+                        //withdraw pyreals
+                        break;
+                    case 2:
+                        //withdraw lum
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (parameters[0] == "transfer" || parameters[0] == "t")
+            {
+                //transfer
+                switch (iType)
+                {
+                    case 1:
+                        //transfer pyreals
+                        break;
+                    case 2:
+                        //transfer lum
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
 
         [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
