@@ -14,13 +14,47 @@ using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
-
+using System.Linq;
 
 namespace ACE.Server.Command.Handlers
 {
     public static class PlayerCommands
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        //custom commands
+        [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, 1, "Handles Banking Operations", "")]
+        public static void HandleBank(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
+            }
+
+            if (parameters[0] == "deposit" || parameters[0] == "d")
+            {
+                //deposit
+                if (parameters.Count() == 1) //only means all
+                {
+                    //deposit all
+                }
+
+            }
+
+        }
+
+        [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
+        public static void HandleEnlightenment(Session session, params string[] parameters)
+        {
+
+        }
+
+        [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "")]
+        public static void HandleExperience(Session session, params string[] parameters)
+        {
+
+        }
 
         // pop
         [CommandHandler("pop", AccessLevel.Player, CommandHandlerFlag.None, 0,
