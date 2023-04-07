@@ -17,6 +17,8 @@ using ACE.Common;
 using ACE.Entity.Enum.Properties;
 using Google.Protobuf.WellKnownTypes;
 using MySqlX.XDevAPI;
+using ACE.Server.Command.Handlers;
+using ACE.Server.Factories;
 
 namespace ACE.Server.WorldObjects
 {
@@ -46,6 +48,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public  void DepositPyreals()
         {
+
             var pyrealsList = this.GetInventoryItemsOfWCID(273);
             long cash = 0;
 
@@ -60,6 +63,10 @@ namespace ACE.Server.WorldObjects
         /// <param name="Amount"></param>
         public void DepositPyreals(long Amount)
         {
+            if (BankedPyreals == null)
+            {
+                BankedPyreals = 0;
+            }
             lock (balanceLock)
             {
                 var pyrealsList = this.GetInventoryItemsOfWCID(273);
@@ -73,13 +80,14 @@ namespace ACE.Server.WorldObjects
                         this.TryConsumeFromInventoryWithNetworking(item);
                         BankedPyreals += 25000;
                     }
-                    else if (Amount < 25000)
+                    else if (Amount >= item.StackSize)
                     {
                         this.TryConsumeFromInventoryWithNetworking(item, (int)Amount);
-                        BankedPyreals += Amount;
+                        Amount -= item.StackSize ?? 0;                        
+                        BankedPyreals += item.StackSize;
                     }
                 }
-            }
+            }          
         }
 
 
@@ -97,10 +105,11 @@ namespace ACE.Server.WorldObjects
         /// <param name="Amount"></param>
         public void DepositLuminance(long Amount)
         {
+            if (BankedLuminance == null) { BankedLuminance = 0;}
             if (Amount <= this.AvailableLuminance)
             {
                 lock(balanceLock)
-                {
+                {                    
                     this.AvailableLuminance -= Amount;
                     BankedLuminance += Amount;
                 }                
@@ -114,7 +123,89 @@ namespace ACE.Server.WorldObjects
                 }
 
             }
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
+        }
 
+        /// <summary>
+        /// Deposits all trade notes
+        /// </summary>
+        public void DepositTradeNotes()
+        {
+            if (BankedPyreals == null)
+            {
+                BankedPyreals = 0;
+            }
+            lock(balanceLock)
+            {
+                var notesList = this.GetTradeNotes();
+                foreach (var note in notesList)
+                {
+                    int val = note.Value ?? 0;
+                    if (val > 0)
+                    {
+                        this.TryConsumeFromInventoryWithNetworking(note);
+                        BankedPyreals += val;
+                    }                    
+                }
+            }
+        }
+
+        /// <summary>
+        /// Withdraw luminance from the bank
+        /// </summary>
+        public void WithdrawLuminance(long Amount)
+        {
+            if (Amount <= this.BankedLuminance)
+            {
+                lock (balanceLock)
+                {
+                    this.AvailableLuminance += Amount;
+                    BankedLuminance -= Amount;
+                }
+            }
+            else
+            {
+                lock (balanceLock)
+                {
+                    this.AvailableLuminance += this.BankedLuminance;
+                    BankedLuminance = 0;
+                }
+            }
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
+        }
+
+        public void WithdrawPyreals(long Amount)
+        {
+            lock (balanceLock)
+            {
+                while (Amount > 250000)
+                {
+                    this.TryCreateInInventoryWithNetworking(WorldObjectFactory.CreateNewWorldObject(20630));
+                    Amount -= 250000;
+                    BankedPyreals -= 250000;
+                }
+
+                if (Amount > 25000)
+                {
+                    while (Amount > 25000)
+                    {
+                        WorldObject coins = WorldObjectFactory.CreateNewWorldObject(273);
+                        coins.StackSize = (int)25000;
+                        this.TryCreateInInventoryWithNetworking(coins);
+                        BankedPyreals -= 25000;
+                        Amount -= 25000;
+                    }
+
+                }
+                if (Amount > 0)
+                {
+                    WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
+                    smallCoins.StackSize = (int)Amount;
+                    this.TryCreateInInventoryWithNetworking(smallCoins);
+                    BankedPyreals -= Amount;
+                    Amount = 0;
+                }                                
+            }            
         }
 
         public long? BankedLuminance

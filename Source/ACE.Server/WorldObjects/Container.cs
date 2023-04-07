@@ -371,7 +371,7 @@ namespace ACE.Server.WorldObjects
             var items = new List<WorldObject>();
 
             // search main pack / creature
-            var localInventory = Inventory.Values.Where(i => i.WeenieClassName.StartsWith("tradenote")).OrderBy(i => i.PlacementPosition).ToList();
+            var localInventory = Inventory.Values.Where(i => i.ItemType == ItemType.PromissoryNote && i.WeenieClassId != 43901).OrderBy(i => i.PlacementPosition).ToList();
 
             items.AddRange(localInventory);
 
