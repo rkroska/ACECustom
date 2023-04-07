@@ -14,13 +14,155 @@ using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
-
+using System.Linq;
 
 namespace ACE.Server.Command.Handlers
 {
     public static class PlayerCommands
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        //custom commands
+        [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
+        public static void HandleBank(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals and luminance, or specify pyreals or luminance and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+            }
+
+            int iType = 0;
+            int amount = -1;
+
+            if (parameters.Count() >= 2)
+            {
+                if (parameters[1] == "pyreals" || parameters[1] == "p")
+                {
+                    //pyreals
+                    iType = 1;
+                }
+                if (parameters[1] == "luminance" || parameters[1] == "l")
+                {
+                    //lum
+                    iType = 2;
+                }
+                if (parameters[1] == "notes" || parameters[1] == "n")
+                {
+                    //trade notes
+                    iType= 3;
+                }
+            }
+
+            if (parameters.Count() == 3)
+            {
+                if (!int.TryParse(parameters[2], out amount))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
+                }
+            }
+
+            if (parameters[0] == "deposit" || parameters[0] == "d")
+            {
+                //deposit
+                if (parameters.Count() == 1) //only means all
+                {
+                    //deposit all
+                    session.Player.DepositPyreals();
+                    session.Player.DepositLuminance();
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals and Luminance!", ChatMessageType.System));
+                }
+                switch (iType)
+                {
+                    case 1:
+                        //deposit pyreals
+                        if (amount > 0)
+                        {
+                            session.Player.DepositPyreals(amount);                            
+                        }
+                        else
+                        {
+                            session.Player.DepositPyreals();
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all pyreals!", ChatMessageType.System));
+                        }
+                        break;
+                    case 2:
+                        //deposit lum
+                        if (amount > 0)
+                        {
+                            session.Player.DepositLuminance(amount);                            
+                        }
+                        else
+                        {
+                            session.Player.DepositLuminance();
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all luminance!", ChatMessageType.System));
+                        }
+                        break;
+                    case 3:
+                        //deposit notes
+                        session.Player.DepositTradeNotes();
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (parameters[0] == "withdraw" || parameters[0] == "w")
+            {
+                //withdraw
+                switch (iType)
+                {
+                    case 1:
+                        //withdraw pyreals
+                        session.Player.WithdrawPyreals(amount);
+                        break;
+                    case 2:
+                        //withdraw lum
+                        session.Player.WithdrawLuminance(amount); 
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (parameters[0] == "transfer" || parameters[0] == "t")
+            {
+                //transfer
+                switch (iType)
+                {
+                    case 1:
+                        //transfer pyreals
+                        break;
+                    case 2:
+                        //transfer lum
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (parameters[0] == "balance" || parameters[0] == "b")
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance}", ChatMessageType.System));
+            }
+        }
+
+        [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
+        public static void HandleEnlightenment(Session session, params string[] parameters)
+        {
+
+        }
+
+        [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "")]
+        public static void HandleExperience(Session session, params string[] parameters)
+        {
+
+        }
 
         // pop
         [CommandHandler("pop", AccessLevel.Player, CommandHandlerFlag.None, 0,
