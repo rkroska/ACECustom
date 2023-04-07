@@ -23,19 +23,22 @@ namespace ACE.Server.Command.Handlers
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         //custom commands
-        [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, 1, "Handles Banking Operations", "")]
+        [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
             if (parameters.Length == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals and luminance, or specify pyreals or luminance and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
             }
 
             int iType = 0;
             int amount = -1;
 
-            if (parameters[1] != null)
+            if (parameters.Count() >= 2)
             {
                 if (parameters[1] == "pyreals" || parameters[1] == "p")
                 {
@@ -54,7 +57,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            if (parameters[2] != null)
+            if (parameters.Count() == 3)
             {
                 if (!int.TryParse(parameters[2], out amount))
                 {
@@ -68,17 +71,40 @@ namespace ACE.Server.Command.Handlers
                 if (parameters.Count() == 1) //only means all
                 {
                     //deposit all
+                    session.Player.DepositPyreals();
+                    session.Player.DepositLuminance();
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals and Luminance!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
                     case 1:
                         //deposit pyreals
+                        if (amount > 0)
+                        {
+                            session.Player.DepositPyreals(amount);                            
+                        }
+                        else
+                        {
+                            session.Player.DepositPyreals();
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all pyreals!", ChatMessageType.System));
+                        }
                         break;
                     case 2:
                         //deposit lum
+                        if (amount > 0)
+                        {
+                            session.Player.DepositLuminance(amount);                            
+                        }
+                        else
+                        {
+                            session.Player.DepositLuminance();
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all luminance!", ChatMessageType.System));
+                        }
                         break;
                     case 3:
                         //deposit notes
+                        session.Player.DepositTradeNotes();
                         break;
                     default:
                         break;
@@ -92,9 +118,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     case 1:
                         //withdraw pyreals
+                        session.Player.WithdrawPyreals(amount);
                         break;
                     case 2:
                         //withdraw lum
+                        session.Player.WithdrawLuminance(amount); 
                         break;
                     default:
                         break;
@@ -115,6 +143,12 @@ namespace ACE.Server.Command.Handlers
                     default:
                         break;
                 }
+            }
+            if (parameters[0] == "balance" || parameters[0] == "b")
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance}", ChatMessageType.System));
             }
         }
 
