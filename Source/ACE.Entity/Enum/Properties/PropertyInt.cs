@@ -629,6 +629,10 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [ServerOnly]
         InventoryOrder                          = 9015,
+
+        [ServerOnly]
+        BankAccountNumber                       = 9016,
+
     }
 
     public static class PropertyIntExtensions
