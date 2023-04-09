@@ -42,7 +42,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // fireworks
                     PlayParticleEffect(PlayScript.WeddingBliss, Guid);
-                    suffix = " and has reached its upper limit";
+                    suffix = " and has reached its upper limit. You need to issue the /attr command to increase attributes.";
                 }
 
                 var sound = new GameMessageSound(Guid, Sound.RaiseTrait);
@@ -74,22 +74,6 @@ namespace ACE.Server.WorldObjects
 
         private bool SpendAttributeXp(CreatureAttribute creatureAttribute, uint amount, bool sendNetworkUpdate = true)
         {
-            // ensure attribute is not already max rank
-            if (creatureAttribute.IsMaxRank)
-            {
-                log.Error($"{Name}.SpendAttributeXp({creatureAttribute.Attribute}, {amount}) - player tried to raise attribute beyond max rank");
-                return false;
-            }
-
-            // the client should already handle this naturally,
-            // but ensure player can't spend xp beyond the max rank
-            var amountToEnd = creatureAttribute.ExperienceLeft;
-
-            if (amount > amountToEnd)
-            {
-                log.Error($"{Name}.SpendAttributeXp({creatureAttribute.Attribute}, {amount}) - player tried to raise attribute beyond {amountToEnd} experience");
-                return false;   // returning error here, instead of setting amount to amountToEnd
-            }
 
             // everything looks good at this point,
             // spend xp on attribute
@@ -102,7 +86,7 @@ namespace ACE.Server.WorldObjects
             creatureAttribute.ExperienceSpent += amount;
 
             // calculate new rank
-            creatureAttribute.Ranks = (ushort)CalcAttributeRank(creatureAttribute.ExperienceSpent);
+            creatureAttribute.Ranks = (uint)CalcAttributeRank(creatureAttribute.ExperienceSpent);
 
             return true;
         }
@@ -121,17 +105,28 @@ namespace ACE.Server.WorldObjects
         /// Returns the maximum rank that can be purchased with an xp amount
         /// </summary>
         /// <param name="xpAmount">The amount of xp used to make the purchase</param>
-        public static int CalcAttributeRank(uint xpAmount)
+        public static uint CalcAttributeRank(uint xpAmount)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
-
-            for (var i = rankXpTable.Count - 1; i >= 0; i--)
+            for (var i = rankXpTable.Count - 1; i >= 0; i--) //count down from 190
             {
                 var rankAmount = rankXpTable[i];
                 if (xpAmount >= rankAmount)
-                    return i;
+                    return (uint)i;
             }
-            return -1;
+
+            var prevRankAmount = rankXpTable[190];
+            uint x = 190;
+            while (true) //count up from 190 until we find a rank
+            {
+                if (xpAmount <= prevRankAmount)
+                {
+                    return x;
+                }
+                prevRankAmount += (uint)(prevRankAmount * .076);
+                x++;
+            }
+            //return -1;
         }
     }
 }
