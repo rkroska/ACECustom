@@ -24,5 +24,18 @@ namespace ACE.Server.Tests
             double result = Player.GenerateDynamicLevelPostMax(277);
             Assert.AreEqual(198152685222, (long)result);
         }
+
+        //[TestMethod]
+        //public void AttributeXP190()
+        //{
+        //    double result = Player.GetXPCostByRank(190);
+        //    Assert.AreEqual(308765680, (long)result);
+        //}
+        //[TestMethod]
+        //public void AttributeXP191()
+        //{
+        //    double result = Player.GetXPCostByRank(191);
+        //    Assert.AreEqual(332540637, (long)result);
+        //}
     }
 }

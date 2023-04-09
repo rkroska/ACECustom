@@ -15,6 +15,9 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using System.Linq;
+using ACE.Entity.Enum.Properties;
+using ACE.Database.Models.Auth;
+using System.Xml.Linq;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -171,10 +174,88 @@ namespace ACE.Server.Command.Handlers
             }            
         }
 
-        [CommandHandler("attr", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Attribute Raising", "")]
+        [CommandHandler("attr", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Handles Attribute Raising", "Type the first 3 letter abbreviation for the attribute to raise, followed optionally by a number (str, end, coo, qui, foc, sel, vit, sta, man)")]
         public static void HandleRaiseAttribute(Session session, params string[] parameters)
         {
-
+            int amt = 1; uint destinationRank = 1; uint xpCost = 0; string AttrName = string.Empty;
+            if (parameters.Count() == 2)
+            {
+                amt = Convert.ToInt32(parameters[1]);
+                
+            }
+            switch (parameters[0])
+            {
+                case "str":
+                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Strength, out var creatureAttribute))
+                    {
+                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
+                        return;
+                    }
+                    destinationRank = (uint)(creatureAttribute.Ranks + amt);
+                    AttrName = creatureAttribute.Attribute.GetDescription();
+                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
+                    session.Player.HandleActionRaiseAttribute(PropertyAttribute.Strength, xpCost);
+                    break;
+                case "end":
+                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Endurance, out var creatureAttribute1))
+                    {
+                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
+                        return;
+                    }
+                    destinationRank = (uint)(creatureAttribute1.Ranks + amt);
+                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute1.Ranks);
+                    AttrName = creatureAttribute1.Attribute.GetDescription();
+                    session.Player.HandleActionRaiseAttribute(PropertyAttribute.Endurance, xpCost);
+                    break;
+                case "coo":
+                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Coordination, out var creatureAttribute2))
+                    {
+                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
+                        return;
+                    }
+                    destinationRank = (uint)(creatureAttribute2.Ranks + amt);
+                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute2.Ranks);
+                    AttrName = creatureAttribute2.Attribute.GetDescription();
+                    session.Player.HandleActionRaiseAttribute(PropertyAttribute.Coordination, xpCost);
+                    break;
+                case "qui":
+                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Quickness, out var creatureAttribute3))
+                    {
+                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
+                        return;
+                    }
+                    destinationRank = (uint)(creatureAttribute3.Ranks + amt);
+                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute3.Ranks);
+                    AttrName = creatureAttribute3.Attribute.GetDescription();
+                    session.Player.HandleActionRaiseAttribute(PropertyAttribute.Quickness, xpCost);
+                    break;
+                case "foc":
+                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Focus, out var creatureAttribute4))
+                    {
+                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
+                        return;
+                    }
+                    destinationRank = (uint)(creatureAttribute4.Ranks + amt);
+                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute4.Ranks);
+                    AttrName = creatureAttribute4.Attribute.GetDescription();
+                    session.Player.HandleActionRaiseAttribute(PropertyAttribute.Focus, xpCost);
+                    break;
+                case "sel":
+                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Self, out var creatureAttribute5))
+                    {
+                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
+                        return;
+                    }
+                    destinationRank = (uint)(creatureAttribute5.Ranks + amt);
+                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute5.Ranks);
+                    AttrName = creatureAttribute5.Attribute.GetDescription();
+                    session.Player.HandleActionRaiseAttribute(PropertyAttribute.Self, xpCost);
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Invalid attribute. Type /attr for help.", ChatMessageType.System));
+                    break;
+            }
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] {AttrName} attribute raised by {amt}, costing {xpCost:N0}!", ChatMessageType.Advancement));
         }
 
         // pop

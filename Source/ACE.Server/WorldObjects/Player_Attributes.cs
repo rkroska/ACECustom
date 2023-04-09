@@ -1,3 +1,4 @@
+using ACE.Common;
 using ACE.DatLoader;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -127,6 +128,60 @@ namespace ACE.Server.WorldObjects
                 x++;
             }
             //return -1;
+        }
+
+        public static uint GetXPCostByRank(uint rank)
+        {
+            var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
+            if (rank < rankXpTable.Count)
+                return rankXpTable[(int)rank];            
+            else
+            {
+                var prevRankAmount = rankXpTable[190];
+                for (int i = 190; i <= rank; i++)
+                {
+                    prevRankAmount += (uint)(prevRankAmount * .076);
+                }
+                return prevRankAmount;
+            }
+        }
+
+        public static uint GetXPDeltaCostByRank(uint destinationRank, uint currentRank)
+        {
+            var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
+            if (destinationRank < rankXpTable.Count)
+            {
+                if (currentRank < rankXpTable.Count)
+                    return rankXpTable[(int)destinationRank] - rankXpTable[(int)currentRank];
+                else
+                {
+                    var prevRankAmount = rankXpTable[190];
+                    for (int i = 190; i <= currentRank; i++)
+                    {
+                        prevRankAmount += (uint)(prevRankAmount * .076);
+                    }
+                    return rankXpTable[(int)destinationRank] - prevRankAmount;
+                }
+            }
+            else
+            {
+                var prevRankAmount = rankXpTable[190];
+                for (int i = 190; i <= destinationRank; i++)
+                {
+                    prevRankAmount += (uint)(prevRankAmount * .076);
+                }
+                if (currentRank < rankXpTable.Count)
+                    return prevRankAmount - rankXpTable[(int)currentRank];
+                else
+                {
+                    var prevRankAmount2 = rankXpTable[190];
+                    for (int i = 190; i <= currentRank; i++)
+                    {
+                        prevRankAmount2 += (uint)(prevRankAmount2 * .076);
+                    }
+                    return prevRankAmount - prevRankAmount2;
+                }
+            }
         }
     }
 }
