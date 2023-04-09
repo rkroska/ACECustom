@@ -161,6 +161,19 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "")]
         public static void HandleExperience(Session session, params string[] parameters)
         {
+            if (parameters.Count() == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP to next level is: {session.Player.GetRemainingXP():N0}", ChatMessageType.System));
+            }
+            if (parameters.Count() == 1)
+            {
+                //check attribute costs
+            }            
+        }
+
+        [CommandHandler("attr", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Attribute Raising", "")]
+        public static void HandleRaiseAttribute(Session session, params string[] parameters)
+        {
 
         }
 
