@@ -165,8 +165,9 @@ namespace ACE.Server.Entity
 
         public static void RemoveLevel(Player player)
         {
-            player.TotalExperience = 0;
+            player.TotalExperience = 0; player.TotalExperienceDouble = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TotalExperience, player.TotalExperience ?? 0));
+            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyFloat(player, PropertyFloat.TotalExperienceDouble, player.TotalExperienceDouble ?? 0));
 
             player.Level = 1;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, player.Level ?? 0));
