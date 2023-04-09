@@ -124,6 +124,7 @@ namespace ACE.Server.Factories
         {
             player.AvailableExperience += 191226310247;
             player.TotalExperience += 191226310247;
+            player.TotalExperienceDouble = 191226310247;
             player.Level = 275;
             player.AvailableSkillCredits += 46;
             player.TotalSkillCredits += 46;

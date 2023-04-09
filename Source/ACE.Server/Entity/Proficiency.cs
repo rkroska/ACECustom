@@ -78,9 +78,9 @@ namespace ACE.Server.Entity
                 }
 
                 var maxLevel = Player.GetMaxLevel();
-                var remainingXP = player.GetRemainingXP(maxLevel).Value;
+                var remainingXP = player.GetRemainingXP(274).Value;
 
-                if (totalXPGranted > remainingXP)
+                if (totalXPGranted > remainingXP && remainingXP > 0) //sometimes overflows happen here
                 {
                     // checks and balances:
                     // total xp = pp * 1.1

@@ -1370,5 +1370,17 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.ImbueSuccesses) ?? 0;
             set { if (value == 0) RemoveProperty(PropertyInt.ImbueSuccesses); else SetProperty(PropertyInt.ImbueSuccesses, value); }
         }
+
+        public double PreviousLevelCost
+        {
+            get => GetProperty(PropertyFloat.PreviousLevelCost) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyFloat.PreviousLevelCost); else SetProperty(PropertyFloat.PreviousLevelCost, value); }
+        }
+
+        public double? TotalExperienceDouble
+        {
+            get => GetProperty(PropertyFloat.TotalExperienceDouble) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.TotalExperienceDouble); else SetProperty(PropertyFloat.TotalExperienceDouble, value.Value); }
+        }
     }
 }

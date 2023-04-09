@@ -3,6 +3,7 @@ using System.Linq;
 
 using ACE.Common.Extensions;
 using ACE.DatLoader;
+using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Actions;
@@ -13,6 +14,11 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        public const long levelXpMult = 58;
+        public const long xp275 = 191226310247;
+        public const long xp274to275delta = 3390451400;
+        public const double levelRatio = 0.014234603;
+
         /// <summary>
         /// A player earns XP through natural progression, ie. kills and quests completed
         /// </summary>
@@ -90,20 +96,31 @@ namespace ACE.Server.WorldObjects
             var xpTable = DatManager.PortalDat.XpTable;
 
             var maxLevel = GetMaxLevel();
-            var maxLevelXp = xpTable.CharacterLevelXPList.Last();
 
             if (Level != maxLevel)
             {
                 var addAmount = amount;
-
-                var amountLeftToEnd = (long)maxLevelXp - TotalExperience ?? 0;
-                if (amount > amountLeftToEnd)
-                    addAmount = amountLeftToEnd;
-
+                
+                if (TotalExperience + addAmount < 0) //check for long overflow
+                {
+                    TotalExperience = long.MaxValue;                    
+                }
+                else
+                {
+                    TotalExperience += addAmount;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.TotalExperience, TotalExperience ?? 0));
+                }
+                if (!TotalExperienceDouble.HasValue || TotalExperienceDouble == 0)
+                {
+                    TotalExperienceDouble = TotalExperience;
+                }
+                else
+                {
+                    TotalExperienceDouble += addAmount;
+                }
                 AvailableExperience += addAmount;
-                TotalExperience += addAmount;
 
-                var xpTotalUpdate = new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.TotalExperience, TotalExperience ?? 0);
+                var xpTotalUpdate = new GameMessagePrivateUpdatePropertyFloat(this, PropertyFloat.TotalExperienceDouble, TotalExperienceDouble ?? 0);
                 var xpAvailUpdate = new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0);
                 Session.Network.EnqueueSend(xpTotalUpdate, xpAvailUpdate);
 
@@ -138,7 +155,7 @@ namespace ACE.Server.WorldObjects
             if (vitae == null)
             {
                 log.Error($"{Name}.UpdateXpVitae({amount}) vitae null, likely due to cross-thread operation or corrupt EnchantmentManager cache. Please report this.");
-                log.Error(Environment.StackTrace);
+                log.Error(System.Environment.StackTrace);
                 return;
             }
 
@@ -186,9 +203,9 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns the maximum possible character level
         /// </summary>
-        public static uint GetMaxLevel()
+        public static int GetMaxLevel()
         {
-            return (uint)DatManager.PortalDat.XpTable.CharacterLevelXPList.Count - 1;
+            return int.MaxValue; //(uint)DatManager.PortalDat.XpTable.CharacterLevelXPList.Count - 1;
         }
 
         /// <summary>
@@ -199,15 +216,26 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns the remaining XP required to reach a level
         /// </summary>
-        public long? GetRemainingXP(uint level)
+        public long? GetRemainingXP(int level)
         {
             var maxLevel = GetMaxLevel();
-            if (level < 1 || level > maxLevel)
+            if (level < 1)
                 return null;
+            if (level == int.MaxValue)
+                return long.MaxValue;
+            
+            if (level > 275)
+            {
+                return (long)(GenerateDynamicLevelPostMax(level) - TotalExperienceDouble);
+            }
+            else
+            {
+                var levelTotalXP = (int)DatManager.PortalDat.XpTable.CharacterLevelXPList[(int)level];
+                return (long)levelTotalXP - TotalExperience.Value;
+            }
+             
 
-            var levelTotalXP = DatManager.PortalDat.XpTable.CharacterLevelXPList[(int)level];
-
-            return (long)levelTotalXP - TotalExperience.Value;
+            
         }
 
         /// <summary>
@@ -215,24 +243,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public ulong GetRemainingXP()
         {
-            var maxLevel = GetMaxLevel();
-            if (Level >= maxLevel)
-                return 0;
-
+            if (Level >= 275)
+            {
+                return (ulong)(GenerateDynamicLevelPostMax(Level + 1) - (ulong)TotalExperienceDouble.Value);
+            }
             var nextLevelTotalXP = DatManager.PortalDat.XpTable.CharacterLevelXPList[Level.Value + 1];
             return nextLevelTotalXP - (ulong)TotalExperience.Value;
-        }
-
-        /// <summary>
-        /// Returns the total XP required to reach a level
-        /// </summary>
-        public static ulong GetTotalXP(int level)
-        {
-            var maxLevel = GetMaxLevel();
-            if (level < 0 || level > maxLevel)
-                return 0;
-
-            return DatManager.PortalDat.XpTable.CharacterLevelXPList[level];
         }
 
         /// <summary>
@@ -258,11 +274,21 @@ namespace ACE.Server.WorldObjects
 
             levelA = Math.Clamp(levelA, 1, maxLevel - 1);
             levelB = Math.Clamp(levelB, 1, maxLevel);
+            double levelA_totalXP = 0;
+            double levelB_totalXP = 0;
 
-            var levelA_totalXP = DatManager.PortalDat.XpTable.CharacterLevelXPList[levelA];
-            var levelB_totalXP = DatManager.PortalDat.XpTable.CharacterLevelXPList[levelB];
+            if (Level > 274)
+            {
+                levelA_totalXP = GenerateDynamicLevelPostMax(levelA);
+                levelB_totalXP = GenerateDynamicLevelPostMax(levelB);
+            }
+            else
+            {
+                levelA_totalXP = DatManager.PortalDat.XpTable.CharacterLevelXPList[levelA];
+                levelB_totalXP = DatManager.PortalDat.XpTable.CharacterLevelXPList[levelB];
+            }
 
-            return levelB_totalXP - levelA_totalXP;
+            return (ulong)(levelB_totalXP - levelA_totalXP);
         }
 
         public ulong GetXPToNextLevel(int level)
@@ -285,16 +311,32 @@ namespace ACE.Server.WorldObjects
             bool creditEarned = false;
 
             // increases until the correct level is found
-            while ((ulong)(TotalExperience ?? 0) >= xpTable.CharacterLevelXPList[(Level ?? 0) + 1])
+            while
+                (
+                    (Level < 275 && (ulong)(TotalExperience ?? 0) >= xpTable.CharacterLevelXPList[(Level ?? 0) + 1]) //level < 275
+                    || (Level >= 275 && TotalExperienceDouble > GenerateDynamicLevelPostMax(Level + 1))// level >= 275
+                )
             {
                 Level++;
 
                 // increase the skill credits if the chart allows this level to grant a credit
-                if (xpTable.CharacterLevelSkillCreditList[Level ?? 0] > 0)
+                if (Level <= 274)
                 {
-                    AvailableSkillCredits += (int)xpTable.CharacterLevelSkillCreditList[Level ?? 0];
-                    TotalSkillCredits += (int)xpTable.CharacterLevelSkillCreditList[Level ?? 0];
-                    creditEarned = true;
+                    if (xpTable.CharacterLevelSkillCreditList[Level ?? 0] > 0)
+                    {
+                        AvailableSkillCredits += (int)xpTable.CharacterLevelSkillCreditList[Level ?? 0];
+                        TotalSkillCredits += (int)xpTable.CharacterLevelSkillCreditList[Level ?? 0];
+                        creditEarned = true;
+                    }
+                }
+                else
+                {
+                    if (Level % 5 == 0) //skill credit every 5th
+                    {
+                        AvailableSkillCredits += 1;
+                        TotalSkillCredits += 1;
+                        creditEarned = true;
+                    }
                 }
 
                 // break if we reach max
@@ -317,10 +359,15 @@ namespace ACE.Server.WorldObjects
                 if (Level != maxLevel && !creditEarned)
                 {
                     var nextLevelWithCredits = 0;
-
+                    
                     for (int i = (Level ?? 0) + 1; i <= maxLevel; i++)
                     {
-                        if (xpTable.CharacterLevelSkillCreditList[i] > 0)
+                        if (Level <= 275 && xpTable.CharacterLevelSkillCreditList[i] > 0)
+                        {
+                            nextLevelWithCredits = i;
+                            break;
+                        }
+                        else if (Level > 275 && i % 5 == 0)
                         {
                             nextLevelWithCredits = i;
                             break;
@@ -347,6 +394,28 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Finds the total XP needed for next level after maximum of 275 in the character level tables
+        /// </summary>
+        /// <param name="startingLevel"></param>
+        /// <returns></returns>
+        public static double GenerateDynamicLevelPostMax(int? startingLevel)
+        {
+
+            double nextXpDelta = (xp274to275delta + (xp274to275delta * levelRatio));
+            double prevXpDelta = xp274to275delta;
+            double nextXpCost = xp275;
+            for (int i = 275; i < startingLevel; i++)
+            {
+                nextXpDelta = (prevXpDelta + (prevXpDelta * levelRatio));
+                nextXpCost += nextXpDelta;
+                prevXpDelta = nextXpDelta;
+            }            
+
+            return nextXpCost;
+        }
+            
+
+        /// <summary>
         /// Spends the amount of XP specified, deducting it from available experience
         /// </summary>
         public bool SpendXP(long amount, bool sendNetworkUpdate = true)
@@ -361,6 +430,8 @@ namespace ACE.Server.WorldObjects
 
             return true;
         }
+
+       
 
         /// <summary>
         /// Tries to spend all of the players Xp into Attributes, Vitals and Skills

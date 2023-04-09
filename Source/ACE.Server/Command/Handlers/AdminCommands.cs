@@ -2989,13 +2989,15 @@ namespace ACE.Server.Command.Handlers
             currentPlayer.AvailableExperience = 0;
             currentPlayer.AvailableSkillCredits = 0;
             currentPlayer.TotalExperience = 191226310247;
+            currentPlayer.TotalExperienceDouble = 191226310247;
 
             var levelMsg = new GameMessagePrivateUpdatePropertyInt(currentPlayer, PropertyInt.Level, (int)currentPlayer.Level);
             var expMsg = new GameMessagePrivateUpdatePropertyInt64(currentPlayer, PropertyInt64.AvailableExperience, (long)currentPlayer.AvailableExperience);
+            var expDoubleMsg = new GameMessagePrivateUpdatePropertyFloat(currentPlayer, PropertyFloat.TotalExperienceDouble, currentPlayer.TotalExperienceDouble.Value);
             var skMsg = new GameMessagePrivateUpdatePropertyInt(currentPlayer, PropertyInt.AvailableSkillCredits, (int)currentPlayer.AvailableSkillCredits);
             var totalExpMsg = new GameMessagePrivateUpdatePropertyInt64(currentPlayer, PropertyInt64.TotalExperience, (long)currentPlayer.TotalExperience);
 
-            currentPlayer.Session.Network.EnqueueSend(levelMsg, expMsg, skMsg, totalExpMsg);
+            currentPlayer.Session.Network.EnqueueSend(levelMsg, expMsg, expDoubleMsg, skMsg, totalExpMsg);
 
             foreach (var s in currentPlayer.Skills)
             {
@@ -3122,8 +3124,9 @@ namespace ACE.Server.Command.Handlers
                                 GameMessagePrivateUpdatePropertyInt levelMsg = new GameMessagePrivateUpdatePropertyInt(currentPlayer, PropertyInt.Level, (int)currentPlayer.Level);
                                 GameMessagePrivateUpdatePropertyInt skMsg = new GameMessagePrivateUpdatePropertyInt(currentPlayer, PropertyInt.AvailableSkillCredits, (int)currentPlayer.AvailableSkillCredits);
                                 GameMessagePrivateUpdatePropertyInt64 totalExpMsg = new GameMessagePrivateUpdatePropertyInt64(currentPlayer, PropertyInt64.TotalExperience, (long)currentPlayer.TotalExperience);
+                                GameMessagePrivateUpdatePropertyFloat totalExpDoubleMsg = new GameMessagePrivateUpdatePropertyFloat(currentPlayer, PropertyFloat.TotalExperienceDouble, currentPlayer.TotalExperienceDouble.Value);
                                 GameMessagePrivateUpdatePropertyInt64 unassignedExpMsg = new GameMessagePrivateUpdatePropertyInt64(currentPlayer, PropertyInt64.AvailableExperience, (long)currentPlayer.AvailableExperience);
-                                currentPlayer.Session.Network.EnqueueSend(levelMsg, skMsg, totalExpMsg, unassignedExpMsg);
+                                currentPlayer.Session.Network.EnqueueSend(levelMsg, skMsg, totalExpMsg, totalExpDoubleMsg, unassignedExpMsg);
                                 i++;
                                 break;
                             default:
