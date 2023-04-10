@@ -14,10 +14,12 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+
+        public const decimal VitalRatio = 0.075m;
         /// <summary>
         /// Handles the GameAction 0x44 - RaiseVital network message from client
         /// </summary>
-        public bool HandleActionRaiseVital(PropertyAttribute2nd vital, uint amount)
+        public bool HandleActionRaiseVital(PropertyAttribute2nd vital, ulong amount)
         {
             if (!Vitals.TryGetValue(vital, out var creatureVital))
             {
@@ -25,7 +27,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if (amount > AvailableExperience)
+            if ((long)amount > AvailableExperience)
             {
                 // there is a client bug for vitals only,
 
@@ -64,24 +66,8 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
-        private bool SpendVitalXp(CreatureVital creatureVital, uint amount, bool sendNetworkUpdate = true)
+        private bool SpendVitalXp(CreatureVital creatureVital, ulong amount, bool sendNetworkUpdate = true)
         {
-            // ensure vital is not already max rank
-            if (creatureVital.IsMaxRank)
-            {
-                log.Error($"{Name}.SpendVitalXp({creatureVital.Vital}, {amount}) - player tried to raise vital beyond max rank");
-                return false;
-            }
-
-            // the client should already handle this naturally,
-            // but ensure player can't spent xp beyond the max rank
-            var amountToEnd = creatureVital.ExperienceLeft;
-
-            if (amount > amountToEnd)
-            {
-                log.Error($"{Name}.SpendVitalXp({creatureVital.Vital}, {amount}) - player tried to raise vital beyond {amountToEnd} experience");
-                return false;   // returning error here, instead of setting amount to amountToEnd
-            }
 
             // everything looks good at this point,
             // spend xp on vital
@@ -91,7 +77,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            creatureVital.ExperienceSpent += amount;
+            creatureVital.ExperienceSpent += (uint)amount;
 
             // calculate new rank
             creatureVital.Ranks = (ushort)CalcVitalRank(creatureVital.ExperienceSpent);
@@ -177,7 +163,7 @@ namespace ACE.Server.WorldObjects
         /// Returns the maximum rank that can be purchased with an xp amount
         /// </summary>
         /// <param name="xpAmount">The amount of xp used to make the purchase</param>
-        public static int CalcVitalRank(uint xpAmount)
+        public static int CalcVitalRank(double xpAmount)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.VitalXpList;
 
@@ -187,7 +173,56 @@ namespace ACE.Server.WorldObjects
                 if (xpAmount >= rankAmount)
                     return i;
             }
-            return -1;
+
+            var prevRankAmount = rankXpTable[196];
+            int x = 196;
+            while (true) //count up from 196 until we find a rank
+            {
+                if (xpAmount <= prevRankAmount)
+                {
+                    return x;
+                }
+                prevRankAmount += (uint)(prevRankAmount * VitalRatio); //slightly lower cost in the curve than attribs
+                x++;
+            }
+        }
+
+        public static uint GetXPDeltaCostByRankForSecondary(uint destinationRank, uint currentRank)
+        {
+            var rankXpTable = DatManager.PortalDat.XpTable.VitalXpList;
+            if (destinationRank < rankXpTable.Count)
+            {
+                if (currentRank < rankXpTable.Count)
+                    return rankXpTable[(int)destinationRank] - rankXpTable[(int)currentRank];
+                else
+                {
+                    var prevRankAmount = rankXpTable[196]; //196 is the last rank in the table
+                    for (int i = 196; i <= currentRank; i++)
+                    {
+                        prevRankAmount += (uint)(prevRankAmount * VitalRatio);
+                    }
+                    return rankXpTable[(int)destinationRank] - prevRankAmount;
+                }
+            }
+            else
+            {
+                var prevRankAmount = rankXpTable[196];
+                for (int i = 196; i <= destinationRank; i++)
+                {
+                    prevRankAmount += (uint)(prevRankAmount * VitalRatio);
+                }
+                if (currentRank < rankXpTable.Count)
+                    return prevRankAmount - rankXpTable[(int)currentRank];
+                else
+                {
+                    var prevRankAmount2 = rankXpTable[196];
+                    for (int i = 196; i <= currentRank; i++)
+                    {
+                        prevRankAmount2 += (uint)(prevRankAmount2 * VitalRatio);
+                    }
+                    return prevRankAmount - prevRankAmount2;
+                }
+            }
         }
 
         /// <summary>

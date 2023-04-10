@@ -11,7 +11,7 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
-        public bool HandleActionRaiseAttribute(PropertyAttribute attribute, uint amount)
+        public bool HandleActionRaiseAttribute(PropertyAttribute attribute, ulong amount)
         {
             if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
             {
@@ -19,7 +19,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            if (amount > AvailableExperience)
+            if ((long)amount > AvailableExperience)
             {
                 log.Error($"{Name}.HandleActionRaiseAttribute({attribute}, {amount}) - amount > AvaiableExperience ({AvailableExperience})");
                 return false;
@@ -73,7 +73,7 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
-        private bool SpendAttributeXp(CreatureAttribute creatureAttribute, uint amount, bool sendNetworkUpdate = true)
+        private bool SpendAttributeXp(CreatureAttribute creatureAttribute, ulong amount, bool sendNetworkUpdate = true)
         {
 
             // everything looks good at this point,
@@ -84,10 +84,10 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            creatureAttribute.ExperienceSpent += amount;
+            creatureAttribute.ExperienceSpent = creatureAttribute.ExperienceSpent + (uint)amount;
 
             // calculate new rank
-            creatureAttribute.Ranks = (uint)CalcAttributeRank(creatureAttribute.ExperienceSpent);
+            creatureAttribute.Ranks = CalcAttributeRank(creatureAttribute.ExperienceSpent);
 
             return true;
         }
@@ -106,17 +106,20 @@ namespace ACE.Server.WorldObjects
         /// Returns the maximum rank that can be purchased with an xp amount
         /// </summary>
         /// <param name="xpAmount">The amount of xp used to make the purchase</param>
-        public static uint CalcAttributeRank(uint xpAmount)
+        public static uint CalcAttributeRank(ulong xpAmount)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
-            for (var i = rankXpTable.Count - 1; i >= 0; i--) //count down from 190
+            var prevRankAmount = (ulong)rankXpTable[190];
+            if (xpAmount < prevRankAmount)
             {
-                var rankAmount = rankXpTable[i];
-                if (xpAmount >= rankAmount)
-                    return (uint)i;
+                for (var i = rankXpTable.Count - 1; i >= 0; i--) //count down from 190
+                {
+                    var rankAmount = rankXpTable[i];
+                    if (xpAmount >= rankAmount)
+                        return (uint)i;
+                }
             }
-
-            var prevRankAmount = rankXpTable[190];
+                        
             uint x = 190;
             while (true) //count up from 190 until we find a rank
             {
@@ -124,29 +127,29 @@ namespace ACE.Server.WorldObjects
                 {
                     return x;
                 }
-                prevRankAmount += (uint)(prevRankAmount * .076);
+                prevRankAmount += (ulong)(prevRankAmount * .076);
                 x++;
             }
             //return -1;
         }
 
-        public static uint GetXPCostByRank(uint rank)
+        public static ulong GetXPCostByRank(uint rank)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
             if (rank < rankXpTable.Count)
                 return rankXpTable[(int)rank];            
             else
             {
-                var prevRankAmount = rankXpTable[190];
+                var prevRankAmount = (ulong)rankXpTable[190];
                 for (int i = 190; i <= rank; i++)
                 {
-                    prevRankAmount += (uint)(prevRankAmount * .076);
+                    prevRankAmount += (ulong)(prevRankAmount * .076);
                 }
                 return prevRankAmount;
             }
         }
 
-        public static uint GetXPDeltaCostByRank(uint destinationRank, uint currentRank)
+        public static ulong GetXPDeltaCostByRank(uint destinationRank, uint currentRank)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
             if (destinationRank < rankXpTable.Count)
