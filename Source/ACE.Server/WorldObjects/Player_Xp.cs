@@ -418,12 +418,12 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Spends the amount of XP specified, deducting it from available experience
         /// </summary>
-        public bool SpendXP(long amount, bool sendNetworkUpdate = true)
+        public bool SpendXP(ulong amount, bool sendNetworkUpdate = true)
         {
-            if (amount > AvailableExperience)
+            if ((long)amount > AvailableExperience)
                 return false;
 
-            AvailableExperience -= amount;
+            AvailableExperience -= (long)amount;
 
             if (sendNetworkUpdate)
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
