@@ -77,10 +77,18 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            creatureVital.ExperienceSpent += (uint)amount;
+            UpdateExtendedAttribute2ndExperience(creatureVital, amount);
+
+            creatureVital.ExperienceSpent = creatureVital.ExperienceSpent + (uint)amount;
+
+            double calcedXp = creatureVital.ExperienceSpent;
+            if (GetExtendedAttribute2ndExperience(creatureVital) > creatureVital.ExperienceSpent)
+            {
+                calcedXp = GetExtendedAttribute2ndExperience(creatureVital).Value;
+            }
 
             // calculate new rank
-            creatureVital.Ranks = (ushort)CalcVitalRank(creatureVital.ExperienceSpent);
+            creatureVital.Ranks = (uint)CalcVitalRank(calcedXp);
 
             return true;
         }
@@ -197,7 +205,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     var prevRankAmount = (ulong)rankXpTable[196]; //196 is the last rank in the table
-                    for (int i = 196; i <= currentRank; i++)
+                    for (int i = 196; i < currentRank; i++)
                     {
                         prevRankAmount += (ulong)(prevRankAmount * VitalRatio);
                     }
@@ -207,7 +215,7 @@ namespace ACE.Server.WorldObjects
             else
             {
                 var prevRankAmount = (ulong)rankXpTable[196];
-                for (int i = 196; i <= destinationRank; i++)
+                for (int i = 196; i < destinationRank; i++)
                 {
                     prevRankAmount += (ulong)(prevRankAmount * VitalRatio);
                 }
@@ -216,7 +224,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     var prevRankAmount2 = (ulong)rankXpTable[196];
-                    for (int i = 196; i <= currentRank; i++)
+                    for (int i = 196; i < currentRank; i++)
                     {
                         prevRankAmount2 += (ulong)(prevRankAmount2 * VitalRatio);
                     }
@@ -257,6 +265,55 @@ namespace ACE.Server.WorldObjects
                 Health.Current = Health.MaxValue;
 
             Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute2ndLevel(this, Vital.Health, Health.Current));
+        }
+
+        public void UpdateExtendedAttribute2ndExperience(CreatureVital vit, ulong amount)
+        {
+            switch (vit.Vital)
+            {
+                case PropertyAttribute2nd.Undef:
+                    break;
+                case PropertyAttribute2nd.MaxHealth:
+                    if (!SpentExperienceHealth.HasValue || SpentExperienceHealth == 0)
+                    {
+                        SpentExperienceHealth = vit.ExperienceSpent;
+                    }
+                    SpentExperienceHealth += amount;                    
+                    break;
+                case PropertyAttribute2nd.MaxStamina:
+                    if (!SpentExperienceStamina.HasValue || SpentExperienceStamina == 0)
+                    {
+                        SpentExperienceStamina = vit.ExperienceSpent;
+                    }
+                    SpentExperienceStamina += amount;
+                    break;
+                case PropertyAttribute2nd.MaxMana:
+                    if (!SpentExperienceMana.HasValue || SpentExperienceMana == 0)
+                    {
+                        SpentExperienceMana = vit.ExperienceSpent;
+                    }
+                    SpentExperienceMana += amount;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        public double? GetExtendedAttribute2ndExperience(CreatureVital vit)
+        {
+            switch (vit.Vital)
+            {
+                case PropertyAttribute2nd.Undef:
+                    return null;
+                case PropertyAttribute2nd.MaxHealth:
+                    return SpentExperienceHealth;
+                case PropertyAttribute2nd.MaxStamina:
+                    return SpentExperienceStamina;
+                case PropertyAttribute2nd.MaxMana:
+                    return SpentExperienceMana;
+                default:
+                    return null;
+            }
         }
     }
 }
