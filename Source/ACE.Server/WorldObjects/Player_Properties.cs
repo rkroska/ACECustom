@@ -1370,5 +1370,76 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.ImbueSuccesses) ?? 0;
             set { if (value == 0) RemoveProperty(PropertyInt.ImbueSuccesses); else SetProperty(PropertyInt.ImbueSuccesses, value); }
         }
+
+        public double PreviousLevelCost
+        {
+            get => GetProperty(PropertyFloat.PreviousLevelCost) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyFloat.PreviousLevelCost); else SetProperty(PropertyFloat.PreviousLevelCost, value); }
+        }
+
+        public double? TotalExperienceDouble
+        {
+            get => GetProperty(PropertyFloat.TotalExperienceDouble) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.TotalExperienceDouble); else SetProperty(PropertyFloat.TotalExperienceDouble, value.Value); }
+        }
+
+        public double? SpentExperienceStrength
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceStrength) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceStrength); else SetProperty(PropertyFloat.SpentExperienceStrength, value.Value); }
+        }
+
+        public double? SpentExperienceEndurance
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceEndurance) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceEndurance); else SetProperty(PropertyFloat.SpentExperienceEndurance, value.Value); }
+        }
+
+        public double? SpentExperienceCoordination
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceCoordination) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceCoordination); else SetProperty(PropertyFloat.SpentExperienceCoordination, value.Value); }
+        }
+
+        public double? SpentExperienceQuickness
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceQuickness) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceQuickness); else SetProperty(PropertyFloat.SpentExperienceQuickness, value.Value); }
+        }
+
+        public double? SpentExperienceFocus
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceFocus) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceFocus); else SetProperty(PropertyFloat.SpentExperienceFocus, value.Value); }
+        }
+
+        public double? SpentExperienceSelf
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceSelf) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceSelf); else SetProperty(PropertyFloat.SpentExperienceSelf, value.Value); }
+        }
+
+
+        public double? SpentExperienceHealth
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceHealth) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceHealth); else SetProperty(PropertyFloat.SpentExperienceHealth, value.Value); }
+        }
+
+        public double? SpentExperienceStamina
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceStamina) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceStamina); else SetProperty(PropertyFloat.SpentExperienceStamina, value.Value); }
+        }
+
+        public double? SpentExperienceMana
+        {
+            get => GetProperty(PropertyFloat.SpentExperienceMana) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceMana); else SetProperty(PropertyFloat.SpentExperienceMana, value.Value); }
+        }
+
+
+
+        
     }
 }

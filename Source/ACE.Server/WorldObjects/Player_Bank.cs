@@ -70,7 +70,6 @@ namespace ACE.Server.WorldObjects
             lock (balanceLock)
             {
                 var pyrealsList = this.GetInventoryItemsOfWCID(273);
-                long cash = 0;
 
                 foreach (var item in pyrealsList)
                 {

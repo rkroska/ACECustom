@@ -83,7 +83,7 @@ namespace ACE.Server.WorldObjects.Entity
             {
                 var attributeXPTable = DatManager.PortalDat.XpTable.AttributeXpList;
 
-                return Ranks >= (attributeXPTable.Count - 1);
+                return Ranks == (attributeXPTable.Count - 1);
             }
         }
 

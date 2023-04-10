@@ -178,7 +178,7 @@ namespace ACE.Server.WorldObjects.Managers
                         }
                         else if (amt < 0)
                         {
-                            player.SpendXP(-amt);
+                            player.SpendXP((ulong)-amt);
                         }
                     }
                     break;
