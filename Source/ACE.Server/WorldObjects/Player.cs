@@ -94,6 +94,7 @@ namespace ACE.Server.WorldObjects
             // Make sure properties this WorldObject requires are not null.
             AvailableExperience = AvailableExperience ?? 0;
             TotalExperience = TotalExperience ?? 0;
+            TotalExperienceDouble = TotalExperienceDouble ?? 0;
 
             Attackable = true;
 

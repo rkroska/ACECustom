@@ -3374,7 +3374,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid level {parameters[0]}", ChatMessageType.Broadcast));
                 return;
             }
-            if (delevel < 1 || delevel > Player.GetMaxLevel())
+            if (delevel < 1 || delevel > Player.GetMaxLevel() || delevel > 275)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid level {delevel}", ChatMessageType.Broadcast));
                 return;
