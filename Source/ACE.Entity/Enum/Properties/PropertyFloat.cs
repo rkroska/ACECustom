@@ -221,6 +221,24 @@ namespace ACE.Entity.Enum.Properties
         PreviousLevelCost              = 9000,
         [ServerOnly]
         TotalExperienceDouble          = 9001,
+        [ServerOnly]
+        SpentExperienceStrength        = 9002,
+        [ServerOnly]
+        SpentExperienceEndurance       = 9003,
+        [ServerOnly]
+        SpentExperienceCoordination    = 9004,
+        [ServerOnly]
+        SpentExperienceQuickness       = 9005,
+        [ServerOnly]
+        SpentExperienceFocus           = 9006,
+        [ServerOnly]
+        SpentExperienceSelf            = 9007,
+        [ServerOnly]
+        SpentExperienceHealth          = 9008,
+        [ServerOnly]
+        SpentExperienceStamina         = 9009,
+        [ServerOnly]
+        SpentExperienceMana            = 9010,
     }
 
     public static class PropertyFloatExtensions

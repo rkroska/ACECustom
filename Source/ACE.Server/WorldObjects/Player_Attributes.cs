@@ -1,4 +1,5 @@
 using ACE.Common;
+using ACE.Database.Models.Auth;
 using ACE.DatLoader;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -11,6 +12,7 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        public const double AttributeXpMod = 0.077;
         public bool HandleActionRaiseAttribute(PropertyAttribute attribute, ulong amount)
         {
             if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
@@ -83,11 +85,17 @@ namespace ACE.Server.WorldObjects
                 log.Error($"{Name}.SpendAttributeXp({creatureAttribute.Attribute}, {amount}) - SpendXP failed");
                 return false;
             }
+            UpdateExtendedAttributeExperience(creatureAttribute, amount);
 
             creatureAttribute.ExperienceSpent = creatureAttribute.ExperienceSpent + (uint)amount;
 
+            double calcedXp = creatureAttribute.ExperienceSpent;
+            if (GetExtendedAttributeExperience(creatureAttribute) > creatureAttribute.ExperienceSpent)
+            {
+                calcedXp = GetExtendedAttributeExperience(creatureAttribute).Value;
+            }
             // calculate new rank
-            creatureAttribute.Ranks = CalcAttributeRank(creatureAttribute.ExperienceSpent);
+            creatureAttribute.Ranks = CalcAttributeRank(calcedXp);
 
             return true;
         }
@@ -106,10 +114,10 @@ namespace ACE.Server.WorldObjects
         /// Returns the maximum rank that can be purchased with an xp amount
         /// </summary>
         /// <param name="xpAmount">The amount of xp used to make the purchase</param>
-        public static uint CalcAttributeRank(ulong xpAmount)
+        public static uint CalcAttributeRank(double xpAmount)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
-            var prevRankAmount = (ulong)rankXpTable[190];
+            var prevRankAmount = (double)rankXpTable[190];
             if (xpAmount < prevRankAmount)
             {
                 for (var i = rankXpTable.Count - 1; i >= 0; i--) //count down from 190
@@ -127,7 +135,7 @@ namespace ACE.Server.WorldObjects
                 {
                     return x;
                 }
-                prevRankAmount += (ulong)(prevRankAmount * .076);
+                prevRankAmount += (double)(prevRankAmount * AttributeXpMod);
                 x++;
             }
             //return -1;
@@ -151,39 +159,115 @@ namespace ACE.Server.WorldObjects
 
         public static ulong GetXPDeltaCostByRank(uint destinationRank, uint currentRank)
         {
-            var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
+            var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;           
             if (destinationRank < rankXpTable.Count)
             {
                 if (currentRank < rankXpTable.Count)
                     return rankXpTable[(int)destinationRank] - rankXpTable[(int)currentRank];
                 else
                 {
-                    var prevRankAmount = rankXpTable[190];
-                    for (int i = 190; i <= currentRank; i++)
+                    var prevRankAmount = (ulong)rankXpTable[190];
+                    for (int i = 190; i < currentRank; i++)
                     {
-                        prevRankAmount += (uint)(prevRankAmount * .076);
+                        prevRankAmount += (ulong)(prevRankAmount * AttributeXpMod);
                     }
-                    return rankXpTable[(int)destinationRank] - prevRankAmount;
+                    return (ulong)rankXpTable[(int)destinationRank] - prevRankAmount;
                 }
             }
             else
             {
-                var prevRankAmount = rankXpTable[190];
-                for (int i = 190; i <= destinationRank; i++)
+                var prevRankAmount = (ulong)rankXpTable[190];
+                for (int i = 190; i < destinationRank; i++)
                 {
-                    prevRankAmount += (uint)(prevRankAmount * .076);
+                    prevRankAmount += (ulong)(prevRankAmount * AttributeXpMod);
                 }
                 if (currentRank < rankXpTable.Count)
-                    return prevRankAmount - rankXpTable[(int)currentRank];
+                    return (ulong)prevRankAmount - (ulong)rankXpTable[(int)currentRank];
                 else
                 {
-                    var prevRankAmount2 = rankXpTable[190];
-                    for (int i = 190; i <= currentRank; i++)
+                    var prevRankAmount2 = (ulong)rankXpTable[190];
+                    for (int i = 190; i < currentRank; i++)
                     {
-                        prevRankAmount2 += (uint)(prevRankAmount2 * .076);
+                        prevRankAmount2 += (ulong)(prevRankAmount2 * AttributeXpMod);
                     }
                     return prevRankAmount - prevRankAmount2;
                 }
+            }
+        }
+
+        public void UpdateExtendedAttributeExperience(CreatureAttribute attrib, ulong amount)
+        {
+            switch (attrib.Attribute)
+            {
+                case PropertyAttribute.Undef:
+                    break;
+                case PropertyAttribute.Strength:
+                    if (!SpentExperienceStrength.HasValue || SpentExperienceStrength == 0)
+                    {
+                        SpentExperienceStrength = attrib.ExperienceSpent;
+                    }
+                    SpentExperienceStrength += amount;
+                    break;
+                case PropertyAttribute.Endurance:
+                    if (!SpentExperienceEndurance.HasValue || SpentExperienceEndurance == 0)
+                    {
+                        SpentExperienceEndurance = attrib.ExperienceSpent;
+                    }
+                    SpentExperienceEndurance += amount;
+                    break;
+                case PropertyAttribute.Quickness:
+                    if (!SpentExperienceQuickness.HasValue || SpentExperienceQuickness == 0)
+                    {
+                        SpentExperienceQuickness = attrib.ExperienceSpent;
+                    }
+                    SpentExperienceQuickness += amount;
+                    break;
+                case PropertyAttribute.Coordination:
+                    if (!SpentExperienceCoordination.HasValue || SpentExperienceCoordination == 0)
+                    {
+                        SpentExperienceCoordination = attrib.ExperienceSpent;
+                    }
+                    SpentExperienceCoordination += amount;
+                    break;
+                case PropertyAttribute.Focus:
+                    if (!SpentExperienceFocus.HasValue || SpentExperienceFocus == 0)
+                    {
+                        SpentExperienceFocus = attrib.ExperienceSpent;
+                    }
+                    SpentExperienceFocus += amount;
+                    break;
+                case PropertyAttribute.Self:
+                    if (!SpentExperienceSelf.HasValue || SpentExperienceSelf == 0)
+                    {
+                        SpentExperienceSelf = attrib.ExperienceSpent;
+                    }
+                    SpentExperienceSelf += amount;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        public double? GetExtendedAttributeExperience(CreatureAttribute attrib)
+        {
+            switch (attrib.Attribute)
+            {
+                case PropertyAttribute.Undef:
+                    return null;
+                case PropertyAttribute.Strength:
+                    return SpentExperienceStrength;
+                case PropertyAttribute.Endurance:
+                    return SpentExperienceEndurance;
+                case PropertyAttribute.Quickness:
+                    return SpentExperienceQuickness;
+                case PropertyAttribute.Coordination:
+                    return SpentExperienceCoordination;
+                case PropertyAttribute.Focus:
+                    return SpentExperienceFocus;
+                case PropertyAttribute.Self:
+                    return SpentExperienceSelf;
+                default:
+                    return null;
             }
         }
     }

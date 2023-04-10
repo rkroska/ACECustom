@@ -187,7 +187,7 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public static uint GetXPDeltaCostByRankForSecondary(uint destinationRank, uint currentRank)
+        public static ulong GetXPDeltaCostByRankForSecondary(uint destinationRank, uint currentRank)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.VitalXpList;
             if (destinationRank < rankXpTable.Count)
@@ -196,29 +196,29 @@ namespace ACE.Server.WorldObjects
                     return rankXpTable[(int)destinationRank] - rankXpTable[(int)currentRank];
                 else
                 {
-                    var prevRankAmount = rankXpTable[196]; //196 is the last rank in the table
+                    var prevRankAmount = (ulong)rankXpTable[196]; //196 is the last rank in the table
                     for (int i = 196; i <= currentRank; i++)
                     {
-                        prevRankAmount += (uint)(prevRankAmount * VitalRatio);
+                        prevRankAmount += (ulong)(prevRankAmount * VitalRatio);
                     }
                     return rankXpTable[(int)destinationRank] - prevRankAmount;
                 }
             }
             else
             {
-                var prevRankAmount = rankXpTable[196];
+                var prevRankAmount = (ulong)rankXpTable[196];
                 for (int i = 196; i <= destinationRank; i++)
                 {
-                    prevRankAmount += (uint)(prevRankAmount * VitalRatio);
+                    prevRankAmount += (ulong)(prevRankAmount * VitalRatio);
                 }
                 if (currentRank < rankXpTable.Count)
                     return prevRankAmount - rankXpTable[(int)currentRank];
                 else
                 {
-                    var prevRankAmount2 = rankXpTable[196];
+                    var prevRankAmount2 = (ulong)rankXpTable[196];
                     for (int i = 196; i <= currentRank; i++)
                     {
-                        prevRankAmount2 += (uint)(prevRankAmount2 * VitalRatio);
+                        prevRankAmount2 += (ulong)(prevRankAmount2 * VitalRatio);
                     }
                     return prevRankAmount - prevRankAmount2;
                 }
