@@ -697,7 +697,7 @@ namespace ACE.Server.Managers
         {
             if (!player.QuestCompletionCount.HasValue || player.QuestCompletionCount == 0)
             {
-                player.QuestCompletionCount = player.Character.GetQuestCount(new System.Threading.ReaderWriterLockSlim());
+                player.QuestCompletionCount = player.Character.GetCompletedQuestCount(new System.Threading.ReaderWriterLockSlim());
             }
             else
             {
