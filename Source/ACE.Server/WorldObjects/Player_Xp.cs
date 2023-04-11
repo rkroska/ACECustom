@@ -18,6 +18,8 @@ namespace ACE.Server.WorldObjects
         public const long xp275 = 191226310247;
         public const long xp274to275delta = 3390451400;
         public const double levelRatio = 0.014234603;
+        public const double questToBonusRation = 0.05;
+        public const double enlightenmentToBonusRatio = 0.1;
 
         /// <summary>
         /// A player earns XP through natural progression, ie. kills and quests completed
@@ -38,7 +40,11 @@ namespace ACE.Server.WorldObjects
             // should this be passed upstream to fellowship / allegiance?
             var enchantment = GetXPAndLuminanceModifier(xpType);
 
-            var m_amount = (long)Math.Round(amount * enchantment * modifier);
+            var quest = GetQuestCountXPBonus();
+
+            var enlightenment = GetEnglightenmentXPBonus();
+
+            var m_amount = (long)Math.Round(amount * enchantment * modifier * quest * enlightenment);
 
             if (m_amount < 0)
             {
@@ -577,6 +583,20 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine($"XPAndLuminanceModifier: {modifier}");
 
             return modifier;
+        }
+
+        /// <summary>
+        /// Reads from the quest completion count property to get the running XP bonus
+        /// </summary>
+        /// <returns></returns>
+        public double GetQuestCountXPBonus()
+        {
+            return 1 + (QuestCompletionCount ?? 1) * questToBonusRation;
+        }
+
+        public double GetEnglightenmentXPBonus()
+        {
+            return 1 + (this.Enlightenment * enlightenmentToBonusRatio);
         }
     }
 }
