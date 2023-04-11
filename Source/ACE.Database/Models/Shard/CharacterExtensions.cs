@@ -357,6 +357,19 @@ namespace ACE.Database.Models.Shard
             }
         }
 
+        public static long GetQuestCount(this Character character, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try
+            {
+                return character.CharacterPropertiesQuestRegistry.Count;
+            }
+            finally
+            {
+                rwLock.ExitReadLock();
+            }
+        }
+
         public static CharacterPropertiesQuestRegistry GetQuest(this Character character, string questName, ReaderWriterLockSlim rwLock)
         {
             rwLock.EnterReadLock();

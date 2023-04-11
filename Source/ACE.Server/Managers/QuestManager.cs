@@ -13,6 +13,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using ACE.Server.Entity;
+using ACE.Server.Network;
 
 namespace ACE.Server.Managers
 {
@@ -189,6 +190,7 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+
                 }
             }
             else
@@ -241,7 +243,11 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've completed {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                 }
+                
             }
             else
             {
@@ -256,6 +262,9 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've completed {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                 }
             }
         }
@@ -682,6 +691,18 @@ namespace ACE.Server.Managers
                 Console.WriteLine($"{Name}.QuestManager.SetQuestBits({questFormat}, 0x{bits:X}): {on}");
 
             SetQuestCompletions(questFormat, questBits);
+        }
+
+        public void UpdatePlayerQuestCompletions(Player player)
+        {
+            if (!player.QuestCompletionCount.HasValue || player.QuestCompletionCount == 0)
+            {
+                player.QuestCompletionCount = player.Character.GetQuestCount(new System.Threading.ReaderWriterLockSlim());
+            }
+            else
+            {
+                player.QuestCompletionCount += 1;
+            }
         }
     }
 }
