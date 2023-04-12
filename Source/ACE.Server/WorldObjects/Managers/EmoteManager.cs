@@ -627,6 +627,11 @@ namespace ACE.Server.WorldObjects.Managers
                         success = hasQuest && !canSolve;
 
                         ExecuteEmoteSet(success ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                        if (success)
+                        {
+                            questTarget.QuestManager.UpdatePlayerQuestCompletions(player);
+                            player.SendMessage($"You've completed {emote.Message}!", ChatMessageType.Advancement);//quest name
+                        }
                     }
 
                     break;

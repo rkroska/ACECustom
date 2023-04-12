@@ -35,7 +35,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals and luminance, or specify pyreals or luminance and an amount", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                return;
             }
 
             int iType = 0;
