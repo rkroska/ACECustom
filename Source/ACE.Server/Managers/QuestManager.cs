@@ -188,9 +188,9 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've started {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
-
                 }
             }
             else
@@ -210,7 +210,6 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -241,11 +240,10 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've started {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
-                    UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've completed {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                 }
                 
             }
@@ -262,9 +260,6 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
-
-                    UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've completed {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                 }
             }
         }
