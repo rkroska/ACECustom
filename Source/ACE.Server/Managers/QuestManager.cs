@@ -145,7 +145,17 @@ namespace ACE.Server.Managers
         private CharacterPropertiesQuestRegistry GetOrCreateQuest(string questName, out bool questRegistryWasCreated)
         {
             if (Creature is Player player)
-                return player.Character.GetOrCreateQuest(questName, player.CharacterDatabaseLock, out questRegistryWasCreated);
+            {
+                CharacterPropertiesQuestRegistry r = player.Character.GetOrCreateQuest(questName, player.CharacterDatabaseLock, out questRegistryWasCreated);
+                var quest = DatabaseManager.World.GetCachedQuest(questName);
+                if (questRegistryWasCreated && quest.MinDelta > 0) //avoid re-stamping for kill task quests
+                {
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've been stamped for {questName}!", ChatMessageType.Advancement);//quest name
+                }
+                return r;
+            }
+                
 
             // Not a player
             var existing = runtimeQuests.FirstOrDefault(q => q.QuestName.Equals(questName, StringComparison.OrdinalIgnoreCase));
@@ -160,6 +170,7 @@ namespace ACE.Server.Managers
                 runtimeQuests.Add(existing);
 
                 questRegistryWasCreated = true;
+                
             }
             else
                 questRegistryWasCreated = false;
@@ -188,8 +199,6 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've started {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -240,8 +249,6 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've started {quest.QuestName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
                 }
@@ -258,7 +265,11 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
+                    if (quest.NumTimesCompleted == 1)
+                    {
+                        UpdatePlayerQuestCompletions(player);
+                        player.SendMessage($"You've completed {questName}!", ChatMessageType.Advancement);//quest name
+                    }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
