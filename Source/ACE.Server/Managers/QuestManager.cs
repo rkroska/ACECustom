@@ -147,12 +147,7 @@ namespace ACE.Server.Managers
             if (Creature is Player player)
             {
                 CharacterPropertiesQuestRegistry r = player.Character.GetOrCreateQuest(questName, player.CharacterDatabaseLock, out questRegistryWasCreated);
-                var quest = DatabaseManager.World.GetCachedQuest(questName);
-                if (questRegistryWasCreated && quest.MinDelta > 0) //avoid re-stamping for kill task quests
-                {
-                    UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've been stamped for {questName}!", ChatMessageType.Advancement);//quest name
-                }
+                //var quest = DatabaseManager.World.GetCachedQuest(questName);
                 return r;
             }
                 
