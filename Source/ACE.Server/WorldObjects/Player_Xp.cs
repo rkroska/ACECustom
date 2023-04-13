@@ -18,7 +18,7 @@ namespace ACE.Server.WorldObjects
         public const long xp275 = 191226310247;
         public const long xp274to275delta = 3390451400;
         public const double levelRatio = 0.014234603;
-        public const double questToBonusRation = 0.05;
+        public const double questToBonusRation = 0.01;
         public const double enlightenmentToBonusRatio = 0.1;
 
         /// <summary>
