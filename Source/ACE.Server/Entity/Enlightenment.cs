@@ -46,7 +46,7 @@ namespace ACE.Server.Entity
         // - +1 to all of your skills
         // - An attribute reset certificate
 
-        public static void HandleEnlightenment(WorldObject npc, Player player)
+        public static void HandleEnlightenment(Player player)
         {
             if (!VerifyRequirements(player))
                 return;
@@ -55,42 +55,27 @@ namespace ACE.Server.Entity
 
             RemoveAbility(player);
 
-            AddPerks(npc, player);
+            AddPerks(player);
 
             player.SaveBiotaToDatabase();
         }
 
         public static bool VerifyRequirements(Player player)
         {
-            if (player.Level < 275)
+            if (player.Level + player.Enlightenment < 275)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 for enlightenment.", ChatMessageType.Broadcast));
-                return false;
-            }
-
-            if (!VerifyLumAugs(player))
-            {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have all luminance auras for enlightenment.", ChatMessageType.Broadcast));
-                return false;
-            }
-
-            if (!VerifySocietyMaster(player))
-            {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a Master of one of the Societies of Dereth for enlightenment.", ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment for enlightenment.", ChatMessageType.Broadcast));
                 return false;
             }
 
             if (player.GetFreeInventorySlots() < 25)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have at least 25 free inventory slots in your main pack for enlightenment.", ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have at least 25 free inventory slots in your main pack for enlightenment, to unequip your gear automatically.", ChatMessageType.Broadcast));
                 return false;
             }
 
-            if (player.Enlightenment >= 5)
-            {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already reached the maximum enlightenment level!", ChatMessageType.Broadcast));
-                return false;
-            }
+            //todo: check for trophies that are enl level appropriate
+
             return true;
         }
 
@@ -126,14 +111,18 @@ namespace ACE.Server.Entity
                 player.HandleActionPutItemInContainer(equippedObject.Full, player.Guid.Full, 0);
         }
 
+        public static void RemoveAllSpells(Player player)
+        {
+            player.EnchantmentManager.DispelAllEnchantments();
+        }
+
         public static void RemoveAbility(Player player)
         {
             RemoveSociety(player);
             RemoveLuminance(player);
-            RemoveAetheria(player);
-            RemoveAttributes(player);
             RemoveSkills(player);
             RemoveLevel(player);
+            RemoveAllSpells(player);
         }
 
         public static void RemoveSociety(Player player)
@@ -253,50 +242,17 @@ namespace ACE.Server.Entity
 
         public static void RemoveLuminance(Player player)
         {
-            player.QuestManager.Erase("OracleLuminanceRewardsAccess_1110");
-            player.QuestManager.Erase("LoyalToShadeOfLadyAdja");
-            player.QuestManager.Erase("LoyalToKahiri");
-            player.QuestManager.Erase("LoyalToLiamOfGelid");
-            player.QuestManager.Erase("LoyalToLordTyragar");
-
-            player.LumAugDamageRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugDamageRating, 0));
-            player.LumAugDamageReductionRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugDamageReductionRating, 0));
-            player.LumAugCritDamageRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugCritDamageRating, 0));
-            player.LumAugCritReductionRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugCritReductionRating, 0));
-            //player.LumAugSurgeEffectRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugSurgeEffectRating, 0));
-            player.LumAugSurgeChanceRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugSurgeChanceRating, 0));
-            player.LumAugItemManaUsage = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugItemManaUsage, 0));
-            player.LumAugItemManaGain = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugItemManaGain, 0));
-            player.LumAugVitality = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugVitality, 0));
-            player.LumAugHealingRating = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugHealingRating, 0));
-            player.LumAugSkilledCraft = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugSkilledCraft, 0));
-            player.LumAugSkilledSpec = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugSkilledSpec, 0));
-            player.LumAugAllSkills = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.LumAugAllSkills, 0));
-
             player.AvailableLuminance = null;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableLuminance, 0));
             player.MaximumLuminance = null;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.MaximumLuminance, 0));
 
-            player.SendMessage("Your Luminance and Luminance Auras fade from your spirit.", ChatMessageType.Broadcast);
+            player.SendMessage("Your Luminance fades from your spirit.", ChatMessageType.Broadcast);
         }
 
         public static uint AttributeResetCertificate => 46421;
 
-        public static void AddPerks(WorldObject npc, Player player)
+        public static void AddPerks(Player player)
         {
             // +1 to all skills
             // this could be handled through InitLevel, since we are always using deltas when modifying that field
@@ -338,8 +294,6 @@ namespace ACE.Server.Entity
                     lvl = "5th";
                     break;
             }
-
-            player.GiveFromEmote(npc, AttributeResetCertificate, 1);
 
             var msg = $"{player.Name} has achieved the {lvl} level of Enlightenment!";
             PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
