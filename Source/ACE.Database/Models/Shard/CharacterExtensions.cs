@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace ACE.Database.Models.Shard
@@ -350,6 +351,19 @@ namespace ACE.Database.Models.Shard
             try
             {
                 return character.CharacterPropertiesQuestRegistry.ToList();
+            }
+            finally
+            {
+                rwLock.ExitReadLock();
+            }
+        }
+
+        public static long GetCompletedQuestCount(this Character character, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try
+            {
+                return character.CharacterPropertiesQuestRegistry.Count(x=>x.NumTimesCompleted > 0 || x.NumTimesCompleted == -1);
             }
             finally
             {

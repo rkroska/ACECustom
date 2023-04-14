@@ -347,7 +347,7 @@ namespace ACE.Server.WorldObjects.Managers
                     questTarget = GetQuestTarget((EmoteType)emote.Type, targetCreature, creature);
 
                     if (questTarget != null)
-                        questTarget.QuestManager.Erase(emote.Message);
+                        questTarget.QuestManager.SetQuestCompletions(emote.Message, -1); //reset to -1 rather than delete quest
 
                     break;
 
