@@ -244,6 +244,8 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've started {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
                 }
