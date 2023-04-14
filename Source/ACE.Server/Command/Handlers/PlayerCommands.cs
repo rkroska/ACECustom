@@ -18,6 +18,7 @@ using System.Linq;
 using ACE.Entity.Enum.Properties;
 using ACE.Database.Models.Auth;
 using System.Xml.Linq;
+using Lifestoned.DataModel.DerethForever;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -159,7 +160,9 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
         public static void HandleEnlightenment(Session session, params string[] parameters)
         {
-
+            if(!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(session.Player.Guid, session.Player.Guid, "Enlightenment"), "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes."))
+                return;
+            Enlightenment.HandleEnlightenment(session.Player);
         }
 
         [CommandHandler("mult", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]

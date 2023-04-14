@@ -22,11 +22,13 @@ namespace ACE.Server.WorldObjects
             var modifier = PropertyManager.GetDouble("luminance_modifier").Item;
             if (xpType == XpType.Quest)
                 modifier *= questModifier;
+            var quest = GetQuestCountXPBonus();
 
+            var enlightenment = GetEnglightenmentXPBonus();
             // should this be passed upstream to fellowship?
             var enchantment = GetXPAndLuminanceModifier(xpType);
 
-            var m_amount = (long)Math.Round(amount * enchantment * modifier);
+            var m_amount = (long)Math.Round(amount * quest * enlightenment * enchantment * modifier);
 
             GrantLuminance(m_amount, xpType, shareType);
         }
