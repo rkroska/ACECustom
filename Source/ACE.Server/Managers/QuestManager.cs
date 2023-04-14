@@ -94,7 +94,8 @@ namespace ACE.Server.Managers
         public bool HasQuest(string questFormat)
         {
             var questName = GetQuestName(questFormat);
-            var hasQuest = GetQuest(questName) != null;
+            var Quest = GetQuest(questName);
+            var hasQuest = (Quest != null && Quest.NumTimesCompleted >= 0);
 
             if (Debug)
                 Console.WriteLine($"{Name}.QuestManager.HasQuest({questFormat}): {hasQuest}");

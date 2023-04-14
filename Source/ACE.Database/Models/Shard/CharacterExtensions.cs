@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace ACE.Database.Models.Shard
@@ -362,7 +363,7 @@ namespace ACE.Database.Models.Shard
             rwLock.EnterReadLock();
             try
             {
-                return character.CharacterPropertiesQuestRegistry.Count(x=>x.NumTimesCompleted > 0);
+                return character.CharacterPropertiesQuestRegistry.Count(x=>x.NumTimesCompleted > 0 || x.NumTimesCompleted == -1);
             }
             finally
             {
