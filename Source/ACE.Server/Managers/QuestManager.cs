@@ -13,6 +13,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using ACE.Server.Entity;
+using ACE.Server.Network;
 
 namespace ACE.Server.Managers
 {
@@ -93,7 +94,8 @@ namespace ACE.Server.Managers
         public bool HasQuest(string questFormat)
         {
             var questName = GetQuestName(questFormat);
-            var hasQuest = GetQuest(questName) != null;
+            var Quest = GetQuest(questName);
+            var hasQuest = (Quest != null && Quest.NumTimesCompleted >= 0);
 
             if (Debug)
                 Console.WriteLine($"{Name}.QuestManager.HasQuest({questFormat}): {hasQuest}");
@@ -144,7 +146,12 @@ namespace ACE.Server.Managers
         private CharacterPropertiesQuestRegistry GetOrCreateQuest(string questName, out bool questRegistryWasCreated)
         {
             if (Creature is Player player)
-                return player.Character.GetOrCreateQuest(questName, player.CharacterDatabaseLock, out questRegistryWasCreated);
+            {
+                CharacterPropertiesQuestRegistry r = player.Character.GetOrCreateQuest(questName, player.CharacterDatabaseLock, out questRegistryWasCreated);
+                //var quest = DatabaseManager.World.GetCachedQuest(questName);
+                return r;
+            }
+                
 
             // Not a player
             var existing = runtimeQuests.FirstOrDefault(q => q.QuestName.Equals(questName, StringComparison.OrdinalIgnoreCase));
@@ -159,6 +166,7 @@ namespace ACE.Server.Managers
                 runtimeQuests.Add(existing);
 
                 questRegistryWasCreated = true;
+                
             }
             else
                 questRegistryWasCreated = false;
@@ -187,7 +195,6 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -208,7 +215,6 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -239,9 +245,12 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've started {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+
                 }
+                
             }
             else
             {
@@ -254,7 +263,11 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-
+                    if (quest.NumTimesCompleted == 1)
+                    {
+                        UpdatePlayerQuestCompletions(player);
+                        player.SendMessage($"You've completed {questName}!", ChatMessageType.Advancement);//quest name
+                    }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -682,6 +695,18 @@ namespace ACE.Server.Managers
                 Console.WriteLine($"{Name}.QuestManager.SetQuestBits({questFormat}, 0x{bits:X}): {on}");
 
             SetQuestCompletions(questFormat, questBits);
+        }
+
+        public void UpdatePlayerQuestCompletions(Player player)
+        {
+            if (!player.QuestCompletionCount.HasValue || player.QuestCompletionCount == 0)
+            {
+                player.QuestCompletionCount = player.Character.GetCompletedQuestCount(new System.Threading.ReaderWriterLockSlim());
+            }
+            else
+            {
+                player.QuestCompletionCount += 1;
+            }
         }
     }
 }

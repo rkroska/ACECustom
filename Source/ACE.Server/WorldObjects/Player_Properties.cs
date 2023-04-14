@@ -1438,8 +1438,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.SpentExperienceMana); else SetProperty(PropertyFloat.SpentExperienceMana, value.Value); }
         }
 
+        public long? QuestCompletionCount
+        {
+            get => GetProperty(PropertyInt64.QuestCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.QuestCount); else SetProperty(PropertyInt64.QuestCount, value.Value); }
+        }
 
 
-        
     }
 }

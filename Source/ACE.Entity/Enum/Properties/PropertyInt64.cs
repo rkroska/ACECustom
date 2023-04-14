@@ -36,6 +36,8 @@ namespace ACE.Entity.Enum.Properties
         BankedPyreals         = 9004,
         [ServerOnly]
         BankedLuminance       = 9005,
+        [ServerOnly]
+        QuestCount            = 9006,
     }
 
     public static class PropertyInt64Extensions

@@ -35,7 +35,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals and luminance, or specify pyreals or luminance and an amount", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                return;
             }
 
             int iType = 0;
@@ -161,7 +162,20 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "")]
+        [CommandHandler("mult", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
+        public static void HandleMultiplier (Session session, params string[] paramters)
+        {
+            var qb = session.Player.GetQuestCountXPBonus();
+            var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
+            var en = session.Player.GetEnglightenmentXPBonus();
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your XP multiplier from Quests is: {qb-1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your XP multiplier from Equipment is: {eq-1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your XP multiplier from Enlightenment is: {en-1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your Total XP multiplier is: {(qb-1)+(eq-1)+(en-1):P}", ChatMessageType.System));
+        }
+
+        [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleExperience(Session session, params string[] parameters)
         {
             if (parameters.Count() == 0)
@@ -170,14 +184,74 @@ namespace ACE.Server.Command.Handlers
             }
             if (parameters.Count() == 1)
             {
+                ulong xp = 0; string AttrName = ""; bool success = false;
                 //check attribute costs
+                switch (parameters[0])
+                {
+                    case "str": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Strength, out AttrName, false, out success);
+                        break;
+                    case "end": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Endurance, out AttrName, false, out success);
+                        break;
+                    case "coo": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Coordination, out AttrName, false, out success);
+                        break;
+                    case "qui": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Quickness, out AttrName, false, out success);
+                        break; 
+                    case "foc": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Focus, out AttrName, false, out success);
+                        break;
+                    case "sel": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Self, out AttrName, false, out success);
+                        break;
+                    case "sta": xp = GetOrRaise2ndAttrib(session, 1, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
+                        break;
+                    case "hea": xp = GetOrRaise2ndAttrib(session, 1, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
+                        break;
+                    case "man": xp = GetOrRaise2ndAttrib(session, 1, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
+                        break;
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP cost for next {AttrName} level is: {xp:N0}", ChatMessageType.System));
             }            
+        }
+
+        public static ulong GetOrRaiseAttrib(Network.Session session, int RanksToRaise, PropertyAttribute attrib, out string AttrName, bool doRaise, out bool success)
+        {            
+            if (!session.Player.Attributes.TryGetValue(attrib, out var creatureAttribute))
+            {}
+            uint destinationRank = (uint)(creatureAttribute.Ranks + RanksToRaise);
+            AttrName = creatureAttribute.Attribute.GetDescription();
+            ulong xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
+            if (doRaise)
+            {
+                success = session.Player.HandleActionRaiseAttribute(attrib, xpCost);
+            }
+            else
+            {
+                success = false;
+            }
+            return xpCost;
+        }
+
+        public static ulong GetOrRaise2ndAttrib(Network.Session session, int RanksToRaise, PropertyAttribute2nd vital, out string AttrName, bool doRaise, out bool success)
+        {
+            if (!session.Player.Vitals.TryGetValue(vital, out var creatureAttribute))
+            { }
+            uint destinationRank = (uint)(creatureAttribute.Ranks + RanksToRaise);
+            AttrName = creatureAttribute.Vital.GetDescription();
+            ulong xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
+            if (doRaise)
+            {
+                success = session.Player.HandleActionRaiseVital(vital, xpCost);
+            }
+            else
+            {
+                success = false;
+            }
+            return xpCost;
         }
 
         [CommandHandler("attr", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Handles Attribute Raising", "Type the first 3 letter abbreviation for the attribute to raise, followed optionally by a number (str, end, coo, qui, foc, sel, vit, sta, man)")]
         public static void HandleRaiseAttribute(Session session, params string[] parameters)
         {
-            int amt = 1; uint destinationRank = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
+            int amt = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
             if (parameters.Count() == 2)
             {
                 amt = Convert.ToInt32(parameters[1]);
@@ -186,103 +260,31 @@ namespace ACE.Server.Command.Handlers
             switch (parameters[0])
             {
                 case "str":
-                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Strength, out var creatureAttribute))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureAttribute.Ranks + amt);
-                    AttrName = creatureAttribute.Attribute.GetDescription();
-                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
-                    success = session.Player.HandleActionRaiseAttribute(PropertyAttribute.Strength, xpCost);
+                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Strength, out AttrName, true, out success);
                     break;
                 case "end":
-                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Endurance, out var creatureAttribute1))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureAttribute1.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute1.Ranks);
-                    AttrName = creatureAttribute1.Attribute.GetDescription();
-                    success = session.Player.HandleActionRaiseAttribute(PropertyAttribute.Endurance, xpCost);
+                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Endurance, out AttrName, true, out success);
                     break;
                 case "coo":
-                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Coordination, out var creatureAttribute2))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureAttribute2.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute2.Ranks);
-                    AttrName = creatureAttribute2.Attribute.GetDescription();
-                    success = session.Player.HandleActionRaiseAttribute(PropertyAttribute.Coordination, xpCost);
+                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Coordination, out AttrName, true, out success);
                     break;
                 case "qui":
-                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Quickness, out var creatureAttribute3))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureAttribute3.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute3.Ranks);
-                    AttrName = creatureAttribute3.Attribute.GetDescription();
-                    success = session.Player.HandleActionRaiseAttribute(PropertyAttribute.Quickness, xpCost);
+                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Quickness, out AttrName, true, out success);
                     break;
                 case "foc":
-                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Focus, out var creatureAttribute4))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureAttribute4.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute4.Ranks);
-                    AttrName = creatureAttribute4.Attribute.GetDescription();
-                    success = session.Player.HandleActionRaiseAttribute(PropertyAttribute.Focus, xpCost);
+                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Focus, out AttrName, true, out success);
                     break;
                 case "sel":
-                    if (!session.Player.Attributes.TryGetValue(PropertyAttribute.Self, out var creatureAttribute5))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureAttribute5.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute5.Ranks);
-                    AttrName = creatureAttribute5.Attribute.GetDescription();
-                    success = session.Player.HandleActionRaiseAttribute(PropertyAttribute.Self, xpCost);
+                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
                     break;
                 case "sta":
-                    if (!session.Player.Vitals.TryGetValue(PropertyAttribute2nd.MaxStamina, out var creatureVital))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureVital.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRankForSecondary(destinationRank, creatureVital.Ranks);
-                    AttrName = creatureVital.Vital.GetDescription();
-                    success = session.Player.HandleActionRaiseVital(PropertyAttribute2nd.MaxStamina, xpCost);
+                    GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxStamina, out AttrName, true, out success);
                     break;
                 case "hea":
-                    if (!session.Player.Vitals.TryGetValue(PropertyAttribute2nd.MaxHealth, out var creatureVital1))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureVital1.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRankForSecondary(destinationRank, creatureVital1.Ranks);
-                    AttrName = creatureVital1.Vital.GetDescription();
-                    success = session.Player.HandleActionRaiseVital(PropertyAttribute2nd.MaxHealth, xpCost);
+                    GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxHealth, out AttrName, true, out success);
                     break;
                 case "man":
-                    if (!session.Player.Vitals.TryGetValue(PropertyAttribute2nd.MaxMana, out var creatureVital2))
-                    {
-                        log.Error($"[ATTR] ({parameters[0]}, {amt}) - invalid attribute");
-                        return;
-                    }
-                    destinationRank = (uint)(creatureVital2.Ranks + amt);
-                    xpCost = Player.GetXPDeltaCostByRankForSecondary(destinationRank, creatureVital2.Ranks);
-                    AttrName = creatureVital2.Vital.GetDescription();
-                    success = session.Player.HandleActionRaiseVital(PropertyAttribute2nd.MaxMana, xpCost);
+                    GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxMana, out AttrName, true, out success);
                     break;
                 default:
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Invalid attribute. Type /attr for help.", ChatMessageType.System));
