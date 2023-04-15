@@ -591,7 +591,7 @@ namespace ACE.Server.WorldObjects
         /// <returns></returns>
         public double GetQuestCountXPBonus()
         {
-            return 1 + (QuestCompletionCount ?? 1) * questToBonusRation;
+            return 1 + (this.QuestCompletionCount ?? 1) * questToBonusRation;
         }
 
         public double GetEnglightenmentXPBonus()
