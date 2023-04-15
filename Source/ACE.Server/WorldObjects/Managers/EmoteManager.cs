@@ -336,7 +336,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (player != null)
                     {
-                        Enlightenment.HandleEnlightenment(WorldObject, player);
+                        Enlightenment.HandleEnlightenment(player);
                     }
 
                     break;
