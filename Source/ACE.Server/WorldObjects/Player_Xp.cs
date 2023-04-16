@@ -554,7 +554,11 @@ namespace ACE.Server.WorldObjects
             var newItemLevel = item.ItemLevel.Value;
             if (newItemLevel > prevItemLevel)
             {
-                OnItemLevelUp(item, prevItemLevel);
+                for (int i = 0; i < newItemLevel - prevItemLevel; i++)
+                {
+                    OnItemLevelUp(item, prevItemLevel + i);
+                }
+
 
                 var actionChain = new ActionChain();
                 actionChain.AddAction(this, () =>

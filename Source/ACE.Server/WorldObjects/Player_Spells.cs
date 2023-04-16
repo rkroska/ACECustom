@@ -195,18 +195,18 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +5 Armor Level!", ChatMessageType.Advancement));
                     if (item.ItemLevel % 5 == 0)
                     {
-                        item.ArmorModVsAcid += 5;
-                        item.ArmorModVsBludgeon += 5;
-                        item.ArmorModVsCold += 5;
-                        item.ArmorModVsElectric += 5;
-                        item.ArmorModVsFire += 5;
-                        item.ArmorModVsNether += 5;
-                        item.ArmorModVsPierce += 5;
-                        item.ArmorModVsSlash += 5;
+                        item.ArmorModVsAcid += 0.5;
+                        item.ArmorModVsBludgeon += 0.5;
+                        item.ArmorModVsCold += 0.5;
+                        item.ArmorModVsElectric += 0.5;
+                        item.ArmorModVsFire += 0.5;
+                        item.ArmorModVsNether += 0.5;
+                        item.ArmorModVsPierce += 0.5;
+                        item.ArmorModVsSlash += 0.5;
                         Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +5 Defenses!", ChatMessageType.Advancement));
                     }
                 }
-                if (item.ItemType == ItemType.Weapon)
+                if (item.ItemType == ItemType.MeleeWeapon || item.ItemType == ItemType.MissileWeapon)
                 {
                     if (item.ItemLevel % 2 == 0)
                     {
@@ -215,21 +215,50 @@ namespace ACE.Server.WorldObjects
                     }
                     else
                     {
-                        item.DamageVariance += 0.1;
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +10% Variance!", ChatMessageType.Advancement));
+                        item.DamageVariance -= 0.1;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item improved +10% Variance!", ChatMessageType.Advancement));
                     }
 
                     if (item.ItemLevel % 5 == 0)
                     {
                         item.WeaponDefense += 0.02;
                         item.WeaponMissileDefense += 0.02;
+                        item.WeaponMagicDefense += 0.02;
                         Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +2% Defenses!", ChatMessageType.Advancement));
                     }
                 }
                 if (item.ItemType == ItemType.Caster)
                 {
-                    item.DamageMod += 0.01;
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained 1% Damage Mod!", ChatMessageType.Advancement));
+                    if (item.WeaponDefense == null)
+                    {
+                        item.WeaponDefense = 1.01;                      
+                    }
+                    else
+                    {
+                        item.WeaponDefense += 0.01;
+                    }
+
+                    if (item.ManaConversionMod == null)
+                    {
+                        item.ManaConversionMod = 1.01;
+                    }
+                    else
+                    {
+                        item.ManaConversionMod += 0.01;
+                    }
+                    if (item.Level % 3 == 0)
+                    {
+                        if (item.WeaponMagicDefense == null)
+                        {
+                            item.WeaponMagicDefense = 1.01;
+                        }
+                        else
+                        {
+                            item.WeaponMagicDefense += 0.01;
+                        }
+                    }
+
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained 1% Defense Mod!", ChatMessageType.Advancement));
                     if (item.ElementalDamageMod > 0)
                     {
                         item.ElementalDamageMod += 0.01;
