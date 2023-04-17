@@ -187,17 +187,98 @@ namespace ACE.Server.WorldObjects
 
         public void OnItemLevelUp(WorldObject item, int prevItemLevel)
         {
-            if (!item.HasItemSet) return;
+            if (!item.HasItemSet) //general item level up
+            {
+                if (item.ItemType == ItemType.Armor)
+                {
+                    item.ArmorLevel += 5;
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +5 Armor Level!", ChatMessageType.Advancement));
+                    if (item.ItemLevel % 5 == 0)
+                    {
+                        item.ArmorModVsAcid += 0.5;
+                        item.ArmorModVsBludgeon += 0.5;
+                        item.ArmorModVsCold += 0.5;
+                        item.ArmorModVsElectric += 0.5;
+                        item.ArmorModVsFire += 0.5;
+                        item.ArmorModVsNether += 0.5;
+                        item.ArmorModVsPierce += 0.5;
+                        item.ArmorModVsSlash += 0.5;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +5 Defenses!", ChatMessageType.Advancement));
+                    }
+                }
+                if (item.ItemType == ItemType.MeleeWeapon || item.ItemType == ItemType.MissileWeapon)
+                {
+                    if (item.ItemLevel % 2 == 0)
+                    {
+                        item.Damage += 1;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +1 Damage!", ChatMessageType.Advancement));
+                    }
+                    else
+                    {
+                        item.DamageVariance -= 0.1;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item improved +10% Variance!", ChatMessageType.Advancement));
+                    }
 
-            var setItems = EquippedObjects.Values.Where(i => i.HasItemSet && i.EquipmentSetId == item.EquipmentSetId).ToList();
+                    if (item.ItemLevel % 5 == 0)
+                    {
+                        item.WeaponDefense += 0.02;
+                        item.WeaponMissileDefense += 0.02;
+                        item.WeaponMagicDefense += 0.02;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +2% Defenses!", ChatMessageType.Advancement));
+                    }
+                }
+                if (item.ItemType == ItemType.Caster)
+                {
+                    if (item.WeaponDefense == null)
+                    {
+                        item.WeaponDefense = 1.01;                      
+                    }
+                    else
+                    {
+                        item.WeaponDefense += 0.01;
+                    }
 
-            var levelDiff = prevItemLevel - (item.ItemLevel ?? 0);
+                    if (item.ManaConversionMod == null)
+                    {
+                        item.ManaConversionMod = 1.01;
+                    }
+                    else
+                    {
+                        item.ManaConversionMod += 0.01;
+                    }
+                    if (item.Level % 3 == 0)
+                    {
+                        if (item.WeaponMagicDefense == null)
+                        {
+                            item.WeaponMagicDefense = 1.01;
+                        }
+                        else
+                        {
+                            item.WeaponMagicDefense += 0.01;
+                        }
+                    }
 
-            var prevSpells = GetSpellSet(setItems, levelDiff);
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained 1% Defense Mod!", ChatMessageType.Advancement));
+                    if (item.ElementalDamageMod > 0)
+                    {
+                        item.ElementalDamageMod += 0.01;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained 1% Elemental Damage Mod!", ChatMessageType.Advancement));
+                    }
+                }
+            }
+            else
+            {
+                var setItems = EquippedObjects.Values.Where(i => i.HasItemSet && i.EquipmentSetId == item.EquipmentSetId).ToList();
 
-            var spells = GetSpellSet(setItems);
+                var levelDiff = prevItemLevel - (item.ItemLevel ?? 0);
 
-            EquipDequipItemFromSet(item, spells, prevSpells);
+                var prevSpells = GetSpellSet(setItems, levelDiff);
+
+                var spells = GetSpellSet(setItems);
+
+                EquipDequipItemFromSet(item, spells, prevSpells);
+            }
+
         }
 
         public void CreateSentinelBuffPlayers(IEnumerable<Player> players, bool self = false, ulong maxLevel = 8)
