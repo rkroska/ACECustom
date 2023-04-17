@@ -57,6 +57,8 @@ namespace ACE.Server.Entity
 
             AddPerks(player);
 
+            player.Teleport(player.LinkedLifestone, false);
+
             player.SaveBiotaToDatabase();
         }
 

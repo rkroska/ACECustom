@@ -136,6 +136,12 @@ namespace ACE.Entity.Models
             (int)SpellId.SpiritDrinkerSelf8,
             (int)SpellId.SwiftKillerSelf8,
             (int)SpellId.HermeticLinkSelf8,
+            (int)SpellId.StrengthSelf8,
+            (int)SpellId.EnduranceSelf8,
+            (int)SpellId.CoordinationSelf8,
+            (int)SpellId.QuicknessSelf8,
+            (int)SpellId.FocusSelf8,
+            (int)SpellId.WillpowerSelf8
         };
 
         public static List<PropertiesEnchantmentRegistry> GetEnchantmentsTopLayer(this ICollection<PropertiesEnchantmentRegistry> value, ReaderWriterLockSlim rwLock, HashSet<int> setSpells)
@@ -225,6 +231,7 @@ namespace ACE.Entity.Models
                     into categories
                     //select categories.OrderByDescending(c => c.LayerId).First();
                     select categories.OrderByDescending(c => c.PowerLevel)
+                        .ThenByDescending(c => c.StatModValue)
                         .ThenByDescending(c => Level8AuraSelfSpells.Contains(c.SpellId))
                         .ThenByDescending(c => setSpells.Contains(c.SpellId) ? c.SpellId : c.StartTime).First();
 
