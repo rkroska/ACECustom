@@ -2197,6 +2197,12 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("testdynamic", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1)]
+        public static void TestDynamicQuest(Session session, params string[] parameters)
+        {
+            session.Player.QuestManager.ComputeDynamicQuest(parameters[0]);
+        }
+
         /// <summary>
         /// Parses the command-line parameters for /create or /createliveops
         /// The only difference with /createliveops is that it includes a lifespan parameter in the middle
