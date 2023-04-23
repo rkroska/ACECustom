@@ -167,6 +167,40 @@ namespace ACE.Database
             weenieSpecificCachesPopulated = true;
         }
 
+        public ACE.Entity.Models.Weenie GetRandomNPCWeenie()
+        {
+            var w = GetRandomWeeniesOfType(10, 50);
+            if (w == null) return null;
+
+            List<ACE.Entity.Models.Weenie> npcs = new List<ACE.Entity.Models.Weenie>();
+            foreach (var x in w)
+            {
+                bool attackable = true; int targetTactic = 99; bool looksLikeObj = true;
+                if (x.PropertiesBool == null || !x.PropertiesBool.TryGetValue(PropertyBool.Attackable, out attackable))
+                {
+                    continue;
+                }
+                if (x.PropertiesInt == null || !x.PropertiesInt.TryGetValue(PropertyInt.TargetingTactic, out targetTactic))
+                {
+                    targetTactic = 0;
+                }
+                if (x.PropertiesBool == null || !x.PropertiesBool.TryGetValue(PropertyBool.NpcLooksLikeObject, out looksLikeObj))
+                {
+                    looksLikeObj = false;
+                }
+
+                if (!attackable && targetTactic == 0 && !looksLikeObj)
+                {
+                    npcs.Add(x);
+                }
+            }
+            var index = ThreadSafeRandom.Next(0, npcs.Count - 1);
+
+            var weenie = GetCachedWeenie(npcs[index].WeenieClassId);
+
+            return weenie;
+        }
+
         public List<ACE.Entity.Models.Weenie> GetRandomWeeniesOfType(int weenieTypeId, int count)
         {
             if (!weenieCacheByType.TryGetValue((WeenieType)weenieTypeId, out var weenies))
@@ -185,7 +219,7 @@ namespace ACE.Database
                         if (results.Count == 0)
                             return weenies;
 
-                        for (int i = 0; i < count; i++)
+                        for (int i = 0; i < count; i++) //todo: convert to parallel.for
                         {
                             var index = ThreadSafeRandom.Next(0, results.Count - 1);
 

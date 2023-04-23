@@ -1270,6 +1270,12 @@ namespace ACE.Server.WorldObjects.Managers
                         if (questName.EndsWith("@#kt", StringComparison.Ordinal))
                             log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.StampQuest({questName}) is a depreciated kill task method.");
 
+                        if (questName.StartsWith("Dynamic", StringComparison.Ordinal))
+                        {
+                            questTarget.QuestManager.ComputeDynamicQuest(emote.Message);
+                            break;
+                        }
+
                         questTarget.QuestManager.Stamp(emote.Message);
                     }
                     break;

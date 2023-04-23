@@ -14,6 +14,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using ACE.Server.Entity;
 using ACE.Server.Network;
+using ACE.Entity.Models;
 
 namespace ACE.Server.Managers
 {
@@ -195,6 +196,8 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -215,9 +218,11 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
+                    UpdatePlayerQuestCompletions(player);
+                    player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
-            }
+            }          
         }
 
         /// <summary>
@@ -246,7 +251,7 @@ namespace ACE.Server.Managers
                 {
                     player.CharacterChangesDetected = true;
                     UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've started {questName}!", ChatMessageType.Advancement);//quest name
+                    player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
                 }
@@ -266,7 +271,7 @@ namespace ACE.Server.Managers
                     if (quest.NumTimesCompleted == 1)
                     {
                         UpdatePlayerQuestCompletions(player);
-                        player.SendMessage($"You've completed {questName}!", ChatMessageType.Advancement);//quest name
+                        player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
@@ -644,6 +649,49 @@ namespace ACE.Server.Managers
         /// </summary>
         public void OnDeath(WorldObject killer)
         {
+        }
+
+        public static string RandomString(int length)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz!@#$^&";
+            return new string(Enumerable.Repeat(chars, length)
+                .Select(s => s[ThreadSafeRandom.Next(0, s.Length)]).ToArray());
+        }
+
+        public void ComputeDynamicQuest(string questName)
+        {
+            if (!questName.Contains("Dynamic"))
+            {
+                return;
+            }
+            bool created = false;
+
+            int ranStrLen = ThreadSafeRandom.Next(5, 15);
+            questName += "_" + RandomString(ranStrLen-1);
+
+            var quest = GetOrCreateQuest(questName, out created);
+            if (quest == null) { return; }
+            if (!created) { return; }
+
+            //todo: create random note paper - start to fill it with the details of the quest. place it in inventory at the end
+
+            //find target NPC
+            WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
+            Weenie npcTarget = world.GetRandomNPCWeenie();
+            if (npcTarget == null)
+            {
+                npcTarget = world.GetRandomNPCWeenie();
+                if (npcTarget == null)
+                {
+                    Console.WriteLine("Get Random NPC Weenie returned null twice.");
+                    return;
+                }
+                
+            }
+
+            //Console.WriteLine($"{npcTarget.GetProperty(ACE.Entity.Enum.Properties.PropertyString.Name)} Selected NPC");
+
+            //todo: find an item for the target NPC to give player - create emote to give it to player
         }
 
         public bool HasQuestBits(string questFormat, int bits)
