@@ -1272,7 +1272,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                         if (questName.StartsWith("Dynamic", StringComparison.Ordinal))
                         {
-                            questTarget.QuestManager.ComputeDynamicQuest(emote.Message);
+                            questTarget.QuestManager.ComputeDynamicQuest(emote.Message, player.Session);
                             break;
                         }
 
@@ -2086,6 +2086,27 @@ namespace ACE.Server.WorldObjects.Managers
         public void ClearProxy()
         {
             _proxy = null;
+        }
+
+
+        /// <summary>
+        /// Dynamically add an emote to the given worldObject for the purposes of responding to dynamic quests
+        /// </summary>
+        /// <param name="emote">The eMote to add</param>
+        /// <returns></returns>
+        public bool AddEmote(PropertiesEmote emote)
+        {
+            if(emote == null)
+            {
+                return false;
+            }
+            if (_worldObject.Biota.PropertiesEmote == null)
+            {
+                _worldObject.Biota.PropertiesEmote = new List<PropertiesEmote>();
+            }
+            _worldObject.Biota.PropertiesEmote.Add(emote);
+          
+            return true;
         }
     }
 }

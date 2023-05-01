@@ -15,6 +15,9 @@ using ACE.Server.WorldObjects;
 using ACE.Server.Entity;
 using ACE.Server.Network;
 using ACE.Entity.Models;
+using ACE.Server.Factories;
+using ACE.Entity;
+using MySqlX.XDevAPI;
 
 namespace ACE.Server.Managers
 {
@@ -218,8 +221,13 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    UpdatePlayerQuestCompletions(player);
-                    player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                    
+                    if (quest.NumTimesCompleted == 1)
+                    {
+                        UpdatePlayerQuestCompletions(player);
+                        player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                    }
+                    
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }          
@@ -655,24 +663,18 @@ namespace ACE.Server.Managers
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz!@#$^&";
             return new string(Enumerable.Repeat(chars, length)
-                .Select(s => s[ThreadSafeRandom.Next(0, s.Length)]).ToArray());
+                .Select(s => s[ThreadSafeRandom.Next(0, s.Length-1)]).ToArray());
         }
 
-        public void ComputeDynamicQuest(string questName)
+        public void ComputeDynamicQuest(string questName, Network.Session session)
         {
             if (!questName.Contains("Dynamic"))
             {
                 return;
             }
             bool created = false;
-
-            int ranStrLen = ThreadSafeRandom.Next(5, 15);
-            questName += "_" + RandomString(ranStrLen-1);
-
-            var quest = GetOrCreateQuest(questName, out created);
-            if (quest == null) { return; }
-            if (!created) { return; }
-
+            var player = Creature as Player;
+           
             //todo: create random note paper - start to fill it with the details of the quest. place it in inventory at the end
 
             //find target NPC
@@ -685,13 +687,146 @@ namespace ACE.Server.Managers
                 {
                     Console.WriteLine("Get Random NPC Weenie returned null twice.");
                     return;
-                }
-                
+                }                
             }
+
+            int ranStrLen = ThreadSafeRandom.Next(5, 15);
+            questName += "_" + RandomString(ranStrLen - 1);
+
+            var quest = GetOrCreateQuest(questName, out created);
+            if (quest == null) { return; }
+            if (!created) { return; }
 
             //Console.WriteLine($"{npcTarget.GetProperty(ACE.Entity.Enum.Properties.PropertyString.Name)} Selected NPC");
 
             //todo: find an item for the target NPC to give player - create emote to give it to player
+            Weenie itemTarget = world.GetRandomEquippableItem();
+
+            //var wo = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
+            //var wo = WorldObjectFactory.CreateWorldObject(world.GetCachedWeenie(44890), GuidManager.NewDynamicGuid());
+            //npcTarget = world.GetCachedWeenie(44890);
+            //var w = WorldObjectFactory.CreateNewWorldObject(npcTarget);
+
+            //LandblockManager.
+
+            var g = new ObjectGuid(1933414518);
+            var wo = session.Player.FindObject(g.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
+
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Find NPC: {wo.Name}", ChatMessageType.Tell));
+
+            var it = WorldObjectFactory.CreateWorldObject(itemTarget, GuidManager.NewDynamicGuid());
+
+            var responseEmote = new PropertiesEmote
+            {
+                DatabaseRecordId = 0,
+
+                Category = EmoteCategory.Use,
+                Probability = 1,
+                WeenieClassId = null,
+                Style = MotionStance.NonCombat,
+                Substyle = MotionCommand.Wave,
+                Quest = questName,
+                VendorType = VendorType.Undef,
+                MinHealth = 0,
+                MaxHealth = null,
+            };                  
+
+            var responseAction = new PropertiesEmoteAction
+            {
+                DatabaseRecordId = 0,
+
+                Type = 10,
+                Delay = 1200,
+                Extent = 0,
+                Motion = MotionCommand.Wave,
+                Message = $"Nice job {player.Name}, you've found me for quest {questName}",
+                TestString = "",
+                Min = null,
+                Max = null,
+                Min64 = null,
+                Max64 = null,
+                MinDbl = null,
+                MaxDbl = null,
+                Stat = null,
+                Display = null,
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                Percent = null,
+                SpellId = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                PScript = null,
+                Sound = null,
+                DestinationType = null,
+                WeenieClassId = null,
+                StackSize = null,
+                Palette = null,
+                Shade = null,
+                TryToBond = null,
+                ObjCellId = null,
+                OriginX = null,
+                OriginY = null,
+                OriginZ = null,
+                AnglesW = null,
+                AnglesX = null,
+                AnglesY = null,
+                AnglesZ = null,
+            };
+
+            responseEmote.PropertiesEmoteAction.Add(responseAction);
+            
+            var actionGiveItem = new PropertiesEmoteAction
+            {
+                DatabaseRecordId = 0,
+
+                Type = 3,
+                Delay = 1200,
+                Extent = 0,
+                Motion = MotionCommand.Wave,
+                Message = $"Here is the {it.Name} you came here for",
+                TestString = "",
+                Min = null,
+                Max = null,
+                Min64 = null,
+                Max64 = null,
+                MinDbl = null,
+                MaxDbl = null,
+                Stat = null,
+                Display = null,
+                Amount = 1,
+                Amount64 = null,
+                HeroXP64 = null,
+                Percent = null,
+                SpellId = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                PScript = null,
+                Sound = null,
+                DestinationType = null,
+                WeenieClassId = it.WeenieClassId,
+                StackSize = null,
+                Palette = null,
+                Shade = null,
+                TryToBond = null,
+                ObjCellId = null,
+                OriginX = null,
+                OriginY = null,
+                OriginZ = null,
+                AnglesW = null,
+                AnglesX = null,
+                AnglesY = null,
+                AnglesZ = null,
+            };
+
+            responseEmote.PropertiesEmoteAction.Add(actionGiveItem);
+            wo.EmoteManager.AddEmote(responseEmote);
+            //npcTarget.PropertiesEmote.Add(responseEmote);
+            
+
+
         }
 
         public bool HasQuestBits(string questFormat, int bits)
@@ -747,14 +882,7 @@ namespace ACE.Server.Managers
 
         public void UpdatePlayerQuestCompletions(Player player)
         {
-            if (!player.QuestCompletionCount.HasValue || player.QuestCompletionCount == 0)
-            {
-                player.QuestCompletionCount = player.Character.GetCompletedQuestCount(new System.Threading.ReaderWriterLockSlim());
-            }
-            else
-            {
-                player.QuestCompletionCount += 1;
-            }
+            player.QuestCompletionCount = player.Character.GetCompletedQuestStampCount(new System.Threading.ReaderWriterLockSlim());        
         }
     }
 }
