@@ -175,7 +175,7 @@ namespace ACE.Database
             List<ACE.Entity.Models.Weenie> npcs = new List<ACE.Entity.Models.Weenie>();
             foreach (var x in w)
             {
-                bool attackable = true; int targetTactic = 99; bool looksLikeObj = true;
+                bool attackable = true; int targetTactic = 99; bool looksLikeObj = true; bool socMember = true;
                 if (x.PropertiesBool == null || !x.PropertiesBool.TryGetValue(PropertyBool.Attackable, out attackable))
                 {
                     continue;
@@ -188,17 +188,47 @@ namespace ACE.Database
                 {
                     looksLikeObj = false;
                 }
-
-                if (!attackable && targetTactic == 0 && !looksLikeObj)
+                if (x.PropertiesInt != null &&
+                        (!x.PropertiesInt.ContainsKey(PropertyInt.SocietyRankRadblo) &&
+                        !x.PropertiesInt.ContainsKey(PropertyInt.SocietyRankEldweb) &&
+                        !x.PropertiesInt.ContainsKey(PropertyInt.SocietyRankCelhan)))
+                {
+                    socMember = false;
+                }
+                //also exclude Town Criers, Emissary of Asheron, and Society Members(?)
+                if (!attackable && targetTactic == 0 && !looksLikeObj && !x.ClassName.Contains("towncrier") && !x.ClassName.Contains("emissaryofasheron") && !socMember)
                 {
                     npcs.Add(x);
                 }
+                
             }
             var index = ThreadSafeRandom.Next(0, npcs.Count - 1);
 
             var weenie = GetCachedWeenie(npcs[index].WeenieClassId);
 
             return weenie;
+        }
+
+        public ACE.Entity.Models.Weenie GetRandomEquippableItem()
+        {
+            List<ACE.Entity.Models.Weenie> weenies = new List<ACE.Entity.Models.Weenie>();
+
+            var foodW = GetRandomWeeniesOfType(18, 12);
+            var missleW = GetRandomWeeniesOfType(3, 8);
+            var meleeW = GetRandomWeeniesOfType(6, 12);
+            var clothingW = GetRandomWeeniesOfType(2, 12);
+
+            weenies.AddRange(foodW);
+            weenies.AddRange(missleW);
+            weenies.AddRange(meleeW);
+            weenies.AddRange(clothingW);
+
+            var index = ThreadSafeRandom.Next(0, weenies.Count - 1);
+
+            var weenie = GetCachedWeenie(weenies[index].WeenieClassId);
+
+            return weenie;
+
         }
 
         public List<ACE.Entity.Models.Weenie> GetRandomWeeniesOfType(int weenieTypeId, int count)

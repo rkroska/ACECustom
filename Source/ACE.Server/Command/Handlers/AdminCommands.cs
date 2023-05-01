@@ -2200,7 +2200,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("testdynamic", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1)]
         public static void TestDynamicQuest(Session session, params string[] parameters)
         {
-            session.Player.QuestManager.ComputeDynamicQuest(parameters[0]);
+            session.Player.QuestManager.ComputeDynamicQuest(parameters[0], session);
         }
 
         /// <summary>
