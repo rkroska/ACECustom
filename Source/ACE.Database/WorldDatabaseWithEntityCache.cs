@@ -175,7 +175,7 @@ namespace ACE.Database
             List<ACE.Entity.Models.Weenie> npcs = new List<ACE.Entity.Models.Weenie>();
             foreach (var x in w)
             {
-                bool attackable = true; int targetTactic = 99; bool looksLikeObj = true; bool socMember = true;
+                bool attackable = true; int targetTactic = 99; bool looksLikeObj = true; bool socMember = true; bool inDung = false;
                 if (x.PropertiesBool == null || !x.PropertiesBool.TryGetValue(PropertyBool.Attackable, out attackable))
                 {
                     continue;
@@ -195,8 +195,20 @@ namespace ACE.Database
                 {
                     socMember = false;
                 }
+
+                // MONSTEROUSLY NON PERFORMANT
+                //List<LandblockInstance> locations = LandblockInstance.GetLandblockByStaticWeenieId(x.WeenieClassId);
+                //foreach (var item in locations)
+                //{
+                //    if (item.Landblock > 192)
+                //    {
+                //        //dungeon - skip
+                //        inDung = true; break;
+                //    }
+                //}
+
                 //also exclude Town Criers, Emissary of Asheron, and Society Members(?)
-                if (!attackable && targetTactic == 0 && !looksLikeObj && !x.ClassName.Contains("towncrier") && !x.ClassName.Contains("emissaryofasheron") && !socMember)
+                if (!attackable && targetTactic == 0 && !looksLikeObj && !x.ClassName.Contains("towncrier") && !x.ClassName.Contains("emissaryofasheron") && !socMember && !inDung)
                 {
                     npcs.Add(x);
                 }

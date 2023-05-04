@@ -18,6 +18,7 @@ using ACE.Entity.Models;
 using ACE.Server.Factories;
 using ACE.Entity;
 using MySqlX.XDevAPI;
+using System.Drawing;
 
 namespace ACE.Server.Managers
 {
@@ -676,7 +677,7 @@ namespace ACE.Server.Managers
             var player = Creature as Player;
            
             //todo: create random note paper - start to fill it with the details of the quest. place it in inventory at the end
-
+            //weenie class 365 - Parchment -- Create Parchment world object
             //find target NPC
             WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
             Weenie npcTarget = world.GetRandomNPCWeenie();
@@ -690,141 +691,166 @@ namespace ACE.Server.Managers
                 }                
             }
 
-            int ranStrLen = ThreadSafeRandom.Next(5, 15);
-            questName += "_" + RandomString(ranStrLen - 1);
 
-            var quest = GetOrCreateQuest(questName, out created);
-            if (quest == null) { return; }
-            if (!created) { return; }
 
             //Console.WriteLine($"{npcTarget.GetProperty(ACE.Entity.Enum.Properties.PropertyString.Name)} Selected NPC");
-
-            //todo: find an item for the target NPC to give player - create emote to give it to player
-            Weenie itemTarget = world.GetRandomEquippableItem();
-
-            //var wo = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
-            //var wo = WorldObjectFactory.CreateWorldObject(world.GetCachedWeenie(44890), GuidManager.NewDynamicGuid());
-            //npcTarget = world.GetCachedWeenie(44890);
-            //var w = WorldObjectFactory.CreateNewWorldObject(npcTarget);
-
-            //LandblockManager.
-
-            var g = new ObjectGuid(1933414518);
-            var wo = session.Player.FindObject(g.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
-
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Find NPC: {wo.Name}", ChatMessageType.Tell));
-
-            var it = WorldObjectFactory.CreateWorldObject(itemTarget, GuidManager.NewDynamicGuid());
-
-            var responseEmote = new PropertiesEmote
+            //save?
+            using (ACE.Database.Models.World.WorldDbContext context = new ACE.Database.Models.World.WorldDbContext())
             {
-                DatabaseRecordId = 0,
+                //todo: find an item for the target NPC to give player - create emote to give it to player
+                Weenie itemTarget = world.GetRandomEquippableItem();
+                var it = WorldObjectFactory.CreateWorldObject(itemTarget, GuidManager.NewDynamicGuid());
 
-                Category = EmoteCategory.Use,
-                Probability = 1,
-                WeenieClassId = null,
-                Style = MotionStance.NonCombat,
-                Substyle = MotionCommand.Wave,
-                Quest = questName,
-                VendorType = VendorType.Undef,
-                MinHealth = 0,
-                MaxHealth = null,
-            };                  
+                var wo = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
+                //var wo = WorldObjectFactory.CreateWorldObject(world.GetCachedWeenie(44890), GuidManager.NewDynamicGuid());
+                //npcTarget = world.GetCachedWeenie(44890);
+                //var w = WorldObjectFactory.CreateNewWorldObject(npcTarget);
 
-            var responseAction = new PropertiesEmoteAction
-            {
-                DatabaseRecordId = 0,
+                //LandblockManager.
 
-                Type = 10,
-                Delay = 1200,
-                Extent = 0,
-                Motion = MotionCommand.Wave,
-                Message = $"Nice job {player.Name}, you've found me for quest {questName}",
-                TestString = "",
-                Min = null,
-                Max = null,
-                Min64 = null,
-                Max64 = null,
-                MinDbl = null,
-                MaxDbl = null,
-                Stat = null,
-                Display = null,
-                Amount = null,
-                Amount64 = null,
-                HeroXP64 = null,
-                Percent = null,
-                SpellId = null,
-                WealthRating = null,
-                TreasureClass = null,
-                TreasureType = null,
-                PScript = null,
-                Sound = null,
-                DestinationType = null,
-                WeenieClassId = null,
-                StackSize = null,
-                Palette = null,
-                Shade = null,
-                TryToBond = null,
-                ObjCellId = null,
-                OriginX = null,
-                OriginY = null,
-                OriginZ = null,
-                AnglesW = null,
-                AnglesX = null,
-                AnglesY = null,
-                AnglesZ = null,
-            };
+                //var g = new ObjectGuid(1933414518);
+                //var wo = session.Player.FindObject(g.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
+                //ACE.Database.WorldDatabase db = new WorldDatabase();
+                //Database.Models.World.Weenie woWeenie = db.GetWeenie(npcTarget.WeenieClassId);
 
-            responseEmote.PropertiesEmoteAction.Add(responseAction);
+                var note = WorldObjectFactory.CreateNewWorldObject(365); //parchment
+                Book b = (note as Book); int index = 0;
+                b.AddPage(0, "Quest", "", true, $"Get {it.Name} from {wo.Name}", out index);
+                //note.SetProperty(ACE.Entity.Enum.Properties.PropertyString.Inscription, $"Get {it.Name} from {wo.Name}");
+
+                if(!player.TryCreateInInventoryWithNetworking(note))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pack space, free at least one inventory slot...", ChatMessageType.Tell));
+                    return;
+                }
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You receive an interesting note with an errand...", ChatMessageType.Tell));
+                Database.Models.World.Weenie woWeenie = context.Weenie.Where(x=>x.ClassId == npcTarget.WeenieClassId).FirstOrDefault();
+                if (woWeenie == null) { return; }
+
+                int ranStrLen = ThreadSafeRandom.Next(5, 15);
+                questName += "_" + RandomString(ranStrLen - 1);
+
+                var quest = GetOrCreateQuest(questName, out created);
+                if (quest == null) { return; }
+                if (!created) { return; }
+
+
+                Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
+                {
+                    Object = woWeenie,
+                    Category = (uint)EmoteCategory.Use,
+                    Probability = 1,
+                    WeenieClassId = null,
+                    Style = (uint?)MotionStance.NonCombat,
+                    Substyle = (uint?)MotionCommand.Wave,
+                    Quest = questName,
+                    VendorType = (int?)VendorType.Undef,
+                    MinHealth = 0,
+                    MaxHealth = null,
+                };
+
+                Database.Models.World.WeeniePropertiesEmoteAction responseAction = new Database.Models.World.WeeniePropertiesEmoteAction
+                {
+                    Emote = responseEmote,
+                    Type = 10,
+                    Order = 0,
+                    Delay = 1200,
+                    Extent = 0,
+                    Motion = (uint?)MotionCommand.Wave,
+                    Message = $"Nice job {player.Name}, you've found me for quest {questName}",
+                    TestString = "",
+                    Min = null,
+                    Max = null,
+                    Min64 = null,
+                    Max64 = null,
+                    MinDbl = null,
+                    MaxDbl = null,
+                    Stat = null,
+                    Display = null,
+                    Amount = null,
+                    Amount64 = null,
+                    HeroXP64 = null,
+                    Percent = null,
+                    SpellId = null,
+                    WealthRating = null,
+                    TreasureClass = null,
+                    TreasureType = null,
+                    PScript = null,
+                    Sound = null,
+                    DestinationType = null,
+                    WeenieClassId = null,
+                    StackSize = null,
+                    Palette = null,
+                    Shade = null,
+                    TryToBond = null,
+                    ObjCellId = null,
+                    OriginX = null,
+                    OriginY = null,
+                    OriginZ = null,
+                    AnglesW = null,
+                    AnglesX = null,
+                    AnglesY = null,
+                    AnglesZ = null,
+                };
+
+                //responseEmote.PropertiesEmoteAction.Add(responseAction);
+                responseEmote.WeeniePropertiesEmoteAction.Add(responseAction);
+
+                Database.Models.World.WeeniePropertiesEmoteAction actionGiveItem = new Database.Models.World.WeeniePropertiesEmoteAction
+                {
+                    Emote = responseEmote,
+                    Type = 3,
+                    Order = 1,
+                    Delay = 1200,
+                    Extent = 0,
+                    Motion = (uint?)MotionCommand.Wave,
+                    Message = $"Here is the {it.Name} you came here for",
+                    TestString = "",
+                    Min = null,
+                    Max = null,
+                    Min64 = null,
+                    Max64 = null,
+                    MinDbl = null,
+                    MaxDbl = null,
+                    Stat = null,
+                    Display = null,
+                    Amount = 1,
+                    Amount64 = null,
+                    HeroXP64 = null,
+                    Percent = null,
+                    SpellId = null,
+                    WealthRating = null,
+                    TreasureClass = null,
+                    TreasureType = null,
+                    PScript = null,
+                    Sound = null,
+                    DestinationType = null,
+                    WeenieClassId = it.WeenieClassId,
+                    StackSize = null,
+                    Palette = null,
+                    Shade = null,
+                    TryToBond = null,
+                    ObjCellId = null,
+                    OriginX = null,
+                    OriginY = null,
+                    OriginZ = null,
+                    AnglesW = null,
+                    AnglesX = null,
+                    AnglesY = null,
+                    AnglesZ = null,
+                };
+
+                //responseEmote.PropertiesEmoteAction.Add(actionGiveItem);
+                responseEmote.WeeniePropertiesEmoteAction.Add(actionGiveItem);
+                //wo.EmoteManager.AddEmote(responseEmote);
+                //npcTarget.PropertiesEmote.Add(responseEmote);
+                woWeenie.WeeniePropertiesEmote.Add(responseEmote);
+
             
-            var actionGiveItem = new PropertiesEmoteAction
-            {
-                DatabaseRecordId = 0,
-
-                Type = 3,
-                Delay = 1200,
-                Extent = 0,
-                Motion = MotionCommand.Wave,
-                Message = $"Here is the {it.Name} you came here for",
-                TestString = "",
-                Min = null,
-                Max = null,
-                Min64 = null,
-                Max64 = null,
-                MinDbl = null,
-                MaxDbl = null,
-                Stat = null,
-                Display = null,
-                Amount = 1,
-                Amount64 = null,
-                HeroXP64 = null,
-                Percent = null,
-                SpellId = null,
-                WealthRating = null,
-                TreasureClass = null,
-                TreasureType = null,
-                PScript = null,
-                Sound = null,
-                DestinationType = null,
-                WeenieClassId = it.WeenieClassId,
-                StackSize = null,
-                Palette = null,
-                Shade = null,
-                TryToBond = null,
-                ObjCellId = null,
-                OriginX = null,
-                OriginY = null,
-                OriginZ = null,
-                AnglesW = null,
-                AnglesX = null,
-                AnglesY = null,
-                AnglesZ = null,
-            };
-
-            responseEmote.PropertiesEmoteAction.Add(actionGiveItem);
-            wo.EmoteManager.AddEmote(responseEmote);
-            //npcTarget.PropertiesEmote.Add(responseEmote);
-            
+                //context.WeeniePropertiesEmote.Add(responseEmote);
+                //context.Update(woWeenie);
+                context.SaveChanges();
+            }
 
 
         }
