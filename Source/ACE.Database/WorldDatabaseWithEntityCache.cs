@@ -167,6 +167,15 @@ namespace ACE.Database
             weenieSpecificCachesPopulated = true;
         }
 
+        public int GetRandomNPCWeenieIDFromWhitelist()
+        {
+            var list = ACE.Common.NPCList.GetNPCs();
+            var index = ThreadSafeRandom.Next(0, list.Count - 1);
+
+            var weenie = list[index];
+            return weenie;
+        }
+
         public ACE.Entity.Models.Weenie GetRandomNPCWeenie()
         {
             var w = GetRandomWeeniesOfType(10, 50);

@@ -680,18 +680,7 @@ namespace ACE.Server.Managers
             //weenie class 365 - Parchment -- Create Parchment world object
             //find target NPC
             WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
-            Weenie npcTarget = world.GetRandomNPCWeenie();
-            if (npcTarget == null)
-            {
-                npcTarget = world.GetRandomNPCWeenie();
-                if (npcTarget == null)
-                {
-                    Console.WriteLine("Get Random NPC Weenie returned null twice.");
-                    return;
-                }                
-            }
-
-
+            Weenie npcTarget = world.GetCachedWeenie((uint)world.GetRandomNPCWeenieIDFromWhitelist());
 
             //Console.WriteLine($"{npcTarget.GetProperty(ACE.Entity.Enum.Properties.PropertyString.Name)} Selected NPC");
             //save?
@@ -738,9 +727,9 @@ namespace ACE.Server.Managers
                 Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
                 {
                     Object = woWeenie,
-                    Category = (uint)EmoteCategory.Use,
+                    Category = (uint)EmoteCategory.Give,
                     Probability = 1,
-                    WeenieClassId = null,
+                    WeenieClassId = 365, //Parchment: the note
                     Style = (uint?)MotionStance.NonCombat,
                     Substyle = (uint?)MotionCommand.Wave,
                     Quest = questName,
@@ -752,45 +741,21 @@ namespace ACE.Server.Managers
                 Database.Models.World.WeeniePropertiesEmoteAction responseAction = new Database.Models.World.WeeniePropertiesEmoteAction
                 {
                     Emote = responseEmote,
-                    Type = 10,
+                    Type = (uint)EmoteType.InqQuest,
                     Order = 0,
                     Delay = 1200,
                     Extent = 0,
                     Motion = (uint?)MotionCommand.Wave,
                     Message = $"Nice job {player.Name}, you've found me for quest {questName}",
                     TestString = "",
-                    Min = null,
-                    Max = null,
-                    Min64 = null,
-                    Max64 = null,
-                    MinDbl = null,
-                    MaxDbl = null,
-                    Stat = null,
-                    Display = null,
                     Amount = null,
                     Amount64 = null,
                     HeroXP64 = null,
-                    Percent = null,
-                    SpellId = null,
                     WealthRating = null,
                     TreasureClass = null,
                     TreasureType = null,
-                    PScript = null,
-                    Sound = null,
-                    DestinationType = null,
-                    WeenieClassId = null,
-                    StackSize = null,
-                    Palette = null,
-                    Shade = null,
-                    TryToBond = null,
-                    ObjCellId = null,
-                    OriginX = null,
-                    OriginY = null,
-                    OriginZ = null,
-                    AnglesW = null,
-                    AnglesX = null,
-                    AnglesY = null,
-                    AnglesZ = null,
+                    WeenieClassId = null,                    
+
                 };
 
                 //responseEmote.PropertiesEmoteAction.Add(responseAction);
@@ -799,45 +764,22 @@ namespace ACE.Server.Managers
                 Database.Models.World.WeeniePropertiesEmoteAction actionGiveItem = new Database.Models.World.WeeniePropertiesEmoteAction
                 {
                     Emote = responseEmote,
-                    Type = 3,
+                    Type = (uint)EmoteType.Give,
                     Order = 1,
                     Delay = 1200,
                     Extent = 0,
                     Motion = (uint?)MotionCommand.Wave,
                     Message = $"Here is the {it.Name} you came here for",
                     TestString = "",
-                    Min = null,
-                    Max = null,
-                    Min64 = null,
-                    Max64 = null,
-                    MinDbl = null,
-                    MaxDbl = null,
-                    Stat = null,
-                    Display = null,
                     Amount = 1,
                     Amount64 = null,
                     HeroXP64 = null,
                     Percent = null,
-                    SpellId = null,
                     WealthRating = null,
                     TreasureClass = null,
                     TreasureType = null,
-                    PScript = null,
-                    Sound = null,
-                    DestinationType = null,
                     WeenieClassId = it.WeenieClassId,
                     StackSize = null,
-                    Palette = null,
-                    Shade = null,
-                    TryToBond = null,
-                    ObjCellId = null,
-                    OriginX = null,
-                    OriginY = null,
-                    OriginZ = null,
-                    AnglesW = null,
-                    AnglesX = null,
-                    AnglesY = null,
-                    AnglesZ = null,
                 };
 
                 //responseEmote.PropertiesEmoteAction.Add(actionGiveItem);
