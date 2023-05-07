@@ -167,11 +167,14 @@ namespace ACE.Database
             weenieSpecificCachesPopulated = true;
         }
 
-        public int GetRandomNPCWeenieIDFromWhitelist()
+        public uint GetRandomNPCWeenieIDFromWhitelist(uint weenieToSkip = 0)
         {
             var list = ACE.Common.NPCList.GetNPCs();
             var index = ThreadSafeRandom.Next(0, list.Count - 1);
-
+            while (index == weenieToSkip)
+            {
+                index = ThreadSafeRandom.Next(0, list.Count - 1); //reroll
+            }
             var weenie = list[index];
             return weenie;
         }
