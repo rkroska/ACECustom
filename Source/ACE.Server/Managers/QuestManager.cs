@@ -676,44 +676,54 @@ namespace ACE.Server.Managers
             bool created = false;
             var player = Creature as Player;
            
-            //todo: create random note paper - start to fill it with the details of the quest. place it in inventory at the end
+            //create random note paper - start to fill it with the details of the quest. place it in inventory at the end
             //weenie class 365 - Parchment -- Create Parchment world object
             //find target NPC
             WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
-            Weenie npcTarget = world.GetCachedWeenie((uint)world.GetRandomNPCWeenieIDFromWhitelist());
+            Weenie npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
 
-            //Console.WriteLine($"{npcTarget.GetProperty(ACE.Entity.Enum.Properties.PropertyString.Name)} Selected NPC");
-            //save?
             using (ACE.Database.Models.World.WorldDbContext context = new ACE.Database.Models.World.WorldDbContext())
             {
-                //todo: find an item for the target NPC to give player - create emote to give it to player
+                //find an item for the target NPC to give player - create emote to give it to player
                 Weenie itemTarget = world.GetRandomEquippableItem();
                 var it = WorldObjectFactory.CreateWorldObject(itemTarget, GuidManager.NewDynamicGuid());
 
                 var wo = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
-                //var wo = WorldObjectFactory.CreateWorldObject(world.GetCachedWeenie(44890), GuidManager.NewDynamicGuid());
-                //npcTarget = world.GetCachedWeenie(44890);
-                //var w = WorldObjectFactory.CreateNewWorldObject(npcTarget);
 
-                //LandblockManager.
+                //this forms a basic fetch from NPC quest fashion - check if it should be also a delivery
+                bool chainDelivery = false;
+                int randChance = ThreadSafeRandom.Next(0, 10);
+                if (randChance > 2) // chain delivery on 80% of the time
+                {
+                    chainDelivery = true;
+                }
 
-                //var g = new ObjectGuid(1933414518);
-                //var wo = session.Player.FindObject(g.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
-                //ACE.Database.WorldDatabase db = new WorldDatabase();
-                //Database.Models.World.Weenie woWeenie = db.GetWeenie(npcTarget.WeenieClassId);
+                WorldObject woDeliveryTarget = null;
+                Weenie npcDeliveryTarget = null;
+                Database.Models.World.Weenie woWeenieDelivery = null;
+
+                var noteMessage = $"Get {it.Name} from {wo.Name}. ";
+                if (chainDelivery)
+                {
+                    npcDeliveryTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist(wo.WeenieClassId));
+                    woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
+                    woWeenieDelivery = context.Weenie.Where(x=>x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
+                    noteMessage += $"Once you've received the {it.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
+                }
 
                 var note = WorldObjectFactory.CreateNewWorldObject(365); //parchment
                 Book b = (note as Book); int index = 0;
-                b.AddPage(0, "Quest", "", true, $"Get {it.Name} from {wo.Name}", out index);
+                b.AddPage(0, "Quest", "", true, noteMessage, out index);
                 //note.SetProperty(ACE.Entity.Enum.Properties.PropertyString.Inscription, $"Get {it.Name} from {wo.Name}");
 
-                if(!player.TryCreateInInventoryWithNetworking(note))
+                if (!player.TryCreateInInventoryWithNetworking(note))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pack space, free at least one inventory slot...", ChatMessageType.Tell));
                     return;
                 }
+
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You receive an interesting note with an errand...", ChatMessageType.Tell));
-                Database.Models.World.Weenie woWeenie = context.Weenie.Where(x=>x.ClassId == npcTarget.WeenieClassId).FirstOrDefault();
+                Database.Models.World.Weenie woWeenie = context.Weenie.Where(x => x.ClassId == npcTarget.WeenieClassId).FirstOrDefault();
                 if (woWeenie == null) { return; }
 
                 int ranStrLen = ThreadSafeRandom.Next(5, 15);
@@ -723,78 +733,270 @@ namespace ACE.Server.Managers
                 if (quest == null) { return; }
                 if (!created) { return; }
 
+                
 
-                Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
+                Database.Models.World.WeeniePropertiesEmote responseEmote = NewStarterDyanmicEmote(questName, woWeenie);
+
+                //Basic ends with InqQuest - to respond to those already finished, create quest success as "Already done" emote.
+                Database.Models.World.WeeniePropertiesEmote completeEmote = NewAlreadyCompleteEmote(questName, woWeenie);
+
+                //Basic ends with InqQuest - to add rewards - create emote with Quest Failure
+                Database.Models.World.WeeniePropertiesEmote finishedEmote = NewQuestFinishedEmote(questName, woWeenie, it.WeenieClassId);
+
+                if (chainDelivery)
                 {
-                    Object = woWeenie,
-                    Category = (uint)EmoteCategory.Give,
-                    Probability = 1,
-                    WeenieClassId = 365, //Parchment: the note
-                    Style = (uint?)MotionStance.NonCombat,
-                    Substyle = (uint?)MotionCommand.Wave,
-                    Quest = questName,
-                    VendorType = (int?)VendorType.Undef,
-                    MinHealth = 0,
-                    MaxHealth = null,
-                };
+                    Database.Models.World.WeeniePropertiesEmote deliveryEmote = NewStarterDyanmicEmote(questName + "_d", woWeenieDelivery);
 
-                Database.Models.World.WeeniePropertiesEmoteAction responseAction = new Database.Models.World.WeeniePropertiesEmoteAction
-                {
-                    Emote = responseEmote,
-                    Type = (uint)EmoteType.InqQuest,
-                    Order = 0,
-                    Delay = 1200,
-                    Extent = 0,
-                    Motion = (uint?)MotionCommand.Wave,
-                    Message = $"Nice job {player.Name}, you've found me for quest {questName}",
-                    TestString = "",
-                    Amount = null,
-                    Amount64 = null,
-                    HeroXP64 = null,
-                    WealthRating = null,
-                    TreasureClass = null,
-                    TreasureType = null,
-                    WeenieClassId = null,                    
+                    //Basic ends with InqQuest - to respond to those already finished, create quest success as "Already done" emote.
+                    Database.Models.World.WeeniePropertiesEmote deliverycompleteEmote = NewAlreadyCompleteEmote(questName + "_d", woWeenieDelivery);
 
-                };
+                    //Basic ends with InqQuest - to add rewards - create emote with Quest Failure
+                    Database.Models.World.WeeniePropertiesEmote deliveryfinishedEmote = NewQuestFinishedEmote(questName + "_d", woWeenieDelivery, GetSpecialWeenieReward());
 
-                //responseEmote.PropertiesEmoteAction.Add(responseAction);
-                responseEmote.WeeniePropertiesEmoteAction.Add(responseAction);
+                    woWeenieDelivery.WeeniePropertiesEmote.Add(deliveryEmote);
+                    woWeenieDelivery.WeeniePropertiesEmote.Add(deliverycompleteEmote);
+                    woWeenieDelivery.WeeniePropertiesEmote.Add(deliveryfinishedEmote);
 
-                Database.Models.World.WeeniePropertiesEmoteAction actionGiveItem = new Database.Models.World.WeeniePropertiesEmoteAction
-                {
-                    Emote = responseEmote,
-                    Type = (uint)EmoteType.Give,
-                    Order = 1,
-                    Delay = 1200,
-                    Extent = 0,
-                    Motion = (uint?)MotionCommand.Wave,
-                    Message = $"Here is the {it.Name} you came here for",
-                    TestString = "",
-                    Amount = 1,
-                    Amount64 = null,
-                    HeroXP64 = null,
-                    Percent = null,
-                    WealthRating = null,
-                    TreasureClass = null,
-                    TreasureType = null,
-                    WeenieClassId = it.WeenieClassId,
-                    StackSize = null,
-                };
+                }
+                
 
-                //responseEmote.PropertiesEmoteAction.Add(actionGiveItem);
-                responseEmote.WeeniePropertiesEmoteAction.Add(actionGiveItem);
-                //wo.EmoteManager.AddEmote(responseEmote);
-                //npcTarget.PropertiesEmote.Add(responseEmote);
                 woWeenie.WeeniePropertiesEmote.Add(responseEmote);
+                woWeenie.WeeniePropertiesEmote.Add(completeEmote);
+                woWeenie.WeeniePropertiesEmote.Add(finishedEmote);
 
-            
-                //context.WeeniePropertiesEmote.Add(responseEmote);
-                //context.Update(woWeenie);
                 context.SaveChanges();
             }
 
 
+        }
+
+        private static Database.Models.World.WeeniePropertiesEmote NewQuestFinishedEmote(string questName, Database.Models.World.Weenie targetNPCWeenie, uint item_id)
+        {
+            Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
+            {
+                Object = targetNPCWeenie,
+                Category = (uint)EmoteCategory.QuestSuccess,
+                Probability = 1,
+                WeenieClassId = 365, //Parchment: the note
+                Style = (uint?)MotionStance.NonCombat,
+                Substyle = (uint?)MotionCommand.Wave,
+                Quest = questName,
+                VendorType = (int?)VendorType.Undef,
+                MinHealth = 0,
+                MaxHealth = null,
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction1 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.Tell,
+                Order = 0,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = $"Good work, you've completed this errand with ease. Here's the item you've ventured all this way for.",
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = item_id,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction2 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.Give,
+                Order = 1,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = $"Good work, you've completed this errand with ease. Here's an item for you.",
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.AwardLevelProportionalXP,
+                Order = 2,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = $"Good work, you've completed this errand with ease. Here's an item for you.",
+                TestString = "",
+                Amount = 1000,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction4 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.StampQuest,
+                Order = 3,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = questName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction2);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction3);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction4);
+
+
+            return responseEmote;
+        }
+
+        private static Database.Models.World.WeeniePropertiesEmote NewAlreadyCompleteEmote(string questName, Database.Models.World.Weenie targetNPCWeenie)
+        {
+            Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
+            {
+                Object = targetNPCWeenie,
+                Category = (uint)EmoteCategory.QuestFailure,
+                Probability = 1,
+                WeenieClassId = 365, //Parchment: the note
+                Style = (uint?)MotionStance.NonCombat,
+                Substyle = (uint?)MotionCommand.Wave,
+                Quest = questName,
+                VendorType = (int?)VendorType.Undef,
+                MinHealth = 0,
+                MaxHealth = null,
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction1 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.Tell,
+                Order = 0,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = $"You've already completed this quest. You won't be able to repeat or retry this errand for some time",
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);
+
+            return responseEmote;
+        }
+
+        private static Database.Models.World.WeeniePropertiesEmote NewStarterDyanmicEmote(string questName, Database.Models.World.Weenie targetNPCWeenie)
+        {
+            Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
+            {
+                Object = targetNPCWeenie,
+                Category = (uint)EmoteCategory.Give,
+                Probability = 1,
+                WeenieClassId = 365, //Parchment: the note
+                Style = (uint?)MotionStance.NonCombat,
+                Substyle = (uint?)MotionCommand.Wave,
+                Quest = questName,
+                VendorType = (int?)VendorType.Undef,
+                MinHealth = 0,
+                MaxHealth = null,
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction1 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.TurnToTarget,
+                Order = 0,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = questName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction2 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.Motion,
+                Order = 1,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = questName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.InqQuest,
+                Order = 2,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = questName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction2);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction3);
+
+            return responseEmote;
         }
 
         public bool HasQuestBits(string questFormat, int bits)
@@ -851,6 +1053,24 @@ namespace ACE.Server.Managers
         public void UpdatePlayerQuestCompletions(Player player)
         {
             player.QuestCompletionCount = player.Character.GetCompletedQuestStampCount(new System.Threading.ReaderWriterLockSlim());        
+        }
+
+        public static uint GetSpecialWeenieReward()
+        {
+            var list = GetSpecialWeenieRewardsList();
+            if (list.Count == 0) return 0;
+            if (list.Count == 1) return list[0];
+            var index = ThreadSafeRandom.Next(0, list.Count -1);
+            return list[index];
+        }
+
+        public static List<uint> GetSpecialWeenieRewardsList()
+        {
+            List<uint> list = new List<uint>();
+
+            list.Add(8899); //Bandit Hilt
+
+            return list;
         }
     }
 }
