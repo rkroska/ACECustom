@@ -777,7 +777,7 @@ namespace ACE.Server.Managers
 
                 //reload landblock if it's already loaded
                 // destroy all non-player server objects
-                if (!wo.CurrentLandblock.IsDormant)
+                if (wo.CurrentLandblock != null && !wo.CurrentLandblock.IsDormant)
                 {
                     wo.CurrentLandblock.DestroyAllNonPlayerObjects();
 
