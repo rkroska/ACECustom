@@ -17,7 +17,7 @@
 
       // MaximumAllowedSessionsPerIPAddress, default: -1
       // -1 means unlimited connections per IP Address.
-      "MaximumAllowedSessionsPerIPAddress": -1,
+      "MaximumAllowedSessionsPerIPAddress": 2,
 
      // AllowUlimitedSessionsFromIPs, default []
      // Will allow the given IP addresses to have unlimited sessions - recommend only use this for Admins/Devs
@@ -150,25 +150,25 @@
   },
   "MySql": {
     "Authentication": {
-      "Host": "ace-db",
-      "Port": 3306,
-      "Database": "ace_auth",
-      "Username": "acedockeruser",
-      "Password": "2020acEmulator2017"
+        "Host": "inflt-ace-mysql",
+        "Port": 3306,
+        "Database": "ace_auth",
+        "Username": "rudy",
+        "Password": "password@1password@1"
     },
     "Shard": {
-      "Host": "ace-db",
-      "Port": 3306,
-      "Database": "ace_shard",
-      "Username": "acedockeruser",
-      "Password": "2020acEmulator2017"
+        "Host": "inflt-ace-mysql",
+        "Port": 3306,
+        "Database": "ace_shard",
+        "Username": "rudy",
+        "Password": "password@1password@1"
     },
     "World": {
-      "Host": "ace-db",
-      "Port": 3306,
-      "Database": "ace_world",
-      "Username": "acedockeruser",
-      "Password": "2020acEmulator2017"
+        "Host": "inflt-ace-mysql",
+        "Port": 3306,
+        "Database": "ace_world",
+        "Username": "rudy",
+        "Password": "password@1password@1"
     }
   },
   // This section can trigger events that may happen before the world starts up, or after it shuts down

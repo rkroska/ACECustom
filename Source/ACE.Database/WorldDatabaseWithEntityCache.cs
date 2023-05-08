@@ -167,6 +167,94 @@ namespace ACE.Database
             weenieSpecificCachesPopulated = true;
         }
 
+        public uint GetRandomNPCWeenieIDFromWhitelist(uint weenieToSkip = 0)
+        {
+            var list = ACE.Common.NPCList.GetNPCs();
+            var index = ThreadSafeRandom.Next(0, list.Count - 1);
+            while (index == weenieToSkip)
+            {
+                index = ThreadSafeRandom.Next(0, list.Count - 1); //reroll
+            }
+            var weenie = list[index];
+            return weenie;
+        }
+
+        public ACE.Entity.Models.Weenie GetRandomNPCWeenie()
+        {
+            var w = GetRandomWeeniesOfType(10, 50);
+            if (w == null) return null;
+
+            List<ACE.Entity.Models.Weenie> npcs = new List<ACE.Entity.Models.Weenie>();
+            foreach (var x in w)
+            {
+                bool attackable = true; int targetTactic = 99; bool looksLikeObj = true; bool socMember = true; bool inDung = false;
+                if (x.PropertiesBool == null || !x.PropertiesBool.TryGetValue(PropertyBool.Attackable, out attackable))
+                {
+                    continue;
+                }
+                if (x.PropertiesInt == null || !x.PropertiesInt.TryGetValue(PropertyInt.TargetingTactic, out targetTactic))
+                {
+                    targetTactic = 0;
+                }
+                if (x.PropertiesBool == null || !x.PropertiesBool.TryGetValue(PropertyBool.NpcLooksLikeObject, out looksLikeObj))
+                {
+                    looksLikeObj = false;
+                }
+                if (x.PropertiesInt != null &&
+                        (!x.PropertiesInt.ContainsKey(PropertyInt.SocietyRankRadblo) &&
+                        !x.PropertiesInt.ContainsKey(PropertyInt.SocietyRankEldweb) &&
+                        !x.PropertiesInt.ContainsKey(PropertyInt.SocietyRankCelhan)))
+                {
+                    socMember = false;
+                }
+
+                // MONSTEROUSLY NON PERFORMANT
+                //List<LandblockInstance> locations = LandblockInstance.GetLandblockByStaticWeenieId(x.WeenieClassId);
+                //foreach (var item in locations)
+                //{
+                //    if (item.Landblock > 192)
+                //    {
+                //        //dungeon - skip
+                //        inDung = true; break;
+                //    }
+                //}
+
+                //also exclude Town Criers, Emissary of Asheron, and Society Members(?)
+                if (!attackable && targetTactic == 0 && !looksLikeObj && !x.ClassName.Contains("towncrier") && !x.ClassName.Contains("emissaryofasheron") && !socMember && !inDung)
+                {
+                    npcs.Add(x);
+                }
+                
+            }
+            var index = ThreadSafeRandom.Next(0, npcs.Count - 1);
+
+            var weenie = GetCachedWeenie(npcs[index].WeenieClassId);
+
+            return weenie;
+        }
+
+        public ACE.Entity.Models.Weenie GetRandomEquippableItem()
+        {
+            List<ACE.Entity.Models.Weenie> weenies = new List<ACE.Entity.Models.Weenie>();
+
+            var foodW = GetRandomWeeniesOfType(18, 12);
+            var missleW = GetRandomWeeniesOfType(3, 8);
+            var meleeW = GetRandomWeeniesOfType(6, 12);
+            var clothingW = GetRandomWeeniesOfType(2, 12);
+
+            weenies.AddRange(foodW);
+            weenies.AddRange(missleW);
+            weenies.AddRange(meleeW);
+            weenies.AddRange(clothingW);
+
+            var index = ThreadSafeRandom.Next(0, weenies.Count - 1);
+
+            var weenie = GetCachedWeenie(weenies[index].WeenieClassId);
+
+            return weenie;
+
+        }
+
         public List<ACE.Entity.Models.Weenie> GetRandomWeeniesOfType(int weenieTypeId, int count)
         {
             if (!weenieCacheByType.TryGetValue((WeenieType)weenieTypeId, out var weenies))
@@ -185,7 +273,7 @@ namespace ACE.Database
                         if (results.Count == 0)
                             return weenies;
 
-                        for (int i = 0; i < count; i++)
+                        for (int i = 0; i < count; i++) //todo: convert to parallel.for
                         {
                             var index = ThreadSafeRandom.Next(0, results.Count - 1);
 
