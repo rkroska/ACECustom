@@ -57,14 +57,14 @@ namespace ACE.Server.Entity
 
             AddPerks(player);
 
-            player.Teleport(player.LinkedLifestone, false);
+            player.ThreadSafeTeleportOnDeath();
 
             player.SaveBiotaToDatabase();
         }
 
         public static bool VerifyRequirements(Player player)
         {
-            if (player.Level + player.Enlightenment < 275)
+            if (player.Level < 275 + player.Enlightenment)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment for enlightenment.", ChatMessageType.Broadcast));
                 return false;

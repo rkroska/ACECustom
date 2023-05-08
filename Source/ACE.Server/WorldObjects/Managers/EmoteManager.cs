@@ -1270,6 +1270,7 @@ namespace ACE.Server.WorldObjects.Managers
                         if (questName.EndsWith("@#kt", StringComparison.Ordinal))
                             log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.StampQuest({questName}) is a depreciated kill task method.");
 
+
                         questTarget.QuestManager.Stamp(emote.Message);
                     }
                     break;
@@ -2080,6 +2081,27 @@ namespace ACE.Server.WorldObjects.Managers
         public void ClearProxy()
         {
             _proxy = null;
+        }
+
+
+        /// <summary>
+        /// Dynamically add an emote to the given worldObject for the purposes of responding to dynamic quests
+        /// </summary>
+        /// <param name="emote">The eMote to add</param>
+        /// <returns></returns>
+        public bool AddEmote(PropertiesEmote emote)
+        {
+            if(emote == null)
+            {
+                return false;
+            }
+            if (_worldObject.Biota.PropertiesEmote == null)
+            {
+                _worldObject.Biota.PropertiesEmote = new List<PropertiesEmote>();
+            }
+            _worldObject.Biota.PropertiesEmote.Add(emote);
+          
+            return true;
         }
     }
 }
