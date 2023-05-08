@@ -19,6 +19,7 @@ using ACE.Server.Factories;
 using ACE.Entity;
 using MySqlX.XDevAPI;
 using System.Drawing;
+using ACE.Server.Entity.Actions;
 
 namespace ACE.Server.Managers
 {
@@ -667,7 +668,7 @@ namespace ACE.Server.Managers
                 .Select(s => s[ThreadSafeRandom.Next(0, s.Length-1)]).ToArray());
         }
 
-        public void ComputeDynamicQuest(string questName, Network.Session session)
+        public void ComputeDynamicQuest(string questName, Network.Session session, bool test)
         {
             if (!questName.Contains("Dynamic"))
             {
@@ -679,8 +680,12 @@ namespace ACE.Server.Managers
             //create random note paper - start to fill it with the details of the quest. place it in inventory at the end
             //weenie class 365 - Parchment -- Create Parchment world object
             //find target NPC
-            WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
+            WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();            
             Weenie npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
+            if (test)
+            {
+                npcTarget = world.GetCachedWeenie(6873);//Ulgrim
+            }
 
             using (ACE.Database.Models.World.WorldDbContext context = new ACE.Database.Models.World.WorldDbContext())
             {
@@ -702,10 +707,14 @@ namespace ACE.Server.Managers
                 Weenie npcDeliveryTarget = null;
                 Database.Models.World.Weenie woWeenieDelivery = null;
 
-                var noteMessage = $"Get {it.Name} from {wo.Name}. ";
+                var noteMessage = $"Get {it.Name} from {wo.Name}. Provide them this note as proof of your errand. ";
                 if (chainDelivery)
                 {
                     npcDeliveryTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist(wo.WeenieClassId));
+                    if (test)
+                    {
+                        npcDeliveryTarget = world.GetCachedWeenie(28690); //Erik Festus, Ayan
+                    }
                     woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
                     woWeenieDelivery = context.Weenie.Where(x=>x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
                     noteMessage += $"Once you've received the {it.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
@@ -765,9 +774,26 @@ namespace ACE.Server.Managers
                 woWeenie.WeeniePropertiesEmote.Add(finishedEmote);
 
                 context.SaveChanges();
+
+                //reload landblock if it's already loaded
+                // destroy all non-player server objects
+                if (!wo.CurrentLandblock.IsDormant)
+                {
+                    wo.CurrentLandblock.DestroyAllNonPlayerObjects();
+
+                    // clear landblock cache
+                    DatabaseManager.World.ClearCachedInstancesByLandblock(wo.CurrentLandblock.Id.Landblock);
+
+                    // reload landblock
+                    var actionChain = new ActionChain();
+                    actionChain.AddDelayForOneTick();
+                    actionChain.AddAction(session.Player, () =>
+                    {
+                        wo.CurrentLandblock.Init(true);
+                    });
+                    actionChain.EnqueueChain();
+                }               
             }
-
-
         }
 
         private static Database.Models.World.WeeniePropertiesEmote NewQuestFinishedEmote(string questName, Database.Models.World.Weenie targetNPCWeenie, uint item_id)
@@ -802,7 +828,7 @@ namespace ACE.Server.Managers
                 WealthRating = null,
                 TreasureClass = null,
                 TreasureType = null,
-                WeenieClassId = item_id,
+                WeenieClassId = null,
 
             };
 
@@ -822,7 +848,7 @@ namespace ACE.Server.Managers
                 WealthRating = null,
                 TreasureClass = null,
                 TreasureType = null,
-                WeenieClassId = null,
+                WeenieClassId = item_id,
 
             };
 
@@ -836,7 +862,8 @@ namespace ACE.Server.Managers
                 Motion = (uint?)MotionCommand.Wave,
                 Message = $"Good work, you've completed this errand with ease. Here's an item for you.",
                 TestString = "",
-                Amount = 1000,
+                Amount = null,
+                Percent = 0.25,
                 Amount64 = null,
                 HeroXP64 = null,
                 WealthRating = null,
@@ -921,7 +948,7 @@ namespace ACE.Server.Managers
             Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
             {
                 Object = targetNPCWeenie,
-                Category = (uint)EmoteCategory.Give,
+                Category = (uint)EmoteCategory.Refuse, //refuse = examine
                 Probability = 1,
                 WeenieClassId = 365, //Parchment: the note
                 Style = (uint?)MotionStance.NonCombat,
@@ -999,6 +1026,19 @@ namespace ACE.Server.Managers
             return responseEmote;
         }
 
+        private static int ClearDynamicQuestEmotes()
+        {
+            using (var db = new Database.Models.World.WorldDbContext())
+            {
+                var emotes = db.WeeniePropertiesEmote.Where(e => e.Quest.StartsWith("Dynamic")).ToList();                
+                foreach (var emote in emotes)
+                {
+                    db.WeeniePropertiesEmote.Remove(emote);
+                }
+                return db.SaveChanges();
+            }
+        }
+
         public bool HasQuestBits(string questFormat, int bits)
         {
             var questName = GetQuestName(questFormat);
@@ -1069,6 +1109,8 @@ namespace ACE.Server.Managers
             List<uint> list = new List<uint>();
 
             list.Add(8899); //Bandit Hilt
+            list.Add(29295); //Blank aug gem
+            list.Add(36867); //Dire champ token
 
             return list;
         }
