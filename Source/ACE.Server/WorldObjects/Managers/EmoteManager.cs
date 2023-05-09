@@ -1494,6 +1494,13 @@ namespace ACE.Server.WorldObjects.Managers
                     PlayerManager.LogBroadcastChat(Channel.AllBroadcast, WorldObject, message);
 
                     break;
+                case EmoteType.StartDynamicQuest:
+                    if (player != null)
+                    {
+                        player.QuestManager.ComputeDynamicQuest("Dynamic_1", player.Session, false);
+                    }
+
+                    break;
 
                 default:
                     log.Debug($"EmoteManager.Execute - Encountered Unhandled EmoteType {(EmoteType)emote.Type} for {WorldObject.Name} ({WorldObject.WeenieClassId})");
