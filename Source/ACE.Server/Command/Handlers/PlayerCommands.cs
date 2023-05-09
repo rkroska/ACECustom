@@ -110,6 +110,7 @@ namespace ACE.Server.Command.Handlers
                     case 3:
                         //deposit notes
                         session.Player.DepositTradeNotes();
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all trade notes!", ChatMessageType.System));
                         break;
                     default:
                         break;
@@ -165,17 +166,17 @@ namespace ACE.Server.Command.Handlers
             Enlightenment.HandleEnlightenment(session.Player);
         }
 
-        [CommandHandler("mult", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
+        [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleMultiplier (Session session, params string[] paramters)
         {
             var qb = session.Player.GetQuestCountXPBonus();
             var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
             var en = session.Player.GetEnglightenmentXPBonus();
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your XP multiplier from Quests is: {qb-1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your XP multiplier from Equipment is: {eq-1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your XP multiplier from Enlightenment is: {en-1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[MULT] Your Total XP multiplier is: {(qb-1)+(eq-1)+(en-1):P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Quests is: {qb-1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Equipment is: {eq-1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Enlightenment is: {en-1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your Total XP multiplier is: {(qb-1)+(eq-1)+(en-1):P}", ChatMessageType.System));
         }
 
         [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
@@ -299,7 +300,7 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Could not raise {AttrName} attribute, check your available XP and try again.", ChatMessageType.Advancement));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Could not raise {AttrName} attribute, check your available XP and use /xp to see the cost and try again.", ChatMessageType.Advancement));
             }
         }
 
