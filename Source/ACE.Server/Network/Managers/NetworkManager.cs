@@ -35,7 +35,7 @@ namespace ACE.Server.Network.Managers
         public static uint DefaultSessionTimeout = ConfigManager.Config.Server.Network.DefaultSessionTimeout;
 
         private static readonly ReaderWriterLockSlim sessionLock = new ReaderWriterLockSlim();
-        private static readonly Session[] sessionMap = new Session[ConfigManager.Config.Server.Network.MaximumAllowedSessions];
+        private static readonly List<Session> sessionMap = new List<Session>((int)ConfigManager.Config.Server.Network.MaximumAllowedSessions);
 
         /// <summary>
         /// Handles ClientMessages in InboundMessageManager
@@ -112,7 +112,7 @@ namespace ACE.Server.Network.Managers
                     }
                     else
                     {
-                        log.DebugFormat("Login Request from {0}", endPoint);
+                        log.DebugFormat("Login Request from {0}", endPoint);                        
 
                         var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(endPoint.Address.ToString());
                         if (ipAllowsUnlimited || ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress == -1 || GetSessionEndpointTotalByAddressCount(endPoint.Address) < ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
@@ -143,7 +143,7 @@ namespace ACE.Server.Network.Managers
                         }
                     }
                 }
-                else if (sessionMap.Length > packet.Header.Id)
+                else if (sessionMap.Count > packet.Header.Id)
                 {
                     var session = sessionMap[packet.Header.Id];
                     if (session != null)
@@ -168,7 +168,7 @@ namespace ACE.Server.Network.Managers
 
         private static void SendLoginRequestReject(ConnectionListener connectionListener, IPEndPoint endPoint, CharacterError error)
         {
-            var tempSession = new Session(connectionListener, endPoint, (ushort)(sessionMap.Length + 1), ServerId);
+            var tempSession = new Session(connectionListener, endPoint, (ushort)(sessionMap.Count + 1), ServerId);
 
             SendLoginRequestReject(tempSession, error);
         }
@@ -247,7 +247,7 @@ namespace ACE.Server.Network.Managers
 
                 foreach (var s in sessionMap)
                 {
-                    if (s != null && s.EndPoint.Address.Equals(address))
+                    if (s != null && s.EndPoint.Address.Equals(address) && !s.inExemptLandblock())
                         result++;
                 }
 
@@ -272,7 +272,7 @@ namespace ACE.Server.Network.Managers
                     sessionLock.EnterWriteLock();
                     try
                     {
-                        for (ushort i = 0; i < sessionMap.Length; i++)
+                        for (ushort i = 0; i < sessionMap.Count; i++)
                         {
                             if (sessionMap[i] == null)
                             {

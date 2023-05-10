@@ -16,6 +16,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.Managers;
+using ACE.Server.Entity;
 
 namespace ACE.Server.Network
 {
@@ -30,7 +31,6 @@ namespace ACE.Server.Network
         public uint GameEventSequence { get; set; }
 
         public SessionState State { get; set; }
-
 
         public uint AccountId { get; private set; }
 
@@ -91,6 +91,17 @@ namespace ACE.Server.Network
             Network.ProcessPacket(packet);
         }
 
+        public bool inExemptLandblock()
+        {
+            if (Player != null)
+            {
+                if (Player.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains((ushort)Player.CurrentLandblock.Id.Raw))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /// <summary>
         /// This will send outgoing packets as well as the final logoff message.
