@@ -533,6 +533,8 @@ namespace ACE.Server.WorldObjects
 
                         skillBonus = Spell.MinDamage * percentageBonus;
                     }
+                    skillBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Focus.Current) * 0.25f;
+                    skillBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Self.Current) * 0.25f;
                 }
                 baseDamage = ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
 
