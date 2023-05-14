@@ -1960,10 +1960,29 @@ namespace ACE.Server.WorldObjects
             // - surge of regeneration (caster gains health over time)
             // - dirty fighting bleed
 
-            if (spell.DotDuration == 0)
-                return statModVal;
+            //calculate in the luminance advanced augments for schools
+            var player = this as Player;
+            var lumAug = 0f;
+            if (player != null)
+            {
+                if (spell.School == MagicSchool.VoidMagic)
+                {
+                    lumAug += player.LuminanceAugmentVoidCount ?? 0f; 
+                }
+                if (spell.School == MagicSchool.WarMagic)
+                {
+                    lumAug += player.LuminanceAugmentWarCount ?? 0f;
+                }
+                if (spell.School == MagicSchool.LifeMagic)
+                {
+                    lumAug += player.LuminanceAugmentLifeCount ?? 0f;
+                }
+            }
 
-            var enchantment_statModVal = statModVal;
+            if (spell.DotDuration == 0)
+                return statModVal + lumAug;
+
+            var enchantment_statModVal = statModVal + lumAug;
 
             var creatureTarget = target as Creature;
 
@@ -1983,7 +2002,7 @@ namespace ACE.Server.WorldObjects
                 return enchantment_statModVal;
             }
 
-            var player = this as Player;
+
             var creatureSource = this as Creature;
 
             var damageRatingMod = 1.0f;

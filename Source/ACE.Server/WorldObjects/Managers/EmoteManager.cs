@@ -561,6 +561,10 @@ namespace ACE.Server.WorldObjects.Managers
                         else
                         {
                             stat ??= 0;
+                            if (emote.Max == 999) //DB magic number
+                            {
+                                emote.Max = int.MaxValue;
+                            }
                             success = stat >= (emote.Min ?? int.MinValue) && stat <= (emote.Max ?? int.MaxValue);
                             ExecuteEmoteSet(success ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure, emote.Message, targetObject, true);
                         }

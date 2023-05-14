@@ -157,6 +157,7 @@ namespace ACE.Server.Entity
 
             // normally we can just use the value in StatModVal for this,
             // however it assumes that heartbeat is 5
+
             if (heartbeat == 5.0f)
                 return StatModVal;
 

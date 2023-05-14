@@ -17,6 +17,7 @@ namespace ACE.Server.WorldObjects
 {
     public class SpellProjectile : WorldObject
     {
+        public const float DefaultSpellAttributeMult = 0.25f;
         public Spell Spell;
         public ProjectileSpellType SpellType { get; set; }
 
@@ -462,6 +463,9 @@ namespace ACE.Server.WorldObjects
             // Possible 2x + damage bonus for the slayer property
             var slayerMod = GetWeaponCreatureSlayerModifier(weapon, sourceCreature, target);
 
+            var attribBonus = 1.0f;
+            attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Focus.Current) * DefaultSpellAttributeMult;
+            attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Self.Current) * DefaultSpellAttributeMult;
             // life magic projectiles: ie., martyr's hecatomb
             if (Spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile)
             {
@@ -478,6 +482,11 @@ namespace ACE.Server.WorldObjects
                     critDamageBonus = lifeMagicDamage * 0.5f * weaponCritDamageMod;
                 }
 
+                if (sourcePlayer.LuminanceAugmentLifeCount.HasValue && sourcePlayer.LuminanceAugmentLifeCount >= 1)
+                {
+                    lifeMagicDamage += sourcePlayer.LuminanceAugmentLifeCount.Value;
+                }
+
                 weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
 
                 // if attacker/weapon has IgnoreMagicResist directly, do not transfer to spell projectile
@@ -485,7 +494,7 @@ namespace ACE.Server.WorldObjects
 
                 resistanceMod = (float)Math.Max(0.0f, target.GetResistanceMod(resistanceType, this, null, weaponResistanceMod));
 
-                finalDamage = (lifeMagicDamage + critDamageBonus) * elementalDamageMod * slayerMod * resistanceMod * absorbMod;
+                finalDamage = (lifeMagicDamage + critDamageBonus) * elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
             // war/void magic projectiles
             else
@@ -533,10 +542,26 @@ namespace ACE.Server.WorldObjects
 
                         skillBonus = Spell.MinDamage * percentageBonus;
                     }
-                    skillBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Focus.Current) * 0.25f;
-                    skillBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Self.Current) * 0.25f;
                 }
                 baseDamage = ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
+
+                if (sourcePlayer != null)
+                {
+                    if (Spell.School == MagicSchool.WarMagic)
+                    {
+                        if (sourcePlayer.LuminanceAugmentWarCount.HasValue && sourcePlayer.LuminanceAugmentWarCount >= 1)
+                        {
+                            baseDamage += (int)sourcePlayer.LuminanceAugmentWarCount.Value;
+                        }
+                    }
+                    else if (Spell.School == MagicSchool.VoidMagic)
+                    {
+                        if (sourcePlayer.LuminanceAugmentVoidCount.HasValue && sourcePlayer.LuminanceAugmentVoidCount >= 1)
+                        {
+                            baseDamage += (int)sourcePlayer.LuminanceAugmentVoidCount.Value;
+                        }
+                    }
+                }
 
                 weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
 
@@ -556,7 +581,7 @@ namespace ACE.Server.WorldObjects
 
                 finalDamage = baseDamage + critDamageBonus + skillBonus;
 
-                finalDamage *= elementalDamageMod * slayerMod * resistanceMod * absorbMod;
+                finalDamage *= elementalDamageMod * slayerMod * resistanceMod * absorbMod * attribBonus;
             }
 
             // show debug info

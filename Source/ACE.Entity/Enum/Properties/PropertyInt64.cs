@@ -38,6 +38,16 @@ namespace ACE.Entity.Enum.Properties
         BankedLuminance       = 9005,
         [ServerOnly]
         QuestCount            = 9006,
+        [ServerOnly]
+        LumAugCreatureCount   = 9007,
+        [ServerOnly]
+        LumAugItemCount       = 9008,
+        [ServerOnly]
+        LumAugLifeCount       = 9009,
+        [ServerOnly]
+        LumAugVoidCount       = 9010,
+        [ServerOnly]
+        LumAugWarCount        = 9011,
     }
 
     public static class PropertyInt64Extensions

@@ -245,7 +245,38 @@ namespace ACE.Server.WorldObjects.Managers
             entry.DegradeLimit = spell.DegradeLimit;
             entry.StatModType = spell.StatModType;
             entry.StatModKey = spell.StatModKey;
-            entry.StatModValue = spell.StatModVal;
+
+            //calculate luminance aug additions for statmod
+            var luminanceAug = 0.0f;
+            if (spell.School == MagicSchool.CreatureEnchantment && caster is Player)
+            {
+                luminanceAug += (caster as Player).LuminanceAugmentCreatureCount ?? 0.0f;
+            }
+            if (spell.School == MagicSchool.ItemEnchantment && caster is Player)
+            {
+                if (spell.StatModVal < 1 && spell.StatModVal > -1)
+                {
+                    luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.025f;
+                }
+                else
+                {
+                    luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
+                }                
+            }
+            if (spell.School == MagicSchool.LifeMagic && caster is Player)
+            {
+                luminanceAug += (caster as Player).LuminanceAugmentLifeCount ?? 0.0f;
+            }
+
+            if (spell.StatModVal > 0)
+            {
+                entry.StatModValue = spell.StatModVal + luminanceAug;
+            }
+            else
+            {
+                entry.StatModValue = spell.StatModVal - luminanceAug;
+            }
+            
 
             if (spell.IsDamageOverTime)
             {

@@ -421,7 +421,7 @@ namespace ACE.Server.WorldObjects
 
             if (weapon?.WeaponSkill == Skill.FinesseWeapons)
             {
-                return (SkillFormula.GetAttributeMod((int)Strength.Current / 2, isBow) + (SkillFormula.GetAttributeMod((int)Coordination.Current, isBow));
+                return SkillFormula.GetAttributeMod((int)Strength.Current / 2, isBow) + (SkillFormula.GetAttributeMod((int)Coordination.Current, isBow));
             }
             else if (!isBow)
             {
