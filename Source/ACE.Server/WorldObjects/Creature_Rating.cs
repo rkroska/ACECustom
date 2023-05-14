@@ -216,15 +216,17 @@ namespace ACE.Server.WorldObjects
 
             var augBonus = 0;
             var lumAugBonus = 0;
+            var enlightenmentBonus = 0;
 
             if (this is Player player)
             {
                 augBonus = player.AugmentationDamageBonus * 3;
                 lumAugBonus = player.LumAugDamageRating;
+                enlightenmentBonus = player.Enlightenment;
             }
 
             // heritage / weapon type bonus factored in elsewhere?
-            return damageRating + equipment + enchantments - weaknessRating + augBonus + lumAugBonus;
+            return damageRating + equipment + enchantments - weaknessRating + augBonus + lumAugBonus + enlightenmentBonus;
         }
 
         public int GetDamageResistRating(CombatType? combatType = null, bool directDamage = true)
