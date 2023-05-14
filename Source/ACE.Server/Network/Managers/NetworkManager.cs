@@ -35,7 +35,7 @@ namespace ACE.Server.Network.Managers
         public static uint DefaultSessionTimeout = ConfigManager.Config.Server.Network.DefaultSessionTimeout;
 
         private static readonly ReaderWriterLockSlim sessionLock = new ReaderWriterLockSlim();
-        private static readonly List<Session> sessionMap = new List<Session>((int)ConfigManager.Config.Server.Network.MaximumAllowedSessions);
+        private static readonly Session[] sessionMap = new Session[(int)ConfigManager.Config.Server.Network.MaximumAllowedSessions];
 
         /// <summary>
         /// Handles ClientMessages in InboundMessageManager
@@ -143,7 +143,7 @@ namespace ACE.Server.Network.Managers
                         }
                     }
                 }
-                else if (sessionMap.Count > packet.Header.Id)
+                else if (sessionMap.Length > packet.Header.Id)
                 {
                     var session = sessionMap[packet.Header.Id];
                     if (session != null)
@@ -168,7 +168,7 @@ namespace ACE.Server.Network.Managers
 
         private static void SendLoginRequestReject(ConnectionListener connectionListener, IPEndPoint endPoint, CharacterError error)
         {
-            var tempSession = new Session(connectionListener, endPoint, (ushort)(sessionMap.Count + 1), ServerId);
+            var tempSession = new Session(connectionListener, endPoint, (ushort)(sessionMap.Length + 1), ServerId);
 
             SendLoginRequestReject(tempSession, error);
         }
@@ -272,7 +272,7 @@ namespace ACE.Server.Network.Managers
                     sessionLock.EnterWriteLock();
                     try
                     {
-                        for (ushort i = 0; i < sessionMap.Count; i++)
+                        for (ushort i = 0; i < sessionMap.Length; i++)
                         {
                             if (sessionMap[i] == null)
                             {
