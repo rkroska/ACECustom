@@ -78,7 +78,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool SpendLuminance(long amount)
         {
-            var available = AvailableLuminance ?? 0;
+            var available = AvailableLuminance ?? 0 + BankedLuminance ?? 0;
 
             if (amount > available)
                 return false;

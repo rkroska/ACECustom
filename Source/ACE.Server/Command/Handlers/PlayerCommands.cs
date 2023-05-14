@@ -163,7 +163,9 @@ namespace ACE.Server.Command.Handlers
         {
             //if(!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(session.Player.Guid, session.Player.Guid, "Enlightenment"), "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes."))
             //    return;
-            Enlightenment.HandleEnlightenment(session.Player);
+            var message = "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
+            var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => Enlightenment.HandleEnlightenment(session.Player)), message);
+            
         }
 
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
@@ -264,31 +266,31 @@ namespace ACE.Server.Command.Handlers
             switch (parameters[0])
             {
                 case "str":
-                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Strength, out AttrName, true, out success);
+                    xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Strength, out AttrName, true, out success);
                     break;
                 case "end":
-                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Endurance, out AttrName, true, out success);
+                    xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Endurance, out AttrName, true, out success);
                     break;
                 case "coo":
-                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Coordination, out AttrName, true, out success);
+                    xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Coordination, out AttrName, true, out success);
                     break;
                 case "qui":
-                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Quickness, out AttrName, true, out success);
+                    xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Quickness, out AttrName, true, out success);
                     break;
                 case "foc":
-                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Focus, out AttrName, true, out success);
+                    xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Focus, out AttrName, true, out success);
                     break;
                 case "sel":
-                    GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
+                    xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
                     break;
                 case "sta":
-                    GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxStamina, out AttrName, true, out success);
+                    xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxStamina, out AttrName, true, out success);
                     break;
                 case "hea":
-                    GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxHealth, out AttrName, true, out success);
+                    xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxHealth, out AttrName, true, out success);
                     break;
                 case "man":
-                    GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxMana, out AttrName, true, out success);
+                    xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxMana, out AttrName, true, out success);
                     break;
                 default:
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Invalid attribute. Type /attr for help.", ChatMessageType.System));

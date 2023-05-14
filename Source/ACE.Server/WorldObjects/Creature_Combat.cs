@@ -16,6 +16,7 @@ namespace ACE.Server.WorldObjects
 {
     partial class Creature
     {
+        const int OverpowerResistAdditionThreshold = 600;
         public enum DebugDamageType
         {
             None     = 0x0,
@@ -415,6 +416,17 @@ namespace ACE.Server.WorldObjects
 
             //var attribute = isBow || GetCurrentWeaponSkill() == Skill.FinesseWeapons ? Coordination : Strength;
             var attribute = isBow || weapon?.WeaponSkill == Skill.FinesseWeapons ? Coordination : Strength;
+
+            if (isBow) { attribute = Coordination;}
+
+            if (weapon?.WeaponSkill == Skill.FinesseWeapons)
+            {
+                return SkillFormula.GetAttributeMod((int)Strength.Current / 2, isBow) + (SkillFormula.GetAttributeMod((int)Coordination.Current, isBow));
+            }
+            else if (!isBow)
+            {
+                return SkillFormula.GetAttributeMod((int)Strength.Current, isBow);
+            }
 
             return SkillFormula.GetAttributeMod((int)attribute.Current, isBow);
         }
@@ -1240,11 +1252,16 @@ namespace ACE.Server.WorldObjects
 
             if (rng >= overpowerChance * 0.01f)
                 return false;
+            var resistChance = 0;
 
-            if (defender.OverpowerResist == null)
-                return true;
-
-            var resistChance = defender.OverpowerResist.Value;
+            if (defender.OverpowerResist.HasValue)
+            {
+                 resistChance = defender.OverpowerResist.Value;
+            }
+            if (defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) > OverpowerResistAdditionThreshold)
+            {
+                resistChance += (int)(defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) - OverpowerResistAdditionThreshold) / 50;
+            }
 
             rng = ThreadSafeRandom.Next(0.0f, 1.0f);
 
@@ -1280,7 +1297,12 @@ namespace ACE.Server.WorldObjects
                 return 0.0f;
 
             var overpowerChance = (attacker.Overpower ?? 0) * 0.01f;
-            var overpowerResistChance = (defender.OverpowerResist ?? 0) * 0.01f;
+            var overpowerResistChance = 0f;
+            overpowerResistChance = (defender.OverpowerResist ?? 0) * 0.01f;
+            if (defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) > OverpowerResistAdditionThreshold)
+            {
+                overpowerResistChance += (int)(defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) - OverpowerResistAdditionThreshold) / 50;
+            }
 
             return overpowerChance * (1.0f - overpowerResistChance);
         }
