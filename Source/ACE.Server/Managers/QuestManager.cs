@@ -20,6 +20,7 @@ using ACE.Entity;
 using MySqlX.XDevAPI;
 using System.Drawing;
 using ACE.Server.Entity.Actions;
+using ACE.Database.Models.Auth;
 
 namespace ACE.Server.Managers
 {
@@ -201,7 +202,7 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    UpdatePlayerQuestCompletions(player);
+                    UpdatePlayerQuestCompletions(player, questFormat);
                     player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
@@ -226,7 +227,7 @@ namespace ACE.Server.Managers
                     
                     if (quest.NumTimesCompleted == 1)
                     {
-                        UpdatePlayerQuestCompletions(player);
+                        UpdatePlayerQuestCompletions(player, questName);
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     }
                     
@@ -260,7 +261,7 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    UpdatePlayerQuestCompletions(player);
+                    UpdatePlayerQuestCompletions(player, questFormat);
                     player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
@@ -280,7 +281,7 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
                     if (quest.NumTimesCompleted == 1)
                     {
-                        UpdatePlayerQuestCompletions(player);
+                        UpdatePlayerQuestCompletions(player, questFormat);
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
@@ -1090,9 +1091,24 @@ namespace ACE.Server.Managers
             SetQuestCompletions(questFormat, questBits);
         }
 
-        public void UpdatePlayerQuestCompletions(Player player)
+        public void UpdatePlayerQuestCompletions(Player player, string questName)
         {
-            player.QuestCompletionCount = player.Character.GetCompletedQuestStampCount(new System.Threading.ReaderWriterLockSlim());        
+            var acctId = player.Account.AccountId;
+            using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
+            {
+                context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName });
+                context.SaveChangesFailed += (object sender, Microsoft.EntityFrameworkCore.SaveChangesFailedEventArgs e) =>
+                {
+                    Console.WriteLine($"Failed to save quest {questName} for account {acctId}");
+                };
+                try
+                {
+                    context.SaveChanges();
+                }
+                catch (Exception ex) { }
+            }
+
+            player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();      
         }
 
         public static uint GetSpecialWeenieReward()

@@ -12,6 +12,7 @@ using ACE.Entity.Enum;
 using System.Collections.Generic;
 using System;
 using System.Net;
+using ACE.Database.Models.Shard;
 
 namespace ACE.Database
 {
@@ -175,6 +176,24 @@ namespace ACE.Database
 
                 return result;
             }
+        }
+
+        public long? GetCountOfAccountQuests(int accountId)
+        {
+            long count = 0;
+            using (var context = new AuthDbContext())
+            {
+                count = context.AccountQuest
+                    .AsNoTracking()
+                    .Where(r => r.AccountId == accountId)
+                    .Count();
+            }
+            return count;
+        }
+
+        public void ConsolidateAccountQuests(int accountId, int characterId)
+        {
+
         }
     }
 }

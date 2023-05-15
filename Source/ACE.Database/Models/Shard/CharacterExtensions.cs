@@ -358,20 +358,6 @@ namespace ACE.Database.Models.Shard
             }
         }
 
-        public static long GetCompletedQuestStampCount(this Character character, ReaderWriterLockSlim rwLock)
-        {
-            rwLock.EnterReadLock();
-            try
-            {
-                return character.CharacterPropertiesQuestRegistry.Count(x=>x.NumTimesCompleted >= 1 || x.NumTimesCompleted == -1) +
-                    character.CharacterPropertiesQuestRegistry.Count();
-            }
-            finally
-            {
-                rwLock.ExitReadLock();
-            }
-        }
-
         public static CharacterPropertiesQuestRegistry GetQuest(this Character character, string questName, ReaderWriterLockSlim rwLock)
         {
             rwLock.EnterReadLock();
