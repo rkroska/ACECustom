@@ -264,7 +264,10 @@ namespace ACE.Server.WorldObjects
         public override void OnCollideObject(WorldObject target)
         {
             //Console.WriteLine($"{Name}.OnCollideObject({target.Name})");
-
+            if (ProjectileSource == null)
+            {
+                return;
+            }
             var player = ProjectileSource as Player;
 
             if (Info != null && player != null && player.DebugSpell)
@@ -378,6 +381,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public float? CalculateDamage(WorldObject source, Creature target, ref bool criticalHit, ref bool critDefended, ref bool overpower)
         {
+            if (source == null || target == null)
+                return null;
             var sourcePlayer = source as Player;
             var targetPlayer = target as Player;
 
