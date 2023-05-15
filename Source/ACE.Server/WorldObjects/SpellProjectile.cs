@@ -464,8 +464,12 @@ namespace ACE.Server.WorldObjects
             var slayerMod = GetWeaponCreatureSlayerModifier(weapon, sourceCreature, target);
 
             var attribBonus = 1.0f;
-            attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Focus.Current) * DefaultSpellAttributeMult;
-            attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Self.Current) * DefaultSpellAttributeMult;
+            if (sourcePlayer != null)
+            {
+                attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Focus.Current) * DefaultSpellAttributeMult;
+                attribBonus += SkillFormula.GetAttributeMod((int)sourcePlayer.Self.Current) * DefaultSpellAttributeMult;
+            }
+            
             // life magic projectiles: ie., martyr's hecatomb
             if (Spell.MetaSpellType == ACE.Entity.Enum.SpellType.LifeProjectile)
             {
