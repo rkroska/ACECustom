@@ -187,6 +187,10 @@ namespace ACE.Database
                     .AsNoTracking()
                     .Where(r => r.AccountId == accountId)
                     .Count();
+                count += context.AccountQuest
+                    .AsNoTracking()
+                    .Where(r => r.AccountId == accountId && r.NumTimesCompleted >= 1)
+                    .Count();
             }
             return count;
         }
