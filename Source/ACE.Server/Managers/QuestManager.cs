@@ -1096,12 +1096,17 @@ namespace ACE.Server.Managers
             var acctId = player.Account.AccountId;
             using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
             {
-                if (context.AccountQuest.Where(x=>x.AccountId == acctId && x.Quest == questName).Count() > 0)
+                var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == questName).FirstOrDefault();
+                if (acctQuest != null)
                 {
-                    context.AccountQuest.Update()
+                    acctQuest.NumTimesCompleted += 1;
+                    context.AccountQuest.Update(acctQuest);
                 }
-
-                context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = 0 });
+                else
+                {
+                    context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = 0 });
+                }
+                
                 context.SaveChangesFailed += (object sender, Microsoft.EntityFrameworkCore.SaveChangesFailedEventArgs e) =>
                 {
                     Console.WriteLine($"Failed to save quest {questName} for account {acctId}");
