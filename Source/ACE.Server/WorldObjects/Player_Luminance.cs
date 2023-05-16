@@ -85,6 +85,10 @@ namespace ACE.Server.WorldObjects
             {
                 return;
             }
+            if (amount <= 0)
+            {
+                return;
+            }
 
             AllegianceManager.PassXP(AllegianceNode, (ulong)amount, true, true);
         }
