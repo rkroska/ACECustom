@@ -63,6 +63,9 @@ namespace ACE.Server.Entity
 
         ulong AllegianceXPGenerated { get; set; }
 
+        ulong AllegianceLumCached { get; set; }
+        ulong AllegianceLumGenerated { get; set; }
+
         int? AllegianceRank { get; set; }
 
         int? AllegianceOfficerRank { get; set; }

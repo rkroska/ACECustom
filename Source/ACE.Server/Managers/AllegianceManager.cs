@@ -192,12 +192,12 @@ namespace ACE.Server.Managers
         // This function can be called from multi-threaded operations
         // We must add thread safety to prevent AllegianceManager corruption
         // We must also protect against cross-thread operations on vassal/patron (non-concurrent collections)
-        public static void PassXP(AllegianceNode vassalNode, ulong amount, bool direct)
+        public static void PassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct, luminance)));
         }
 
-        private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct)
+        private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
         {
             // http://asheron.wikia.com/wiki/Allegiance_Experience
 
@@ -295,7 +295,21 @@ namespace ACE.Server.Managers
             Console.WriteLine("Generated amount: " + generatedAmount);
             Console.WriteLine("Passup amount: " + passupAmount);*/
 
-            if (passupAmount > 0)
+            if (passupAmount > 0 && luminance == true)
+            {
+                vassal.AllegianceLumGenerated += generatedAmount;
+
+                patron.AllegianceLumCached += passupAmount;
+                var onlinePatron = PlayerManager.GetOnlinePlayer(patron.Guid);
+                if (onlinePatron != null)
+                {
+                    onlinePatron.AddAllegianceLum();
+                }
+                // call recursively
+                DoPassXP(patronNode, passupAmount, false, luminance);
+            }
+
+            if (passupAmount > 0 && luminance == false)
             {
                 //vassal.CPTithed += generatedAmount;
                 //patron.CPCached += passupAmount;
@@ -313,7 +327,7 @@ namespace ACE.Server.Managers
                     onlinePatron.AddAllegianceXP();
 
                 // call recursively
-                DoPassXP(patronNode, passupAmount, false);
+                DoPassXP(patronNode, passupAmount, false, luminance);
             }
         }
 
