@@ -54,8 +54,10 @@ namespace ACE.Server.WorldObjects
         private void AddLuminance(long amount, XpType xpType)
         {
             BankedLuminance += amount;
-            if (xpType == XpType.Quest)
+            if (xpType == XpType.Quest || xpType == XpType.Kill)
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
+
+            UpdateLumAllegiance(amount);
 
             UpdateLuminance();
         }
@@ -75,6 +77,16 @@ namespace ACE.Server.WorldObjects
             UpdateLuminance();
 
             return true;
+        }
+
+        private void UpdateLumAllegiance(long amount)
+        {
+            if (!HasAllegiance)
+            {
+                return;
+            }
+
+            AllegianceManager.PassXP(AllegianceNode, (ulong)amount, true, true);
         }
 
         /// <summary>

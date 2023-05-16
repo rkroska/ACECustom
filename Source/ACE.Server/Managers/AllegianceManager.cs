@@ -192,9 +192,9 @@ namespace ACE.Server.Managers
         // This function can be called from multi-threaded operations
         // We must add thread safety to prevent AllegianceManager corruption
         // We must also protect against cross-thread operations on vassal/patron (non-concurrent collections)
-        public static void PassXP(AllegianceNode vassalNode, ulong amount, bool direct)
+        public static void PassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct, luminance)));
         }
 
         private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
@@ -305,6 +305,8 @@ namespace ACE.Server.Managers
                 {
                     onlinePatron.AddAllegianceLum();
                 }
+                // call recursively
+                DoPassXP(patronNode, passupAmount, false, luminance);
             }
 
             if (passupAmount > 0 && luminance == false)
@@ -325,7 +327,7 @@ namespace ACE.Server.Managers
                     onlinePatron.AddAllegianceXP();
 
                 // call recursively
-                DoPassXP(patronNode, passupAmount, false);
+                DoPassXP(patronNode, passupAmount, false, luminance);
             }
         }
 
