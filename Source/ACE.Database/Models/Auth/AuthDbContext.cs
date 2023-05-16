@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,8 +22,19 @@ public partial class AuthDbContext : DbContext
     public virtual DbSet<AccountQuest> AccountQuest { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see http://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseMySql("server=localhost;user=root;password=password!;database=ace_auth", Microsoft.EntityFrameworkCore.ServerVersion.Parse("8.0.32-mysql"));
+    {
+        if (!optionsBuilder.IsConfigured)
+        {
+            var config = Common.ConfigManager.Config.MySql.Authentication;
+
+            var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=None;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator";
+
+            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
+            {
+                builder.EnableRetryOnFailure(10);
+            });
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
