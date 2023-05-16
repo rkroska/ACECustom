@@ -121,5 +121,10 @@ namespace ACE.Database.Models.Auth
 
             DatabaseManager.Authentication.UpdateAccount(account);
         }
+
+        public static long? GetCharacterQuestCompletions(this Account account)
+        {
+            return DatabaseManager.Authentication.GetCountOfAccountQuests((int)account.AccountId);
+        }
     }
 }
