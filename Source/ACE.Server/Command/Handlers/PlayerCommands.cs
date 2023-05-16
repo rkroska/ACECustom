@@ -19,6 +19,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Database.Models.Auth;
 using System.Xml.Linq;
 using Lifestoned.DataModel.DerethForever;
+using MySqlX.XDevAPI.Common;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -171,6 +172,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleMultiplier (Session session, params string[] paramters)
         {
+            session.Player.QuestCompletionCount = session.Player.Account.GetCharacterQuestCompletions();
             var qb = session.Player.GetQuestCountXPBonus();
             var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
             var en = session.Player.GetEnglightenmentXPBonus();
@@ -313,6 +315,55 @@ namespace ACE.Server.Command.Handlers
         public static void HandlePop(Session session, params string[] parameters)
         {
             CommandHandlerHelper.WriteOutputInfo(session, $"Current world population: {PlayerManager.GetOnlineCount():N0}", ChatMessageType.Broadcast);
+        }
+
+        [CommandHandler("qb", AccessLevel.Player, CommandHandlerFlag.None, "Show current quest bonus", "add List to list your current quests")]
+        public static void DisplayQB(Session session, params string[] parameters)
+        {
+            bool list = false;
+            if (parameters.Length > 0)
+            {
+                if (parameters[0] == "list")
+                {
+                    list = true;
+                }
+            }
+
+            if (!list)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Your current quest bonus count: {session.Player.Account.GetCharacterQuestCompletions():N0}", ChatMessageType.Broadcast);
+            }
+            else
+            {
+                using (var context = new AuthDbContext())
+                {
+                    var res = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted >= 1).ToList();
+                    if (res != null)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Your completed quest bonus list:", ChatMessageType.Broadcast);
+                        foreach (var item in res)
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, $"{item.Quest}", ChatMessageType.Broadcast);
+                        }
+                    }
+                    var res2 = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted == 0).ToList();
+                    if (res2 != null)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Your incomplete quest bonus list:", ChatMessageType.Broadcast);
+                        foreach (var item in res2)
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, $"{item.Quest}", ChatMessageType.Broadcast);
+                        }
+                    }
+                }
+            }
+            
+        }
+
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels")]
+        public static void DisplayTop(Session session, params string[] parameters)
+        {
+
         }
 
         // quest info (uses GDLe formatting to match plugin expectations)

@@ -236,7 +236,7 @@ namespace ACE.Server.Managers
                         UpdatePlayerQuestCompletions(player, questFormat, out isStamp);
                         if (isStamp)
                         {
-                            player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                            player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
                     
@@ -298,7 +298,7 @@ namespace ACE.Server.Managers
                         UpdatePlayerQuestCompletions(player, questFormat, out isStamp);
                         if (isStamp)
                         {
-                            player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                            player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
