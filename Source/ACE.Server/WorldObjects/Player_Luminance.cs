@@ -53,22 +53,11 @@ namespace ACE.Server.WorldObjects
 
         private void AddLuminance(long amount, XpType xpType)
         {
-            var available = AvailableLuminance ?? 0;
-            var maximum = MaximumLuminance ?? 0;
+            BankedLuminance += amount;
+            if (xpType == XpType.Quest || xpType == XpType.Kill)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
 
-            if (available == maximum)
-                return;
-
-            // this is similar to Player_Xp.UpdateXpAndLevel()
-
-            var remaining = maximum - available;
-
-            var addAmount = Math.Min(amount, remaining);
-
-            AvailableLuminance = available + addAmount;
-
-            if (xpType == XpType.Quest)
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"You've earned {amount:N0} Luminance.", ChatMessageType.Broadcast));
+            UpdateLumAllegiance(amount);
 
             UpdateLuminance();
         }
@@ -90,12 +79,26 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
+        private void UpdateLumAllegiance(long amount)
+        {
+            if (!HasAllegiance)
+            {
+                return;
+            }
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            AllegianceManager.PassXP(AllegianceNode, (ulong)amount, true, true);
+        }
+
         /// <summary>
         /// Sends network message to update luminance
         /// </summary>
         private void UpdateLuminance()
         {
-            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, AvailableLuminance ?? 0));
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
         }
     }
 }

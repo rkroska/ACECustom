@@ -150,6 +150,8 @@ namespace ACE.Server.WorldObjects
             AllegianceManager.PassXP(AllegianceNode, (ulong)amount, true);
         }
 
+
+
         /// <summary>
         /// Handles updating the vitae penalty through earned XP
         /// </summary>

@@ -48,6 +48,13 @@ namespace ACE.Entity.Enum.Properties
         LumAugVoidCount       = 9010,
         [ServerOnly]
         LumAugWarCount        = 9011,
+
+        [ServerOnly]
+        AllegianceLumCached   = 9012,
+        [ServerOnly]
+        AllegianceLumGenerated= 9013,
+        [ServerOnly]
+        AllegianceLumReceived = 9014,
     }
 
     public static class PropertyInt64Extensions
