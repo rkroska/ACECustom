@@ -38,6 +38,24 @@ namespace ACE.Server.WorldObjects
             set { if (value == 0) RemoveProperty(PropertyInt64.AllegianceXPReceived); else SetProperty(PropertyInt64.AllegianceXPReceived, (long)value); }
         }
 
+        public ulong AllegianceLumCached
+        {
+            get => (ulong)(GetProperty(PropertyInt64.AllegianceLumCached) ?? 0);
+            set { if (value == 0) RemoveProperty(PropertyInt64.AllegianceLumCached); else SetProperty(PropertyInt64.AllegianceLumCached, (long)value); }
+        }
+
+        public ulong AllegianceLumGenerated
+        {
+            get => (ulong)(GetProperty(PropertyInt64.AllegianceLumGenerated) ?? 0);
+            set { if (value == 0) RemoveProperty(PropertyInt64.AllegianceLumGenerated); else SetProperty(PropertyInt64.AllegianceLumGenerated, (long)value); }
+        }
+
+        public ulong AllegianceLumReceived
+        {
+            get => (ulong)(GetProperty(PropertyInt64.AllegianceLumReceived) ?? 0);
+            set { if (value == 0) RemoveProperty(PropertyInt64.AllegianceLumReceived); else SetProperty(PropertyInt64.AllegianceLumReceived, (long)value); }
+        }
+
         public int? AllegianceRank
         {
             get => GetProperty(PropertyInt.AllegianceRank);
@@ -497,6 +515,17 @@ namespace ACE.Server.WorldObjects
             AllegianceXPReceived += AllegianceXPCached;
 
             AllegianceXPCached = 0;
+        }
+
+        public void AddAllegianceLum()
+        {
+            if (AllegianceLumCached == 0)
+            {
+                return;
+            }
+            GrantLuminance((long)AllegianceLumCached, XpType.Allegiance, ShareType.None);
+            AllegianceLumReceived += AllegianceLumCached;
+            AllegianceLumCached = 0;
         }
 
         public void HandleActionQueryMotd()

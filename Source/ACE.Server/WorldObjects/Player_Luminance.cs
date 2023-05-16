@@ -53,22 +53,9 @@ namespace ACE.Server.WorldObjects
 
         private void AddLuminance(long amount, XpType xpType)
         {
-            var available = AvailableLuminance ?? 0;
-            var maximum = MaximumLuminance ?? 0;
-
-            if (available == maximum)
-                return;
-
-            // this is similar to Player_Xp.UpdateXpAndLevel()
-
-            var remaining = maximum - available;
-
-            var addAmount = Math.Min(amount, remaining);
-
-            AvailableLuminance = available + addAmount;
-
+            BankedLuminance += amount;
             if (xpType == XpType.Quest)
-                Session.Network.EnqueueSend(new GameMessageSystemChat($"You've earned {amount:N0} Luminance.", ChatMessageType.Broadcast));
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
 
             UpdateLuminance();
         }
@@ -95,7 +82,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void UpdateLuminance()
         {
-            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, AvailableLuminance ?? 0));
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
         }
     }
 }

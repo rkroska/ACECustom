@@ -197,7 +197,7 @@ namespace ACE.Server.Managers
             WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct)));
         }
 
-        private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct)
+        private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
         {
             // http://asheron.wikia.com/wiki/Allegiance_Experience
 
@@ -295,7 +295,19 @@ namespace ACE.Server.Managers
             Console.WriteLine("Generated amount: " + generatedAmount);
             Console.WriteLine("Passup amount: " + passupAmount);*/
 
-            if (passupAmount > 0)
+            if (passupAmount > 0 && luminance == true)
+            {
+                vassal.AllegianceLumGenerated += generatedAmount;
+
+                patron.AllegianceLumCached += passupAmount;
+                var onlinePatron = PlayerManager.GetOnlinePlayer(patron.Guid);
+                if (onlinePatron != null)
+                {
+                    onlinePatron.AddAllegianceLum();
+                }
+            }
+
+            if (passupAmount > 0 && luminance == false)
             {
                 //vassal.CPTithed += generatedAmount;
                 //patron.CPCached += passupAmount;
