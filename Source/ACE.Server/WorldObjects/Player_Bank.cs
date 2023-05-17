@@ -189,7 +189,7 @@ namespace ACE.Server.WorldObjects
                     while (Amount > 25000)
                     {
                         WorldObject coins = WorldObjectFactory.CreateNewWorldObject(273);
-                        coins.StackSize = (int)25000;
+                        coins.SetStackSize((int)25000);
                         this.TryCreateInInventoryWithNetworking(coins);
                         BankedPyreals -= 25000;
                         Amount -= 25000;
@@ -199,7 +199,7 @@ namespace ACE.Server.WorldObjects
                 if (Amount > 0)
                 {
                     WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
-                    smallCoins.StackSize = (int)Amount;
+                    smallCoins.SetStackSize((int)Amount);
                     this.TryCreateInInventoryWithNetworking(smallCoins);
                     BankedPyreals -= Amount;
                     Amount = 0;
