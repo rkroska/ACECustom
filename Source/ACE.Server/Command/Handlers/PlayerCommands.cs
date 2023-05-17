@@ -360,10 +360,44 @@ namespace ACE.Server.Command.Handlers
             
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments")]
         public static void DisplayTop(Session session, params string[] parameters)
         {
+            List<Leaderboard> list = new List<Leaderboard>();
+            using (var context = new AuthDbContext())
+            {
+                if (parameters.Length > 0 && parameters[0] == "qb")
+                {
+                    list = Leaderboard.GetTopQBLeaderboard(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Quest Bonus:", ChatMessageType.Broadcast));
+                    }
+                }
 
+                if (parameters.Length > 0 && parameters[0] == "level")
+                {
+                    list = Leaderboard.GetTopLevelLeaderboard(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Level:", ChatMessageType.Broadcast));
+                    }
+                }
+
+                if (parameters.Length > 0 && parameters[0] == "enl")
+                {
+                    list = Leaderboard.GetTopEnlightenmentLeaderboard(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
+                    }
+                }
+            }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{i+1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+            }
         }
 
         // quest info (uses GDLe formatting to match plugin expectations)
