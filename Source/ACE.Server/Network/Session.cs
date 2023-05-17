@@ -95,7 +95,7 @@ namespace ACE.Server.Network
         {
             if (Player != null)
             {
-                if (Player.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains((ushort)Player.CurrentLandblock.Id.Raw))
+                if (Player.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(Player.CurrentLandblock.Id.Landblock))
                 {
                     return true;
                 }
