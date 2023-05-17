@@ -21,6 +21,8 @@ public partial class AuthDbContext : DbContext
 
     public virtual DbSet<AccountQuest> AccountQuest { get; set; }
 
+    public virtual DbSet<Leaderboard> Leaderboard { get; set; }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
@@ -143,6 +145,16 @@ public partial class AuthDbContext : DbContext
             entity.Property(e => e.AccountId).HasColumnName("accountId");
             entity.Property(e => e.Quest).HasColumnName("quest");
             entity.Property(e => e.NumTimesCompleted).HasColumnName("num_Times_Completed");
+        });
+
+        modelBuilder.Entity<Leaderboard>(entity =>
+        {
+            entity.HasKey(e => e.LeaderboardId).HasName("PRIMARY");
+
+            entity.ToTable("leaderboard");
+
+            entity.Property(e => e.LeaderboardId).HasColumnName("LeaderboardID");
+            entity.Property(e => e.Character).HasMaxLength(255);
         });
 
         OnModelCreatingPartial(modelBuilder);
