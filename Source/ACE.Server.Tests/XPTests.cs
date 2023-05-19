@@ -25,6 +25,18 @@ namespace ACE.Server.Tests
             Assert.AreEqual(198152685222, (long)result);
         }
 
+        [TestMethod]
+        public void EarnXP()
+        {
+            var amount = 1000;
+            var enchantment = 1.0;
+            var quest = 1 + (100) * 0.005;
+            var enlightenment = 1.0;
+            var modifier = 1.0;
+
+            var m_amount = (long)Math.Round(amount * enchantment * modifier * quest * enlightenment);
+        }
+
         //[TestMethod]
         //public void AttributeXP190()
         //{

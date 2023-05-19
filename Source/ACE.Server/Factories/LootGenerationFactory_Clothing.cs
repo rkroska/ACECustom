@@ -159,6 +159,11 @@ namespace ACE.Server.Factories
             //if (wo.HasMutateFilter(MutateFilter.Value))   // fixme: data
                 MutateValue(wo, profile.Tier, roll);
 
+            if (wo.ItemMaxLevel.HasValue && wo.EquipmentSetId == null)
+            {
+                MutateItemLevel(wo, profile);
+            }
+
             wo.LongDesc = GetLongDesc(wo);
         }
 

@@ -24,7 +24,7 @@ namespace ACE.Server
                 var currentVersion = worldDb.GetVersion();
                 log.Info($"Current World Database version: Base - {currentVersion.BaseVersion} | Patch - {currentVersion.PatchVersion}");
 
-                var url = "https://api.github.com/repos/ACEmulator/ACE-World-16PY-Patches/releases/latest";
+                var url = "https://api.github.com/repos/ACEmulator/ACE-World-16PY-Patches/releases/98659475";
 
                 using var client = new WebClient();
                 var html = client.GetStringFromURL(url).Result;

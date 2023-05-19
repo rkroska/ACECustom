@@ -338,6 +338,39 @@ namespace ACE.Server.Factories
             return wo;
         }
 
+        private static void MutateItemLevel(WorldObject wo, TreasureDeath profile)
+        {
+            switch (profile.Tier)
+            {
+                case 1:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 5);
+                    break;
+                case 2:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 8);
+                    break;
+                case 3:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 12);
+                    break;
+                case 4:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 16);
+                    break;
+                case 5:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 21);
+                    break;
+                case 6:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 35);
+                    break;
+                case 7:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 45);
+                    break;
+                case 8:
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 60);
+                    break;
+                default:
+                    break;
+            }
+        }
+
 
         public static bool MutateItem(WorldObject item, TreasureDeath profile, bool isMagical)
         {
