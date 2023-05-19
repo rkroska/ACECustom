@@ -346,25 +346,25 @@ namespace ACE.Server.Factories
                     wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 5);
                     break;
                 case 2:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 8);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(2, 8);
                     break;
                 case 3:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 12);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(4, 12);
                     break;
                 case 4:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 16);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(6, 16);
                     break;
                 case 5:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 21);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(8, 21);
                     break;
                 case 6:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 35);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(10, 35);
                     break;
                 case 7:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 45);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(12, 45);
                     break;
                 case 8:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(0, 60);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(20, 60);
                     break;
                 default:
                     break;

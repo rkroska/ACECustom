@@ -2011,7 +2011,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             if (quest == null)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find quest {questName}");
+                //CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find quest {questName}");
                 return;
             }
 
@@ -2307,7 +2307,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             if (quest == null)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find quest {questName}");
+                //CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find quest {questName}");
                 return;
             }
 
