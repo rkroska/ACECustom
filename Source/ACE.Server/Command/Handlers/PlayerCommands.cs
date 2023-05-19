@@ -35,14 +35,27 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals and luminance, or specify pyreals or luminance and an amount", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals or Luminance to a character. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all, /bank b will show balance, etc.", ChatMessageType.System));
+                
                 return;
+            }
+
+            //cleanup edge cases
+            if (session.Player.BankedPyreals < 0)
+            {
+                session.Player.BankedPyreals = 0;
+            }
+            if (session.Player.BankedLuminance < 0)
+            {
+                session.Player.BankedLuminance = 0;
             }
 
             int iType = 0;
             int amount = -1;
+            string transferTargetName = "";
 
             if (parameters.Count() >= 2)
             {
@@ -69,6 +82,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
                 }
+            }
+
+            if (parameters.Count() == 4)
+            {
+                transferTargetName = parameters[3];
             }
 
             if (parameters[0] == "deposit" || parameters[0] == "d")
@@ -125,10 +143,20 @@ namespace ACE.Server.Command.Handlers
                 {
                     case 1:
                         //withdraw pyreals
+                        if (amount > session.Player.BankedPyreals)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this withdrawl", ChatMessageType.System));
+                            break;
+                        }
                         session.Player.WithdrawPyreals(amount);
                         break;
                     case 2:
                         //withdraw lum
+                        if (amount > session.Player.BankedLuminance)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this withdrawl", ChatMessageType.System));
+                            break;
+                        }
                         session.Player.WithdrawLuminance(amount); 
                         break;
                     default:
@@ -143,9 +171,23 @@ namespace ACE.Server.Command.Handlers
                 {
                     case 1:
                         //transfer pyreals
+                        if (amount > session.Player.BankedPyreals)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this transfer", ChatMessageType.System));
+                            break;
+                        }
+                        session.Player.TransferPyreals(amount, transferTargetName);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Pyreal to {transferTargetName}", ChatMessageType.System));
                         break;
                     case 2:
                         //transfer lum
+                        if (amount > session.Player.BankedLuminance)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this transfer", ChatMessageType.System));
+                            break;
+                        }
+                        session.Player.TransferLuminance(amount, transferTargetName);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
                         break;
                     default:
                         break;

@@ -64,6 +64,10 @@ namespace ACE.Server.Factories
                     return null;
                 }
             }
+            if (wo != null && wo.ItemMaxLevel > 0 && wo.EquipmentSetId == null)
+            {
+                MutateItemLevel(wo, profile);
+            }
             return wo;
         }
 

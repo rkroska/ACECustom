@@ -33,7 +33,12 @@ namespace ACE.Server.Factories
 
             if (wo != null && mutate)
                 MutateMissileWeapon(wo, profile, isMagical, wieldDifficulty);
-            
+
+            if (wo != null && wo.ItemMaxLevel > 0 && wo.EquipmentSetId == null)
+            {
+                MutateItemLevel(wo, profile);
+            }
+
             return wo;
         }
 
