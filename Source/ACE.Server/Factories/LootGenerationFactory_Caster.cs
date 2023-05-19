@@ -46,6 +46,11 @@ namespace ACE.Server.Factories
             if (wo != null && mutate)
                 MutateCaster(wo, profile, isMagical, wield);
 
+            if (wo != null && wo.ItemMaxLevel > 0 && wo.EquipmentSetId == null)
+            {
+                MutateItemLevel(wo, profile);
+            }
+
             return wo;
         }
 
