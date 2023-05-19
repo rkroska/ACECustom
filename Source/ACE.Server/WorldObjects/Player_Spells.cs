@@ -192,7 +192,7 @@ namespace ACE.Server.WorldObjects
                 if (item.ItemType == ItemType.Armor)
                 {
                     item.ArmorLevel += 5;
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +5 Armor Level!", ChatMessageType.Advancement));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +5 Armor Level!", ChatMessageType.Advancement));
                     if (item.ItemLevel % 5 == 0)
                     {
                         item.ArmorModVsAcid += 0.5;
@@ -203,20 +203,38 @@ namespace ACE.Server.WorldObjects
                         item.ArmorModVsNether += 0.5;
                         item.ArmorModVsPierce += 0.5;
                         item.ArmorModVsSlash += 0.5;
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +5 Defenses!", ChatMessageType.Advancement));
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +5 Defenses!", ChatMessageType.Advancement));
                     }
+
+                }
+                if (item.ItemType == ItemType.Clothing || item.ItemType == ItemType.Jewelry)
+                {
+                    if (item.ArmorLevel.HasValue)
+                    {
+                        item.ArmorLevel += 5;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +5 Armor Level!", ChatMessageType.Advancement));
+                    }
+                    else
+                    {
+                        if (item.ItemMaxMana.HasValue)
+                        {
+                            item.ItemMaxMana += 50;
+                            Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +50 Max Mana!", ChatMessageType.Advancement));
+                        }                                                
+                    }
+                    
                 }
                 if (item.ItemType == ItemType.MeleeWeapon || item.ItemType == ItemType.MissileWeapon)
                 {
                     if (item.ItemLevel % 2 == 0)
                     {
                         item.Damage += 1;
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +1 Damage!", ChatMessageType.Advancement));
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +1 Damage!", ChatMessageType.Advancement));
                     }
                     else
                     {
-                        item.DamageVariance -= 0.1;
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item improved +10% Variance!", ChatMessageType.Advancement));
+                        item.DamageVariance -= 0.04;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} improved +4% Variance!", ChatMessageType.Advancement));
                     }
 
                     if (item.ItemLevel % 5 == 0)
@@ -224,7 +242,7 @@ namespace ACE.Server.WorldObjects
                         item.WeaponDefense += 0.02;
                         item.WeaponMissileDefense += 0.02;
                         item.WeaponMagicDefense += 0.02;
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained +2% Defenses!", ChatMessageType.Advancement));
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +2% Defenses!", ChatMessageType.Advancement));
                     }
                 }
                 if (item.ItemType == ItemType.Caster)
@@ -258,11 +276,11 @@ namespace ACE.Server.WorldObjects
                         }
                     }
 
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained 1% Defense Mod!", ChatMessageType.Advancement));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained 1% Defense Mod!", ChatMessageType.Advancement));
                     if (item.ElementalDamageMod > 0)
                     {
                         item.ElementalDamageMod += 0.01;
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Your item gained 1% Elemental Damage Mod!", ChatMessageType.Advancement));
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained 1% Elemental Damage Mod!", ChatMessageType.Advancement));
                     }
                 }
             }

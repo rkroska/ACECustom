@@ -207,6 +207,37 @@ namespace ACE.Server.WorldObjects
             }            
         }
 
+        public bool TransferPyreals(long Amount, string CharacterDestination)
+        {
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
+            if (tarplayer == null)
+            {
+                return false;
+            }
+            else
+            {
+                this.BankedPyreals -= Amount;
+                (tarplayer as Player).BankedPyreals += Amount;
+                return true;
+            }
+
+        }
+
+        public bool TransferLuminance(long Amount, string CharacterDestination)
+        {
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
+            if (tarplayer == null)
+            {
+                return false;
+            }
+            else
+            {
+                this.BankedLuminance -= Amount;
+                (tarplayer as Player).BankedLuminance += Amount;
+                return true;
+            }          
+        }
+
         public long? BankedLuminance
         {
             get => GetProperty(PropertyInt64.BankedLuminance);
