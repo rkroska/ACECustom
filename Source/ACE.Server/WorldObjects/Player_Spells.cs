@@ -193,7 +193,7 @@ namespace ACE.Server.WorldObjects
                 {
                     item.ArmorLevel += 5;
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +5 Armor Level!", ChatMessageType.Advancement));
-                    if (item.ItemLevel % 5 == 0)
+                    if (prevItemLevel % 5 == 0)
                     {
                         item.ArmorModVsAcid += 0.5;
                         item.ArmorModVsBludgeon += 0.5;
@@ -226,7 +226,7 @@ namespace ACE.Server.WorldObjects
                 }
                 if (item.ItemType == ItemType.MeleeWeapon || item.ItemType == ItemType.MissileWeapon)
                 {
-                    if (item.ItemLevel % 2 == 0)
+                    if (prevItemLevel % 2 == 0)
                     {
                         item.Damage += 1;
                         Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +1 Damage!", ChatMessageType.Advancement));
@@ -237,11 +237,11 @@ namespace ACE.Server.WorldObjects
                         Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} improved +4% Variance!", ChatMessageType.Advancement));
                     }
 
-                    if (item.ItemLevel % 5 == 0)
+                    if (prevItemLevel % 5 == 0)
                     {
-                        item.WeaponDefense += 0.02;
-                        item.WeaponMissileDefense += 0.02;
-                        item.WeaponMagicDefense += 0.02;
+                        item.WeaponDefense += 0.01;
+                        item.WeaponMissileDefense += 0.01;
+                        item.WeaponMagicDefense += 0.01;
                         Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {item.Name} gained +2% Defenses!", ChatMessageType.Advancement));
                     }
                 }
@@ -264,7 +264,7 @@ namespace ACE.Server.WorldObjects
                     {
                         item.ManaConversionMod += 0.01;
                     }
-                    if (item.Level % 3 == 0)
+                    if (prevItemLevel % 3 == 0)
                     {
                         if (item.WeaponMagicDefense == null)
                         {

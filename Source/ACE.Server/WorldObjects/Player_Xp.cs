@@ -30,7 +30,10 @@ namespace ACE.Server.WorldObjects
         public void EarnXP(long amount, XpType xpType, ShareType shareType = ShareType.All)
         {
             //Console.WriteLine($"{Name}.EarnXP({amount}, {sharable}, {fixedAmount})");
-
+            if (IsMule)
+            {
+                return;
+            }
             // apply xp modifiers.  Quest XP is multiplicative with general XP modification
             var questModifier = PropertyManager.GetDouble("quest_xp_modifier").Item;
             var modifier = PropertyManager.GetDouble("xp_modifier").Item;
@@ -541,7 +544,12 @@ namespace ACE.Server.WorldObjects
         public void GrantItemXP(long amount)
         {
             foreach (var item in EquippedObjects.Values.Where(i => i.HasItemLevel))
-                GrantItemXP(item, amount);
+            {
+                if (item != null && amount > 0)
+                { 
+                    GrantItemXP(item, amount);
+                }
+            }
         }
 
         public void GrantItemXP(WorldObject item, long amount)

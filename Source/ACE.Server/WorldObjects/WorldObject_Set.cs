@@ -63,9 +63,24 @@ namespace ACE.Server.WorldObjects
         {
             get
             {
-                if (!HasItemLevel) return null;
+                try
+                {
+                    if (!HasItemLevel) return null;
+                    
+                }
+                catch (NullReferenceException ex)
+                {
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine($"{Name}, {this.WeenieClassId} HasItemLevel returns null");
+                    return null;
+                }
 
-                return ExperienceSystem.ItemTotalXPToLevel((ulong)ItemTotalXp.Value, (ulong)ItemBaseXp.Value, ItemMaxLevel.Value, ItemXpStyle.Value);
+                var itemTotalXp = ItemTotalXp ?? 0;
+                var itemBaseXp = ItemBaseXp ?? 0;
+                var itemMaxLevel = ItemMaxLevel ?? 0;
+
+                return ExperienceSystem.ItemTotalXPToLevel((ulong)itemTotalXp, (ulong)itemBaseXp, itemMaxLevel, ItemXpStyle ?? ACE.Entity.Enum.ItemXpStyle.Fixed);
+
             }
         }
 
@@ -83,9 +98,9 @@ namespace ACE.Server.WorldObjects
             {
                 // seems like ItemMaxLevel would be good enough here,
                 // but using the client formula from ItemExamineUI::Appraisal_ShowItemLevelInfo
-                return ItemBaseXp != null && ItemBaseXp > 0 &&
-                       ItemMaxLevel != null && ItemMaxLevel > 0 &&
-                       ItemXpStyle != null && ItemXpStyle > 0;
+                return ItemBaseXp.HasValue && ItemBaseXp > 0 &&
+                       ItemMaxLevel.HasValue && ItemMaxLevel > 0 &&
+                       ItemXpStyle.HasValue && ItemXpStyle > 0;
             }
         }
 

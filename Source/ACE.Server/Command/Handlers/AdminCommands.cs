@@ -2720,11 +2720,25 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("dispel", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Removes all enchantments from the player", "/dispel")]
         public static void HandleDispel(Session session, params string[] parameters)
         {
-            session.Player.EnchantmentManager.DispelAllEnchantments();
 
-            // remove all enchantments from equipped items for now
-            foreach (var item in session.Player.EquippedObjects.Values)
-                item.EnchantmentManager.DispelAllEnchantments();
+            if (parameters.Length > 0)
+            {
+                var player = PlayerManager.GetOnlinePlayer(parameters[0]);
+                player.EnchantmentManager.DispelAllEnchantments();
+                // remove all enchantments from equipped items for now
+                foreach (var item in player.EquippedObjects.Values)
+                    item.EnchantmentManager.DispelAllEnchantments();
+            }
+            else
+            {
+                session.Player.EnchantmentManager.DispelAllEnchantments();
+                // remove all enchantments from equipped items for now
+                foreach (var item in session.Player.EquippedObjects.Values)
+                    item.EnchantmentManager.DispelAllEnchantments();
+            }
+            
+
+            
         }
 
         // event

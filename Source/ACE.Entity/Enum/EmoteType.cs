@@ -128,7 +128,8 @@ namespace ACE.Entity.Enum
         AddContract                   = 119,
         RemoveContract                = 120,
         InqContractsFull              = 121,
-        StartDynamicQuest             = 122,
+        StartDynamicQuest             = 122, //Custom
+        PromptAddAugment              = 123, //Custom
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

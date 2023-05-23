@@ -310,7 +310,16 @@ namespace ACE.Server.WorldObjects
             var critDefended = false;
             var overpower = false;
 
-            var damage = CalculateDamage(ProjectileSource, creatureTarget, ref critical, ref critDefended, ref overpower);
+            float? damage = null;
+            try
+            {
+                damage = CalculateDamage(ProjectileSource, creatureTarget, ref critical, ref critDefended, ref overpower);
+            }
+            catch (NullReferenceException ex)
+            {
+                Console.WriteLine(ex.Message);                
+            }
+             
 
             if (damage != null)
             {

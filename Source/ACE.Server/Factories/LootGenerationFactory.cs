@@ -364,7 +364,7 @@ namespace ACE.Server.Factories
                     wo.ItemMaxLevel += ThreadSafeRandom.Next(12, 45);
                     break;
                 case 8:
-                    wo.ItemMaxLevel += ThreadSafeRandom.Next(20, 60);
+                    wo.ItemMaxLevel += ThreadSafeRandom.Next(15, 50);
                     break;
                 default:
                     break;

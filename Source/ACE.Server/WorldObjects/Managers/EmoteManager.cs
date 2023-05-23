@@ -347,7 +347,7 @@ namespace ACE.Server.WorldObjects.Managers
                     questTarget = GetQuestTarget((EmoteType)emote.Type, targetCreature, creature);
 
                     if (questTarget != null)
-                        questTarget.QuestManager.SetQuestCompletions(emote.Message, -1); //reset to -1 rather than delete quest
+                        questTarget.QuestManager.Erase(emote.Message);
 
                     break;
 
@@ -1504,6 +1504,76 @@ namespace ACE.Server.WorldObjects.Managers
                         player.QuestManager.ComputeDynamicQuest("Dynamic_1", player.Session, false);
                     }
 
+                    break;
+                case EmoteType.PromptAddAugment:
+                    if (player != null)
+                    {
+                        switch (emote.Message)
+                        {
+                            case "Creature":
+                                long creatureAugs = player.LuminanceAugmentCreatureCount ?? 0;
+                                var curVal = emote.Amount + (player.LuminanceAugmentCreatureCount * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal); player.LuminanceAugmentCreatureCount = creatureAugs + 1; }), $"You are about to spend {curVal} luminance to add 1 point to all of your creature spell effects. Are you sure?");                                    
+                                }
+                                break;
+                            case "Item":
+                                long itemAugs = player.LuminanceAugmentItemCount ?? 0;
+                                var curVal2 = emote.Amount + (player.LuminanceAugmentItemCount * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal2)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal2} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal2); player.LuminanceAugmentItemCount = itemAugs + 1; }), $"You are about to spend {curVal2} luminance to add an equivalent point to all of your item spell effects. Are you sure?");
+                                }
+                                break;
+                            case "Life":
+                                long lifeAugs = player.LuminanceAugmentLifeCount ?? 0;
+                                var curVal3 = emote.Amount + (player.LuminanceAugmentLifeCount * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal3)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal3} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal3); player.LuminanceAugmentLifeCount = lifeAugs + 1; }), $"You are about to spend {curVal3} luminance to add 1 point to all of your life spell effects. Are you sure?");
+                                }
+                                break;
+                            case "War":
+                                long warAugs = player.LuminanceAugmentWarCount ?? 0;
+                                var curVal4 = emote.Amount + (player.LuminanceAugmentWarCount * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal4)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal4} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal4); player.LuminanceAugmentWarCount = warAugs + 1; }), $"You are about to spend {curVal4} luminance to add 1 point to all of your war spell effects. Are you sure?");
+                                }
+                                break;
+                            case "Void":
+                                long voidAugs = player.LuminanceAugmentVoidCount ?? 0;
+                                var curVal5 = emote.Amount + (player.LuminanceAugmentVoidCount * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal5)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal5} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal5); player.LuminanceAugmentVoidCount = voidAugs + 1; }), $"You are about to spend {curVal5} luminance to add 1 point to all of your void spell effects. Are you sure?");
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                    }
                     break;
 
                 default:
