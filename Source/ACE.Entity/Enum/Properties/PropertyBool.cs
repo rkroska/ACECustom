@@ -170,6 +170,8 @@ namespace ACE.Entity.Enum.Properties
         [SendOnLogin]
         NoOlthoiTalk                     = 129,
         AutowieldLeft                    = 130,
+        [ServerOnly]
+        IsMule                           = 131,
 
         /* custom */
         [ServerOnly]

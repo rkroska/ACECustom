@@ -14,7 +14,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void EarnLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All)
         {
-            if (IsOlthoiPlayer)
+            if (IsOlthoiPlayer || IsMule)
                 return;
 
             // following the same model as Player_Xp
@@ -67,12 +67,27 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool SpendLuminance(long amount)
         {
+
+            if (!BankedLuminance.HasValue) { BankedLuminance = 0; }
             var available = AvailableLuminance ?? 0 + BankedLuminance ?? 0;
 
             if (amount > available)
                 return false;
 
-            AvailableLuminance = available - amount;
+            if (BankedLuminance > 0 && BankedLuminance > amount)
+            {
+                BankedLuminance = BankedLuminance - amount;
+            }
+            else if (amount > BankedLuminance)
+            {
+                amount = amount - (long)BankedLuminance;
+                BankedLuminance = 0;
+            }
+            if (amount > 0)
+            {
+                AvailableLuminance = available - amount;
+            }
+            
 
             UpdateLuminance();
 

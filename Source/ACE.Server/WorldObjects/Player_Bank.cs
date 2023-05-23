@@ -33,13 +33,13 @@ namespace ACE.Server.WorldObjects
         {
             get
             {
-                int _bankAccount = (int)(GetProperty(PropertyInt.BankAccountNumber));
-                if (_bankAccount == 0)
+                int? _bankAccount = GetProperty(PropertyInt.BankAccountNumber);
+                if (!_bankAccount.HasValue || _bankAccount == 0)
                 {
                     _bankAccount = ThreadSafeRandom.Next(0, int.MaxValue - 1);
-                    SetProperty(PropertyInt.BankAccountNumber, _bankAccount);
+                    SetProperty(PropertyInt.BankAccountNumber, _bankAccount.Value);
                 }
-                return _bankAccount;
+                return _bankAccount.Value;
             }
         }
 
