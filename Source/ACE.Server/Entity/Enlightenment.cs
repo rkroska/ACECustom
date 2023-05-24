@@ -77,6 +77,17 @@ namespace ACE.Server.Entity
             }
 
             //todo: check for trophies that are enl level appropriate
+            //first, 1 enlightenment token per enlightenment past 5.
+            if (player.Enlightenment + 1 > 5)
+            {
+                var count = player.GetNumInventoryItemsOfWCID(300000); //magic number - EnlightenmentToken
+                if (count < player.Enlightenment + 1 - 5)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Tokens to continue.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
 
             return true;
         }
