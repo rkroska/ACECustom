@@ -249,45 +249,56 @@ namespace ACE.Server.WorldObjects.Managers
             //calculate luminance aug additions for statmod
             var luminanceAug = 0.0f;
 
-            if (spell.School == MagicSchool.CreatureEnchantment && caster is Player && spell.IsSelfTargeted)
+            if (caster != null && caster is Player)
             {
-                luminanceAug += (caster as Player).LuminanceAugmentCreatureCount ?? 0.0f;
-            }
-            if (spell.School == MagicSchool.ItemEnchantment && caster is Player && spell.IsSelfTargeted)
-            {
-                if (spell.StatModVal < 1 && spell.StatModVal > -1)
+                if (spell.School == MagicSchool.CreatureEnchantment && spell.IsSelfTargeted)
                 {
-                    luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                    luminanceAug += (caster as Player).LuminanceAugmentCreatureCount ?? 0.0f;
+                    entry.AugmentationLevelWhenCast = (caster as Player).LuminanceAugmentCreatureCount ?? 0;
                 }
-                else
+                if (spell.School == MagicSchool.ItemEnchantment && spell.IsSelfTargeted)
                 {
-                    luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
+                    if (spell.StatModVal < 1 && spell.StatModVal > -1)
+                    {
+                        luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                    }
+                    else
+                    {
+                        luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
+                    }
+                    entry.AugmentationLevelWhenCast = (caster as Player).LuminanceAugmentItemCount ?? 0;
                 }
-            }
-            if (spell.School == MagicSchool.LifeMagic && caster is Player)
-            {
-                luminanceAug += (caster as Player).LuminanceAugmentLifeCount ?? 0.0f;
-            }
+                if (spell.School == MagicSchool.LifeMagic)
+                {
+                    luminanceAug += (caster as Player).LuminanceAugmentLifeCount ?? 0.0f;
+                    entry.AugmentationLevelWhenCast = (caster as Player).LuminanceAugmentLifeCount ?? 0;
+                }
 
-            if (luminanceAug > 0)
-            {
-                if (spell.StatModVal > 0)
+                if (luminanceAug > 0)
                 {
-                    entry.StatModValue = spell.StatModVal + luminanceAug;
+                    if (spell.StatModVal > 0)
+                    {
+                        entry.StatModValue = spell.StatModVal + luminanceAug;
+                    }
+                    else
+                    {
+                        entry.StatModValue = spell.StatModVal - luminanceAug;
+                    }
                 }
                 else
                 {
-                    entry.StatModValue = spell.StatModVal - luminanceAug;
+                    entry.StatModValue = spell.StatModVal;
                 }
+                
             }
             else
             {
                 entry.StatModValue = spell.StatModVal;
             }
-            
-            
-            
-            
+
+
+
+
 
             if (spell.IsDamageOverTime)
             {

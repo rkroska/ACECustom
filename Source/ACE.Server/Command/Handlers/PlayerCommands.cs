@@ -27,6 +27,29 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
+        public static void HandleBankShort(Session session, params string[] parameters)
+        {
+            if (parameters.Count() == 0)
+            {
+                parameters = new string[] { "b" };
+            }
+            
+            HandleBank(session, parameters);
+        }
+
+        [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Handles Augmentation Reporting", "")]
+        public static void HandleAugmentReport(Session session, params string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Advanced Augmentation Levels:", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Creature:{session.Player.LuminanceAugmentCreatureCount:N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Item:{session.Player.LuminanceAugmentItemCount:N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Life:{session.Player.LuminanceAugmentLifeCount:N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"War:{session.Player.LuminanceAugmentWarCount:N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Void:{session.Player.LuminanceAugmentVoidCount:N0}", ChatMessageType.Broadcast));
+        }
+
         //custom commands
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
@@ -196,8 +219,8 @@ namespace ACE.Server.Command.Handlers
             if (parameters[0] == "balance" || parameters[0] == "b")
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
             }
         }
 
@@ -265,7 +288,9 @@ namespace ACE.Server.Command.Handlers
         public static ulong GetOrRaiseAttrib(Network.Session session, int RanksToRaise, PropertyAttribute attrib, out string AttrName, bool doRaise, out bool success)
         {            
             if (!session.Player.Attributes.TryGetValue(attrib, out var creatureAttribute))
-            {}
+            {
+                success = false;
+            }
             uint destinationRank = (uint)(creatureAttribute.Ranks + RanksToRaise);
             AttrName = creatureAttribute.Attribute.GetDescription();
             ulong xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
@@ -310,30 +335,39 @@ namespace ACE.Server.Command.Handlers
             switch (parameters[0])
             {
                 case "str":
+                case "strength":
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Strength, out AttrName, true, out success);
                     break;
                 case "end":
+                case "endurance":
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Endurance, out AttrName, true, out success);
                     break;
                 case "coo":
+                case "coordination":
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Coordination, out AttrName, true, out success);
                     break;
                 case "qui":
+                case "quickness":
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Quickness, out AttrName, true, out success);
                     break;
                 case "foc":
+                case "focus":
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Focus, out AttrName, true, out success);
                     break;
                 case "sel":
+                case "self":    
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
                     break;
                 case "sta":
+                case "stamina":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxStamina, out AttrName, true, out success);
                     break;
                 case "hea":
+                case "health":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxHealth, out AttrName, true, out success);
                     break;
                 case "man":
+                case "mana":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxMana, out AttrName, true, out success);
                     break;
                 default:

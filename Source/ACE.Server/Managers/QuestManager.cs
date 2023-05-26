@@ -203,7 +203,7 @@ namespace ACE.Server.Managers
                 {
                     player.CharacterChangesDetected = true;
                     bool isStamp = false;
-                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp);
+                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)quest.NumTimesCompleted);
                     if (isStamp)
                     {
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
@@ -233,7 +233,7 @@ namespace ACE.Server.Managers
                     if (quest.NumTimesCompleted == 1)
                     {
                         bool isStamp = false;
-                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp);
+                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)quest.NumTimesCompleted);
                         if (isStamp)
                         {
                             player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
@@ -271,7 +271,7 @@ namespace ACE.Server.Managers
                 {
                     player.CharacterChangesDetected = true;
                     bool isStamp = false;
-                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp);
+                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)numTimesCompleted);
                     if (isStamp)
                     {
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
@@ -295,7 +295,7 @@ namespace ACE.Server.Managers
                     if (quest.NumTimesCompleted == 1)
                     {
                         bool isStamp = false;
-                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp);
+                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)numTimesCompleted);
                         if (isStamp)
                         {
                             player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
@@ -819,7 +819,7 @@ namespace ACE.Server.Managers
             Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
             {
                 Object = targetNPCWeenie,
-                Category = (uint)EmoteCategory.QuestSuccess,
+                Category = (uint)EmoteCategory.QuestFailure,
                 Probability = 1,
                 WeenieClassId = 365, //Parchment: the note
                 Style = (uint?)MotionStance.NonCombat,
@@ -925,7 +925,7 @@ namespace ACE.Server.Managers
             Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
             {
                 Object = targetNPCWeenie,
-                Category = (uint)EmoteCategory.QuestFailure,
+                Category = (uint)EmoteCategory.QuestSuccess,
                 Probability = 1,
                 WeenieClassId = 365, //Parchment: the note
                 Style = (uint?)MotionStance.NonCombat,
@@ -1108,17 +1108,17 @@ namespace ACE.Server.Managers
             SetQuestCompletions(questFormat, questBits);
         }
 
-        public void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew)
+        public void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, uint solves = 0)
         {
             var acctId = player.Account.AccountId;
             stampedNew = false;
             using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
             {
                 var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == questName).FirstOrDefault();
-                if (acctQuest != null)
+                if (acctQuest != null && solves > 0)
                 {
-                    acctQuest.NumTimesCompleted += 1;
-                    if (acctQuest.NumTimesCompleted > 1)
+                    acctQuest.NumTimesCompleted = solves;
+                    if (acctQuest.NumTimesCompleted >= 1)
                     {
                         stampedNew = false;
                     }
@@ -1130,7 +1130,7 @@ namespace ACE.Server.Managers
                 }
                 else
                 {
-                    context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = 0 });
+                    context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = solves });
                     stampedNew = true;
                 }
                 
@@ -1164,6 +1164,7 @@ namespace ACE.Server.Managers
             list.Add(8899); //Bandit Hilt
             list.Add(29295); //Blank aug gem
             list.Add(36867); //Dire champ token
+            list.Add(34276); //Empyrean trinket
 
             return list;
         }

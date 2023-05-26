@@ -255,10 +255,8 @@ namespace ACE.Server.Entity
 
         public static void RemoveLuminance(Player player)
         {
-            player.AvailableLuminance = null;
+            player.AvailableLuminance = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableLuminance, 0));
-            player.MaximumLuminance = null;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.MaximumLuminance, 0));
 
             player.SendMessage("Your Luminance fades from your spirit.", ChatMessageType.Broadcast);
         }

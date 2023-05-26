@@ -1508,6 +1508,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.PromptAddAugment:
                     if (player != null)
                     {
+                        bool auged = false;
                         switch (emote.Message)
                         {
                             case "Creature":
@@ -1519,7 +1520,14 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 else
                                 {
-                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal); player.LuminanceAugmentCreatureCount = creatureAugs + 1; }), $"You are about to spend {curVal} luminance to add 1 point to all of your creature spell effects. Are you sure?");                                    
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        player.SpendLuminance((long)curVal);
+                                        player.LuminanceAugmentCreatureCount = creatureAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300005);
+                                    }), $"You are about to spend {curVal} luminance to add 1 point to all of your creature spell effects. Are you sure?");  
+
+                                                                      
                                 }
                                 break;
                             case "Item":
@@ -1531,7 +1539,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 else
                                 {
-                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal2); player.LuminanceAugmentItemCount = itemAugs + 1; }), $"You are about to spend {curVal2} luminance to add an equivalent point to all of your item spell effects. Are you sure?");
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        player.SpendLuminance((long)curVal2);
+                                        player.LuminanceAugmentItemCount = itemAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300006);
+                                    }), $"You are about to spend {curVal2} luminance to add an equivalent point to all of your item spell effects. Are you sure?");
                                 }
                                 break;
                             case "Life":
@@ -1543,7 +1556,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 else
                                 {
-                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal3); player.LuminanceAugmentLifeCount = lifeAugs + 1; }), $"You are about to spend {curVal3} luminance to add 1 point to all of your life spell effects. Are you sure?");
+                                   player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                   {
+                                       player.SpendLuminance((long)curVal3);
+                                       player.LuminanceAugmentLifeCount = lifeAugs + 1;
+                                       player.TryConsumeFromInventoryWithNetworking(300007);
+                                   }), $"You are about to spend {curVal3} luminance to add 1 point to all of your life spell effects. Are you sure?");
                                 }
                                 break;
                             case "War":
@@ -1555,7 +1573,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 else
                                 {
-                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal4); player.LuminanceAugmentWarCount = warAugs + 1; }), $"You are about to spend {curVal4} luminance to add 1 point to all of your war spell effects. Are you sure?");
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        player.SpendLuminance((long)curVal4);
+                                        player.LuminanceAugmentWarCount = warAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300008);
+                                    }), $"You are about to spend {curVal4} luminance to add 1 point to all of your war spell effects. Are you sure?");
                                 }
                                 break;
                             case "Void":
@@ -1567,11 +1590,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 else
                                 {
-                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () => { player.SpendLuminance((long)curVal5); player.LuminanceAugmentVoidCount = voidAugs + 1; }), $"You are about to spend {curVal5} luminance to add 1 point to all of your void spell effects. Are you sure?");
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        player.SpendLuminance((long)curVal5);
+                                        player.LuminanceAugmentVoidCount = voidAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300009);
+                                    }), $"You are about to spend {curVal5} luminance to add 1 point to all of your void spell effects. Are you sure?");
+                                    
                                 }
                                 break;
                             default:
                                 break;
+                        }
+                        if (auged)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                         }
                     }
                     break;
