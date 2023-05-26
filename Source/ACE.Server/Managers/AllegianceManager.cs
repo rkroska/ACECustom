@@ -262,6 +262,15 @@ namespace ACE.Server.Managers
             if (!vassal.ExistedBeforeAllegianceXpChanges)
                 return;
 
+            if (patron.GetProperty(PropertyBool.IsMule).HasValue && patron.GetProperty(PropertyBool.IsMule).Value == true)
+            {
+                return;
+            }
+            if (vassal.GetProperty(PropertyBool.IsMule).HasValue && vassal.GetProperty(PropertyBool.IsMule).Value == true)
+            {
+                return;
+            }
+
             var loyalty = Math.Min(vassal.GetCurrentLoyalty(), SkillCap);
             var leadership = Math.Min(patron.GetCurrentLeadership(), SkillCap);
 

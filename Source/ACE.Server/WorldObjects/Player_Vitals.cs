@@ -15,7 +15,7 @@ namespace ACE.Server.WorldObjects
     partial class Player
     {
 
-        public const decimal VitalRatio = 0.075m;
+        public const double VitalRatio = 0.075;
         /// <summary>
         /// Handles the GameAction 0x44 - RaiseVital network message from client
         /// </summary>
@@ -174,15 +174,18 @@ namespace ACE.Server.WorldObjects
         public static int CalcVitalRank(double xpAmount)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.VitalXpList;
+            var prevRankAmount = (double)rankXpTable[196];
 
-            for (var i = rankXpTable.Count - 1; i >= 0; i--)
+            if (xpAmount < prevRankAmount)
             {
-                var rankAmount = rankXpTable[i];
-                if (xpAmount >= rankAmount)
-                    return i;
+                for (var i = rankXpTable.Count - 1; i >= 0; i--)
+                {
+                    var rankAmount = rankXpTable[i];
+                    if (xpAmount >= rankAmount)
+                        return i;
+                }
             }
-
-            var prevRankAmount = rankXpTable[196];
+                        
             int x = 196;
             while (true) //count up from 196 until we find a rank
             {
@@ -190,7 +193,7 @@ namespace ACE.Server.WorldObjects
                 {
                     return x;
                 }
-                prevRankAmount += (uint)(prevRankAmount * VitalRatio); //slightly lower cost in the curve than attribs
+                prevRankAmount += (double)(prevRankAmount * VitalRatio); //slightly lower cost in the curve than attribs
                 x++;
             }
         }

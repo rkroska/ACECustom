@@ -17,13 +17,13 @@ namespace ACE.Server.WorldObjects
         {
             if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
             {
-                log.Error($"{Name}.HandleActionRaiseAttribute({attribute}, {amount}) - invalid attribute");
+                //log.Error($"{Name}.HandleActionRaiseAttribute({attribute}, {amount}) - invalid attribute");
                 return false;
             }
 
             if ((long)amount > AvailableExperience)
             {
-                log.Error($"{Name}.HandleActionRaiseAttribute({attribute}, {amount}) - amount > AvaiableExperience ({AvailableExperience})");
+                //log.Error($"{Name}.HandleActionRaiseAttribute({attribute}, {amount}) - amount > AvaiableExperience ({AvailableExperience})");
                 return false;
             }
 

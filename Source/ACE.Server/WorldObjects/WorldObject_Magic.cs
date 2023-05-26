@@ -508,7 +508,15 @@ namespace ACE.Server.WorldObjects
                     tryBoost = boost = reduced;
                 }
             }
-
+            if (player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost > 0)
+            {
+                tryBoost += (int)player.LuminanceAugmentLifeCount;
+            }
+            if (player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost < 0)
+            {
+                tryBoost -= (int)player.LuminanceAugmentLifeCount;
+            }
+           
             string srcVital;
 
             switch (spell.VitalDamageType)
@@ -762,6 +770,28 @@ namespace ACE.Server.WorldObjects
                     srcVitalChange = reduced;
                     destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
                 }
+            }
+
+            if (player.LuminanceAugmentLifeCount.HasValue)
+            {
+                if (srcVitalChange > 0)
+                {
+                    srcVitalChange += (uint)player.LuminanceAugmentLifeCount;
+                }
+                else
+                {
+                    srcVitalChange -= (uint)player.LuminanceAugmentLifeCount;
+                }
+
+                if (destVitalChange > 0)
+                {
+                    destVitalChange += (uint)player.LuminanceAugmentLifeCount;
+                }
+                else
+                {
+                    destVitalChange -= (uint)player.LuminanceAugmentLifeCount;
+                }
+
             }
 
             string srcVital, destVital;

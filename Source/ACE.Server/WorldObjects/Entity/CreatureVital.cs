@@ -94,7 +94,7 @@ namespace ACE.Server.WorldObjects.Entity
             {
                 var vitalXPTable = DatManager.PortalDat.XpTable.VitalXpList;
 
-                return Ranks >= (vitalXPTable.Count - 1);
+                return Ranks == (vitalXPTable.Count - 1);
             }
         }
 

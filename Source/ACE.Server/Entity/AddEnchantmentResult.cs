@@ -67,7 +67,7 @@ namespace ACE.Server.Entity
 
             var powerLevel = spell.Power;
 
-            foreach (var entry in entries.OrderByDescending(i => i.PowerLevel))
+            foreach (var entry in entries.OrderByDescending(i => i.PowerLevel + i.AugmentationLevelWhenCast??0))
             {
                 if (powerLevel > entry.PowerLevel)
                 {
