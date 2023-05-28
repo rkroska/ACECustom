@@ -772,7 +772,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            if (player.LuminanceAugmentLifeCount.HasValue)
+            if (player != null && player.LuminanceAugmentLifeCount.HasValue)
             {
                 if (srcVitalChange > 0)
                 {

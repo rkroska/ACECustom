@@ -544,6 +544,7 @@ namespace ACE.Server.WorldObjects.Managers
                         else
                         {
                             stat ??= 0;
+                            if (emote.Stat == 6) { stat += player.BankedLuminance; } //DB magic number for available luminance
                             success = stat >= (emote.Min64 ?? long.MinValue) && stat <= (emote.Max64 ?? long.MaxValue);
                             ExecuteEmoteSet(success ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure, emote.Message, targetObject, true);
                         }
@@ -1508,7 +1509,6 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.PromptAddAugment:
                     if (player != null)
                     {
-                        bool auged = false;
                         switch (emote.Message)
                         {
                             case "Creature":
@@ -1524,7 +1524,8 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         player.SpendLuminance((long)curVal);
                                         player.LuminanceAugmentCreatureCount = creatureAugs + 1;
-                                        player.TryConsumeFromInventoryWithNetworking(300005);
+                                        player.TryConsumeFromInventoryWithNetworking(300005, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal} luminance to add 1 point to all of your creature spell effects. Are you sure?");  
 
                                                                       
@@ -1543,7 +1544,8 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         player.SpendLuminance((long)curVal2);
                                         player.LuminanceAugmentItemCount = itemAugs + 1;
-                                        player.TryConsumeFromInventoryWithNetworking(300006);
+                                        player.TryConsumeFromInventoryWithNetworking(300006, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal2} luminance to add an equivalent point to all of your item spell effects. Are you sure?");
                                 }
                                 break;
@@ -1560,7 +1562,8 @@ namespace ACE.Server.WorldObjects.Managers
                                    {
                                        player.SpendLuminance((long)curVal3);
                                        player.LuminanceAugmentLifeCount = lifeAugs + 1;
-                                       player.TryConsumeFromInventoryWithNetworking(300007);
+                                       player.TryConsumeFromInventoryWithNetworking(300007, 1);
+                                       player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                                    }), $"You are about to spend {curVal3} luminance to add 1 point to all of your life spell effects. Are you sure?");
                                 }
                                 break;
@@ -1577,7 +1580,8 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         player.SpendLuminance((long)curVal4);
                                         player.LuminanceAugmentWarCount = warAugs + 1;
-                                        player.TryConsumeFromInventoryWithNetworking(300008);
+                                        player.TryConsumeFromInventoryWithNetworking(300008, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal4} luminance to add 1 point to all of your war spell effects. Are you sure?");
                                 }
                                 break;
@@ -1594,17 +1598,14 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         player.SpendLuminance((long)curVal5);
                                         player.LuminanceAugmentVoidCount = voidAugs + 1;
-                                        player.TryConsumeFromInventoryWithNetworking(300009);
+                                        player.TryConsumeFromInventoryWithNetworking(300009, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal5} luminance to add 1 point to all of your void spell effects. Are you sure?");
                                     
                                 }
                                 break;
                             default:
                                 break;
-                        }
-                        if (auged)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                         }
                     }
                     break;

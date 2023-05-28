@@ -154,6 +154,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void WithdrawLuminance(long Amount)
         {
+            if (this.QuestManager.HasQuest("OracleLuminanceRewardsAccess_1110"))
+            {
+                if (!this.MaximumLuminance.HasValue)
+                {
+                    this.MaximumLuminance = 1500000;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.MaximumLuminance, this.MaximumLuminance ?? 0));
+                }
+            }
+
             if (Amount <= this.BankedLuminance)
             {
                 lock (balanceLock)

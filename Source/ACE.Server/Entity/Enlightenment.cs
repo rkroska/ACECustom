@@ -132,7 +132,7 @@ namespace ACE.Server.Entity
         public static void RemoveAbility(Player player)
         {
             RemoveSociety(player);
-            RemoveLuminance(player);
+            //RemoveLuminance(player);
             RemoveSkills(player);
             RemoveLevel(player);
             RemoveAllSpells(player);
