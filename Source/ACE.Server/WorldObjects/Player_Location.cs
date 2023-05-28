@@ -739,6 +739,22 @@ namespace ACE.Server.WorldObjects
 
         public void OnTeleportComplete()
         {
+
+            int nonexemptCount = 0;
+            var endpoint = this.Session.EndPoint;
+            var players = PlayerManager.GetAllOnline();
+            foreach (var p in players.Where(x => x.Session.EndPoint.Address.Address == endpoint.Address.Address))
+            {
+                if (Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
+                    continue;
+
+                if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
+                {
+                    p.SendMessage($"Booting due to exceeding {ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress} allowed outside of exempt areas.");
+                    p.Session.LogOffPlayer();
+                }
+            }
+
             if (CurrentLandblock != null && !CurrentLandblock.CreateWorldObjectsCompleted)
             {
                 // If the critical landblock resources haven't been loaded yet, we keep the player in the pink bubble state

@@ -1115,15 +1115,16 @@ namespace ACE.Server.Managers
             using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
             {
                 var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == questName).FirstOrDefault();
-                if (acctQuest != null && solves > 0)
+                if (acctQuest != null)
                 {
-                    acctQuest.NumTimesCompleted = solves;
+                    
                     if (acctQuest.NumTimesCompleted >= 1)
                     {
                         stampedNew = false;
                     }
                     else
                     {
+                        acctQuest.NumTimesCompleted = solves;
                         stampedNew = true;
                     }
                     context.AccountQuest.Update(acctQuest);
