@@ -21,6 +21,7 @@ using MySqlX.XDevAPI;
 using System.Drawing;
 using ACE.Server.Entity.Actions;
 using ACE.Database.Models.Auth;
+using System.Reactive;
 
 namespace ACE.Server.Managers
 {
@@ -58,8 +59,8 @@ namespace ACE.Server.Managers
                 if (Creature != null)
                     return Creature.Guid.Full;
                 else
-                    return 1; 
-                    //return Fellowship.FellowshipLeaderGuid;
+                    return 1;
+                //return Fellowship.FellowshipLeaderGuid;
             }
         }
 
@@ -158,7 +159,7 @@ namespace ACE.Server.Managers
                 //var quest = DatabaseManager.World.GetCachedQuest(questName);
                 return r;
             }
-                
+
 
             // Not a player
             var existing = runtimeQuests.FirstOrDefault(q => q.QuestName.Equals(questName, StringComparison.OrdinalIgnoreCase));
@@ -173,7 +174,7 @@ namespace ACE.Server.Managers
                 runtimeQuests.Add(existing);
 
                 questRegistryWasCreated = true;
-                
+
             }
             else
                 questRegistryWasCreated = false;
@@ -192,7 +193,7 @@ namespace ACE.Server.Managers
 
             if (questRegistryWasCreated)
             {
-                quest.LastTimeCompleted = (uint) Time.GetUnixTime();
+                quest.LastTimeCompleted = (uint)Time.GetUnixTime();
                 quest.NumTimesCompleted = 1; // initial add / first solve
 
                 quest.CharacterId = IDtoUseForQuestRegistry;
@@ -208,7 +209,7 @@ namespace ACE.Server.Managers
                     {
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
                     }
-                    
+
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
@@ -229,7 +230,7 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    
+
                     if (quest.NumTimesCompleted == 1)
                     {
                         bool isStamp = false;
@@ -239,10 +240,10 @@ namespace ACE.Server.Managers
                             player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
-                    
+
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
-            }          
+            }
         }
 
         /// <summary>
@@ -260,7 +261,7 @@ namespace ACE.Server.Managers
 
             if (questRegistryWasCreated)
             {
-                quest.LastTimeCompleted = (uint) Time.GetUnixTime();
+                quest.LastTimeCompleted = (uint)Time.GetUnixTime();
                 quest.NumTimesCompleted = numTimesCompleted; // initialize the quest to the given completions
 
                 quest.CharacterId = IDtoUseForQuestRegistry;
@@ -279,7 +280,7 @@ namespace ACE.Server.Managers
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
                 }
-                
+
             }
             else
             {
@@ -683,7 +684,7 @@ namespace ACE.Server.Managers
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz!@#$^&";
             return new string(Enumerable.Repeat(chars, length)
-                .Select(s => s[ThreadSafeRandom.Next(0, s.Length-1)]).ToArray());
+                .Select(s => s[ThreadSafeRandom.Next(0, s.Length - 1)]).ToArray());
         }
 
         public void ComputeDynamicQuest(string questName, Network.Session session, bool test)
@@ -694,11 +695,11 @@ namespace ACE.Server.Managers
             }
             bool created = false;
             var player = Creature as Player;
-           
+
             //create random note paper - start to fill it with the details of the quest. place it in inventory at the end
             //weenie class 365 - Parchment -- Create Parchment world object
             //find target NPC
-            WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();            
+            WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
             Weenie npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
             if (test)
             {
@@ -734,7 +735,7 @@ namespace ACE.Server.Managers
                         npcDeliveryTarget = world.GetCachedWeenie(28690); //Erik Festus, Ayan
                     }
                     woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
-                    woWeenieDelivery = context.Weenie.Where(x=>x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
+                    woWeenieDelivery = context.Weenie.Where(x => x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
                     noteMessage += $"Once you've received the {it.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
                 }
 
@@ -760,7 +761,7 @@ namespace ACE.Server.Managers
                 if (quest == null) { return; }
                 if (!created) { return; }
 
-                
+
 
                 Database.Models.World.WeeniePropertiesEmote responseEmote = NewStarterDyanmicEmote(questName, woWeenie);
 
@@ -772,7 +773,7 @@ namespace ACE.Server.Managers
 
                 if (chainDelivery)
                 {
-                    Database.Models.World.WeeniePropertiesEmote deliveryEmote = NewStarterDyanmicEmote(questName + "_d", woWeenieDelivery);
+                    Database.Models.World.WeeniePropertiesEmote deliveryEmote = NewStarterDyanmicEmote(questName + "_d", woWeenieDelivery, it.WeenieClassId);
 
                     //Basic ends with InqQuest - to respond to those already finished, create quest success as "Already done" emote.
                     Database.Models.World.WeeniePropertiesEmote deliverycompleteEmote = NewAlreadyCompleteEmote(questName + "_d", woWeenieDelivery);
@@ -785,7 +786,7 @@ namespace ACE.Server.Managers
                     woWeenieDelivery.WeeniePropertiesEmote.Add(deliveryfinishedEmote);
 
                 }
-                
+
 
                 woWeenie.WeeniePropertiesEmote.Add(responseEmote);
                 woWeenie.WeeniePropertiesEmote.Add(completeEmote);
@@ -810,7 +811,7 @@ namespace ACE.Server.Managers
                         wo.CurrentLandblock.Init(true);
                     });
                     actionChain.EnqueueChain();
-                }               
+                }
             }
         }
 
@@ -944,7 +945,7 @@ namespace ACE.Server.Managers
                 Delay = 0,
                 Extent = 0,
                 Motion = (uint?)MotionCommand.Wave,
-                Message = $"You've already completed this quest. You won't be able to repeat or retry this errand for some time",
+                Message = $"Hmm.. Either you've already completed this quest, or you're not supposed to be here today. You won't be able to repeat or retry this errand for some time",
                 TestString = "",
                 Amount = null,
                 Amount64 = null,
@@ -961,14 +962,14 @@ namespace ACE.Server.Managers
             return responseEmote;
         }
 
-        private static Database.Models.World.WeeniePropertiesEmote NewStarterDyanmicEmote(string questName, Database.Models.World.Weenie targetNPCWeenie)
+        private static Database.Models.World.WeeniePropertiesEmote NewStarterDyanmicEmote(string questName, Database.Models.World.Weenie targetNPCWeenie, uint? acceptedItemWeenieID = 365)
         {
             Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
             {
                 Object = targetNPCWeenie,
                 Category = (uint)EmoteCategory.Refuse, //refuse = examine
                 Probability = 1,
-                WeenieClassId = 365, //Parchment: the note
+                WeenieClassId = acceptedItemWeenieID, //Parchment: the note, or the item from the delivery
                 Style = (uint?)MotionStance.NonCombat,
                 Substyle = (uint?)MotionCommand.Wave,
                 Quest = questName,
@@ -1020,7 +1021,7 @@ namespace ACE.Server.Managers
             Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
             {
                 Emote = responseEmote,
-                Type = (uint)EmoteType.InqQuest,
+                Type = (uint)EmoteType.InqQuestSolves,
                 Order = 2,
                 Delay = 0,
                 Extent = 0,
@@ -1034,6 +1035,8 @@ namespace ACE.Server.Managers
                 TreasureClass = null,
                 TreasureType = null,
                 WeenieClassId = null,
+                Max = 1,
+                Min = 1,
 
             };
 
@@ -1044,11 +1047,51 @@ namespace ACE.Server.Managers
             return responseEmote;
         }
 
-        private static int ClearDynamicQuestEmotes()
+        public bool IsDynamicQuestEligible(Player player)
         {
+            using (var db = new Database.Models.Shard.ShardDbContext())
+            {
+                var quests = db.CharacterPropertiesQuestRegistry.Where(x => x.CharacterId == player.Character.Id && x.QuestName.StartsWith("Dynamic"));
+                foreach (var q in quests)
+                {
+                    if (q.LastTimeCompleted != 0 && q.LastTimeCompleted > (uint)Time.GetUnixTime(DateTime.Today.AddDays(-1))) 
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        public static int ClearDynamicQuestEmotes()
+        {
+            int stateItems = 0;
             using (var db = new Database.Models.World.WorldDbContext())
             {
                 var emotes = db.WeeniePropertiesEmote.Where(e => e.Quest.StartsWith("Dynamic")).ToList();                
+                foreach (var emote in emotes)
+                {
+                    db.WeeniePropertiesEmote.Remove(emote);
+                }
+                stateItems +=  db.SaveChanges();
+            }
+            using (var db = new Database.Models.Shard.ShardDbContext())
+            {
+                var emotes = db.BiotaPropertiesEmote.Where(e => e.Quest.StartsWith("Dynamic")).ToList();
+                foreach (var emote in emotes)
+                {
+                    db.BiotaPropertiesEmote.Remove(emote);
+                }
+                stateItems += db.SaveChanges();
+            }
+
+            return stateItems;
+        }
+
+        public static int ClearDynamicQuestEmotesByQuest(string questName)
+        {
+            using (var db = new Database.Models.World.WorldDbContext())
+            {
+                var emotes = db.WeeniePropertiesEmote.Where(e => e.Quest == questName).ToList();
                 foreach (var emote in emotes)
                 {
                     db.WeeniePropertiesEmote.Remove(emote);

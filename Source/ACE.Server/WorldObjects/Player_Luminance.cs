@@ -53,6 +53,10 @@ namespace ACE.Server.WorldObjects
 
         private void AddLuminance(long amount, XpType xpType)
         {
+            if (!BankedLuminance.HasValue)
+            {
+                BankedLuminance = 0;
+            }
             BankedLuminance += amount;
             if (xpType == XpType.Quest || xpType == XpType.Kill)
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
@@ -114,6 +118,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void UpdateLuminance()
         {
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, AvailableLuminance ?? 0));
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
         }
     }
