@@ -25,23 +25,6 @@ namespace ACE.Server.WorldObjects
     partial class Player
     {
         private readonly object balanceLock = new object();
-        /// <summary>
-        /// Generates a new bank account if the player doesn't have one
-        /// </summary>
-        /// <returns></returns>
-        public int BankAccountNumber
-        {
-            get
-            {
-                int? _bankAccount = GetProperty(PropertyInt.BankAccountNumber);
-                if (!_bankAccount.HasValue || _bankAccount == 0)
-                {
-                    _bankAccount = ThreadSafeRandom.Next(0, int.MaxValue - 1);
-                    SetProperty(PropertyInt.BankAccountNumber, _bankAccount.Value);
-                }
-                return _bankAccount.Value;
-            }
-        }
 
         /// <summary>
         /// Deposit all pyreals
@@ -123,6 +106,7 @@ namespace ACE.Server.WorldObjects
 
             }
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
         }
 
         /// <summary>
@@ -180,13 +164,14 @@ namespace ACE.Server.WorldObjects
                 }
             }
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
+            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
         }
 
         public void WithdrawPyreals(long Amount)
         {
             lock (balanceLock)
             {
-                while (Amount > 250000)
+                while (Amount >= 250000)
                 {
                     this.TryCreateInInventoryWithNetworking(WorldObjectFactory.CreateNewWorldObject(20630));
                     Amount -= 250000;

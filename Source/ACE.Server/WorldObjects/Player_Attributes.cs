@@ -141,17 +141,17 @@ namespace ACE.Server.WorldObjects
             //return -1;
         }
 
-        public static ulong GetXPCostByRank(uint rank)
+        public static double GetXPCostByRank(uint rank)
         {
             var rankXpTable = DatManager.PortalDat.XpTable.AttributeXpList;
             if (rank < rankXpTable.Count)
-                return rankXpTable[(int)rank];            
+                return (double)rankXpTable[(int)rank];            
             else
             {
-                var prevRankAmount = (ulong)rankXpTable[190];
+                var prevRankAmount = (double)rankXpTable[190];
                 for (int i = 190; i <= rank; i++)
                 {
-                    prevRankAmount += (ulong)(prevRankAmount * .076);
+                    prevRankAmount += (double)(prevRankAmount * .076);
                 }
                 return prevRankAmount;
             }

@@ -75,6 +75,12 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("cleardynamic", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld)]
+        public static void HandleClearDynamicEmotes(Session session, params string[] parameters)
+        {
+            QuestManager.ClearDynamicQuestEmotes();
+        }
+
         // adminui
         [CommandHandler("adminui", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0)]
         public static void HandleAdminui(Session session, params string[] parameters)

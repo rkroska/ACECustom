@@ -17,9 +17,10 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
 using ACE.Server.Factories.Enum;
 using ACE.Server.Managers;
+using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
-
+using ACE.Server.WorldObjects.Entity;
 using log4net;
 
 using Position = ACE.Entity.Position;
@@ -1502,7 +1503,15 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.StartDynamicQuest:
                     if (player != null)
                     {
-                        player.QuestManager.ComputeDynamicQuest("Dynamic_1", player.Session, false);
+                        if (player.QuestManager.IsDynamicQuestEligible(player))
+                        {
+                            player.QuestManager.ComputeDynamicQuest("Dynamic_1", player.Session, false);
+                        }
+                        else
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"The Town Crier looks at you, exhausted, clearly nursing a writers cramp. Perhaps you should come back tomorrow...", ChatMessageType.Tell));
+                        }
+                        
                     }
 
                     break;
@@ -1609,7 +1618,48 @@ namespace ACE.Server.WorldObjects.Managers
                         }
                     }
                     break;
+                case EmoteType.SetAttributeStat:
+                    if (player != null && emote.Amount != null)
+                    {
+                        switch (emote.Stat)
+                        {
+                            case 1:
+                                player.Strength.Ranks = Player.CalcAttributeRank(Player.GetXPCostByRank((uint)emote.Amount));
+                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Strength));
+                                break;
+                            case 2:
+                                player.Endurance.Ranks = Player.CalcAttributeRank(Player.GetXPCostByRank((uint)emote.Amount));
+                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Endurance));
+                                break;
+                            case 3:
+                                player.Quickness.Ranks = Player.CalcAttributeRank(Player.GetXPCostByRank((uint)emote.Amount));
+                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Quickness));
+                                break;
+                            case 4:
+                                player.Coordination.Ranks = Player.CalcAttributeRank(Player.GetXPCostByRank((uint)emote.Amount));
+                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Coordination));
+                                break;
+                            case 5:
+                                player.Focus.Ranks = Player.CalcAttributeRank(Player.GetXPCostByRank((uint)emote.Amount));
+                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Focus));
+                                break;
+                            case 6:
+                                player.Self.Ranks = Player.CalcAttributeRank(Player.GetXPCostByRank((uint)emote.Amount));
+                                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Self));
+                                break;
+                            default:
+                                break;
+                        }
 
+                        
+                    }
+                    break;
+                case EmoteType.SetSecondaryAttributeStat:
+                    if (player != null)
+                    {
+
+                    }
+                    break;
                 default:
                     log.Debug($"EmoteManager.Execute - Encountered Unhandled EmoteType {(EmoteType)emote.Type} for {WorldObject.Name} ({WorldObject.WeenieClassId})");
                     break;
