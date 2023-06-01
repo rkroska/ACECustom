@@ -51,6 +51,8 @@ namespace ACE.Server.Entity
             if (!VerifyRequirements(player))
                 return;
 
+            RemoveTokens(player);
+
             DequipAllItems(player);
 
             RemoveAbility(player);
@@ -66,7 +68,7 @@ namespace ACE.Server.Entity
         {
             if (player.Level < 275 + player.Enlightenment)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment for enlightenment.", ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment to enlighten further.", ChatMessageType.Broadcast));
                 return false;
             }
 
@@ -136,6 +138,11 @@ namespace ACE.Server.Entity
             RemoveSkills(player);
             RemoveLevel(player);
             RemoveAllSpells(player);
+        }
+
+        public static void RemoveTokens(Player player)
+        {
+            player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
         }
 
         public static void RemoveSociety(Player player)

@@ -1515,6 +1515,12 @@ namespace ACE.Server.WorldObjects.Managers
                     }
 
                     break;
+                case EmoteType.StartDynamicBounty:
+                    if (player != null)
+                    {
+
+                    }
+                    break;
                 case EmoteType.PromptAddAugment:
                     if (player != null)
                     {

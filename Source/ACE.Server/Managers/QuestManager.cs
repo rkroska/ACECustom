@@ -1047,6 +1047,19 @@ namespace ACE.Server.Managers
             return responseEmote;
         }
 
+        public void AbandonDynamicQuests(Player player)
+        {
+            using (var db = new Database.Models.Shard.ShardDbContext())
+            {
+                var quests = db.CharacterPropertiesQuestRegistry.Where(x => x.CharacterId == player.Character.Id && x.QuestName.StartsWith("Dynamic"));
+                foreach (var q in quests)
+                { 
+                    q.LastTimeCompleted = (uint)Time.GetUnixTime(DateTime.Now); 
+                }
+                db.SaveChanges();
+            }
+        }
+
         public bool IsDynamicQuestEligible(Player player)
         {
             using (var db = new Database.Models.Shard.ShardDbContext())
