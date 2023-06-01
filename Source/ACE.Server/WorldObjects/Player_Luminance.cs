@@ -90,7 +90,7 @@ namespace ACE.Server.WorldObjects
             }
             if (amount > 0)
             {
-                AvailableLuminance = available - amount;
+                AvailableLuminance = AvailableLuminance - amount;
             }
             
 

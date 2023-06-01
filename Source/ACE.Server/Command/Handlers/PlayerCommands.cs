@@ -171,6 +171,11 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this withdrawl", ChatMessageType.System));
                             break;
                         }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                            break;
+                        }
                         session.Player.WithdrawPyreals(amount);
                         break;
                     case 2:
@@ -178,6 +183,16 @@ namespace ACE.Server.Command.Handlers
                         if (amount > session.Player.BankedLuminance)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this withdrawl", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount + session.Player.AvailableLuminance > session.Player.MaximumLuminance)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot withdraw that much luminance, it would put you over your maximum.", ChatMessageType.System));
                             break;
                         }
                         session.Player.WithdrawLuminance(amount); 
@@ -232,6 +247,12 @@ namespace ACE.Server.Command.Handlers
             var message = "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
             var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => Enlightenment.HandleEnlightenment(session.Player)), message);
             
+        }
+
+        [CommandHandler("dynamicabandon", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Abandons the most recent dynamic quest", "")]
+        public static void AbandonDynamicQuest(Session session, params string[] parameters)
+        {
+            session.Player.QuestManager.AbandonDynamicQuests(session.Player);
         }
 
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
