@@ -99,7 +99,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            if (parameters.Count() == 3)
+            if (parameters.Count() == 3 || parameters.Count() == 4)
             {
                 if (!int.TryParse(parameters[2], out amount))
                 {
@@ -214,6 +214,11 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this transfer", ChatMessageType.System));
                             break;
                         }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
+                            break;
+                        }
                         session.Player.TransferPyreals(amount, transferTargetName);
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Pyreal to {transferTargetName}", ChatMessageType.System));
                         break;
@@ -222,6 +227,11 @@ namespace ACE.Server.Command.Handlers
                         if (amount > session.Player.BankedLuminance)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this transfer", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
                             break;
                         }
                         session.Player.TransferLuminance(amount, transferTargetName);
@@ -242,6 +252,11 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
         public static void HandleEnlightenment(Session session, params string[] parameters)
         {
+            if (session.Player.Teleporting || session.Player.TooBusyToRecall)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
+                return;
+            }
             //if(!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(session.Player.Guid, session.Player.Guid, "Enlightenment"), "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes."))
             //    return;
             var message = "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
@@ -350,7 +365,10 @@ namespace ACE.Server.Command.Handlers
             int amt = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
             if (parameters.Count() == 2)
             {
-                amt = Convert.ToInt32(parameters[1]);
+                if(!int.TryParse(parameters[1], out amt))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Something isn't parsing your command correctly, check your input and try again!", ChatMessageType.Advancement));
+                }
                 
             }
             switch (parameters[0])

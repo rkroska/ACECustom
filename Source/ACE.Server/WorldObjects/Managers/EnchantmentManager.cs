@@ -251,44 +251,56 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (caster != null && caster is Player)
             {
+                var player = caster as Player;
                 if (spell.School == MagicSchool.CreatureEnchantment && spell.IsSelfTargeted)
                 {
-                    luminanceAug += (caster as Player).LuminanceAugmentCreatureCount ?? 0.0f;
-                    entry.AugmentationLevelWhenCast = (caster as Player).LuminanceAugmentCreatureCount ?? 0;
+                    luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
+                    entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
                 }
                 if (spell.School == MagicSchool.ItemEnchantment && spell.IsSelfTargeted)
                 {
-                    if (spell.StatModVal < 1 && spell.StatModVal > -1)
+                    if (spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 170) //bane, percentages
                     {
-                        luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }
-                    else
+                    else if (spell.StatModVal > 0) //eg blood drinker
                     {
-                        luminanceAug += ((caster as Player).LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
                     }
-                    entry.AugmentationLevelWhenCast = (caster as Player).LuminanceAugmentItemCount ?? 0;
+                    else if (spell.StatModVal < 0) //eg atlans alacrity
+                    {
+                        luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
+                    }
+                    entry.AugmentationLevelWhenCast = player.LuminanceAugmentItemCount ?? 0;
                 }
                 if (spell.School == MagicSchool.LifeMagic)
                 {
-                    luminanceAug += (caster as Player).LuminanceAugmentLifeCount ?? 0.0f;
-                    entry.AugmentationLevelWhenCast = (caster as Player).LuminanceAugmentLifeCount ?? 0;
+                    if (spell.IsBeneficial && spell.IsSelfTargeted) //buffs
+                    {
+                        if (spell.StatModKey == 0) //armor -- single point
+                        {
+                            luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f);
+                        }
+                        else
+                        {
+                            luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                        }
+                    }
+                    else if (spell.IsHarmful) //debuffs -- single point
+                    {
+                        if (spell.StatModKey == 0)
+                        {
+                            luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f);
+                        }
+                        else
+                        {
+                            luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                        }
+                    }
+                    entry.AugmentationLevelWhenCast = player.LuminanceAugmentLifeCount ?? 0;
                 }
 
-                if (luminanceAug > 0)
-                {
-                    if (spell.StatModVal > 0)
-                    {
-                        entry.StatModValue = spell.StatModVal + luminanceAug;
-                    }
-                    else
-                    {
-                        entry.StatModValue = spell.StatModVal - luminanceAug;
-                    }
-                }
-                else
-                {
-                    entry.StatModValue = spell.StatModVal;
-                }
+                entry.StatModValue = spell.StatModVal + luminanceAug;
                 
             }
             else
