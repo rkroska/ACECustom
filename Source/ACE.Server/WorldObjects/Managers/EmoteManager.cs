@@ -1248,7 +1248,10 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.SpendLuminance:
 
                     if (player != null)
-                        player.SpendLuminance(emote.Amount64 ?? emote.HeroXP64 ?? 0);
+                        if(!player.SpendLuminance(emote.Amount64 ?? emote.HeroXP64 ?? 0))
+                        {
+                            WorldObject.EnqueueBroadcast(new GameMessageHearSpeech("You do not have enough luminance to do that.", "System", WorldObject.Guid.Full, ChatMessageType.System));
+                        }
                     break;
 
                 case EmoteType.StampFellowQuest:

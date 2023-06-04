@@ -749,7 +749,7 @@ namespace ACE.Server.WorldObjects
                 var players = PlayerManager.GetAllOnline();
                 foreach (var p in players.Where(x => x.Session.EndPoint.Address.Address == endpoint.Address.Address))
                 {
-                    if (Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
+                    if (p.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
                         continue;
 
                     if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
