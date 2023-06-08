@@ -1,0 +1,8 @@
+0x3800002A Mutation #1:
+
+Tier chances: 1
+
+    - Chance: 100%:
+        ImbuedEffect = NetherRending
+        NumTimesTinkered (>= 1 ? add : set) 1
+

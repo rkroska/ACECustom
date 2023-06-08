@@ -10,6 +10,10 @@ namespace ACE.Server.Network.GameAction.Actions
         {
             var fellowshipName = message.Payload.ReadString16L();
             bool shareXp = message.Payload.ReadUInt32() > 0;
+            if (session.Player.IsMule)
+            {
+                return;
+            }
 
             session.Player.FellowshipCreate(fellowshipName, shareXp);
         }

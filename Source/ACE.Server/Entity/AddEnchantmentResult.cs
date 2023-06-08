@@ -65,11 +65,38 @@ namespace ACE.Server.Entity
             Refresh = new List<PropertiesEnchantmentRegistry>();
             Surpassed = new List<PropertiesEnchantmentRegistry>();
 
+            long augmentLevel = 0;
+            if (caster is Player)
+            {
+                switch (spell.School)
+                {
+                    case ACE.Entity.Enum.MagicSchool.WarMagic:
+                        augmentLevel = ((Player)caster).LuminanceAugmentWarCount ?? 0;
+                        break;
+                    case ACE.Entity.Enum.MagicSchool.LifeMagic:
+                        augmentLevel = ((Player)caster).LuminanceAugmentLifeCount ?? 0;
+                        break;
+                    case ACE.Entity.Enum.MagicSchool.ItemEnchantment:
+                        augmentLevel = ((Player)caster).LuminanceAugmentItemCount ?? 0;
+                        break;
+                    case ACE.Entity.Enum.MagicSchool.CreatureEnchantment:
+                        augmentLevel = ((Player)caster).LuminanceAugmentCreatureCount ?? 0;
+                        break;
+                    case ACE.Entity.Enum.MagicSchool.VoidMagic:
+                        augmentLevel = ((Player)caster).LuminanceAugmentVoidCount ?? 0;
+                        break;
+                    case ACE.Entity.Enum.MagicSchool.None:
+                    default:
+                        break;
+                }
+                
+            }
+
             var powerLevel = spell.Power;
 
             foreach (var entry in entries.OrderByDescending(i => i.PowerLevel + i.AugmentationLevelWhenCast??0))
             {
-                if (powerLevel > entry.PowerLevel)
+                if (powerLevel + augmentLevel > (entry.PowerLevel + entry.AugmentationLevelWhenCast ?? 0))
                 {
                     // surpassing existing spell
                     Surpass.Add(entry);

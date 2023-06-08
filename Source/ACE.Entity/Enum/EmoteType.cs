@@ -132,6 +132,7 @@ namespace ACE.Entity.Enum
         PromptAddAugment              = 123, //Custom
         SetAttributeStat              = 124,
         SetSecondaryAttributeStat     = 125,
+        StartDynamicBounty            = 126, //Custom
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

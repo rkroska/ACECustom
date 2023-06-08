@@ -295,5 +295,17 @@ namespace ACE.Server.Entity
             get => (ulong)(GetProperty(PropertyInt64.AllegianceLumGenerated) ?? 0);
             set { if (value == 0) RemoveProperty(PropertyInt64.AllegianceLumGenerated); else SetProperty(PropertyInt64.AllegianceLumGenerated, (long)value); }
         }
+
+        public long? BankedLuminance
+        {
+            get => GetProperty(PropertyInt64.BankedLuminance);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value); }
+        }
+
+        public long? BankedPyreals
+        {
+            get => GetProperty(PropertyInt64.BankedPyreals);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPyreals); else SetProperty(PropertyInt64.BankedPyreals, value.Value); }
+        }
     }
 }
