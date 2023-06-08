@@ -79,24 +79,21 @@ namespace ACE.Server.WorldObjects
             if (amount > available)
                 return false;
 
-            if (BankedLuminance > 0 && BankedLuminance > amount)
+            if (AvailableLuminance > 0 && amount >= AvailableLuminance)
+            {
+                AvailableLuminance = AvailableLuminance - amount;
+                UpdateLuminance();
+                return true;
+            }
+
+            if (BankedLuminance > 0 && BankedLuminance >= amount)
             {
                 BankedLuminance = BankedLuminance - amount;
-            }
-            else if (amount > BankedLuminance)
-            {
-                amount = amount - (long)BankedLuminance;
-                BankedLuminance = 0;
-            }
-            if (amount > 0)
-            {
-                AvailableLuminance = available - amount;
-            }
-            
+                UpdateLuminance();
+                return true;
+            }                        
 
-            UpdateLuminance();
-
-            return true;
+            return false;
         }
 
         private void UpdateLumAllegiance(long amount)

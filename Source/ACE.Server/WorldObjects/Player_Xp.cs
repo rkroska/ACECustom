@@ -67,7 +67,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="shareable">If TRUE, this XP can be shared with fellowship members</param>
         public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All)
         {
-            if (IsOlthoiPlayer)
+            if (IsOlthoiPlayer || IsMule)
             {
                 if (HasVitae)
                     UpdateXpVitae(amount);

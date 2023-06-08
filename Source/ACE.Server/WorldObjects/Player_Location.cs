@@ -16,6 +16,7 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Managers;
+using System.Net;
 
 namespace ACE.Server.WorldObjects
 {
@@ -742,18 +743,23 @@ namespace ACE.Server.WorldObjects
 
             int nonexemptCount = 0;
             var endpoint = this.Session.EndPoint;
-            var players = PlayerManager.GetAllOnline();
-            foreach (var p in players.Where(x => x.Session.EndPoint.Address.Address == endpoint.Address.Address))
+            var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(endpoint.Address.ToString());
+            if(!ipAllowsUnlimited)
             {
-                if (Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
-                    continue;
-
-                if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
+                var players = PlayerManager.GetAllOnline();
+                foreach (var p in players.Where(x => x.Session.EndPoint.Address.Address == endpoint.Address.Address))
                 {
-                    p.SendMessage($"Booting due to exceeding {ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress} allowed outside of exempt areas.");
-                    p.Session.LogOffPlayer();
+                    if (p.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
+                        continue;
+
+                    if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
+                    {
+                        p.SendMessage($"Booting due to exceeding {ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress} allowed outside of exempt areas.");
+                        p.Session.LogOffPlayer();
+                    }
                 }
             }
+            
 
             if (CurrentLandblock != null && !CurrentLandblock.CreateWorldObjectsCompleted)
             {

@@ -19,6 +19,7 @@ using Google.Protobuf.WellKnownTypes;
 using MySqlX.XDevAPI;
 using ACE.Server.Command.Handlers;
 using ACE.Server.Factories;
+using ACE.Server.Entity;
 
 namespace ACE.Server.WorldObjects
 {
@@ -138,14 +139,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void WithdrawLuminance(long Amount)
         {
-            if (this.QuestManager.HasQuest("OracleLuminanceRewardsAccess_1110"))
+
+            if (!this.MaximumLuminance.HasValue || this.MaximumLuminance == 0)
             {
-                if (!this.MaximumLuminance.HasValue)
-                {
-                    this.MaximumLuminance = 1500000;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.MaximumLuminance, this.MaximumLuminance ?? 0));
-                }
+                this.MaximumLuminance = 1500000;
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.MaximumLuminance, this.MaximumLuminance ?? 0));
             }
+            
 
             if (Amount <= this.BankedLuminance)
             {
@@ -211,7 +211,15 @@ namespace ACE.Server.WorldObjects
             else
             {
                 this.BankedPyreals -= Amount;
-                (tarplayer as Player).BankedPyreals += Amount;
+                if (tarplayer is OfflinePlayer)
+                {
+                    (tarplayer as OfflinePlayer).BankedPyreals += Amount;
+                }
+                else
+                {
+                    (tarplayer as Player).BankedPyreals += Amount;
+                }
+                
                 return true;
             }
 
@@ -226,12 +234,30 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                this.BankedLuminance -= Amount;
-                (tarplayer as Player).BankedLuminance += Amount;
+
+                if (tarplayer is OfflinePlayer)
+                {
+                    if ((tarplayer as OfflinePlayer).BankedLuminance == 0) 
+                    {
+                        return false;
+                    }
+
+                    this.BankedLuminance -= Amount;
+                    (tarplayer as OfflinePlayer).BankedLuminance += Amount;
+                }
+                else
+                {
+                    if (!(tarplayer as Player).MaximumLuminance.HasValue)
+                    {
+                        return false;
+                    }
+                    this.BankedLuminance -= Amount;
+                    (tarplayer as Player).BankedLuminance += Amount;
+                }
+                
                 return true;
             }          
         }
-
         public long? BankedLuminance
         {
             get => GetProperty(PropertyInt64.BankedLuminance);

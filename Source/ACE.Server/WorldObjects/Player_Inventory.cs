@@ -3325,7 +3325,7 @@ namespace ACE.Server.WorldObjects
 
             var acceptAll = target.AiAcceptEverything && !item.IsStickyAttunedOrContainsStickyAttuned;
 
-            if (target.HasGiveOrRefuseEmoteForItem(item, out var emoteResult) || acceptAll)
+            if (target.HasGiveOrRefuseEmoteForItem(Session, item, out var emoteResult) || acceptAll)
             {
                 if (acceptAll || (emoteResult.Category == EmoteCategory.Give && target.AllowGive))
                 {

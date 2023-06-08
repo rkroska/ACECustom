@@ -9,6 +9,10 @@ namespace ACE.Server.Network.GameAction.Actions
         {
             uint newMemberGuid = message.Payload.ReadUInt32();
             var newPlayer = PlayerManager.GetOnlinePlayer(newMemberGuid);
+            if (newPlayer.IsMule)
+            {
+                return;
+            }
 
             session.Player.FellowshipRecruit(newPlayer);
         }

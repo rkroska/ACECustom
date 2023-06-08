@@ -51,6 +51,8 @@ namespace ACE.Server.Entity
             if (!VerifyRequirements(player))
                 return;
 
+            RemoveTokens(player);
+
             DequipAllItems(player);
 
             RemoveAbility(player);
@@ -66,13 +68,19 @@ namespace ACE.Server.Entity
         {
             if (player.Level < 275 + player.Enlightenment)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment for enlightenment.", ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment to enlighten further.", ChatMessageType.Broadcast));
                 return false;
             }
 
             if (player.GetFreeInventorySlots() < 25)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have at least 25 free inventory slots in your main pack for enlightenment, to unequip your gear automatically.", ChatMessageType.Broadcast));
+                return false;
+            }
+
+            if (player.HasVitae)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot reach enlightenment with a Vitae Penalty. Go find those lost pieces of your soul and try again. Check under the couch cushions, that's where I usually lose mine.", ChatMessageType.Broadcast));
                 return false;
             }
 
@@ -136,6 +144,11 @@ namespace ACE.Server.Entity
             RemoveSkills(player);
             RemoveLevel(player);
             RemoveAllSpells(player);
+        }
+
+        public static void RemoveTokens(Player player)
+        {
+            player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
         }
 
         public static void RemoveSociety(Player player)
