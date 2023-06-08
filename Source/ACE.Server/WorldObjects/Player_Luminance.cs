@@ -79,14 +79,14 @@ namespace ACE.Server.WorldObjects
             if (amount > available)
                 return false;
 
-            if (amount >= AvailableLuminance)
+            if (AvailableLuminance > 0 && amount >= AvailableLuminance)
             {
                 AvailableLuminance = AvailableLuminance - amount;
                 UpdateLuminance();
                 return true;
             }
 
-            if (BankedLuminance > 0 && BankedLuminance > amount)
+            if (BankedLuminance > 0 && BankedLuminance >= amount)
             {
                 BankedLuminance = BankedLuminance - amount;
                 UpdateLuminance();

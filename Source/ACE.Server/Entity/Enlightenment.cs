@@ -78,6 +78,12 @@ namespace ACE.Server.Entity
                 return false;
             }
 
+            if (player.HasVitae)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot reach enlightenment with a Vitae Penalty. Go find those lost pieces of your soul and try again. Check under the couch cushions, that's where I usually lose mine.", ChatMessageType.Broadcast));
+                return false;
+            }
+
             //todo: check for trophies that are enl level appropriate
             //first, 1 enlightenment token per enlightenment past 5.
             if (player.Enlightenment + 1 > 5)
