@@ -22,6 +22,8 @@ using System.Drawing;
 using ACE.Server.Entity.Actions;
 using ACE.Database.Models.Auth;
 using System.Reactive;
+using ACE.Entity.Adapter;
+using ACE.Entity.Enum.Properties;
 
 namespace ACE.Server.Managers
 {
@@ -94,6 +96,11 @@ namespace ACE.Server.Managers
 
             // Not a player
             return runtimeQuests;
+        }
+
+        public ICollection<CharacterPropertiesQuestRegistry> GetDynamicQuests()
+        {           
+            return GetQuests().Where(q=>q.QuestName.StartsWith("Dynamic_")).ToList();
         }
 
         /// <summary>
@@ -709,10 +716,10 @@ namespace ACE.Server.Managers
             using (ACE.Database.Models.World.WorldDbContext context = new ACE.Database.Models.World.WorldDbContext())
             {
                 //find an item for the target NPC to give player - create emote to give it to player
-                Weenie itemTarget = world.GetRandomEquippableItem();
-                var it = WorldObjectFactory.CreateWorldObject(itemTarget, GuidManager.NewDynamicGuid());
+                Weenie itemTargetWeenie = world.GetRandomEquippableItem();
+                var itemTargetWorldObject = WorldObjectFactory.CreateWorldObject(itemTargetWeenie, GuidManager.NewDynamicGuid());
 
-                var wo = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
+                var npcTargetWorldObject = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
 
                 //this forms a basic fetch from NPC quest fashion - check if it should be also a delivery
                 bool chainDelivery = false;
@@ -726,17 +733,17 @@ namespace ACE.Server.Managers
                 Weenie npcDeliveryTarget = null;
                 Database.Models.World.Weenie woWeenieDelivery = null;
 
-                var noteMessage = $"Get {it.Name} from {wo.Name}. Provide them this note as proof of your errand. ";
+                var noteMessage = $"Get {itemTargetWorldObject.Name} from {npcTargetWorldObject.Name}. Provide them this note as proof of your errand. ";
                 if (chainDelivery)
                 {
-                    npcDeliveryTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist(wo.WeenieClassId));
+                    npcDeliveryTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist(npcTargetWorldObject.WeenieClassId));
                     if (test)
                     {
                         npcDeliveryTarget = world.GetCachedWeenie(28690); //Erik Festus, Ayan
                     }
                     woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
                     woWeenieDelivery = context.Weenie.Where(x => x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
-                    noteMessage += $"Once you've received the {it.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
+                    noteMessage += $"Once you've received the {itemTargetWorldObject.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
                 }
 
                 var note = WorldObjectFactory.CreateNewWorldObject(365); //parchment
@@ -751,8 +758,8 @@ namespace ACE.Server.Managers
                 }
 
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You receive an interesting note with an errand...", ChatMessageType.Tell));
-                Database.Models.World.Weenie woWeenie = context.Weenie.Where(x => x.ClassId == npcTarget.WeenieClassId).FirstOrDefault();
-                if (woWeenie == null) { return; }
+                Database.Models.World.Weenie databaseWeenie = context.Weenie.Where(x => x.ClassId == npcTarget.WeenieClassId).FirstOrDefault();
+                if (databaseWeenie == null) { return; }
 
                 int ranStrLen = ThreadSafeRandom.Next(5, 15);
                 questName += "_" + RandomString(ranStrLen - 1);
@@ -763,17 +770,17 @@ namespace ACE.Server.Managers
 
 
 
-                Database.Models.World.WeeniePropertiesEmote responseEmote = NewStarterDyanmicEmote(questName, woWeenie);
+                Database.Models.World.WeeniePropertiesEmote responseEmote = NewStarterDyanmicEmote(questName, databaseWeenie);
 
                 //Basic ends with InqQuest - to respond to those already finished, create quest success as "Already done" emote.
-                Database.Models.World.WeeniePropertiesEmote completeEmote = NewAlreadyCompleteEmote(questName, woWeenie);
+                Database.Models.World.WeeniePropertiesEmote completeEmote = NewAlreadyCompleteEmote(questName, databaseWeenie);
 
                 //Basic ends with InqQuest - to add rewards - create emote with Quest Failure
-                Database.Models.World.WeeniePropertiesEmote finishedEmote = NewQuestFinishedEmote(questName, woWeenie, it.WeenieClassId);
+                Database.Models.World.WeeniePropertiesEmote finishedEmote = NewQuestFinishedEmote(questName, databaseWeenie, itemTargetWorldObject.WeenieClassId);
 
                 if (chainDelivery)
                 {
-                    Database.Models.World.WeeniePropertiesEmote deliveryEmote = NewStarterDyanmicEmote(questName + "_d", woWeenieDelivery, it.WeenieClassId);
+                    Database.Models.World.WeeniePropertiesEmote deliveryEmote = NewStarterDyanmicEmote(questName + "_d", woWeenieDelivery, itemTargetWorldObject.WeenieClassId, true);
 
                     //Basic ends with InqQuest - to respond to those already finished, create quest success as "Already done" emote.
                     Database.Models.World.WeeniePropertiesEmote deliverycompleteEmote = NewAlreadyCompleteEmote(questName + "_d", woWeenieDelivery);
@@ -785,32 +792,95 @@ namespace ACE.Server.Managers
                     woWeenieDelivery.WeeniePropertiesEmote.Add(deliverycompleteEmote);
                     woWeenieDelivery.WeeniePropertiesEmote.Add(deliveryfinishedEmote);
 
+                    woDeliveryTarget.EmoteManager.AddEmote(deliveryEmote);
+                    woDeliveryTarget.EmoteManager.AddEmote(deliverycompleteEmote);
+                    woDeliveryTarget.EmoteManager.AddEmote(deliveryfinishedEmote);
                 }
 
 
-                woWeenie.WeeniePropertiesEmote.Add(responseEmote);
-                woWeenie.WeeniePropertiesEmote.Add(completeEmote);
-                woWeenie.WeeniePropertiesEmote.Add(finishedEmote);
+                databaseWeenie.WeeniePropertiesEmote.Add(responseEmote);
+                databaseWeenie.WeeniePropertiesEmote.Add(completeEmote);
+                databaseWeenie.WeeniePropertiesEmote.Add(finishedEmote);
 
                 context.SaveChanges();
 
+                //find the NPC - ? npcTargetWorldObject.Guid;
+                //load the new emotes onto the biota
+                //look at converters ACE.Entity/Adapter/WeenieConverter.cs
+
+                npcTargetWorldObject.EmoteManager.AddEmote(responseEmote);
+                npcTargetWorldObject.EmoteManager.AddEmote(completeEmote);
+                npcTargetWorldObject.EmoteManager.AddEmote(finishedEmote);
+
+                DatabaseManager.World.ClearCachedWeenie(npcTargetWorldObject.WeenieClassId);
+                
+                //DatabaseManager.Shard.SaveBiota(npcTargetWorldObject.Biota, new System.Threading.ReaderWriterLockSlim(), null);
+
+                //DatabaseManager.Shard.SaveBiota(npcTargetWorldObject.Biota, new System.Threading.ReaderWriterLockSlim(), null);
+
+                //npcTargetWorldObject.SaveBiotaToDatabase();
+
+                //npcTargetWorldObject.Destroy();
+
+                //npcTargetWorldObject = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
+                //npcTargetWorldObject.EnterWorld();
+
+
                 //reload landblock if it's already loaded
-                // destroy all non-player server objects
-                if (wo.CurrentLandblock != null && !wo.CurrentLandblock.IsDormant)
+                //destroy all non - player server objects
+                LandblockId p;
+                foreach (var item in Enum.GetValues(typeof(PositionType)))
                 {
-                    wo.CurrentLandblock.DestroyAllNonPlayerObjects();
+                    PropertiesPosition propPos = null;
+                    bool found = npcTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos);
 
-                    // clear landblock cache
-                    DatabaseManager.World.ClearCachedInstancesByLandblock(wo.CurrentLandblock.Id.Landblock);
-
-                    // reload landblock
-                    var actionChain = new ActionChain();
-                    actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(session.Player, () =>
+                    if (found && propPos != null)
                     {
-                        wo.CurrentLandblock.Init(true);
-                    });
-                    actionChain.EnqueueChain();
+                        p = new LandblockId(propPos.ObjCellId);
+                        Landblock L = LandblockManager.GetLandblock(p, false);                        
+                        if (L != null)
+                        {
+                            L.DestroyAllNonPlayerObjects();
+
+                            //DatabaseManager.Shard.SaveBiota //try this?
+                            // clear landblock cache
+                            DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw);
+
+                            // reload landblock
+                            L.Init(true);
+                            //var actionChain = new ActionChain();
+                            //actionChain.AddDelayForOneTick();
+                            //actionChain.AddAction(session.Player, () =>
+                            //{
+                            //    L.Init(true);
+                            //});
+                            //actionChain.EnqueueChain();
+                        }
+                        break;
+                    }
+                }                
+
+                if (chainDelivery)
+                {
+                    LandblockId p2;
+                    foreach (var item in Enum.GetValues(typeof(PositionType)))
+                    {
+                        PropertiesPosition propPos2 = null;
+                        bool found2 = npcTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos2);
+
+                        if (found2 && propPos2 != null)
+                        {
+                            p2 = new LandblockId(propPos2.ObjCellId);
+                            Landblock L2 = LandblockManager.GetLandblock(p2, false);
+                            if (L2 != null)
+                            {
+                                L2.DestroyAllNonPlayerObjects();
+                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw);
+                                L2.Init(true);
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -962,12 +1032,18 @@ namespace ACE.Server.Managers
             return responseEmote;
         }
 
-        private static Database.Models.World.WeeniePropertiesEmote NewStarterDyanmicEmote(string questName, Database.Models.World.Weenie targetNPCWeenie, uint? acceptedItemWeenieID = 365)
+        private static Database.Models.World.WeeniePropertiesEmote NewStarterDyanmicEmote(string questName, Database.Models.World.Weenie targetNPCWeenie, uint? acceptedItemWeenieID = 365, bool takeItem = false)
         {
+            uint takeCategory = 1;
+            if (takeItem == true)
+            {
+                takeCategory = 6;
+            }
+
             Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
             {
                 Object = targetNPCWeenie,
-                Category = (uint)EmoteCategory.Refuse, //refuse = examine
+                Category = takeCategory, //refuse = examine
                 Probability = 1,
                 WeenieClassId = acceptedItemWeenieID, //Parchment: the note, or the item from the delivery
                 Style = (uint?)MotionStance.NonCombat,

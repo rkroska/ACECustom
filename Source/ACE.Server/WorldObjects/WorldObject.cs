@@ -104,7 +104,7 @@ namespace ACE.Server.WorldObjects
         protected WorldObject(Weenie weenie, ObjectGuid guid)
         {
             Weenie = weenie;
-            Biota = ACE.Entity.Adapter.WeenieConverter.ConvertToBiota(weenie, guid.Full, false, true);
+            Biota = ACE.Entity.Adapter.WeenieConverter.ConvertToBiota(weenie, guid.Full, false, false);
             Guid = guid;
 
             InitializePropertyDictionaries();
@@ -262,9 +262,26 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool Teleporting { get; set; } = false;
 
-        public bool HasGiveOrRefuseEmoteForItem(WorldObject item, out PropertiesEmote emote)
+        public bool HasGiveOrRefuseEmoteForItem(Session session, WorldObject item, out PropertiesEmote emote)
         {
             // NPC refuses this item, with a custom response
+            if (session != null && session.Player != null)
+            {
+                var list = session.Player.QuestManager.GetDynamicQuests().Where(x => x.LastTimeCompleted == 0).ToList();
+                if (list != null && list.Count > 0)
+                {
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        var dynamicRefuseItem = EmoteManager.GetEmoteSet(EmoteCategory.Refuse, list[i].QuestName, null, item.WeenieClassId);
+                        if (dynamicRefuseItem != null)
+                        {
+                            emote = dynamicRefuseItem;
+                            return true;
+                        }
+                    }
+                }
+            }
+
             var refuseItem = EmoteManager.GetEmoteSet(EmoteCategory.Refuse, null, null, item.WeenieClassId);
             if (refuseItem != null)
             {

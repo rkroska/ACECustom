@@ -22,7 +22,17 @@ namespace ACE.Server
             {
                 var worldDb = new Database.WorldDatabase();
                 var currentVersion = worldDb.GetVersion();
-                log.Info($"Current World Database version: Base - {currentVersion.BaseVersion} | Patch - {currentVersion.PatchVersion}");
+                string defaultPatchVersion = "0.0.0";
+                if (currentVersion != null)
+                {
+                    log.Info($"Current World Database version: Base - {currentVersion.BaseVersion} | Patch - {currentVersion.PatchVersion}");
+                    defaultPatchVersion = currentVersion.PatchVersion;
+                }
+                else
+                {
+                    log.Info($"World Database Version not initialized or recently rebased, starting update from latest");
+                }
+                
 
                 var url = "https://api.github.com/repos/ACEmulator/ACE-World-16PY-Patches/releases/latest";
 
@@ -31,11 +41,11 @@ namespace ACE.Server
                 dynamic json = JsonConvert.DeserializeObject(html);
                 string tag = json.tag_name;
                 string dbURL = json.assets[0].browser_download_url;
-                string dbFileName = json.assets[0].name;
+                string dbFileName = json.assets[0].name;               
 
-                if (currentVersion.PatchVersion != tag)
+                if (defaultPatchVersion != tag)
                 {
-                    var patchVersionSplit = currentVersion.PatchVersion.Split(".");
+                    var patchVersionSplit = defaultPatchVersion.Split(".");
                     var tagSplit = tag.Split(".");
 
                     int.TryParse(patchVersionSplit[0], out var patchMajor);

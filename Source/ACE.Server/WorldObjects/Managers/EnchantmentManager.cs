@@ -281,9 +281,14 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f);
                         }
+                        else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
+                            || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
+                        {
+                            luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                        }
                         else
                         {
-                            luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                            luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.10f;
                         }
                     }
                     else if (spell.IsHarmful) //debuffs -- single point
@@ -292,9 +297,14 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f);
                         }
+                        else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
+                            || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
+                        {
+                            luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                        }
                         else
                         {
-                            luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                            luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.10f;
                         }
                     }
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentLifeCount ?? 0;

@@ -35,7 +35,7 @@ namespace ACE.Entity.Models
 
         // Properties for all world objects that typically aren't modified over the original weenie
         public ICollection<PropertiesCreateList> PropertiesCreateList { get; set; }
-        public ICollection<PropertiesEmote> PropertiesEmote { get; set; }
+        public IList<PropertiesEmote> PropertiesEmote { get; set; }
         public HashSet<int> PropertiesEventFilter { get; set; }
         public IList<PropertiesGenerator> PropertiesGenerator { get; set; }
 
@@ -53,5 +53,8 @@ namespace ACE.Entity.Models
         public IDictionary<uint /* Character ID */, PropertiesAllegiance> PropertiesAllegiance { get; set; }
         public ICollection<PropertiesEnchantmentRegistry> PropertiesEnchantmentRegistry { get; set; }
         public IDictionary<uint /* Player GUID */, bool /* Storage */> HousePermissions { get; set; }
+
+        // Biota dynamic quest addition
+        public List<PropertiesEmote> DynamicEmoteList { get; set; }
     }
 }

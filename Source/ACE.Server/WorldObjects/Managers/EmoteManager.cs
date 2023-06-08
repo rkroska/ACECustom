@@ -9,6 +9,7 @@ using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.DatLoader;
 using ACE.Entity;
+using ACE.Entity.Adapter;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -1686,9 +1687,18 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (_worldObject.Biota.PropertiesEmote == null)
                 return null;
-
+            
             // always pull emoteSet from _worldObject
             var emoteSet = _worldObject.Biota.PropertiesEmote.Where(e => e.Category == category);
+
+            if (category == EmoteCategory.Refuse && questName != null)
+            {
+                emoteSet = emoteSet.Where(e => e.Quest != null && e.Quest.Equals(questName, StringComparison.OrdinalIgnoreCase));
+                if (emoteSet.Count() == 0 && _worldObject.Biota.DynamicEmoteList != null) //pre-refresh dynamic quests
+                {
+                    emoteSet = _worldObject.Biota.DynamicEmoteList.Where(e => e.Quest == questName);
+                }
+            }
 
             // optional criteria
             if ((category == EmoteCategory.HearChat || category == EmoteCategory.ReceiveTalkDirect) && questName != null)
@@ -1940,7 +1950,7 @@ namespace ACE.Server.WorldObjects.Managers
 
         public IEnumerable<PropertiesEmote> Emotes(EmoteCategory emoteCategory)
         {
-            return WorldObject.Biota.PropertiesEmote.Where(x => x.Category == emoteCategory);
+            return _worldObject.Biota.PropertiesEmote.Where(x => x.Category == emoteCategory);
         }
 
         public string Replace(string message, WorldObject source, WorldObject target, string quest)
@@ -2273,9 +2283,89 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 _worldObject.Biota.PropertiesEmote = new List<PropertiesEmote>();
             }
-            _worldObject.Biota.PropertiesEmote.Add(emote);
-          
+            _worldObject.Biota.PropertiesEmote.Add(emote); //preserved on refresh
+            if (_worldObject.Biota.DynamicEmoteList == null)
+            {
+                _worldObject.Biota.DynamicEmoteList = new List<PropertiesEmote>();
+            }
+            _worldObject.Biota.DynamicEmoteList.Add(emote); //temporary pre-refresh list
+
             return true;
+        }
+
+
+        /// <summary>
+        /// Dynamicall add an emote to the given worldObject for the purposes of responding to dynamic quests
+        /// </summary>
+        /// <param name="emote">World Database Emote</param>
+        /// <returns></returns>
+        public bool AddEmote(Database.Models.World.WeeniePropertiesEmote emote)
+        {
+            //map the database emote to the biota object emote
+            ACE.Entity.Models.PropertiesEmote newEmote = new ACE.Entity.Models.PropertiesEmote();
+
+            newEmote.DatabaseRecordId = 1;
+            newEmote.Quest = emote.Quest;
+            newEmote.MaxHealth = emote.MaxHealth;
+            newEmote.MinHealth = emote.MinHealth;
+            newEmote.Style = (MotionStance?)emote.Style;
+            newEmote.Category = (EmoteCategory)emote.Category;
+            newEmote.VendorType = (VendorType?)emote.VendorType;
+            newEmote.Substyle = (MotionCommand?)emote.Substyle;
+            newEmote.Object = ACE.Database.Adapter.WeenieConverter.ConvertToEntityWeenie(emote.Object);
+            newEmote.Probability = emote.Probability;
+            newEmote.WeenieClassId = emote.WeenieClassId;
+            List<Database.Models.World.WeeniePropertiesEmoteAction> actions = emote.WeeniePropertiesEmoteAction.ToList();
+            for (int i = 0; i < actions.Count; i++)
+            {
+                PropertiesEmoteAction newAction = new PropertiesEmoteAction();
+                
+                newAction.DatabaseRecordId = (uint)i+1;
+                newAction.Amount = actions[i].Amount;
+                newAction.Amount64 = actions[i].Amount64;
+                newAction.AnglesW = actions[i].AnglesW;
+                newAction.AnglesX = actions[i].AnglesX;
+                newAction.AnglesY = actions[i].AnglesY;
+                newAction.AnglesZ = actions[i].AnglesZ;
+                newAction.Delay = actions[i].Delay;
+                newAction.DestinationType = actions[i].DestinationType;
+                newAction.Display = actions[i].Display;
+                newAction.Extent = actions[i].Extent;
+                newAction.HeroXP64 = actions[i].HeroXP64;
+                newAction.Max = actions[i].Max;
+                newAction.Max64 = actions[i].Max64;
+                newAction.Min = actions[i].Min;
+                newAction.MaxDbl = actions[i].MaxDbl;
+                newAction.Message = actions[i].Message;
+                newAction.Min64 = actions[i].Min64;
+                newAction.MinDbl = actions[i].MinDbl;
+                newAction.Motion = (MotionCommand?)actions[i].Motion;
+                newAction.ObjCellId = actions[i].ObjCellId;
+                newAction.OriginX = actions[i].OriginX;
+                newAction.OriginY = actions[i].OriginY;
+                newAction.OriginZ = actions[i].OriginZ;
+                newAction.Palette = actions[i].Palette;
+                newAction.Percent = actions[i].Percent;
+                newAction.PScript = (PlayScript?)actions[i].PScript;
+                newAction.Shade = actions[i].Shade;
+                newAction.Sound = (Sound?)actions[i].Sound;
+                newAction.SpellId = actions[i].SpellId;
+                newAction.StackSize = actions[i].StackSize;
+                newAction.TestString = actions[i].TestString;
+                newAction.TreasureClass = actions[i].TreasureClass;
+                newAction.TryToBond = actions[i].TryToBond;
+                newAction.Type = actions[i].Type;
+                newAction.WealthRating = actions[i].WealthRating;
+                newAction.WeenieClassId = actions[i].WeenieClassId;
+
+                newEmote.PropertiesEmoteAction.Add(newAction);
+
+            }
+
+            return AddEmote(newEmote);
+
+
+
         }
     }
 }
