@@ -54,6 +54,14 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
+
+            if (session.Player == null)
+                return;
+            if (session.Player.IsOlthoiPlayer)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Bugs ain't got banks.", ChatMessageType.Broadcast));
+                return;
+            }
             if (parameters.Length == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
@@ -252,7 +260,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
         public static void HandleEnlightenment(Session session, params string[] parameters)
         {
-            if (session.Player.Teleporting || session.Player.TooBusyToRecall)
+            if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsAnimating || session.Player.IsInDeathProcess)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
                 return;
