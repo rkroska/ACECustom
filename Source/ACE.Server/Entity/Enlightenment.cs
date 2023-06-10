@@ -7,6 +7,8 @@ using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Common;
+using ACE.Server.Entity.Actions;
 
 namespace ACE.Server.Entity
 {
@@ -55,13 +57,35 @@ namespace ACE.Server.Entity
 
             DequipAllItems(player);
 
-            RemoveAbility(player);
+            RemoveFromFellowships(player);
 
-            AddPerks(player);
+            player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
-            player.ThreadSafeTeleportOnDeath();
+            var startPos = new ACE.Entity.Position(player.Location);
+            ActionChain enlChain = new ActionChain();
+            enlChain.AddDelaySeconds(14);
 
-            player.SaveBiotaToDatabase();
+            // Then do teleport
+            player.IsBusy = true;
+            enlChain.AddAction(player, () =>
+            {
+                player.IsBusy = false;
+                var endPos = new ACE.Entity.Position(player.Location);
+                if (startPos.SquaredDistanceTo(endPos) > Player.RecallMoveThresholdSq)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have moved too far!", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                player.ThreadSafeTeleportOnDeath();
+                RemoveAbility(player);
+                AddPerks(player);
+                player.SaveBiotaToDatabase();
+            });
+
+            // Set the chain to run
+            enlChain.EnqueueChain();
+
         }
 
         public static bool VerifyRequirements(Player player)
@@ -84,6 +108,37 @@ namespace ACE.Server.Entity
                 return false;
             }
 
+            if (player.Teleporting || player.TooBusyToRecall || player.IsAnimating || player.IsInDeathProcess)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
+                return false;
+            }
+
+            Landblock currentLandblock = LandblockManager.GetLandblock(new ACE.Entity.LandblockId(player.Location.Landblock), false);
+            if (currentLandblock != null && currentLandblock.IsDungeon)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while inside a dungeon. Find an exit or recall to begin your enlightenment.", ChatMessageType.System));
+                return false;
+            }
+
+            if (player.CombatMode != CombatMode.NonCombat)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while in combat mode. Be at peace, friend.", ChatMessageType.System));
+                return false;
+            }
+
+
+            if (player.LastPortalTeleportTimestamp.HasValue)
+            {
+                var timeSinceLastPortal = Time.GetUnixTime() - player.LastPortalTeleportTimestamp.Value;
+                if (timeSinceLastPortal <= 10.0f)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You've teleported too recently to enlighten.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
+
             //todo: check for trophies that are enl level appropriate
             //first, 1 enlightenment token per enlightenment past 5.
             if (player.Enlightenment + 1 > 5)
@@ -92,6 +147,24 @@ namespace ACE.Server.Entity
                 if (count < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Tokens to continue.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
+            if (player.Enlightenment + 1 > 10)
+            {
+                if (!VerifyLumAugs(player))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have all Standard Luminance Augmentations to continue your enlightenment beyond 10.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
+            if (player.Enlightenment + 1 > 15)
+            {
+                if (!VerifySocietyMaster(player))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a Master of your Society to enlighten beyond level 15.", ChatMessageType.Broadcast));
                     return false;
                 }
             }
@@ -122,6 +195,11 @@ namespace ACE.Server.Entity
             lumAugCredits += player.LumAugSkilledSpec;
 
             return lumAugCredits == 65;
+        }
+
+        public static void RemoveFromFellowships(Player player)
+        {
+            player.FellowshipQuit(false);
         }
 
         public static void DequipAllItems(Player player)
