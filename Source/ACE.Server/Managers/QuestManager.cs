@@ -1248,17 +1248,17 @@ namespace ACE.Server.Managers
             {
                 var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == questName).FirstOrDefault();
                 if (acctQuest != null)
-                {
-                    
-                    if (acctQuest.NumTimesCompleted >= 1)
+                {                   
+                    acctQuest.NumTimesCompleted = solves;
+                    if (solves == 1)
                     {
-                        stampedNew = false;
+                        stampedNew = true;
                     }
                     else
                     {
-                        acctQuest.NumTimesCompleted = solves;
-                        stampedNew = true;
+                        stampedNew = false;
                     }
+                    
                     context.AccountQuest.Update(acctQuest);
                 }
                 else
@@ -1298,6 +1298,7 @@ namespace ACE.Server.Managers
             list.Add(29295); //Blank aug gem
             list.Add(36867); //Dire champ token
             list.Add(34276); //Empyrean trinket
+            list.Add(300004); //Mid enl coin
 
             return list;
         }
