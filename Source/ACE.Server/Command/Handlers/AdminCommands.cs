@@ -2203,6 +2203,24 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("clearquest", AccessLevel.Admin, CommandHandlerFlag.None, 1)]
+        public static void HandleQuestClear(Session session, params string[] parameters)
+        {
+            DatabaseManager.World.ClearCachedQuest(parameters[0]);
+        }
+
+        [CommandHandler("clearallquests", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
+        public static void HandleQuestClearAll(Session session, params string[] parameters)
+        {
+            DatabaseManager.World.ClearAllCachedQuests();
+        }
+
+        [CommandHandler("clearspellcache", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
+        public static void HandleClearSpellCache(Session session, params string[] parameters)
+        {
+            DatabaseManager.World.ClearSpellCache();
+        }
+
         [CommandHandler("testdynamic", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1)]
         public static void TestDynamicQuest(Session session, params string[] parameters)
         {

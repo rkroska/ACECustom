@@ -210,11 +210,15 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    bool isStamp = false;
-                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)quest.NumTimesCompleted);
+                    bool isStamp = false; bool isCompletion = false;
+                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp, out isCompletion, (uint)quest.NumTimesCompleted);
                     if (isStamp)
                     {
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                    }
+                    if (isCompletion)
+                    {
+                        player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                     }
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
@@ -240,11 +244,15 @@ namespace ACE.Server.Managers
 
                     if (quest.NumTimesCompleted == 1)
                     {
-                        bool isStamp = false;
-                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)quest.NumTimesCompleted);
+                        bool isStamp = false; bool isCompletion = false;
+                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp, out isCompletion, (uint)quest.NumTimesCompleted);
                         if (isStamp)
                         {
                             player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
+                        }
+                        if (isCompletion)
+                        {
+                            player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
 
@@ -278,11 +286,15 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    bool isStamp = false;
-                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)numTimesCompleted);
+                    bool isStamp = false; bool isCompletion = false;
+                    UpdatePlayerQuestCompletions(player, questFormat, out isStamp, out isCompletion, (uint)numTimesCompleted);
                     if (isStamp)
                     {
                         player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                    }
+                    if (isCompletion)
+                    {
+                        player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                     }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
 
@@ -302,11 +314,15 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
                     if (quest.NumTimesCompleted == 1)
                     {
-                        bool isStamp = false;
-                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp, (uint)numTimesCompleted);
+                        bool isStamp = false; bool isCompletion = false;
+                        UpdatePlayerQuestCompletions(player, questFormat, out isStamp, out isCompletion, (uint)numTimesCompleted);
                         if (isStamp)
                         {
-                            player.SendMessage($"You've stamped {questName} on completion!", ChatMessageType.Advancement);//quest name
+                            player.SendMessage($"You've stamped {questName}!", ChatMessageType.Advancement);//quest name
+                        }
+                        if (isCompletion)
+                        {
+                            player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
@@ -1240,42 +1256,40 @@ namespace ACE.Server.Managers
             SetQuestCompletions(questFormat, questBits);
         }
 
-        public void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, uint solves = 0)
+        public void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, out bool stampedCompletion, uint solves = 0)
         {
             var acctId = player.Account.AccountId;
             stampedNew = false;
+            stampedCompletion = false;
             using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
             {
-                var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == questName).FirstOrDefault();
-                if (acctQuest != null)
-                {                   
-                    acctQuest.NumTimesCompleted = solves;
-                    if (solves == 1)
+                try
+                {
+                    var acctQuest = context.AccountQuest.Where(x => x.AccountId == acctId && x.Quest == questName).FirstOrDefault();
+                    if (acctQuest != null)
                     {
-                        stampedNew = true;
+
+                        if (solves == 1)
+                        {
+                            stampedNew = false;
+                            stampedCompletion = true;
+                            context.AccountQuest.Update(acctQuest);
+                        }                        
                     }
                     else
                     {
-                        stampedNew = false;
+                        context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = solves });
+                        stampedNew = true;
                     }
-                    
-                    context.AccountQuest.Update(acctQuest);
-                }
-                else
-                {
-                    context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = solves });
-                    stampedNew = true;
-                }
                 
-                context.SaveChangesFailed += (object sender, Microsoft.EntityFrameworkCore.SaveChangesFailedEventArgs e) =>
-                {
-                    Console.WriteLine($"Failed to save quest {questName} for account {acctId}");
-                };
-                try
-                {
+                    context.SaveChangesFailed += (object sender, Microsoft.EntityFrameworkCore.SaveChangesFailedEventArgs e) =>
+                    {
+                        Console.WriteLine($"Failed to save quest {questName} for account {acctId}");
+                    };
+                
                     context.SaveChanges();
                 }
-                catch (Exception ex) { stampedNew = false; }
+                catch (Exception ex) { stampedNew = false; stampedCompletion = false; }
             }
 
             player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();      

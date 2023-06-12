@@ -23,5 +23,10 @@ namespace ACE.Database.Models.Auth
         {
             return context.Leaderboard.FromSql($"CALL TopEnlightenment").ToList();
         }
+
+        public static List<Leaderboard> GetTopTitleLeaderboard(AuthDbContext context)
+        {
+            return context.Leaderboard.FromSql($"CALL TopTitles").ToList();
+        }
     }
 }

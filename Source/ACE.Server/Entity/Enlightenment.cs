@@ -90,7 +90,7 @@ namespace ACE.Server.Entity
 
         public static bool VerifyRequirements(Player player)
         {
-            if (player.Level < 275 + player.Enlightenment)
+            if (player.Level < (275 + player.Enlightenment + 1))
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment to enlighten further.", ChatMessageType.Broadcast));
                 return false;
@@ -114,7 +114,7 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            Landblock currentLandblock = LandblockManager.GetLandblock(new ACE.Entity.LandblockId(player.Location.Landblock), false);
+            Landblock currentLandblock = LandblockManager.GetLandblock(player.Location.LandblockId, false);
             if (currentLandblock != null && currentLandblock.IsDungeon)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while inside a dungeon. Find an exit or recall to begin your enlightenment.", ChatMessageType.System));
