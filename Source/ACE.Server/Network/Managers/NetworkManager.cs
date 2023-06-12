@@ -247,7 +247,7 @@ namespace ACE.Server.Network.Managers
 
                 foreach (var s in sessionMap)
                 {
-                    if (s != null && s.EndPoint.Address.Equals(address) && !s.inExemptLandblock())
+                    if (s != null && s.EndPoint.Address.Equals(address) && !s.inExemptLandblock() && (s.AccessLevel != ACE.Entity.Enum.AccessLevel.Admin && s.AccessLevel != ACE.Entity.Enum.AccessLevel.Developer))
                         result++;
                 }
 

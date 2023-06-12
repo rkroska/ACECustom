@@ -171,9 +171,11 @@ namespace ACE.Server.WorldObjects
         {
             lock (balanceLock)
             {
+                int mmdCount = 0;
                 while (Amount >= 250000)
                 {
-                    this.TryCreateInInventoryWithNetworking(WorldObjectFactory.CreateNewWorldObject(20630));
+                    mmdCount++;
+                    //this.TryCreateInInventoryWithNetworking(WorldObjectFactory.CreateNewWorldObject(20630));
                     Amount -= 250000;
                     BankedPyreals -= 250000;
                 }
@@ -197,7 +199,13 @@ namespace ACE.Server.WorldObjects
                     this.TryCreateInInventoryWithNetworking(smallCoins);
                     BankedPyreals -= Amount;
                     Amount = 0;
-                }                                
+                }
+                if (mmdCount > 0)
+                {
+                    var woMMDs = WorldObjectFactory.CreateNewWorldObject(20630);
+                    woMMDs.SetStackSize(mmdCount);
+                    this.TryCreateInInventoryWithNetworking(woMMDs);
+                }
             }            
         }
 

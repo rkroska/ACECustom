@@ -257,10 +257,16 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("enl", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Enlightenment Alias", "")]
+        public static void HandleEnlShort(Session session, params string[] parameters)
+        {
+            HandleEnlightenment(session, parameters);
+        }
+
         [CommandHandler("enlighten", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Enlightenment", "")]
         public static void HandleEnlightenment(Session session, params string[] parameters)
         {
-            if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsAnimating || session.Player.IsInDeathProcess)
+            if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsBusy || session.Player.IsInDeathProcess)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while teleporting or busy. Complete your movement and try again. Neener neener.", ChatMessageType.System));
                 return;
@@ -295,37 +301,46 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleExperience(Session session, params string[] parameters)
         {
+            int amount = 1;
             if (parameters.Count() == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP to next level is: {session.Player.GetRemainingXP():N0}", ChatMessageType.System));
             }
+            if (parameters.Count() == 2)
+            {
+                if (!int.TryParse(parameters[1], out amount))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number to count for XP Ranks", ChatMessageType.System));
+                }
+            }
+
             if (parameters.Count() == 1)
             {
                 ulong xp = 0; string AttrName = ""; bool success = false;
                 //check attribute costs
                 switch (parameters[0])
                 {
-                    case "str": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Strength, out AttrName, false, out success);
+                    case "str": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out success);
                         break;
-                    case "end": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Endurance, out AttrName, false, out success);
+                    case "end": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out success);
                         break;
-                    case "coo": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Coordination, out AttrName, false, out success);
+                    case "coo": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out success);
                         break;
-                    case "qui": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Quickness, out AttrName, false, out success);
+                    case "qui": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out success);
                         break; 
-                    case "foc": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Focus, out AttrName, false, out success);
+                    case "foc": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out success);
                         break;
-                    case "sel": xp = GetOrRaiseAttrib(session, 1, PropertyAttribute.Self, out AttrName, false, out success);
+                    case "sel": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out success);
                         break;
-                    case "sta": xp = GetOrRaise2ndAttrib(session, 1, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
+                    case "sta": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
                         break;
-                    case "hea": xp = GetOrRaise2ndAttrib(session, 1, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
+                    case "hea": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
                         break;
-                    case "man": xp = GetOrRaise2ndAttrib(session, 1, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
+                    case "man": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
                         break;
                 }
 
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP cost for next {AttrName} level is: {xp:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP cost for next {amount} {AttrName} level is: {xp:N0}", ChatMessageType.System));
             }            
         }
 
@@ -513,6 +528,15 @@ namespace ACE.Server.Command.Handlers
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
+                    }
+                }
+
+                if (parameters.Length > 0 && parameters[0] == "title")
+                {
+                    list = Leaderboard.GetTopTitleLeaderboard(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
                     }
                 }
             }

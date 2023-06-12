@@ -797,6 +797,11 @@ namespace ACE.Database
             return cachedQuest.TryRemove(questName, out _);
         }
 
+        public void ClearAllCachedQuests()
+        {
+             cachedQuest.Clear();
+        }
+
         public Quest GetCachedQuest(string questName)
         {
             if (cachedQuest.TryGetValue(questName, out var quest))
