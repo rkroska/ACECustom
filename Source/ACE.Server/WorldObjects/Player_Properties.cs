@@ -1480,5 +1480,7 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IsMule); else SetProperty(PropertyBool.IsMule, value); }
         }
 
+       
+
     }
 }

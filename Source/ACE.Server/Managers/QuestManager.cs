@@ -712,7 +712,7 @@ namespace ACE.Server.Managers
 
         public void ComputeDynamicQuest(string questName, Network.Session session, bool test)
         {
-            if (!questName.Contains("Dynamic"))
+            if (string.IsNullOrEmpty(questName) || !questName.Contains("Dynamic"))
             {
                 return;
             }
@@ -848,6 +848,10 @@ namespace ACE.Server.Managers
                 foreach (var item in Enum.GetValues(typeof(PositionType)))
                 {
                     PropertiesPosition propPos = null;
+                    if (npcTarget == null || npcTarget.PropertiesPosition == null)
+                    {
+                        continue;
+                    }
                     bool found = npcTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos);
 
                     if (found && propPos != null)
@@ -882,7 +886,11 @@ namespace ACE.Server.Managers
                     foreach (var item in Enum.GetValues(typeof(PositionType)))
                     {
                         PropertiesPosition propPos2 = null;
-                        bool found2 = npcTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos2);
+                        if (npcDeliveryTarget == null || npcDeliveryTarget.PropertiesPosition == null)
+                        {
+                            continue;
+                        }
+                        bool found2 = npcDeliveryTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos2);
 
                         if (found2 && propPos2 != null)
                         {

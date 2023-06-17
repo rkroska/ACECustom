@@ -395,6 +395,9 @@ namespace ACE.Server.Entity
                     player.AddTitle(CharacterTitle.CosmicConscious);
                     lvl = "5th";
                     break;
+                default:
+                    lvl = player.Enlightenment.ToString() + "th";
+                    break;
             }
 
             var msg = $"{player.Name} has achieved the {lvl} level of Enlightenment!";

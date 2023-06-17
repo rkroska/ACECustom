@@ -34,7 +34,7 @@ namespace ACE.Server.Command.Handlers
             {
                 parameters = new string[] { "b" };
             }
-            
+
             HandleBank(session, parameters);
         }
 
@@ -66,11 +66,11 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, and keys or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals or Luminance to a character. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all, /bank b will show balance, etc.", ChatMessageType.System));
-                
+
                 return;
             }
 
@@ -82,6 +82,10 @@ namespace ACE.Server.Command.Handlers
             if (session.Player.BankedLuminance < 0)
             {
                 session.Player.BankedLuminance = 0;
+            }
+            if (session.Player.BankedLegendaryKeys < 0)
+            {
+                session.Player.BankedLegendaryKeys = 0;
             }
 
             int iType = 0;
@@ -103,7 +107,11 @@ namespace ACE.Server.Command.Handlers
                 if (parameters[1] == "notes" || parameters[1] == "n")
                 {
                     //trade notes
-                    iType= 3;
+                    iType = 3;
+                }
+                if (parameters[1] == "keys" || parameters[1] == "k")
+                {
+                    iType = 4;
                 }
             }
 
@@ -112,6 +120,12 @@ namespace ACE.Server.Command.Handlers
                 if (!int.TryParse(parameters[2], out amount))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
+                    return;
+                }
+                if (amount <= 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                    return;
                 }
             }
 
@@ -128,6 +142,7 @@ namespace ACE.Server.Command.Handlers
                     //deposit all
                     session.Player.DepositPyreals();
                     session.Player.DepositLuminance();
+                    session.Player.DepositLegendaryKeys();
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals and Luminance!", ChatMessageType.System));
                 }
@@ -137,7 +152,7 @@ namespace ACE.Server.Command.Handlers
                         //deposit pyreals
                         if (amount > 0)
                         {
-                            session.Player.DepositPyreals(amount);                            
+                            session.Player.DepositPyreals(amount);
                         }
                         else
                         {
@@ -149,7 +164,7 @@ namespace ACE.Server.Command.Handlers
                         //deposit lum
                         if (amount > 0)
                         {
-                            session.Player.DepositLuminance(amount);                            
+                            session.Player.DepositLuminance(amount);
                         }
                         else
                         {
@@ -161,6 +176,10 @@ namespace ACE.Server.Command.Handlers
                         //deposit notes
                         session.Player.DepositTradeNotes();
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all trade notes!", ChatMessageType.System));
+                        break;
+                    case 4:
+                        session.Player.DepositLegendaryKeys();
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all aged legendary keys!", ChatMessageType.System));
                         break;
                     default:
                         break;
@@ -203,7 +222,25 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot withdraw that much luminance, it would put you over your maximum.", ChatMessageType.System));
                             break;
                         }
-                        session.Player.WithdrawLuminance(amount); 
+                        session.Player.WithdrawLuminance(amount);
+                        break;
+                    case 4:
+                        if (amount > session.Player.BankedLegendaryKeys)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough keys banked to make this withdrawl", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount >= session.Player.GetFreeInventorySlots())
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many keys.", ChatMessageType.System));
+                            break;
+                        }
+                        session.Player.WithdrawLegendaryKeys(amount);
                         break;
                     default:
                         break;
@@ -254,6 +291,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
             }
         }
 
@@ -275,7 +313,7 @@ namespace ACE.Server.Command.Handlers
             //    return;
             var message = "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
             var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => Enlightenment.HandleEnlightenment(session.Player)), message);
-            
+
         }
 
         [CommandHandler("dynamicabandon", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Abandons the most recent dynamic quest", "")]
@@ -285,17 +323,17 @@ namespace ACE.Server.Command.Handlers
         }
 
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
-        public static void HandleMultiplier (Session session, params string[] paramters)
+        public static void HandleMultiplier(Session session, params string[] paramters)
         {
             session.Player.QuestCompletionCount = session.Player.Account.GetCharacterQuestCompletions();
             var qb = session.Player.GetQuestCountXPBonus();
             var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
             var en = session.Player.GetEnglightenmentXPBonus();
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Quests is: {qb-1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Equipment is: {eq-1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Enlightenment is: {en-1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your Total XP multiplier is: {(qb-1)+(eq-1)+(en-1):P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Quests is: {qb - 1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Equipment is: {eq - 1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Enlightenment is: {en - 1:P}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your Total XP multiplier is: {(qb - 1) + (eq - 1) + (en - 1):P}", ChatMessageType.System));
         }
 
         [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
@@ -314,7 +352,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            if (parameters.Count() == 1)
+            if (parameters.Count() == 1 || parameters.Count() == 2)
             {
                 ulong xp = 0; string AttrName = ""; bool success = false;
                 //check attribute costs
@@ -502,11 +540,12 @@ namespace ACE.Server.Command.Handlers
         public static void DisplayTop(Session session, params string[] parameters)
         {
             List<Leaderboard> list = new List<Leaderboard>();
+            LeaderboardCache cache = LeaderboardCache.Instance;
             using (var context = new AuthDbContext())
             {
                 if (parameters.Length > 0 && parameters[0] == "qb")
                 {
-                    list = Leaderboard.GetTopQBLeaderboard(context);
+                    list = cache.GetTopQB(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Quest Bonus:", ChatMessageType.Broadcast));
@@ -515,7 +554,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters.Length > 0 && parameters[0] == "level")
                 {
-                    list = Leaderboard.GetTopLevelLeaderboard(context);
+                    list = cache.GetTopLevel(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Level:", ChatMessageType.Broadcast));
@@ -524,7 +563,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters.Length > 0 && parameters[0] == "enl")
                 {
-                    list = Leaderboard.GetTopEnlightenmentLeaderboard(context);
+                    list = cache.GetTopEnl(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
@@ -533,7 +572,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters.Length > 0 && parameters[0] == "title")
                 {
-                    list = Leaderboard.GetTopTitleLeaderboard(context);
+                    list = cache.GetTopTitle(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
