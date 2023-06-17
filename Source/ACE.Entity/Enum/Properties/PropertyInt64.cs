@@ -55,6 +55,8 @@ namespace ACE.Entity.Enum.Properties
         AllegianceLumGenerated= 9013,
         [ServerOnly]
         AllegianceLumReceived = 9014,
+        [ServerOnly]
+        BankedLegendaryKeys   = 9015,
     }
 
     public static class PropertyInt64Extensions

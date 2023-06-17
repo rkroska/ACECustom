@@ -73,6 +73,29 @@ namespace ACE.Server.WorldObjects
             }          
         }
 
+        public void DepositLegendaryKeys()
+        {
+            if (BankedLegendaryKeys == null)
+            {
+                BankedLegendaryKeys = 0;
+            }
+            lock (balanceLock)
+            {
+                int i = 0;
+                var keysList = this.GetInventoryItemsOfWCID(48746);
+                foreach (var item in keysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(item))
+                    {
+                        BankedLegendaryKeys += 1;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+        }
 
         /// <summary>
         /// Deposit all luminance
@@ -209,6 +232,19 @@ namespace ACE.Server.WorldObjects
             }            
         }
 
+        public void WithdrawLegendaryKeys(long Amount)
+        {
+            lock (balanceLock)
+            {
+                for (int i = 0; i < Amount; i++)
+                {
+                    WorldObject key = WorldObjectFactory.CreateNewWorldObject(48746);
+                    this.TryCreateInInventoryWithNetworking(key);
+                    BankedLegendaryKeys -= 1;
+                }
+            }
+        }
+
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
             var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
@@ -276,6 +312,12 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedPyreals);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPyreals); else SetProperty(PropertyInt64.BankedPyreals, value.Value); }
+        }
+
+        public long? BankedLegendaryKeys
+        {
+            get => GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
         }
     }
 }

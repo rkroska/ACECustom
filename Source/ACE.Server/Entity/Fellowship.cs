@@ -514,6 +514,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
+
                     var fellowXpType = player == member ? XpType.Quest : XpType.Fellowship;
 
                     member.GrantXP(perAmount, fellowXpType, shareType);
@@ -528,6 +529,11 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
+                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    {
+                        member.GrantXP((long)amount, xpType, shareType);
+                        continue;
+                    }
                     var shareAmount = (ulong)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
 
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
@@ -546,6 +552,11 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
+                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    {
+                        member.GrantXP((long)amount, xpType, shareType);
+                        continue;
+                    }
                     var levelXPScale = (double)member.GetXPToNextLevel(member.Level.Value) / levelXPSum;
 
                     var playerTotal = (ulong)Math.Round(amount * levelXPScale * GetDistanceScalar(player, member, xpType));
@@ -580,18 +591,29 @@ namespace ACE.Server.Entity
                 var shareableMembers = GetFellowshipMembers().Values.Where(f => f.MaximumLuminance != null).ToList();
 
                 if (shareableMembers.Count == 0)
+                {
+                    player.GrantLuminance((long)amount, XpType.Fellowship, shareType);
                     return;
+                }    
+                    
 
                 var perAmount = (long)Math.Round((double)(amount / (ulong)shareableMembers.Count));
 
                 // further filter to fellows in radar range
-                var inRange = shareableMembers.Intersect(WithinRange(player, true)).ToList();
+                //var inRange = shareableMembers.Intersect(WithinRange(player, true)).ToList();
 
-                foreach (var member in inRange)
+                foreach (var member in shareableMembers)
                 {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    {
+                        player.GrantLuminance((long)amount, fellowXpType, shareType);
+                        continue;
+                    }
+                    
+                    var playerTotal = (long)Math.Round(perAmount * GetDistanceScalar(player, member, xpType));
 
-                    member.GrantLuminance(perAmount, fellowXpType, shareType);
+                    member.GrantLuminance(playerTotal, fellowXpType, shareType);
                 }
             }
         }
