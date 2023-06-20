@@ -1532,7 +1532,7 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             case "Creature":
                                 long creatureAugs = player.LuminanceAugmentCreatureCount ?? 0;
-                                var curVal = emote.Amount + (player.LuminanceAugmentCreatureCount * (emote.Amount * (1 + emote.Percent)));
+                                var curVal = emote.Amount + (creatureAugs * (emote.Amount * (1 + emote.Percent)));
                                 if (player.BankedLuminance < curVal)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal} luminance to use.", ChatMessageType.Broadcast));
@@ -1552,7 +1552,7 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Item":
                                 long itemAugs = player.LuminanceAugmentItemCount ?? 0;
-                                var curVal2 = emote.Amount + (player.LuminanceAugmentItemCount * (emote.Amount * (1 + emote.Percent)));
+                                var curVal2 = emote.Amount + (itemAugs * (emote.Amount * (1 + emote.Percent)));
                                 if (player.BankedLuminance < curVal2)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal2} luminance to use.", ChatMessageType.Broadcast));
@@ -1570,7 +1570,7 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Life":
                                 long lifeAugs = player.LuminanceAugmentLifeCount ?? 0;
-                                var curVal3 = emote.Amount + (player.LuminanceAugmentLifeCount * (emote.Amount * (1 + emote.Percent)));
+                                var curVal3 = emote.Amount + (lifeAugs * (emote.Amount * (1 + emote.Percent)));
                                 if (player.BankedLuminance < curVal3)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal3} luminance to use.", ChatMessageType.Broadcast));
@@ -1588,7 +1588,7 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "War":
                                 long warAugs = player.LuminanceAugmentWarCount ?? 0;
-                                var curVal4 = emote.Amount + (player.LuminanceAugmentWarCount * (emote.Amount * (1 + emote.Percent)));
+                                var curVal4 = emote.Amount + (warAugs * (emote.Amount * (1 + emote.Percent)));
                                 if (player.BankedLuminance < curVal4)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal4} luminance to use.", ChatMessageType.Broadcast));
@@ -1606,7 +1606,7 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Void":
                                 long voidAugs = player.LuminanceAugmentVoidCount ?? 0;
-                                var curVal5 = emote.Amount + (player.LuminanceAugmentVoidCount * (emote.Amount * (1 + emote.Percent)));
+                                var curVal5 = emote.Amount + (voidAugs * (emote.Amount * (1 + emote.Percent)));
                                 if (player.BankedLuminance < curVal5)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal5} luminance to use.", ChatMessageType.Broadcast));
@@ -1625,7 +1625,7 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Duration":
                                 long durAugs = player.LuminanceAugmentSpellDurationCount ?? 0;
-                                var curVal6 = emote.Amount + (player.LuminanceAugmentSpellDurationCount * (emote.Amount * (1 + emote.Percent)));
+                                var curVal6 = emote.Amount + (durAugs * (emote.Amount * (1 + emote.Percent)));
                                 if (player.BankedLuminance < curVal6)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal6} luminance to use.", ChatMessageType.Broadcast));
