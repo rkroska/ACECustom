@@ -1623,6 +1623,25 @@ namespace ACE.Server.WorldObjects.Managers
                                     
                                 }
                                 break;
+                            case "Duration":
+                                long durAugs = player.LuminanceAugmentSpellDurationCount ?? 0;
+                                var curVal6 = emote.Amount + (player.LuminanceAugmentSpellDurationCount * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal6)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal6} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        player.SpendLuminance((long)curVal6);
+                                        player.LuminanceAugmentVoidCount = durAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300016, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal6} luminance to add 1 point to all of your void spell effects. Are you sure?");
+
+                                }
+                                break;
                             default:
                                 break;
                         }

@@ -80,5 +80,16 @@ namespace ACE.Server.Command.Handlers
             }
             return target;
         }
+
+        public static WorldObject GetWorldObjectByGuid(Session session, uint guid)
+        {
+            var target = session.Player.FindObject(guid, Player.SearchLocations.Everywhere, out _, out _, out _);
+            if (target == null)
+            {
+                WriteOutputInfo(session, $"GetWorldObjectByGuid() - couldn't find {guid:X8}");
+                return null;
+            }
+            return target;
+        }
     }
 }

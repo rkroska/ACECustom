@@ -1480,7 +1480,17 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IsMule); else SetProperty(PropertyBool.IsMule, value); }
         }
 
-       
+        public bool ExcludeFromLeaderboards
+        {
+            get => GetProperty(PropertyBool.ExcludeFromLeaderboards) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.ExcludeFromLeaderboards); else SetProperty(PropertyBool.ExcludeFromLeaderboards, value); }
+        }
+
+        public long? LuminanceAugmentSpellDurationCount
+        {
+            get => GetProperty(PropertyInt64.LumAugDurationCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugDurationCount); else SetProperty(PropertyInt64.LumAugDurationCount, value.Value); }
+        }
 
     }
 }

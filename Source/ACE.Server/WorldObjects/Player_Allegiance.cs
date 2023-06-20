@@ -462,6 +462,11 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Your Vassals have produced experience points for you.\nTaking your skills as a leader into account, you gain {AllegianceXPCached:N0} xp.", ChatMessageType.Broadcast));
                     AddAllegianceXP();
                 }
+                if (AllegianceLumCached != 0)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Your Vassals have produced luminance points for you.\nTaking your skills as a leader int account, you gain {AllegianceLumCached:N0} luminance.", ChatMessageType.Broadcast));
+                    AddAllegianceLum();
+                }
             });
             actionChain.EnqueueChain();
 

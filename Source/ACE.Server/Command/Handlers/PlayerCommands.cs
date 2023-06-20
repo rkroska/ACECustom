@@ -279,8 +279,15 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
                             break;
                         }
-                        session.Player.TransferLuminance(amount, transferTargetName);
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
+                        if (session.Player.TransferLuminance(amount, transferTargetName))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Luminance to {transferTargetName}", ChatMessageType.System));
+                        }
+                        
                         break;
                     default:
                         break;
@@ -578,6 +585,24 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
                     }
                 }
+
+                if (parameters.Length > 0 && parameters[0] == "augs")
+                {
+                    list = cache.GetTopAugs(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Advanced Augmentations:", ChatMessageType.Broadcast));
+                    }
+                }
+
+                if (parameters.Length > 0 && parameters[0] == "deaths")
+                {
+                    list = cache.GetTopDeaths(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Deaths:", ChatMessageType.Broadcast));
+                    }
+                }
             }
 
             for (int i = 0; i < list.Count; i++)
@@ -611,7 +636,7 @@ namespace ACE.Server.Command.Handlers
                 var quest = DatabaseManager.World.GetCachedQuest(questName);
                 if (quest == null)
                 {
-                    Console.WriteLine($"Couldn't find quest {playerQuest.QuestName}");
+                    //Console.WriteLine($"Couldn't find quest {playerQuest.QuestName}");
                     continue;
                 }
 

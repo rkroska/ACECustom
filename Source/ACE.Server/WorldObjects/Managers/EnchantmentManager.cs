@@ -184,7 +184,7 @@ namespace ACE.Server.WorldObjects.Managers
                 var duration = spell.Duration;
                 if (caster is Player player && player.AugmentationIncreasedSpellDuration > 0 && spell.DotDuration == 0)
                     duration *= 1.0f + player.AugmentationIncreasedSpellDuration * 0.2f;
-
+                duration += (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.01f;
                 var timeRemaining = refreshSpell.Duration + refreshSpell.StartTime;
 
                 if (duration > timeRemaining)
@@ -257,19 +257,23 @@ namespace ACE.Server.WorldObjects.Managers
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
                 }
-                if (spell.School == MagicSchool.ItemEnchantment && spell.IsSelfTargeted)
+                if (spell.School == MagicSchool.ItemEnchantment)
                 {
-                    if (spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 170) //bane, percentages
+                    if (spell.StatModKey == 28) //impen
                     {
-                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
                     }
-                    else if (spell.StatModVal > 0) //eg blood drinker
+                    else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 171 || spell.StatModKey == 360) //eg blood drinker
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
                     }
-                    else if (spell.StatModVal < 0) //eg atlans alacrity
+                    else if (spell.StatModKey == 170) //spirit drinker
                     {
-                        luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 0.10f;
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                    }    
+                    else if (spell.StatModKey == 361) //eg atlans alacrity
+                    {
+                        luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 1.0f;
                     }
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentItemCount ?? 0;
                 }
