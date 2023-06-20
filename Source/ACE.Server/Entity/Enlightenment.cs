@@ -9,6 +9,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Common;
 using ACE.Server.Entity.Actions;
+using System.Runtime.CompilerServices;
 
 namespace ACE.Server.Entity
 {
@@ -90,7 +91,7 @@ namespace ACE.Server.Entity
 
         public static bool VerifyRequirements(Player player)
         {
-            if (player.Level < (275 + player.Enlightenment + 1))
+            if (player.Level < (275 + player.Enlightenment))
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be level 275 Plus 1 per Previous Enlightenment to enlighten further.", ChatMessageType.Broadcast));
                 return false;
@@ -160,11 +161,11 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (player.Enlightenment + 1 > 15)
+            if (player.Enlightenment + 1 > 25)
             {
                 if (!VerifySocietyMaster(player))
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a Master of your Society to enlighten beyond level 15.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a Master of your Society to enlighten beyond level 25.", ChatMessageType.Broadcast));
                     return false;
                 }
             }
@@ -353,6 +354,41 @@ namespace ACE.Server.Entity
         }
 
         public static uint AttributeResetCertificate => 46421;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetEnlightenmentRatingBonus(int EnlightenmentAmt)
+        {
+            int bonus = 0;
+            for (int x = 0; x < EnlightenmentAmt; x++)
+            {
+                if (x < 10)
+                {
+                    bonus++;
+                }
+                else if (x < 20)
+                {
+                    if (x % 2 == 0)
+                    {
+                        bonus++;
+                    }
+                }
+                else if (x < 50)
+                {
+                    if (x % 5 == 0)
+                    {
+                        bonus++;
+                    }
+                }
+                else
+                {
+                    if (x % 10 == 0)
+                    {
+                        bonus++;
+                    }
+                }
+            }
+            return bonus;
+        }
 
         public static void AddPerks(Player player)
         {

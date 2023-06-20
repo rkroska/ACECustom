@@ -829,6 +829,10 @@ namespace ACE.Server.Managers
                 npcTargetWorldObject.EmoteManager.AddEmote(finishedEmote);
 
                 DatabaseManager.World.ClearCachedWeenie(npcTargetWorldObject.WeenieClassId);
+                if (chainDelivery)
+                {
+                    DatabaseManager.World.ClearCachedWeenie(npcDeliveryTarget.WeenieClassId);
+                }
                 
                 //DatabaseManager.Shard.SaveBiota(npcTargetWorldObject.Biota, new System.Threading.ReaderWriterLockSlim(), null);
 
@@ -976,7 +980,7 @@ namespace ACE.Server.Managers
                 Message = $"Good work, you've completed this errand with ease. Here's an item for you.",
                 TestString = "",
                 Amount = null,
-                Percent = 0.25,
+                Percent = 0.15,
                 Amount64 = null,
                 HeroXP64 = null,
                 WealthRating = null,

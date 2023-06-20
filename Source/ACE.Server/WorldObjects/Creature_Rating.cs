@@ -3,6 +3,7 @@ using System.Linq;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Entity;
 using ACE.Server.Managers;
 
 namespace ACE.Server.WorldObjects
@@ -222,7 +223,7 @@ namespace ACE.Server.WorldObjects
             {
                 augBonus = player.AugmentationDamageBonus * 3;
                 lumAugBonus = player.LumAugDamageRating;
-                enlightenmentBonus = player.Enlightenment;
+                enlightenmentBonus = Enlightenment.GetEnlightenmentRatingBonus(player.Enlightenment);
             }
 
             // heritage / weapon type bonus factored in elsewhere?

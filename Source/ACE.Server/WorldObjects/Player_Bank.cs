@@ -254,16 +254,25 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                this.BankedPyreals -= Amount;
+                
                 if (tarplayer is OfflinePlayer)
                 {
+                    if ((tarplayer as OfflinePlayer).BankedPyreals == null)
+                    {
+                        (tarplayer as OfflinePlayer).BankedPyreals = Amount;
+                    }
                     (tarplayer as OfflinePlayer).BankedPyreals += Amount;
                 }
                 else
                 {
+                    if ((tarplayer as Player).BankedPyreals == null)
+                    {
+                        (tarplayer as Player).BankedPyreals = Amount;
+                    }
                     (tarplayer as Player).BankedPyreals += Amount;
                 }
-                
+                this.BankedPyreals -= Amount;
+
                 return true;
             }
 
@@ -281,6 +290,10 @@ namespace ACE.Server.WorldObjects
 
                 if (tarplayer is OfflinePlayer)
                 {
+                    if ((tarplayer as OfflinePlayer).BankedLuminance == null)
+                    {
+                        return false;
+                    }
                     if ((tarplayer as OfflinePlayer).BankedLuminance == 0) 
                     {
                         return false;
@@ -298,7 +311,7 @@ namespace ACE.Server.WorldObjects
                     this.BankedLuminance -= Amount;
                     (tarplayer as Player).BankedLuminance += Amount;
                 }
-                
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
                 return true;
             }          
         }

@@ -1847,14 +1847,34 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("setproperty", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2, "Sets a property for the last appraised object", "<property> <value>")]
         public static void HandleSetProperty(Session session, params string[] parameters)
         {
-            var obj = CommandHandlerHelper.GetLastAppraisedObject(session);
-            if (obj == null) return;
+            string guid = string.Empty;
+            if (parameters.Length > 2)
+            {
+                guid = parameters[2];
+            }
+            WorldObject target = null;
+            uint guidVal = 0;
+            if (uint.TryParse(guid, out guidVal))
+            {
+                target = CommandHandlerHelper.GetWorldObjectByGuid(session, guidVal);
+            }
+            else
+            {
+                var obj = CommandHandlerHelper.GetLastAppraisedObject(session);
+                if (obj != null)
+                {
+                    target = obj;
+                }
+            }
+            
+            if (target == null && guid == string.Empty) return;
 
             if (parameters.Length < 2)
                 return;
 
             var prop = parameters[0];
             var value = parameters[1];
+
 
             var props = prop.Split('.');
             if (props.Length != 2)
@@ -1896,19 +1916,19 @@ namespace ACE.Server.Command.Handlers
             if (value == "null")
             {
                 if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyInt)result);
+                    target.RemoveProperty((PropertyInt)result);
                 else if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyInt64)result);
+                    target.RemoveProperty((PropertyInt64)result);
                 else if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyBool)result);
+                    target.RemoveProperty((PropertyBool)result);
                 else if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyFloat)result);
+                    target.RemoveProperty((PropertyFloat)result);
                 else if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyString)result);
+                    target.RemoveProperty((PropertyString)result);
                 else if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyInstanceId)result);
+                    target.RemoveProperty((PropertyInstanceId)result);
                 else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
-                    obj.RemoveProperty((PropertyDataId)result);
+                    target.RemoveProperty((PropertyDataId)result);
             }
             else
             {
@@ -1918,41 +1938,41 @@ namespace ACE.Server.Command.Handlers
                     {
                         var intValue = Convert.ToInt32(value, value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10);
 
-                        session.Player.UpdateProperty(obj, (PropertyInt)result, intValue, true);
+                        session.Player.UpdateProperty(target, (PropertyInt)result, intValue, true);
                     }
                     else if (propType.Equals("PropertyInt64", StringComparison.OrdinalIgnoreCase))
                     {
                         var int64Value = Convert.ToInt64(value, value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10);
 
-                        session.Player.UpdateProperty(obj, (PropertyInt64)result, int64Value, true);
+                        session.Player.UpdateProperty(target, (PropertyInt64)result, int64Value, true);
                     }
                     else if (propType.Equals("PropertyBool", StringComparison.OrdinalIgnoreCase))
                     {
                         var boolValue = Convert.ToBoolean(value);
 
-                        session.Player.UpdateProperty(obj, (PropertyBool)result, boolValue, true);
+                        session.Player.UpdateProperty(target, (PropertyBool)result, boolValue, true);
                     }
                     else if (propType.Equals("PropertyFloat", StringComparison.OrdinalIgnoreCase))
                     {
                         var floatValue = Convert.ToDouble(value);
 
-                        session.Player.UpdateProperty(obj, (PropertyFloat)result, floatValue, true);
+                        session.Player.UpdateProperty(target, (PropertyFloat)result, floatValue, true);
                     }
                     else if (propType.Equals("PropertyString", StringComparison.OrdinalIgnoreCase))
                     {
-                        session.Player.UpdateProperty(obj, (PropertyString)result, value, true);
+                        session.Player.UpdateProperty(target, (PropertyString)result, value, true);
                     }
                     else if (propType.Equals("PropertyInstanceId", StringComparison.OrdinalIgnoreCase))
                     {
                         var iidValue = Convert.ToUInt32(value, value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10);
 
-                        session.Player.UpdateProperty(obj, (PropertyInstanceId)result, iidValue, true);
+                        session.Player.UpdateProperty(target, (PropertyInstanceId)result, iidValue, true);
                     }
                     else if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
                     {
                         var didValue = Convert.ToUInt32(value, value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10);
 
-                        session.Player.UpdateProperty(obj, (PropertyDataId)result, didValue, true);
+                        session.Player.UpdateProperty(target, (PropertyDataId)result, didValue, true);
                     }
                 }
                 catch (Exception e)
@@ -1961,8 +1981,8 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
             }
-            session.Network.EnqueueSend(new GameMessageSystemChat($"{obj.Name} ({obj.Guid}): {prop} = {value}", ChatMessageType.Broadcast));
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {obj.Name} ({obj.Guid}): {prop} = {value}");
+            session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} ({target.Guid}): {prop} = {value}", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {target.Name} ({target.Guid}): {prop} = {value}");
         }
 
         /// <summary>

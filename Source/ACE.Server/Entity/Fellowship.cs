@@ -588,16 +588,16 @@ namespace ACE.Server.Entity
             else
             {
                 // pre-filter: evenly divide between luminance-eligible fellows
-                var shareableMembers = GetFellowshipMembers().Values.Where(f => f.MaximumLuminance != null).ToList();
+                //var shareableMembers = GetFellowshipMembers().Values.Where(f => f.MaximumLuminance != null).ToList();
+                var shareableMembers = GetFellowshipMembers().Values.ToList();
 
                 if (shareableMembers.Count == 0)
                 {
-                    player.GrantLuminance((long)amount, XpType.Fellowship, shareType);
+                    player.GrantLuminance((long)amount, xpType, shareType);
                     return;
-                }    
-                    
+                }
 
-                var perAmount = (long)Math.Round((double)(amount / (ulong)shareableMembers.Count));
+                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
 
                 // further filter to fellows in radar range
                 //var inRange = shareableMembers.Intersect(WithinRange(player, true)).ToList();
@@ -611,7 +611,7 @@ namespace ACE.Server.Entity
                         continue;
                     }
                     
-                    var playerTotal = (long)Math.Round(perAmount * GetDistanceScalar(player, member, xpType));
+                    var playerTotal = (long)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
 
                     member.GrantLuminance(playerTotal, fellowXpType, shareType);
                 }
@@ -642,6 +642,8 @@ namespace ACE.Server.Entity
                     return .35;
                 case 9:
                     return .3;
+                default:
+                    return .25;
                     // TODO: handle fellowship mods with > 9 players?
             }
             return 1.0;
