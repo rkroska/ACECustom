@@ -632,6 +632,10 @@ namespace ACE.Entity.Enum.Properties
 
         [ServerOnly]
         BankAccountNumber                       = 9016,
+        [ServerOnly]
+        LumAugmentMeleeRange                    = 9017,
+        [ServerOnly]
+        LumAugmentPowerBarSpeed                 = 9018,
 
     }
 

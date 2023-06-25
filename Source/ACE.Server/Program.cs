@@ -338,6 +338,7 @@ namespace ACE.Server
                     log.Warn("Unsafe server shutdown detected! Data loss is possible!");
 
                 PropertyManager.StopUpdating();
+                //ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
 
                 // Do system specific cleanup here

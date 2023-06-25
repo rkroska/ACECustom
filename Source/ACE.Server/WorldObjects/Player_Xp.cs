@@ -237,12 +237,12 @@ namespace ACE.Server.WorldObjects
             
             if (level > 275)
             {
-                return (long)(GenerateDynamicLevelPostMax(level) - TotalExperienceDouble);
+                return (long)(GenerateDynamicLevelPostMax(level) - TotalExperienceDouble ?? 0);
             }
             else
             {
                 var levelTotalXP = (int)DatManager.PortalDat.XpTable.CharacterLevelXPList[(int)level];
-                return (long)levelTotalXP - TotalExperience.Value;
+                return (long)levelTotalXP - TotalExperience ?? 0;
             }
              
 
