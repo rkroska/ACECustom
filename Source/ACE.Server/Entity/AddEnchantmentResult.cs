@@ -123,8 +123,10 @@ namespace ACE.Server.Entity
                         var spellDuration = equip ? double.PositiveInfinity : spell.Duration;
 
                         if (!equip && caster is Player player && (player.AugmentationIncreasedSpellDuration + player.LuminanceAugmentSpellDurationCount ?? 0) > 0)
+                        {
                             spellDuration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f);
-                        spellDuration += (((caster as Player).LuminanceAugmentSpellDurationCount ?? 0) * 0.01f);
+                            spellDuration += (((caster as Player).LuminanceAugmentSpellDurationCount ?? 0) * 0.01f);
+                        }
                         var entryDuration = entry.Duration == -1 ? double.PositiveInfinity : entry.Duration;
 
                         if (spellDuration > entryDuration || spellDuration == entryDuration && !SpellSet.SetSpells.Contains(entry.SpellId))

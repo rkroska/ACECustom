@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 using ACE.DatLoader.Entity.AnimationHooks;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
@@ -17,6 +18,19 @@ namespace ACE.Server.WorldObjects
     /// </summary>
     partial class Player
     {
+
+        public int? LumAugmentMeleeRange
+        {
+            get => GetProperty(PropertyInt.LumAugmentMeleeRange);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.LumAugmentMeleeRange); else SetProperty(PropertyInt.LumAugmentMeleeRange, value.Value); }
+        }
+
+        public int? LumAugmentPowerBarSpeed
+        {
+            get => GetProperty(PropertyInt.LumAugmentPowerBarSpeed) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.LumAugmentPowerBarSpeed); else SetProperty(PropertyInt.LumAugmentPowerBarSpeed, value.Value); }
+        }
+
         /// <summary>
         /// The target this player is currently performing a melee attack on
         /// </summary>
@@ -171,7 +185,7 @@ namespace ACE.Server.WorldObjects
         {
             var dist = GetCylinderDistance(target);
 
-            if (dist <= MeleeDistance || dist <= StickyDistance && IsMeleeVisible(target))
+            if (dist <= (MeleeDistance + (LumAugmentMeleeRange ?? 0) * 0.1f) || dist <= StickyDistance && IsMeleeVisible(target))
             {
                 // sticky melee
                 var angle = GetAngle(target);
@@ -372,7 +386,7 @@ namespace ACE.Server.WorldObjects
 
                 var dist = GetCylinderDistance(target);
 
-                if (creature.IsAlive && GetCharacterOption(CharacterOption.AutoRepeatAttacks) && (dist <= MeleeDistance || dist <= StickyDistance && IsMeleeVisible(target)) && !IsBusy && !AttackCancelled)
+                if (creature.IsAlive && GetCharacterOption(CharacterOption.AutoRepeatAttacks) && (dist <= (MeleeDistance + (LumAugmentMeleeRange ?? 0) * 0.1f) || dist <= StickyDistance && IsMeleeVisible(target)) && !IsBusy && !AttackCancelled)
                 {
                     // client starts refilling power meter
                     Session.Network.EnqueueSend(new GameEventAttackDone(Session));

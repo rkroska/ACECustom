@@ -28,8 +28,18 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public float GetArmorMod(DamageType damageType, List<WorldObject> armorLayers, Creature attacker, WorldObject weapon, float armorRendingMod = 1.0f)
         {
-            var effectiveArmorVsType = GetEffectiveArmorVsType(damageType, armorLayers, attacker, weapon, armorRendingMod);
+            float effectiveArmorVsType = 0f;
+            try
+            {
+                effectiveArmorVsType = GetEffectiveArmorVsType(damageType, armorLayers, attacker, weapon, armorRendingMod);
 
+                return SkillFormula.CalcArmorMod(effectiveArmorVsType);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                
+            }
             return SkillFormula.CalcArmorMod(effectiveArmorVsType);
         }
 
