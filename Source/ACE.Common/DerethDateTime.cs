@@ -11,7 +11,7 @@ namespace ACE.Common
     {
         // Changing the four variables below will result in the Date and Time reported in ACClient no longer matching
         private static int hoursInADay      = 16;   // A Derethian day has 16 hours
-        private static int daysInAMonth     = 30;   // A Derethian month has 30 days and does not vary like Earth months.
+        private static int daysInAMonth     = 7;   // A Derethian month has 30 days and does not vary like Earth months.
         private static int monthsInAYear    = 12;   // A Derethian year has 12 months
         private static double dayTicks      = 7620; // A Derethain day has 7620 ticks per day
 
@@ -32,7 +32,7 @@ namespace ACE.Common
         private static DateTime dayOne_RealWorld        = new DateTime(1999, 4, 2, 00, 00, 00);
 
         private static DateTime retailDayOne_RealWorld  = new DateTime(1999, 11, 2, 00, 00, 00);
-        private static DateTime retailDayLast_RealWorld = new DateTime(2017, 1, 31, 12, 00, 00);
+        private static DateTime retailDayLast_RealWorld = new DateTime(2017, 1, 7, 12, 00, 00);
 
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Derethian Date, Portal Year and Time when the worlds first opened.</para>
@@ -47,7 +47,7 @@ namespace ACE.Common
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Derethian Date, Portal Year and Time when the worlds closed.</para>
         /// </summary>
-        private static DerethDateTime retailDayLast_Derethian           = new DerethDateTime(206, Months.Solclaim, 24, Hours.Gloaming);
+        private static DerethDateTime retailDayLast_Derethian           = new DerethDateTime(206, Months.Solclaim, 7, Hours.Gloaming);
 
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Lore Corrected Derethian Date, Portal Year and Time when the worlds closed.</para>
@@ -185,16 +185,16 @@ namespace ACE.Common
             get { return day; }
             private set
             {
-                if ((value >= 1) && (value <= 30))
+                if ((value >= 1) && (value <= daysInAMonth))
                 {
                     day = value;
                 }
                 if ((value < 1))
                 {
                     Month--;
-                    day = 30;
+                    day = daysInAMonth;
                 }
-                if ((value > 30))
+                if ((value > daysInAMonth))
                 {
                     Month++;
                     day = 1;
@@ -375,13 +375,45 @@ namespace ACE.Common
         {
             get
             {
-                if (Month >= (int)Months.Snowreap && Month <= (int)Months.Wintersebb)
-                    return Seasons.Winter;
-                if (Month >= (int)Months.Morningthaw && Month <= (int)Months.Seedsow)
-                    return Seasons.Spring;
-                if (Month >= (int)Months.Leafdawning && Month <= (int)Months.Thistledown)
-                    return Seasons.Summer;
-                return Seasons.Autumn;
+                switch (Month)
+                {
+                    case (int)Months.Snowreap:
+                        return Seasons.Winter;
+                    case (int)Months.Coldeve:
+                        return Seasons.Spring;
+                    case (int)Months.Wintersebb:
+                        return Seasons.Summer;
+                    case (int)Months.Morningthaw:
+                        return Seasons.Autumn;
+                    case (int)Months.Solclaim:
+                        return Seasons.Winter;
+                    case (int)Months.Seedsow:
+                        return Seasons.Spring;
+                    case (int)Months.Leafdawning:
+                        return Seasons.Summer;
+                    case (int)Months.Verdantine:
+                        return Seasons.Autumn;
+                    case (int)Months.Thistledown:
+                        return Seasons.Winter;
+                    case (int)Months.HarvestGain:
+                        return Seasons.Spring;
+                    case (int)Months.Leafcull:
+                        return Seasons.Summer;
+                    case (int)Months.Frostfell:
+                        return Seasons.Autumn;
+                    default:
+                        return Seasons.Autumn;
+                        break;
+                }
+
+                //Original:
+                //if (Month >= (int)Months.Snowreap && Month <= (int)Months.Wintersebb)
+                //    return Seasons.Winter;
+                //if (Month >= (int)Months.Morningthaw && Month <= (int)Months.Seedsow)
+                //    return Seasons.Spring;
+                //if (Month >= (int)Months.Leafdawning && Month <= (int)Months.Thistledown)
+                //    return Seasons.Summer;
+                //return Seasons.Autumn;
             }
         }
 
@@ -512,8 +544,8 @@ namespace ACE.Common
                 throw new ArgumentOutOfRangeException("year", "year is less than 10 or greater than 401");
             if (month < (int)Months.Snowreap || month > (int)Months.Frostfell)
                 throw new ArgumentOutOfRangeException("month", "month is less than " + Months.Snowreap + " or greater than " + Months.Frostfell);
-            if (day < 1 || day > 30)
-                throw new ArgumentOutOfRangeException("day", "day is less than 1 or greater than 30");
+            if (day < 1 || day > daysInAMonth)
+                throw new ArgumentOutOfRangeException("day", "day is less than 1 or greater than " + daysInAMonth);
             if (hour < (int)Hours.Darktide || hour > (int)Hours.Gloaming_and_Half)
                 throw new ArgumentOutOfRangeException("hour", "time is less than " + Hours.Darktide + " or greater than " + Hours.Gloaming_and_Half);
 
@@ -586,8 +618,8 @@ namespace ACE.Common
                 throw new ArgumentOutOfRangeException("year", "year is less than 10 or greater than 401");
             if ((int)month < (int)Months.Snowreap || (int)month > (int)Months.Frostfell)
                 throw new ArgumentOutOfRangeException("month", "month is less than " + Months.Snowreap + " or greater than " + Months.Frostfell);
-            if (day < 1 || day > 30)
-                throw new ArgumentOutOfRangeException("day", "day is less than 1 or greater than 30");
+            if (day < 1 || day > daysInAMonth)
+                throw new ArgumentOutOfRangeException("day", $"day is {day}, less than 1 or greater than " + daysInAMonth);
             if ((int)time < (int)Hours.Darktide || (int)time > (int)Hours.Gloaming_and_Half)
                 throw new ArgumentOutOfRangeException("time", "time is less than " + Hours.Darktide + " or greater than " + Hours.Gloaming_and_Half);
 
@@ -724,7 +756,7 @@ namespace ACE.Common
             {
                 for (double i = 0; i < numOfDaysToAdd; i++)
                 {
-                    if (newDay == 30)
+                    if (newDay == daysInAMonth)
                     {
                         if (newMonth == (int)Months.Wintersebb)
                         {
@@ -762,7 +794,7 @@ namespace ACE.Common
                         else
                             newMonth--;
 
-                        newDay = 30;
+                        newDay = daysInAMonth;
                     }
                     else
                         newDay--;
@@ -803,7 +835,7 @@ namespace ACE.Common
                 {
                     if (newHour == (int)Hours.Gloaming_and_Half)
                     {
-                        if (newDay == 30)
+                        if (newDay == daysInAMonth)
                         {
                             if (newMonth == (int)Months.Wintersebb)
                             {
@@ -848,7 +880,7 @@ namespace ACE.Common
                             else
                                 newMonth--;
 
-                            newDay = 30;
+                            newDay = daysInAMonth;
                         }
                         else
                             newDay--;
@@ -974,8 +1006,8 @@ namespace ACE.Common
 
             convertedYear += yearsToAdd;
 
-            if (convertedDay > 30)
-                convertedDay = 30;
+            if (convertedDay > daysInAMonth)
+                convertedDay = daysInAMonth;
 
             if (dateToBeConverted.Hour >= 00 && dateToBeConverted.Hour <= 02)
             {
