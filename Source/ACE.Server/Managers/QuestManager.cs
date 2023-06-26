@@ -1281,10 +1281,11 @@ namespace ACE.Server.Managers
                     if (acctQuest != null)
                     {
 
-                        if (solves == 1)
+                        if (solves == 1 && acctQuest.NumTimesCompleted < 1)
                         {
                             stampedNew = false;
                             stampedCompletion = true;
+                            acctQuest.NumTimesCompleted = solves;
                             context.AccountQuest.Update(acctQuest);
                         }                        
                     }
