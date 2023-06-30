@@ -1637,8 +1637,8 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.SpendLuminance((long)curVal6);
                                         player.LuminanceAugmentVoidCount = durAugs + 1;
                                         player.TryConsumeFromInventoryWithNetworking(300016, 1);
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
-                                    }), $"You are about to spend {curVal6} luminance to add 1 point to all of your void spell effects. Are you sure?");
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your spell {emote.Message} by 1%.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal6} luminance to add 1% to the duration of all of your spell effects. Are you sure?");
 
                                 }
                                 break;
