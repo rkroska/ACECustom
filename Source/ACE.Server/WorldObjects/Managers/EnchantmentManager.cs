@@ -182,10 +182,9 @@ namespace ACE.Server.WorldObjects.Managers
                 // should be update the StatModVal here?
 
                 var duration = spell.Duration;
-                if (caster is Player player && player.AugmentationIncreasedSpellDuration > 0 && spell.DotDuration == 0)
+                if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
                 {
-                    duration *= 1.0f + player.AugmentationIncreasedSpellDuration * 0.2f;
-                    duration += (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.01f;
+                    duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.01f);
                 }
                 var timeRemaining = refreshSpell.Duration + refreshSpell.StartTime;
 
@@ -221,8 +220,11 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 entry.Duration = spell.Duration;
 
-                if (caster is Player player && player.AugmentationIncreasedSpellDuration > 0 && spell.DotDuration == 0)
-                    entry.Duration *= 1.0f + player.AugmentationIncreasedSpellDuration * 0.2f;
+                if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
+                { 
+                    entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.01f);
+                    //entry.Duration *= (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.001f;
+                }
             }
             else
             {

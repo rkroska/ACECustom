@@ -54,8 +54,6 @@ namespace ACE.Server.Entity
             if (!VerifyRequirements(player))
                 return;
 
-            RemoveTokens(player);
-
             DequipAllItems(player);
 
             RemoveFromFellowships(player);
@@ -74,11 +72,12 @@ namespace ACE.Server.Entity
                 var endPos = new ACE.Entity.Position(player.Location);
                 if (startPos.SquaredDistanceTo(endPos) > Player.RecallMoveThresholdSq)
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have moved too far!", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have moved too far during the enlightenment animation!", ChatMessageType.Broadcast));
                     return;
                 }
 
                 player.ThreadSafeTeleportOnDeath();
+                RemoveTokens(player);
                 RemoveAbility(player);
                 AddPerks(player);
                 player.SaveBiotaToDatabase();

@@ -887,14 +887,14 @@ namespace ACE.Server.Managers
                 if (chainDelivery)
                 {
                     LandblockId p2;
-                    foreach (var item in Enum.GetValues(typeof(PositionType)))
+                    foreach (var item2 in Enum.GetValues(typeof(PositionType)))
                     {
                         PropertiesPosition propPos2 = null;
                         if (npcDeliveryTarget == null || npcDeliveryTarget.PropertiesPosition == null)
                         {
                             continue;
                         }
-                        bool found2 = npcDeliveryTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos2);
+                        bool found2 = npcDeliveryTarget.PropertiesPosition.TryGetValue((PositionType)item2, out propPos2);
 
                         if (found2 && propPos2 != null)
                         {
