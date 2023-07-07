@@ -184,7 +184,7 @@ namespace ACE.Server.WorldObjects.Managers
                 var duration = spell.Duration;
                 if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
                 {
-                    duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.01f);
+                    duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
                 }
                 var timeRemaining = refreshSpell.Duration + refreshSpell.StartTime;
 
@@ -222,7 +222,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                 if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
                 { 
-                    entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.01f);
+                    entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
                     //entry.Duration *= (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.001f;
                 }
             }
@@ -267,7 +267,16 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
                     }
-                    else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 170 || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 171 || spell.StatModKey == 360) //spirit drinker
+                    else if (spell.StatModKey == 360) //blood drinker buffed
+                    {
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.025f;
+                    }
+                    else if (spell.StatModKey == 170) //spirit drinker
+                    {
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.005f;
+                    }
+                    else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 171
+                        || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }    
@@ -302,7 +311,8 @@ namespace ACE.Server.WorldObjects.Managers
                             luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f);
                         }
                         else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
-                            || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
+                            || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70 //fire, cold, acid, electric
+                            || spell.StatModKey == 312 || spell.StatModKey == 307 || spell.StatModKey == 318 || spell.StatModKey == 308 || spell.StatModKey == 317) //surge of regeneration
                         {
                             luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
                         }

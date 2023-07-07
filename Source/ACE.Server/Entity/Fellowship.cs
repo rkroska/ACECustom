@@ -23,7 +23,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// The maximum # of fellowship members
         /// </summary>
-        public static int MaxFellows = 9;
+        public static int MaxFellows = 29;
 
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
@@ -148,7 +148,7 @@ namespace ACE.Server.Entity
                 return;
             }
 
-            if (FellowshipMembers.Count == 9)
+            if (FellowshipMembers.Count == MaxFellows)
             {
                 inviter.Session.Network.EnqueueSend(new GameEventWeenieError(inviter.Session, WeenieError.YourFellowshipIsFull));
                 return;

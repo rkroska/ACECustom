@@ -12,6 +12,7 @@ namespace ACE.Common
         public long GeneralChannelId { get; set; }
         public long TradeChannelId { get; set; }
         public long ServerId { get; set; }
+        public long AdminAuditId { get; set; }
 
     }
 }
