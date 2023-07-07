@@ -27,6 +27,101 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
+        public static void HandleFellowCommand(Session session, params string[] parameters)
+        {
+            if (parameters == null || parameters.Count() == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship add <name or targetted player>", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship landblock to invite all players in your landblock", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship remove <name or targetted player>", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship create <name> to create a fellowship", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship leave", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship disband", ChatMessageType.Broadcast));
+            }
+
+            if (parameters.Count() == 1)
+            {
+                if (parameters[0] == "landblock")
+                {
+                    if (session.Player.CurrentLandblock == null)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Your current landblock is not found, for some reason (logged)", ChatMessageType.Broadcast));
+                        return;
+                    }
+                    foreach (var player in session.Player.CurrentLandblock.players)
+                    {
+                        if (player.Guid != session.Player.Guid)
+                        {
+                            session.Player.FellowshipRecruit(player);
+                        }
+                    }
+                    return;
+                }
+
+                if (parameters[0] == "leave")
+                {
+                    session.Player.Fellowship.QuitFellowship(session.Player, false);
+                    return;
+                }
+                if (parameters[0] == "disband")
+                {
+                    session.Player.Fellowship.QuitFellowship(session.Player, true);
+                    return;
+                }
+                if (parameters[0] == "add")
+                {
+                    var tPGuid = session.Player.CurrentAppraisalTarget;
+                    if (tPGuid != null)
+                    {
+                        var tplayer = PlayerManager.FindByGuid(tPGuid.Value) as Player;
+                        if (tplayer != null)
+                        {
+                            session.Player.FellowshipRecruit(tplayer);
+                        }                        
+                    }
+                    return;
+                    
+                }
+                if (parameters[0] == "remove")
+                {
+                    var tPGuid = session.Player.CurrentAppraisalTarget;
+                    if (tPGuid != null)
+                    {                       
+                        session.Player.FellowshipDismissPlayer(tPGuid.Value);
+                    }
+                    return;
+                }
+            }
+
+            if (parameters.Count() == 2)
+            {
+                if (parameters[0] == "create")
+                {
+                    session.Player.FellowshipCreate(parameters[1], true);
+                    return;
+                }
+                if (parameters[0] == "add")
+                {                    
+                    var tplayer = PlayerManager.FindByName(parameters[1]) as Player;
+                    if (tplayer != null)
+                    {
+                        session.Player.FellowshipRecruit(tplayer);
+                        return;
+                    }
+                }
+                if (parameters[0] == "remove")
+                {                    
+                    var tplayer = PlayerManager.FindByName(parameters[1]) as Player;
+                    if (tplayer != null)
+                    {
+                        session.Player.FellowshipDismissPlayer(tplayer.Guid.Full);
+                        return;
+                    }
+                }
+            }
+        }
+
         [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBankShort(Session session, params string[] parameters)
         {

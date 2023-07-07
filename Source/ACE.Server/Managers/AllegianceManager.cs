@@ -292,6 +292,15 @@ namespace ACE.Server.Managers
             var generatedAmount = (uint)(amount * generated);
             var passupAmount = (uint)(amount * passup);
 
+
+
+            if (luminance)
+            {
+                var lumMult = PropertyManager.GetDouble("lum_passup_mult", 0.5).Item;
+                generatedAmount = (uint)(generatedAmount * lumMult);
+                passupAmount = (uint)(passupAmount * lumMult);
+            }
+
             /*Console.WriteLine("---");
             Console.WriteLine("AllegianceManager.PassXP(" + amount + ")");
             Console.WriteLine("Vassal: " + vassal.Name);

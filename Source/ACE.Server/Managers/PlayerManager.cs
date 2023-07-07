@@ -562,9 +562,16 @@ namespace ACE.Server.Managers
         public static void BroadcastToAuditChannel(Player issuer, string message)
         {
             if (issuer != null)
+            { 
                 BroadcastToChannel(Channel.Audit, issuer, message, true, true);
+                DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
+            }
             else
+            {
                 BroadcastToChannelFromConsole(Channel.Audit, message);
+                DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
+            }
+                
 
             //if (PropertyManager.GetBool("log_audit", true).Item)
                 //log.Info($"[AUDIT] {(issuer != null ? $"{issuer.Name} says on the Audit channel: " : "")}{message}");

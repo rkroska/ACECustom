@@ -78,7 +78,7 @@ namespace ACE.Server.Entity
         private readonly List<ObjectGuid> pendingRemovals = new List<ObjectGuid>();
 
         // Cache used for Tick efficiency
-        private readonly List<Player> players = new List<Player>();
+        public readonly List<Player> players = new List<Player>();
         private readonly LinkedList<Creature> sortedCreaturesByNextTick = new LinkedList<Creature>();
         private readonly LinkedList<WorldObject> sortedWorldObjectsByNextHeartbeat = new LinkedList<WorldObject>();
         private readonly LinkedList<WorldObject> sortedGeneratorsByNextGeneratorUpdate = new LinkedList<WorldObject>();
@@ -222,7 +222,7 @@ namespace ACE.Server.Entity
             0xC4ED, 0xC5ED, 0xC6ED, 0xC7ED, 0xC8ED, 0xC9ED, 0xCAED, 0xCBED, 0xCCED,
             0xC4EE, 0xC5EE, 0xC6EE, 0xC7EE, 0xC8EE, 0xC9EE, 0xCAEE, 0xCBEE,
             0xC4EF, 0xC5EF, 0xC6EF, 0xC7EF, 0xC8EF, 0xC9EF, 0xCAEF, 0xCBEF,
-            0xC5F0, 0xC6F0, 0xC7F0, 0xC8F0, 0xC9F0, 0xCAF0,
+            0xC5F0, 0xC6F0, 0xC7F0, 0xC8F0, 0xC9F0, 0xC9EA, 0xCAF0,
             0xC5F1, 0xC6F1, 0xC7F1, 0xC8F1, 0xC9F1,
             0xC4F2, 0xC5F2, 0xC6F2, 0xC7F2, 0xC8F2,
             0xC3F3, 0xC4F3, 0xC5F3, 0xC6F3, 0xC7F3, 0xC8F3,
