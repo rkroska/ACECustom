@@ -1270,9 +1270,14 @@ namespace ACE.Server.Managers
 
         public void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, out bool stampedCompletion, uint solves = 0)
         {
-            var acctId = player.Account.AccountId;
             stampedNew = false;
             stampedCompletion = false;
+            if (player.IsMule)
+            {
+                return;
+            }
+            var acctId = player.Account.AccountId;
+
             using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
             {
                 try

@@ -360,8 +360,15 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
                             break;
                         }
-                        session.Player.TransferPyreals(amount, transferTargetName);
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Pyreal to {transferTargetName}", ChatMessageType.System));
+                        if (session.Player.TransferPyreals(amount, transferTargetName))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Pyreal to {transferTargetName}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Pyreals to {transferTargetName}", ChatMessageType.System));
+                        }
+                        
                         break;
                     case 2:
                         //transfer lum
@@ -382,8 +389,27 @@ namespace ACE.Server.Command.Handlers
                         else
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Luminance to {transferTargetName}", ChatMessageType.System));
+                        }                    
+                        break;
+                    case 4:
+                        if (amount > session.Player.BankedLegendaryKeys)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough keys banked to make this transfer", ChatMessageType.System));
+                            break;
                         }
-                        
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
+                            break;
+                        }
+                        if (session.Player.TransferLegendaryKeys(amount, transferTargetName))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Legendary Keys to {transferTargetName}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Legendary Keys to {transferTargetName}", ChatMessageType.System));
+                        }
                         break;
                     default:
                         break;

@@ -2398,6 +2398,24 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
+        [CommandHandler("refreshweenie", AccessLevel.Developer, CommandHandlerFlag.None, "Clears the weenie database cache for one specific weenie")]
+        public static void HandleRefreshWeenie(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                return;
+            }
+            uint weenieId = 0;
+            if (!uint.TryParse(parameters[0], out weenieId))
+            {
+                return;
+            }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Clearing weenie cache for {weenieId}");
+            DatabaseManager.World.ClearCachedWeenie(weenieId);
+            //DatabaseManager.World.GetCachedWeenie(weenieId);
+        }
+
         [CommandHandler("clearcache", AccessLevel.Developer, CommandHandlerFlag.None, "Clears the various database caches. This enables live editing of the database information")]
         public static void HandleClearCache(Session session, params string[] parameters)
         {

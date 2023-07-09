@@ -20,6 +20,7 @@ using MySqlX.XDevAPI;
 using ACE.Server.Command.Handlers;
 using ACE.Server.Factories;
 using ACE.Server.Entity;
+using ACE.Database.Models.Auth;
 
 namespace ACE.Server.WorldObjects
 {
@@ -88,6 +89,19 @@ namespace ACE.Server.WorldObjects
                     if (this.TryConsumeFromInventoryWithNetworking(item))
                     {
                         BankedLegendaryKeys += 1;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                var durKeysList = this.GetInventoryItemsOfWCID(51954); //Durable legendary keys
+                foreach (var dur in durKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(dur))
+                    {
+                        BankedLegendaryKeys += 10;
                     }
                     else
                     {
@@ -234,11 +248,22 @@ namespace ACE.Server.WorldObjects
 
         public void WithdrawLegendaryKeys(long Amount)
         {
+            long remainingAmount = Amount;
             lock (balanceLock)
             {
-                for (int i = 0; i < Amount; i++)
+                if (Amount >= 10)
                 {
-                    WorldObject key = WorldObjectFactory.CreateNewWorldObject(48746);
+                    for (int x = 0; x < Amount; x+=10)
+                    {
+                        remainingAmount -= 10;
+                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(51954); //Durable legendary key
+                        this.TryCreateInInventoryWithNetworking(key);
+                        BankedLegendaryKeys -= 10;
+                    }
+                }
+                for (int i = 0; i < remainingAmount; i++)
+                {
+                    WorldObject key = WorldObjectFactory.CreateNewWorldObject(48746); //Regular legendary key
                     this.TryCreateInInventoryWithNetworking(key);
                     BankedLegendaryKeys -= 1;
                 }
@@ -270,12 +295,47 @@ namespace ACE.Server.WorldObjects
                         (tarplayer as Player).BankedPyreals = Amount;
                     }
                     (tarplayer as Player).BankedPyreals += Amount;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(tarplayer as Player, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
+                    (tarplayer as Player).Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
                 }
                 this.BankedPyreals -= Amount;
-
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
+                
                 return true;
             }
+        }
 
+        public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
+        {
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
+            if (tarplayer == null)
+            {
+                return false;
+            }
+            else
+            {
+                if (tarplayer is OfflinePlayer)
+                {
+                    if ((tarplayer as OfflinePlayer).BankedLegendaryKeys == null)
+                    {
+                        (tarplayer as OfflinePlayer).BankedLegendaryKeys = Amount;
+                    }
+                    (tarplayer as OfflinePlayer).BankedLegendaryKeys += Amount;
+                }
+                else
+                {
+                    if ((tarplayer as Player).BankedLegendaryKeys == null)
+                    {
+                        (tarplayer as Player).BankedLegendaryKeys = Amount;
+                    }
+                    (tarplayer as Player).BankedLegendaryKeys += Amount;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(tarplayer as Player, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
+                    (tarplayer as Player).Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
+                }
+                this.BankedLegendaryKeys -= Amount;
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
+                return true;
+            }
         }
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
@@ -310,6 +370,8 @@ namespace ACE.Server.WorldObjects
                     }
                     this.BankedLuminance -= Amount;
                     (tarplayer as Player).BankedLuminance += Amount;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(tarplayer as Player, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                    (tarplayer as Player).Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
                 }
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
                 return true;
