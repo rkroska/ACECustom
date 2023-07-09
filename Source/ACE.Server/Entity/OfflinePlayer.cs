@@ -307,5 +307,11 @@ namespace ACE.Server.Entity
             get => GetProperty(PropertyInt64.BankedPyreals);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPyreals); else SetProperty(PropertyInt64.BankedPyreals, value.Value); }
         }
+
+        public long? BankedLegendaryKeys
+        {
+            get => GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
+        }
     }
 }

@@ -14,6 +14,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects.Entity;
+using System.Runtime.CompilerServices;
 
 namespace ACE.Server.WorldObjects.Managers
 {
@@ -297,7 +298,7 @@ namespace ACE.Server.WorldObjects.Managers
                         else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
                             || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
                         {
-                            luminanceAug -= (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.01f;
+                            luminanceAug -= GetLifeAugProtectRating(player.LuminanceAugmentLifeCount ?? 0);
                         }
                         else
                         {
@@ -333,9 +334,6 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
 
-
-
-
             if (spell.IsDamageOverTime)
             {
                 var heartbeatInterval = WorldObject.HeartbeatInterval ?? 5.0f;
@@ -364,6 +362,36 @@ namespace ACE.Server.WorldObjects.Managers
             return entry;
         }
 
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float GetLifeAugProtectRating(long LifeAugAmt)
+        {
+            float bonus = 0;
+            for (int x = 0; x < LifeAugAmt; x++)
+            {
+                if (x < 10)
+                {
+                    bonus += 1f;
+                }
+                else if (x < 30)
+                {
+                    bonus += 0.5f;
+                }
+                else if (x < 50)
+                {
+                    bonus += 0.25f;
+                }
+                else if (x < 70)
+                {
+                    bonus += 0.125f;
+                }
+                else
+                {
+                    bonus += 0.0625f;
+                }
+            }
+            return bonus;
+        }
         /// <summary>
         /// Adds a cooldown spell to the enchantment registry
         /// </summary>
