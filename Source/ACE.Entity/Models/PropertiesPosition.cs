@@ -13,6 +13,8 @@ namespace ACE.Entity.Models
         public float RotationY { get; set; }
         public float RotationZ { get; set; }
 
+        public int? VariationId { get; set; }
+
         public PropertiesPosition Clone()
         {
             var result = new PropertiesPosition
@@ -25,6 +27,7 @@ namespace ACE.Entity.Models
                 RotationX = RotationX,
                 RotationY = RotationY,
                 RotationZ = RotationZ,
+                VariationId = VariationId,
             };
 
             return result;

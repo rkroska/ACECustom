@@ -7,6 +7,8 @@ namespace ACE.Entity
 {
     public class Position
     {
+        public int? Variation;
+
         private LandblockId landblockId;
 
         public LandblockId LandblockId
@@ -215,11 +217,13 @@ namespace ACE.Entity
             LandblockId = new LandblockId(pos.LandblockId.Raw);
             Pos = pos.Pos;
             Rotation = pos.Rotation;
+            Variation = pos.Variation;
         }
 
-        public Position(uint blockCellID, float newPositionX, float newPositionY, float newPositionZ, float newRotationX, float newRotationY, float newRotationZ, float newRotationW, bool relativePos = false)
+        public Position(uint blockCellID, float newPositionX, float newPositionY, float newPositionZ, float newRotationX, float newRotationY, float newRotationZ, float newRotationW, bool relativePos = false, int? VariationId = null)
         {
             LandblockId = new LandblockId(blockCellID);
+            Variation = VariationId;
 
             if (!relativePos)
             {

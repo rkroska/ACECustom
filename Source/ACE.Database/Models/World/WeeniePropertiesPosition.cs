@@ -19,6 +19,8 @@ namespace ACE.Database.Models.World
         public float AnglesY { get; set; }
         public float AnglesZ { get; set; }
 
+        public int? VariationId { get; set; }
+
         public virtual Weenie Object { get; set; }
     }
 }
