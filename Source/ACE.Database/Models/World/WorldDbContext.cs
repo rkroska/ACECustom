@@ -298,6 +298,8 @@ namespace ACE.Database.Models.World
                 entity.Property(e => e.WeenieClassId)
                     .HasColumnName("weenie_Class_Id")
                     .HasComment("Weenie Class Id of object to spawn");
+
+                entity.Property(e => e.VariationId).HasColumnName("variation_Id");
             });
 
             modelBuilder.Entity<LandblockInstanceLink>(entity =>
@@ -2209,6 +2211,8 @@ namespace ACE.Database.Models.World
                     .WithMany(p => p.WeeniePropertiesPosition)
                     .HasForeignKey(d => d.ObjectId)
                     .HasConstraintName("wcid_position");
+
+                entity.Property(e => e.VariationId).HasColumnName("variation_Id");
             });
 
             modelBuilder.Entity<WeeniePropertiesSkill>(entity =>

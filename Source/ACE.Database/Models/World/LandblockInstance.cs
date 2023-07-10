@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 #nullable disable
@@ -25,6 +25,8 @@ namespace ACE.Database.Models.World
         public float AnglesZ { get; set; }
         public bool IsLinkChild { get; set; }
         public DateTime LastModified { get; set; }
+
+        public int? VariationId { get; set; }
 
         public virtual ICollection<LandblockInstanceLink> LandblockInstanceLink { get; set; }
     }

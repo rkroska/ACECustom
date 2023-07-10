@@ -49,5 +49,12 @@ namespace ACE.Server.Tests
         //    double result = Player.GetXPCostByRank(191);
         //    Assert.AreEqual(332540637, (long)result);
         //}
+
+        [TestMethod]
+        public void AttributeXP192()
+        {
+            double result = Player.GetXPCostByRank(192);
+            Assert.AreEqual(357000000, (long)result);
+        }
     }
 }
