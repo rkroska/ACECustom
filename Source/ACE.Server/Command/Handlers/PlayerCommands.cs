@@ -240,7 +240,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositLuminance();
                     session.Player.DepositLegendaryKeys();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals and Luminance!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, and Legendary Keys!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
@@ -537,7 +537,7 @@ namespace ACE.Server.Command.Handlers
             { }
             uint destinationRank = (uint)(creatureAttribute.Ranks + RanksToRaise);
             AttrName = creatureAttribute.Vital.GetDescription();
-            ulong xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
+            ulong xpCost = Player.GetXPDeltaCostByRankForSecondary(destinationRank, creatureAttribute.Ranks);
             if (doRaise)
             {
                 success = session.Player.HandleActionRaiseVital(vital, xpCost);
@@ -588,11 +588,15 @@ namespace ACE.Server.Command.Handlers
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
                     break;
                 case "sta":
+                case "stam":
                 case "stamina":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxStamina, out AttrName, true, out success);
                     break;
                 case "hea":
                 case "health":
+                case "vit":
+                case "vitality":
+                case "maxhealth":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxHealth, out AttrName, true, out success);
                     break;
                 case "man":
