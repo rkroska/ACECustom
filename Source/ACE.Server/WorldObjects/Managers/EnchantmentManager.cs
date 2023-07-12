@@ -371,23 +371,23 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 if (x < 10)
                 {
-                    bonus += 1f;
+                    bonus += 0.01f;
                 }
                 else if (x < 30)
                 {
-                    bonus += 0.5f;
+                    bonus += 0.005f;
                 }
                 else if (x < 50)
                 {
-                    bonus += 0.25f;
+                    bonus += 0.0025f;
                 }
                 else if (x < 70)
                 {
-                    bonus += 0.125f;
+                    bonus += 0.00125f;
                 }
                 else
                 {
-                    bonus += 0.0625f;
+                    bonus += 0.000625f;
                 }
             }
             return bonus;
