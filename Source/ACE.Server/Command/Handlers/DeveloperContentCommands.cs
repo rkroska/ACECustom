@@ -1111,6 +1111,7 @@ namespace ACE.Server.Command.Handlers.Processors
         public static void HandleCreateInst(Session session, params string[] parameters)
         {
             var loc = new Position(session.Player.Location);
+            var variation = loc.Variation;
 
             var param = parameters[0];
 
@@ -1177,7 +1178,7 @@ namespace ACE.Server.Command.Handlers.Processors
             // clear any cached instances for this landblock
             DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, variation);
 
             // for link mode, ensure parent guid instance exists
             WorldObject parentObj = null;
@@ -1373,6 +1374,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.IsLinkChild = isLinkChild;
 
             instance.LastModified = DateTime.Now;
+            instance.VariationId = wo.Location.Variation;
 
             return instance;
         }

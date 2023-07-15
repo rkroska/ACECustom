@@ -24,6 +24,7 @@ namespace ACE.Server.Physics.Animation
         public SpherePath SpherePath;
         public CollisionInfo CollisionInfo;
         public CellArray CellArray;
+        public int? VariationId;
         //public ObjCell NewCellPtr;
 
         public Transition()

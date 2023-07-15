@@ -47,6 +47,7 @@ namespace ACE.Server.Entity
         public static float MaxObjectRange { get; } = 192f;
         public static float MaxObjectGhostRange { get; } = 250f;
 
+        public int? VariationId { get; set; }
 
         public LandblockId Id { get; }
 
@@ -90,6 +91,8 @@ namespace ACE.Server.Entity
         public LandblockGroup CurrentLandblockGroup { get; internal set; }
 
         public List<Landblock> Adjacents = new List<Landblock>();
+
+        public List<Landblock> Variations = new List<Landblock>();
 
         private readonly ActionQueue actionQueue = new ActionQueue();
 
@@ -180,6 +183,12 @@ namespace ACE.Server.Entity
             PhysicsLandblock = new Physics.Common.Landblock(cellLandblock);
         }
 
+
+        /// <summary>
+        /// Initializes a landblock
+        /// TODO: Make this variation aware
+        /// </summary>
+        /// <param name="reload"></param>
         public void Init(bool reload = false)
         {
             if (!reload)

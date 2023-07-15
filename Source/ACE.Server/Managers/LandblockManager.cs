@@ -171,6 +171,11 @@ namespace ACE.Server.Managers
             0x5369FFFF
         };
 
+
+        /// <summary>
+        /// Loads landblocks when they are needed
+        /// TODO: Come back and make this Variation aware
+        /// </summary>
         private static void ProcessPendingLandblockGroupAdditions()
         {
             if (landblockGroupPendingAdditions.Count == 0)
@@ -185,6 +190,7 @@ namespace ACE.Server.Managers
                         // Each dungeon exists in its own group
                         var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i]);
                         landblockGroups.Add(landblockGroup);
+                        //TODO: Add variation code here?
                     }
                     else
                     {
@@ -399,6 +405,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Returns a reference to a landblock, loading the landblock if not already active
+        /// TODO: Make this Variation Aware
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false)
         {

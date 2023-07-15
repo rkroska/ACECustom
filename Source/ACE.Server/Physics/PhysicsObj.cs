@@ -2396,7 +2396,7 @@ namespace ACE.Server.Physics
             // handle known players
             foreach (var player in ObjMaint.GetKnownPlayersValues())
             {
-                var added = player.handle_visible_obj(this);
+                var added = player.handle_visible_obj(this); //Todo: make variant change here?
 
                 if (added)
                     player.enqueue_obj(this);
@@ -2737,7 +2737,7 @@ namespace ACE.Server.Physics
                 //Console.WriteLine(expiredObj.Name);
 
             // get the list of visible objects from this cell
-            var visibleObjects = ObjMaint.GetVisibleObjects(CurCell);
+            var visibleObjects = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.All, this.Position.Variation);
 
             //Console.WriteLine("Visible objects from this cell: " + visibleObjects.Count);
             //foreach (var visibleObject in visibleObjects)
@@ -2776,7 +2776,7 @@ namespace ACE.Server.Physics
             if (WeenieObj.IsMonster)
             {
                 // players and combat pets
-                var visibleTargets = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.AttackTargets);
+                var visibleTargets = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.AttackTargets, this.Position.Variation);
 
                 var newTargets = ObjMaint.AddVisibleTargets(visibleTargets);
             }
@@ -2784,8 +2784,8 @@ namespace ACE.Server.Physics
             {
                 // everything except monsters
                 // usually these are server objects whose position never changes
-                var knownPlayers = ObjectMaint.InitialClamp ? ObjMaint.GetVisibleObjectsDist(CurCell, ObjectMaint.VisibleObjectType.Players)
-                    : ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.Players);
+                var knownPlayers = ObjectMaint.InitialClamp ? ObjMaint.GetVisibleObjectsDist(CurCell, ObjectMaint.VisibleObjectType.Players, this.Position.Variation)
+                    : ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.Players, this.Position.Variation);
 
                 ObjMaint.AddKnownPlayers(knownPlayers);
             }
@@ -3465,6 +3465,7 @@ namespace ACE.Server.Physics
         public void set_current_pos(Position newPos)
         {
             Position.ObjCellID = newPos.ObjCellID;
+            Position.Variation = newPos.Variation;
             Position.Frame = new AFrame(newPos.Frame);
 
             if (CurCell == null || CurCell.ID != Position.ObjCellID)
@@ -3885,10 +3886,11 @@ namespace ACE.Server.Physics
         /// Sets the requested position to the AutonomousPosition
         /// received from the client
         /// </summary>
-        public void set_request_pos(Vector3 pos, Quaternion rotation, ObjCell cell, uint blockCellID)
+        public void set_request_pos(Vector3 pos, Quaternion rotation, ObjCell cell, uint blockCellID, int? VariationId = null)
         {
             RequestPos.Frame.Origin = pos;
             RequestPos.Frame.Orientation = rotation;
+            RequestPos.Variation = VariationId;
 
             if (CurCell == null)
             {

@@ -38,7 +38,7 @@ namespace ACE.Database.SQLFormatters.World
                 if (value != input[0])
                     writer.WriteLine();
 
-                writer.WriteLine("INSERT INTO `landblock_instance` (`guid`, `weenie_Class_Id`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `is_Link_Child`, `last_Modified`)");
+                writer.WriteLine("INSERT INTO `landblock_instance` (`guid`, `weenie_Class_Id`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `is_Link_Child`, `last_Modified`, `variation_Id`)");
 
                 string label = null;
 
@@ -58,8 +58,9 @@ namespace ACE.Database.SQLFormatters.World
                              $"{TrimNegativeZero(value.AnglesZ):0.######}, " +
                              $"{value.IsLinkChild.ToString().PadLeft(5)}, " +
                              $"'{value.LastModified:yyyy-MM-dd HH:mm:ss}'" +
+                             $"'{value.VariationId:0.######}'" +
                              $"); /* {label} */" +
-                             Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6} */";
+                             Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6}  {TrimNegativeZero(value.VariationId):F6} */";
 
                 output = FixNullFields(output);
 

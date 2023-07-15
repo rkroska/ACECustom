@@ -675,7 +675,7 @@ namespace ACE.Database
             return cachedLandblockInstances.TryRemove(landblock, out _);
         }
 
-        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock)
+        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null)
         {
             if (cachedLandblockInstances.TryGetValue(landblock, out var value))
                 return value;
@@ -683,7 +683,7 @@ namespace ACE.Database
             var results = context.LandblockInstance
                 .Include(r => r.LandblockInstanceLink)
                 .AsNoTracking()
-                .Where(r => r.Landblock == landblock)
+                .Where(r => r.Landblock == landblock && r.VariationId == variation)
                 .ToList();
 
             cachedLandblockInstances.TryAdd(landblock, results.ToList());
@@ -694,10 +694,10 @@ namespace ACE.Database
         /// <summary>
         /// Returns statics spawn map and their links for the landblock
         /// </summary>
-        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock)
+        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock, int? variation = null)
         {
             using (var context = new WorldDbContext())
-                return GetCachedInstancesByLandblock(context, landblock);
+                return GetCachedInstancesByLandblock(context, landblock, variation);
         }
 
 

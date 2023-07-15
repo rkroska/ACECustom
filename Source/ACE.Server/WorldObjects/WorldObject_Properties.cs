@@ -609,7 +609,7 @@ namespace ACE.Server.WorldObjects
             try
             {
                 foreach (var kvp in Biota.PropertiesPosition)
-                    results[kvp.Key] = new Position(kvp.Value.ObjCellId, kvp.Value.PositionX, kvp.Value.PositionY, kvp.Value.PositionZ, kvp.Value.RotationX, kvp.Value.RotationY, kvp.Value.RotationZ, kvp.Value.RotationW);
+                    results[kvp.Key] = new Position(kvp.Value.ObjCellId, kvp.Value.PositionX, kvp.Value.PositionY, kvp.Value.PositionZ, kvp.Value.RotationX, kvp.Value.RotationY, kvp.Value.RotationZ, kvp.Value.RotationW, false, kvp.Value.VariationId);
             }
             finally
             {
