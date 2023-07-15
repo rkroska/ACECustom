@@ -894,6 +894,16 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Cast efficiency meter {(session.Player.MagicState.CastMeter ? "enabled" : "disabled")}", ChatMessageType.Broadcast));
         }
 
+        [CommandHandler("instance", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current instance")]
+        public static void HandleInstanceInfo(Session session, params string[] parameters)
+        {
+            var physicsObj = session.Player.PhysicsObj;
+
+            var instance = physicsObj.Position.Variation;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Instance: {instance}", ChatMessageType.Broadcast));
+        }
+
         private static List<string> configList = new List<string>()
         {
             "Common settings:\nConfirmVolatileRareUse, MainPackPreferred, SalvageMultiple, SideBySideVitals, UseCraftSuccessDialog",

@@ -473,7 +473,7 @@ namespace ACE.Database
             return wieldedItems.ToList();
         }
 
-        public List<Biota> GetStaticObjectsByLandblock(ushort landblockId)
+        public List<Biota> GetStaticObjectsByLandblock(ushort landblockId, int? variationId = null)
         {
             var staticObjects = new List<Biota>();
 
@@ -491,7 +491,18 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result.Id);
-                    staticObjects.Add(biota);
+                    if (variationId.HasValue)
+                    {
+                        if (biota.BiotaPropertiesPosition.Where(x=>x.VariationId == variationId) != null) //filter to only the objects that are the correct variation
+                        {
+                            staticObjects.Add(biota);
+                        }
+                    }
+                    else //no variation id specified, so return all objects`
+                    {
+                        staticObjects.Add(biota);
+                    }
+                    
                 }
             }
 

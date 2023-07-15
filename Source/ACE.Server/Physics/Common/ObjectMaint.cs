@@ -334,7 +334,7 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// Returns a list of objects that are currently visible from a cell
         /// </summary>
-        public List<PhysicsObj> GetVisibleObjects(ObjCell cell, VisibleObjectType type = VisibleObjectType.All)
+        public List<PhysicsObj> GetVisibleObjects(ObjCell cell, VisibleObjectType type = VisibleObjectType.All, int? VariationId = null)
         {
             rwLock.EnterReadLock();
             try
@@ -345,7 +345,7 @@ namespace ACE.Server.Physics.Common
                 // use PVS / VisibleCells for EnvCells not seen outside
                 // (mostly dungeons, also some large indoor areas ie. caves)
                 if (cell is EnvCell envCell)
-                    return GetVisibleObjects(envCell, type);
+                    return GetVisibleObjects(envCell, type, VariationId);
 
                 // use current landblock + adjacents for outdoors,
                 // and envcells seen from outside (all buildings)
@@ -362,7 +362,7 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// Returns a list of objects that are currently visible from a dungeon cell
         /// </summary>
-        private List<PhysicsObj> GetVisibleObjects(EnvCell cell, VisibleObjectType type)
+        private List<PhysicsObj> GetVisibleObjects(EnvCell cell, VisibleObjectType type, int? VariationId = null)
         {
             var visibleObjs = new List<PhysicsObj>();
 
@@ -382,6 +382,11 @@ namespace ACE.Server.Physics.Common
                 var outsideObjs = PhysicsObj.CurLandblock.GetServerObjects(true).Where(i => !(i.CurCell is EnvCell indoors) || indoors.SeenOutside);
 
                 visibleObjs.AddRange(outsideObjs);
+            }
+
+            if (VariationId != null)
+            {
+                ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList();
             }
 
             return ApplyFilter(visibleObjs, type).Where(i => !i.DatObject && i.ID != PhysicsObj.ID).Distinct().ToList();
@@ -1020,12 +1025,12 @@ namespace ACE.Server.Physics.Common
             return VisibleTargets.Remove(obj.ID);
         }
 
-        public List<PhysicsObj> GetVisibleObjectsDist(ObjCell cell, VisibleObjectType type)
+        public List<PhysicsObj> GetVisibleObjectsDist(ObjCell cell, VisibleObjectType type, int? VariationId = null)
         {
             rwLock.EnterReadLock();
             try
             {
-                var visibleObjs = GetVisibleObjects(cell, type);
+                var visibleObjs = GetVisibleObjects(cell, type, VariationId);
 
                 var dist = new List<PhysicsObj>();
                 foreach (var obj in visibleObjs)
