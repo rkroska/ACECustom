@@ -168,11 +168,12 @@ namespace ACE.Server.Entity
         }
 
 
-        public Landblock(LandblockId id)
+        public Landblock(LandblockId id, int? variation = null)
         {
             //log.Debug($"Landblock({(id.Raw | 0xFFFF):X8})");
 
             Id = id;
+            VariationId = variation;
 
             CellLandblock = DatManager.CellDat.ReadFromDat<CellLandblock>(Id.Raw | 0xFFFF);
             LandblockInfo = DatManager.CellDat.ReadFromDat<LandblockInfo>((uint)Id.Landblock << 16 | 0xFFFE);
@@ -248,9 +249,9 @@ namespace ACE.Server.Entity
         /// </summary>
         private void CreateWorldObjects()
         {
-            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock);
+            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, VariationId);
             var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock);
-            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects);
+            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, VariationId);
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
@@ -297,7 +298,7 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnDynamicShardObjects()
         {
-            var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock);
+            var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock, VariationId);
             var factoryShardObjects = WorldObjectFactory.CreateWorldObjects(dynamics);
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
@@ -335,6 +336,7 @@ namespace ACE.Server.Entity
                     pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
 
                     wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+                    wo.Location.Variation = VariationId;
 
                     var sortCell = LScape.get_landcell(pos.ObjCellID) as SortCell;
                     if (sortCell != null && sortCell.has_building())
@@ -896,6 +898,7 @@ namespace ACE.Server.Entity
             }
 
             wo.CurrentLandblock = this;
+            wo.Location.Variation = VariationId;
 
             if (wo.PhysicsObj == null)
                 wo.InitPhysicsObj();

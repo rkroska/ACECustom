@@ -271,7 +271,7 @@ namespace ACE.Server.Factories
         /// <summary>
         /// This will create a list of WorldObjects, all with new GUIDs and for every position provided.
         /// </summary>
-        public static List<WorldObject> CreateNewWorldObjects(List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrict_wcid = null)
+        public static List<WorldObject> CreateNewWorldObjects(List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrict_wcid = null, int? variationId = null)
         {
             var results = new List<WorldObject>();
 
@@ -298,7 +298,8 @@ namespace ACE.Server.Factories
                 {
                     worldObject = CreateWorldObject(weenie, guid);
 
-                    worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+                    worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ,
+                        instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, false, variationId);
                 }
                 else
                 {
@@ -307,7 +308,8 @@ namespace ACE.Server.Factories
                     if (worldObject.Location == null)
                     {
                         log.Warn($"CreateNewWorldObjects: {worldObject.Name} (0x{worldObject.Guid}) Location was null. CreationTimestamp = {worldObject.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(worldObject.CreationTimestamp ?? 0).ToLocalTime()}) | Location restored from world db instance.");
-                        worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+                        worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ,
+                            instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, false, variationId);
                     }
                 }
 

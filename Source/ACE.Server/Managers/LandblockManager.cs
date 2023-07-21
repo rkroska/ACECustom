@@ -35,7 +35,7 @@ namespace ACE.Server.Managers
         /// A table of all the landblocks in the world map
         /// Landblocks which aren't currently loaded will be null here
         /// </summary>
-        private static readonly Landblock[,] landblocks = new Landblock[255, 255];
+        private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
 
         /// <summary>
         /// A lookup table of all the currently loaded landblocks
@@ -370,7 +370,7 @@ namespace ACE.Server.Managers
         /// <param name="loadAdjacents">If TRUE, ensures all of the adjacent landblocks for this WorldObject are loaded</param>
         public static bool AddObject(WorldObject worldObject, bool loadAdjacents = false)
         {
-            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents);
+            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents, false, worldObject.Location.Variation);
 
             return block.AddWorldObject(worldObject);
         }
@@ -397,17 +397,17 @@ namespace ACE.Server.Managers
             newBlock.AddWorldObjectForPhysics(worldObject);
         }
 
-        public static bool IsLoaded(LandblockId landblockId)
+        public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
             lock (landblockMutex)
-                return landblocks[landblockId.LandblockX, landblockId.LandblockY] != null;
+                return landblocks[landblockId.LandblockX, landblockId.LandblockY, variationId ?? 0] != null;
         }
 
         /// <summary>
         /// Returns a reference to a landblock, loading the landblock if not already active
         /// TODO: Make this Variation Aware
         /// </summary>
-        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false)
+        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false, int? variation = null)
         {
             Landblock landblock;
 
@@ -415,12 +415,12 @@ namespace ACE.Server.Managers
             {
                 bool setAdjacents = false;
 
-                landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY];
+                landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY, variation ?? 0];
 
                 if (landblock == null)
                 {
                     // load up this landblock
-                    landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY] = new Landblock(landblockId);
+                    landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY, variation ?? 0] = new Landblock(landblockId, variation);
 
                     if (!loadedLandblocks.Add(landblock))
                     {
@@ -443,7 +443,7 @@ namespace ACE.Server.Managers
                 {
                     var adjacents = GetAdjacentIDs(landblock);
                     foreach (var adjacent in adjacents)
-                        GetLandblock(adjacent, false, permaload);
+                        GetLandblock(adjacent, false, permaload, variation);
 
                     setAdjacents = true;
                 }
@@ -468,7 +468,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns the active, non-null adjacents for a landblock
         /// </summary>
-        private static List<Landblock> GetAdjacents(Landblock landblock)
+        private static List<Landblock> GetAdjacents(Landblock landblock, int? variationId = null)
         {
             var adjacentIDs = GetAdjacentIDs(landblock);
 
@@ -476,7 +476,7 @@ namespace ACE.Server.Managers
 
             foreach (var adjacentID in adjacentIDs)
             {
-                var adjacent = landblocks[adjacentID.LandblockX, adjacentID.LandblockY];
+                var adjacent = landblocks[adjacentID.LandblockX, adjacentID.LandblockY, variationId ?? 0];
                 if (adjacent != null)
                     adjacents.Add(adjacent);
             }
@@ -615,7 +615,7 @@ namespace ACE.Server.Managers
                         // remove from list of managed landblocks
                         if (loadedLandblocks.Remove(landblock))
                         {
-                            landblocks[landblock.Id.LandblockX, landblock.Id.LandblockY] = null;
+                            landblocks[landblock.Id.LandblockX, landblock.Id.LandblockY, landblock.VariationId ?? 0] = null;
 
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0 ; i--)

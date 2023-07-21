@@ -1293,7 +1293,7 @@ namespace ACE.Server.Physics
                 return ForceIntoCell(newCell, pos);
 
             //if (setPos.Flags.HasFlag(SetPositionFlags.DontCreateCells))
-                //transition.CellArray.DoNotLoadCells = true;
+            //transition.CellArray.DoNotLoadCells = true;
 
             if (!CheckPositionInternal(newCell, pos, transition, setPos))
                 return handle_all_collisions(transition.CollisionInfo, false, false) ?
@@ -1442,7 +1442,7 @@ namespace ACE.Server.Physics
 
                     }
                     //else
-                        //indoors = true;
+                    //indoors = true;
 
                     /*if (sortCell != null && sortCell.has_building())
                     {
@@ -1478,7 +1478,7 @@ namespace ACE.Server.Physics
             }
 
             //if (result != SetPositionError.OK)
-                //Console.WriteLine($"Couldn't spawn {Name} after {setPos.NumTries} retries @ {setPos.Pos}");
+            //Console.WriteLine($"Couldn't spawn {Name} after {setPos.NumTries} retries @ {setPos.Pos}");
 
             return result;
         }
@@ -2734,14 +2734,14 @@ namespace ACE.Server.Physics
             var expiredObjs = ObjMaint.DestroyObjects();
             //Console.WriteLine("Destroyed objects: " + expiredObjs.Count);
             //foreach (var expiredObj in expiredObjs)
-                //Console.WriteLine(expiredObj.Name);
+            //Console.WriteLine(expiredObj.Name);
 
             // get the list of visible objects from this cell
             var visibleObjects = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.All, this.Position.Variation);
 
             //Console.WriteLine("Visible objects from this cell: " + visibleObjects.Count);
             //foreach (var visibleObject in visibleObjects)
-                //Console.WriteLine(visibleObject.Name);
+            //Console.WriteLine(visibleObject.Name);
 
             // get the difference between current and previous visible
             //var newlyVisible = visibleObjects.Except(ObjMaint.VisibleObjects.Values).ToList();
@@ -2749,7 +2749,7 @@ namespace ACE.Server.Physics
             //Console.WriteLine("Newly visible objects: " + newlyVisible.Count);
             //Console.WriteLine("Newly occluded objects: " + newlyOccluded.Count);
             //foreach (var obj in newlyOccluded)
-                //Console.WriteLine(obj.Name);
+            //Console.WriteLine(obj.Name);
 
             // add newly visible objects, and get the previously unknowns
             var createObjs = ObjMaint.AddVisibleObjects(visibleObjects);
@@ -2877,7 +2877,7 @@ namespace ACE.Server.Physics
                 CurLandblock.remove_server_object(this);
                 CurLandblock = null;
             }
-           
+
         }
 
         public void leave_visibility()
