@@ -509,7 +509,7 @@ namespace ACE.Database
             return staticObjects;
         }
 
-        public List<Biota> GetDynamicObjectsByLandblock(ushort landblockId)
+        public List<Biota> GetDynamicObjectsByLandblock(ushort landblockId, int? variationId)
         {
             var dynamics = new List<Biota>();
 
@@ -521,7 +521,7 @@ namespace ACE.Database
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
                 var results = context.BiotaPropertiesPosition
-                    .Where(p => p.PositionType == 1 && p.ObjCellId >= min && p.ObjCellId <= max && p.ObjectId >= 0x80000000)
+                    .Where(p => p.PositionType == 1 && p.ObjCellId >= min && p.ObjCellId <= max && p.ObjectId >= 0x80000000 && p.VariationId == variationId)
                     .ToList();
 
                 foreach (var result in results)
