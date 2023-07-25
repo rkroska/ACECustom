@@ -903,6 +903,7 @@ namespace ACE.Server.WorldObjects
             location.RotationY = lifestone.RotationY;
             location.RotationZ = lifestone.RotationZ;
             location.RotationW = lifestone.RotationW;
+            location.VariationId = lifestone.VariationId;
 
             playerWasMovedFromNoLogLandblock = true;
 

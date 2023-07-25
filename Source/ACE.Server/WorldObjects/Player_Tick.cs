@@ -415,6 +415,10 @@ namespace ACE.Server.WorldObjects
 
             // possible bug: while teleporting, client can still send AutoPos packets from old landblock
             if (Teleporting && !forceUpdate) return false;
+            if (!Teleporting && Location.Variation != null && newPosition.Variation == null) //do not wipe out the prior Variation unless teleporting
+            {
+                newPosition.Variation = Location.Variation;
+            }
 
             // pre-validate movement
             if (!ValidateMovement(newPosition))
@@ -503,7 +507,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!success) return false;
 
-                var landblockUpdate = Location.Cell >> 16 != newPosition.Cell >> 16;
+                var landblockUpdate = (Location.Cell >> 16 != newPosition.Cell >> 16) || (Location.Variation != newPosition.Variation);
 
                 Location = newPosition;
 
@@ -575,10 +579,11 @@ namespace ACE.Server.WorldObjects
             var blockcell = PhysicsObj.Position.ObjCellID;
             var pos = PhysicsObj.Position.Frame.Origin;
             var rotate = PhysicsObj.Position.Frame.Orientation;
+            var variation = PhysicsObj.Position.Variation;
 
             var landblockUpdate = blockcell << 16 != CurrentLandblock.Id.Landblock;
 
-            Location = new ACE.Entity.Position(blockcell, pos, rotate);
+            Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 
             return landblockUpdate;
         }

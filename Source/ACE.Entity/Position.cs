@@ -241,12 +241,13 @@ namespace ACE.Entity
             }
         }
 
-        public Position(uint blockCellID, Vector3 position, Quaternion rotation)
+        public Position(uint blockCellID, Vector3 position, Quaternion rotation, int? VariationId)
         {
             LandblockId = new LandblockId(blockCellID);
 
             Pos = position;
             Rotation = rotation;
+            Variation = VariationId;
 
             if ((blockCellID & 0xFFFF) == 0)
                 SetPosition(Pos);
@@ -504,7 +505,7 @@ namespace ACE.Entity
 
         public string ToLOCString()
         {
-            return $"0x{LandblockId.Raw:X8} [{PositionX:F6} {PositionY:F6} {PositionZ:F6}] {RotationW:F6} {RotationX:F6} {RotationY:F6} {RotationZ:F6}";
+            return $"0x{LandblockId.Raw:X8} [{PositionX:F6} {PositionY:F6} {PositionZ:F6}] {RotationW:F6} {RotationX:F6} {RotationY:F6} {RotationZ:F6}, v:{Variation:N0}";
         }
 
         public static readonly int BlockLength = 192;

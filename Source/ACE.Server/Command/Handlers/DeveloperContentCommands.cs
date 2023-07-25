@@ -499,7 +499,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sqlFile}");
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, null); //todo - comeback and make this variation aware
         }
 
         private static void ImportJsonQuest(Session session, string json_folder, string json_file)
@@ -913,7 +913,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sql_file}");
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, null); //todo: come back and make this work with variation
 
             // load landblock instances from database
             var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
@@ -1176,7 +1176,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variation);
 
             var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, variation);
 
@@ -1347,7 +1347,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             // clear landblock instances for this landblock (again)
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, null); //todo: come back and make this variation aware
         }
 
         public static LandblockInstance CreateLandblockInstance(WorldObject wo, bool isLinkChild = false)
@@ -1436,7 +1436,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     guid = staticGuid.Value;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, session.Player.Location.Variation);
 
             var instance = instances.FirstOrDefault(i => i.Guid == guid);
 
@@ -1633,7 +1633,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin);
 
-            wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation);
+            wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation, newPos.Variation);
 
             var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID) as Physics.Common.SortCell;
             if (sortCell != null && sortCell.has_building())

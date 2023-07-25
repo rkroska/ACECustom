@@ -16,6 +16,10 @@ namespace ACE.Database.SQLFormatters.World
         {
             string fileName = (input.ObjCellId >> 16).ToString("X4");
             fileName = IllegalInFileName.Replace(fileName, "_");
+            if (input.VariationId != null)
+            {
+                fileName += "_" + input.VariationId.ToString();
+            }
             fileName += ".sql";
 
             return fileName;
@@ -23,7 +27,7 @@ namespace ACE.Database.SQLFormatters.World
 
         public void CreateSQLDELETEStatement(IList<LandblockInstance> input, StreamWriter writer)
         {
-            writer.WriteLine($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4};");
+            writer.WriteLine($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4} and `variation_Id` = {input[0].VariationId:N0};");
         }
 
         /// <exception cref="System.Exception">WeenieClassNames must be set, and must have a record for input.ClassId.</exception>
@@ -57,10 +61,10 @@ namespace ACE.Database.SQLFormatters.World
                              $"{TrimNegativeZero(value.AnglesY):0.######}, " +
                              $"{TrimNegativeZero(value.AnglesZ):0.######}, " +
                              $"{value.IsLinkChild.ToString().PadLeft(5)}, " +
-                             $"'{value.LastModified:yyyy-MM-dd HH:mm:ss}'" +
-                             $"'{value.VariationId:0.######}'" +
+                             $"'{value.LastModified:yyyy-MM-dd HH:mm:ss}'," +
+                             $"{value.VariationId:N0}" +
                              $"); /* {label} */" +
-                             Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6}  {TrimNegativeZero(value.VariationId):F6} */";
+                             Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6}  {TrimNegativeZero(value.VariationId):N0} */";
 
                 output = FixNullFields(output);
 

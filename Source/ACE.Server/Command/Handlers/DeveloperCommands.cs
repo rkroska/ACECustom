@@ -1766,6 +1766,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleMyLoc(Session session, params string[] parameters)
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentLandblock: {session.Player.CurrentLandblock.Id.Landblock:X4}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentVariation: {session.Player.CurrentLandblock.VariationId:N0} ", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {session.Player.Location.ToLOCString()}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics : {session.Player.PhysicsObj.Position}", ChatMessageType.Broadcast));
         }
@@ -3107,16 +3108,17 @@ namespace ACE.Server.Command.Handlers
         public static void HandleReloadLandblocks(Session session, params string[] parameters)
         {
             var landblock = session.Player.CurrentLandblock;
+            var variation = session.Player.Location.Variation;
 
             var landblockId = landblock.Id.Raw | 0xFFFF;
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Reloading 0x{landblockId:X8}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Reloading 0x{landblockId:X8}, {variation ?? 0:N0}", ChatMessageType.Broadcast));
 
             // destroy all non-player server objects
             landblock.DestroyAllNonPlayerObjects();
 
             // clear landblock cache
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock, variation);
 
             // reload landblock
             var actionChain = new ActionChain();

@@ -80,6 +80,7 @@ namespace ACE.Database.Adapter
                         RotationX = record.AnglesX,
                         RotationY = record.AnglesY,
                         RotationZ = record.AnglesZ,
+                        VariationId = record.VariationId,
 
                     };
 
@@ -525,7 +526,7 @@ namespace ACE.Database.Adapter
             {
                 foreach (var kvp in biota.PropertiesPosition)
                 {
-                    var entity = new BiotaPropertiesPosition { ObjectId = biota.Id, PositionType = (ushort)kvp.Key, ObjCellId = kvp.Value.ObjCellId, OriginX = kvp.Value.PositionX, OriginY = kvp.Value.PositionY, OriginZ = kvp.Value.PositionZ, AnglesW = kvp.Value.RotationW, AnglesX = kvp.Value.RotationX, AnglesY = kvp.Value.RotationY, AnglesZ = kvp.Value.RotationZ };
+                    var entity = new BiotaPropertiesPosition { ObjectId = biota.Id, PositionType = (ushort)kvp.Key, ObjCellId = kvp.Value.ObjCellId, OriginX = kvp.Value.PositionX, OriginY = kvp.Value.PositionY, OriginZ = kvp.Value.PositionZ, AnglesW = kvp.Value.RotationW, AnglesX = kvp.Value.RotationX, AnglesY = kvp.Value.RotationY, AnglesZ = kvp.Value.RotationZ, VariationId = kvp.Value.VariationId };
 
                     // Entity Framework is unable to store NaN floats in the database and results in an error of:
                     // ERROR 1054: Unknown column 'NaN' in 'field list'

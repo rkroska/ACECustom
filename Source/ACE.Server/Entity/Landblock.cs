@@ -181,7 +181,7 @@ namespace ACE.Server.Entity
             lastActiveTime = DateTime.UtcNow;
 
             var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
-            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock);
+            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock, variation);
         }
 
 
@@ -250,7 +250,7 @@ namespace ACE.Server.Entity
         private void CreateWorldObjects()
         {
             var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, VariationId);
-            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock);
+            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, VariationId);
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, VariationId);
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
@@ -335,7 +335,7 @@ namespace ACE.Server.Entity
 
                     pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
 
-                    wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+                    wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
                     wo.Location.Variation = VariationId;
 
                     var sortCell = LScape.get_landcell(pos.ObjCellID) as SortCell;
@@ -382,61 +382,61 @@ namespace ACE.Server.Entity
         /// its useful, concise, high level overview code for everything needed to load landblocks, all their objects, scenery, polygons
         /// without getting into all of the low level methods that acclient uses to do it
         /// </summary>
-        private void LoadMeshes(List<LandblockInstance> objects)
-        {
-            LandblockMesh = new LandblockMesh(Id);
-            LoadLandObjects();
-            LoadBuildings();
-            LoadWeenies(objects);
-            LoadScenery();
-        }
+        //private void LoadMeshes(List<LandblockInstance> objects)
+        //{
+        //    LandblockMesh = new LandblockMesh(Id);
+        //    LoadLandObjects();
+        //    LoadBuildings();
+        //    LoadWeenies(objects);
+        //    LoadScenery();
+        //}
 
         /// <summary>
         /// Loads the meshes for the static landblock objects,
         /// also known as obstacles
         /// </summary>
-        private void LoadLandObjects()
-        {
-            LandObjects = new List<ModelMesh>();
+        //private void LoadLandObjects()
+        //{
+        //    LandObjects = new List<ModelMesh>();
 
-            foreach (var obj in LandblockInfo.Objects)
-                LandObjects.Add(new ModelMesh(obj.Id, obj.Frame));
-        }
+        //    foreach (var obj in LandblockInfo.Objects)
+        //        LandObjects.Add(new ModelMesh(obj.Id, obj.Frame));
+        //}
 
         /// <summary>
         /// Loads the meshes for the buildings on the landblock
         /// </summary>
-        private void LoadBuildings()
-        {
-            Buildings = new List<ModelMesh>();
+        //private void LoadBuildings()
+        //{
+        //    Buildings = new List<ModelMesh>();
 
-            foreach (var obj in LandblockInfo.Buildings)
-                Buildings.Add(new ModelMesh(obj.ModelId, obj.Frame));
-        }
+        //    foreach (var obj in LandblockInfo.Buildings)
+        //        Buildings.Add(new ModelMesh(obj.ModelId, obj.Frame));
+        //}
 
         /// <summary>
         /// Loads the meshes for the weenies on the landblock
         /// </summary>
-        private void LoadWeenies(List<LandblockInstance> objects)
-        {
-            WeenieMeshes = new List<ModelMesh>();
+        //private void LoadWeenies(List<LandblockInstance> objects)
+        //{
+        //    WeenieMeshes = new List<ModelMesh>();
 
-            foreach (var obj in objects)
-            {
-                var weenie = DatabaseManager.World.GetCachedWeenie(obj.WeenieClassId);
-                WeenieMeshes.Add(
-                    new ModelMesh(weenie.GetProperty(PropertyDataId.Setup) ?? 0,
-                    new DatLoader.Entity.Frame(new Position(obj.ObjCellId, obj.OriginX, obj.OriginY, obj.OriginZ, obj.AnglesX, obj.AnglesY, obj.AnglesZ, obj.AnglesW))));
-            }
-        }
+        //    foreach (var obj in objects)
+        //    {
+        //        var weenie = DatabaseManager.World.GetCachedWeenie(obj.WeenieClassId);
+        //        WeenieMeshes.Add(
+        //            new ModelMesh(weenie.GetProperty(PropertyDataId.Setup) ?? 0,
+        //            new DatLoader.Entity.Frame(new Position(obj.ObjCellId, obj.OriginX, obj.OriginY, obj.OriginZ, obj.AnglesX, obj.AnglesY, obj.AnglesZ, obj.AnglesW))));
+        //    }
+        //}
 
         /// <summary>
         /// Loads the meshes for the scenery on the landblock
         /// </summary>
-        private void LoadScenery()
-        {
-            Scenery = Entity.Scenery.Load(this);
-        }
+        //private void LoadScenery()
+        //{
+        //    Scenery = Entity.Scenery.Load(this);
+        //}
 
         /// <summary>
         /// This should be called before TickLandblockGroupThreadSafeWork() and before Tick()
@@ -872,9 +872,10 @@ namespace ACE.Server.Entity
                 {
                     log.Error($"Landblock 0x{Id} entered AddWorldObjectInternal in a cross-thread operation.");
                     log.Error($"Landblock 0x{Id} CurrentLandblockGroup: {CurrentLandblockGroup}");
+                    log.Error($"Variation: {VariationId}");
                     log.Error($"LandblockManager.CurrentMultiThreadedTickingLandblockGroup.Value: {LandblockManager.CurrentMultiThreadedTickingLandblockGroup.Value}");
 
-                    log.Error($"wo: 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}], previous landblock 0x{wo.CurrentLandblock?.Id}");
+                    log.Error($"wo: 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}], v:{wo.Location.Variation}, previous landblock 0x{wo.CurrentLandblock?.Id}");
 
                     if (wo.WeenieType == WeenieType.ProjectileSpell)
                     {
@@ -898,7 +899,7 @@ namespace ACE.Server.Entity
             }
 
             wo.CurrentLandblock = this;
-            wo.Location.Variation = VariationId;
+            //wo.Location.Variation = VariationId;
 
             if (wo.PhysicsObj == null)
                 wo.InitPhysicsObj();
@@ -1075,7 +1076,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// This will return null if the object was not found in the current or adjacent landblocks.
         /// </summary>
-        public WorldObject GetObject(ObjectGuid guid, bool searchAdjacents = true)
+        public WorldObject GetObject(ObjectGuid guid, bool searchAdjacents = true, bool searchVariations = false)
         {
             if (pendingRemovals.Contains(guid))
                 return null;

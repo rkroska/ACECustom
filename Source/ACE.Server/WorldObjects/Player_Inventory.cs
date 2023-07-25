@@ -530,7 +530,7 @@ namespace ACE.Server.WorldObjects
 
             if (searchLocations.HasFlag(SearchLocations.Landblock))
             {
-                result = CurrentLandblock?.GetObject(objectGuid);
+                result = CurrentLandblock?.GetObject(objectGuid, true, true);
 
                 if (result != null)
                     return result;

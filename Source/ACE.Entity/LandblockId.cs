@@ -19,13 +19,13 @@ namespace ACE.Entity
             Raw = (uint)x << 24 | (uint)y << 16;
         }
 
-        public LandblockId(uint raw, int variationId)
+        public LandblockId(uint raw, int? variationId)
         {
             Raw = raw;
             Variation_Id = variationId;
         }
 
-        public LandblockId(byte x, byte y, int variationId)
+        public LandblockId(byte x, byte y, int? variationId)
         {
             Raw = (uint)x << 24 | (uint)y << 16;
             Variation_Id = variationId;

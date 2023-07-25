@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 
+using ACE.Common;
 using ACE.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Util;
@@ -18,7 +19,7 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// This is not used if PhysicsEngine.Instance.Server is true
         /// </summary>
-        public static ConcurrentDictionary<uint, Landblock> Landblocks = new ConcurrentDictionary<uint, Landblock>();
+        public static ConcurrentDictionary<VariantCacheId, Landblock> Landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
         public static Dictionary<uint, Landblock> BlockDrawList = new Dictionary<uint, Landblock>();
 
         public static uint LoadedCellID;
@@ -51,14 +52,14 @@ namespace ACE.Server.Physics.Common
         /// This function is thread safe
         /// </summary>
         /// <param name="blockCellID">Any landblock + cell ID within the landblock</param>
-        public static Landblock get_landblock(uint blockCellID)
+        public static Landblock get_landblock(uint blockCellID, int? variationId = null)
         {
             var landblockID = blockCellID | 0xFFFF;
-
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)landblockID, Variant = variationId ?? 0 };
             if (PhysicsEngine.Instance.Server)
             {
                 var lbid = new LandblockId(landblockID);
-                var lbmLandblock = LandblockManager.GetLandblock(lbid, false, false);
+                var lbmLandblock = LandblockManager.GetLandblock(lbid, false, false, variationId);
 
                 return lbmLandblock.PhysicsLandblock;
             }
@@ -82,27 +83,28 @@ namespace ACE.Server.Physics.Common
             return Landblocks[yDiff + xDiff * MidWidth];*/
 
             // check if landblock is already cached
-            if (Landblocks.TryGetValue(landblockID, out var landblock))
+            
+            if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
 
             lock (landblockMutex)
             {
                 // check if landblock is already cached, this time under the lock.
-                if (Landblocks.TryGetValue(landblockID, out landblock))
+                if (Landblocks.TryGetValue(cacheKey, out landblock))
                     return landblock;
 
                 // if not, load into cache
-                landblock = new Landblock(DBObj.GetCellLandblock(landblockID));
-                if (Landblocks.TryAdd(landblockID, landblock))
+                landblock = new Landblock(DBObj.GetCellLandblock(landblockID), variationId);
+                if (Landblocks.TryAdd(cacheKey, landblock))
                     landblock.PostInit();
                 else
-                    Landblocks.TryGetValue(landblockID, out landblock);
+                    Landblocks.TryGetValue(cacheKey, out landblock);
 
                 return landblock;
             }
         }
 
-        public static bool unload_landblock(uint landblockID)
+        public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
             if (PhysicsEngine.Instance.Server)
             {
@@ -112,8 +114,8 @@ namespace ACE.Server.Physics.Common
                 AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
                 return true;
             }
-
-            var result = Landblocks.TryRemove(landblockID, out _);
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)landblockID, Variant = variationId ?? 0 };
+            var result = Landblocks.TryRemove(cacheKey, out _);
             // todo: Like mentioned above, the following function should be moved to ACE.Server.Physics.Common.Landblock.Unload()
             AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
             return result;

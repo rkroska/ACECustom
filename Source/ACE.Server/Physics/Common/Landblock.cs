@@ -32,6 +32,7 @@ namespace ACE.Server.Physics.Common
         public List<LandCell> DrawArray;
         public List<PhysicsObj> Scenery;
         public List<PhysicsObj> ServerObjects { get; set; }
+        public int? VariationId { get; set; }
 
         public static bool UseSceneFiles = true;
 
@@ -40,7 +41,7 @@ namespace ACE.Server.Physics.Common
             Init();
         }
 
-        public Landblock(CellLandblock landblock)
+        public Landblock(CellLandblock landblock, int? Variation)
             : base(landblock)
         {
             Init();
@@ -52,6 +53,7 @@ namespace ACE.Server.Physics.Common
                 Info = DBObj.GetLandblockInfo(ID - 1);
             BlockCoord = LandDefs.blockid_to_lcoord(landblock.Id).Value;
             _landblock = landblock;
+            VariationId = Variation;
             get_land_limits();
         }
 
@@ -438,7 +440,7 @@ namespace ACE.Server.Physics.Common
             foreach (var info in Info.Buildings)
             {
                 var building = BuildingObj.makeBuilding(info.ModelId, info.Portals, info.NumLeaves);
-                var position = new Position(ID, new AFrame(info.Frame));
+                var position = new Position(ID, new AFrame(info.Frame), VariationId);
                 var outside = LandDefs.AdjustToOutside(position);
                 var cell = get_landcell(position.ObjCellID);
                 if (cell == null) continue;
@@ -492,7 +494,7 @@ namespace ACE.Server.Physics.Common
                 {
                     var obj = PhysicsObj.makeObject(info.Id, 0, false);
                     obj.DatObject = true;
-                    var position = new Position(ID, new AFrame(info.Frame));
+                    var position = new Position(ID, new AFrame(info.Frame), VariationId);
                     var outside = LandDefs.AdjustToOutside(position);
                     var cell = get_landcell(position.ObjCellID);
                     if (cell == null)

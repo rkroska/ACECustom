@@ -181,10 +181,11 @@ namespace ACE.Database.Models.Shard
                 result.AnglesX = position.RotationX;
                 result.AnglesY = position.RotationY;
                 result.AnglesZ = position.RotationZ;
+                result.VariationId = position.Variation;
             }
             else
             {
-                var entity = new BiotaPropertiesPosition { ObjectId = biota.Id, PositionType = (ushort)positionType, ObjCellId = position.Cell, OriginX = position.PositionX, OriginY = position.PositionY, OriginZ = position.PositionZ, AnglesW = position.RotationW, AnglesX = position.RotationX, AnglesY = position.RotationY, AnglesZ = position.RotationZ, Object = biota };
+                var entity = new BiotaPropertiesPosition { ObjectId = biota.Id, PositionType = (ushort)positionType, ObjCellId = position.Cell, OriginX = position.PositionX, OriginY = position.PositionY, OriginZ = position.PositionZ, AnglesW = position.RotationW, AnglesX = position.RotationX, AnglesY = position.RotationY, AnglesZ = position.RotationZ, VariationId = position.Variation, Object = biota };
 
                 biota.BiotaPropertiesPosition.Add(entity);
             }

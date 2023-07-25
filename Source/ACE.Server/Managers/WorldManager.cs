@@ -24,6 +24,7 @@ using ACE.Server.Physics.Common;
 
 using Character = ACE.Database.Models.Shard.Character;
 using Position = ACE.Entity.Position;
+using System.Linq;
 
 namespace ACE.Server.Managers
 {
@@ -216,6 +217,17 @@ namespace ACE.Server.Managers
             var olthoiPlayerReturnedToLifestone = session.Player.IsOlthoiPlayer && character.TotalLogins >= 1 && session.Player.LoginAtLifestone;
             if (olthoiPlayerReturnedToLifestone)
                 session.Player.Location = new Position(session.Player.Sanctuary);
+
+            //explicitly set the varation if the player has one saved in their playerBiota
+            var savedLoc = playerBiota.GetPosition(PositionType.Location, new ReaderWriterLockSlim());
+            if (savedLoc != null)
+            {
+                session.Player.Location.Variation = savedLoc.Variation;
+            }
+            else
+            {
+                log.Error($"Saved Player Biota location position does not exist for {session.Player.Name}, variation could not be found and set");
+            }
 
             session.Player.PlayerEnterWorld();
 
