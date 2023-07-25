@@ -552,6 +552,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("attr", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Handles Attribute Raising", "Type the first 3 letter abbreviation for the attribute to raise, followed optionally by a number (str, end, coo, qui, foc, sel, vit, sta, man)")]
         public static void HandleRaiseAttribute(Session session, params string[] parameters)
         {
+
+            if (session.Player.IsMule)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Mules can't improve themselves. Deal with it!", ChatMessageType.Advancement));
+                return;
+            }
             int amt = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
             if (parameters.Count() == 2)
             {
