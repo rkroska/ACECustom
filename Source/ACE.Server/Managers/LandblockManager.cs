@@ -34,6 +34,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// A table of all the landblocks in the world map
         /// Landblocks which aren't currently loaded will be null here
+        /// X, Y, Variation dimensions
         /// </summary>
         private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
 
@@ -381,7 +382,7 @@ namespace ACE.Server.Managers
         public static void RelocateObjectForPhysics(WorldObject worldObject, bool adjacencyMove)
         {
             var oldBlock = worldObject.CurrentLandblock;
-            var newBlock = GetLandblock(worldObject.Location.LandblockId, true);
+            var newBlock = GetLandblock(worldObject.Location.LandblockId, true, false, worldObject.Location.Variation);
 
             if (newBlock.IsDormant && worldObject is SpellProjectile)
             {
@@ -424,7 +425,7 @@ namespace ACE.Server.Managers
 
                     if (!loadedLandblocks.Add(landblock))
                     {
-                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8} to active landblocks!");
+                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
                         return landblock;
                     }
 

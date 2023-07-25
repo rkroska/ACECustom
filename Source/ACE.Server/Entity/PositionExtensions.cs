@@ -52,6 +52,7 @@ namespace ACE.Server.Entity
                 iPos.Pos = new Vector3(pos.X, pos.Y, pos.Z);
                 iPos.Rotation = p.Rotation;
                 iPos.LandblockId = new LandblockId(GetCell(iPos));
+                iPos.Variation = p.Variation;
                 return iPos;
             }
 
@@ -69,6 +70,7 @@ namespace ACE.Server.Entity
             position.PositionY = localY;
             position.PositionZ = pos.Z;
             position.Rotation = p.Rotation;
+            position.Variation = p.Variation;   
             position.LandblockId = new LandblockId(GetCell(position));
             return position;
         }
@@ -78,7 +80,7 @@ namespace ACE.Server.Entity
         /// </summary>
         public static uint GetCell(this Position p)
         {
-            var landblock = LScape.get_landblock(p.LandblockId.Raw);
+            var landblock = LScape.get_landblock(p.LandblockId.Raw, p.Variation);
 
             // dungeons
             // TODO: investigate dungeons that are below actual traversable overworld terrain
@@ -317,12 +319,12 @@ namespace ACE.Server.Entity
 
         public static Position ACEPosition(this Physics.Common.Position pos)
         {
-            return new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+            return new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
         }
 
         public static Physics.Common.Position PhysPosition(this Position pos)
         {
-            return new Physics.Common.Position(pos.Cell, new Physics.Animation.AFrame(pos.Pos, pos.Rotation));
+            return new Physics.Common.Position(pos.Cell, new Physics.Animation.AFrame(pos.Pos, pos.Rotation), pos.Variation);
         }
 
 

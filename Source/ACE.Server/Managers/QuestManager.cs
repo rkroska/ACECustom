@@ -868,7 +868,7 @@ namespace ACE.Server.Managers
 
                             //DatabaseManager.Shard.SaveBiota //try this?
                             // clear landblock cache
-                            DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw);
+                            DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw, propPos.VariationId);
 
                             // reload landblock
                             L.Init(true);
@@ -903,7 +903,7 @@ namespace ACE.Server.Managers
                             if (L2 != null)
                             {
                                 L2.DestroyAllNonPlayerObjects();
-                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw);
+                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw, propPos2.VariationId);
                                 L2.Init(true);
                             }
                             break;
