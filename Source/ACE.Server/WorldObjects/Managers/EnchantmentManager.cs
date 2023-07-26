@@ -274,7 +274,7 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     else if (spell.StatModKey == 170) //spirit drinker
                     {
-                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.05f;
+                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.005f;
                     }
                     else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 171
                         || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
