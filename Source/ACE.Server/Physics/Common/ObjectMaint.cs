@@ -196,6 +196,10 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
+                if (this.PhysicsObj.Position.Variation != obj.Position.Variation)
+                {
+                    return false;
+                }
                 if (KnownObjects.ContainsKey(obj.ID))
                     return false;
 
@@ -386,7 +390,7 @@ namespace ACE.Server.Physics.Common
 
             if (VariationId != null)
             {
-                ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList();
+                ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList(); //TODO: Test if this actually works?
             }
 
             return ApplyFilter(visibleObjs, type).Where(i => !i.DatObject && i.ID != PhysicsObj.ID).Distinct().ToList();
@@ -437,6 +441,10 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
+                if (PhysicsObj.Position.Variation != obj.Position.Variation)
+                {
+                    return false;
+                }
                 if (VisibleObjects.ContainsKey(obj.ID))
                     return false;
 
@@ -766,6 +774,11 @@ namespace ACE.Server.Physics.Common
                 Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player for dat object");
                 return false;
             }
+            if (obj.Position.Variation != PhysicsObj.Position.Variation)
+            {
+                Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
+                return false;
+            }
 
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddKnownPlayer({obj.Name})");
 
@@ -903,7 +916,7 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterReadLock();
             try
             {
-                return VisibleTargets.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                return VisibleTargets.Values.Select(v => v.WeenieObj.WorldObject).Where(x =>x.Location.Variation == this.PhysicsObj.Position.Variation).OfType<Creature>().ToList();
             }
             finally
             {
