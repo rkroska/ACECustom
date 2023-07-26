@@ -348,7 +348,7 @@ namespace ACE.Server.WorldObjects
             Creature closestTarget = null;
             var closestDistSq = float.MaxValue;
 
-            foreach (var creature in PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature())
+            foreach (var creature in PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature()) //has variant filter
             {
                 if (creature is Player player && (!player.Attackable || player.Teleporting || (player.Hidden ?? false)))
                     continue;

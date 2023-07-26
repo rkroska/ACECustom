@@ -2366,7 +2366,7 @@ namespace ACE.Server.Physics
             if (!DatObject && newCell != null)
             {
                 CurLandblock = LScape.get_landblock(newCell.ID);
-                if (CurLandblock != null)
+                if (CurLandblock != null && CurLandblock.VariationId == this.Position.Variation)
                     CurLandblock.add_server_object(this);
             }
         }
@@ -2396,7 +2396,7 @@ namespace ACE.Server.Physics
             // handle known players
             foreach (var player in ObjMaint.GetKnownPlayersValues())
             {
-                var added = player.handle_visible_obj(this); //Todo: make variant change here?
+                var added = player.handle_visible_obj(this); //DONE: make variant change here?
 
                 if (added)
                     player.enqueue_obj(this);
@@ -2811,6 +2811,10 @@ namespace ACE.Server.Physics
             }
 
             var isVisible = CurCell.IsVisible(obj.CurCell);
+            if (isVisible && obj.Position.Variation != this.Position.Variation)  //todo I hate this?
+            {
+                isVisible = false;
+            }
 
             if (isVisible)
             {

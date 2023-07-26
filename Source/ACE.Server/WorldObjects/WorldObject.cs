@@ -235,6 +235,8 @@ namespace ACE.Server.WorldObjects
             Location.PositionZ = PhysicsObj.Position.Frame.Origin.Z;
 
             Location.Rotation = PhysicsObj.Position.Frame.Orientation;
+
+            Location.Variation = PhysicsObj.Position.Variation;
         }
 
         private void InitializePropertyDictionaries()
