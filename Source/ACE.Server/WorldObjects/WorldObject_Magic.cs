@@ -2007,6 +2007,7 @@ namespace ACE.Server.WorldObjects
                 {
                     lumAug += player.LuminanceAugmentLifeCount ?? 0f;
                 }
+                lumAug = lumAug * 0.01f;
             }
 
             if (spell.DotDuration == 0)

@@ -119,15 +119,15 @@ namespace ACE.Server.WorldObjects
             AuditItemSpells();
             AuditEquippedItems();
 
-            HandleMissingXp();
-            HandleSkillCreditRefund();
-            HandleSkillTemplesReset();
-            HandleSkillSpecCreditRefund();
-            HandleFreeSkillResetRenewal();
+            //HandleMissingXp();
+            //HandleSkillCreditRefund();
+            //HandleSkillTemplesReset();
+            //HandleSkillSpecCreditRefund();
+            //HandleFreeSkillResetRenewal();
             HandleFreeAttributeResetRenewal();
-            HandleFreeMasteryResetRenewal();
+            //HandleFreeMasteryResetRenewal();
 
-            HandleDBUpdates();
+            //HandleDBUpdates();
 
             if (ServerManager.ShutdownInitiated)
             {
