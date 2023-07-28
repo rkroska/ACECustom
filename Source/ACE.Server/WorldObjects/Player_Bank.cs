@@ -101,7 +101,7 @@ namespace ACE.Server.WorldObjects
                 {
                     if (this.TryConsumeFromInventoryWithNetworking(dur))
                     {
-                        BankedLegendaryKeys += 10;
+                        BankedLegendaryKeys += dur.Structure ?? 10;
                     }
                     else
                     {
