@@ -101,7 +101,7 @@ namespace ACE.Server.Entity
                     // surpassing existing spell
                     Surpass.Add(entry);
                 }
-                else if (powerLevel == entry.PowerLevel)
+                else if (powerLevel + augmentLevel == (entry.PowerLevel + entry.AugmentationLevelWhenCast ?? 0))
                 {
                     // refreshing existing spell
                     if (spell.Id == entry.SpellId)
@@ -145,7 +145,7 @@ namespace ACE.Server.Entity
                         }
                     }
                 }
-                else if (powerLevel < entry.PowerLevel)
+                else if (powerLevel + augmentLevel < (entry.PowerLevel + entry.AugmentationLevelWhenCast ?? 0))
                 {
                     // surpassed by existing spell
                     Surpassed.Add(entry);
