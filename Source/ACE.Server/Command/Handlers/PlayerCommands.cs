@@ -240,7 +240,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositLuminance();
                     session.Player.DepositLegendaryKeys();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals and Luminance!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, and Legendary Keys!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
@@ -537,7 +537,7 @@ namespace ACE.Server.Command.Handlers
             { }
             uint destinationRank = (uint)(creatureAttribute.Ranks + RanksToRaise);
             AttrName = creatureAttribute.Vital.GetDescription();
-            ulong xpCost = Player.GetXPDeltaCostByRank(destinationRank, creatureAttribute.Ranks);
+            ulong xpCost = Player.GetXPDeltaCostByRankForSecondary(destinationRank, creatureAttribute.Ranks);
             if (doRaise)
             {
                 success = session.Player.HandleActionRaiseVital(vital, xpCost);
@@ -552,6 +552,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("attr", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Handles Attribute Raising", "Type the first 3 letter abbreviation for the attribute to raise, followed optionally by a number (str, end, coo, qui, foc, sel, vit, sta, man)")]
         public static void HandleRaiseAttribute(Session session, params string[] parameters)
         {
+
+            if (session.Player.IsMule)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Mules can't improve themselves. Deal with it!", ChatMessageType.Advancement));
+                return;
+            }
             int amt = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
             if (parameters.Count() == 2)
             {
@@ -588,11 +594,15 @@ namespace ACE.Server.Command.Handlers
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
                     break;
                 case "sta":
+                case "stam":
                 case "stamina":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxStamina, out AttrName, true, out success);
                     break;
                 case "hea":
                 case "health":
+                case "vit":
+                case "vitality":
+                case "maxhealth":
                     xpCost = GetOrRaise2ndAttrib(session, amt, PropertyAttribute2nd.MaxHealth, out AttrName, true, out success);
                     break;
                 case "man":
