@@ -96,6 +96,20 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
+                var rtwKeysList = this.GetInventoryItemsOfWCID(52010); //Rynthid Keys
+                foreach (var rtw in rtwKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(rtw))
+                    {
+                        BankedLegendaryKeys += rtw.Structure ?? 5;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+
                 var durKeysList = this.GetInventoryItemsOfWCID(51954); //Durable legendary keys
                 foreach (var dur in durKeysList)
                 {
