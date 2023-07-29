@@ -25,9 +25,14 @@ namespace ACE.Database.SQLFormatters.World
             return fileName;
         }
 
-        public void CreateSQLDELETEStatement(IList<LandblockInstance> input, StreamWriter writer)
+        public void CreateSQLDELETEStatement(IList<LandblockInstance> input, StreamWriter writer, int? variationId)
         {
-            writer.WriteLine($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4} and `variation_Id` = {input[0].VariationId:N0};");
+            writer.Write($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4} ");
+            if (variationId.HasValue)
+            {
+                writer.Write($"and `variation_Id` = {variationId:N0}");
+            }
+            writer.WriteLine(";");
         }
 
         /// <exception cref="System.Exception">WeenieClassNames must be set, and must have a record for input.ClassId.</exception>

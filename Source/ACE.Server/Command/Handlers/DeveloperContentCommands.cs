@@ -1296,14 +1296,14 @@ namespace ACE.Server.Command.Handlers.Processors
                 wo.ParentLink = parentObj;
             }
 
-            SyncInstances(session, landblock, instances);
+            SyncInstances(session, landblock, instances, variation);
         }
 
         /// <summary>
         /// Serializes landblock instances to XXYY.sql file,
         /// import into database, and clears the cached landblock instances
         /// </summary>
-        public static void SyncInstances(Session session, ushort landblock, List<LandblockInstance> instances)
+        public static void SyncInstances(Session session, ushort landblock, List<LandblockInstance> instances, int? variationId)
         {
             // serialize to .sql file
             var contentFolder = VerifyContentFolder(session, false);
@@ -1313,8 +1313,16 @@ namespace ACE.Server.Command.Handlers.Processors
 
             if (!folder.Exists)
                 folder.Create();
-
-            var sqlFilename = $"{folder.FullName}{sep}{landblock:X4}.sql";
+            var sqlFilename = string.Empty;
+            if (variationId.HasValue)
+            {
+                sqlFilename = $"{folder.FullName}{sep}{landblock:X4}_{variationId.Value}.sql";
+            }
+            else
+            {
+                sqlFilename = $"{folder.FullName}{sep}{landblock:X4}.sql";
+            }
+            
 
             if (instances.Count > 0)
             {
@@ -1426,6 +1434,7 @@ namespace ACE.Server.Command.Handlers.Processors
             if (wo?.Location == null) return;
 
             var landblock = (ushort)wo.Location.Landblock;
+            int? variation = wo.Location.Variation;
 
             // if generator child, try getting the "real" guid
             var guid = wo.Guid.Full;
@@ -1490,7 +1499,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             instances.Remove(instance);
 
-            SyncInstances(session, landblock, instances);
+            SyncInstances(session, landblock, instances, variation);
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {(instance.IsLinkChild ? "child " : "")}{wo.WeenieClassId} - {wo.Name} (0x{guid:X8}) from landblock instances", ChatMessageType.Broadcast));
         }
@@ -2583,6 +2592,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
+            var variation = obj.Location.Variation;
             // get direction
             var dirname = parameters[curParam++].ToLower();
             var dir = GetNudgeDir(dirname);
@@ -2620,7 +2630,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
             // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, variation);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
@@ -2722,8 +2732,9 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.OriginX = obj.Location.PositionX;
             instance.OriginY = obj.Location.PositionY;
             instance.OriginZ = obj.Location.PositionZ;
+            instance.VariationId = obj.Location.Variation;
 
-            SyncInstances(session, landblock_id, instances);
+            SyncInstances(session, landblock_id, instances, variation);
         }
 
         public static Vector3? GetNudgeDir(string dir)
@@ -2796,6 +2807,7 @@ namespace ACE.Server.Command.Handlers.Processors
             // get direction
             var dirname = parameters[curParam++].ToLower();
             var dir = GetNudgeDir(dirname);
+            var variation = obj.Location.Variation;
 
             bool curRotate = false;
 
@@ -2861,7 +2873,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.AnglesY = newRotation.Y;
             instance.AnglesZ = newRotation.Z;
 
-            SyncInstances(session, landblock_id, instances);
+            SyncInstances(session, landblock_id, instances, variation);
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
@@ -2932,6 +2944,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid angle: {degrees_str}", ChatMessageType.Broadcast));
                 return;
             }
+            var variation = obj.Location.Variation;
 
             var rads = degrees.ToRadians();
             var q = Quaternion.CreateFromAxisAngle(axis, rads);
@@ -2966,7 +2979,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.AnglesY = newRotation.Y;
             instance.AnglesZ = newRotation.Z;
 
-            SyncInstances(session, landblock_id, instances);
+            SyncInstances(session, landblock_id, instances, variation);
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
