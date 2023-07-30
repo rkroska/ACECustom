@@ -680,9 +680,14 @@ namespace ACE.Server.Command.Handlers
         {
             List<Leaderboard> list = new List<Leaderboard>();
             LeaderboardCache cache = LeaderboardCache.Instance;
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Specify a leaderboard to run, such as /top qb or /top deaths", ChatMessageType.Broadcast));
+                return;
+            }
             using (var context = new AuthDbContext())
             {
-                if (parameters.Length > 0 && parameters[0] == "qb")
+                if (parameters[0] == "qb")
                 {
                     list = cache.GetTopQB(context);
                     if (list.Count > 0)
@@ -691,7 +696,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters.Length > 0 && parameters[0] == "level")
+                if (parameters[0] == "level")
                 {
                     list = cache.GetTopLevel(context);
                     if (list.Count > 0)
@@ -700,7 +705,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters.Length > 0 && parameters[0] == "enl")
+                if (parameters[0] == "enl")
                 {
                     list = cache.GetTopEnl(context);
                     if (list.Count > 0)
@@ -709,7 +714,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters.Length > 0 && parameters[0] == "title")
+                if (parameters[0] == "title")
                 {
                     list = cache.GetTopTitle(context);
                     if (list.Count > 0)
@@ -727,12 +732,39 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters.Length > 0 && parameters[0] == "deaths")
+                if (parameters[0] == "deaths")
                 {
                     list = cache.GetTopDeaths(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Deaths:", ChatMessageType.Broadcast));
+                    }
+                }
+
+                if (parameters[0] == "bank")
+                {
+                    list = cache.GetTopBank(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Bank Value:", ChatMessageType.Broadcast));
+                    }
+                }
+
+                if (parameters[0] == "lum")
+                {
+                    list = cache.GetTopLum(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Luminance:", ChatMessageType.Broadcast));
+                    }
+                }
+
+                if (parameters[0] == "attr")
+                {
+                    list = cache.GetTopAttr(context);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
                     }
                 }
             }
