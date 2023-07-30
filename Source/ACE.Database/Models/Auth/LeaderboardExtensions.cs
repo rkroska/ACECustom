@@ -38,6 +38,21 @@ namespace ACE.Database.Models.Auth
         {
             return context.Leaderboard.FromSql($"CALL TopDeaths").ToList();
         }
+
+        public static List<Leaderboard> GetTopBankLeaderboard(AuthDbContext context)
+        {
+            return context.Leaderboard.FromSql($"CALL TopBank").ToList();
+        }
+
+        public static List<Leaderboard> GetTopLumLeaderboard(AuthDbContext context)
+        {
+            return context.Leaderboard.FromSql($"CALL TopLum").ToList();
+        }
+
+        public static List<Leaderboard> GetTopAttrLeaderboard(AuthDbContext context)
+        {
+            return context.Leaderboard.FromSql($"CALL TopAttributes").ToList();
+        }
     }
 
     public class LeaderboardCache
@@ -68,6 +83,9 @@ namespace ACE.Database.Models.Auth
         public List<Leaderboard> TitleCache = new List<Leaderboard>();
         public List<Leaderboard> AugsCache = new List<Leaderboard>();
         public List<Leaderboard> DeathsCache = new List<Leaderboard>();
+        public List<Leaderboard> BankCache = new List<Leaderboard>();
+        public List<Leaderboard> LumCache = new List<Leaderboard>();
+        public List<Leaderboard> AttrCache = new List<Leaderboard>();
 
         public DateTime QBLastUpdate = DateTime.Now;
         public DateTime LevelLastUpdate = DateTime.Now;
@@ -75,6 +93,9 @@ namespace ACE.Database.Models.Auth
         public DateTime TitleLastUpdate = DateTime.Now;
         public DateTime AugsLastUpdate = DateTime.Now;
         public DateTime DeathsLastUpdate = DateTime.Now;
+        public DateTime BanksLastUpdate = DateTime.Now;
+        public DateTime LumLastUpdate = DateTime.Now;
+        public DateTime AttrLastUpdate = DateTime.Now;
 
         public void UpdateQBCache(List<Leaderboard> list)
         {
@@ -111,6 +132,24 @@ namespace ACE.Database.Models.Auth
             DeathsCache = list;
             DeathsLastUpdate = DateTime.Now;
         }
+
+        public void UpdateBankCache(List<Leaderboard> list)
+        {
+            BankCache = list;
+            BanksLastUpdate = DateTime.Now;
+        }
+
+        public void UpdateLumCache(List<Leaderboard> list)
+        {
+            LumCache = list;
+            LumLastUpdate = DateTime.Now;
+        }
+
+        public void UpdateAttrCache(List<Leaderboard> list)
+        {
+            AttrCache = list;
+            AttrLastUpdate = DateTime.Now;
+        }   
 
         public List<Leaderboard> GetTopQB(AuthDbContext context)
         {
@@ -164,6 +203,33 @@ namespace ACE.Database.Models.Auth
                 UpdateDeathsCache(Leaderboard.GetTopDeathsLeaderboard(context));
             }
             return DeathsCache;
+        }
+
+        public List<Leaderboard> GetTopBank(AuthDbContext context)
+        {
+            if (BankCache.Count == 0 || BanksLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                UpdateBankCache(Leaderboard.GetTopBankLeaderboard(context));
+            }
+            return BankCache;
+        }
+
+        public List<Leaderboard> GetTopLum(AuthDbContext context)
+        {
+            if (LumCache.Count == 0 || LumLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                UpdateLumCache(Leaderboard.GetTopLumLeaderboard(context));
+            }
+            return LumCache;
+        }
+
+        public List<Leaderboard> GetTopAttr(AuthDbContext context)
+        {
+            if (AttrCache.Count == 0 || AttrLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                UpdateAttrCache(Leaderboard.GetTopAttrLeaderboard(context));   
+            }
+            return AttrCache;
         }
     }
 }
