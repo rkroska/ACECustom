@@ -457,6 +457,7 @@ namespace ACE.Database.Adapter
                         StatModKey = record.StatModKey,
                         StatModValue = record.StatModValue,
                         SpellSetId = (EquipmentSet)record.SpellSetId,
+                        AugmentationLevelWhenCast = record.AugmentationLevelWhenCast
                     };
 
                     result.PropertiesEnchantmentRegistry.Add(newEntity);
@@ -896,7 +897,8 @@ namespace ACE.Database.Adapter
                         StatModKey = value.StatModKey,
                         StatModValue = value.StatModValue,
                         SpellSetId = (uint)value.SpellSetId,
-                    };
+                        AugmentationLevelWhenCast = value.AugmentationLevelWhenCast
+    };
 
                     result.BiotaPropertiesEnchantmentRegistry.Add(entity);
                 }
