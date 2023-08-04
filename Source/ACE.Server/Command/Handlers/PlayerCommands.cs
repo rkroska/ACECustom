@@ -469,46 +469,72 @@ namespace ACE.Server.Command.Handlers
         public static void HandleExperience(Session session, params string[] parameters)
         {
             int amount = 1;
-            if (parameters.Count() == 0)
+            if (parameters.Length == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP to next level is: {session.Player.GetRemainingXP():N0}", ChatMessageType.System));
             }
-            if (parameters.Count() == 2)
+            else if (parameters.Length < 3)
             {
-                if (!int.TryParse(parameters[1], out amount))
+                if (parameters.Length == 2)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number to count for XP Ranks", ChatMessageType.System));
+                    if (!int.TryParse(parameters[1], out amount) || amount < 1)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a number to count for XP Ranks", ChatMessageType.System));
+                        return;
+                    }
+                }
+
+                //check attribute costs
+                if (parameters[0] == "all")
+                {
+                    ReportXPRequired(session, amount, "str");
+                    ReportXPRequired(session, amount, "end");
+                    ReportXPRequired(session, amount, "coo");
+                    ReportXPRequired(session, amount, "qui");
+                    ReportXPRequired(session, amount, "foc");
+                    ReportXPRequired(session, amount, "sel");
+                    ReportXPRequired(session, amount, "sta");
+                    ReportXPRequired(session, amount, "hea");
+                    ReportXPRequired(session, amount, "man");
+                }
+                else
+                {
+                    ReportXPRequired(session, amount, parameters[0]);
                 }
             }
+        }
 
-            if (parameters.Count() == 1 || parameters.Count() == 2)
+        private static void ReportXPRequired(Session session, int amount, string attrAbbr)
+        {
+            ulong xp = 0; string AttrName = ""; bool success = false;
+            switch (attrAbbr)
             {
-                ulong xp = 0; string AttrName = ""; bool success = false;
-                //check attribute costs
-                switch (parameters[0])
-                {
-                    case "str": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out success);
-                        break;
-                    case "end": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out success);
-                        break;
-                    case "coo": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out success);
-                        break;
-                    case "qui": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out success);
-                        break; 
-                    case "foc": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out success);
-                        break;
-                    case "sel": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out success);
-                        break;
-                    case "sta": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
-                        break;
-                    case "hea": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
-                        break;
-                    case "man": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
-                        break;
-                }
-
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP cost for next {amount} {AttrName} level is: {xp:N0}", ChatMessageType.System));
-            }            
+                case "str": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out success);
+                    break;
+                case "end": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out success);
+                    break;
+                case "coo": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out success);
+                    break;
+                case "qui": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out success);
+                    break; 
+                case "foc": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out success);
+                    break;
+                case "sel": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out success);
+                    break;
+                case "sta": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
+                    break;
+                case "hea": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
+                    break;
+                case "man": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
+                    break;
+            }
+            if (string.IsNullOrEmpty(AttrName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Provide a valid attribute abbreviation", ChatMessageType.System));
+                return;
+            }
+            string pluralize = amount > 1 ? "levels" : "level";
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[XP] Your XP cost for next {amount} {AttrName} {pluralize} is: {xp:N0}", ChatMessageType.System));
         }
 
         public static ulong GetOrRaiseAttrib(Network.Session session, int RanksToRaise, PropertyAttribute attrib, out string AttrName, bool doRaise, out bool success)
