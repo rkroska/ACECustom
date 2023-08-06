@@ -49,11 +49,15 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Your current landblock is not found, for some reason (logged)", ChatMessageType.Broadcast));
                         return;
                     }
+                    bool currentPlayerOver50 = session.Player.Level >= 50;
                     foreach (var player in session.Player.CurrentLandblock.players)
                     {
                         if (player.Guid != session.Player.Guid)
                         {
-                            session.Player.FellowshipRecruit(player);
+                            if (!currentPlayerOver50 || player.Level >= 50) // Don't add lowbies to a fellowship of players over 50
+                            {
+                                session.Player.FellowshipRecruit(player);
+                            }
                         }
                     }
                     return;
