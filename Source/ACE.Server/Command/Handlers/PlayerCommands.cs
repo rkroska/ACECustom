@@ -909,9 +909,10 @@ namespace ACE.Server.Command.Handlers
         {
             var physicsObj = session.Player.PhysicsObj;
 
-            var instance = physicsObj.Position.Variation;
+            var physInstance = physicsObj.Position.Variation;
+            var locInstance = session.Player.Location.Variation;
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Instance: {instance}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Instance: {physInstance}\nLocation Instance: {locInstance}", ChatMessageType.Broadcast));
         }
 
         private static List<string> configList = new List<string>()

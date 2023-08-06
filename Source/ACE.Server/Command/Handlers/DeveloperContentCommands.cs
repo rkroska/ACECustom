@@ -689,7 +689,7 @@ namespace ACE.Server.Command.Handlers.Processors
         public static string json2sql_landblock(Session session, string folder, string json_filename)
         {
             var json_file = folder + json_filename;
-
+            var variation = session.Player.Location.Variation;
             // read json into gdle spawnmap
             var success = GDLELoader.TryLoadLandblock(json_file, out var result);
 
@@ -762,7 +762,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 sqlFilename = LandblockInstanceWriter.GetDefaultFileName(landblockInstances[0]);
                 var sqlFile = new StreamWriter(sqlFolder + sqlFilename);
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(landblockInstances, sqlFile);
+                LandblockInstanceWriter.CreateSQLDELETEStatement(landblockInstances, sqlFile, variation);
                 sqlFile.WriteLine();
 
                 LandblockInstanceWriter.CreateSQLINSERTStatement(landblockInstances, sqlFile);
@@ -1274,7 +1274,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             // create new landblock instance
-            var instance = CreateLandblockInstance(wo, isLinkChild);
+            var instance = CreateLandblockInstance(wo, isLinkChild, variation);
 
             instances.Add(instance);
 
@@ -1334,7 +1334,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     LandblockInstanceWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
                 }
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, fileWriter);
+                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, fileWriter, variationId);
 
                 fileWriter.WriteLine();
 
@@ -1358,7 +1358,7 @@ namespace ACE.Server.Command.Handlers.Processors
             DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, null); //todo: come back and make this variation aware
         }
 
-        public static LandblockInstance CreateLandblockInstance(WorldObject wo, bool isLinkChild = false)
+        public static LandblockInstance CreateLandblockInstance(WorldObject wo, bool isLinkChild = false, int? variationId = null)
         {
             var instance = new LandblockInstance();
 
@@ -1382,7 +1382,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.IsLinkChild = isLinkChild;
 
             instance.LastModified = DateTime.Now;
-            instance.VariationId = wo.Location.Variation;
+            instance.VariationId = variationId;
 
             return instance;
         }
@@ -2258,6 +2258,7 @@ namespace ACE.Server.Command.Handlers.Processors
             DirectoryInfo di = VerifyContentFolder(session, false);
 
             var sep = Path.DirectorySeparatorChar;
+            var variationId = session.Player.Location.Variation;
 
             if (!ushort.TryParse(Regex.Match(param, @"[0-9A-F]{4}", RegexOptions.IgnoreCase).Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var landblockId))
             {
@@ -2279,7 +2280,15 @@ namespace ACE.Server.Command.Handlers.Processors
             if (!di.Exists)
                 di.Create();
 
-            var sql_filename = $"{landblockId:X4}.sql";
+            string sql_filename = string.Empty;
+            if (variationId.HasValue)
+            {
+                sql_filename = $"{landblockId:X4}_{variationId:N0}.sql";
+            }
+            else
+            {
+                sql_filename = $"{landblockId:X4}.sql";
+            }            
 
             try
             {
@@ -2291,7 +2300,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                 var sqlFile = new StreamWriter(sql_folder + sql_filename);
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sqlFile);
+                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sqlFile, variationId);
                 sqlFile.WriteLine();
 
                 LandblockInstanceWriter.CreateSQLINSERTStatement(instances, sqlFile);

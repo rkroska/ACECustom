@@ -3052,7 +3052,7 @@ namespace ACE.Server.Command.Handlers
             var wo = CommandHandlerHelper.GetLastAppraisedObject(session);
 
             if (wo != null)
-                session.Network.EnqueueSend(new GameMessageSystemChat($"GUID: {wo.Guid}\nWeenieClassId: {wo.WeenieClassId}\nWeenieClassName: {wo.WeenieClassName}", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"GUID: {wo.Guid}\nWeenieClassId: {wo.WeenieClassId}\nWeenieClassName: {wo.WeenieClassName}\nVariation: {wo.Location.Variation}", ChatMessageType.Broadcast));
         }
 
         public static WorldObject LastTestAim;
