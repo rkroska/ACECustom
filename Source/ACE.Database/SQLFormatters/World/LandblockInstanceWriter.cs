@@ -16,7 +16,7 @@ namespace ACE.Database.SQLFormatters.World
         {
             string fileName = (input.ObjCellId >> 16).ToString("X4");
             fileName = IllegalInFileName.Replace(fileName, "_");
-            if (input.VariationId != null)
+            if (input.VariationId.HasValue)
             {
                 fileName += "_" + input.VariationId.ToString();
             }
@@ -67,7 +67,7 @@ namespace ACE.Database.SQLFormatters.World
                              $"{TrimNegativeZero(value.AnglesZ):0.######}, " +
                              $"{value.IsLinkChild.ToString().PadLeft(5)}, " +
                              $"'{value.LastModified:yyyy-MM-dd HH:mm:ss}'," +
-                             $"{value.VariationId:N0}" +
+                             $"{VariantNullFix(value.VariationId)}" +
                              $"); /* {label} */" +
                              Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6}  {TrimNegativeZero(value.VariationId):N0} */";
 
@@ -80,6 +80,18 @@ namespace ACE.Database.SQLFormatters.World
                     writer.WriteLine();
                     CreateSQLINSERTStatement(value.LandblockInstanceLink.OrderBy(r => r.ChildGuid).ToList(), instanceWcids, writer);
                 }
+            }
+        }
+
+        private string VariantNullFix(int? variationId)
+        {
+            if (variationId.HasValue)
+            {
+                return variationId.ToString();
+            }
+            else
+            {
+                return "NULL";
             }
         }
 
