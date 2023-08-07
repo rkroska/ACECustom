@@ -901,7 +901,8 @@ namespace ACE.Server.Entity
             wo.CurrentLandblock = this;
             if (this.Id.ToString().StartsWith("019E"))
             {
-                Console.WriteLine($"{wo.Name} is spawning in landblock {this.Id} v:{wo.CurrentLandblock.VariationId} wo.v:{wo.Location.Variation}");
+                Console.WriteLine($"{wo.Name}, {wo.WeenieClassId} is spawning in landblock {this.Id} v:{wo.CurrentLandblock.VariationId} wo.v:{wo.Location.Variation}\n" +
+                    $"From: {new StackTrace()}");
             }                     
             //wo.Location.Variation = VariationId;
 
