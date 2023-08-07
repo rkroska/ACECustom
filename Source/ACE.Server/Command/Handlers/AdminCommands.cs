@@ -1076,6 +1076,7 @@ namespace ACE.Server.Command.Handlers
 
             var msg = $"Broadcast from {(session != null ? session.Player.Name : "System")}> {string.Join(" ", parameters)}";
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
+            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
             PlayerManager.BroadcastToAll(sysMessage);
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, session?.Player, msg);
         }
@@ -4248,6 +4249,7 @@ namespace ACE.Server.Command.Handlers
             //session.Player.HandleActionWorldBroadcast($"{msg}", ChatMessageType.WorldBroadcast);
 
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
+            DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.GeneralChannelId);
             PlayerManager.BroadcastToAll(sysMessage);
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, session?.Player, msg);
         }
