@@ -191,7 +191,7 @@ namespace ACE.Server.WorldObjects
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
 
-            var cell = LScape.get_landcell(Location.Cell);
+            var cell = LScape.get_landcell(Location.Cell, Location.Variation);
             if (cell == null)
             {
                 PhysicsObj.DestroyObject();
@@ -770,7 +770,7 @@ namespace ACE.Server.WorldObjects
 
             var dungeonID = pos.Cell >> 16;
 
-            var adjustCell = AdjustCell.Get(dungeonID);
+            var adjustCell = AdjustCell.Get(dungeonID, pos.Variation);
             var cellID = adjustCell.GetCell(pos.Pos);
 
             if (cellID != null && pos.Cell != cellID.Value)
@@ -786,7 +786,7 @@ namespace ACE.Server.WorldObjects
         {
             if (pos == null) return false;
 
-            var landblock = LScape.get_landblock(pos.Cell);
+            var landblock = LScape.get_landblock(pos.Cell, pos.Variation);
             if (landblock == null || !landblock.HasDungeon) return false;
 
             var dungeonID = pos.Cell >> 16;

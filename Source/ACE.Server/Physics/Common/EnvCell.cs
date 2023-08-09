@@ -70,6 +70,8 @@ namespace ACE.Server.Physics.Common
 
             if (Environment?.Cells != null && Environment.Cells.TryGetValue(CellStructureID, out var cellStruct))
                 CellStructure = new CellStruct(cellStruct);
+            else
+                Console.WriteLine("CellStructureID {0} not found in Environment {1}", CellStructureID, EnvironmentID);
 
             NumSurfaces = envCell.Surfaces.Count;
         }
@@ -89,7 +91,7 @@ namespace ACE.Server.Physics.Common
 
             transition.SpherePath.ObstructionEthereal = false;
 
-            if (CellStructure.PhysicsBSP != null)
+            if (CellStructure != null && CellStructure.PhysicsBSP != null)
             {
                 transition.SpherePath.CacheLocalSpaceSphere(Pos, 1.0f);
 
@@ -120,7 +122,7 @@ namespace ACE.Server.Physics.Common
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;
                 if (VisibleCells.ContainsKey(blockCellID)) continue;
-                var cell = (EnvCell)LScape.get_landcell(blockCellID);
+                var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
                 VisibleCells.Add(visibleCellID, cell);
             }
         }
@@ -403,9 +405,9 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell get_visible(uint cellID)
+        public static ObjCell get_visible(uint cellID, int? variationId)
         {
-            var cell = (EnvCell)LScape.get_landcell(cellID);
+            var cell = (EnvCell)LScape.get_landcell(cellID, variationId);
             return cell.VisibleCells.Values.First();
         }
 
@@ -418,6 +420,10 @@ namespace ACE.Server.Physics.Common
         public override bool point_in_cell(Vector3 point)
         {
             var localPoint = Pos.Frame.GlobalToLocal(point);
+            if (CellStructure == null)
+            {
+                return false;
+            }
             return CellStructure.point_in_cell(localPoint);
         }
 

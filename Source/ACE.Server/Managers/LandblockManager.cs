@@ -114,7 +114,7 @@ namespace ACE.Server.Managers
         private static void PreloadLandblock(uint landblock, PreloadedLandblocks preloadLandblock)
         {
             var landblockID = new LandblockId(landblock);
-            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
+            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, null, preloadLandblock.Permaload);
             log.DebugFormat("Landblock {0:X4}, ({1}) preloaded. IncludeAdjacents = {2}, Permaload = {3}", landblockID.Landblock, preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
         }
 
@@ -371,7 +371,7 @@ namespace ACE.Server.Managers
         /// <param name="loadAdjacents">If TRUE, ensures all of the adjacent landblocks for this WorldObject are loaded</param>
         public static bool AddObject(WorldObject worldObject, bool loadAdjacents = false)
         {
-            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents, false, worldObject.Location.Variation);
+            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents, worldObject.Location.Variation, false);
 
             return block.AddWorldObject(worldObject);
         }
@@ -382,7 +382,7 @@ namespace ACE.Server.Managers
         public static void RelocateObjectForPhysics(WorldObject worldObject, bool adjacencyMove)
         {
             var oldBlock = worldObject.CurrentLandblock;
-            var newBlock = GetLandblock(worldObject.Location.LandblockId, true, false, worldObject.Location.Variation);
+            var newBlock = GetLandblock(worldObject.Location.LandblockId, true, worldObject.Location.Variation, false );
 
             if (newBlock.IsDormant && worldObject is SpellProjectile)
             {
@@ -408,10 +408,10 @@ namespace ACE.Server.Managers
         /// Returns a reference to a landblock, loading the landblock if not already active
         /// TODO: Make this Variation Aware
         /// </summary>
-        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false, int? variation = null)
+        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
             Landblock landblock;
-
+            //Console.WriteLine($"Get Landblock: {landblockId}, v: {variation}");
             lock (landblockMutex)
             {
                 bool setAdjacents = false;
@@ -430,7 +430,11 @@ namespace ACE.Server.Managers
                     }
 
                     landblockGroupPendingAdditions.Add(landblock);
-
+                    if (landblock.Id.ToString().StartsWith("019E"))
+                    {                        
+                        Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
+                            $"From: {new System.Diagnostics.StackTrace()}");
+                    }
                     landblock.Init();
 
                     setAdjacents = true;
@@ -444,7 +448,7 @@ namespace ACE.Server.Managers
                 {
                     var adjacents = GetAdjacentIDs(landblock);
                     foreach (var adjacent in adjacents)
-                        GetLandblock(adjacent, false, permaload, variation);
+                        GetLandblock(adjacent, false, variation, permaload);
 
                     setAdjacents = true;
                 }

@@ -1,5 +1,5 @@
 using System;
-
+using System.Diagnostics;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 
@@ -64,7 +64,10 @@ namespace ACE.Server.Physics.Common
         public static EnvCell GetEnvCell(uint id)
         {
             var envCell = DatManager.CellDat.ReadFromDat<DatLoader.FileTypes.EnvCell>(id);
-
+            if (envCell.Id == 0)
+            {
+                Console.WriteLine("EnvCell not found: " + id + "\n" + new StackTrace().ToString());
+            }
             return new EnvCell(envCell);
         }
 

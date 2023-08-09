@@ -59,7 +59,7 @@ namespace ACE.Server.Physics.Common
             if (PhysicsEngine.Instance.Server)
             {
                 var lbid = new LandblockId(landblockID);
-                var lbmLandblock = LandblockManager.GetLandblock(lbid, false, false, variationId);
+                var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
 
                 return lbmLandblock.PhysicsLandblock;
             }
@@ -125,11 +125,11 @@ namespace ACE.Server.Physics.Common
         /// Gets the landcell from a landblock. If the cell is an indoor cell and hasn't been loaded, it will be loaded.<para />
         /// This function is thread safe
         /// </summary>
-        public static ObjCell get_landcell(uint blockCellID)
+        public static ObjCell get_landcell(uint blockCellID, int? variationId)
         {
             //Console.WriteLine($"get_landcell({blockCellID:X8}");
 
-            var landblock = get_landblock(blockCellID);
+            var landblock = get_landblock(blockCellID, variationId);
             if (landblock == null)
                 return null;
 

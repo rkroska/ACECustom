@@ -1644,7 +1644,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation, newPos.Variation);
 
-            var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID) as Physics.Common.SortCell;
+            var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID, newPos.Variation) as Physics.Common.SortCell;
             if (sortCell != null && sortCell.has_building())
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create encounter near building cell", ChatMessageType.Broadcast));

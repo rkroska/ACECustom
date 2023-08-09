@@ -491,7 +491,7 @@ namespace ACE.Server.Command.Handlers
                     for (int y = 0; y <= 0xFE; y++)
                     {
                         var blockid = new LandblockId((byte)x, (byte)y);
-                        LandblockManager.GetLandblock(blockid, false, false);
+                        LandblockManager.GetLandblock(blockid, false, null, false);
                     }
                 }
 
@@ -2463,7 +2463,7 @@ namespace ACE.Server.Command.Handlers
                 msg += $"------- IsInDeathProcess: {player.IsInDeathProcess}\n";
                 var foundOnLandblock = false;
                 if (player.CurrentLandblock != null)
-                    foundOnLandblock = LandblockManager.GetLandblock(player.CurrentLandblock.Id, false).GetObject(player.Guid) != null;
+                    foundOnLandblock = LandblockManager.GetLandblock(player.CurrentLandblock.Id, false, player.Location.Variation, false).GetObject(player.Guid) != null;
                 msg += $"------- FoundOnLandblock: {foundOnLandblock}\n";
                 var playerForcedLogOffRequested = player.ForcedLogOffRequested;
                 msg += $"------- ForcedLogOffRequested: {playerForcedLogOffRequested}\n";

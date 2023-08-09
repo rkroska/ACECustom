@@ -464,7 +464,7 @@ namespace ACE.Server.WorldObjects
                                 verifyContact = true;
                         }
 
-                        var curCell = LScape.get_landcell(newPosition.Cell);
+                        var curCell = LScape.get_landcell(newPosition.Cell, newPosition.Variation);
                         if (curCell != null)
                         {
                             //if (PhysicsObj.CurCell == null || curCell.ID != PhysicsObj.CurCell.ID)

@@ -658,7 +658,7 @@ namespace ACE.Server.WorldObjects
             //newPosition.PositionZ += 0.005f;
             newPosition.PositionZ += 0.005f * (ObjScale ?? 1.0f);
 
-            //Console.WriteLine($"{Name}.Teleport() - Sending to {newPosition.ToLOCString()}");
+            Console.WriteLine($"{Name}.Teleport() - Sending to {newPosition.ToLOCString()}, From Portal {fromPortal}");
 
             // Check currentFogColor set for player. If LandblockManager.GlobalFogColor is set, don't bother checking, dungeons didn't clear like this on retail worlds.
             // if not clear, reset to clear before portaling in case portaling to dungeon (no current way to fast check unloaded landblock for IsDungeon or current FogColor)
