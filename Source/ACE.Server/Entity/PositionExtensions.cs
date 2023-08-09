@@ -91,7 +91,7 @@ namespace ACE.Server.Entity
 
             // outside - could be on landscape, in building, or underground cave
             var cellID = GetOutdoorCell(p);
-            var landcell = LScape.get_landcell(cellID) as LandCell;
+            var landcell = LScape.get_landcell(cellID, p.Variation) as LandCell;
 
             if (landcell == null)
                 return cellID;
@@ -145,7 +145,7 @@ namespace ACE.Server.Entity
         /// </summary>
         private static uint GetIndoorCell(this Position p)
         {
-            var adjustCell = AdjustCell.Get(p.Landblock);
+            var adjustCell = AdjustCell.Get(p.Landblock, p.Variation);
             var envCell = adjustCell.GetCell(p.Pos);
             if (envCell != null)
                 return envCell.Value;
@@ -234,7 +234,7 @@ namespace ACE.Server.Entity
             pos.PositionZ = pos.GetTerrainZ();
 
             // adjust to building height, if applicable
-            var sortCell = LScape.get_landcell(pos.Cell) as SortCell;
+            var sortCell = LScape.get_landcell(pos.Cell, pos.Variation) as SortCell;
             if (sortCell != null && sortCell.has_building())
             {
                 var building = sortCell.Building;
@@ -276,7 +276,7 @@ namespace ACE.Server.Entity
             var landblock = LScape.get_landblock(p.LandblockId.Raw);
 
             var cellID = GetOutdoorCell(p);
-            var landcell = (LandCell)LScape.get_landcell(cellID);
+            var landcell = (LandCell)LScape.get_landcell(cellID, p.Variation);
 
             if (landcell == null)
                 return p.Pos.Z;
@@ -298,7 +298,7 @@ namespace ACE.Server.Entity
         {
             if (p.Indoors) return true;
 
-            var landcell = (LandCell)LScape.get_landcell(p.Cell);
+            var landcell = (LandCell)LScape.get_landcell(p.Cell, p.Variation);
 
             Physics.Polygon walkable = null;
             var terrainPoly = landcell.find_terrain_poly(p.Pos, ref walkable);

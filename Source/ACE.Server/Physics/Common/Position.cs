@@ -244,7 +244,7 @@ namespace ACE.Server.Physics.Common
         {
             var dungeonID = blockCellID >> 16;
 
-            var adjustCell = AdjustCell.Get(dungeonID);
+            var adjustCell = AdjustCell.Get(dungeonID, Variation);
             if (adjustCell == null)
             {
                 //Console.WriteLine("Position: couldn't find ObjCellID for indoor cell " + blockCellID.ToString("X8"));

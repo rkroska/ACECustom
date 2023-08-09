@@ -32,7 +32,7 @@ namespace ACE.Server.Physics.Common
         public List<LandCell> DrawArray;
         public List<PhysicsObj> Scenery;
         public List<PhysicsObj> ServerObjects { get; set; }
-        public int? VariationId { get; set; }
+
 
         public static bool UseSceneFiles = true;
 
@@ -147,7 +147,7 @@ namespace ACE.Server.Physics.Common
             var cellY = (int)point.Y / 24;
 
             var blockCellID = (ID & 0xFFFF0000) | (uint)(cellX * 8 + cellY) + 1;
-            return (LandCell)LScape.get_landcell((uint)blockCellID);
+            return (LandCell)LScape.get_landcell((uint)blockCellID, VariationId);
         }
 
         public void destroy_buildings()
@@ -687,7 +687,7 @@ namespace ACE.Server.Physics.Common
             var cellID = startCell;
             for (var i = 0; i < Info.NumCells; i++)
             {
-                var envCell = (EnvCell)LScape.get_landcell(cellID++);
+                var envCell = (EnvCell)LScape.get_landcell(cellID++, VariationId);
                 if (envCell != null)
                     envcells.Add(envCell);
                 else

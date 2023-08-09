@@ -861,7 +861,7 @@ namespace ACE.Server.Managers
                     if (found && propPos != null)
                     {
                         p = new LandblockId(propPos.ObjCellId);
-                        Landblock L = LandblockManager.GetLandblock(p, false);                        
+                        Landblock L = LandblockManager.GetLandblock(p, false, null);                        
                         if (L != null)
                         {
                             L.DestroyAllNonPlayerObjects();
@@ -899,7 +899,7 @@ namespace ACE.Server.Managers
                         if (found2 && propPos2 != null)
                         {
                             p2 = new LandblockId(propPos2.ObjCellId);
-                            Landblock L2 = LandblockManager.GetLandblock(p2, false);
+                            Landblock L2 = LandblockManager.GetLandblock(p2, false, null);
                             if (L2 != null)
                             {
                                 L2.DestroyAllNonPlayerObjects();

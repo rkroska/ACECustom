@@ -12,6 +12,7 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
+using System;
 
 namespace ACE.Server.WorldObjects
 {
@@ -272,7 +273,8 @@ namespace ACE.Server.WorldObjects
             if (player == null) return;
 
 #if DEBUG
-            // player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
+            Console.WriteLine($"Player sending to v: {Destination.Variation}");
 #endif
             var portalDest = new Position(Destination);
             AdjustDungeon(portalDest);

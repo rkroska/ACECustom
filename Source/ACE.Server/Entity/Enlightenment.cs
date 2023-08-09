@@ -114,7 +114,7 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            Landblock currentLandblock = LandblockManager.GetLandblock(player.Location.LandblockId, false);
+            Landblock currentLandblock = LandblockManager.GetLandblock(player.Location.LandblockId, false, player.Location.Variation, false);
             if (currentLandblock != null && currentLandblock.IsDungeon)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot enlighten while inside a dungeon. Find an exit or recall to begin your enlightenment.", ChatMessageType.System));

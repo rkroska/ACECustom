@@ -228,7 +228,7 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell GetVisible(uint cellID)
+        public static ObjCell GetVisible(uint cellID, int? variationId)
         {
             if (cellID == 0) return null;
 
@@ -237,7 +237,7 @@ namespace ACE.Server.Physics.Common
                return EnvCell.get_visible(cellID);
             else
                 return LandCell.Get(cellID);*/
-            return LScape.get_landcell(cellID);
+            return LScape.get_landcell(cellID, variationId);
         }
 
         public void Init()
@@ -337,7 +337,7 @@ namespace ACE.Server.Physics.Common
             cellArray.NumCells = 0;
             cellArray.AddedOutside = false;
 
-            var visibleCell = GetVisible(position.ObjCellID);
+            var visibleCell = GetVisible(position.ObjCellID, position.Variation);
 
             if ((position.ObjCellID & 0xFFFF) >= 0x100)
             {

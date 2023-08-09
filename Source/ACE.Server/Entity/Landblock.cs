@@ -246,12 +246,28 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Monster Locations, Generators<para />
         /// This will be called from a separate task from our constructor. Use thread safety when interacting with this landblock.
+        /// TODO: Make this variation aware
         /// </summary>
         private void CreateWorldObjects()
         {
+            bool logspam = false;
+            if (this.Id.ToString().StartsWith("019E"))
+            {
+                logspam = true;
+                Console.WriteLine($"CreateWOs in landblock {this.Id} v:{this.VariationId}, group: {this.CurrentLandblockGroup}\n" +
+                    $"From: {new StackTrace()}");
+            }
             var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, VariationId);
+            if (logspam)
+            {
+                Console.WriteLine($"Cached Instances: {objects.Count}, v:{VariationId}");
+            }
             var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, VariationId);
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, VariationId);
+            if (logspam)
+            {
+                Console.WriteLine($"Factory objs: {factoryObjects.Count}, v: {VariationId}");
+            }
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
@@ -338,7 +354,7 @@ namespace ACE.Server.Entity
                     wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
                     wo.Location.Variation = VariationId;
 
-                    var sortCell = LScape.get_landcell(pos.ObjCellID) as SortCell;
+                    var sortCell = LScape.get_landcell(pos.ObjCellID, pos.Variation) as SortCell;
                     if (sortCell != null && sortCell.has_building())
                     {
                         wo.Destroy();

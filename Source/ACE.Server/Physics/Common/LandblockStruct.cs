@@ -14,6 +14,7 @@ namespace ACE.Server.Physics.Common
     {
         public uint ID;
         //public Vector3 VertexLighting;    // RGBColor
+        public int? VariationId { get; set; }
         public LandDefs.Direction TransDir;
         public int SideVertexCount;
         public int SidePolyCount;
