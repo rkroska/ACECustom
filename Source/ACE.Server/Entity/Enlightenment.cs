@@ -80,6 +80,10 @@ namespace ACE.Server.Entity
                 RemoveTokens(player);
                 RemoveAbility(player);
                 AddPerks(player);
+                if (player.Enlightenment >= 25)
+                {
+                    DequipAllItems(player);
+                }
                 player.SaveBiotaToDatabase();
             });
 
@@ -160,11 +164,11 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (player.Enlightenment + 1 > 25)
+            if (player.Enlightenment + 1 > 30)
             {
                 if (!VerifySocietyMaster(player))
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a Master of your Society to enlighten beyond level 25.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must be a Master of your Society to enlighten beyond level 30.", ChatMessageType.Broadcast));
                     return false;
                 }
             }
@@ -429,6 +433,16 @@ namespace ACE.Server.Entity
                 case 5:
                     player.AddTitle(CharacterTitle.CosmicConscious);
                     lvl = "5th";
+                    break;
+                case 21:
+                case 31:
+                case 41:
+                case 51:
+                case 61:
+                case 71:
+                case 81:
+                case 91:
+                    lvl = player.Enlightenment.ToString() + "st";
                     break;
                 default:
                     lvl = player.Enlightenment.ToString() + "th";

@@ -752,6 +752,10 @@ namespace ACE.Database.Models.Shard
                     .HasColumnName("stat_Mod_Value")
                     .HasComment("the effect value/amount");
 
+                entity.Property(e => e.AugmentationLevelWhenCast)
+                    .HasColumnName("augmentation_Level_When_Cast")
+                    .HasComment("Player Skill Augmentation Level when Enchantment Was Cast");
+
                 entity.HasOne(d => d.Object)
                     .WithMany(p => p.BiotaPropertiesEnchantmentRegistry)
                     .HasForeignKey(d => d.ObjectId)
