@@ -680,6 +680,7 @@ namespace ACE.Database.Adapter
                     existingValue.StatModKey = value.StatModKey;
                     existingValue.StatModValue = value.StatModValue;
                     existingValue.SpellSetId = (uint)value.SpellSetId;
+                    existingValue.AugmentationLevelWhenCast = value.AugmentationLevelWhenCast;
                 }
             }
             foreach (var value in targetBiota.BiotaPropertiesEnchantmentRegistry)
