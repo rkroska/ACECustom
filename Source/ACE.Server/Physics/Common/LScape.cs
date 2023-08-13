@@ -127,7 +127,11 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public static ObjCell get_landcell(uint blockCellID, int? variationId)
         {
-            //Console.WriteLine($"get_landcell({blockCellID:X8}");
+            Console.WriteLine($"get_landcell({blockCellID:X8}");
+            if (blockCellID == 3880648731 || blockCellID == 3880648721)
+            {
+                Console.WriteLine(new System.Diagnostics.StackTrace());
+            }
 
             var landblock = get_landblock(blockCellID, variationId);
             if (landblock == null)
