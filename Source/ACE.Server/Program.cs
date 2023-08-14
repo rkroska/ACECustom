@@ -252,7 +252,7 @@ namespace ACE.Server
             GuidManager.Initialize();
 
             
-            if (!string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
+            if (ConfigManager.Config.Chat.EnableDiscordConnection && !string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
             {
                 log.Info("Attempting to start Discord Client...");
                 DiscordChatManager.Initialize();
