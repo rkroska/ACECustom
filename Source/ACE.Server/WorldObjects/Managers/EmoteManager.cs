@@ -1716,7 +1716,7 @@ namespace ACE.Server.WorldObjects.Managers
                                             return;
                                         }
                                         player.LuminanceAugmentSpecializeCount = specAugs + 1;
-                                        player.TryConsumeFromInventoryWithNetworking(300017, 1); // Need Weenie ID
+                                        player.TryConsumeFromInventoryWithNetworking(300021, 1); // Need Weenie ID
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Max Specialized Skill Credits by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal7} luminance to add 1 point to your max specialized skill credits. Are you sure?");
                                 }
