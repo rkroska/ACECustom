@@ -434,6 +434,16 @@ namespace ACE.Server.Entity
                     player.AddTitle(CharacterTitle.CosmicConscious);
                     lvl = "5th";
                     break;
+                case 21:
+                case 31:
+                case 41:
+                case 51:
+                case 61:
+                case 71:
+                case 81:
+                case 91:
+                    lvl = player.Enlightenment.ToString() + "st";
+                    break;
                 default:
                     lvl = player.Enlightenment.ToString() + "th";
                     break;
