@@ -53,8 +53,9 @@ namespace ACE.Server.Physics.Common
                 Info = DBObj.GetLandblockInfo(ID - 1);
             BlockCoord = LandDefs.blockid_to_lcoord(landblock.Id).Value;
             _landblock = landblock;
-            VariationId = Variation;
+            
             get_land_limits();
+            VariationId = Variation;
         }
 
         public new void Init()

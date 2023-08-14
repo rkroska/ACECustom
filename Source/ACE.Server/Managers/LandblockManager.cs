@@ -36,7 +36,8 @@ namespace ACE.Server.Managers
         /// Landblocks which aren't currently loaded will be null here
         /// X, Y, Variation dimensions
         /// </summary>
-        private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
+        //private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
+        private static Dictionary<VariantCacheId, Landblock> landblocks = new Dictionary<VariantCacheId, Landblock>();
 
         /// <summary>
         /// A lookup table of all the currently loaded landblocks
@@ -53,6 +54,49 @@ namespace ACE.Server.Managers
                 lock (landblockMutex)
                     return landblockGroups.Count;
             }
+        }
+
+        /// <summary>
+        /// Add or update a landblock in the landblock dictionary
+        /// </summary>
+        private static void AddUpdateLandblock(Landblock landblock, int? VariationId)
+        {
+            VariantCacheId key = new VariantCacheId(){ Landblock = landblock.Id.Raw, Variant = VariationId ?? 0 };
+            AddUpdateLandblock(key, landblock);
+        }
+
+        private static void AddUpdateLandblock(VariantCacheId landblockKey, Landblock landblock)
+        {
+            var lb = GetLandblock(landblockKey);
+            if (lb == null && landblock == null)            
+                return;
+            if (lb == null && landblock != null)
+            {
+                lock (landblockMutex)
+                    landblocks.Add(landblockKey, landblock);
+            }
+            else if (lb != null && landblock == null)
+            {
+                lock (landblockMutex)
+                    landblocks.Remove(landblockKey);
+            }
+            else if (lb != null && landblock != null)
+            {
+                lock (landblockMutex)
+                    landblocks[landblockKey] = landblock;
+            }
+
+        }
+
+        private static Landblock GetLandblock(VariantCacheId landblockKey)
+        {
+            lock (landblockMutex)
+            {
+                if (landblocks.TryGetValue(landblockKey, out Landblock landblock))
+                    return landblock;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -401,7 +445,7 @@ namespace ACE.Server.Managers
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
             lock (landblockMutex)
-                return landblocks[landblockId.LandblockX, landblockId.LandblockY, variationId ?? 0] != null;
+                return GetLandblock(new VariantCacheId() {Landblock = landblockId.Raw, Variant = variationId ?? 0 }) != null;
         }
 
         /// <summary>
@@ -416,12 +460,13 @@ namespace ACE.Server.Managers
             {
                 bool setAdjacents = false;
 
-                landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY, variation ?? 0];
+                landblock = GetLandblock(new VariantCacheId() { Landblock = landblockId.Raw, Variant = variation ?? 0 });
 
                 if (landblock == null)
                 {
                     // load up this landblock
-                    landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY, variation ?? 0] = new Landblock(landblockId, variation);
+                    landblock = new Landblock(landblockId, variation);
+                    AddUpdateLandblock(landblock, variation);
 
                     if (!loadedLandblocks.Add(landblock))
                     {
@@ -481,7 +526,7 @@ namespace ACE.Server.Managers
 
             foreach (var adjacentID in adjacentIDs)
             {
-                var adjacent = landblocks[adjacentID.LandblockX, adjacentID.LandblockY, variationId ?? 0];
+                var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Raw, Variant = variationId ?? 0 });
                 if (adjacent != null)
                     adjacents.Add(adjacent);
             }
@@ -619,8 +664,8 @@ namespace ACE.Server.Managers
                     {
                         // remove from list of managed landblocks
                         if (loadedLandblocks.Remove(landblock))
-                        {
-                            landblocks[landblock.Id.LandblockX, landblock.Id.LandblockY, landblock.VariationId ?? 0] = null;
+                        {                            
+                            AddUpdateLandblock(new VariantCacheId() { Landblock = landblock.Id.Raw, Variant = landblock.VariationId ?? 0 }, null);
 
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0 ; i--)
