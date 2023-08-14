@@ -176,11 +176,11 @@ namespace ACE.Server.Physics.Common
                     max_y = Math.Max(max_cy - ly, max_y);
                 }
 
-                add_cell_block(min_x + (int)lcoord.X, min_y + (int)lcoord.Y, max_x + (int)lcoord.X, max_y + (int)lcoord.Y, cellArray, id, loc.Variation);
+                add_cell_block(min_x + (int)lcoord.X, min_y + (int)lcoord.Y, max_x + (int)lcoord.X, max_y + (int)lcoord.Y, cellArray, id);
             }
         }
 
-        public static void add_cell_block(int min_x, int min_y, int max_x, int max_y, CellArray cellArray, uint id, int? variationId)
+        public static void add_cell_block(int min_x, int min_y, int max_x, int max_y, CellArray cellArray, uint id)
         {
             for (var i = min_x; i <= max_x; i++)
             {
@@ -198,7 +198,7 @@ namespace ACE.Server.Physics.Common
                     if (id >> 16 != cellID >> 16)
                         continue;
 
-                    var cell = LScape.get_landcell(cellID, variationId);
+                    var cell = LScape.get_landcell(cellID, cellArray.Cells[id].CurLandblock.VariationId);
 
                     cellArray.add_cell(cellID, cell);
                 }
