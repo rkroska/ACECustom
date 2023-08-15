@@ -4,12 +4,32 @@ using System.Collections.Generic;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum;
+using ACE.Server.Managers;
 using ACE.Server.Network;
 
 namespace ACE.Server.Command.Handlers
 {
     public static class ConsoleCommands
     {
+        [CommandHandler("lbcache", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, 0, "Write out all cached landblocks.", "")]
+        public static void WriteLandblockCache(Session session, params string[] parameters)
+        {
+            foreach (var LI in LandblockManager.landblocks)
+            {
+                Console.WriteLine($"LB Keys: {LI.Key.Landblock}, {LI.Key.Variant}. Values: {LI.Value.Id.Raw}, {LI.Value.VariationId}");
+            }
+        }
+
+        [CommandHandler("lbhash", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, 0, "Write out all hashed loaded landblocks.", "")]
+        public static void WriteLandblockHash(Session session, params string[] parameters)
+        {
+            foreach (var LI in LandblockManager.loadedLandblocks)
+            {
+                Console.WriteLine($"LB Keys: {LI.Id.Raw}, {LI.VariationId}");
+            }
+        }
+
+
         [CommandHandler("version", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, 0, "Show server version information.", "")]
         public static void ShowVersion(Session session, params string[] parameters)
         {
