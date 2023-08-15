@@ -213,7 +213,7 @@ namespace ACE.Server.Physics.Common
             if (x >= 0 && y >= 0 && x < 2040 && y < 2040)
             {
                 var cellID = (((y >> 3) | 32 * (x & 0xFFFFFFF8)) << 16) | ((y & 7) + 8 * (x & 7) + 1);
-                var landCell = Get(cellID);
+                var landCell = Get(cellID, null);
                 if (landCell != null)
                     cellArray.add_cell(cellID, landCell);
             }
