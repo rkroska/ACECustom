@@ -52,7 +52,7 @@ namespace ACE.Server.Command.Handlers
                     bool currentPlayerOver50 = session.Player.Level >= 50;
                     foreach (var player in session.Player.CurrentLandblock.players)
                     {
-                        if (player.Guid != session.Player.Guid && !player.IsMule && !(player.Cloaked ?? false))
+                        if (player.Guid != session.Player.Guid && !player.IsMule && (player.CloakStatus == CloakStatus.Player || player.CloakStatus == CloakStatus.Off || player.CloakStatus == CloakStatus.Undef))
                         {
                             if (!currentPlayerOver50 || player.Level >= 50) // Don't add lowbies to a fellowship of players over 50
                             {
