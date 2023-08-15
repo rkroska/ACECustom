@@ -37,15 +37,15 @@ namespace ACE.Server.Managers
         /// X, Y, Variation dimensions
         /// </summary>
         //private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
-        private static Dictionary<VariantCacheId, Landblock> landblocks = new Dictionary<VariantCacheId, Landblock>();
+        public static Dictionary<VariantCacheId, Landblock> landblocks = new Dictionary<VariantCacheId, Landblock>();
 
         /// <summary>
         /// A lookup table of all the currently loaded landblocks
         /// </summary>
-        private static readonly HashSet<Landblock> loadedLandblocks = new HashSet<Landblock>();
+        public static readonly HashSet<Landblock> loadedLandblocks = new HashSet<Landblock>();
 
         private static readonly List<Landblock> landblockGroupPendingAdditions = new List<Landblock>();
-        private static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
+        public static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
 
         public static int LandblockGroupsCount
         {
@@ -74,6 +74,7 @@ namespace ACE.Server.Managers
             {
                 lock (landblockMutex)
                     landblocks.Add(landblockKey, landblock);
+                Console.WriteLine("Added " + landblock.Id.Raw);
             }
             else if (lb != null && landblock == null)
             {
@@ -84,6 +85,7 @@ namespace ACE.Server.Managers
             {
                 lock (landblockMutex)
                     landblocks[landblockKey] = landblock;
+                Console.WriteLine("Updated " + lb.Id.Raw + " : " + landblock.Id.Raw);
             }
 
         }
@@ -95,7 +97,6 @@ namespace ACE.Server.Managers
                 if (landblocks.TryGetValue(landblockKey, out Landblock landblock))
                     return landblock;
             }
-
             return null;
         }
 
@@ -230,7 +231,7 @@ namespace ACE.Server.Managers
             {
                 for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
                 {
-                    if (landblockGroupPendingAdditions[i].IsDungeon)
+                    if (landblockGroupPendingAdditions[i].IsDungeon || landblockGroupPendingAdditions[i].VariationId.HasValue)
                     {
                         // Each dungeon exists in its own group
                         var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i]);
