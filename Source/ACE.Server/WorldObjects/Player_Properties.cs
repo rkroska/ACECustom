@@ -1474,6 +1474,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugWarCount); else SetProperty(PropertyInt64.LumAugWarCount, value.Value); }
         }
 
+        public long? LuminanceAugmentSpecializeCount
+        {
+            get => GetProperty(PropertyInt64.LumAugSpecializeCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugSpecializeCount); else SetProperty(PropertyInt64.LumAugSpecializeCount, value.Value); }
+        }
+
         public bool IsMule
         {
             get => GetProperty(PropertyBool.IsMule) ?? false;

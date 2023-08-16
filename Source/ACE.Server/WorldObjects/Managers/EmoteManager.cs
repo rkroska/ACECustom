@@ -1694,6 +1694,33 @@ namespace ACE.Server.WorldObjects.Managers
 
                                 }
                                 break;
+                            case "Specialize":
+                                long specAugs = player.LuminanceAugmentSpecializeCount ?? 0;
+                                var curVal7 = emote.Amount + (specAugs * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal7)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal7} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal7)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal7} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal7))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentSpecializeCount = specAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300021, 1); // Need Weenie ID
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Max Specialized Skill Credits by 1.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal7} luminance to add 1 point to your max specialized skill credits. Are you sure?");
+                                }
+                                break;
                             default:
                                 break;
                         }
