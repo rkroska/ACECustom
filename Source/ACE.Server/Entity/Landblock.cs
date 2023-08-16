@@ -194,7 +194,7 @@ namespace ACE.Server.Entity
         {
             if (!reload)
                 PhysicsLandblock.PostInit();
-
+            Console.WriteLine($"Landblock.Init({Id.Raw})");
             Task.Run(() =>
             {
                 CreateWorldObjects();
