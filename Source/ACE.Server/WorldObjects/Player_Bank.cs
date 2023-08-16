@@ -122,6 +122,19 @@ namespace ACE.Server.WorldObjects
                         break;
                     }
                 }
+
+                var legKeysList = this.GetInventoryItemsOfWCID(48748); //2-use Legendary keys
+                foreach (var leg in legKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(leg))
+                    {
+                        BankedLegendaryKeys += leg.Structure ?? 2;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
             }
         }
 
