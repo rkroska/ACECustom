@@ -444,6 +444,26 @@ namespace ACE.Server.Entity
                 case 91:
                     lvl = player.Enlightenment.ToString() + "st";
                     break;
+                case 22:
+                case 32:
+                case 42:
+                case 52:
+                case 62:
+                case 72:
+                case 82:
+                case 92:
+                    lvl = player.Enlightenment.ToString() + "nd";
+                    break;
+                case 23:
+                case 33:
+                case 43:
+                case 53:
+                case 63:
+                case 73:
+                case 83:
+                case 93:
+                    lvl = player.Enlightenment.ToString() + "rd";
+                    break;
                 default:
                     lvl = player.Enlightenment.ToString() + "th";
                     break;
