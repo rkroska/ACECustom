@@ -194,11 +194,12 @@ namespace ACE.Server.Entity
         {
             if (!reload)
                 PhysicsLandblock.PostInit();
-            Console.WriteLine($"Landblock.Init({Id.Raw})");
+            
             Task.Run(() =>
             {
+                Console.WriteLine($"Landblock.Init({Id}) task started");
                 CreateWorldObjects();
-
+                
                 SpawnDynamicShardObjects();
 
                 SpawnEncounters();
@@ -251,29 +252,34 @@ namespace ACE.Server.Entity
         private void CreateWorldObjects()
         {
             bool logspam = false;
+            logspam = true;
+            Console.WriteLine($"CreateWOs in landblock {this.Id} v:{this.VariationId}, group: {this.CurrentLandblockGroup}\n");
             if (this.Id.ToString().StartsWith("019E"))
             {
-                logspam = true;
-                Console.WriteLine($"CreateWOs in landblock {this.Id} v:{this.VariationId}, group: {this.CurrentLandblockGroup}\n" +
-                    $"From: {new StackTrace()}");
+                
+                Console.WriteLine($"From: {new StackTrace()}");
             }
             var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, VariationId);
             if (logspam)
             {
-                Console.WriteLine($"Cached Instances: {objects.Count}, v:{VariationId}");
+                Console.WriteLine($"Cached Instances: {objects.Count}, {this.Id}, v:{VariationId}");
             }
             var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, VariationId);
-            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, VariationId);
             if (logspam)
             {
-                Console.WriteLine($"Factory objs: {factoryObjects.Count}, v: {VariationId}");
+                Console.WriteLine($"Shard objs: {shardObjects.Count}, {this.Id}, v: {VariationId}");
             }
+            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, VariationId);
+
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
                 // for mansion linking
                 var houses = new List<House>();
-
+                if (logspam)
+                {
+                    Console.WriteLine($"AddWorldObject action queued - Factory objs: {factoryObjects.Count}, {this.Id}, v: {VariationId}");
+                }
                 foreach (var fo in factoryObjects)
                 {
                     WorldObject parent = null;
@@ -295,7 +301,11 @@ namespace ACE.Server.Entity
                         }
                     }
 
-                    AddWorldObject(fo);
+                    var res = AddWorldObject(fo);
+                    if (!res)
+                    {
+                        Console.WriteLine($"Failed to add world object {fo.Name}, {fo.Guid} to landblock {Id.Landblock}");
+                    }
                     fo.ActivateLinks(objects, shardObjects, parent);
 
                     if (fo.PhysicsObj != null)
@@ -942,7 +952,7 @@ namespace ACE.Server.Entity
                     else if (wo.IsGenerator) // Some generators will fail random spawns if they're circumference spans over water or cliff edges
                         log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
                     else if (wo.ProjectileTarget == null && !(wo is SpellProjectile))
-                        log.Warn($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
+                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
 
                     return false;
                 }
