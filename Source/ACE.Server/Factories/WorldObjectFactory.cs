@@ -274,6 +274,7 @@ namespace ACE.Server.Factories
         public static List<WorldObject> CreateNewWorldObjects(List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrict_wcid = null, int? variationId = null)
         {
             var results = new List<WorldObject>();
+            Console.WriteLine($"source objects to spawn: {sourceObjects.Where(x=>x.IsLinkChild==false).Count()}");
 
             // spawn direct landblock objects
             foreach (var instance in sourceObjects.Where(x => x.IsLinkChild == false))
@@ -296,6 +297,7 @@ namespace ACE.Server.Factories
                 var biota = biotas.FirstOrDefault(b => b.Id == instance.Guid);
                 if (biota == null)
                 {
+                    Console.WriteLine($"Biota id not match for {instance.Guid}, creating new wo");
                     worldObject = CreateWorldObject(weenie, guid);
 
                     worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ,

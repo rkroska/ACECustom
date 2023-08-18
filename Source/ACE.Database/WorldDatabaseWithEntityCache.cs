@@ -692,8 +692,13 @@ namespace ACE.Database
             var results = context.LandblockInstance
                 .Include(r => r.LandblockInstanceLink)
                 .AsNoTracking()
-                .Where(r => r.Landblock == landblock && r.VariationId == variation)
+                .Where(r => r.Landblock == landblock)
                 .ToList();
+
+            if (variation.HasValue)
+            {
+                results = results.Where(r => r.VariationId == variation).ToList();
+            }
 
             cachedLandblockInstances.TryAdd(cacheKey, results.ToList());
 
