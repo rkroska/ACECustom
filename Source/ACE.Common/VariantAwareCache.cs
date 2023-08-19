@@ -8,7 +8,7 @@ namespace ACE.Common
 {
     public struct VariantCacheId
     {
-        public uint Landblock;
+        public ushort Landblock;
         public int Variant;
     }
 }
