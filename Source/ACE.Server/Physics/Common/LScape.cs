@@ -55,15 +55,15 @@ namespace ACE.Server.Physics.Common
         public static Landblock get_landblock(uint blockCellID, int? variationId = null)
         {
             var landblockID = blockCellID | 0xFFFF;
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockID, Variant = variationId ?? 0 };
+            var lbid = new LandblockId(landblockID);
             if (PhysicsEngine.Instance.Server)
             {
-                var lbid = new LandblockId(landblockID);
+                
                 var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
 
                 return lbmLandblock.PhysicsLandblock;
             }
-
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
             // client implementation
             /*if (Landblocks == null || Landblocks.Count == 0)
                 return null;
@@ -83,7 +83,7 @@ namespace ACE.Server.Physics.Common
             return Landblocks[yDiff + xDiff * MidWidth];*/
 
             // check if landblock is already cached
-            
+
             if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
 
@@ -114,7 +114,8 @@ namespace ACE.Server.Physics.Common
                 AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
                 return true;
             }
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockID, Variant = variationId ?? 0 };
+            var lbid = new LandblockId(landblockID);
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
             var result = Landblocks.TryRemove(cacheKey, out _);
             // todo: Like mentioned above, the following function should be moved to ACE.Server.Physics.Common.Landblock.Unload()
             AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
