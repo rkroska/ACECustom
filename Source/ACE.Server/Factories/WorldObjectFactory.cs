@@ -297,7 +297,7 @@ namespace ACE.Server.Factories
                 var biota = biotas.FirstOrDefault(b => b.Id == instance.Guid);
                 if (biota == null)
                 {
-                    Console.WriteLine($"Biota id not match for {instance.Guid}, creating new wo");
+                    //Console.WriteLine($"Biota id not match for {instance.Guid}, creating new wo");
                     worldObject = CreateWorldObject(weenie, guid);
 
                     worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ,

@@ -3,13 +3,15 @@ using System.Collections.Concurrent;
 using System.Numerics;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
+using ACE.Common;
+using ACE.Entity;
 
 namespace ACE.Server.Physics.Util
 {
     public class AdjustCell
     {
         public List<Common.EnvCell> EnvCells;
-        public static ConcurrentDictionary<uint, AdjustCell> AdjustCells = new ConcurrentDictionary<uint, AdjustCell>();
+        public static ConcurrentDictionary<VariantCacheId, AdjustCell> AdjustCells = new ConcurrentDictionary<VariantCacheId, AdjustCell>();
 
         public AdjustCell(uint dungeonID, int? variationId)
         {
@@ -46,12 +48,14 @@ namespace ACE.Server.Physics.Util
 
         public static AdjustCell Get(uint dungeonID, int? variationId)
         {
+            var lbid = new LandblockId(dungeonID);
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0};
             AdjustCell adjustCell = null;
-            AdjustCells.TryGetValue(dungeonID, out adjustCell);
+            AdjustCells.TryGetValue(cacheKey, out adjustCell);
             if (adjustCell == null)
             {
                 adjustCell = new AdjustCell(dungeonID, variationId);
-                AdjustCells.TryAdd(dungeonID, adjustCell);
+                AdjustCells.TryAdd(cacheKey, adjustCell);
             }
             return adjustCell;
         }
