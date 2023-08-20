@@ -401,7 +401,7 @@ namespace ACE.Server.Physics.Common
                     StaticObjects.Add(staticObj);
                 }
 
-                //Console.WriteLine($"{ID:X8}: loaded {NumStaticObjects} static objects");
+                Console.WriteLine($"{ID:X8}: loaded {NumStaticObjects} static objects to v:{this.Pos.Variation}");
             }
         }
 

@@ -106,19 +106,19 @@ namespace ACE.Server.Physics.Common
 
         public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
+            var lbid = new LandblockId(landblockID);
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()
-                // todo: which would then call AdjustCell.AdjustCells.Remove()
-
-                AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
+                // todo: which would then call AdjustCell.AdjustCells.Remove()                
+                AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
                 return true;
             }
-            var lbid = new LandblockId(landblockID);
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
+            
             var result = Landblocks.TryRemove(cacheKey, out _);
             // todo: Like mentioned above, the following function should be moved to ACE.Server.Physics.Common.Landblock.Unload()
-            AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
+            AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
             return result;
         }
 
@@ -162,6 +162,7 @@ namespace ACE.Server.Physics.Common
 
                     cell = DBObj.GetEnvCell(blockCellID);
                     cell.CurLandblock = landblock;
+                    cell.Pos.Variation = variationId;
                     landblock.LandCells.TryAdd((int)cellID, cell);
                     var envCell = (EnvCell)cell;
                     envCell.PostInit();
