@@ -185,7 +185,7 @@ namespace ACE.Server.Entity
                 long reqLum = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum))
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum} to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
                     return false;
                 }
             }
