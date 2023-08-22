@@ -77,6 +77,11 @@ namespace ACE.Server.Entity
                 }
 
                 player.ThreadSafeTeleportOnDeath();
+                if (!SpendLuminance(player))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
+                    return;
+                }
                 RemoveTokens(player);
                 RemoveAbility(player);
                 AddPerks(player);
@@ -250,15 +255,16 @@ namespace ACE.Server.Entity
             player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
         }
 
-        public static void SpendLuminance(Player player)
+        public static bool SpendLuminance(Player player)
         {
             if (player.Enlightenment + 1 > 50)
             {
                 var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum = targetEnlightenment * baseLumCost;
-                player.SpendLuminance(reqLum);
+                return player.SpendLuminance(reqLum);
             }
+            return true;
         }
 
         public static void RemoveSociety(Player player)
