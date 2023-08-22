@@ -142,10 +142,11 @@ namespace ACE.Server.Entity
                 }
             }
 
+            var targetEnlightenment = player.Enlightenment + 1;
 
             //todo: check for trophies that are enl level appropriate
             //first, 1 enlightenment token per enlightenment past 5.
-            if (player.Enlightenment + 1 > 5)
+            if (targetEnlightenment > 5)
             {
                 var count = player.GetNumInventoryItemsOfWCID(300000); //magic number - EnlightenmentToken
                 if (count < player.Enlightenment + 1 - 5)
@@ -155,7 +156,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (player.Enlightenment + 1 > 10)
+            if (targetEnlightenment > 10)
             {
                 if (!VerifyLumAugs(player))
                 {
@@ -164,7 +165,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (player.Enlightenment + 1 > 30)
+            if (targetEnlightenment > 30)
             {
                 if (!VerifySocietyMaster(player))
                 {
@@ -173,8 +174,24 @@ namespace ACE.Server.Entity
                 }
             }
 
+            if (targetEnlightenment > 50)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                long reqLum = targetEnlightenment * baseLumCost;
+                if (!VerifyLuminance(player, reqLum))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum} to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
 
             return true;
+        }
+
+        public static bool VerifyLuminance(Player player, long reqLum)
+        {
+            return player.BankedLuminance >= reqLum;
         }
 
         public static bool VerifySocietyMaster(Player player)
@@ -231,6 +248,17 @@ namespace ACE.Server.Entity
         public static void RemoveTokens(Player player)
         {
             player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
+        }
+
+        public static void SpendLuminance(Player player)
+        {
+            if (player.Enlightenment + 1 > 50)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                var targetEnlightenment = player.Enlightenment + 1;
+                long reqLum = targetEnlightenment * baseLumCost;
+                player.SpendLuminance(reqLum);
+            }
         }
 
         public static void RemoveSociety(Player player)
