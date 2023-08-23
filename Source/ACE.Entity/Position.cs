@@ -253,7 +253,7 @@ namespace ACE.Entity
                 SetPosition(Pos);
         }
 
-        public Position(BinaryReader payload)
+        public Position(BinaryReader payload, int? VariationId)
         {
             LandblockId = new LandblockId(payload.ReadUInt32());
 
@@ -266,6 +266,7 @@ namespace ACE.Entity
             RotationX = payload.ReadSingle();
             RotationY = payload.ReadSingle();
             RotationZ = payload.ReadSingle();
+            Variation = VariationId;
         }
 
         public Position(float northSouth, float eastWest)

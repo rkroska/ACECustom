@@ -272,12 +272,18 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
-#if DEBUG
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
-            Console.WriteLine($"Player sending to v: {Destination.Variation}");
-#endif
             var portalDest = new Position(Destination);
+#if DEBUG
+            //player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
+            Console.WriteLine($"Player sending to v: {portalDest.Variation}");
+#endif
             AdjustDungeon(portalDest);
+
+
+            if (player.Location.Variation != portalDest.Variation) //immediately switch variation
+            {
+                player.Location.Variation = portalDest.Variation;
+            }
 
             WorldManager.ThreadSafeTeleport(player, portalDest, new ActionEventDelegate(() =>
             {

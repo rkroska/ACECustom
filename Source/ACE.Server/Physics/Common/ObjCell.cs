@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
@@ -33,6 +34,7 @@ namespace ACE.Server.Physics.Common
         public List<DatLoader.Entity.Stab> VisibleCells;
         public bool SeenOutside;
         public List<uint> VoyeurTable;
+        public int? VariationId;
 
         public Landblock CurLandblock;
 
@@ -332,12 +334,12 @@ namespace ACE.Server.Physics.Common
             return false;
         }
 
-        public static void find_cell_list(Position position, int numSphere, List<Sphere> sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path)
+        public static void find_cell_list(Position position, int numSphere, List<Sphere> sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path, int? variation)
         {
             cellArray.NumCells = 0;
-            cellArray.AddedOutside = false;
+            cellArray.AddedOutside = false;            
 
-            var visibleCell = GetVisible(position.ObjCellID, position.Variation);
+            var visibleCell = GetVisible(position.ObjCellID, variation);
 
             if ((position.ObjCellID & 0xFFFF) >= 0x100)
             {
@@ -413,7 +415,7 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static void find_cell_list(Position position, int numCylSphere, List<CylSphere> cylSphere, CellArray cellArray, SpherePath path)
+        public static void find_cell_list(Position position, int numCylSphere, List<CylSphere> cylSphere, CellArray cellArray, SpherePath path, int? variation)
         {
             if (numCylSphere > 10)
                 numCylSphere = 10;
@@ -429,27 +431,27 @@ namespace ACE.Server.Physics.Common
             }
 
             ObjCell empty = null;
-            find_cell_list(position, numCylSphere, spheres, cellArray, ref empty, path);
+            find_cell_list(position, numCylSphere, spheres, cellArray, ref empty, path, variation);
         }
 
-        public static void find_cell_list(Position position, Sphere sphere, CellArray cellArray, SpherePath path)
+        public static void find_cell_list(Position position, Sphere sphere, CellArray cellArray, SpherePath path, int? variation)
         {
             var globalSphere = new Sphere();
             globalSphere.Center = position.LocalToGlobal(sphere.Center);
             globalSphere.Radius = sphere.Radius;
 
             ObjCell empty = null;
-            find_cell_list(position, 1, globalSphere, cellArray, ref empty, path);
+            find_cell_list(position, 1, globalSphere, cellArray, ref empty, path, variation);
         }
 
-        public static void find_cell_list(CellArray cellArray, ref ObjCell checkCell, SpherePath path)
+        public static void find_cell_list(CellArray cellArray, ref ObjCell checkCell, SpherePath path, int? variation)
         {
-            find_cell_list(path.CheckPos, path.NumSphere, path.GlobalSphere, cellArray, ref checkCell, path);
+            find_cell_list(path.CheckPos, path.NumSphere, path.GlobalSphere, cellArray, ref checkCell, path, variation);
         }
 
-        public static void find_cell_list(Position position, int numSphere, Sphere sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path)
+        public static void find_cell_list(Position position, int numSphere, Sphere sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path, int? variation)
         {
-            find_cell_list(position, numSphere, new List<Sphere>() { sphere }, cellArray, ref currCell, path);
+            find_cell_list(position, numSphere, new List<Sphere>() { sphere }, cellArray, ref currCell, path, variation);
         }
 
         public virtual void find_transit_cells(int numParts, List<PhysicsPart> parts, CellArray cellArray)

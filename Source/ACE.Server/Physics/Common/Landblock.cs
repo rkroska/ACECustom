@@ -10,6 +10,7 @@ using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.BSP;
 using ACE.Server.Physics.Extensions;
 using ACE.Server.Managers;
+using ACE.Common;
 
 namespace ACE.Server.Physics.Common
 {
@@ -413,9 +414,10 @@ namespace ACE.Server.Physics.Common
             var lcoord = LandDefs.gid_to_lcoord(cellID).Value;
 
             var idx = ((int)lcoord.Y & 7) + ((int)lcoord.X & 7) * SideCellCount;
-
-            if (LandCells[idx].ID == cellID)
-                return (LandCell)LandCells[idx];
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId ?? 0 };
+            var found = LandCells.TryGetValue(cacheKey, out var cell);
+            if (found && cell.ID == cellID)
+                return (LandCell)LandCells[cacheKey];
             else
                 return null;
         }
@@ -465,8 +467,8 @@ namespace ACE.Server.Physics.Common
 
             for (var i = 0; i < SideCellCount; i++)
             {
-                var cell = (ObjCell)LandCells[i];
-                var offset = i * SideCellCount * 11;    // ?
+                VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 };
+                var cell = (ObjCell)LandCells[cacheKey];
                 cell.init_objects();
             }
             DynObjsInitDone = true;
@@ -487,7 +489,7 @@ namespace ACE.Server.Physics.Common
                 adjust_scene_obj_height();
                 foreach (var obj in StaticObjects)
                     if (!obj.is_completely_visible())
-                        obj.calc_cross_cells_static();
+                        obj.calc_cross_cells_static(VariationId);
             }
             else if (Info != null)
             {
@@ -517,8 +519,8 @@ namespace ACE.Server.Physics.Common
                         if (lcoord == null) continue;
 
                         var idx = ((int)lcoord.Value.Y & 7) + ((int)lcoord.Value.X & 7) * SideCellCount;
-
-                        LandCells[idx].RestrictionObj = kvp.Value;
+                        var cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId ?? 0 };
+                        LandCells[cacheKey].RestrictionObj = kvp.Value;
                     }
                 }
             }
@@ -547,8 +549,8 @@ namespace ACE.Server.Physics.Common
 
             for (var i = 0; i < SideCellCount; i++)
             {
-                var cell = (ObjCell)LandCells[i];
-                var offset = i * SideCellCount * 11;    // ?
+                var cacheKey = new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 };
+                var cell = (ObjCell)LandCells[cacheKey];
                 cell.release_objects();
             }
             DynObjsInitDone = false;

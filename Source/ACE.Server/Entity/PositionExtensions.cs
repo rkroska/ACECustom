@@ -273,7 +273,7 @@ namespace ACE.Server.Entity
 
         public static float GetTerrainZ(this Position p)
         {
-            var landblock = LScape.get_landblock(p.LandblockId.Raw);
+            var landblock = LScape.get_landblock(p.LandblockId.Raw, p.Variation);
 
             var cellID = GetOutdoorCell(p);
             var landcell = (LandCell)LScape.get_landcell(cellID, p.Variation);

@@ -537,7 +537,7 @@ namespace ACE.Server.Physics
             if (CurCell != newCell)
             {
                 change_cell(newCell);
-                calc_cross_cells();
+                calc_cross_cells(pos.Variation);
             }
             return SetPositionError.OK;
         }
@@ -1259,7 +1259,7 @@ namespace ACE.Server.Physics
             {
                 if (State.HasFlag(PhysicsState.HasPhysicsBSP))
                 {
-                    calc_cross_cells();
+                    calc_cross_cells(curPos.Variation);
                     return true;
                 }
 
@@ -1432,7 +1432,7 @@ namespace ACE.Server.Physics
                     if (sortCell == null || !sortCell.has_building())
                     {
                         // set to ground pos
-                        var landblock = LScape.get_landblock(newPos.ObjCellID);
+                        var landblock = LScape.get_landblock(newPos.ObjCellID, newPos.Variation);
                         var groundZ = landblock.GetZ(newPos.Frame.Origin) + 0.05f;
 
                         if (Math.Abs(newPos.Frame.Origin.Z - groundZ) > ScatterThreshold_Z)
@@ -1458,7 +1458,7 @@ namespace ACE.Server.Physics
                 }
                 if (indoors)
                 {
-                    var landblock = LScape.get_landblock(newPos.ObjCellID);
+                    var landblock = LScape.get_landblock(newPos.ObjCellID, newPos.Variation);
                     var envcells = landblock.get_envcells();
                     var found = false;
                     foreach (var envCell in envcells)
@@ -1952,7 +1952,7 @@ namespace ACE.Server.Physics
                 PartArray.SetFrame(Position.Frame);
 
             UpdateChildrenInternal();
-            calc_cross_cells_static();
+            calc_cross_cells_static(this.Position.Variation);
         }
 
         public void add_particle_shadow_to_cell()
@@ -2056,7 +2056,7 @@ namespace ACE.Server.Physics
             sphere.Radius = AttackManager.AttackRadius + attackCone.Radius * Scale;
 
             var cellArray = new CellArray();
-            ObjCell.find_cell_list(Position, sphere, cellArray, null);
+            ObjCell.find_cell_list(Position, sphere, cellArray, null, Position.Variation);
 
             var attackInfo = AttackManager.NewAttack(attackCone.PartIdx);
 
@@ -2083,7 +2083,7 @@ namespace ACE.Server.Physics
             }
         }
 
-        public void calc_cross_cells()
+        public void calc_cross_cells(int? variation)
         {
             CellArray.SetDynamic();
 
@@ -2092,24 +2092,24 @@ namespace ACE.Server.Physics
             else
             {
                 if (PartArray != null && PartArray.GetNumCylsphere() != 0)
-                    ObjCell.find_cell_list(Position, PartArray.GetNumCylsphere(), PartArray.GetCylSphere(), CellArray, null);
+                    ObjCell.find_cell_list(Position, PartArray.GetNumCylsphere(), PartArray.GetCylSphere(), CellArray, null, variation);
                 else
                 {
                     // added sorting sphere null check
                     var sphere = PartArray != null && PartArray.Setup.SortingSphere != null ? PartArray.GetSortingSphere() : PhysicsGlobals.DummySphere;
-                    ObjCell.find_cell_list(Position, sphere, CellArray, null);
+                    ObjCell.find_cell_list(Position, sphere, CellArray, null, variation);
                 }
             }
             remove_shadows_from_cells();
             add_shadows_to_cell(CellArray);
         }
 
-        public void calc_cross_cells_static()
+        public void calc_cross_cells_static(int? variation)
         {
             CellArray.SetStatic();
 
             if (PartArray != null && PartArray.GetNumCylsphere() != 0 && !State.HasFlag(PhysicsState.HasPhysicsBSP))
-                ObjCell.find_cell_list(Position, PartArray.GetNumCylsphere(), PartArray.GetCylSphere(), CellArray, null);
+                ObjCell.find_cell_list(Position, PartArray.GetNumCylsphere(), PartArray.GetCylSphere(), CellArray, null, variation);
             else
                 find_bbox_cell_list(CellArray);
 
@@ -2365,8 +2365,8 @@ namespace ACE.Server.Physics
 
             if (!DatObject && newCell != null)
             {
-                CurLandblock = LScape.get_landblock(newCell.ID);
-                if (CurLandblock != null && CurLandblock.VariationId == this.Position.Variation)
+                CurLandblock = LScape.get_landblock(newCell.ID, Position.Variation);
+                if (CurLandblock != null && CurLandblock.VariationId == Position.Variation)
                     CurLandblock.add_server_object(this);
             }
         }
@@ -3188,7 +3188,7 @@ namespace ACE.Server.Physics
         {
             if (PartArray == null) return;
             if (Position.ObjCellID != 0)
-                calc_cross_cells();
+                calc_cross_cells(Position.Variation);
             else
             {
                 if (!ExaminationObject || !State.HasFlag(PhysicsState.ParticleEmitter)) return;

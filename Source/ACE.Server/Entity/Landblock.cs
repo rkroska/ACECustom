@@ -484,7 +484,11 @@ namespace ACE.Server.Entity
                 var landblockUpdate = wo.UpdateObjectPhysics();
 
                 if (landblockUpdate)
+                {
                     movedObjects.Add(wo);
+                    Console.WriteLine($"Ticking Physics Landblock: {Id}, v: {VariationId}");
+                }
+                    
             }
 
             Monitor5m.Pause();
@@ -927,8 +931,8 @@ namespace ACE.Server.Entity
             wo.CurrentLandblock = this;
             if (this.Id.ToString().StartsWith("019E"))
             {
-                Console.WriteLine($"{wo.Name}, {wo.WeenieClassId} is spawning in landblock {this.Id} v:{wo.CurrentLandblock.VariationId} wo.v:{wo.Location.Variation}\n" +
-                    $"From: {new StackTrace()}");
+                Console.WriteLine($"{wo.Name}, {wo.WeenieClassId} is spawning in landblock {this.Id} v:{wo.CurrentLandblock.VariationId} wo.v:{wo.Location.Variation}");
+                    //$"From: {new StackTrace()}");
             }                     
             //wo.Location.Variation = VariationId;
 
