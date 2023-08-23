@@ -302,6 +302,7 @@ namespace ACE.Server.WorldObjects
                 // update position through physics engine
                 if (RequestedLocation != null)
                 {
+                    Console.WriteLine($"Updating player position to v: {RequestedLocation.Variation}");
                     landblockUpdate = UpdatePlayerPosition(RequestedLocation);
                     RequestedLocation = null;
                 }
@@ -468,8 +469,8 @@ namespace ACE.Server.WorldObjects
                         if (curCell != null)
                         {
                             //if (PhysicsObj.CurCell == null || curCell.ID != PhysicsObj.CurCell.ID)
-                                //PhysicsObj.change_cell_server(curCell);
-
+                            //PhysicsObj.change_cell_server(curCell);
+                            Console.WriteLine($"Destination Cell v: {curCell.VariationId}");
                             PhysicsObj.set_request_pos(newPosition.Pos, newPosition.Rotation, curCell, Location.LandblockId.Raw, newPosition.Variation);
                             if (FastTick)
                                 success = PhysicsObj.update_object_server_new();
@@ -559,7 +560,7 @@ namespace ACE.Server.WorldObjects
 
                 if (CurrentLandblock.IsDungeon)
                 {
-                    var destBlock = LScape.get_landblock(newPosition.Cell);
+                    var destBlock = LScape.get_landblock(newPosition.Cell, newPosition.Variation);
                     if (destBlock != null && destBlock.IsDungeon)
                         return false;
                 }

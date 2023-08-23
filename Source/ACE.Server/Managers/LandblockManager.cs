@@ -16,6 +16,7 @@ using ACE.Server.WorldObjects;
 using ACE.Database;
 using ACE.Database.Models.World;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 
 namespace ACE.Server.Managers
 {
@@ -234,6 +235,10 @@ namespace ACE.Server.Managers
             {
                 for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
                 {
+                    if (landblockGroupPendingAdditions[i].Id.ToString().StartsWith("019E"))
+                    {
+                        Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions[i].Id.ToString() + " to landblockGroups");
+                    }
                     if (landblockGroupPendingAdditions[i].IsDungeon || landblockGroupPendingAdditions[i].VariationId.HasValue)
                     {
                         // Each dungeon exists in its own group
@@ -468,8 +473,7 @@ namespace ACE.Server.Managers
 
                 if (landblock == null)
                 {
-                    // load up this landblock
-                    Console.WriteLine($"Landblock null from GetLandblock: {landblockId.Raw} v: {variation}");
+                    // load up this landblock                    
                     landblock = new Landblock(landblockId, variation);
                     if(!AddUpdateLandblock(landblock, variation))
                     {

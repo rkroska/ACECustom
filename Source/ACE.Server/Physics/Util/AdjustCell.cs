@@ -5,6 +5,7 @@ using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Common;
 using ACE.Entity;
+using System;
 
 namespace ACE.Server.Physics.Util
 {
@@ -55,6 +56,7 @@ namespace ACE.Server.Physics.Util
             if (adjustCell == null)
             {
                 adjustCell = new AdjustCell(dungeonID, variationId);
+                Console.WriteLine($"AdjustCell created: {dungeonID} v: {variationId}");
                 AdjustCells.TryAdd(cacheKey, adjustCell);
             }
             return adjustCell;

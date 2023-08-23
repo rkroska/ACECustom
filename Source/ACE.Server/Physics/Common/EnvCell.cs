@@ -379,7 +379,7 @@ namespace ACE.Server.Physics.Common
                 foreach (var staticObj in StaticObjects)
                 {
                     if (!staticObj.is_completely_visible())
-                        staticObj.calc_cross_cells_static();
+                        staticObj.calc_cross_cells_static(this.Pos.Variation);
                 }
             }
             else
@@ -401,7 +401,7 @@ namespace ACE.Server.Physics.Common
                     StaticObjects.Add(staticObj);
                 }
 
-                Console.WriteLine($"{ID:X8}: loaded {NumStaticObjects} static objects to v:{this.Pos.Variation}");
+                //Console.WriteLine($"{ID:X8}: loaded {NumStaticObjects} static objects to v:{this.Pos.Variation}");
             }
         }
 

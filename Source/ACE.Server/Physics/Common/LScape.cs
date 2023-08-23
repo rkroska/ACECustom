@@ -52,7 +52,7 @@ namespace ACE.Server.Physics.Common
         /// This function is thread safe
         /// </summary>
         /// <param name="blockCellID">Any landblock + cell ID within the landblock</param>
-        public static Landblock get_landblock(uint blockCellID, int? variationId = null)
+        public static Landblock get_landblock(uint blockCellID, int? variationId)
         {
             var landblockID = blockCellID | 0xFFFF;
             var lbid = new LandblockId(landblockID);
@@ -147,23 +147,25 @@ namespace ACE.Server.Physics.Common
                 var lcoord = LandDefs.gid_to_lcoord(blockCellID, false);
                 if (lcoord == null) return null;
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
-                landblock.LandCells.TryGetValue(landCellIdx, out cell);
+                var cacheKey = new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 };
+                landblock.LandCells.TryGetValue(cacheKey, out cell);
             }
             // indoor cells
             else
             {
-                if (landblock.LandCells.TryGetValue((int)cellID, out cell))
+                if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0}, out cell))
                     return cell;
 
                 lock (landblock.LandCellMutex)
                 {
-                    if (landblock.LandCells.TryGetValue((int)cellID, out cell))
+                    if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, out cell))
                         return cell;
 
                     cell = DBObj.GetEnvCell(blockCellID);
                     cell.CurLandblock = landblock;
                     cell.Pos.Variation = variationId;
-                    landblock.LandCells.TryAdd((int)cellID, cell);
+                    cell.VariationId = variationId;
+                    landblock.LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, cell);
                     var envCell = (EnvCell)cell;
                     envCell.PostInit();
                 }
