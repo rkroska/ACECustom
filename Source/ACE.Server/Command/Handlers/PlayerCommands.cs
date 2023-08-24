@@ -190,7 +190,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             int iType = 0;
-            int amount = -1;
+            long amount = -1;
             string transferTargetName = "";
 
             if (parameters.Count() >= 2)
@@ -218,7 +218,7 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Count() == 3 || parameters.Count() == 4)
             {
-                if (!int.TryParse(parameters[2], out amount))
+                if (!long.TryParse(parameters[2], out amount))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
                     return;
