@@ -132,6 +132,8 @@ namespace ACE.Server.WorldObjects
 
             if (cachedRegenerationInterval > 0)
                 NextGeneratorRegenerationTime = currentUnixTime + cachedRegenerationInterval;
+            else
+                NextGeneratorRegenerationTime = double.MaxValue;
 
             //Console.WriteLine($"{Name}.NextGeneratorRegenerationTime({NextGeneratorRegenerationTime})");
         }
