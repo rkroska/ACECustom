@@ -871,7 +871,7 @@ namespace ACE.Server.Managers
                             DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw, propPos.VariationId);
 
                             // reload landblock
-                            L.Init(true);
+                            L.Init(null, true);
                             //var actionChain = new ActionChain();
                             //actionChain.AddDelayForOneTick();
                             //actionChain.AddAction(session.Player, () =>
@@ -904,7 +904,7 @@ namespace ACE.Server.Managers
                             {
                                 L2.DestroyAllNonPlayerObjects();
                                 DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw, propPos2.VariationId);
-                                L2.Init(true);
+                                L2.Init(null, true);
                             }
                             break;
                         }

@@ -606,7 +606,7 @@ namespace ACE.Server.Command
 
             try
             {
-                position = new Position(new Vector2(coordEW, coordNS));
+                position = new Position(new Vector2(coordEW, coordNS), null);
                 position.AdjustMapCoords();
             }
             catch (Exception e)

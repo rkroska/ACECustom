@@ -205,6 +205,8 @@ namespace ACE.Server.WorldObjects
             location.ObjCellID = cell.ID;
             location.Frame.Origin = Location.Pos;
             location.Frame.Orientation = Location.Rotation;
+            location.Variation = Location.Variation;
+            Console.WriteLine($"PhysicsObj {Name} Location.Variation: {Location.Variation}");
 
             var success = PhysicsObj.enter_world(location);
 
@@ -212,7 +214,7 @@ namespace ACE.Server.WorldObjects
             {
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
-                //Console.WriteLine($"AddPhysicsObj: failure: {Name} @ {cell.ID.ToString("X8")} - {Location.Pos} - {Location.Rotation} - SetupID: {SetupTableId.ToString("X8")}, MTableID: {MotionTableId.ToString("X8")}");
+                Console.WriteLine($"AddPhysicsObj: failure: {Name} @ {cell.ID.ToString("X8")} - {Location.Pos} - {Location.Rotation} - SetupID: {SetupTableId.ToString("X8")}, MTableID: {MotionTableId.ToString("X8")}");
                 return false;
             }
 

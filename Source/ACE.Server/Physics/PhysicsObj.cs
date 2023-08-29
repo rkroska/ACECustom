@@ -232,7 +232,7 @@ namespace ACE.Server.Physics
         public ObjCell AdjustPosition(Position position, Vector3 low_pt, bool dontCreateCells, bool searchCells)
         {
             var cellID = position.ObjCellID & 0xFFFF;
-
+            //Console.WriteLine("AdjustPosition variation: {0:X4}", position.Variation);
             if ((cellID < 1 || cellID > 0x40) && (cellID < 0x100 || cellID > 0xFFFD) && cellID != 0xFFFF)
                 return null;
 
@@ -1341,7 +1341,10 @@ namespace ACE.Server.Physics
 
             if (wo == null)
                 return SetPositionError.GeneralFailure;
-
+            if (setPos.Pos.Variation != null)
+            {
+                transition.VariationId = setPos.Pos.Variation;
+            }
             //if (setPos.Flags.HasFlag(SetPositionFlags.RandomScatter))
             //return SetScatterPositionInternal(setPos, transition);
             if (wo.ScatterPos != null)
@@ -1351,6 +1354,7 @@ namespace ACE.Server.Physics
             }
 
             // frame ref?
+            //Console.WriteLine($"Set position internal - var: {setPos.Pos.Variation}");
             var result = SetPositionInternal(setPos.Pos, setPos, transition);
 
             if (result != SetPositionError.OK && setPos.Flags.HasFlag(SetPositionFlags.Scatter))
@@ -1943,7 +1947,7 @@ namespace ACE.Server.Physics
             return true;
         }
 
-        public void add_obj_to_cell(ObjCell newCell, AFrame newFrame)
+        public void add_obj_to_cell(ObjCell newCell, AFrame newFrame, int? variation)
         {
             enter_cell(newCell);
 
@@ -1952,7 +1956,8 @@ namespace ACE.Server.Physics
                 PartArray.SetFrame(Position.Frame);
 
             UpdateChildrenInternal();
-            calc_cross_cells_static(this.Position.Variation);
+            //Console.WriteLine($"add_obj_to_cell v:{variation}");
+            calc_cross_cells_static(variation);
         }
 
         public void add_particle_shadow_to_cell()
@@ -2411,25 +2416,25 @@ namespace ACE.Server.Physics
 
             store_position(pos);
             bool slide = ProjectileTarget == null || WeenieObj.WorldObject is SpellProjectile;
-            var result = enter_world(slide);
+            var result = enter_world(slide, pos);
 
             entering_world = false;
             return result;
         }
 
-        public bool enter_world(bool slide)
+        public bool enter_world(bool slide, Position pos)
         {
             if (Parent != null) return false;
 
             UpdateTime = PhysicsTimer.CurrentTime;
-
+            
             var setPos = new SetPosition();
-            setPos.Pos = Position;
+            setPos.Pos = pos;
             setPos.Flags = SetPositionFlags.Placement;
 
             if (slide)
                 setPos.Flags |= SetPositionFlags.Slide;
-
+            Console.WriteLine($"enter_world {this.Name} setPos v: {setPos.Pos.Variation}");
             var result = SetPosition(setPos);
             if (result != SetPositionError.OK)
                 return false;

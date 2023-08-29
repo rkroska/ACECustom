@@ -7,7 +7,7 @@ namespace ACE.Server.Entity
     class LandblockGroupSplitHelper : IEnumerable<Landblock>
     {
         private readonly HashSet<Landblock> landblocks = new HashSet<Landblock>();
-
+        int? VaraitionId;
         private int xMin = int.MaxValue;
         private int xMax = int.MinValue;
         private int yMin = int.MaxValue;

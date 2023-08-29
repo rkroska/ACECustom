@@ -18,7 +18,7 @@ namespace ACE.Server.Tests
         {
             ConfigManager.Initialize(@"D:\Code\ACE\Source\ACE.Server\bin\x64\Debug\net6.0\Config.js");
             DatManager.Initialize(ConfigManager.Config.Server.DatFilesDirectory, false, true, true);
-            var cell = DBObj.GetEnvCell(3880648731);
+            var cell = DBObj.GetEnvCell(3880648731, null);
             Assert.AreNotEqual<uint>(0, cell.CellStructureID);
         }
     }

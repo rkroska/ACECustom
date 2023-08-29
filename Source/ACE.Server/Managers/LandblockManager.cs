@@ -237,12 +237,12 @@ namespace ACE.Server.Managers
                 {
                     if (landblockGroupPendingAdditions[i].Id.ToString().StartsWith("019E"))
                     {
-                        Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions[i].Id.ToString() + " to landblockGroups");
+                        Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions[i].Id.ToString() + ", v:" + landblockGroupPendingAdditions[i].VariationId + " to landblockGroups");
                     }
                     if (landblockGroupPendingAdditions[i].IsDungeon || landblockGroupPendingAdditions[i].VariationId.HasValue)
                     {
                         // Each dungeon exists in its own group
-                        var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i]);
+                        var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i], landblockGroupPendingAdditions[i].VariationId);
                         landblockGroups.Add(landblockGroup);
                         //TODO: Add variation code here?
                     }
@@ -265,7 +265,7 @@ namespace ACE.Server.Managers
                         if (landblockGroupsIndexMatchesByDistance.Count > 0)
                         {
                             // Add the landblock to the first eligible group
-                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblockGroupPendingAdditions[i]);
+                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblockGroupPendingAdditions[i], landblockGroupPendingAdditions[i].VariationId);
 
                             if (landblockGroupsIndexMatchesByDistance.Count > 1)
                             {
@@ -274,7 +274,7 @@ namespace ACE.Server.Managers
                                 {
                                     // Copy the j down into 0
                                     foreach (var landblock in landblockGroups[landblockGroupsIndexMatchesByDistance[j]])
-                                        landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock);
+                                        landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock.Value, landblock.Value.VariationId);
 
                                     landblockGroups.RemoveAt(landblockGroupsIndexMatchesByDistance[j]);
                                 }
@@ -283,7 +283,7 @@ namespace ACE.Server.Managers
                         else
                         {
                             // No close groups were found
-                            var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i]);
+                            var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i], landblockGroupPendingAdditions[i].VariationId);
                             landblockGroups.Add(landblockGroup);
                         }
                     }
@@ -349,7 +349,7 @@ namespace ACE.Server.Managers
                     CurrentMultiThreadedTickingLandblockGroup.Value = landblockGroup;
 
                     foreach (var landblock in landblockGroup)
-                        landblock.TickPhysics(portalYearTicks, movedObjects);
+                        landblock.Value.TickPhysics(portalYearTicks, movedObjects);
 
                     CurrentMultiThreadedTickingLandblockGroup.Value = null;
                 });
@@ -361,7 +361,7 @@ namespace ACE.Server.Managers
                 foreach (var landblockGroup in landblockGroups)
                 {
                     foreach (var landblock in landblockGroup)
-                        landblock.TickPhysics(portalYearTicks, movedObjects);
+                        landblock.Value.TickPhysics(portalYearTicks, movedObjects);
                 }
             }
 
@@ -390,7 +390,7 @@ namespace ACE.Server.Managers
                     CurrentMultiThreadedTickingLandblockGroup.Value = landblockGroup;
 
                     foreach (var landblock in landblockGroup)
-                        landblock.TickMultiThreadedWork(Time.GetUnixTime());
+                        landblock.Value.TickMultiThreadedWork(Time.GetUnixTime());
 
                     CurrentMultiThreadedTickingLandblockGroup.Value = null;
                 });
@@ -402,7 +402,7 @@ namespace ACE.Server.Managers
                 foreach (var landblockGroup in landblockGroups)
                 {
                     foreach (var landblock in landblockGroup)
-                        landblock.TickMultiThreadedWork(Time.GetUnixTime());
+                        landblock.Value.TickMultiThreadedWork(Time.GetUnixTime());
                 }
             }
         }
@@ -414,7 +414,7 @@ namespace ACE.Server.Managers
             foreach (var landblockGroup in landblockGroups)
             {
                 foreach (var landblock in landblockGroup)
-                    landblock.TickSingleThreadedWork(Time.GetUnixTime());
+                    landblock.Value.TickSingleThreadedWork(Time.GetUnixTime());
             }
         }
 
@@ -493,7 +493,7 @@ namespace ACE.Server.Managers
                         Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
                             $"From: {new System.Diagnostics.StackTrace()}");
                     }
-                    landblock.Init();
+                    landblock.Init(variation);
 
                     setAdjacents = true;
                 }
@@ -687,7 +687,7 @@ namespace ACE.Server.Managers
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0 ; i--)
                             {
-                                if (landblockGroups[i].Remove(landblock))
+                                if (landblockGroups[i].Remove(landblock, landblock.VariationId))
                                 {
                                     if (landblockGroups[i].Count == 0)
                                         landblockGroups.RemoveAt(i);

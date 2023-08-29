@@ -3123,7 +3123,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                     try
                     {
-                        var pos = new Position(new Vector2(x, y));
+                        var pos = new Position(new Vector2(x, y), null);
                         pos.AdjustMapCoords();
                         pos.Translate(objCellId);
                         pos.FindZ();

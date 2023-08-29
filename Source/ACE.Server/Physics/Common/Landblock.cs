@@ -278,7 +278,7 @@ namespace ACE.Server.Physics.Common
                             continue;
                         }
 
-                        physicsObj.add_obj_to_cell(cell, pos.Frame);
+                        physicsObj.add_obj_to_cell(cell, pos.Frame, VariationId);
                         var scale = ObjectDesc.ScaleObj(obj, globalCellX, globalCellY, j);
                         physicsObj.SetScaleStatic(scale);
                         Scenery.Add(physicsObj);
@@ -506,7 +506,7 @@ namespace ACE.Server.Physics.Common
                         obj.DestroyObject();
                         continue;
                     }
-                    obj.add_obj_to_cell(cell, position.Frame);
+                    obj.add_obj_to_cell(cell, position.Frame, VariationId);
                     add_static_object(obj);
                 }
 

@@ -690,9 +690,7 @@ namespace ACE.Server.Physics.Animation
         /// <returns></returns>
         public static Transition MakeTransition()
         {
-            var transition = new Transition();
-            transition.Init();
-            return transition;
+            return new Transition();
         }
 
         public TransitionState PlacementInsert()
