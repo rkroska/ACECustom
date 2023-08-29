@@ -56,7 +56,10 @@ namespace ACE.Server.Command.Handlers
                         {
                             if (!currentPlayerOver50 || player.Level >= 50) // Don't add lowbies to a fellowship of players over 50
                             {
-                                session.Player.FellowshipRecruit(player);
+                                if (!session.Player.SquelchManager.Squelches.Contains(player, ChatMessageType.Tell))
+                                {
+                                    session.Player.FellowshipRecruit(player);
+                                }
                             }
                         }
                     }
