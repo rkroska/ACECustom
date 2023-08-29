@@ -200,15 +200,15 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell Get(uint cellID)
+        public static ObjCell Get(uint cellID, int? Variation)
         {
             if (cellID == 0) return null;
 
             var objCell = new ObjCell(cellID);
             if (cellID >= 0x100)
-                return DBObj.GetEnvCell(cellID);
+                return DBObj.GetEnvCell(cellID, Variation);
 
-            return LandCell.Get(cellID);
+            return LandCell.Get(cellID, Variation);
         }
 
         public PhysicsObj GetObject(int id)

@@ -269,7 +269,7 @@ namespace ACE.Entity
             Variation = VariationId;
         }
 
-        public Position(float northSouth, float eastWest)
+        public Position(float northSouth, float eastWest, int? VariationId)
         {
             northSouth = (northSouth - 0.5f) * 10.0f;
             eastWest = (eastWest - 0.5f) * 10.0f;
@@ -290,13 +290,14 @@ namespace ACE.Entity
             PositionY = yOffset;
             PositionZ = zOffset;
             Rotation = Quaternion.Identity;
+            Variation = VariationId;
         }
 
         /// <summary>
         /// Given a Vector2 set of coordinates, create a new position object for use in converting from VLOC to LOC
         /// </summary>
         /// <param name="coordinates">A set coordinates provided in a Vector2 object with East-West being the X value and North-South being the Y value</param>
-        public Position(Vector2 coordinates)
+        public Position(Vector2 coordinates, int? VariationId)
         {
             // convert from (-101.95, 102.05) to (0, 204)
             coordinates += Vector2.One * 101.95f;
@@ -326,6 +327,7 @@ namespace ACE.Entity
             Pos = new Vector3(originX, originY, 0);     // must use PositionExtensions.AdjustMapCoords() to get Z
 
             Rotation = Quaternion.Identity;
+            Variation = VariationId;
         }
 
         public void Serialize(BinaryWriter payload, PositionFlags positionFlags, int animationFrame, bool writeLandblock = true)

@@ -19,7 +19,7 @@ namespace ACE.Server.Physics.Common
                 return GetLandblockInfo(qualifiedDID.ID);
 
             if (qualifiedDID.Type == 3)
-                return GetEnvCell(qualifiedDID.ID);
+                return GetEnvCell(qualifiedDID.ID, null);
 
             if (qualifiedDID.Type == 6)
                 return GetGfxObj(qualifiedDID.ID);
@@ -61,14 +61,14 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// QualifiedDID Type 3
         /// </summary>
-        public static EnvCell GetEnvCell(uint id)
+        public static EnvCell GetEnvCell(uint id, int? Variation)
         {
             var envCell = DatManager.CellDat.ReadFromDat<DatLoader.FileTypes.EnvCell>(id);
             if (envCell.Id == 0)
             {
                 Console.WriteLine("EnvCell not found: " + id + "\n" + new StackTrace().ToString());
             }
-            return new EnvCell(envCell);
+            return new EnvCell(envCell, Variation);
         }
 
         /// <summary>

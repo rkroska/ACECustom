@@ -3132,7 +3132,7 @@ namespace ACE.Server.Command.Handlers
             actionChain.AddDelayForOneTick();
             actionChain.AddAction(session.Player, () =>
             {
-                landblock.Init(true);
+                landblock.Init(variation, true);
             });
             actionChain.EnqueueChain();
         }

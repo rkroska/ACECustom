@@ -161,13 +161,13 @@ namespace ACE.Server.Physics.Common
                     if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, out cell))
                         return cell;
 
-                    cell = DBObj.GetEnvCell(blockCellID);
+                    cell = DBObj.GetEnvCell(blockCellID, variationId);
                     cell.CurLandblock = landblock;
-                    cell.Pos.Variation = variationId;
+                    cell.Pos.Variation = variationId; //todo - gross
                     cell.VariationId = variationId;
                     landblock.LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, cell);
                     var envCell = (EnvCell)cell;
-                    envCell.PostInit();
+                    envCell.PostInit(variationId);
                 }
             }
             return cell;

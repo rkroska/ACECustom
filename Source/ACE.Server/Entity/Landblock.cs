@@ -190,15 +190,15 @@ namespace ACE.Server.Entity
         /// TODO: Make this variation aware
         /// </summary>
         /// <param name="reload"></param>
-        public void Init(bool reload = false)
+        public void Init(int? variationId, bool reload = false)
         {
             if (!reload)
                 PhysicsLandblock.PostInit();
             
             Task.Run(() =>
             {
-                Console.WriteLine($"Landblock.Init({Id}) task started");
-                CreateWorldObjects();
+                Console.WriteLine($"Landblock.Init({Id}) task started, variation: {VariationId}, v: {variationId}");
+                CreateWorldObjects(variationId);
                 
                 SpawnDynamicShardObjects();
 
@@ -249,27 +249,31 @@ namespace ACE.Server.Entity
         /// This will be called from a separate task from our constructor. Use thread safety when interacting with this landblock.
         /// TODO: Make this variation aware
         /// </summary>
-        private void CreateWorldObjects()
+        private void CreateWorldObjects(int? variationId)
         {
             bool logspam = false;
             logspam = true;
-            Console.WriteLine($"CreateWOs in landblock {this.Id} v:{this.VariationId}, group: {this.CurrentLandblockGroup}\n");
+            if (VariationId == null && variationId != null)
+            {
+                VariationId = variationId.Value;
+            }
+            Console.WriteLine($"CreateWOs in landblock {this.Id} v:{variationId}, group: {this.CurrentLandblockGroup}\n");
             if (this.Id.ToString().StartsWith("019E"))
             {
                 
                 Console.WriteLine($"From: {new StackTrace()}");
             }
-            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, VariationId);
+            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
             if (logspam)
             {
                 Console.WriteLine($"Cached Instances: {objects.Count}, {this.Id}, v:{VariationId}");
             }
-            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, VariationId);
+            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
             if (logspam)
             {
-                Console.WriteLine($"Shard objs: {shardObjects.Count}, {this.Id}, v: {VariationId}");
+                Console.WriteLine($"Shard objs: {shardObjects.Count}, {this.Id}, v: {variationId}");
             }
-            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, VariationId);
+            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
@@ -278,7 +282,7 @@ namespace ACE.Server.Entity
                 var houses = new List<House>();
                 if (logspam)
                 {
-                    Console.WriteLine($"AddWorldObject action queued - Factory objs: {factoryObjects.Count}, {this.Id}, v: {VariationId}");
+                    Console.WriteLine($"AddWorldObject action queued - Factory objs: {factoryObjects.Count}, {this.Id}, v: {variationId}");
                 }
                 foreach (var fo in factoryObjects)
                 {
@@ -356,6 +360,7 @@ namespace ACE.Server.Entity
 
                     var pos = new Physics.Common.Position();
                     pos.ObjCellID = (uint)(Id.Landblock << 16) | 1;
+                    pos.Variation = VariationId;
                     pos.Frame = new Physics.Animation.AFrame(new Vector3(xPos, yPos, 0), Quaternion.Identity);
                     pos.adjust_to_outside();
 
@@ -486,7 +491,7 @@ namespace ACE.Server.Entity
                 if (landblockUpdate)
                 {
                     movedObjects.Add(wo);
-                    Console.WriteLine($"Ticking Physics Landblock: {Id}, v: {VariationId}");
+                    //Console.WriteLine($"Ticking Physics Landblock: {Id}, v: {VariationId}");
                 }
                     
             }
@@ -882,7 +887,7 @@ namespace ACE.Server.Entity
         {
             if (wo.Location == null)
             {
-                log.DebugFormat("Landblock 0x{0} failed to add 0x{1:X8} {2}. Invalid Location", Id, wo.Biota.Id, wo.Name);
+                Console.WriteLine("Landblock 0x{0} failed to add 0x{1:X8} {2}. Invalid Location", Id, wo.Biota.Id, wo.Name);
                 return false;
             }
 
