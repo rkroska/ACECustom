@@ -806,7 +806,13 @@ namespace ACE.Server.Command.Handlers
                     try
                     {
                         var amount = aceParams[1].AsLong;
-                        aceParams[0].AsPlayer.GrantXP(amount, XpType.Admin, ShareType.None);
+                        var player = aceParams[0].AsPlayer;
+
+                        player.GrantXP(amount, XpType.Admin, ShareType.None);
+                        if (player.Session != null)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You've been granted {amount:N0} experience.", ChatMessageType.Broadcast));
+                        }
 
                         session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} experience granted.", ChatMessageType.Advancement));
 
@@ -848,7 +854,13 @@ namespace ACE.Server.Command.Handlers
                     try
                     {
                         var amount = aceParams[1].AsLong;
-                        aceParams[0].AsPlayer.GrantLuminance(amount, XpType.Admin, ShareType.None);
+                        var player = aceParams[0].AsPlayer;
+
+                        player.GrantLuminance(amount, XpType.Admin, ShareType.None);
+                        if (player.Session != null)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You've been granted {amount:N0} luminance.", ChatMessageType.Broadcast));
+                        }
 
                         session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} luminance granted.", ChatMessageType.Advancement));
 
