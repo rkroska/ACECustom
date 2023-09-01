@@ -309,21 +309,29 @@ namespace ACE.Server.WorldObjects
                 
                 if (tarplayer is OfflinePlayer)
                 {
-                    if ((tarplayer as OfflinePlayer).BankedPyreals == null)
+                    var offlinePlayer = tarplayer as OfflinePlayer;
+                    if (offlinePlayer.BankedPyreals == null)
                     {
-                        (tarplayer as OfflinePlayer).BankedPyreals = Amount;
+                        offlinePlayer.BankedPyreals = Amount;
                     }
-                    (tarplayer as OfflinePlayer).BankedPyreals += Amount;
+                    else
+                    {
+                        offlinePlayer.BankedPyreals += Amount;
+                    }
                 }
                 else
                 {
-                    if ((tarplayer as Player).BankedPyreals == null)
+                    var onlinePlayer = tarplayer as Player;
+                    if (onlinePlayer.BankedPyreals == null)
                     {
-                        (tarplayer as Player).BankedPyreals = Amount;
+                        onlinePlayer.BankedPyreals = Amount;
                     }
-                    (tarplayer as Player).BankedPyreals += Amount;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(tarplayer as Player, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
-                    (tarplayer as Player).Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
+                    else
+                    {
+                        onlinePlayer.BankedPyreals += Amount;
+                    }
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedPyreals, onlinePlayer.BankedPyreals ?? 0));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
                 }
                 this.BankedPyreals -= Amount;
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
@@ -343,21 +351,29 @@ namespace ACE.Server.WorldObjects
             {
                 if (tarplayer is OfflinePlayer)
                 {
-                    if ((tarplayer as OfflinePlayer).BankedLegendaryKeys == null)
+                    var offlinePlayer = tarplayer as OfflinePlayer;
+                    if (offlinePlayer.BankedLegendaryKeys == null)
                     {
-                        (tarplayer as OfflinePlayer).BankedLegendaryKeys = Amount;
+                        offlinePlayer.BankedLegendaryKeys = Amount;
                     }
-                    (tarplayer as OfflinePlayer).BankedLegendaryKeys += Amount;
+                    else
+                    {
+                        offlinePlayer.BankedLegendaryKeys += Amount;
+                    }
                 }
                 else
                 {
-                    if ((tarplayer as Player).BankedLegendaryKeys == null)
+                    var onlinePlayer = tarplayer as Player;
+                    if (onlinePlayer.BankedLegendaryKeys == null)
                     {
-                        (tarplayer as Player).BankedLegendaryKeys = Amount;
+                        onlinePlayer.BankedLegendaryKeys = Amount;
                     }
-                    (tarplayer as Player).BankedLegendaryKeys += Amount;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(tarplayer as Player, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
-                    (tarplayer as Player).Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
+                    else
+                    {
+                        onlinePlayer.BankedLegendaryKeys += Amount;
+                    }
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLegendaryKeys, onlinePlayer.BankedLegendaryKeys ?? 0));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
                 }
                 this.BankedLegendaryKeys -= Amount;
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
@@ -374,31 +390,32 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-
                 if (tarplayer is OfflinePlayer)
                 {
-                    if ((tarplayer as OfflinePlayer).BankedLuminance == null)
+                    var offlinePlayer = tarplayer as OfflinePlayer;
+                    if (offlinePlayer.BankedLuminance == null)
                     {
                         return false;
                     }
-                    if ((tarplayer as OfflinePlayer).BankedLuminance == 0) 
+                    if (offlinePlayer.BankedLuminance == 0) 
                     {
                         return false;
                     }
 
                     this.BankedLuminance -= Amount;
-                    (tarplayer as OfflinePlayer).BankedLuminance += Amount;
+                    (offlinePlayer).BankedLuminance += Amount;
                 }
                 else
                 {
-                    if (!(tarplayer as Player).MaximumLuminance.HasValue)
+                    var onlinePlayer = tarplayer as Player;
+                    if (!onlinePlayer.MaximumLuminance.HasValue)
                     {
                         return false;
                     }
                     this.BankedLuminance -= Amount;
-                    (tarplayer as Player).BankedLuminance += Amount;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(tarplayer as Player, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
-                    (tarplayer as Player).Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
+                    onlinePlayer.BankedLuminance += Amount;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLuminance, onlinePlayer.BankedLuminance ?? 0));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
                 }
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
                 return true;
