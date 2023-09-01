@@ -56,7 +56,10 @@ namespace ACE.Server.Command.Handlers
                         {
                             if (!currentPlayerOver50 || player.Level >= 50) // Don't add lowbies to a fellowship of players over 50
                             {
-                                session.Player.FellowshipRecruit(player);
+                                if (!session.Player.SquelchManager.Squelches.Contains(player, ChatMessageType.Tell))
+                                {
+                                    session.Player.FellowshipRecruit(player);
+                                }
                             }
                         }
                     }
@@ -169,7 +172,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, and keys or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals or Luminance to a character. All bank commands and keywords can be shortened to their first letter", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals, Luminance or Legendary Keys to a character.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all, /bank b will show balance, etc.", ChatMessageType.System));
 
                 return;
@@ -350,6 +353,11 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "transfer" || parameters[0] == "t")
             {
+                if (parameters.Length > 4)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Too many parameters, ensure you use \"quotes\" around player names with spaces.", ChatMessageType.System));
+                    return;
+                }
                 //transfer
                 switch (iType)
                 {
@@ -642,7 +650,7 @@ namespace ACE.Server.Command.Handlers
                     break;
                 default:
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Invalid attribute. Type /attr for help.", ChatMessageType.System));
-                    break;
+                    return;
             }
             if (success)
             {
