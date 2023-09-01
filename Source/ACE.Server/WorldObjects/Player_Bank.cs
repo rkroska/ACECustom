@@ -299,7 +299,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
             if (tarplayer == null)
             {
                 return false;
@@ -342,7 +342,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion ).FirstOrDefault();
             if (tarplayer == null)
             {
                 return false;
@@ -383,7 +383,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
             if (tarplayer == null)
             {
                 return false;
