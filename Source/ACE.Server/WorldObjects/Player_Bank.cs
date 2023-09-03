@@ -280,7 +280,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (Amount >= 10)
                 {
-                    for (int x = 0; x < Amount; x+=10)
+                    for (int x = 10; x < Amount; x+=10)
                     {
                         remainingAmount -= 10;
                         WorldObject key = WorldObjectFactory.CreateNewWorldObject(51954); //Durable legendary key
