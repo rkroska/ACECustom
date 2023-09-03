@@ -73,7 +73,7 @@ namespace ACE.Server.WorldObjects
                 ActionLoop.AddDelaySeconds(CycleTimeNext);
                 ActionLoop.AddAction(this, () =>
                 {
-                    if (Creatures.Any())
+                    if (Creatures != null && Creatures.Any())
                     {
                         Activate();
                         NextActionLoop.EnqueueChain();
@@ -145,6 +145,7 @@ namespace ACE.Server.WorldObjects
 
         private void Activate()
         {
+            if (Creatures == null) return;
             foreach (var creatureGuid in Creatures.ToList())
             {
                 var creature = CurrentLandblock.GetObject(creatureGuid) as Creature;

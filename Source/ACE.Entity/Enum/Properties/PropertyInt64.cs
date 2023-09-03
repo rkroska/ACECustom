@@ -59,6 +59,8 @@ namespace ACE.Entity.Enum.Properties
         BankedLegendaryKeys   = 9015,
         [ServerOnly]
         LumAugDurationCount   = 9016,
+        [ServerOnly]
+        LumAugSpecializeCount = 9017,
     }
 
     public static class PropertyInt64Extensions
