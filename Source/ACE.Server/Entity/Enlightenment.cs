@@ -77,6 +77,11 @@ namespace ACE.Server.Entity
                 }
 
                 player.ThreadSafeTeleportOnDeath();
+                if (!SpendLuminance(player))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
+                    return;
+                }
                 RemoveTokens(player);
                 RemoveAbility(player);
                 AddPerks(player);
@@ -142,10 +147,11 @@ namespace ACE.Server.Entity
                 }
             }
 
+            var targetEnlightenment = player.Enlightenment + 1;
 
             //todo: check for trophies that are enl level appropriate
             //first, 1 enlightenment token per enlightenment past 5.
-            if (player.Enlightenment + 1 > 5)
+            if (targetEnlightenment > 5)
             {
                 var count = player.GetNumInventoryItemsOfWCID(300000); //magic number - EnlightenmentToken
                 if (count < player.Enlightenment + 1 - 5)
@@ -155,7 +161,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (player.Enlightenment + 1 > 10)
+            if (targetEnlightenment > 10)
             {
                 if (!VerifyLumAugs(player))
                 {
@@ -164,7 +170,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (player.Enlightenment + 1 > 30)
+            if (targetEnlightenment > 30)
             {
                 if (!VerifySocietyMaster(player))
                 {
@@ -173,8 +179,24 @@ namespace ACE.Server.Entity
                 }
             }
 
+            if (targetEnlightenment > 50)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                long reqLum = targetEnlightenment * baseLumCost;
+                if (!VerifyLuminance(player, reqLum))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
 
             return true;
+        }
+
+        public static bool VerifyLuminance(Player player, long reqLum)
+        {
+            return player.BankedLuminance >= reqLum;
         }
 
         public static bool VerifySocietyMaster(Player player)
@@ -231,6 +253,18 @@ namespace ACE.Server.Entity
         public static void RemoveTokens(Player player)
         {
             player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
+        }
+
+        public static bool SpendLuminance(Player player)
+        {
+            if (player.Enlightenment + 1 > 50)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                var targetEnlightenment = player.Enlightenment + 1;
+                long reqLum = targetEnlightenment * baseLumCost;
+                return player.SpendLuminance(reqLum);
+            }
+            return true;
         }
 
         public static void RemoveSociety(Player player)
@@ -443,6 +477,26 @@ namespace ACE.Server.Entity
                 case 81:
                 case 91:
                     lvl = player.Enlightenment.ToString() + "st";
+                    break;
+                case 22:
+                case 32:
+                case 42:
+                case 52:
+                case 62:
+                case 72:
+                case 82:
+                case 92:
+                    lvl = player.Enlightenment.ToString() + "nd";
+                    break;
+                case 23:
+                case 33:
+                case 43:
+                case 53:
+                case 63:
+                case 73:
+                case 83:
+                case 93:
+                    lvl = player.Enlightenment.ToString() + "rd";
                     break;
                 default:
                     lvl = player.Enlightenment.ToString() + "th";
