@@ -305,7 +305,7 @@ namespace ACE.Server.Entity
                         }
                     }
 
-                    var res = AddWorldObject(fo);
+                    var res = AddWorldObject(fo, variationId);
                     if (!res)
                     {
                         Console.WriteLine($"Failed to add world object {fo.Name}, {fo.Guid} to landblock {Id.Landblock}");
@@ -334,7 +334,7 @@ namespace ACE.Server.Entity
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
                 foreach (var fso in factoryShardObjects)
-                    AddWorldObject(fso);
+                    AddWorldObject(fso, VariationId);
             }));
         }
 
@@ -401,7 +401,7 @@ namespace ACE.Server.Entity
                         }
                     }
 
-                    if (!AddWorldObject(wo))
+                    if (!AddWorldObject(wo, VariationId))
                         wo.Destroy();
                 }));
             }
@@ -883,7 +883,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// This will fail if the wo doesn't have a valid location.
         /// </summary>
-        public bool AddWorldObject(WorldObject wo)
+        public bool AddWorldObject(WorldObject wo, int? VariationId)
         {
             if (wo.Location == null)
             {
@@ -891,15 +891,15 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            return AddWorldObjectInternal(wo);
+            return AddWorldObjectInternal(wo, VariationId);
         }
 
-        public void AddWorldObjectForPhysics(WorldObject wo)
+        public void AddWorldObjectForPhysics(WorldObject wo, int? VariationId)
         {
-            AddWorldObjectInternal(wo);
+            AddWorldObjectInternal(wo, VariationId);
         }
 
-        private bool AddWorldObjectInternal(WorldObject wo)
+        private bool AddWorldObjectInternal(WorldObject wo, int? VariationId)
         {
             if (LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded)
             {
@@ -942,13 +942,13 @@ namespace ACE.Server.Entity
             //wo.Location.Variation = VariationId;
 
             if (wo.PhysicsObj == null)
-                wo.InitPhysicsObj();
+                wo.InitPhysicsObj(VariationId);
             else
                 wo.PhysicsObj.set_object_guid(wo.Guid);  // re-add to ServerObjectManager
 
             if (wo.PhysicsObj.CurCell == null)
             {
-                var success = wo.AddPhysicsObj();
+                var success = wo.AddPhysicsObj(VariationId);
                 if (!success)
                 {
                     wo.CurrentLandblock = null;

@@ -118,12 +118,13 @@ namespace ACE.Server.Physics
 
         public bool IsSticky => PositionManager?.StickyManager != null && PositionManager.StickyManager.TargetID != 0;
 
-        public PhysicsObj()
+        public PhysicsObj(int? VariationId)
         {
             PlayerVector = new Vector3(0, 0, 1);
             PlayerDistance = float.MaxValue;
             CYpt = float.MaxValue;
             Position = new Position();
+            Position.Variation = VariationId;
             Elasticity = PhysicsGlobals.DefaultElasticity;
             Translucency = PhysicsGlobals.DefaultTranslucency;
             Friction = PhysicsGlobals.DefaultFriction;
@@ -2434,7 +2435,7 @@ namespace ACE.Server.Physics
 
             if (slide)
                 setPos.Flags |= SetPositionFlags.Slide;
-            Console.WriteLine($"enter_world {this.Name} setPos v: {setPos.Pos.Variation}");
+            //Console.WriteLine($"enter_world {this.Name} setPos v: {setPos.Pos.Variation}");
             var result = SetPosition(setPos);
             if (result != SetPositionError.OK)
                 return false;
@@ -2930,7 +2931,7 @@ namespace ACE.Server.Physics
 
         public static PhysicsObj makeNullObject(uint objectIID, bool dynamic)
         {
-            var obj = new PhysicsObj();
+            var obj = new PhysicsObj(null);
             obj.InitObjectBegin(objectIID, dynamic);
             return obj;
         }
@@ -2941,7 +2942,7 @@ namespace ACE.Server.Physics
             if (template.PartArray != null)
                 dataID = template.PartArray.GetDataID();
             else
-                template = new PhysicsObj();
+                template = new PhysicsObj(null);
 
             var obj = makeObject(dataID, 0, true);
             if (obj == null) return null;
@@ -2958,7 +2959,7 @@ namespace ACE.Server.Physics
 
         public static PhysicsObj makeObject(uint dataDID, uint objectIID, bool dynamic, bool sightObj = false)
         {
-            var obj = new PhysicsObj();
+            var obj = new PhysicsObj(null);
             obj.InitObjectBegin(objectIID, dynamic);
             obj.InitPartArrayObject(dataDID, true);
             obj.InitObjectEnd();
@@ -2969,9 +2970,9 @@ namespace ACE.Server.Physics
             return obj;
         }
 
-        public static PhysicsObj makeParticleObject(int numParts, Sphere sortingSphere)
+        public static PhysicsObj makeParticleObject(int numParts, Sphere sortingSphere, int? VariationId)
         {
-            var particle = new PhysicsObj();
+            var particle = new PhysicsObj(VariationId);
             particle.State = PhysicsState.Static | PhysicsState.ReportCollisions;
             particle.PartArray = PartArray.CreateParticle(particle, numParts, sortingSphere);
             return particle;

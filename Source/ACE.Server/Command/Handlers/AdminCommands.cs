@@ -2880,7 +2880,7 @@ namespace ACE.Server.Command.Handlers
                     var ethereal = item.Ethereal;
                     item.Ethereal = true;
 
-                    if (session.Player.CurrentLandblock?.AddWorldObject(item) ?? false)
+                    if (session.Player.CurrentLandblock?.AddWorldObject(item, session.Player.Location.Variation) ?? false)
                     {
                         item.Location.LandblockId = new LandblockId(item.Location.GetCell());
 

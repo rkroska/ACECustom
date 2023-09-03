@@ -99,7 +99,7 @@ namespace ACE.Server.Physics
             return new ParticleEmitter(parent);
         }
 
-        public bool SetInfo(ParticleEmitterInfo info)
+        public bool SetInfo(ParticleEmitterInfo info, int? VariationId)
         {
             // destroy first?
             Info = info;
@@ -108,7 +108,7 @@ namespace ACE.Server.Physics
                 // destroy
                 return false;
             }
-            PhysicsObj = PhysicsObj.makeParticleObject(Info.MaxParticles, Info.SortingSphere);
+            PhysicsObj = PhysicsObj.makeParticleObject(Info.MaxParticles, Info.SortingSphere, VariationId);
             LastEmitOffset = PhysicsObj.Position.Frame.Origin;
             Parts = PhysicsObj.PartArray.Parts;
             PartStorage = new PhysicsPart[Info.MaxParticles];
@@ -122,9 +122,9 @@ namespace ACE.Server.Physics
             return true;
         }
 
-        public bool SetInfo(uint emitterID)
+        public bool SetInfo(uint emitterID, int? VariationId)
         {
-            return SetInfo(new ParticleEmitterInfo(DBObj.GetParticleEmitterInfo(emitterID)));
+            return SetInfo(new ParticleEmitterInfo(DBObj.GetParticleEmitterInfo(emitterID)), VariationId);
         }
 
         public void EmitParticle()

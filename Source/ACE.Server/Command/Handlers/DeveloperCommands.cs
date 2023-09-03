@@ -3106,7 +3106,7 @@ namespace ACE.Server.Command.Handlers
             wo.Location.Pos = globalOrigin;
             wo.Location.Rotation *= zRotation;
 
-            session.Player.CurrentLandblock.AddWorldObject(wo);
+            session.Player.CurrentLandblock.AddWorldObject(wo, session.Player.Location.Variation);
 
             LastTestAim = wo;
         }

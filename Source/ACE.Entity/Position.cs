@@ -13,7 +13,7 @@ namespace ACE.Entity
 
         public LandblockId LandblockId
         {
-            get => landblockId.Raw != 0 ? landblockId : new LandblockId(Cell);
+            get => landblockId.Raw != 0 ? landblockId : new LandblockId(Cell, Variation);
             set => landblockId = value;
         }
 
@@ -111,10 +111,10 @@ namespace ACE.Entity
             if (rotate180)
             {
                 var rotate = new Quaternion(0, 0, qz, qw) * Quaternion.CreateFromYawPitchRoll(0, 0, (float)Math.PI);
-                return new Position(LandblockId.Raw, PositionX + dx, PositionY + dy, PositionZ + bumpHeight, 0f, 0f, rotate.Z, rotate.W);
+                return new Position(LandblockId.Raw, PositionX + dx, PositionY + dy, PositionZ + bumpHeight, 0f, 0f, rotate.Z, rotate.W, false, Variation);
             }
             else
-                return new Position(LandblockId.Raw, PositionX + dx, PositionY + dy, PositionZ + bumpHeight, 0f, 0f, qz, qw);
+                return new Position(LandblockId.Raw, PositionX + dx, PositionY + dy, PositionZ + bumpHeight, 0f, 0f, qz, qw, false, Variation);
         }
 
         /// <summary>
@@ -202,7 +202,7 @@ namespace ACE.Entity
             if (cellID == curCellID)
                 return false;
 
-            LandblockId = new LandblockId((uint)((LandblockId.Raw & 0xFFFF0000) | cellID));
+            LandblockId = new LandblockId((uint)((LandblockId.Raw & 0xFFFF0000) | cellID), Variation);
             return true;
         }
 
@@ -214,7 +214,7 @@ namespace ACE.Entity
 
         public Position(Position pos)
         {
-            LandblockId = new LandblockId(pos.LandblockId.Raw);
+            LandblockId = new LandblockId(pos.LandblockId.Raw, pos.Variation);
             Pos = pos.Pos;
             Rotation = pos.Rotation;
             Variation = pos.Variation;
@@ -222,7 +222,7 @@ namespace ACE.Entity
 
         public Position(uint blockCellID, float newPositionX, float newPositionY, float newPositionZ, float newRotationX, float newRotationY, float newRotationZ, float newRotationW, bool relativePos = false, int? VariationId = null)
         {
-            LandblockId = new LandblockId(blockCellID);
+            LandblockId = new LandblockId(blockCellID, VariationId);
             Variation = VariationId;
 
             if (!relativePos)
@@ -243,7 +243,7 @@ namespace ACE.Entity
 
         public Position(uint blockCellID, Vector3 position, Quaternion rotation, int? VariationId)
         {
-            LandblockId = new LandblockId(blockCellID);
+            LandblockId = new LandblockId(blockCellID, VariationId);
 
             Pos = position;
             Rotation = rotation;
@@ -255,7 +255,7 @@ namespace ACE.Entity
 
         public Position(BinaryReader payload, int? VariationId)
         {
-            LandblockId = new LandblockId(payload.ReadUInt32());
+            LandblockId = new LandblockId(payload.ReadUInt32(), VariationId);
 
             PositionX = payload.ReadSingle();
             PositionY = payload.ReadSingle();
@@ -285,7 +285,7 @@ namespace ACE.Entity
             // float zOffset = GetZFromCellXY(LandblockId.Raw, xOffset, yOffset);
             const float zOffset = 0.0f;
 
-            LandblockId = new LandblockId(GetCellFromBase(baseX, baseY));
+            LandblockId = new LandblockId(GetCellFromBase(baseX, baseY), VariationId);
             PositionX = xOffset;
             PositionY = yOffset;
             PositionZ = zOffset;
@@ -322,7 +322,7 @@ namespace ACE.Entity
 
             var objCellID = (uint)(blockX << 24 | blockY << 16 | cell);
 
-            LandblockId = new LandblockId(objCellID);
+            LandblockId = new LandblockId(objCellID, VariationId);
 
             Pos = new Vector3(originX, originY, 0);     // must use PositionExtensions.AdjustMapCoords() to get Z
 
@@ -503,7 +503,7 @@ namespace ACE.Entity
 
         public override string ToString()
         {
-            return $"{LandblockId.Raw:X8} [{PositionX} {PositionY} {PositionZ}]";
+            return $"{LandblockId.Raw:X8} [{PositionX} {PositionY} {PositionZ}] [v:{Variation:N0}]";
         }
 
         public string ToLOCString()
@@ -517,7 +517,7 @@ namespace ACE.Entity
 
         public bool Equals(Position p)
         {
-            return Cell == p.Cell && Pos.Equals(p.Pos) && Rotation.Equals(p.Rotation);
+            return Cell == p.Cell && Pos.Equals(p.Pos) && Rotation.Equals(p.Rotation) && p.Variation == Variation;
         }
     }
 }

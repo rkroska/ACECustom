@@ -16,7 +16,7 @@ namespace ACE.Server.Physics.Common
 
         public uint LandblockID { get => CurCell.ID | 0xFFFF; }
 
-        public BuildingObj() : base()
+        public BuildingObj() : base(null)
         {
             Portals = new List<BldPortal>();
             LeafCells = new List<PartCell>();

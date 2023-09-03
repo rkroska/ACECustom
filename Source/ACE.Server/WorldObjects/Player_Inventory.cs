@@ -1435,7 +1435,7 @@ namespace ACE.Server.WorldObjects
             var ethereal = item.Ethereal;
             item.Ethereal = true;
 
-            if (!CurrentLandblock.AddWorldObject(item))
+            if (!CurrentLandblock.AddWorldObject(item, item.Location.Variation))
                 return false;
 
             // use radius?
