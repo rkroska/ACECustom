@@ -49,9 +49,9 @@ namespace ACE.Server.WorldObjects
                 ChannelsAllowed |= Channel.Audit | Channel.Advocate1 | Channel.Advocate2 | Channel.Advocate3 | Channel.Sentinel | Channel.AllBroadcast;
         }
 
-        public override void InitPhysicsObj()
+        public override void InitPhysicsObj(int? VariationId)
         {
-            base.InitPhysicsObj();
+            base.InitPhysicsObj(VariationId);
 
             switch (CloakStatus)
             {

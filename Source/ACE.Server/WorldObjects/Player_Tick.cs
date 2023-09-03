@@ -302,7 +302,7 @@ namespace ACE.Server.WorldObjects
                 // update position through physics engine
                 if (RequestedLocation != null)
                 {
-                    Console.WriteLine($"Updating player position to v: {RequestedLocation.Variation}");
+                    //Console.WriteLine($"Updating player position to v: {RequestedLocation.Variation}");
                     landblockUpdate = UpdatePlayerPosition(RequestedLocation);
                     RequestedLocation = null;
                 }
@@ -510,7 +510,7 @@ namespace ACE.Server.WorldObjects
 
                 var landblockUpdate = (Location.Cell >> 16 != newPosition.Cell >> 16) || (Location.Variation != newPosition.Variation);
 
-                Location = newPosition;
+                Location = new ACE.Entity.Position(newPosition);
 
                 if (RecordCast.Enabled)
                     RecordCast.Log($"CurPos: {Location.ToLOCString()}");

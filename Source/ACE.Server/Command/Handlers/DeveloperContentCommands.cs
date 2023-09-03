@@ -1296,7 +1296,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 wo.ParentLink = parentObj;
             }
 
-            SyncInstances(session, landblock, instances, variation);
+            //SyncInstances(session, landblock, instances, variation);
         }
 
         /// <summary>

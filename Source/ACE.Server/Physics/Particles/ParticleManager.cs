@@ -30,7 +30,7 @@ namespace ACE.Server.Physics
 
             var emitter = ParticleEmitter.makeParticleEmitter(obj);
 
-            if (!emitter.SetInfo(emitterInfoID) || !emitter.SetParenting(partIdx, offset))
+            if (!emitter.SetInfo(emitterInfoID, obj.Position.Variation) || !emitter.SetParenting(partIdx, offset))
                 return 0;
 
             emitter.InitEnd();

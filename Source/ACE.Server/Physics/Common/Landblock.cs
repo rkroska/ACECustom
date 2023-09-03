@@ -450,8 +450,8 @@ namespace ACE.Server.Physics.Common
                 building.set_initial_frame(position.Frame);
 
                 // hack
-                building.PartArray.Parts[0].Pos = position;
-                building.Position = position;
+                building.PartArray.Parts[0].Pos = new Position(position);
+                building.Position = new Position(position);
                 cell.Building = building;
 
                 building.add_to_cell(cell); // SortCell?

@@ -25,7 +25,7 @@ namespace ACE.Server.Command.Handlers
         {
             foreach (var LI in LandblockManager.loadedLandblocks)
             {
-                Console.WriteLine($"LB Keys: {LI.Id.Raw}, {LI.VariationId}");
+                Console.WriteLine($"LB Keys: {LI.Value.Id.Raw}, {LI.Value.VariationId}");
             }
         }
 

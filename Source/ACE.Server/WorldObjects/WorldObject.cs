@@ -137,7 +137,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Initializes a new default physics object
         /// </summary>
-        public virtual void InitPhysicsObj()
+        public virtual void InitPhysicsObj(int? VariationId)
         {
             //Console.WriteLine($"InitPhysicsObj({Name} - {Guid})");
 
@@ -161,7 +161,7 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                PhysicsObj = new PhysicsObj();
+                PhysicsObj = new PhysicsObj(VariationId);
                 PhysicsObj.makeAnimObject(SetupTableId, true);
             }
 
@@ -181,7 +181,7 @@ namespace ACE.Server.WorldObjects
                 PhysicsObj.Velocity = new Vector3(0, 0, 0.5f);
         }
 
-        public bool AddPhysicsObj()
+        public bool AddPhysicsObj(int? VariationId)
         {
             if (PhysicsObj.CurCell != null)
                 return false;
@@ -191,7 +191,7 @@ namespace ACE.Server.WorldObjects
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
 
-            var cell = LScape.get_landcell(Location.Cell, Location.Variation);
+            var cell = LScape.get_landcell(Location.Cell, VariationId);
             if (cell == null)
             {
                 PhysicsObj.DestroyObject();
@@ -205,8 +205,8 @@ namespace ACE.Server.WorldObjects
             location.ObjCellID = cell.ID;
             location.Frame.Origin = Location.Pos;
             location.Frame.Orientation = Location.Rotation;
-            location.Variation = Location.Variation;
-            Console.WriteLine($"PhysicsObj {Name} Location.Variation: {Location.Variation}");
+            location.Variation = VariationId;
+            //Console.WriteLine($"PhysicsObj {Name} Location.Variation: {Location.Variation}");
 
             var success = PhysicsObj.enter_world(location);
 
@@ -238,7 +238,19 @@ namespace ACE.Server.WorldObjects
 
             Location.Rotation = PhysicsObj.Position.Frame.Orientation;
 
-            Location.Variation = PhysicsObj.Position.Variation;
+            if (PhysicsObj.Position.Variation.HasValue)
+            {
+                Location.Variation = PhysicsObj.Position.Variation;
+            }
+            else if (Location.Variation.HasValue)
+            {
+                PhysicsObj.Position.Variation = Location.Variation;
+            }
+            else
+            {
+                Location.Variation = PhysicsObj.Position.Variation;
+            }
+            
         }
 
         private void InitializePropertyDictionaries()

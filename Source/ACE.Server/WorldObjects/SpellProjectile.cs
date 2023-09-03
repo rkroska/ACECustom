@@ -71,7 +71,7 @@ namespace ACE.Server.WorldObjects
             Spell = spell;
             SpellType = spellType;
 
-            InitPhysicsObj();
+            InitPhysicsObj(Location.Variation);
 
             // Runtime changes to default state
             ReportCollisions = true;

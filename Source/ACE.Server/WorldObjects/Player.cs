@@ -126,9 +126,9 @@ namespace ACE.Server.WorldObjects
             UpdateCoinValue(false);
         }
 
-        public override void InitPhysicsObj()
+        public override void InitPhysicsObj(int? VariationId)
         {
-            base.InitPhysicsObj();
+            base.InitPhysicsObj(VariationId);
 
             // set pink bubble state
             IgnoreCollisions = true; ReportCollisions = false; Hidden = true;
