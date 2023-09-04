@@ -2891,7 +2891,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             item.PhysicsObj.SetPositionInternal(transit);
 
-                            item.SyncLocation();
+                            item.SyncLocation(session.Player.Location.Variation);
 
                             item.SendUpdatePosition(true);
                         }

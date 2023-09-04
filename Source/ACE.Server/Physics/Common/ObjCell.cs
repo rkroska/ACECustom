@@ -21,11 +21,8 @@ namespace ACE.Server.Physics.Common
         public uint ID;
         public LandDefs.WaterType WaterType;
         public Position Pos;
-        public int NumObjects;
         public List<PhysicsObj> ObjectList;
-        public int NumLights;
         public List<int> LightList;
-        public int NumShadowObjects;
         public List<ShadowObj> ShadowObjectList;
         public List<uint> ShadowObjectIDs;
         public uint RestrictionObj;
@@ -71,9 +68,11 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterWriteLock();
             try
             {
-                // check for existing obj?
-                ObjectList.Add(obj);
-                NumObjects++;
+                if (!ObjectList.Contains(obj))
+                {
+                    ObjectList.Add(obj);
+                }
+
                 if (obj.ID == 0 || obj.Parent != null || obj.State.HasFlag(PhysicsState.Hidden) || VoyeurTable == null)
                     return;
 
@@ -100,8 +99,7 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterWriteLock();
             try
             {
-                ShadowObjectList.Add(shadowObj);
-                NumShadowObjects++; // can probably replace with .Count
+                ShadowObjectList.Add(shadowObj);                
                 shadowObj.Cell = this;
             }
             finally
@@ -256,7 +254,7 @@ namespace ACE.Server.Physics.Common
             try
             {
                 ObjectList.Remove(obj);
-                NumObjects--;
+                
                 update_all_voyeur(obj, DetectionType.LeftDetection);
             }
             finally
@@ -522,7 +520,7 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterWriteLock();
             try
             {
-                while (NumShadowObjects > 0)
+                while (ShadowObjectList.Count > 0)
                 {
                     var shadowObj = ShadowObjectList[0];
                     remove_shadow_object(shadowObj);
@@ -547,7 +545,6 @@ namespace ACE.Server.Physics.Common
                 // multiple shadows?
                 ShadowObjectList.Remove(shadowObj);
                 shadowObj.Cell = null;
-                NumShadowObjects--;
             }
             finally
             {
@@ -621,7 +618,13 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterReadLock();
             try
             {
-                target.AddRange(ObjectList);
+                for (int i = 0; i < ObjectList.Count; i++)
+                {
+                    if (!target.Contains(ObjectList[i]))
+                    {
+                        target.Add(ObjectList[i]);
+                    }
+                }
             }
             finally
             {

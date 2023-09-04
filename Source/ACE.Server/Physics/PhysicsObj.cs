@@ -1667,6 +1667,7 @@ namespace ACE.Server.Physics
 
             JumpedThisFrame = false;
             var newPos = new Position(Position.ObjCellID);
+            newPos.Variation = Position.Variation;
             UpdatePositionInternal(quantum, ref newPos.Frame);
 
             if (PartArray != null && PartArray.GetNumSphere() != 0)
@@ -2371,8 +2372,8 @@ namespace ACE.Server.Physics
 
             if (!DatObject && newCell != null)
             {
-                CurLandblock = LScape.get_landblock(newCell.ID, Position.Variation);
-                if (CurLandblock != null && CurLandblock.VariationId == Position.Variation)
+                CurLandblock = LScape.get_landblock(newCell.ID, newCell.VariationId);
+                if (CurLandblock != null && CurLandblock.VariationId == newCell.VariationId)
                     CurLandblock.add_server_object(this);
             }
         }
@@ -2386,7 +2387,7 @@ namespace ACE.Server.Physics
 
             // sync location for initial CO
             if (entering_world)
-                WeenieObj.WorldObject.SyncLocation();
+                WeenieObj.WorldObject.SyncLocation(newCell.VariationId);
 
             // handle self
             if (IsPlayer)
@@ -4082,6 +4083,7 @@ namespace ACE.Server.Physics
 
             var objectInfo = get_object_info(trans, adminMove);
             trans.InitObject(this, objectInfo.State);
+            trans.VariationId = newPos.Variation;
 
             if (PartArray == null || PartArray.GetNumSphere() == 0)
                 trans.InitSphere(1, PhysicsGlobals.DummySphere, 1.0f);

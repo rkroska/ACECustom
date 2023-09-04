@@ -1197,7 +1197,7 @@ namespace ACE.Server.WorldObjects
                             if (result == SetPositionError.OK)
                             {
                                 // handle landblock update?
-                                SyncLocation();
+                                SyncLocation(Location.Variation);
 
                                 // force broadcast
                                 Sequences.GetNextSequence(SequenceType.ObjectForcePosition);

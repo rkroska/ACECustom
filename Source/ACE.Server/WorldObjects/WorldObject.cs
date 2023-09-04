@@ -219,16 +219,16 @@ namespace ACE.Server.WorldObjects
             }
 
             //Console.WriteLine($"AddPhysicsObj: success: {Name} ({Guid})");
-            SyncLocation();
+            SyncLocation(VariationId);
 
             SetPosition(PositionType.Home, new Position(Location));
 
             return true;
         }
 
-        public void SyncLocation()
+        public void SyncLocation(int? Variation)
         {
-            Location.LandblockId = new LandblockId(PhysicsObj.Position.ObjCellID);
+            Location.LandblockId = new LandblockId(PhysicsObj.Position.ObjCellID, Variation);
 
             // skip ObjCellID check when updating from physics
             // TODO: update to newer version of ACE.Entity.Position
@@ -237,19 +237,11 @@ namespace ACE.Server.WorldObjects
             Location.PositionZ = PhysicsObj.Position.Frame.Origin.Z;
 
             Location.Rotation = PhysicsObj.Position.Frame.Orientation;
-
-            if (PhysicsObj.Position.Variation.HasValue)
+            if (!PhysicsObj.Position.Variation.HasValue && Variation.HasValue)
             {
-                Location.Variation = PhysicsObj.Position.Variation;
+                PhysicsObj.Position.Variation = Variation;
             }
-            else if (Location.Variation.HasValue)
-            {
-                PhysicsObj.Position.Variation = Location.Variation;
-            }
-            else
-            {
-                Location.Variation = PhysicsObj.Position.Variation;
-            }
+            Location.Variation = Variation ?? PhysicsObj.Position.Variation;
             
         }
 

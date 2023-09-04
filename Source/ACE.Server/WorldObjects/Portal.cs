@@ -60,7 +60,7 @@ namespace ACE.Server.WorldObjects
                 var relativeDestination = new Position(Location);
                 relativeDestination.Pos += new Vector3(RelativeDestination.PositionX, RelativeDestination.PositionY, RelativeDestination.PositionZ);
                 relativeDestination.Rotation = new Quaternion(RelativeDestination.RotationX, relativeDestination.RotationY, relativeDestination.RotationZ, relativeDestination.RotationW);
-                relativeDestination.LandblockId = new LandblockId(relativeDestination.GetCell());
+                relativeDestination.LandblockId = new LandblockId(relativeDestination.GetCell(), Location.Variation);
 
                 UpdatePortalDestination(relativeDestination);
             }

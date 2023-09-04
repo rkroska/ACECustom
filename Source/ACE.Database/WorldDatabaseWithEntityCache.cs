@@ -699,6 +699,10 @@ namespace ACE.Database
             {
                 results = results.Where(r => r.VariationId == variation).ToList();
             }
+            else
+            {
+                results = results.Where(r => r.VariationId == null).ToList();
+            }
 
             cachedLandblockInstances.TryAdd(cacheKey, results.ToList());
 
