@@ -733,6 +733,12 @@ namespace ACE.Server.Managers
             {
                 //find an item for the target NPC to give player - create emote to give it to player
                 Weenie itemTargetWeenie = world.GetRandomEquippableItem();
+
+                // Exclude Rares
+                while (itemTargetWeenie.PropertiesInt.Any(x => x.Key == PropertyInt.RareId))
+                {
+                    itemTargetWeenie = world.GetRandomEquippableItem();
+                }
                 var itemTargetWorldObject = WorldObjectFactory.CreateWorldObject(itemTargetWeenie, GuidManager.NewDynamicGuid());
 
                 var npcTargetWorldObject = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
