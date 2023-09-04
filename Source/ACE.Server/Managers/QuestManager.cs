@@ -733,6 +733,12 @@ namespace ACE.Server.Managers
             {
                 //find an item for the target NPC to give player - create emote to give it to player
                 Weenie itemTargetWeenie = world.GetRandomEquippableItem();
+
+                // Exclude Rares
+                while (itemTargetWeenie.PropertiesInt.Any(x => x.Key == PropertyInt.RareId))
+                {
+                    itemTargetWeenie = world.GetRandomEquippableItem();
+                }
                 var itemTargetWorldObject = WorldObjectFactory.CreateWorldObject(itemTargetWeenie, GuidManager.NewDynamicGuid());
 
                 var npcTargetWorldObject = WorldObjectFactory.CreateWorldObject(npcTarget, GuidManager.NewDynamicGuid());
@@ -1168,10 +1174,11 @@ namespace ACE.Server.Managers
         {
             using (var db = new Database.Models.Shard.ShardDbContext())
             {
+                var dynamicQuestRepeatHours = PropertyManager.GetLong("dynamic_quest_repeat_hours").Item;
                 var quests = db.CharacterPropertiesQuestRegistry.Where(x => x.CharacterId == player.Character.Id && x.QuestName.StartsWith("Dynamic"));
                 foreach (var q in quests)
                 {
-                    if (q.LastTimeCompleted != 0 && q.LastTimeCompleted > (uint)Time.GetUnixTime(DateTime.Today.AddDays(-1))) 
+                    if (q.LastTimeCompleted != 0 && q.LastTimeCompleted > (uint)Time.GetUnixTime(DateTime.Now.AddHours(-dynamicQuestRepeatHours))) 
                     {
                         return false;
                     }
