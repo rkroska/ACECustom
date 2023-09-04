@@ -1449,7 +1449,7 @@ namespace ACE.Server.WorldObjects
             {
                 item.PhysicsObj.SetPositionInternal(transit);
 
-                item.SyncLocation();
+                item.SyncLocation(item.Location.Variation);
 
                 item.SendUpdatePosition(true);
             }
