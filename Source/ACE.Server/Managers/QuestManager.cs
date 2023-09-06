@@ -975,6 +975,8 @@ namespace ACE.Server.Managers
 
             };
 
+            var dynamicQuestMaxXP = PropertyManager.GetLong("dynamic_quest_max_xp").Item;
+
             Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
             {
                 Emote = responseEmote,
@@ -993,7 +995,7 @@ namespace ACE.Server.Managers
                 TreasureClass = null,
                 TreasureType = null,
                 WeenieClassId = null,
-
+                Max64 = dynamicQuestMaxXP
             };
 
             Database.Models.World.WeeniePropertiesEmoteAction responseAction4 = new Database.Models.World.WeeniePropertiesEmoteAction
