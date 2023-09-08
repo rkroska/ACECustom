@@ -3070,7 +3070,11 @@ namespace ACE.Server.Command.Handlers
                 if (wo.Location != null)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Variation: {wo.Location.Variation}", ChatMessageType.Broadcast));
-                }                
+                }
+                if (wo.PhysicsObj != null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Position: {wo.PhysicsObj.Position}", ChatMessageType.Broadcast));
+                }
             }            
         }
 

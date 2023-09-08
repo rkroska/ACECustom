@@ -686,6 +686,8 @@ namespace ACE.Server.WorldObjects
 
             Session.Network.EnqueueSend(new GameMessagePlayerTeleport(this));
 
+            // check for changing varation - and remove anything from knownobjects that is not in the new variation
+            HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
             // load quickly, but player can load into landblock before server is finished loading
 
             // send a "fake" update position to get the client to start loading asap,
@@ -706,6 +708,30 @@ namespace ACE.Server.WorldObjects
             HandlePreTeleportVisibility(newPosition);
 
             UpdatePlayerPosition(new Position(newPosition), true);
+        }
+
+        public void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
+        {
+            if (sourceVariation == destinationVariation)
+            {
+                return;
+            }
+            var knownObjs = GetKnownObjects();
+
+            for (int i = 0; i < knownObjs.Count; i++)
+            {
+                var knownObj = knownObjs[i];
+                if (knownObj.Location.Variation != destinationVariation)
+                {
+                    knownObj.PhysicsObj.ObjMaint.RemoveObject(PhysicsObj);
+
+                    if (knownObj is Player knownPlayer)
+                        knownPlayer.RemoveTrackedObject(this, false);
+
+                    ObjMaint.RemoveObject(knownObj.PhysicsObj);
+                    RemoveTrackedObject(knownObj, false);
+                }
+            }
         }
 
         public void DoPreTeleportHide()

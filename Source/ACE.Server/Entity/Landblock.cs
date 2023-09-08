@@ -96,6 +96,24 @@ namespace ACE.Server.Entity
 
         private readonly ActionQueue actionQueue = new ActionQueue();
 
+        public int WorldObjectCount
+        { get
+            {
+                lock (worldObjects)
+                    return worldObjects.Count;
+            }
+        }
+
+        public int PhysicsObjectCount
+        { get
+            {
+                if (PhysicsLandblock != null)
+                    return PhysicsLandblock.ServerObjects.Count;
+                else
+                    return 0;
+            }
+        }
+
         /// <summary>
         /// Landblocks heartbeat every 5 seconds
         /// </summary>
