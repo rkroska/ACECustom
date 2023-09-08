@@ -984,6 +984,28 @@ namespace ACE.Server.Command.Handlers
             var locInstance = session.Player.Location.Variation;
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Instance: {physInstance}\nLocation Instance: {locInstance}", ChatMessageType.Broadcast));
+            if (session.Player.CurrentLandblock != null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock World Object Count: {session.Player.CurrentLandblock.WorldObjectCount}", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock Physics Object Count: {session.Player.CurrentLandblock.PhysicsObjectCount}", ChatMessageType.Broadcast));
+            }
+            
+        }
+
+        [CommandHandler("knownobjects", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current known objects")]
+        public static void HandleKnownObjectList(Session session, params string[] parameters)
+        {
+            List<WorldObject> objects = session.Player.GetKnownObjects();
+            if (objects == null)
+            {
+                return;
+            }
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Known Objects Count: {objects.Count}", ChatMessageType.Broadcast));
+
+            foreach (var item in objects)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{item.Name}, {item.Guid}, {item.Location}", ChatMessageType.Broadcast));
+            }
         }
 
         private static List<string> configList = new List<string>()

@@ -288,6 +288,10 @@ namespace ACE.Server.Physics.Common
 
         public override string ToString()
         {
+            if (Variation != null)
+            {
+                return $"0x{ObjCellID:X8} {Frame}, v:{Variation}";
+            }
             return $"0x{ObjCellID:X8} {Frame}";
         }
 
