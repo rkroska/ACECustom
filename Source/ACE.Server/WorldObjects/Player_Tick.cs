@@ -470,7 +470,7 @@ namespace ACE.Server.WorldObjects
                         {
                             //if (PhysicsObj.CurCell == null || curCell.ID != PhysicsObj.CurCell.ID)
                             //PhysicsObj.change_cell_server(curCell);
-                            Console.WriteLine($"{Name} Destination Cell {newPosition.Cell}, v: {curCell.VariationId}");
+                            //Console.WriteLine($"{Name} Destination Cell {newPosition.Cell}, v: {curCell.VariationId}");
                             PhysicsObj.set_request_pos(newPosition.Pos, newPosition.Rotation, curCell, Location.LandblockId.Raw, newPosition.Variation);
                             if (FastTick)
                                 success = PhysicsObj.update_object_server_new();
