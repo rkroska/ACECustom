@@ -803,7 +803,6 @@ namespace ACE.Server.Managers
                             npcDeliveryTarget = world.GetCachedWeenie(28690); //Erik Festus, Ayan
                         }
                         woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
-                        var lb = woDeliveryTarget.CurrentLandblock;
                         woWeenieDelivery = context.Weenie.Where(x => x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
                         noteMessage += $"Once you've received the {itemTargetWorldObject.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
                     }
