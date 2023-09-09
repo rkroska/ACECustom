@@ -710,6 +710,11 @@ namespace ACE.Server.Managers
                 .Select(s => s[ThreadSafeRandom.Next(0, s.Length - 1)]).ToArray());
         }
 
+        private bool WeenieHasDynamicQuest(Weenie npcTarget)
+        {
+            return npcTarget.PropertiesEmote.Any(x => x.Quest?.StartsWith("Dynamic") == true);
+        }
+
         private static string DynamicQuestFlagName = "dynamicQuestFlag";
 
         public void ComputeDynamicQuest(string questName, Network.Session session, bool test)
@@ -729,6 +734,19 @@ namespace ACE.Server.Managers
             //find target NPC
             WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
             Weenie npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
+            if (npcTarget == null) {
+                return;
+            }
+            int i = 0;
+            while ( WeenieHasDynamicQuest(npcTarget) )
+            {
+                i++;
+                npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
+                if (i > 50) // Don't try forever
+                {
+                    break;
+                }
+            }
             if (test)
             {
                 npcTarget = world.GetCachedWeenie(6873);//Ulgrim
@@ -764,13 +782,31 @@ namespace ACE.Server.Managers
                 if (chainDelivery)
                 {
                     npcDeliveryTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist(npcTargetWorldObject.WeenieClassId));
-                    if (test)
+                    if (npcDeliveryTarget == null)
                     {
-                        npcDeliveryTarget = world.GetCachedWeenie(28690); //Erik Festus, Ayan
+                        chainDelivery = false;
                     }
-                    woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
-                    woWeenieDelivery = context.Weenie.Where(x => x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
-                    noteMessage += $"Once you've received the {itemTargetWorldObject.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
+                    else
+                    {
+                        i = 0;
+                        while (WeenieHasDynamicQuest(npcDeliveryTarget))
+                        {
+                            i++;
+                            npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist(npcTargetWorldObject.WeenieClassId));
+                            if (i > 50) // Don't try forever
+                            {
+                                break;
+                            }
+                        }
+                        if (test)
+                        {
+                            npcDeliveryTarget = world.GetCachedWeenie(28690); //Erik Festus, Ayan
+                        }
+                        woDeliveryTarget = WorldObjectFactory.CreateWorldObject(npcDeliveryTarget, GuidManager.NewDynamicGuid());
+                        var lb = woDeliveryTarget.CurrentLandblock;
+                        woWeenieDelivery = context.Weenie.Where(x => x.ClassId == npcDeliveryTarget.WeenieClassId).FirstOrDefault();
+                        noteMessage += $"Once you've received the {itemTargetWorldObject.Name}, bring it to {woDeliveryTarget.Name}. You will be rewarded handsomely once this has been completed.";
+                    }
                 }
 
                 var note = WorldObjectFactory.CreateNewWorldObject(365); //parchment
@@ -830,7 +866,6 @@ namespace ACE.Server.Managers
                     woDeliveryTarget.EmoteManager.AddEmote(deliveryfinishedEmote);
                 }
 
-
                 databaseWeenie.WeeniePropertiesEmote.Add(responseEmote);
                 databaseWeenie.WeeniePropertiesEmote.Add(checkOtherQuestEmote);
                 databaseWeenie.WeeniePropertiesEmote.Add(continueEmote);
@@ -869,63 +904,60 @@ namespace ACE.Server.Managers
 
                 //reload landblock if it's already loaded
                 //destroy all non - player server objects
-                LandblockId p;
-                foreach (var item in Enum.GetValues(typeof(PositionType)))
+                PropertiesPosition propPos = null;
+                if (npcTarget != null && npcTarget.PropertiesPosition != null)
                 {
-                    PropertiesPosition propPos = null;
-                    if (npcTarget == null || npcTarget.PropertiesPosition == null)
+                    foreach (var item in Enum.GetValues(typeof(PositionType)))
                     {
-                        continue;
-                    }
-                    bool found = npcTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos);
+                        bool found = npcTarget.PropertiesPosition.TryGetValue((PositionType)item, out propPos);
 
-                    if (found && propPos != null)
-                    {
-                        p = new LandblockId(propPos.ObjCellId);
-                        Landblock L = LandblockManager.GetLandblock(p, false);                        
-                        if (L != null)
+                        if (found && propPos != null)
                         {
-                            L.DestroyAllNonPlayerObjects();
+                            LandblockId p = new LandblockId(propPos.ObjCellId);
+                            Landblock L = LandblockManager.GetLandblock(p, false);
+                            if (L != null)
+                            {
+                                L.DestroyAllNonPlayerObjects();
 
-                            //DatabaseManager.Shard.SaveBiota //try this?
-                            // clear landblock cache
-                            DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw);
+                                //DatabaseManager.Shard.SaveBiota //try this?
+                                // clear landblock cache
+                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw);
 
-                            // reload landblock
-                            L.Init(true);
-                            //var actionChain = new ActionChain();
-                            //actionChain.AddDelayForOneTick();
-                            //actionChain.AddAction(session.Player, () =>
-                            //{
-                            //    L.Init(true);
-                            //});
-                            //actionChain.EnqueueChain();
+                                // reload landblock
+                                L.Init(true);
+                                //var actionChain = new ActionChain();
+                                //actionChain.AddDelayForOneTick();
+                                //actionChain.AddAction(session.Player, () =>
+                                //{
+                                //    L.Init(true);
+                                //});
+                                //actionChain.EnqueueChain();
+                            }
+                            break;
                         }
-                        break;
                     }
-                }                
+                }
 
-                if (chainDelivery)
+                if (chainDelivery && npcDeliveryTarget != null && npcDeliveryTarget.PropertiesPosition != null)
                 {
                     LandblockId p2;
                     foreach (var item2 in Enum.GetValues(typeof(PositionType)))
                     {
                         PropertiesPosition propPos2 = null;
-                        if (npcDeliveryTarget == null || npcDeliveryTarget.PropertiesPosition == null)
-                        {
-                            continue;
-                        }
                         bool found2 = npcDeliveryTarget.PropertiesPosition.TryGetValue((PositionType)item2, out propPos2);
 
                         if (found2 && propPos2 != null)
                         {
-                            p2 = new LandblockId(propPos2.ObjCellId);
-                            Landblock L2 = LandblockManager.GetLandblock(p2, false);
-                            if (L2 != null)
+                            if (propPos == null || propPos.ObjCellId != propPos2.ObjCellId)
                             {
-                                L2.DestroyAllNonPlayerObjects();
-                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw);
-                                L2.Init(true);
+                                p2 = new LandblockId(propPos2.ObjCellId);
+                                Landblock L2 = LandblockManager.GetLandblock(p2, false);
+                                if (L2 != null)
+                                {
+                                    L2.DestroyAllNonPlayerObjects();
+                                    DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw);
+                                    L2.Init(true);
+                                }
                             }
                             break;
                         }
