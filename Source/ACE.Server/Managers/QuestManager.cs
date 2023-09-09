@@ -723,7 +723,10 @@ namespace ACE.Server.Managers
             {
                 return;
             }
-            session.Player.QuestManager.Erase(DynamicQuestFlagName);
+            if (session.Player != null)
+            {
+                session.Player.QuestManager.Erase(DynamicQuestFlagName);
+            }
 
 
             bool created = false;
