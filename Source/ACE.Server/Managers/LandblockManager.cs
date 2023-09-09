@@ -77,11 +77,11 @@ namespace ACE.Server.Managers
                 lock (landblockMutex)
                     result = landblocks.TryAdd(landblockKey, landblock);
                     //landblocks.Add(landblockKey, landblock);
-                Console.WriteLine("Added AddUpdateLandblock Landblock: " + landblock.Id.Raw + " v: " + landblock.VariationId);
-                if (landblock.Id.Raw == 27197439)
-                {
-                    Console.WriteLine(new StackTrace());
-                }
+                //Console.WriteLine("Added AddUpdateLandblock Landblock: " + landblock.Id.Raw + " v: " + landblock.VariationId);
+                //if (landblock.Id.Raw == 27197439)
+                //{
+                //    Console.WriteLine(new StackTrace());
+                //}
             }
             else if (lb != null && landblock == null)
             {
@@ -92,7 +92,7 @@ namespace ACE.Server.Managers
             {
                 lock (landblockMutex)
                     result = landblocks.TryUpdate(landblockKey, landblock, lb);
-                Console.WriteLine("Updated AddUpdateLandblock landblock: " + lb.Id.Raw + " : " + landblock.Id.Raw + " v: " + landblock.VariationId);
+                //Console.WriteLine("Updated AddUpdateLandblock landblock: " + lb.Id.Raw + " : " + landblock.Id.Raw + " v: " + landblock.VariationId);
             }
 
             return result;
@@ -239,10 +239,10 @@ namespace ACE.Server.Managers
             {
                 for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
                 {
-                    if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
-                    {
-                        Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
-                    }
+                    //if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
+                    //{
+                    //    Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
+                    //}
                     if (landblockGroupPendingAdditions.ElementAt(i).Value.IsDungeon || landblockGroupPendingAdditions.ElementAt(i).Value.VariationId.HasValue)
                     {
                         // Each dungeon exists in its own group
@@ -493,11 +493,11 @@ namespace ACE.Server.Managers
                     }
 
                     landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
-                    if (landblock.Id.ToString().StartsWith("019E"))
-                    {                        
-                        Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
-                            $"From: {new System.Diagnostics.StackTrace()}");
-                    }
+                    //if (landblock.Id.ToString().StartsWith("019E"))
+                    //{                        
+                    //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
+                    //        $"From: {new System.Diagnostics.StackTrace()}");
+                    //}
                     landblock.Init(variation);
 
                     setAdjacents = true;

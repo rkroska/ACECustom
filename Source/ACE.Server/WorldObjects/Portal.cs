@@ -275,7 +275,7 @@ namespace ACE.Server.WorldObjects
             var portalDest = new Position(Destination);
 #if DEBUG
             //player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
-            Console.WriteLine($"Player sending to v: {portalDest.Variation}");
+            //Console.WriteLine($"Player sending to v: {portalDest.Variation}");
 #endif
             AdjustDungeon(portalDest);
 

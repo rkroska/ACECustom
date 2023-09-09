@@ -274,7 +274,7 @@ namespace ACE.Server.Factories
         public static List<WorldObject> CreateNewWorldObjects(List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrict_wcid = null, int? variationId = null)
         {
             var results = new List<WorldObject>();
-            Console.WriteLine($"source objects to spawn: {sourceObjects.Where(x=>x.IsLinkChild==false).Count()}");
+            //Console.WriteLine($"source objects to spawn: {sourceObjects.Where(x=>x.IsLinkChild==false).Count()}");
 
             // spawn direct landblock objects
             foreach (var instance in sourceObjects.Where(x => x.IsLinkChild == false))
