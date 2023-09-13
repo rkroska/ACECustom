@@ -45,7 +45,7 @@ namespace ACE.Server.WorldObjects
 
             // copy ratings from pet device
             DamageRating = petDevice.GearDamage;
-            DamageResistRating = petDevice.GearDamageResist;
+            DamageResistRating = (petDevice.GearDamageResist ?? 0) + ((int)(player.LuminanceAugmentSummonCount ?? 0) * 3);
             CritDamageRating = petDevice.GearCritDamage;
             CritDamageResistRating = petDevice.GearCritDamageResist;
             CritRating = petDevice.GearCrit;
