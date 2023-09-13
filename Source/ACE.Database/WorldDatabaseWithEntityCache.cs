@@ -683,7 +683,7 @@ namespace ACE.Database
             return cachedLandblockInstances.TryRemove(cacheKey, out _);
         }
 
-        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null)
+        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null, bool allVariations = false)
         {
             VariantCacheId cacheKey = new VariantCacheId { Landblock = landblock, Variant = variation ?? 0 };
             if (cachedLandblockInstances.TryGetValue(cacheKey, out var value))
@@ -695,14 +695,17 @@ namespace ACE.Database
                 .Where(r => r.Landblock == landblock)
                 .ToList();
 
-            if (variation.HasValue)
+            if (!allVariations)
             {
-                results = results.Where(r => r.VariationId == variation).ToList();
-            }
-            else
-            {
-                results = results.Where(r => r.VariationId == null).ToList();
-            }
+                if (variation.HasValue)
+                {
+                    results = results.Where(r => r.VariationId == variation).ToList();
+                }
+                else
+                {
+                    results = results.Where(r => r.VariationId == null).ToList();
+                }
+            }            
 
             cachedLandblockInstances.TryAdd(cacheKey, results.ToList());
 
@@ -718,6 +721,15 @@ namespace ACE.Database
                 return GetCachedInstancesByLandblock(context, landblock, variation);
         }
 
+        /// <summary>
+        /// Returns a list of static spawns for any and all variations of the landblock
+        /// </summary>
+        ///
+        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock)
+        {
+            using (var context = new WorldDbContext())
+                return GetCachedInstancesByLandblock(context, landblock, null, true);
+        }
 
         private readonly ConcurrentDictionary<ushort /* Landblock */, uint /* House GUID */> cachedBasementHouseGuids = new ConcurrentDictionary<ushort, uint>();
 

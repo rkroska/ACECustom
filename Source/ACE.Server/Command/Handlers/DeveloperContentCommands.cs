@@ -1178,7 +1178,7 @@ namespace ACE.Server.Command.Handlers.Processors
             // clear any cached instances for this landblock
             DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variation);
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, variation);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
 
             // for link mode, ensure parent guid instance exists
             WorldObject parentObj = null;
@@ -1204,6 +1204,8 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             var nextStaticGuid = GetNextStaticGuid(landblock, instances);
+
+            instances = instances.Where(x => x.VariationId == variation).ToList();
 
             var maxStaticGuid = firstStaticGuid | 0xFFF;
 

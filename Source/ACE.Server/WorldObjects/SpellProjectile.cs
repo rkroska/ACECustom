@@ -64,14 +64,14 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Perfroms additional set up of the spell projectile based on the spell id or its derived type.
+        /// Performs additional set up of the spell projectile based on the spell id or its derived type.
         /// </summary>
-        public void Setup(Spell spell, ProjectileSpellType spellType)
+        public void Setup(Spell spell, ProjectileSpellType spellType, int? SourceVariation)
         {
             Spell = spell;
             SpellType = spellType;
-
-            InitPhysicsObj(Location.Variation);
+            
+            InitPhysicsObj(SourceVariation);
 
             // Runtime changes to default state
             ReportCollisions = true;
