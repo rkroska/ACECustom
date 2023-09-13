@@ -1716,9 +1716,36 @@ namespace ACE.Server.WorldObjects.Managers
                                             return;
                                         }
                                         player.LuminanceAugmentSpecializeCount = specAugs + 1;
-                                        player.TryConsumeFromInventoryWithNetworking(300021, 1); // Need Weenie ID
+                                        player.TryConsumeFromInventoryWithNetworking(300021, 1);
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Max Specialized Skill Credits by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal7:N0} luminance to add 1 point to your max specialized skill credits. Are you sure?");
+                                }
+                                break;
+                            case "Summon":
+                                long summonAugs = player.LuminanceAugmentSummonCount ?? 0;
+                                var curVal8 = emote.Amount + (summonAugs * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal8)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal8:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal8)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal8:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal8))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentSummonCount = summonAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(2003001, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your summons damage resist rating by 3.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal8:N0} luminance to add 3 points to your summons damage resist rating. Are you sure?");
                                 }
                                 break;
                             default:
