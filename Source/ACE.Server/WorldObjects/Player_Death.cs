@@ -472,7 +472,7 @@ namespace ACE.Server.WorldObjects
             // if player dies on a No Drop landblock,
             // they don't drop any items
 
-            if (corpse.IsOnNoDropLandblock || IsPKLiteDeath(corpse.KillerId) || IsMule)
+            if (corpse.IsOnNoDropLandblock || IsPKLiteDeath(corpse.KillerId))
                 return new List<WorldObject>();
 
             var numItemsDropped = GetNumItemsDropped(corpse);
