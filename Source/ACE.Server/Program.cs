@@ -310,6 +310,9 @@ namespace ACE.Server
             log.Info("Initializing EventManager...");
             EventManager.Initialize();
 
+            log.Info("Initializing Content Service Manager...");
+            ContentServiceManager.Initialize();
+
             // Free up memory before the server goes online. This can free up 6 GB+ on larger servers.
             log.Info("Forcing .net garbage collection...");
             for (int i = 0 ; i < 10 ; i++)
