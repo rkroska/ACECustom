@@ -74,8 +74,12 @@ namespace ACE.Server.WorldObjects
 
             if (!BankedLuminance.HasValue) { BankedLuminance = 0; }
             if (!AvailableLuminance.HasValue) { AvailableLuminance = 0; }
+            var available = AvailableLuminance + BankedLuminance;
 
-            if (AvailableLuminance > 0 && AvailableLuminance >= amount)
+            if (amount > available)
+                return false;
+
+            if (AvailableLuminance > 0 && amount >= AvailableLuminance)
             {
                 AvailableLuminance = AvailableLuminance - amount;
                 UpdateLuminance();

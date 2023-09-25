@@ -420,7 +420,6 @@ namespace ACE.Server.WorldObjects
             0x596B,     // Gauntlet Staging Area (All Societies)
             0x8A04,     // Night Club (Seasonal Anniversary)
             0xB5F0,     // Aerfalle's Sanctum
-            0x016C,     // Marketplace
         };
     }
 }

@@ -3218,7 +3218,7 @@ namespace ACE.Server.Command.Handlers
         }
 
 
-        [CommandHandler("modifyvital", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the maximum vital attribute for the last appraised mob/player and restores full vitals", "<Health|Stamina|Mana> <delta>")]
+        [CommandHandler("modifyvital", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Adjusts the maximum vital attribute for the last appraised mob/player and restores full vitals", "<Health|Stamina|Mana> <delta>")]
         public static void HandleModifyVital(Session session, params string[] parameters)
         {
             var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
@@ -3242,7 +3242,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (!ulong.TryParse(parameters[1], out ulong delta))
+            if (!Int32.TryParse(parameters[1], out int delta))
             {
                 ChatPacket.SendServerMessage(session, "Invalid vital value, values must be valid integers", ChatMessageType.Broadcast);
                 return;
@@ -3271,7 +3271,7 @@ namespace ACE.Server.Command.Handlers
 
             CreatureVital vital = new CreatureVital(creature, vitalAttr);
             vital.Ranks = (uint)Math.Clamp(vital.Ranks + delta, 1, uint.MaxValue);
-            //creature.UpdateVital(vital, maxVital.MaxValue);
+            creature.UpdateVital(vital, maxVital.MaxValue);
 
             if (creature is Player)
             {
@@ -3288,7 +3288,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("modifyskill", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts the skill for the last appraised mob/player", "<skillName> <delta>")]
+        [CommandHandler("modifyskill", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Adjusts the skill for the last appraised mob/player", "<skillName> <delta>")]
         public static void HandleModifySkill(Session session, params string[] parameters)
         {
             var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
@@ -3331,7 +3331,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("modifyattr", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player", "<attribute> <delta>")]
+        [CommandHandler("modifyattr", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player", "<attribute> <delta>")]
         public static void HandleModifyAttribute(Session session, params string[] parameters)
         {
             var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);

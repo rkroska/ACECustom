@@ -629,9 +629,7 @@ namespace ACE.Server.Managers
                 ("rares_max_seconds_between", new Property<long>(5256000, "for rares_real_time: the maximum number of seconds a player can go before a second chance at a rare is allowed on rare eligible creature kills that did not generate a rare")),
                 ("summoning_killtask_multicredit_cap", new Property<long>(2, "if allow_summoning_killtask_multicredit is enabled, the maximum # of killtask credits a player can receive from 1 kill")),
                 ("teleport_visibility_fix", new Property<long>(0, "Fixes some possible issues with invisible players and mobs. 0 = default / disabled, 1 = players only, 2 = creatures, 3 = all world objects")),
-                ("enl_50_base_lum_cost", new Property<long>(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level")),
-                ("dynamic_quest_repeat_hours", new Property<long>(20, "the number of hours before a player can do another dynamic quest")),
-                ("dynamic_quest_max_xp", new Property<long>(5000000000, "the maximum base xp rewarded from a dynamic quest"))
+                ("enl_50_base_lum_cost", new Property<long>(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level"))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
