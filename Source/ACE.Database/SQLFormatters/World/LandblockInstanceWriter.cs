@@ -16,14 +16,23 @@ namespace ACE.Database.SQLFormatters.World
         {
             string fileName = (input.ObjCellId >> 16).ToString("X4");
             fileName = IllegalInFileName.Replace(fileName, "_");
+            if (input.VariationId.HasValue)
+            {
+                fileName += "_" + input.VariationId.ToString();
+            }
             fileName += ".sql";
 
             return fileName;
         }
 
-        public void CreateSQLDELETEStatement(IList<LandblockInstance> input, StreamWriter writer)
+        public void CreateSQLDELETEStatement(IList<LandblockInstance> input, StreamWriter writer, int? variationId)
         {
-            writer.WriteLine($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4};");
+            writer.Write($"DELETE FROM `landblock_instance` WHERE `landblock` = 0x{(input[0].ObjCellId >> 16):X4} ");
+            if (variationId.HasValue)
+            {
+                writer.Write($"and `variation_Id` = {variationId:N0}");
+            }
+            writer.WriteLine(";");
         }
 
         /// <exception cref="System.Exception">WeenieClassNames must be set, and must have a record for input.ClassId.</exception>
@@ -38,7 +47,7 @@ namespace ACE.Database.SQLFormatters.World
                 if (value != input[0])
                     writer.WriteLine();
 
-                writer.WriteLine("INSERT INTO `landblock_instance` (`guid`, `weenie_Class_Id`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `is_Link_Child`, `last_Modified`)");
+                writer.WriteLine("INSERT INTO `landblock_instance` (`guid`, `weenie_Class_Id`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `is_Link_Child`, `last_Modified`, `variation_Id`)");
 
                 string label = null;
 
@@ -57,9 +66,10 @@ namespace ACE.Database.SQLFormatters.World
                              $"{TrimNegativeZero(value.AnglesY):0.######}, " +
                              $"{TrimNegativeZero(value.AnglesZ):0.######}, " +
                              $"{value.IsLinkChild.ToString().PadLeft(5)}, " +
-                             $"'{value.LastModified:yyyy-MM-dd HH:mm:ss}'" +
+                             $"'{value.LastModified:yyyy-MM-dd HH:mm:ss}'," +
+                             $"{VariantNullFix(value.VariationId)}" +
                              $"); /* {label} */" +
-                             Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6} */";
+                             Environment.NewLine + $"/* @teleloc 0x{value.ObjCellId:X8} [{TrimNegativeZero(value.OriginX):F6} {TrimNegativeZero(value.OriginY):F6} {TrimNegativeZero(value.OriginZ):F6}] {TrimNegativeZero(value.AnglesW):F6} {TrimNegativeZero(value.AnglesX):F6} {TrimNegativeZero(value.AnglesY):F6} {TrimNegativeZero(value.AnglesZ):F6}  {TrimNegativeZero(value.VariationId):N0} */";
 
                 output = FixNullFields(output);
 
@@ -70,6 +80,18 @@ namespace ACE.Database.SQLFormatters.World
                     writer.WriteLine();
                     CreateSQLINSERTStatement(value.LandblockInstanceLink.OrderBy(r => r.ChildGuid).ToList(), instanceWcids, writer);
                 }
+            }
+        }
+
+        private string VariantNullFix(int? variationId)
+        {
+            if (variationId.HasValue)
+            {
+                return variationId.ToString();
+            }
+            else
+            {
+                return "NULL";
             }
         }
 

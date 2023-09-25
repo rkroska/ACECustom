@@ -950,6 +950,7 @@ namespace ACE.Server.Managers
 
                         if (found2 && propPos2 != null)
                         {
+
                             if (propPos == null || propPos.ObjCellId != propPos2.ObjCellId)
                             {
                                 p2 = new LandblockId(propPos2.ObjCellId);

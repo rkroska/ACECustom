@@ -13,6 +13,7 @@ namespace ACE.Server.Physics.Common
     {
         public uint ObjCellID;
         public AFrame Frame;
+        public int? Variation;
 
         public uint Landblock => ObjCellID >> 16;
 
@@ -31,10 +32,11 @@ namespace ACE.Server.Physics.Common
             Init();
         }
 
-        public Position(uint objCellID, AFrame frame)
+        public Position(uint objCellID, AFrame frame, int? variation = null)
         {
             ObjCellID = objCellID;
             Frame = frame;
+            Variation = variation;
         }
 
         public Position(Position p)
@@ -47,12 +49,14 @@ namespace ACE.Server.Physics.Common
             }
 
             ObjCellID = p.ObjCellID;
+            Variation = p.Variation;
             Frame = new AFrame(p.Frame);
         }
 
         public Position(ACE.Entity.Position p)
         {
             ObjCellID = p.Cell;
+            Variation = p.Variation;
             Frame = new AFrame(p.Pos, p.Rotation);
         }
 
@@ -240,7 +244,7 @@ namespace ACE.Server.Physics.Common
         {
             var dungeonID = blockCellID >> 16;
 
-            var adjustCell = AdjustCell.Get(dungeonID);
+            var adjustCell = AdjustCell.Get(dungeonID, Variation);
             if (adjustCell == null)
             {
                 //Console.WriteLine("Position: couldn't find ObjCellID for indoor cell " + blockCellID.ToString("X8"));
@@ -284,6 +288,10 @@ namespace ACE.Server.Physics.Common
 
         public override string ToString()
         {
+            if (Variation != null)
+            {
+                return $"0x{ObjCellID:X8} {Frame}, v:{Variation}";
+            }
             return $"0x{ObjCellID:X8} {Frame}";
         }
 

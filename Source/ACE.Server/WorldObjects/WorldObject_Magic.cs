@@ -1799,7 +1799,7 @@ namespace ACE.Server.WorldObjects
                     break;
                 }
 
-                sp.Setup(spell, spellType);
+                sp.Setup(spell, spellType, casterLoc.Variation);
 
                 var rotate = casterLoc.Rotation;
                 if (target != null)

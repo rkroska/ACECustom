@@ -44,9 +44,9 @@ namespace ACE.Server.WorldObjects
 
                 if (wo == null) continue;
 
-                wo.Location = new Position(link.ObjCellId, link.OriginX, link.OriginY, link.OriginZ, link.AnglesX, link.AnglesY, link.AnglesZ, link.AnglesW);
+                wo.Location = new Position(link.ObjCellId, link.OriginX, link.OriginY, link.OriginZ, link.AnglesX, link.AnglesY, link.AnglesZ, link.AnglesW, false, link.VariationId);
                 parent.SetLinkProperties(wo);
-                CurrentLandblock?.AddWorldObject(wo);
+                CurrentLandblock?.AddWorldObject(wo, link.VariationId);
                 if (wo.PhysicsObj != null)
                     wo.PhysicsObj.Order = 0;
 

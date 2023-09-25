@@ -318,7 +318,7 @@ namespace ACE.Server.WorldObjects
                 if (isMoved || isDying)
                 {
                     if (curCell.ID != cellBefore)
-                        Location.LandblockId = new LandblockId(curCell.ID);
+                        Location.LandblockId = new LandblockId(curCell.ID, curCell.VariationId);
 
                     // skip ObjCellID check when updating from physics
                     // TODO: update to newer version of ACE.Entity.Position
@@ -327,6 +327,7 @@ namespace ACE.Server.WorldObjects
                     Location.PositionZ = newPos.Z;
 
                     Location.Rotation = PhysicsObj.Position.Frame.Orientation;
+                    Location.Variation = PhysicsObj.Position.Variation;
 
                     //if (landblockUpdate)
                     //WorldManager.UpdateLandblock.Add(this);

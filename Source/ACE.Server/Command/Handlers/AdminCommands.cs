@@ -902,6 +902,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 var weenie = DatabaseManager.World.GetCachedWeenie(teleportPOI.WeenieClassId);
                 var portalDest = new Position(weenie.GetPosition(PositionType.Destination));
+                portalDest.Variation = null;
                 WorldObject.AdjustDungeon(portalDest);
                 session.Player.Teleport(portalDest);
             }
@@ -2880,7 +2881,7 @@ namespace ACE.Server.Command.Handlers
                     var ethereal = item.Ethereal;
                     item.Ethereal = true;
 
-                    if (session.Player.CurrentLandblock?.AddWorldObject(item) ?? false)
+                    if (session.Player.CurrentLandblock?.AddWorldObject(item, session.Player.Location.Variation) ?? false)
                     {
                         item.Location.LandblockId = new LandblockId(item.Location.GetCell());
 
@@ -2891,7 +2892,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             item.PhysicsObj.SetPositionInternal(transit);
 
-                            item.SyncLocation();
+                            item.SyncLocation(session.Player.Location.Variation);
 
                             item.SendUpdatePosition(true);
                         }

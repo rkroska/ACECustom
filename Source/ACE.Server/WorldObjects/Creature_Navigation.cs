@@ -442,7 +442,7 @@ namespace ACE.Server.WorldObjects
             PhysicsObj.SetPosition(setPosition);
 
             // update ace location
-            SyncLocation();
+            SyncLocation(_newPosition.Variation);
 
             // broadcast blip to new position
             SendUpdatePosition(true);

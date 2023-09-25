@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 
+using ACE.Common;
 using ACE.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Util;
@@ -18,7 +19,7 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// This is not used if PhysicsEngine.Instance.Server is true
         /// </summary>
-        public static ConcurrentDictionary<uint, Landblock> Landblocks = new ConcurrentDictionary<uint, Landblock>();
+        public static ConcurrentDictionary<VariantCacheId, Landblock> Landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
         public static Dictionary<uint, Landblock> BlockDrawList = new Dictionary<uint, Landblock>();
 
         public static uint LoadedCellID;
@@ -51,18 +52,18 @@ namespace ACE.Server.Physics.Common
         /// This function is thread safe
         /// </summary>
         /// <param name="blockCellID">Any landblock + cell ID within the landblock</param>
-        public static Landblock get_landblock(uint blockCellID)
+        public static Landblock get_landblock(uint blockCellID, int? variationId)
         {
             var landblockID = blockCellID | 0xFFFF;
-
+            var lbid = new LandblockId(landblockID);
             if (PhysicsEngine.Instance.Server)
             {
-                var lbid = new LandblockId(landblockID);
-                var lbmLandblock = LandblockManager.GetLandblock(lbid, false, false);
+                
+                var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
 
                 return lbmLandblock.PhysicsLandblock;
             }
-
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
             // client implementation
             /*if (Landblocks == null || Landblocks.Count == 0)
                 return null;
@@ -82,40 +83,42 @@ namespace ACE.Server.Physics.Common
             return Landblocks[yDiff + xDiff * MidWidth];*/
 
             // check if landblock is already cached
-            if (Landblocks.TryGetValue(landblockID, out var landblock))
+
+            if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
 
             lock (landblockMutex)
             {
                 // check if landblock is already cached, this time under the lock.
-                if (Landblocks.TryGetValue(landblockID, out landblock))
+                if (Landblocks.TryGetValue(cacheKey, out landblock))
                     return landblock;
 
                 // if not, load into cache
-                landblock = new Landblock(DBObj.GetCellLandblock(landblockID));
-                if (Landblocks.TryAdd(landblockID, landblock))
+                landblock = new Landblock(DBObj.GetCellLandblock(landblockID), variationId);
+                if (Landblocks.TryAdd(cacheKey, landblock))
                     landblock.PostInit();
                 else
-                    Landblocks.TryGetValue(landblockID, out landblock);
+                    Landblocks.TryGetValue(cacheKey, out landblock);
 
                 return landblock;
             }
         }
 
-        public static bool unload_landblock(uint landblockID)
+        public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
+            var lbid = new LandblockId(landblockID);
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()
-                // todo: which would then call AdjustCell.AdjustCells.Remove()
-
-                AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
+                // todo: which would then call AdjustCell.AdjustCells.Remove()                
+                AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
                 return true;
             }
-
-            var result = Landblocks.TryRemove(landblockID, out _);
+            
+            var result = Landblocks.TryRemove(cacheKey, out _);
             // todo: Like mentioned above, the following function should be moved to ACE.Server.Physics.Common.Landblock.Unload()
-            AdjustCell.AdjustCells.TryRemove(landblockID >> 16, out _);
+            AdjustCell.AdjustCells.TryRemove(cacheKey, out _);
             return result;
         }
 
@@ -123,11 +126,15 @@ namespace ACE.Server.Physics.Common
         /// Gets the landcell from a landblock. If the cell is an indoor cell and hasn't been loaded, it will be loaded.<para />
         /// This function is thread safe
         /// </summary>
-        public static ObjCell get_landcell(uint blockCellID)
+        public static ObjCell get_landcell(uint blockCellID, int? variationId)
         {
             //Console.WriteLine($"get_landcell({blockCellID:X8}");
+            //if (blockCellID == 3880648731 || blockCellID == 3880648721)
+            //{
+            //    Console.WriteLine(new System.Diagnostics.StackTrace());
+            //}
 
-            var landblock = get_landblock(blockCellID);
+            var landblock = get_landblock(blockCellID, variationId);
             if (landblock == null)
                 return null;
 
@@ -140,23 +147,27 @@ namespace ACE.Server.Physics.Common
                 var lcoord = LandDefs.gid_to_lcoord(blockCellID, false);
                 if (lcoord == null) return null;
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
-                landblock.LandCells.TryGetValue(landCellIdx, out cell);
+                var cacheKey = new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 };
+                landblock.LandCells.TryGetValue(cacheKey, out cell);
             }
             // indoor cells
             else
             {
-                if (landblock.LandCells.TryGetValue((int)cellID, out cell))
+                if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0}, out cell))
                     return cell;
 
                 lock (landblock.LandCellMutex)
                 {
-                    if (landblock.LandCells.TryGetValue((int)cellID, out cell))
+                    if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, out cell))
                         return cell;
 
-                    cell = DBObj.GetEnvCell(blockCellID);
-                    landblock.LandCells.TryAdd((int)cellID, cell);
+                    cell = DBObj.GetEnvCell(blockCellID, variationId);
+                    cell.CurLandblock = landblock;
+                    cell.Pos.Variation = variationId; //todo - gross
+                    cell.VariationId = variationId;
+                    landblock.LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, cell);
                     var envCell = (EnvCell)cell;
-                    envCell.PostInit();
+                    envCell.PostInit(variationId);
                 }
             }
             return cell;

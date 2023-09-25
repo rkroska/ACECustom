@@ -16,6 +16,7 @@ using ACE.Server.WorldObjects;
 using ACE.Database;
 using ACE.Database.Models.World;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 
 namespace ACE.Server.Managers
 {
@@ -34,16 +35,18 @@ namespace ACE.Server.Managers
         /// <summary>
         /// A table of all the landblocks in the world map
         /// Landblocks which aren't currently loaded will be null here
+        /// X, Y, Variation dimensions
         /// </summary>
-        private static readonly Landblock[,] landblocks = new Landblock[255, 255];
+        //private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
+        public static ConcurrentDictionary<VariantCacheId, Landblock> landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
 
         /// <summary>
         /// A lookup table of all the currently loaded landblocks
         /// </summary>
-        private static readonly HashSet<Landblock> loadedLandblocks = new HashSet<Landblock>();
+        public static readonly ConcurrentDictionary<VariantCacheId, Landblock> loadedLandblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
 
-        private static readonly List<Landblock> landblockGroupPendingAdditions = new List<Landblock>();
-        private static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
+        private static readonly ConcurrentDictionary<VariantCacheId, Landblock> landblockGroupPendingAdditions = new ConcurrentDictionary<VariantCacheId, Landblock>();
+        public static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
 
         public static int LandblockGroupsCount
         {
@@ -52,6 +55,57 @@ namespace ACE.Server.Managers
                 lock (landblockMutex)
                     return landblockGroups.Count;
             }
+        }
+
+        /// <summary>
+        /// Add or update a landblock in the landblock dictionary
+        /// </summary>
+        private static bool AddUpdateLandblock(Landblock landblock, int? VariationId)
+        {
+            VariantCacheId key = new VariantCacheId(){ Landblock = landblock.Id.Landblock, Variant = VariationId ?? 0 };
+            return AddUpdateLandblock(key, landblock);
+        }
+
+        private static bool AddUpdateLandblock(VariantCacheId landblockKey, Landblock landblock)
+        {
+            bool result = false;
+            var lb = GetLandblock(landblockKey);
+            if (lb == null && landblock == null)            
+                return result;
+            if (lb == null && landblock != null)
+            {
+                lock (landblockMutex)
+                    result = landblocks.TryAdd(landblockKey, landblock);
+                    //landblocks.Add(landblockKey, landblock);
+                //Console.WriteLine("Added AddUpdateLandblock Landblock: " + landblock.Id.Raw + " v: " + landblock.VariationId);
+                //if (landblock.Id.Raw == 27197439)
+                //{
+                //    Console.WriteLine(new StackTrace());
+                //}
+            }
+            else if (lb != null && landblock == null)
+            {
+                lock (landblockMutex)
+                    result = landblocks.TryRemove(landblockKey, out Landblock removedLandblock);
+            }
+            else if (lb != null && landblock != null)
+            {
+                lock (landblockMutex)
+                    result = landblocks.TryUpdate(landblockKey, landblock, lb);
+                //Console.WriteLine("Updated AddUpdateLandblock landblock: " + lb.Id.Raw + " : " + landblock.Id.Raw + " v: " + landblock.VariationId);
+            }
+
+            return result;
+        }
+
+        private static Landblock GetLandblock(VariantCacheId landblockKey)
+        {
+            lock (landblockMutex)
+            {
+                if (landblocks.TryGetValue(landblockKey, out Landblock landblock))
+                    return landblock;
+            }
+            return null;
         }
 
         /// <summary>
@@ -113,7 +167,7 @@ namespace ACE.Server.Managers
         private static void PreloadLandblock(uint landblock, PreloadedLandblocks preloadLandblock)
         {
             var landblockID = new LandblockId(landblock);
-            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
+            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, null, preloadLandblock.Permaload);
             log.DebugFormat("Landblock {0:X4}, ({1}) preloaded. IncludeAdjacents = {2}, Permaload = {3}", landblockID.Landblock, preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
         }
 
@@ -171,6 +225,11 @@ namespace ACE.Server.Managers
             0x5369FFFF
         };
 
+
+        /// <summary>
+        /// Loads landblocks when they are needed
+        /// TODO: Come back and make this Variation aware
+        /// </summary>
         private static void ProcessPendingLandblockGroupAdditions()
         {
             if (landblockGroupPendingAdditions.Count == 0)
@@ -180,11 +239,16 @@ namespace ACE.Server.Managers
             {
                 for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
                 {
-                    if (landblockGroupPendingAdditions[i].IsDungeon)
+                    //if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
+                    //{
+                    //    Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
+                    //}
+                    if (landblockGroupPendingAdditions.ElementAt(i).Value.IsDungeon || landblockGroupPendingAdditions.ElementAt(i).Value.VariationId.HasValue)
                     {
                         // Each dungeon exists in its own group
-                        var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i]);
+                        var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions.ElementAt(i).Value, landblockGroupPendingAdditions.ElementAt(i).Value.VariationId);
                         landblockGroups.Add(landblockGroup);
+                        //TODO: Add variation code here?
                     }
                     else
                     {
@@ -196,7 +260,7 @@ namespace ACE.Server.Managers
                             if (landblockGroups[j].IsDungeon)
                                 continue;
 
-                            var distance = landblockGroups[j].BoundaryDistance(landblockGroupPendingAdditions[i]);
+                            var distance = landblockGroups[j].BoundaryDistance(landblockGroupPendingAdditions.ElementAt(i).Value);
 
                             if (distance < LandblockGroup.LandblockGroupMinSpacing)
                                 landblockGroupsIndexMatchesByDistance.Add(j);
@@ -205,7 +269,7 @@ namespace ACE.Server.Managers
                         if (landblockGroupsIndexMatchesByDistance.Count > 0)
                         {
                             // Add the landblock to the first eligible group
-                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblockGroupPendingAdditions[i]);
+                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblockGroupPendingAdditions.ElementAt(i).Value, landblockGroupPendingAdditions.ElementAt(i).Value.VariationId);
 
                             if (landblockGroupsIndexMatchesByDistance.Count > 1)
                             {
@@ -214,7 +278,7 @@ namespace ACE.Server.Managers
                                 {
                                     // Copy the j down into 0
                                     foreach (var landblock in landblockGroups[landblockGroupsIndexMatchesByDistance[j]])
-                                        landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock);
+                                        landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock.Value, landblock.Value.VariationId);
 
                                     landblockGroups.RemoveAt(landblockGroupsIndexMatchesByDistance[j]);
                                 }
@@ -223,12 +287,13 @@ namespace ACE.Server.Managers
                         else
                         {
                             // No close groups were found
-                            var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions[i]);
+                            var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions.ElementAt(i).Value, landblockGroupPendingAdditions.ElementAt(i).Value.VariationId);
                             landblockGroups.Add(landblockGroup);
                         }
                     }
 
-                    landblockGroupPendingAdditions.RemoveAt(i);
+                    landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landblockGroupPendingAdditions.ElementAt(i).Value.Id.Landblock, Variant = landblockGroupPendingAdditions.ElementAt(i).Value.VariationId ?? 0 }, out _);                    
+                    
                 }
 
                 // Debugging todo: comment this out after enough testing
@@ -289,7 +354,7 @@ namespace ACE.Server.Managers
                     CurrentMultiThreadedTickingLandblockGroup.Value = landblockGroup;
 
                     foreach (var landblock in landblockGroup)
-                        landblock.TickPhysics(portalYearTicks, movedObjects);
+                        landblock.Value.TickPhysics(portalYearTicks, movedObjects);
 
                     CurrentMultiThreadedTickingLandblockGroup.Value = null;
                 });
@@ -301,7 +366,7 @@ namespace ACE.Server.Managers
                 foreach (var landblockGroup in landblockGroups)
                 {
                     foreach (var landblock in landblockGroup)
-                        landblock.TickPhysics(portalYearTicks, movedObjects);
+                        landblock.Value.TickPhysics(portalYearTicks, movedObjects);
                 }
             }
 
@@ -330,7 +395,7 @@ namespace ACE.Server.Managers
                     CurrentMultiThreadedTickingLandblockGroup.Value = landblockGroup;
 
                     foreach (var landblock in landblockGroup)
-                        landblock.TickMultiThreadedWork(Time.GetUnixTime());
+                        landblock.Value.TickMultiThreadedWork(Time.GetUnixTime());
 
                     CurrentMultiThreadedTickingLandblockGroup.Value = null;
                 });
@@ -342,7 +407,7 @@ namespace ACE.Server.Managers
                 foreach (var landblockGroup in landblockGroups)
                 {
                     foreach (var landblock in landblockGroup)
-                        landblock.TickMultiThreadedWork(Time.GetUnixTime());
+                        landblock.Value.TickMultiThreadedWork(Time.GetUnixTime());
                 }
             }
         }
@@ -354,7 +419,7 @@ namespace ACE.Server.Managers
             foreach (var landblockGroup in landblockGroups)
             {
                 foreach (var landblock in landblockGroup)
-                    landblock.TickSingleThreadedWork(Time.GetUnixTime());
+                    landblock.Value.TickSingleThreadedWork(Time.GetUnixTime());
             }
         }
 
@@ -364,9 +429,9 @@ namespace ACE.Server.Managers
         /// <param name="loadAdjacents">If TRUE, ensures all of the adjacent landblocks for this WorldObject are loaded</param>
         public static bool AddObject(WorldObject worldObject, bool loadAdjacents = false)
         {
-            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents);
+            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents, worldObject.Location.Variation, false);
 
-            return block.AddWorldObject(worldObject);
+            return block.AddWorldObject(worldObject, worldObject.Location.Variation);
         }
 
         /// <summary>
@@ -375,7 +440,7 @@ namespace ACE.Server.Managers
         public static void RelocateObjectForPhysics(WorldObject worldObject, bool adjacencyMove)
         {
             var oldBlock = worldObject.CurrentLandblock;
-            var newBlock = GetLandblock(worldObject.Location.LandblockId, true);
+            var newBlock = GetLandblock(worldObject.Location.LandblockId, true, worldObject.Location.Variation, false );
 
             if (newBlock.IsDormant && worldObject is SpellProjectile)
             {
@@ -388,44 +453,58 @@ namespace ACE.Server.Managers
             if (oldBlock != null)
                 oldBlock.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
             // Add to the new landblock
-            newBlock.AddWorldObjectForPhysics(worldObject);
+            newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
         }
 
-        public static bool IsLoaded(LandblockId landblockId)
+        public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
             lock (landblockMutex)
-                return landblocks[landblockId.LandblockX, landblockId.LandblockY] != null;
+                return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
         }
 
         /// <summary>
         /// Returns a reference to a landblock, loading the landblock if not already active
+        /// TODO: Make this Variation Aware
         /// </summary>
-        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false)
+        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
             Landblock landblock;
-
+            //Console.WriteLine($"Get Landblock: {landblockId}, v: {variation}");
             lock (landblockMutex)
             {
                 bool setAdjacents = false;
-
-                landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY];
+                var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation ?? 0 };
+                landblock = GetLandblock(cacheKey);
 
                 if (landblock == null)
                 {
-                    // load up this landblock
-                    landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY] = new Landblock(landblockId);
-
-                    if (!loadedLandblocks.Add(landblock))
+                    // load up this landblock                    
+                    landblock = new Landblock(landblockId, variation);
+                    if(!AddUpdateLandblock(landblock, variation))
                     {
-                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8} to active landblocks!");
+                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
                         return landblock;
                     }
 
-                    landblockGroupPendingAdditions.Add(landblock);
+                    if (!loadedLandblocks.TryAdd(cacheKey, landblock))
+                    {
+                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
+                        return landblock;
+                    }
 
-                    landblock.Init();
+                    landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
+                    //if (landblock.Id.ToString().StartsWith("019E"))
+                    //{                        
+                    //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
+                    //        $"From: {new System.Diagnostics.StackTrace()}");
+                    //}
+                    landblock.Init(variation);
 
                     setAdjacents = true;
+                }
+                else
+                {
+                    //Console.WriteLine($"Landblock found from GetLandblock: {landblockId.Raw} v: {variation}");
                 }
 
                 if (permaload)
@@ -436,7 +515,7 @@ namespace ACE.Server.Managers
                 {
                     var adjacents = GetAdjacentIDs(landblock);
                     foreach (var adjacent in adjacents)
-                        GetLandblock(adjacent, false, permaload);
+                        GetLandblock(adjacent, false, variation, permaload);
 
                     setAdjacents = true;
                 }
@@ -452,16 +531,16 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns the list of all loaded landblocks
         /// </summary>
-        public static List<Landblock> GetLoadedLandblocks()
+        public static ConcurrentDictionary<VariantCacheId, Landblock> GetLoadedLandblocks()
         {
             lock (landblockMutex)
-                return loadedLandblocks.ToList();
+                return loadedLandblocks;
         }
 
         /// <summary>
         /// Returns the active, non-null adjacents for a landblock
         /// </summary>
-        private static List<Landblock> GetAdjacents(Landblock landblock)
+        private static List<Landblock> GetAdjacents(Landblock landblock, int? variationId = null)
         {
             var adjacentIDs = GetAdjacentIDs(landblock);
 
@@ -469,7 +548,7 @@ namespace ACE.Server.Managers
 
             foreach (var adjacentID in adjacentIDs)
             {
-                var adjacent = landblocks[adjacentID.LandblockX, adjacentID.LandblockY];
+                var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId ?? 0 });
                 if (adjacent != null)
                     adjacents.Add(adjacent);
             }
@@ -602,18 +681,18 @@ namespace ACE.Server.Managers
                     landblock.Unload();
 
                     bool unloadFailed = false;
-
+                    var CacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = landblock.VariationId ?? 0 };
                     lock (landblockMutex)
                     {
                         // remove from list of managed landblocks
-                        if (loadedLandblocks.Remove(landblock))
-                        {
-                            landblocks[landblock.Id.LandblockX, landblock.Id.LandblockY] = null;
+                        if (loadedLandblocks.Remove(CacheKey, out landblock))
+                        {                            
+                            AddUpdateLandblock(landblock, landblock.VariationId);
 
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0 ; i--)
                             {
-                                if (landblockGroups[i].Remove(landblock))
+                                if (landblockGroups[i].Remove(landblock, landblock.VariationId))
                                 {
                                     if (landblockGroups[i].Count == 0)
                                         landblockGroups.RemoveAt(i);
@@ -680,7 +759,7 @@ namespace ACE.Server.Managers
             lock (landblockMutex)
             {
                 foreach (var landblock in loadedLandblocks)
-                    AddToDestructionQueue(landblock);
+                    AddToDestructionQueue(landblock.Value);
             }
         }
 
@@ -696,7 +775,7 @@ namespace ACE.Server.Managers
                     GlobalFogColor = environChangeType;
 
                 foreach (var landblock in loadedLandblocks)
-                    landblock.SendCurrentEnviron();
+                    landblock.Value.SendCurrentEnviron();
             }
         }
 
@@ -705,7 +784,7 @@ namespace ACE.Server.Managers
             if (environChangeType.IsSound())
             {
                 foreach (var landblock in loadedLandblocks)
-                    landblock.SendEnvironChange(environChangeType);
+                    landblock.Value.SendEnvironChange(environChangeType);
             }
         }
 
