@@ -84,6 +84,11 @@ namespace ACE.Server.WorldObjects
                 if (rng < probability)
                 {
                     CurrentSpell = new Spell(spell.Key);
+                    if (CurrentSpell.NotFound)
+                    {
+                        CurrentSpell = null;
+                        continue;
+                    }
                     return true;
                 }
             }

@@ -61,6 +61,8 @@ namespace ACE.Entity.Enum.Properties
         LumAugDurationCount   = 9016,
         [ServerOnly]
         LumAugSpecializeCount = 9017,
+        [ServerOnly]
+        LumAugSummonCount     = 9018,
     }
 
     public static class PropertyInt64Extensions
