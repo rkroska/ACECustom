@@ -93,15 +93,17 @@ namespace ACE.Server.Entity
             }
 
             var powerLevel = spell.Power;
+            var auggedPowerLevel = powerLevel + augmentLevel;
 
-            foreach (var entry in entries.OrderByDescending(i => i.PowerLevel + i.AugmentationLevelWhenCast??0))
+            foreach (var entry in entries.OrderByDescending(i => i.PowerLevel + (i.AugmentationLevelWhenCast ?? 0)))
             {
-                if (powerLevel + augmentLevel > (entry.PowerLevel + entry.AugmentationLevelWhenCast ?? 0))
+                var entryAuggedPowerLevel = entry.PowerLevel + (entry.AugmentationLevelWhenCast ?? 0);
+                if (auggedPowerLevel > entryAuggedPowerLevel)
                 {
                     // surpassing existing spell
                     Surpass.Add(entry);
                 }
-                else if (powerLevel + augmentLevel == (entry.PowerLevel + entry.AugmentationLevelWhenCast ?? 0))
+                else if (auggedPowerLevel == entryAuggedPowerLevel)
                 {
                     // refreshing existing spell
                     if (spell.Id == entry.SpellId)
@@ -145,7 +147,7 @@ namespace ACE.Server.Entity
                         }
                     }
                 }
-                else if (powerLevel + augmentLevel < (entry.PowerLevel + entry.AugmentationLevelWhenCast ?? 0))
+                else if (auggedPowerLevel < entryAuggedPowerLevel)
                 {
                     // surpassed by existing spell
                     Surpassed.Add(entry);
