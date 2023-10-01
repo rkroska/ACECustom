@@ -448,7 +448,8 @@ namespace ACE.Server.WorldObjects
 
             if (playerTarget != null)
             {
-                playerTarget.Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(playerTarget.Session, new Enchantment(playerTarget, addResult.Enchantment)));
+                if (addResult.StackType != StackType.Surpassed || caster is Player)
+                    playerTarget.Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(playerTarget.Session, new Enchantment(playerTarget, addResult.Enchantment)));
 
                 playerTarget.HandleSpellHooks(spell);
 
