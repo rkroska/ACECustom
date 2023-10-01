@@ -147,7 +147,7 @@ namespace ACE.Server.Entity
                         }
                     }
                 }
-                else if (auggedPowerLevel <= entryAuggedPowerLevel)
+                else if (auggedPowerLevel < entryAuggedPowerLevel)
                 {
                     // surpassed by existing spell
                     Surpassed.Add(entry);
