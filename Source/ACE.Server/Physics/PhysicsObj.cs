@@ -1154,7 +1154,11 @@ namespace ACE.Server.Physics
         {
             var transition = Transition.MakeTransition();
             if (transition == null)
+            {
+                Console.WriteLine("PhysicsObj::SetPosition: MakeTransition failed, transition null");
                 return SetPositionError.GeneralFailure;
+            }
+                
 
             transition.InitObject(this, ObjectInfoState.Default);
 
@@ -1341,7 +1345,11 @@ namespace ACE.Server.Physics
             var wo = WeenieObj.WorldObject;
 
             if (wo == null)
+            {
+                Console.WriteLine("SetPositionInternal: WorldObject null");
                 return SetPositionError.GeneralFailure;
+            }
+                
             if (setPos.Pos.Variation != null)
             {
                 transition.VariationId = setPos.Pos.Variation;
