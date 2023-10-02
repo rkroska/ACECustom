@@ -1347,15 +1347,22 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             else
             {
-                // handle special case: deleting the last instance from landblock
                 File.Delete(sqlFilename);
-
-                using (var ctx = new WorldDbContext())
-                    ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock};");
+                if (variationId.HasValue)
+                {
+                    // handle special case: deleting the last instance from landblock
+                    using (var ctx = new WorldDbContext())
+                        ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock} and variation_Id={variationId};");
+                }
+                else
+                {
+                    using (var ctx = new WorldDbContext())
+                        ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock};");
+                }
             }
 
             // clear landblock instances for this landblock (again)
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, null); //todo: come back and make this variation aware
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variationId);
         }
 
         public static LandblockInstance CreateLandblockInstance(WorldObject wo, bool isLinkChild = false, int? variationId = null)
@@ -1445,7 +1452,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     guid = staticGuid.Value;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, session.Player.Location.Variation);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, variation);
 
             var instance = instances.FirstOrDefault(i => i.Guid == guid);
 
