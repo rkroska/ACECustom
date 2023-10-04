@@ -632,7 +632,7 @@ namespace ACE.Server.Entity
                         IsDormant = true;
                     }
                     if (lastActiveTime + UnloadInterval < thisHeartBeat)
-                        LandblockManager.AddToDestructionQueue(this);
+                        LandblockManager.AddToDestructionQueue(this, this.VariationId);
                 }
 
                 //log.Info($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_Heartbeat: thisHeartBeat: {thisHeartBeat.ToString()} | lastHeartBeat: {lastHeartBeat.ToString()} | worldObjects.Count: {worldObjects.Count()}");
@@ -1207,7 +1207,7 @@ namespace ACE.Server.Entity
         /// Handles the cleanup process for a landblock
         /// This method is called by LandblockManager
         /// </summary>
-        public void Unload()
+        public void Unload(int? VariationId)
         {
             var landblockID = Id.Raw | 0xFFFF;
 
@@ -1216,7 +1216,7 @@ namespace ACE.Server.Entity
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             SaveDB();
-
+            //Console.WriteLine($"Landblock.Unload({landblockID:X8}), removing {worldObjects.Count}");
             // remove all objects
             foreach (var wo in worldObjects.ToList())
             {
@@ -1231,7 +1231,7 @@ namespace ACE.Server.Entity
             actionQueue.Clear();
 
             // remove physics landblock
-            LScape.unload_landblock(landblockID);
+            LScape.unload_landblock(landblockID, VariationId);
 
             PhysicsLandblock.release_shadow_objs();
         }

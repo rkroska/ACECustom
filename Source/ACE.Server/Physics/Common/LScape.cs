@@ -106,8 +106,7 @@ namespace ACE.Server.Physics.Common
 
         public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
-            var lbid = new LandblockId(landblockID);
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)landblockID, Variant = variationId ?? 0 };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()

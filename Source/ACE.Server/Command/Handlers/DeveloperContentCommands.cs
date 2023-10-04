@@ -1178,7 +1178,7 @@ namespace ACE.Server.Command.Handlers.Processors
             // clear any cached instances for this landblock
             DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variation);
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, variation);
+            var instances = DatabaseManager.World.GetLandblockInstancesByLandblockBypassCache(landblock);
 
             // for link mode, ensure parent guid instance exists
             WorldObject parentObj = null;
@@ -1307,6 +1307,11 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             // serialize to .sql file
             var contentFolder = VerifyContentFolder(session, false);
+            //specfically filter the instances to variation
+            if (variationId.HasValue)
+            {
+                instances = instances.Where(i => i.VariationId == variationId).ToList();
+            }
 
             var sep = Path.DirectorySeparatorChar;
             var folder = new DirectoryInfo($"{contentFolder.FullName}{sep}sql{sep}landblocks{sep}");
