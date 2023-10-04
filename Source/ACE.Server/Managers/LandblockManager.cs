@@ -48,6 +48,12 @@ namespace ACE.Server.Managers
         private static readonly ConcurrentDictionary<VariantCacheId, Landblock> landblockGroupPendingAdditions = new ConcurrentDictionary<VariantCacheId, Landblock>();
         public static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
 
+        /// <summary>
+        /// DestructionQueue is concurrent because it can be added to by multiple threads at once, publicly via AddToDestructionQueue()
+        /// </summary>
+        private static readonly ConcurrentDictionary<VariantCacheId, Landblock> destructionQueue = new ConcurrentDictionary<VariantCacheId, Landblock>();
+
+
         public static int LandblockGroupsCount
         {
             get
@@ -107,11 +113,6 @@ namespace ACE.Server.Managers
             }
             return null;
         }
-
-        /// <summary>
-        /// DestructionQueue is concurrent because it can be added to by multiple threads at once, publicly via AddToDestructionQueue()
-        /// </summary>
-        private static readonly ConcurrentBag<Landblock> destructionQueue = new ConcurrentBag<Landblock>();
 
         /// <summary>
         /// Permaloads a list of configurable landblocks if server option is set
@@ -662,9 +663,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Queues a landblock for thread-safe unloading
         /// </summary>
-        public static void AddToDestructionQueue(Landblock landblock)
+        public static void AddToDestructionQueue(Landblock landblock, int? VariationId)
         {
-            destructionQueue.Add(landblock);
+            var cacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = VariationId ?? 0 };
+            destructionQueue.TryAdd(cacheKey, landblock);
         }
 
         private static readonly System.Diagnostics.Stopwatch swTrySplitEach = new System.Diagnostics.Stopwatch();
@@ -676,18 +678,21 @@ namespace ACE.Server.Managers
         {
             while (!destructionQueue.IsEmpty)
             {
-                if (destructionQueue.TryTake(out Landblock landblock))
+                var cacheKey = destructionQueue.Keys.First();
+                if (destructionQueue.TryGetValue(cacheKey, out Landblock landblock))
                 {
-                    landblock.Unload();
+                    //Console.WriteLine($"UnloadLandblock: {landblock.Id}, v: {cacheKey.Variant}, d-queue: {destructionQueue.Count}");
+                    landblock.Unload(cacheKey.Variant);
 
                     bool unloadFailed = false;
-                    var CacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = landblock.VariationId ?? 0 };
+                    
+                    destructionQueue.TryRemove(cacheKey, out _);
                     lock (landblockMutex)
                     {
                         // remove from list of managed landblocks
-                        if (loadedLandblocks.Remove(CacheKey, out landblock))
+                        if (loadedLandblocks.Remove(cacheKey, out landblock))
                         {                            
-                            AddUpdateLandblock(landblock, landblock.VariationId);
+                            AddUpdateLandblock(cacheKey, null);
 
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0 ; i--)
@@ -759,7 +764,7 @@ namespace ACE.Server.Managers
             lock (landblockMutex)
             {
                 foreach (var landblock in loadedLandblocks)
-                    AddToDestructionQueue(landblock.Value);
+                    AddToDestructionQueue(landblock.Value, landblock.Key.Variant);
             }
         }
 

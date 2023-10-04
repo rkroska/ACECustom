@@ -683,6 +683,26 @@ namespace ACE.Database
             return cachedLandblockInstances.TryRemove(cacheKey, out _);
         }
 
+        /// <summary>
+        /// Only used for CreateInst - do not call this normally as it's not variation aware.
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="landblockId"></param>
+        /// <returns></returns>
+        public List<LandblockInstance> GetLandblockInstancesByLandblockBypassCache(ushort landblockId)
+        {
+            using (var context = new WorldDbContext())
+            {
+                var results = context.LandblockInstance
+                    .Include(r => r.LandblockInstanceLink)
+                    .AsNoTracking()
+                    .Where(r => r.Landblock == landblockId)
+                    .ToList();
+
+                return results;
+            }
+        }
+
         public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null)
         {
             VariantCacheId cacheKey = new VariantCacheId { Landblock = landblock, Variant = variation ?? 0 };
