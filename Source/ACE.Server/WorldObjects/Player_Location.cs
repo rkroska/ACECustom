@@ -37,7 +37,7 @@ namespace ACE.Server.WorldObjects
             {
                 var teleportDest = new Position(position);
                 AdjustDungeon(teleportDest);
-
+                Console.WriteLine($"Player tele to: {teleportDest.ToLOCString()}");
                 Teleport(teleportDest);
                 return true;
             }
@@ -684,10 +684,12 @@ namespace ACE.Server.WorldObjects
             if (fromPortal)
                 LastPortalTeleportTimestamp = LastTeleportStartTimestamp;
 
-            Session.Network.EnqueueSend(new GameMessagePlayerTeleport(this));
 
             // check for changing varation - and remove anything from knownobjects that is not in the new variation
             HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+
+            Session.Network.EnqueueSend(new GameMessagePlayerTeleport(this));
+
             // load quickly, but player can load into landblock before server is finished loading
 
             // send a "fake" update position to get the client to start loading asap,
@@ -920,6 +922,11 @@ namespace ACE.Server.WorldObjects
 
             if (!biota.PropertiesPosition.TryGetValue(PositionType.Sanctuary, out var lifestone))
                 return;
+
+            if (location.VariationId.HasValue)
+            {
+                return; // Variations can't be no-log landblocks. Reserved for base landblocks only.
+            }
 
             location.ObjCellId = lifestone.ObjCellId;
             location.PositionX = lifestone.PositionX;

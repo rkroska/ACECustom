@@ -412,7 +412,7 @@ namespace ACE.Server.WorldObjects
         /// <returns>TRUE if object moves to a different landblock</returns>
         public bool UpdatePlayerPosition(ACE.Entity.Position newPosition, bool forceUpdate = false)
         {
-            //Console.WriteLine($"{Name}.UpdatePlayerPosition({newPosition}, {forceUpdate}, {Teleporting})");
+            Console.WriteLine($"{Name}.UpdatePlayerPosition({newPosition}, {forceUpdate}, {Teleporting})");
             bool verifyContact = false;
 
             // possible bug: while teleporting, client can still send AutoPos packets from old landblock
@@ -441,7 +441,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var distSq = Location.SquaredDistanceTo(newPosition);
 
-                    if (distSq > PhysicsGlobals.EpsilonSq)
+                    if (distSq > PhysicsGlobals.EpsilonSq || (newPosition.Variation != Location.Variation))
                     {
                         /*var p = new Physics.Common.Position(newPosition);
                         var dist = PhysicsObj.Position.Distance(p);

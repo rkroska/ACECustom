@@ -1307,8 +1307,9 @@ namespace ACE.Server.WorldObjects
             gateway.Location = new Position(location);
             gateway.OriginalPortal = portalId;
 
-            gateway.UpdatePortalDestination(new Position(portal.Destination));
 
+            gateway.UpdatePortalDestination(new Position(portal.Destination));
+            Console.WriteLine($"SummonPortal: {location.ToLOCString()}");
             gateway.TimeToRot = portalLifetime;
 
             gateway.MinLevel = portal.MinLevel;
