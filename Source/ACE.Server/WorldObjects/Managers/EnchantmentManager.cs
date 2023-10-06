@@ -385,9 +385,21 @@ namespace ACE.Server.WorldObjects.Managers
                 {
                     bonus += 0.00125f;
                 }
-                else
+                else if (x < 100)
                 {
                     bonus += 0.000625f;
+                }
+                else if (x < 120)
+                {
+                    bonus += 0.000312f;
+                }
+                else if (x < 150)
+                {
+                    bonus += 0.000156f;
+                }
+                else
+                {
+                    bonus += 0.000100f;
                 }
             }
             return bonus;
