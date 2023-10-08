@@ -283,7 +283,7 @@ namespace ACE.Server.Physics.Common
 
         public bool Equals(Position pos)
         {
-            return ObjCellID == pos.ObjCellID && Frame.Equals(pos.Frame);
+            return ObjCellID == pos.ObjCellID && Frame.Equals(pos.Frame) && Variation == pos.Variation;
         }
 
         public override string ToString()
@@ -297,7 +297,7 @@ namespace ACE.Server.Physics.Common
 
         public string ShortLoc()
         {
-            return $"0x{ObjCellID:X8} [{Frame.Origin.X} {Frame.Origin.Y} {Frame.Origin.Z}]";
+            return $"0x{ObjCellID:X8} [{Frame.Origin.X} {Frame.Origin.Y} {Frame.Origin.Z}] [v:{Variation}]";
         }
     }
 }

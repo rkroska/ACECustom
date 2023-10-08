@@ -412,7 +412,7 @@ namespace ACE.Server.WorldObjects
         /// <returns>TRUE if object moves to a different landblock</returns>
         public bool UpdatePlayerPosition(ACE.Entity.Position newPosition, bool forceUpdate = false)
         {
-            Console.WriteLine($"{Name}.UpdatePlayerPosition({newPosition}, {forceUpdate}, {Teleporting})");
+            //Console.WriteLine($"{Name}.UpdatePlayerPosition({newPosition}, {forceUpdate}, {Teleporting})");
             bool verifyContact = false;
 
             // possible bug: while teleporting, client can still send AutoPos packets from old landblock

@@ -203,15 +203,18 @@ namespace ACE.Server.Physics.Common
                 if (KnownObjects.ContainsKey(obj.ID))
                     return false;
 
-                KnownObjects.TryAdd(obj.ID, obj);
+                bool added = KnownObjects.TryAdd(obj.ID, obj);
 
-                // maintain KnownPlayers for both parties
-                if (obj.IsPlayer)
-                    AddKnownPlayer(obj);
+                if (added) // maintain KnownPlayers for both parties
+                {
+                    if (obj.IsPlayer)
+                        AddKnownPlayer(obj);
 
-                obj.ObjMaint.AddKnownPlayer(PhysicsObj);
+                    obj.ObjMaint.AddKnownPlayer(PhysicsObj);
+                }
+                
 
-                return true;
+                return added;
             }
             finally
             {
@@ -296,12 +299,12 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public List<PhysicsObj> GetVisibleObjectsValues()
+        public List<PhysicsObj> GetVisibleObjectsValues(int? Variation)
         {
             rwLock.EnterReadLock();
             try
             {
-                return VisibleObjects.Values.ToList();
+                return VisibleObjects.Values.Where(x=>x.Position.Variation == Variation).ToList();
             }
             finally
             {
@@ -563,13 +566,12 @@ namespace ACE.Server.Physics.Common
             try
             {
                 RemoveVisibleObject(obj);
-
+                Console.WriteLine($"Destructing PhysObj: {obj.Name}, {obj.Position.Variation}");
                 if (DestructionQueue.ContainsKey(obj))
                     return false;
 
-                DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
+                return DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
 
-                return true;
             }
             finally
             {
@@ -581,7 +583,7 @@ namespace ACE.Server.Physics.Common
         /// Adds a list of objects to the destruction queue
         /// only maintained for players
         /// </summary>
-        public List<PhysicsObj> AddObjectsToBeDestroyed(List<PhysicsObj> objs)
+        public void AddObjectsToBeDestroyed(List<PhysicsObj> objs)
         {
             rwLock.EnterWriteLock();
             try
@@ -593,7 +595,7 @@ namespace ACE.Server.Physics.Common
                         queued.Add(obj);
                 }
 
-                return queued;
+                return;
             }
             finally
             {
