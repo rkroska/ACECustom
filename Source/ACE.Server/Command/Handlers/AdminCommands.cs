@@ -708,7 +708,7 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters[0] == "all")
                 {
-                    foreach (var obj in session.Player.PhysicsObj.ObjMaint.GetVisibleObjectsValues())
+                    foreach (var obj in session.Player.PhysicsObj.ObjMaint.GetVisibleObjectsValues(session.Player.Location.Variation))
                     {
                         var wo = obj.WeenieObj.WorldObject;
 

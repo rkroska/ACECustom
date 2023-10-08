@@ -70,7 +70,7 @@ namespace ACE.Server.Physics
         public List<DatLoader.Entity.AnimationHook> AnimHooks;
         public float Scale;
         public float AttackRadius;
-        public DetectionManager DetectionManager;
+        //public DetectionManager DetectionManager;
         public AttackManager AttackManager;
         public TargetManager TargetManager;
         public ParticleManager ParticleManager;
@@ -1194,7 +1194,11 @@ namespace ACE.Server.Physics
             // modified: maintain consistency for Position.Frame in change_cell
             set_frame(curPos.Frame);
 
-            if (transitCell.Equals(CurCell))
+            if (transitCell.VariationId != CurCell?.VariationId)
+            {
+                change_cell(transitCell);
+            }
+            else if (transitCell.Equals(CurCell))
             {
                 Position.ObjCellID = curPos.ObjCellID;
                 if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
@@ -1375,7 +1379,7 @@ namespace ACE.Server.Physics
         public SetPositionError SetPositionSimple(Position pos, bool sliding)
         {
             var setPos = new SetPosition();
-            setPos.Pos = pos;
+            setPos.Pos = new Position(pos);
             setPos.Flags = SetPositionFlags.Teleport | SetPositionFlags.SendPositionEvent;
 
             if (sliding)
@@ -1736,7 +1740,7 @@ namespace ACE.Server.Physics
                 InitialUpdates++;
             }
 
-            if (DetectionManager != null) DetectionManager.CheckDetection();
+            //if (DetectionManager != null) DetectionManager.CheckDetection();
 
             if (TargetManager != null) TargetManager.HandleTargetting();
 
@@ -1798,7 +1802,7 @@ namespace ACE.Server.Physics
             else
                 log.Debug($"{Name}.UpdateObjectInternalServer({quantum}) - failed transition from {Position} to {RequestPos}");
 
-            if (DetectionManager != null) DetectionManager.CheckDetection();
+            //if (DetectionManager != null) DetectionManager.CheckDetection();
 
             if (TargetManager != null) TargetManager.HandleTargetting();
 
@@ -1811,7 +1815,7 @@ namespace ACE.Server.Physics
             if (ParticleManager != null) ParticleManager.UpdateParticles();
 
             if (ScriptManager != null) ScriptManager.UpdateScripts();
-
+            //Console.WriteLine($"UpdateObjectInternalServer: {Name} ({ID:X8}) {requestCell >> 16} -> {CurCell?.ID >> 16}");
             return requestCell >> 16 != 0x18A || CurCell?.ID >> 16 == requestCell >> 16;
         }
 
@@ -2484,8 +2488,8 @@ namespace ACE.Server.Physics
                 TargetManager.ClearTarget();
                 TargetManager.NotifyVoyeurOfEvent(TargetStatus.ExitWorld);
             }
-            if (DetectionManager != null)
-                DetectionManager.DestroyDetectionCylsphere(0);
+            //if (DetectionManager != null)
+            //    DetectionManager.DestroyDetectionCylsphere(0);
 
             report_collision_end(true);
         }
@@ -2760,7 +2764,7 @@ namespace ACE.Server.Physics
 
             // get the difference between current and previous visible
             //var newlyVisible = visibleObjects.Except(ObjMaint.VisibleObjects.Values).ToList();
-            var newlyOccluded = ObjMaint.GetVisibleObjectsValues().Except(visibleObjects).ToList();
+            var newlyOccluded = ObjMaint.GetVisibleObjectsValues(this.Position.Variation).Except(visibleObjects).ToList();
             //Console.WriteLine("Newly visible objects: " + newlyVisible.Count);
             //Console.WriteLine("Newly occluded objects: " + newlyOccluded.Count);
             //foreach (var obj in newlyOccluded)
@@ -3215,8 +3219,8 @@ namespace ACE.Server.Physics
 
         public void receive_detection_update(DetectionInfo info)
         {
-            if (DetectionManager == null) return;
-            DetectionManager.ReceiveDetectionUpdate(info);
+            //if (DetectionManager == null) return;
+            //DetectionManager.ReceiveDetectionUpdate(info);
 
             if (State.HasFlag(PhysicsState.Static)) return;
             if (!TransientState.HasFlag(TransientStateFlags.Active))
@@ -3487,7 +3491,7 @@ namespace ACE.Server.Physics
             Position.Variation = newPos.Variation;
             Position.Frame = new AFrame(newPos.Frame);
 
-            if (CurCell == null || CurCell.ID != Position.ObjCellID)
+            if (CurCell == null || CurCell.ID != Position.ObjCellID || Position.Variation != newPos.Variation)
             {
                 var newCell = LScape.get_landcell(newPos.ObjCellID, newPos.Variation);
 
@@ -4289,7 +4293,7 @@ namespace ACE.Server.Physics
 
             if (wo != null && wo.Teleporting)
             {
-                //Console.WriteLine($"*** SETTING TELEPORT ***");
+                //Console.WriteLine($"*** SETTING TELEPORT *** {RequestPos.ShortLoc()}");
 
                 var setPosition = new SetPosition();
                 setPosition.Pos = RequestPos;

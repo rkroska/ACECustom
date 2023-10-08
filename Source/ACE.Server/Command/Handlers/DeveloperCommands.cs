@@ -1670,7 +1670,7 @@ namespace ACE.Server.Command.Handlers
 
             Console.WriteLine($"\nVisible objects to {target.Name}: {target.PhysicsObj.ObjMaint.GetVisibleObjectsCount()}");
 
-            foreach (var obj in target.PhysicsObj.ObjMaint.GetVisibleObjectsValues())
+            foreach (var obj in target.PhysicsObj.ObjMaint.GetVisibleObjectsValues(target.Location.Variation))
                 Console.WriteLine($"{obj.Name} ({obj.ID:X8})");
         }
 

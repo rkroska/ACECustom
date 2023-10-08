@@ -714,10 +714,6 @@ namespace ACE.Server.WorldObjects
 
         public void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
         {
-            if (sourceVariation == destinationVariation)
-            {
-                return;
-            }
             var knownObjs = GetKnownObjects();
 
             for (int i = 0; i < knownObjs.Count; i++)
