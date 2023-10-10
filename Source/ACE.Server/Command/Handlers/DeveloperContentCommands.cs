@@ -499,7 +499,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sqlFile}");
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, null); //todo - comeback and make this variation aware
         }
 
         private static void ImportJsonQuest(Session session, string json_folder, string json_file)
@@ -689,7 +689,7 @@ namespace ACE.Server.Command.Handlers.Processors
         public static string json2sql_landblock(Session session, string folder, string json_filename)
         {
             var json_file = folder + json_filename;
-
+            var variation = session.Player.Location.Variation;
             // read json into gdle spawnmap
             var success = GDLELoader.TryLoadLandblock(json_file, out var result);
 
@@ -762,7 +762,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 sqlFilename = LandblockInstanceWriter.GetDefaultFileName(landblockInstances[0]);
                 var sqlFile = new StreamWriter(sqlFolder + sqlFilename);
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(landblockInstances, sqlFile);
+                LandblockInstanceWriter.CreateSQLDELETEStatement(landblockInstances, sqlFile, variation);
                 sqlFile.WriteLine();
 
                 LandblockInstanceWriter.CreateSQLINSERTStatement(landblockInstances, sqlFile);
@@ -913,7 +913,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sql_file}");
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, null); //todo: come back and make this work with variation
 
             // load landblock instances from database
             var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
@@ -1111,6 +1111,7 @@ namespace ACE.Server.Command.Handlers.Processors
         public static void HandleCreateInst(Session session, params string[] parameters)
         {
             var loc = new Position(session.Player.Location);
+            var variation = loc.Variation;
 
             var param = parameters[0];
 
@@ -1175,9 +1176,9 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variation);
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var instances = DatabaseManager.World.GetLandblockInstancesByLandblockBypassCache(landblock);
 
             // for link mode, ensure parent guid instance exists
             WorldObject parentObj = null;
@@ -1273,7 +1274,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             // create new landblock instance
-            var instance = CreateLandblockInstance(wo, isLinkChild);
+            var instance = CreateLandblockInstance(wo, isLinkChild, variation);
 
             instances.Add(instance);
 
@@ -1295,25 +1296,38 @@ namespace ACE.Server.Command.Handlers.Processors
                 wo.ParentLink = parentObj;
             }
 
-            SyncInstances(session, landblock, instances);
+            SyncInstances(session, landblock, instances, variation);
         }
 
         /// <summary>
         /// Serializes landblock instances to XXYY.sql file,
         /// import into database, and clears the cached landblock instances
         /// </summary>
-        public static void SyncInstances(Session session, ushort landblock, List<LandblockInstance> instances)
+        public static void SyncInstances(Session session, ushort landblock, List<LandblockInstance> instances, int? variationId)
         {
             // serialize to .sql file
             var contentFolder = VerifyContentFolder(session, false);
+            //specfically filter the instances to variation
+            if (variationId.HasValue)
+            {
+                instances = instances.Where(i => i.VariationId == variationId).ToList();
+            }
 
             var sep = Path.DirectorySeparatorChar;
             var folder = new DirectoryInfo($"{contentFolder.FullName}{sep}sql{sep}landblocks{sep}");
 
             if (!folder.Exists)
                 folder.Create();
-
-            var sqlFilename = $"{folder.FullName}{sep}{landblock:X4}.sql";
+            var sqlFilename = string.Empty;
+            if (variationId.HasValue)
+            {
+                sqlFilename = $"{folder.FullName}{sep}{landblock:X4}_{variationId.Value}.sql";
+            }
+            else
+            {
+                sqlFilename = $"{folder.FullName}{sep}{landblock:X4}.sql";
+            }
+            
 
             if (instances.Count > 0)
             {
@@ -1325,7 +1339,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     LandblockInstanceWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
                 }
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, fileWriter);
+                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, fileWriter, variationId);
 
                 fileWriter.WriteLine();
 
@@ -1338,18 +1352,25 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             else
             {
-                // handle special case: deleting the last instance from landblock
                 File.Delete(sqlFilename);
-
-                using (var ctx = new WorldDbContext())
-                    ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock};");
+                if (variationId.HasValue)
+                {
+                    // handle special case: deleting the last instance from landblock
+                    using (var ctx = new WorldDbContext())
+                        ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock} and variation_Id={variationId};");
+                }
+                else
+                {
+                    using (var ctx = new WorldDbContext())
+                        ctx.Database.ExecuteSqlRaw($"DELETE FROM landblock_instance WHERE landblock={landblock};");
+                }
             }
 
             // clear landblock instances for this landblock (again)
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, variationId);
         }
 
-        public static LandblockInstance CreateLandblockInstance(WorldObject wo, bool isLinkChild = false)
+        public static LandblockInstance CreateLandblockInstance(WorldObject wo, bool isLinkChild = false, int? variationId = null)
         {
             var instance = new LandblockInstance();
 
@@ -1373,6 +1394,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.IsLinkChild = isLinkChild;
 
             instance.LastModified = DateTime.Now;
+            instance.VariationId = variationId;
 
             return instance;
         }
@@ -1424,6 +1446,7 @@ namespace ACE.Server.Command.Handlers.Processors
             if (wo?.Location == null) return;
 
             var landblock = (ushort)wo.Location.Landblock;
+            int? variation = wo.Location.Variation;
 
             // if generator child, try getting the "real" guid
             var guid = wo.Guid.Full;
@@ -1434,7 +1457,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     guid = staticGuid.Value;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, variation);
 
             var instance = instances.FirstOrDefault(i => i.Guid == guid);
 
@@ -1488,7 +1511,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             instances.Remove(instance);
 
-            SyncInstances(session, landblock, instances);
+            SyncInstances(session, landblock, instances, variation);
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {(instance.IsLinkChild ? "child " : "")}{wo.WeenieClassId} - {wo.Name} (0x{guid:X8}) from landblock instances", ChatMessageType.Broadcast));
         }
@@ -1631,9 +1654,9 @@ namespace ACE.Server.Command.Handlers.Processors
 
             newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin);
 
-            wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation);
+            wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation, newPos.Variation);
 
-            var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID) as Physics.Common.SortCell;
+            var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID, newPos.Variation) as Physics.Common.SortCell;
             if (sortCell != null && sortCell.has_building())
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create encounter near building cell", ChatMessageType.Broadcast));
@@ -2247,6 +2270,7 @@ namespace ACE.Server.Command.Handlers.Processors
             DirectoryInfo di = VerifyContentFolder(session, false);
 
             var sep = Path.DirectorySeparatorChar;
+            var variationId = session.Player.Location.Variation;
 
             if (!ushort.TryParse(Regex.Match(param, @"[0-9A-F]{4}", RegexOptions.IgnoreCase).Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var landblockId))
             {
@@ -2268,7 +2292,15 @@ namespace ACE.Server.Command.Handlers.Processors
             if (!di.Exists)
                 di.Create();
 
-            var sql_filename = $"{landblockId:X4}.sql";
+            string sql_filename = string.Empty;
+            if (variationId.HasValue)
+            {
+                sql_filename = $"{landblockId:X4}_{variationId:N0}.sql";
+            }
+            else
+            {
+                sql_filename = $"{landblockId:X4}.sql";
+            }            
 
             try
             {
@@ -2280,7 +2312,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                 var sqlFile = new StreamWriter(sql_folder + sql_filename);
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sqlFile);
+                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sqlFile, variationId);
                 sqlFile.WriteLine();
 
                 LandblockInstanceWriter.CreateSQLINSERTStatement(instances, sqlFile);
@@ -2581,6 +2613,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
+            var variation = obj.Location.Variation;
             // get direction
             var dirname = parameters[curParam++].ToLower();
             var dir = GetNudgeDir(dirname);
@@ -2618,7 +2651,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
             // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, variation);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
@@ -2720,8 +2753,9 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.OriginX = obj.Location.PositionX;
             instance.OriginY = obj.Location.PositionY;
             instance.OriginZ = obj.Location.PositionZ;
+            instance.VariationId = obj.Location.Variation;
 
-            SyncInstances(session, landblock_id, instances);
+            SyncInstances(session, landblock_id, instances, variation);
         }
 
         public static Vector3? GetNudgeDir(string dir)
@@ -2794,6 +2828,7 @@ namespace ACE.Server.Command.Handlers.Processors
             // get direction
             var dirname = parameters[curParam++].ToLower();
             var dir = GetNudgeDir(dirname);
+            var variation = obj.Location.Variation;
 
             bool curRotate = false;
 
@@ -2859,7 +2894,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.AnglesY = newRotation.Y;
             instance.AnglesZ = newRotation.Z;
 
-            SyncInstances(session, landblock_id, instances);
+            SyncInstances(session, landblock_id, instances, variation);
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
@@ -2930,6 +2965,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid angle: {degrees_str}", ChatMessageType.Broadcast));
                 return;
             }
+            var variation = obj.Location.Variation;
 
             var rads = degrees.ToRadians();
             var q = Quaternion.CreateFromAxisAngle(axis, rads);
@@ -2964,7 +3000,7 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.AnglesY = newRotation.Y;
             instance.AnglesZ = newRotation.Z;
 
-            SyncInstances(session, landblock_id, instances);
+            SyncInstances(session, landblock_id, instances, variation);
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
@@ -3099,7 +3135,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                     try
                     {
-                        var pos = new Position(new Vector2(x, y));
+                        var pos = new Position(new Vector2(x, y), null);
                         pos.AdjustMapCoords();
                         pos.Translate(objCellId);
                         pos.FindZ();

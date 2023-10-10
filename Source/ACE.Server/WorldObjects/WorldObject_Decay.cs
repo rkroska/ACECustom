@@ -122,7 +122,7 @@ namespace ACE.Server.WorldObjects
                         item.Location = new Position(corpse.Location);
                         item.Location.PositionZ += 0.05f * (item.ObjScale ?? 1.0f);
                         item.Placement = ACE.Entity.Enum.Placement.Resting; // This is needed to make items lay flat on the ground.
-                        CurrentLandblock.AddWorldObject(item);
+                        CurrentLandblock.AddWorldObject(item, item.Location.Variation);
                         item.SaveBiotaToDatabase();
                         pukedItems += $"{item.Name} (0x{item.Guid.Full.ToString("X8")}), ";
                     }

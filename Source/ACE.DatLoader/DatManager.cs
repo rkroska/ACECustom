@@ -23,7 +23,7 @@ namespace ACE.DatLoader
         public static DatDatabase HighResDat { get; private set; }
         public static LanguageDatDatabase LanguageDat { get; private set; }
 
-        public static void Initialize(string datFileDirectory, bool keepOpen = false, bool loadCell = true)
+        public static void Initialize(string datFileDirectory, bool keepOpen = false, bool loadCell = true, bool loadOnlyCell = false)
         {
             var datDir = Path.GetFullPath(Path.Combine(datFileDirectory));
 
@@ -43,6 +43,10 @@ namespace ACE.DatLoader
                     log.Error($"An exception occured while attempting to open {datFile} file!  This needs to be corrected in order for Landblocks to load!");
                     log.Error($"Exception: {ex.Message}");
                 }
+            }
+            if (loadOnlyCell)
+            {
+                return;
             }
 
             try

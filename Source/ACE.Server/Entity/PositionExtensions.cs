@@ -52,6 +52,7 @@ namespace ACE.Server.Entity
                 iPos.Pos = new Vector3(pos.X, pos.Y, pos.Z);
                 iPos.Rotation = p.Rotation;
                 iPos.LandblockId = new LandblockId(GetCell(iPos));
+                iPos.Variation = p.Variation;
                 return iPos;
             }
 
@@ -69,6 +70,7 @@ namespace ACE.Server.Entity
             position.PositionY = localY;
             position.PositionZ = pos.Z;
             position.Rotation = p.Rotation;
+            position.Variation = p.Variation;   
             position.LandblockId = new LandblockId(GetCell(position));
             return position;
         }
@@ -78,7 +80,7 @@ namespace ACE.Server.Entity
         /// </summary>
         public static uint GetCell(this Position p)
         {
-            var landblock = LScape.get_landblock(p.LandblockId.Raw);
+            var landblock = LScape.get_landblock(p.LandblockId.Raw, p.Variation);
 
             // dungeons
             // TODO: investigate dungeons that are below actual traversable overworld terrain
@@ -89,7 +91,7 @@ namespace ACE.Server.Entity
 
             // outside - could be on landscape, in building, or underground cave
             var cellID = GetOutdoorCell(p);
-            var landcell = LScape.get_landcell(cellID) as LandCell;
+            var landcell = LScape.get_landcell(cellID, p.Variation) as LandCell;
 
             if (landcell == null)
                 return cellID;
@@ -143,7 +145,7 @@ namespace ACE.Server.Entity
         /// </summary>
         private static uint GetIndoorCell(this Position p)
         {
-            var adjustCell = AdjustCell.Get(p.Landblock);
+            var adjustCell = AdjustCell.Get(p.Landblock, p.Variation);
             var envCell = adjustCell.GetCell(p.Pos);
             if (envCell != null)
                 return envCell.Value;
@@ -232,7 +234,7 @@ namespace ACE.Server.Entity
             pos.PositionZ = pos.GetTerrainZ();
 
             // adjust to building height, if applicable
-            var sortCell = LScape.get_landcell(pos.Cell) as SortCell;
+            var sortCell = LScape.get_landcell(pos.Cell, pos.Variation) as SortCell;
             if (sortCell != null && sortCell.has_building())
             {
                 var building = sortCell.Building;
@@ -271,10 +273,10 @@ namespace ACE.Server.Entity
 
         public static float GetTerrainZ(this Position p)
         {
-            var landblock = LScape.get_landblock(p.LandblockId.Raw);
+            var landblock = LScape.get_landblock(p.LandblockId.Raw, p.Variation);
 
             var cellID = GetOutdoorCell(p);
-            var landcell = (LandCell)LScape.get_landcell(cellID);
+            var landcell = (LandCell)LScape.get_landcell(cellID, p.Variation);
 
             if (landcell == null)
                 return p.Pos.Z;
@@ -296,7 +298,7 @@ namespace ACE.Server.Entity
         {
             if (p.Indoors) return true;
 
-            var landcell = (LandCell)LScape.get_landcell(p.Cell);
+            var landcell = (LandCell)LScape.get_landcell(p.Cell, p.Variation);
 
             Physics.Polygon walkable = null;
             var terrainPoly = landcell.find_terrain_poly(p.Pos, ref walkable);
@@ -317,12 +319,12 @@ namespace ACE.Server.Entity
 
         public static Position ACEPosition(this Physics.Common.Position pos)
         {
-            return new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+            return new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
         }
 
         public static Physics.Common.Position PhysPosition(this Position pos)
         {
-            return new Physics.Common.Position(pos.Cell, new Physics.Animation.AFrame(pos.Pos, pos.Rotation));
+            return new Physics.Common.Position(pos.Cell, new Physics.Animation.AFrame(pos.Pos, pos.Rotation), pos.Variation);
         }
 
 

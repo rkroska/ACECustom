@@ -11,6 +11,8 @@ using ACE.Database.Models.World;
 using ACE.Database.Extensions;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Model;
 
 namespace ACE.Database
 {
@@ -649,7 +651,7 @@ namespace ACE.Database
         // LandblockInstance
         // =====================================
 
-        private readonly ConcurrentDictionary<ushort /* Landblock */, List<LandblockInstance>> cachedLandblockInstances = new ConcurrentDictionary<ushort, List<LandblockInstance>>();
+        private readonly ConcurrentDictionary<VariantCacheId /* Landblock */, List<LandblockInstance>> cachedLandblockInstances = new ConcurrentDictionary<VariantCacheId, List<LandblockInstance>>();
 
         /// <summary>
         /// Returns the number of LandblockInstances currently cached.
@@ -667,17 +669,44 @@ namespace ACE.Database
             cachedLandblockInstances.Clear();
         }
 
+        public bool ClearCachedInstancesByLandblock(ushort Landblock, int? variationId)
+        {
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = Landblock, Variant = variationId ?? 0 };
+            return cachedLandblockInstances.TryRemove(cacheKey, out _);
+        }
+
         /// <summary>
         /// Clears the cached landblock instances for a specific landblock
         /// </summary>
-        public bool ClearCachedInstancesByLandblock(ushort landblock)
+        public bool ClearCachedInstancesByLandblock(VariantCacheId cacheKey)
         {
-            return cachedLandblockInstances.TryRemove(landblock, out _);
+            return cachedLandblockInstances.TryRemove(cacheKey, out _);
         }
 
-        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock)
+        /// <summary>
+        /// Only used for CreateInst - do not call this normally as it's not variation aware.
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="landblockId"></param>
+        /// <returns></returns>
+        public List<LandblockInstance> GetLandblockInstancesByLandblockBypassCache(ushort landblockId)
         {
-            if (cachedLandblockInstances.TryGetValue(landblock, out var value))
+            using (var context = new WorldDbContext())
+            {
+                var results = context.LandblockInstance
+                    .Include(r => r.LandblockInstanceLink)
+                    .AsNoTracking()
+                    .Where(r => r.Landblock == landblockId)
+                    .ToList();
+
+                return results;
+            }
+        }
+
+        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null)
+        {
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblock, Variant = variation ?? 0 };
+            if (cachedLandblockInstances.TryGetValue(cacheKey, out var value))
                 return value;
 
             var results = context.LandblockInstance
@@ -686,18 +715,27 @@ namespace ACE.Database
                 .Where(r => r.Landblock == landblock)
                 .ToList();
 
-            cachedLandblockInstances.TryAdd(landblock, results.ToList());
+            if (variation.HasValue)
+            {
+                results = results.Where(r => r.VariationId == variation).ToList();
+            }
+            else
+            {
+                results = results.Where(r => r.VariationId == null).ToList();
+            }
 
-            return cachedLandblockInstances[landblock];
+            cachedLandblockInstances.TryAdd(cacheKey, results.ToList());
+
+            return cachedLandblockInstances[cacheKey];
         }
 
         /// <summary>
         /// Returns statics spawn map and their links for the landblock
         /// </summary>
-        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock)
+        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock, int? variation = null)
         {
             using (var context = new WorldDbContext())
-                return GetCachedInstancesByLandblock(context, landblock);
+                return GetCachedInstancesByLandblock(context, landblock, variation);
         }
 
 

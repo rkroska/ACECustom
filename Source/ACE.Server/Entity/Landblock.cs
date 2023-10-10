@@ -47,6 +47,7 @@ namespace ACE.Server.Entity
         public static float MaxObjectRange { get; } = 192f;
         public static float MaxObjectGhostRange { get; } = 250f;
 
+        public int? VariationId { get; set; }
 
         public LandblockId Id { get; }
 
@@ -91,7 +92,27 @@ namespace ACE.Server.Entity
 
         public List<Landblock> Adjacents = new List<Landblock>();
 
+        public List<Landblock> Variations = new List<Landblock>();
+
         private readonly ActionQueue actionQueue = new ActionQueue();
+
+        public int WorldObjectCount
+        { get
+            {
+                lock (worldObjects)
+                    return worldObjects.Count;
+            }
+        }
+
+        public int PhysicsObjectCount
+        { get
+            {
+                if (PhysicsLandblock != null)
+                    return PhysicsLandblock.ServerObjects.Count;
+                else
+                    return 0;
+            }
+        }
 
         /// <summary>
         /// Landblocks heartbeat every 5 seconds
@@ -165,11 +186,12 @@ namespace ACE.Server.Entity
         }
 
 
-        public Landblock(LandblockId id)
+        public Landblock(LandblockId id, int? variation = null)
         {
             //log.Debug($"Landblock({(id.Raw | 0xFFFF):X8})");
 
             Id = id;
+            VariationId = variation;
 
             CellLandblock = DatManager.CellDat.ReadFromDat<CellLandblock>(Id.Raw | 0xFFFF);
             LandblockInfo = DatManager.CellDat.ReadFromDat<LandblockInfo>((uint)Id.Landblock << 16 | 0xFFFE);
@@ -177,18 +199,25 @@ namespace ACE.Server.Entity
             lastActiveTime = DateTime.UtcNow;
 
             var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
-            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock);
+            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock, variation);
         }
 
-        public void Init(bool reload = false)
+
+        /// <summary>
+        /// Initializes a landblock
+        /// TODO: Make this variation aware
+        /// </summary>
+        /// <param name="reload"></param>
+        public void Init(int? variationId, bool reload = false)
         {
             if (!reload)
                 PhysicsLandblock.PostInit();
-
+            
             Task.Run(() =>
             {
-                CreateWorldObjects();
-
+                //Console.WriteLine($"Landblock.Init({Id}) task started, variation: {VariationId}, v: {variationId}");
+                CreateWorldObjects(variationId);
+                
                 SpawnDynamicShardObjects();
 
                 SpawnEncounters();
@@ -236,18 +265,29 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Monster Locations, Generators<para />
         /// This will be called from a separate task from our constructor. Use thread safety when interacting with this landblock.
+        /// TODO: Make this variation aware
         /// </summary>
-        private void CreateWorldObjects()
+        private void CreateWorldObjects(int? variationId)
         {
-            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock);
-            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock);
-            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects);
+            if (VariationId == null && variationId != null)
+            {
+                VariationId = variationId.Value;
+            }
+            //Console.WriteLine($"CreateWOs in landblock {this.Id} v:{variationId}, group: {this.CurrentLandblockGroup}\n");
+            //if (this.Id.ToString().StartsWith("019E"))
+            //{
+                
+            //    Console.WriteLine($"From: {new StackTrace()}");
+            //}
+            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
+            var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
+
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
                 // for mansion linking
                 var houses = new List<House>();
-
                 foreach (var fo in factoryObjects)
                 {
                     WorldObject parent = null;
@@ -269,7 +309,11 @@ namespace ACE.Server.Entity
                         }
                     }
 
-                    AddWorldObject(fo);
+                    var res = AddWorldObject(fo, variationId);
+                    if (!res)
+                    {
+                        Console.WriteLine($"Failed to add world object {fo.Name}, {fo.Guid} to landblock {Id.Landblock}");
+                    }
                     fo.ActivateLinks(objects, shardObjects, parent);
 
                     if (fo.PhysicsObj != null)
@@ -288,13 +332,13 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnDynamicShardObjects()
         {
-            var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock);
+            var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock, VariationId);
             var factoryShardObjects = WorldObjectFactory.CreateWorldObjects(dynamics);
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
                 foreach (var fso in factoryShardObjects)
-                    AddWorldObject(fso);
+                    AddWorldObject(fso, VariationId);
             }));
         }
 
@@ -320,14 +364,16 @@ namespace ACE.Server.Entity
 
                     var pos = new Physics.Common.Position();
                     pos.ObjCellID = (uint)(Id.Landblock << 16) | 1;
+                    pos.Variation = VariationId;
                     pos.Frame = new Physics.Animation.AFrame(new Vector3(xPos, yPos, 0), Quaternion.Identity);
                     pos.adjust_to_outside();
 
                     pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
 
-                    wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+                    wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
+                    wo.Location.Variation = VariationId;
 
-                    var sortCell = LScape.get_landcell(pos.ObjCellID) as SortCell;
+                    var sortCell = LScape.get_landcell(pos.ObjCellID, pos.Variation) as SortCell;
                     if (sortCell != null && sortCell.has_building())
                     {
                         wo.Destroy();
@@ -359,7 +405,7 @@ namespace ACE.Server.Entity
                         }
                     }
 
-                    if (!AddWorldObject(wo))
+                    if (!AddWorldObject(wo, VariationId))
                         wo.Destroy();
                 }));
             }
@@ -371,61 +417,61 @@ namespace ACE.Server.Entity
         /// its useful, concise, high level overview code for everything needed to load landblocks, all their objects, scenery, polygons
         /// without getting into all of the low level methods that acclient uses to do it
         /// </summary>
-        private void LoadMeshes(List<LandblockInstance> objects)
-        {
-            LandblockMesh = new LandblockMesh(Id);
-            LoadLandObjects();
-            LoadBuildings();
-            LoadWeenies(objects);
-            LoadScenery();
-        }
+        //private void LoadMeshes(List<LandblockInstance> objects)
+        //{
+        //    LandblockMesh = new LandblockMesh(Id);
+        //    LoadLandObjects();
+        //    LoadBuildings();
+        //    LoadWeenies(objects);
+        //    LoadScenery();
+        //}
 
         /// <summary>
         /// Loads the meshes for the static landblock objects,
         /// also known as obstacles
         /// </summary>
-        private void LoadLandObjects()
-        {
-            LandObjects = new List<ModelMesh>();
+        //private void LoadLandObjects()
+        //{
+        //    LandObjects = new List<ModelMesh>();
 
-            foreach (var obj in LandblockInfo.Objects)
-                LandObjects.Add(new ModelMesh(obj.Id, obj.Frame));
-        }
+        //    foreach (var obj in LandblockInfo.Objects)
+        //        LandObjects.Add(new ModelMesh(obj.Id, obj.Frame));
+        //}
 
         /// <summary>
         /// Loads the meshes for the buildings on the landblock
         /// </summary>
-        private void LoadBuildings()
-        {
-            Buildings = new List<ModelMesh>();
+        //private void LoadBuildings()
+        //{
+        //    Buildings = new List<ModelMesh>();
 
-            foreach (var obj in LandblockInfo.Buildings)
-                Buildings.Add(new ModelMesh(obj.ModelId, obj.Frame));
-        }
+        //    foreach (var obj in LandblockInfo.Buildings)
+        //        Buildings.Add(new ModelMesh(obj.ModelId, obj.Frame));
+        //}
 
         /// <summary>
         /// Loads the meshes for the weenies on the landblock
         /// </summary>
-        private void LoadWeenies(List<LandblockInstance> objects)
-        {
-            WeenieMeshes = new List<ModelMesh>();
+        //private void LoadWeenies(List<LandblockInstance> objects)
+        //{
+        //    WeenieMeshes = new List<ModelMesh>();
 
-            foreach (var obj in objects)
-            {
-                var weenie = DatabaseManager.World.GetCachedWeenie(obj.WeenieClassId);
-                WeenieMeshes.Add(
-                    new ModelMesh(weenie.GetProperty(PropertyDataId.Setup) ?? 0,
-                    new DatLoader.Entity.Frame(new Position(obj.ObjCellId, obj.OriginX, obj.OriginY, obj.OriginZ, obj.AnglesX, obj.AnglesY, obj.AnglesZ, obj.AnglesW))));
-            }
-        }
+        //    foreach (var obj in objects)
+        //    {
+        //        var weenie = DatabaseManager.World.GetCachedWeenie(obj.WeenieClassId);
+        //        WeenieMeshes.Add(
+        //            new ModelMesh(weenie.GetProperty(PropertyDataId.Setup) ?? 0,
+        //            new DatLoader.Entity.Frame(new Position(obj.ObjCellId, obj.OriginX, obj.OriginY, obj.OriginZ, obj.AnglesX, obj.AnglesY, obj.AnglesZ, obj.AnglesW))));
+        //    }
+        //}
 
         /// <summary>
         /// Loads the meshes for the scenery on the landblock
         /// </summary>
-        private void LoadScenery()
-        {
-            Scenery = Entity.Scenery.Load(this);
-        }
+        //private void LoadScenery()
+        //{
+        //    Scenery = Entity.Scenery.Load(this);
+        //}
 
         /// <summary>
         /// This should be called before TickLandblockGroupThreadSafeWork() and before Tick()
@@ -447,7 +493,11 @@ namespace ACE.Server.Entity
                 var landblockUpdate = wo.UpdateObjectPhysics();
 
                 if (landblockUpdate)
+                {
                     movedObjects.Add(wo);
+                    //Console.WriteLine($"Ticking Physics Landblock: {Id}, v: {VariationId}");
+                }
+                    
             }
 
             Monitor5m.Pause();
@@ -582,7 +632,7 @@ namespace ACE.Server.Entity
                         IsDormant = true;
                     }
                     if (lastActiveTime + UnloadInterval < thisHeartBeat)
-                        LandblockManager.AddToDestructionQueue(this);
+                        LandblockManager.AddToDestructionQueue(this, this.VariationId);
                 }
 
                 //log.Info($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_Heartbeat: thisHeartBeat: {thisHeartBeat.ToString()} | lastHeartBeat: {lastHeartBeat.ToString()} | worldObjects.Count: {worldObjects.Count()}");
@@ -837,23 +887,23 @@ namespace ACE.Server.Entity
         /// <summary>
         /// This will fail if the wo doesn't have a valid location.
         /// </summary>
-        public bool AddWorldObject(WorldObject wo)
+        public bool AddWorldObject(WorldObject wo, int? VariationId)
         {
             if (wo.Location == null)
             {
-                log.DebugFormat("Landblock 0x{0} failed to add 0x{1:X8} {2}. Invalid Location", Id, wo.Biota.Id, wo.Name);
+                Console.WriteLine("Landblock 0x{0} failed to add 0x{1:X8} {2}. Invalid Location", Id, wo.Biota.Id, wo.Name);
                 return false;
             }
 
-            return AddWorldObjectInternal(wo);
+            return AddWorldObjectInternal(wo, VariationId);
         }
 
-        public void AddWorldObjectForPhysics(WorldObject wo)
+        public void AddWorldObjectForPhysics(WorldObject wo, int? VariationId)
         {
-            AddWorldObjectInternal(wo);
+            AddWorldObjectInternal(wo, VariationId);
         }
 
-        private bool AddWorldObjectInternal(WorldObject wo)
+        private bool AddWorldObjectInternal(WorldObject wo, int? VariationId)
         {
             if (LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded)
             {
@@ -861,9 +911,10 @@ namespace ACE.Server.Entity
                 {
                     log.Error($"Landblock 0x{Id} entered AddWorldObjectInternal in a cross-thread operation.");
                     log.Error($"Landblock 0x{Id} CurrentLandblockGroup: {CurrentLandblockGroup}");
+                    log.Error($"Variation: {VariationId}");
                     log.Error($"LandblockManager.CurrentMultiThreadedTickingLandblockGroup.Value: {LandblockManager.CurrentMultiThreadedTickingLandblockGroup.Value}");
 
-                    log.Error($"wo: 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}], previous landblock 0x{wo.CurrentLandblock?.Id}");
+                    log.Error($"wo: 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}], v:{wo.Location.Variation}, previous landblock 0x{wo.CurrentLandblock?.Id}");
 
                     if (wo.WeenieType == WeenieType.ProjectileSpell)
                     {
@@ -887,15 +938,21 @@ namespace ACE.Server.Entity
             }
 
             wo.CurrentLandblock = this;
+            //if (this.Id.ToString().StartsWith("019E"))
+            //{
+            //    Console.WriteLine($"{wo.Name}, {wo.WeenieClassId} is spawning in landblock {this.Id} v:{wo.CurrentLandblock.VariationId} wo.v:{wo.Location.Variation}");
+            //        //$"From: {new StackTrace()}");
+            //}                     
+            //wo.Location.Variation = VariationId;
 
             if (wo.PhysicsObj == null)
-                wo.InitPhysicsObj();
+                wo.InitPhysicsObj(VariationId);
             else
                 wo.PhysicsObj.set_object_guid(wo.Guid);  // re-add to ServerObjectManager
 
             if (wo.PhysicsObj.CurCell == null)
             {
-                var success = wo.AddPhysicsObj();
+                var success = wo.AddPhysicsObj(VariationId);
                 if (!success)
                 {
                     wo.CurrentLandblock = null;
@@ -908,7 +965,7 @@ namespace ACE.Server.Entity
                     else if (wo.IsGenerator) // Some generators will fail random spawns if they're circumference spans over water or cliff edges
                         log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
                     else if (wo.ProjectileTarget == null && !(wo is SpellProjectile))
-                        log.Warn($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
+                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
 
                     return false;
                 }
@@ -1063,7 +1120,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// This will return null if the object was not found in the current or adjacent landblocks.
         /// </summary>
-        public WorldObject GetObject(ObjectGuid guid, bool searchAdjacents = true)
+        public WorldObject GetObject(ObjectGuid guid, bool searchAdjacents = true, bool searchVariations = false)
         {
             if (pendingRemovals.Contains(guid))
                 return null;
@@ -1150,7 +1207,7 @@ namespace ACE.Server.Entity
         /// Handles the cleanup process for a landblock
         /// This method is called by LandblockManager
         /// </summary>
-        public void Unload()
+        public void Unload(int? VariationId)
         {
             var landblockID = Id.Raw | 0xFFFF;
 
@@ -1159,7 +1216,7 @@ namespace ACE.Server.Entity
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             SaveDB();
-
+            //Console.WriteLine($"Landblock.Unload({landblockID:X8}), removing {worldObjects.Count}");
             // remove all objects
             foreach (var wo in worldObjects.ToList())
             {
@@ -1174,7 +1231,7 @@ namespace ACE.Server.Entity
             actionQueue.Clear();
 
             // remove physics landblock
-            LScape.unload_landblock(landblockID);
+            LScape.unload_landblock(landblockID, VariationId);
 
             PhysicsLandblock.release_shadow_objs();
         }

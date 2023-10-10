@@ -33,7 +33,7 @@ namespace ACE.Server.Network.Structure
             WorldObject = wo;
 
             RawMotionState = new RawMotionState(this, reader);
-            Position = new Position(reader);
+            Position = new Position(reader, wo.Location.Variation);
 
             InstanceSequence = reader.ReadUInt16();
             ServerControlSequence = reader.ReadUInt16();

@@ -196,18 +196,25 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
+                if (this.PhysicsObj.Position.Variation != obj.Position.Variation)
+                {
+                    return false;
+                }
                 if (KnownObjects.ContainsKey(obj.ID))
                     return false;
 
-                KnownObjects.TryAdd(obj.ID, obj);
+                bool added = KnownObjects.TryAdd(obj.ID, obj);
 
-                // maintain KnownPlayers for both parties
-                if (obj.IsPlayer)
-                    AddKnownPlayer(obj);
+                if (added) // maintain KnownPlayers for both parties
+                {
+                    if (obj.IsPlayer)
+                        AddKnownPlayer(obj);
 
-                obj.ObjMaint.AddKnownPlayer(PhysicsObj);
+                    obj.ObjMaint.AddKnownPlayer(PhysicsObj);
+                }
+                
 
-                return true;
+                return added;
             }
             finally
             {
@@ -292,12 +299,12 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public List<PhysicsObj> GetVisibleObjectsValues()
+        public List<PhysicsObj> GetVisibleObjectsValues(int? Variation)
         {
             rwLock.EnterReadLock();
             try
             {
-                return VisibleObjects.Values.ToList();
+                return VisibleObjects.Values.Where(x=>x.Position.Variation == Variation).ToList();
             }
             finally
             {
@@ -334,7 +341,7 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// Returns a list of objects that are currently visible from a cell
         /// </summary>
-        public List<PhysicsObj> GetVisibleObjects(ObjCell cell, VisibleObjectType type = VisibleObjectType.All)
+        public List<PhysicsObj> GetVisibleObjects(ObjCell cell, VisibleObjectType type = VisibleObjectType.All, int? VariationId = null)
         {
             rwLock.EnterReadLock();
             try
@@ -345,7 +352,7 @@ namespace ACE.Server.Physics.Common
                 // use PVS / VisibleCells for EnvCells not seen outside
                 // (mostly dungeons, also some large indoor areas ie. caves)
                 if (cell is EnvCell envCell)
-                    return GetVisibleObjects(envCell, type);
+                    return GetVisibleObjects(envCell, type, VariationId);
 
                 // use current landblock + adjacents for outdoors,
                 // and envcells seen from outside (all buildings)
@@ -362,7 +369,7 @@ namespace ACE.Server.Physics.Common
         /// <summary>
         /// Returns a list of objects that are currently visible from a dungeon cell
         /// </summary>
-        private List<PhysicsObj> GetVisibleObjects(EnvCell cell, VisibleObjectType type)
+        private List<PhysicsObj> GetVisibleObjects(EnvCell cell, VisibleObjectType type, int? VariationId = null)
         {
             var visibleObjs = new List<PhysicsObj>();
 
@@ -382,6 +389,11 @@ namespace ACE.Server.Physics.Common
                 var outsideObjs = PhysicsObj.CurLandblock.GetServerObjects(true).Where(i => !(i.CurCell is EnvCell indoors) || indoors.SeenOutside);
 
                 visibleObjs.AddRange(outsideObjs);
+            }
+
+            if (VariationId != null)
+            {
+                ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList(); //TODO: Test if this actually works?
             }
 
             return ApplyFilter(visibleObjs, type).Where(i => !i.DatObject && i.ID != PhysicsObj.ID).Distinct().ToList();
@@ -432,6 +444,10 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
+                if (PhysicsObj.Position.Variation != obj.Position.Variation)
+                {
+                    return false;
+                }
                 if (VisibleObjects.ContainsKey(obj.ID))
                     return false;
 
@@ -550,13 +566,12 @@ namespace ACE.Server.Physics.Common
             try
             {
                 RemoveVisibleObject(obj);
-
+                Console.WriteLine($"Destructing PhysObj: {obj.Name}, {obj.Position.Variation}");
                 if (DestructionQueue.ContainsKey(obj))
                     return false;
 
-                DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
+                return DestructionQueue.TryAdd(obj, PhysicsTimer.CurrentTime + DestructionTime);
 
-                return true;
             }
             finally
             {
@@ -568,7 +583,7 @@ namespace ACE.Server.Physics.Common
         /// Adds a list of objects to the destruction queue
         /// only maintained for players
         /// </summary>
-        public List<PhysicsObj> AddObjectsToBeDestroyed(List<PhysicsObj> objs)
+        public void AddObjectsToBeDestroyed(List<PhysicsObj> objs)
         {
             rwLock.EnterWriteLock();
             try
@@ -580,7 +595,7 @@ namespace ACE.Server.Physics.Common
                         queued.Add(obj);
                 }
 
-                return queued;
+                return;
             }
             finally
             {
@@ -761,6 +776,11 @@ namespace ACE.Server.Physics.Common
                 Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player for dat object");
                 return false;
             }
+            if (obj.Position.Variation != PhysicsObj.Position.Variation)
+            {
+                Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
+                return false;
+            }
 
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddKnownPlayer({obj.Name})");
 
@@ -898,7 +918,7 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterReadLock();
             try
             {
-                return VisibleTargets.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                return VisibleTargets.Values.Select(v => v.WeenieObj.WorldObject).Where(x =>x.Location.Variation == this.PhysicsObj.Position.Variation).OfType<Creature>().ToList();
             }
             finally
             {
@@ -1020,12 +1040,12 @@ namespace ACE.Server.Physics.Common
             return VisibleTargets.Remove(obj.ID);
         }
 
-        public List<PhysicsObj> GetVisibleObjectsDist(ObjCell cell, VisibleObjectType type)
+        public List<PhysicsObj> GetVisibleObjectsDist(ObjCell cell, VisibleObjectType type, int? VariationId = null)
         {
             rwLock.EnterReadLock();
             try
             {
-                var visibleObjs = GetVisibleObjects(cell, type);
+                var visibleObjs = GetVisibleObjects(cell, type, VariationId);
 
                 var dist = new List<PhysicsObj>();
                 foreach (var obj in visibleObjs)

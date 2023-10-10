@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 
 using ACE.Common;
@@ -555,6 +556,10 @@ namespace ACE.Server.WorldObjects
             }
 
             positionCache[positionType] = position;
+            //if (positionType == PositionType.Location && position != null && position.LandblockId.Landblock == 414)
+            //{
+            //    Console.WriteLine($"Cached {position.LandblockId.Landblock} for {this.Name}, {new StackTrace()}");
+            //}
 
             return position;
         }
@@ -584,6 +589,10 @@ namespace ACE.Server.WorldObjects
 
                     Biota.SetPosition(positionType, position, BiotaDatabaseLock);
                     ChangesDetected = true;
+                    //if (positionType == PositionType.Location && this is Player)
+                    //{
+                    //    Console.WriteLine(Name + " moved to " + position.ToLOCString() + " t:" + Teleporting);
+                    //}
                 }
             }
         }
@@ -609,7 +618,7 @@ namespace ACE.Server.WorldObjects
             try
             {
                 foreach (var kvp in Biota.PropertiesPosition)
-                    results[kvp.Key] = new Position(kvp.Value.ObjCellId, kvp.Value.PositionX, kvp.Value.PositionY, kvp.Value.PositionZ, kvp.Value.RotationX, kvp.Value.RotationY, kvp.Value.RotationZ, kvp.Value.RotationW);
+                    results[kvp.Key] = new Position(kvp.Value.ObjCellId, kvp.Value.PositionX, kvp.Value.PositionY, kvp.Value.PositionZ, kvp.Value.RotationX, kvp.Value.RotationY, kvp.Value.RotationZ, kvp.Value.RotationW, false, kvp.Value.VariationId);
             }
             finally
             {

@@ -7,6 +7,8 @@ namespace ACE.Entity
     {
         public uint Raw { get; }
 
+        public int? Variation_Id = null;
+
         public LandblockId(uint raw)
         {
             Raw = raw;
@@ -15,6 +17,18 @@ namespace ACE.Entity
         public LandblockId(byte x, byte y)
         {
             Raw = (uint)x << 24 | (uint)y << 16;
+        }
+
+        public LandblockId(uint raw, int? variationId)
+        {
+            Raw = raw;
+            Variation_Id = variationId;
+        }
+
+        public LandblockId(byte x, byte y, int? variationId)
+        {
+            Raw = (uint)x << 24 | (uint)y << 16;
+            Variation_Id = variationId;
         }
 
         public LandblockId East => new LandblockId(Convert.ToByte(LandblockX + 1), LandblockY);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 
@@ -302,6 +303,7 @@ namespace ACE.Server.WorldObjects
                 // update position through physics engine
                 if (RequestedLocation != null)
                 {
+                    //Console.WriteLine($"Updating player position to {RequestedLocation.ToLOCString()}");
                     landblockUpdate = UpdatePlayerPosition(RequestedLocation);
                     RequestedLocation = null;
                 }
@@ -352,7 +354,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!PhysicsObj.IsMovingOrAnimating)
                 {
-                    SyncLocation();
+                    SyncLocation(Location.Variation);
                     EnqueueBroadcast(new GameMessageUpdatePosition(this));
                 }
             }
@@ -410,16 +412,21 @@ namespace ACE.Server.WorldObjects
         /// <returns>TRUE if object moves to a different landblock</returns>
         public bool UpdatePlayerPosition(ACE.Entity.Position newPosition, bool forceUpdate = false)
         {
-            //Console.WriteLine($"{Name}.UpdatePlayerPhysics({newPosition}, {forceUpdate}, {Teleporting})");
+            //Console.WriteLine($"{Name}.UpdatePlayerPosition({newPosition}, {forceUpdate}, {Teleporting})");
             bool verifyContact = false;
 
             // possible bug: while teleporting, client can still send AutoPos packets from old landblock
             if (Teleporting && !forceUpdate) return false;
+            if (!Teleporting && Location.Variation != null && newPosition.Variation == null) //do not wipe out the prior Variation unless teleporting
+            {
+                newPosition.Variation = Location.Variation;
+            }
 
             // pre-validate movement
             if (!ValidateMovement(newPosition))
             {
-                log.Error($"{Name}.UpdatePlayerPosition() - movement pre-validation failed from {Location} to {newPosition}");
+                log.Error($"{Name}.UpdatePlayerPosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                //log.Error($"{new StackTrace()}");
                 return false;
             }
 
@@ -434,7 +441,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var distSq = Location.SquaredDistanceTo(newPosition);
 
-                    if (distSq > PhysicsGlobals.EpsilonSq)
+                    if (distSq > PhysicsGlobals.EpsilonSq || (newPosition.Variation != Location.Variation))
                     {
                         /*var p = new Physics.Common.Position(newPosition);
                         var dist = PhysicsObj.Position.Distance(p);
@@ -460,13 +467,13 @@ namespace ACE.Server.WorldObjects
                                 verifyContact = true;
                         }
 
-                        var curCell = LScape.get_landcell(newPosition.Cell);
+                        var curCell = LScape.get_landcell(newPosition.Cell, newPosition.Variation);
                         if (curCell != null)
                         {
                             //if (PhysicsObj.CurCell == null || curCell.ID != PhysicsObj.CurCell.ID)
-                                //PhysicsObj.change_cell_server(curCell);
-
-                            PhysicsObj.set_request_pos(newPosition.Pos, newPosition.Rotation, curCell, Location.LandblockId.Raw);
+                            //PhysicsObj.change_cell_server(curCell);
+                            //Console.WriteLine($"{Name} Destination Cell {newPosition.Cell}, v: {curCell.VariationId}");
+                            PhysicsObj.set_request_pos(newPosition.Pos, newPosition.Rotation, curCell, Location.LandblockId.Raw, newPosition.Variation);
                             if (FastTick)
                                 success = PhysicsObj.update_object_server_new();
                             else
@@ -503,9 +510,9 @@ namespace ACE.Server.WorldObjects
 
                 if (!success) return false;
 
-                var landblockUpdate = Location.Cell >> 16 != newPosition.Cell >> 16;
+                var landblockUpdate = (Location.Cell >> 16 != newPosition.Cell >> 16) || (Location.Variation != newPosition.Variation);
 
-                Location = newPosition;
+                Location = new ACE.Entity.Position(newPosition);
 
                 if (RecordCast.Enabled)
                     RecordCast.Log($"CurPos: {Location.ToLOCString()}");
@@ -555,7 +562,7 @@ namespace ACE.Server.WorldObjects
 
                 if (CurrentLandblock.IsDungeon)
                 {
-                    var destBlock = LScape.get_landblock(newPosition.Cell);
+                    var destBlock = LScape.get_landblock(newPosition.Cell, newPosition.Variation);
                     if (destBlock != null && destBlock.IsDungeon)
                         return false;
                 }
@@ -575,10 +582,11 @@ namespace ACE.Server.WorldObjects
             var blockcell = PhysicsObj.Position.ObjCellID;
             var pos = PhysicsObj.Position.Frame.Origin;
             var rotate = PhysicsObj.Position.Frame.Orientation;
+            var variation = PhysicsObj.Position.Variation;
 
             var landblockUpdate = blockcell << 16 != CurrentLandblock.Id.Landblock;
 
-            Location = new ACE.Entity.Position(blockcell, pos, rotate);
+            Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 
             return landblockUpdate;
         }
