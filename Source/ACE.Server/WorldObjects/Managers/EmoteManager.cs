@@ -1900,7 +1900,7 @@ namespace ACE.Server.WorldObjects.Managers
         {
             //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.Enqueue({emoteSet}, {targetObject}, {emoteIdx}, {delay})");
 
-            if (emoteSet == null)
+            if (emoteSet == null || emoteIdx >= emoteSet.PropertiesEmoteAction.Count)
             {
                 Nested--;
                 return;
