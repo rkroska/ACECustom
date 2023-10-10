@@ -37,7 +37,7 @@ namespace ACE.Server.WorldObjects
             {
                 var teleportDest = new Position(position);
                 AdjustDungeon(teleportDest);
-                Console.WriteLine($"Player tele to: {teleportDest.ToLOCString()}");
+                //Console.WriteLine($"Player tele to: {teleportDest.ToLOCString()}");
                 Teleport(teleportDest);
                 return true;
             }
