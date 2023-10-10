@@ -9,6 +9,8 @@ namespace ACE.Common
 
         public uint Port { get; set; }
 
+        public uint? ContentPort { get; set; }
+
         /// <summary>
         /// Increasing this setting will allow more Accounts to connect with this server.
         /// </summary>
