@@ -126,9 +126,9 @@ namespace ACE.Server.WorldObjects
             UpdateCoinValue(false);
         }
 
-        public override void InitPhysicsObj()
+        public override void InitPhysicsObj(int? VariationId)
         {
-            base.InitPhysicsObj();
+            base.InitPhysicsObj(VariationId);
 
             // set pink bubble state
             IgnoreCollisions = true; ReportCollisions = false; Hidden = true;
@@ -1197,7 +1197,7 @@ namespace ACE.Server.WorldObjects
                             if (result == SetPositionError.OK)
                             {
                                 // handle landblock update?
-                                SyncLocation();
+                                SyncLocation(Location.Variation);
 
                                 // force broadcast
                                 Sequences.GetNextSequence(SequenceType.ObjectForcePosition);

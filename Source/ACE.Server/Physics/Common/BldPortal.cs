@@ -28,7 +28,7 @@ namespace ACE.Server.Physics.Common
         {
             var blockCellID = landblockID & 0xFFFF0000 | OtherCellId;
 
-            return (EnvCell)LScape.get_landcell(blockCellID);
+            return (EnvCell)LScape.get_landcell(blockCellID, null);
         }
 
         public void add_to_stablist(ref List<ushort> stabList, ref uint maxSize, ref uint stabNum)

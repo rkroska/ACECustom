@@ -1047,6 +1047,8 @@ namespace ACE.Database.Models.Shard
                     .WithMany(p => p.BiotaPropertiesPosition)
                     .HasForeignKey(d => d.ObjectId)
                     .HasConstraintName("wcid_position");
+
+                entity.Property(e => e.VariationId).HasColumnName("variation_Id");
             });
 
             modelBuilder.Entity<BiotaPropertiesSkill>(entity =>

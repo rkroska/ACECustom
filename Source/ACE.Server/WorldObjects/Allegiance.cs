@@ -296,7 +296,7 @@ namespace ACE.Server.WorldObjects
 
             if (isLoaded)
             {
-                var loaded = LandblockManager.GetLandblock(landblockId, false);
+                var loaded = LandblockManager.GetLandblock(landblockId, false, null);
                 return loaded.GetObject(new ObjectGuid(houseGuid)) as House;
             }
 

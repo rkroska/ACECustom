@@ -38,14 +38,14 @@ namespace ACE.Server.Physics.Common
             Init();
         }
 
-        public EnvCell(DatLoader.FileTypes.EnvCell envCell): base()
+        public EnvCell(DatLoader.FileTypes.EnvCell envCell, int? Variation): base()
         {
             _envCell = envCell;
 
             Flags = envCell.Flags;
             ID = envCell.Id;
             ShadowObjectIDs = envCell.Surfaces;
-            Pos = new Position(ID, new AFrame(envCell.Position));
+            Pos = new Position(ID, new AFrame(envCell.Position), Variation);
             Portals = envCell.CellPortals;
             NumPortals = Portals.Count;
             StaticObjectIDs = new List<uint>();
@@ -70,14 +70,16 @@ namespace ACE.Server.Physics.Common
 
             if (Environment?.Cells != null && Environment.Cells.TryGetValue(CellStructureID, out var cellStruct))
                 CellStructure = new CellStruct(cellStruct);
+            else
+                Console.WriteLine("CellStructureID {0} not found in Environment {1}", CellStructureID, EnvironmentID);
 
             NumSurfaces = envCell.Surfaces.Count;
         }
 
-        public void PostInit()
+        public void PostInit(int? variation)
         {
             build_visible_cells();
-            init_static_objects();
+            init_static_objects(variation);
         }
 
         public override TransitionState FindEnvCollisions(Transition transition)
@@ -89,7 +91,7 @@ namespace ACE.Server.Physics.Common
 
             transition.SpherePath.ObstructionEthereal = false;
 
-            if (CellStructure.PhysicsBSP != null)
+            if (CellStructure != null && CellStructure.PhysicsBSP != null)
             {
                 transition.SpherePath.CacheLocalSpaceSphere(Pos, 1.0f);
 
@@ -120,7 +122,7 @@ namespace ACE.Server.Physics.Common
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;
                 if (VisibleCells.ContainsKey(blockCellID)) continue;
-                var cell = (EnvCell)LScape.get_landcell(blockCellID);
+                var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
                 VisibleCells.Add(visibleCellID, cell);
             }
         }
@@ -235,9 +237,9 @@ namespace ACE.Server.Physics.Common
             VisibleCells = new Dictionary<uint, EnvCell>();
         }
 
-        public EnvCell add_visible_cell(uint cellID)
+        public EnvCell add_visible_cell(uint cellID, int? Variation)
         {
-            var envCell = DBObj.GetEnvCell(cellID);
+            var envCell = DBObj.GetEnvCell(cellID, Variation);
             VisibleCells.Add(cellID, envCell);
             return envCell;
         }
@@ -370,14 +372,14 @@ namespace ACE.Server.Physics.Common
                 LandCell.add_all_outside_cells(position, numSphere, spheres, cellArray);
         }
 
-        public void init_static_objects()
+        public void init_static_objects(int? variation)
         {
             if (StaticObjects != null)
             {
                 foreach (var staticObj in StaticObjects)
                 {
                     if (!staticObj.is_completely_visible())
-                        staticObj.calc_cross_cells_static();
+                        staticObj.calc_cross_cells_static(variation);
                 }
             }
             else
@@ -388,7 +390,7 @@ namespace ACE.Server.Physics.Common
                 {
                     var staticObj = PhysicsObj.makeObject(StaticObjectIDs[i], 0, false);
                     staticObj.DatObject = true;
-                    staticObj.add_obj_to_cell(this, StaticObjectFrames[i]);
+                    staticObj.add_obj_to_cell(this, StaticObjectFrames[i], variation);
                     if (staticObj.CurCell == null)
                     {
                         //Console.WriteLine($"EnvCell {ID:X8}: failed to add {staticObj.ID:X8}");
@@ -399,25 +401,29 @@ namespace ACE.Server.Physics.Common
                     StaticObjects.Add(staticObj);
                 }
 
-                //Console.WriteLine($"{ID:X8}: loaded {NumStaticObjects} static objects");
+                //Console.WriteLine($"{ID:X8}: loaded {NumStaticObjects} static objects to v:{this.Pos.Variation}");
             }
         }
 
-        public static ObjCell get_visible(uint cellID)
+        public static ObjCell get_visible(uint cellID, int? variationId)
         {
-            var cell = (EnvCell)LScape.get_landcell(cellID);
+            var cell = (EnvCell)LScape.get_landcell(cellID, variationId);
             return cell.VisibleCells.Values.First();
         }
 
-        public void grab_visible(List<uint> stabs)
-        {
-            foreach (var stab in stabs)
-                add_visible_cell(stab);
-        }
+        //public void grab_visible(List<uint> stabs)
+        //{
+        //    foreach (var stab in stabs)
+        //        add_visible_cell(stab);
+        //}
 
         public override bool point_in_cell(Vector3 point)
         {
             var localPoint = Pos.Frame.GlobalToLocal(point);
+            if (CellStructure == null)
+            {
+                return false;
+            }
             return CellStructure.point_in_cell(localPoint);
         }
 

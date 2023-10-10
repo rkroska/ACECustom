@@ -37,7 +37,7 @@ namespace ACE.Server.WorldObjects
             {
                 var teleportDest = new Position(position);
                 AdjustDungeon(teleportDest);
-
+                //Console.WriteLine($"Player tele to: {teleportDest.ToLOCString()}");
                 Teleport(teleportDest);
                 return true;
             }
@@ -658,7 +658,7 @@ namespace ACE.Server.WorldObjects
             //newPosition.PositionZ += 0.005f;
             newPosition.PositionZ += 0.005f * (ObjScale ?? 1.0f);
 
-            //Console.WriteLine($"{Name}.Teleport() - Sending to {newPosition.ToLOCString()}");
+            //Console.WriteLine($"{Name}.Teleport() - Sending to {newPosition.ToLOCString()}, From Portal {fromPortal}");
 
             // Check currentFogColor set for player. If LandblockManager.GlobalFogColor is set, don't bother checking, dungeons didn't clear like this on retail worlds.
             // if not clear, reset to clear before portaling in case portaling to dungeon (no current way to fast check unloaded landblock for IsDungeon or current FogColor)
@@ -684,6 +684,10 @@ namespace ACE.Server.WorldObjects
             if (fromPortal)
                 LastPortalTeleportTimestamp = LastTeleportStartTimestamp;
 
+
+            // check for changing varation - and remove anything from knownobjects that is not in the new variation
+            HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+
             Session.Network.EnqueueSend(new GameMessagePlayerTeleport(this));
 
             // load quickly, but player can load into landblock before server is finished loading
@@ -706,6 +710,26 @@ namespace ACE.Server.WorldObjects
             HandlePreTeleportVisibility(newPosition);
 
             UpdatePlayerPosition(new Position(newPosition), true);
+        }
+
+        public void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
+        {
+            var knownObjs = GetKnownObjects();
+
+            for (int i = 0; i < knownObjs.Count; i++)
+            {
+                var knownObj = knownObjs[i];
+                if (knownObj.Location.Variation != destinationVariation)
+                {
+                    knownObj.PhysicsObj.ObjMaint.RemoveObject(PhysicsObj);
+
+                    if (knownObj is Player knownPlayer)
+                        knownPlayer.RemoveTrackedObject(this, false);
+
+                    ObjMaint.RemoveObject(knownObj.PhysicsObj);
+                    RemoveTrackedObject(knownObj, false);
+                }
+            }
         }
 
         public void DoPreTeleportHide()
@@ -895,6 +919,11 @@ namespace ACE.Server.WorldObjects
             if (!biota.PropertiesPosition.TryGetValue(PositionType.Sanctuary, out var lifestone))
                 return;
 
+            if (location.VariationId.HasValue)
+            {
+                return; // Variations can't be no-log landblocks. Reserved for base landblocks only.
+            }
+
             location.ObjCellId = lifestone.ObjCellId;
             location.PositionX = lifestone.PositionX;
             location.PositionY = lifestone.PositionY;
@@ -903,6 +932,7 @@ namespace ACE.Server.WorldObjects
             location.RotationY = lifestone.RotationY;
             location.RotationZ = lifestone.RotationZ;
             location.RotationW = lifestone.RotationW;
+            location.VariationId = lifestone.VariationId;
 
             playerWasMovedFromNoLogLandblock = true;
 

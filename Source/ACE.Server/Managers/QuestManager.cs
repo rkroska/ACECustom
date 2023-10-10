@@ -728,20 +728,22 @@ namespace ACE.Server.Managers
                 session.Player.QuestManager.Erase(DynamicQuestFlagName);
             }
 
-
             bool created = false;
             var player = Creature as Player;
+            int? Variation = player.Location.Variation;
 
             //create random note paper - start to fill it with the details of the quest. place it in inventory at the end
             //weenie class 365 - Parchment -- Create Parchment world object
             //find target NPC
             WorldDatabaseWithEntityCache world = new WorldDatabaseWithEntityCache();
             Weenie npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
-            if (npcTarget == null) {
+          
+            if (npcTarget == null)
+            {
                 return;
             }
             int i = 0;
-            while ( WeenieHasDynamicQuest(npcTarget) )
+            while (WeenieHasDynamicQuest(npcTarget))
             {
                 i++;
                 npcTarget = world.GetCachedWeenie(world.GetRandomNPCWeenieIDFromWhitelist());
@@ -833,6 +835,8 @@ namespace ACE.Server.Managers
                 if (quest == null) { return; }
                 if (!created) { return; }
 
+                // Refuse Item, check Generic Flag
+                var responseEmote = NewStarterEmote(questName, databaseWeenie);
 
                 // Refuse Item, check Generic Flag
                 var responseEmote = NewStarterEmote(questName, databaseWeenie);
@@ -891,7 +895,7 @@ namespace ACE.Server.Managers
                 {
                     DatabaseManager.World.ClearCachedWeenie(npcDeliveryTarget.WeenieClassId);
                 }
-                
+
                 //DatabaseManager.Shard.SaveBiota(npcTargetWorldObject.Biota, new System.Threading.ReaderWriterLockSlim(), null);
 
                 //DatabaseManager.Shard.SaveBiota(npcTargetWorldObject.Biota, new System.Threading.ReaderWriterLockSlim(), null);
@@ -916,17 +920,20 @@ namespace ACE.Server.Managers
                         if (found && propPos != null)
                         {
                             LandblockId p = new LandblockId(propPos.ObjCellId);
-                            Landblock L = LandblockManager.GetLandblock(p, false);
+                          
+                            Landblock L = LandblockManager.GetLandblock(p, false, Variation);
                             if (L != null)
                             {
                                 L.DestroyAllNonPlayerObjects();
 
                                 //DatabaseManager.Shard.SaveBiota //try this?
                                 // clear landblock cache
-                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw);
+                              
+                                DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L.Id.Raw, Variation);
 
                                 // reload landblock
-                                L.Init(true);
+                                L.Init(Variation, true);
+                              
                                 //var actionChain = new ActionChain();
                                 //actionChain.AddDelayForOneTick();
                                 //actionChain.AddAction(session.Player, () =>
@@ -953,12 +960,12 @@ namespace ACE.Server.Managers
                             if (propPos == null || propPos.ObjCellId != propPos2.ObjCellId)
                             {
                                 p2 = new LandblockId(propPos2.ObjCellId);
-                                Landblock L2 = LandblockManager.GetLandblock(p2, false);
+                                Landblock L2 = LandblockManager.GetLandblock(p2, false, Variation);
                                 if (L2 != null)
                                 {
                                     L2.DestroyAllNonPlayerObjects();
-                                    DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw);
-                                    L2.Init(true);
+                                    DatabaseManager.World.ClearCachedInstancesByLandblock((ushort)L2.Id.Raw, Variation);
+                                    L2.Init(Variation, true);
                                 }
                             }
                             break;
@@ -1384,6 +1391,88 @@ namespace ACE.Server.Managers
                 Max = 1,
                 Min = 1,
 
+            };
+
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction2);
+            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction3);
+
+            return responseEmote;
+        }
+
+        private static Database.Models.World.WeeniePropertiesEmote NewStarterEmote(string questName, Database.Models.World.Weenie targetNPCWeenie)
+        {
+            Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
+            {
+                Object = targetNPCWeenie,
+                Category = (int)EmoteCategory.Refuse, //refuse = examine
+                Probability = 1,
+                WeenieClassId = 365, //Parchment: the note, or the item from the delivery
+                Style = (uint?)MotionStance.NonCombat,
+                Substyle = (uint?)MotionCommand.Wave,
+                Quest = null,
+                VendorType = (int?)VendorType.Undef,
+                MinHealth = 0,
+                MaxHealth = null,
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction1 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.TurnToTarget,
+                Order = 0,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = questName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction2 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.Motion,
+                Order = 1,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = questName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
+
+            };
+
+            Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
+            {
+                Emote = responseEmote,
+                Type = (uint)EmoteType.InqQuest,
+                Order = 2,
+                Delay = 0,
+                Extent = 0,
+                Motion = (uint?)MotionCommand.Wave,
+                Message = DynamicQuestFlagName,
+                TestString = "",
+                Amount = null,
+                Amount64 = null,
+                HeroXP64 = null,
+                WealthRating = null,
+                TreasureClass = null,
+                TreasureType = null,
+                WeenieClassId = null,
             };
 
             responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);

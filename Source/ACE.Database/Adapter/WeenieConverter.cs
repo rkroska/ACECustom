@@ -80,7 +80,7 @@ namespace ACE.Database.Adapter
                         RotationX = record.AnglesX,
                         RotationY = record.AnglesY,
                         RotationZ = record.AnglesZ,
-
+                        VariationId = record.VariationId
                     };
 
                     result.PropertiesPosition[(PositionType)record.PositionType] = newEntity;
@@ -501,6 +501,7 @@ namespace ACE.Database.Adapter
                     AnglesX = value.AnglesX,
                     AnglesY = value.AnglesY,
                     AnglesZ = value.AnglesZ,
+                    VariationId = value.VariationId,
                 });
             }
 

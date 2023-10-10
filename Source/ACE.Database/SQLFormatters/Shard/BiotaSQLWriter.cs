@@ -247,9 +247,9 @@ namespace ACE.Database.SQLFormatters.Shard
 
         public void CreateSQLINSERTStatement(uint id, IList<BiotaPropertiesPosition> input, StreamWriter writer)
         {
-            writer.WriteLine("INSERT INTO `biota_properties_position` (`object_Id`, `position_Type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`)");
+            writer.WriteLine("INSERT INTO `biota_properties_position` (`object_Id`, `position_Type`, `obj_Cell_Id`, `origin_X`, `origin_Y`, `origin_Z`, `angles_W`, `angles_X`, `angles_Y`, `angles_Z`, `variation_Id`)");
 
-            var lineGenerator = new Func<int, string>(i => $"{id}, {(uint)input[i].PositionType}, {input[i].ObjCellId}, {input[i].OriginX}, {input[i].OriginY}, {input[i].OriginZ}, {input[i].AnglesW}, {input[i].AnglesX}, {input[i].AnglesY}, {input[i].AnglesZ}) /* {Enum.GetName(typeof(PositionType), input[i].PositionType)} */" + Environment.NewLine + $"/* @teleloc 0x{input[i].ObjCellId:X8} [{input[i].OriginX:F6} {input[i].OriginY:F6} {input[i].OriginZ:F6}] {input[i].AnglesW:F6} {input[i].AnglesX:F6} {input[i].AnglesY:F6} {input[i].AnglesZ:F6} */");
+            var lineGenerator = new Func<int, string>(i => $"{id}, {(uint)input[i].PositionType}, {input[i].ObjCellId}, {input[i].OriginX}, {input[i].OriginY}, {input[i].OriginZ}, {input[i].AnglesW}, {input[i].AnglesX}, {input[i].AnglesY}, {input[i].AnglesZ}, {input[i].VariationId}) /* {Enum.GetName(typeof(PositionType), input[i].PositionType)} */" + Environment.NewLine + $"/* @teleloc 0x{input[i].ObjCellId:X8} [{input[i].OriginX:F6} {input[i].OriginY:F6} {input[i].OriginZ:F6}] {input[i].AnglesW:F6} {input[i].AnglesX:F6} {input[i].AnglesY:F6} {input[i].AnglesZ:F6} {input[i].VariationId:N0} */");
 
             ValuesWriter(input.Count, lineGenerator, writer);
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
@@ -20,11 +21,8 @@ namespace ACE.Server.Physics.Common
         public uint ID;
         public LandDefs.WaterType WaterType;
         public Position Pos;
-        public int NumObjects;
         public List<PhysicsObj> ObjectList;
-        public int NumLights;
         public List<int> LightList;
-        public int NumShadowObjects;
         public List<ShadowObj> ShadowObjectList;
         public List<uint> ShadowObjectIDs;
         public uint RestrictionObj;
@@ -33,6 +31,7 @@ namespace ACE.Server.Physics.Common
         public List<DatLoader.Entity.Stab> VisibleCells;
         public bool SeenOutside;
         public List<uint> VoyeurTable;
+        public int? VariationId;
 
         public Landblock CurLandblock;
 
@@ -69,9 +68,11 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterWriteLock();
             try
             {
-                // check for existing obj?
-                ObjectList.Add(obj);
-                NumObjects++;
+                if (!ObjectList.Contains(obj))
+                {
+                    ObjectList.Add(obj);
+                }
+
                 if (obj.ID == 0 || obj.Parent != null || obj.State.HasFlag(PhysicsState.Hidden) || VoyeurTable == null)
                     return;
 
@@ -98,8 +99,7 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterWriteLock();
             try
             {
-                ShadowObjectList.Add(shadowObj);
-                NumShadowObjects++; // can probably replace with .Count
+                ShadowObjectList.Add(shadowObj);                
                 shadowObj.Cell = this;
             }
             finally
@@ -198,15 +198,15 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell Get(uint cellID)
+        public static ObjCell Get(uint cellID, int? Variation)
         {
             if (cellID == 0) return null;
 
             var objCell = new ObjCell(cellID);
             if (cellID >= 0x100)
-                return DBObj.GetEnvCell(cellID);
+                return DBObj.GetEnvCell(cellID, Variation);
 
-            return LandCell.Get(cellID);
+            return LandCell.Get(cellID, Variation);
         }
 
         public PhysicsObj GetObject(int id)
@@ -228,7 +228,7 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell GetVisible(uint cellID)
+        public static ObjCell GetVisible(uint cellID, int? variationId)
         {
             if (cellID == 0) return null;
 
@@ -237,7 +237,7 @@ namespace ACE.Server.Physics.Common
                return EnvCell.get_visible(cellID);
             else
                 return LandCell.Get(cellID);*/
-            return LScape.get_landcell(cellID);
+            return LScape.get_landcell(cellID, variationId);
         }
 
         public void Init()
@@ -254,7 +254,7 @@ namespace ACE.Server.Physics.Common
             try
             {
                 ObjectList.Remove(obj);
-                NumObjects--;
+                
                 update_all_voyeur(obj, DetectionType.LeftDetection);
             }
             finally
@@ -332,12 +332,12 @@ namespace ACE.Server.Physics.Common
             return false;
         }
 
-        public static void find_cell_list(Position position, int numSphere, List<Sphere> sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path)
+        public static void find_cell_list(Position position, int numSphere, List<Sphere> sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path, int? variation)
         {
             cellArray.NumCells = 0;
-            cellArray.AddedOutside = false;
+            cellArray.AddedOutside = false;            
 
-            var visibleCell = GetVisible(position.ObjCellID);
+            var visibleCell = GetVisible(position.ObjCellID, variation);
 
             if ((position.ObjCellID & 0xFFFF) >= 0x100)
             {
@@ -413,7 +413,7 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static void find_cell_list(Position position, int numCylSphere, List<CylSphere> cylSphere, CellArray cellArray, SpherePath path)
+        public static void find_cell_list(Position position, int numCylSphere, List<CylSphere> cylSphere, CellArray cellArray, SpherePath path, int? variation)
         {
             if (numCylSphere > 10)
                 numCylSphere = 10;
@@ -429,27 +429,27 @@ namespace ACE.Server.Physics.Common
             }
 
             ObjCell empty = null;
-            find_cell_list(position, numCylSphere, spheres, cellArray, ref empty, path);
+            find_cell_list(position, numCylSphere, spheres, cellArray, ref empty, path, variation);
         }
 
-        public static void find_cell_list(Position position, Sphere sphere, CellArray cellArray, SpherePath path)
+        public static void find_cell_list(Position position, Sphere sphere, CellArray cellArray, SpherePath path, int? variation)
         {
             var globalSphere = new Sphere();
             globalSphere.Center = position.LocalToGlobal(sphere.Center);
             globalSphere.Radius = sphere.Radius;
 
             ObjCell empty = null;
-            find_cell_list(position, 1, globalSphere, cellArray, ref empty, path);
+            find_cell_list(position, 1, globalSphere, cellArray, ref empty, path, variation);
         }
 
-        public static void find_cell_list(CellArray cellArray, ref ObjCell checkCell, SpherePath path)
+        public static void find_cell_list(CellArray cellArray, ref ObjCell checkCell, SpherePath path, int? variation)
         {
-            find_cell_list(path.CheckPos, path.NumSphere, path.GlobalSphere, cellArray, ref checkCell, path);
+            find_cell_list(path.CheckPos, path.NumSphere, path.GlobalSphere, cellArray, ref checkCell, path, variation);
         }
 
-        public static void find_cell_list(Position position, int numSphere, Sphere sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path)
+        public static void find_cell_list(Position position, int numSphere, Sphere sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path, int? variation)
         {
-            find_cell_list(position, numSphere, new List<Sphere>() { sphere }, cellArray, ref currCell, path);
+            find_cell_list(position, numSphere, new List<Sphere>() { sphere }, cellArray, ref currCell, path, variation);
         }
 
         public virtual void find_transit_cells(int numParts, List<PhysicsPart> parts, CellArray cellArray)
@@ -520,7 +520,7 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterWriteLock();
             try
             {
-                while (NumShadowObjects > 0)
+                while (ShadowObjectList.Count > 0)
                 {
                     var shadowObj = ShadowObjectList[0];
                     remove_shadow_object(shadowObj);
@@ -545,7 +545,6 @@ namespace ACE.Server.Physics.Common
                 // multiple shadows?
                 ShadowObjectList.Remove(shadowObj);
                 shadowObj.Cell = null;
-                NumShadowObjects--;
             }
             finally
             {
@@ -619,7 +618,13 @@ namespace ACE.Server.Physics.Common
             readerWriterLockSlim.EnterReadLock();
             try
             {
-                target.AddRange(ObjectList);
+                for (int i = 0; i < ObjectList.Count; i++)
+                {
+                    if (!target.Contains(ObjectList[i]))
+                    {
+                        target.Add(ObjectList[i]);
+                    }
+                }
             }
             finally
             {

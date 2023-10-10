@@ -610,7 +610,7 @@ namespace ACE.Server.WorldObjects
             if (CanGenerateRare && killer != null)
                 corpse.TryGenerateRare(killer);
 
-            corpse.InitPhysicsObj();
+            corpse.InitPhysicsObj(Location.Variation);
 
             // persist the original creature velocity (only used for falling) to corpse
             corpse.PhysicsObj.Velocity = PhysicsObj.Velocity;

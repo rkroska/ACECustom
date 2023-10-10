@@ -530,7 +530,7 @@ namespace ACE.Server.WorldObjects
 
             if (searchLocations.HasFlag(SearchLocations.Landblock))
             {
-                result = CurrentLandblock?.GetObject(objectGuid);
+                result = CurrentLandblock?.GetObject(objectGuid, true, true);
 
                 if (result != null)
                     return result;
@@ -1435,7 +1435,7 @@ namespace ACE.Server.WorldObjects
             var ethereal = item.Ethereal;
             item.Ethereal = true;
 
-            if (!CurrentLandblock.AddWorldObject(item))
+            if (!CurrentLandblock.AddWorldObject(item, item.Location.Variation))
                 return false;
 
             // use radius?
@@ -1449,7 +1449,7 @@ namespace ACE.Server.WorldObjects
             {
                 item.PhysicsObj.SetPositionInternal(transit);
 
-                item.SyncLocation();
+                item.SyncLocation(item.Location.Variation);
 
                 item.SendUpdatePosition(true);
             }

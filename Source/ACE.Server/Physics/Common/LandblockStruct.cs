@@ -7,6 +7,7 @@ using ACE.Entity.Enum;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Server.Physics.Entity;
+using ACE.Common;
 
 namespace ACE.Server.Physics.Common
 {
@@ -14,6 +15,7 @@ namespace ACE.Server.Physics.Common
     {
         public uint ID;
         //public Vector3 VertexLighting;    // RGBColor
+        public int? VariationId { get; set; }
         public LandDefs.Direction TransDir;
         public int SideVertexCount;
         public int SidePolyCount;
@@ -26,7 +28,7 @@ namespace ACE.Server.Physics.Common
         //public List<int> SurfaceStrips;     // SurfaceTriStrips
         //public int BlockSurfaceIndex;
         public readonly object LandCellMutex = new object();
-        public ConcurrentDictionary<int, ObjCell> LandCells;
+        public ConcurrentDictionary<VariantCacheId, ObjCell> LandCells;
         public List<bool> SWtoNEcut { get; set; }
 
         // client-only
@@ -155,22 +157,25 @@ namespace ACE.Server.Physics.Common
                     {
                         bool cellHasWater, cellFullyFlooded;
                         CalcCellWater(x, y, out cellHasWater, out cellFullyFlooded);
-
+                        var cacheKey = new VariantCacheId { Landblock = (ushort)(x * SideCellCount + y), Variant = VariationId ?? 0 };
                         if (cellHasWater)
                         {
                             hasWater = true;
-
+                            
                             if (cellFullyFlooded)
-                                LandCells[x * SideCellCount + y].WaterType = LandDefs.WaterType.EntirelyWater;
+                            {
+                                
+                                LandCells[cacheKey].WaterType = LandDefs.WaterType.EntirelyWater;
+                            }
                             else
                             {
-                                LandCells[x * SideCellCount + y].WaterType = LandDefs.WaterType.PartiallyWater;
+                                LandCells[cacheKey].WaterType = LandDefs.WaterType.PartiallyWater;
                                 waterblock = false;
                             }
                         }
                         else
                         {
-                            LandCells[x * SideCellCount + y].WaterType = LandDefs.WaterType.NotWater;
+                            LandCells[cacheKey].WaterType = LandDefs.WaterType.NotWater;
                             waterblock = false;
                         }
                     }
@@ -200,7 +205,8 @@ namespace ACE.Server.Physics.Common
                     var lcoordY = (int)lcoord.Y + y;
                     var magicB = seedB;
                     var magicA = seedA + 1813693831;
-
+                    var cellIdx = x * SideCellCount + y;
+                    VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)cellIdx, Variant = VariationId ?? 0 };
                     for (var i = 0; i < LandDefs.VertexPerCell; i++)
                     {
                         var idxI = vertexCnt + i;
@@ -210,13 +216,11 @@ namespace ACE.Server.Physics.Common
                         {
                             var splitDir = (uint)(((int)lcoord.Y * LandDefs.VertexPerCell + idxJ) * magicA - magicB - 1369149221);
                             var polyIdx = (LandDefs.VertexPerCell * i + j) * 2;
-
-                            var cellIdx = x * SideCellCount + y;
                             var vertIdx = idxI * SideVertexCount + idxJ;
                             var firstVertex = (idxI * SidePolyCount + idxJ) * 2;
                             var nextVertIdx = (idxI + 1) * SideVertexCount + idxJ;
 
-                            var lcell = (LandCell)LandCells[cellIdx];
+                            var lcell = (LandCell)LandCells[cacheKey];
 
                             if (splitDir * 2.3283064e-10 < 0.5f)
                             {
@@ -249,7 +253,7 @@ namespace ACE.Server.Physics.Common
                     }
 
                     var cellID = (uint)LandDefs.lcoord_to_gid(lcoordX, lcoordY);
-                    var landCell = LandCells[x * SideCellCount + y];
+                    var landCell = LandCells[cacheKey];
                     landCell.ID = cellID;
                     landCell.Pos.ObjCellID = cellID;
                     landCell.Pos.Frame.Origin.X = originX * LandDefs.HalfSquareLength;
@@ -480,8 +484,8 @@ namespace ACE.Server.Physics.Common
             //BlockSurfaceIndex = -1;
 
             // init for landcell
-            LandCells = new ConcurrentDictionary<int, ObjCell>();
-            for (uint i = 1; i <= 64; i++) LandCells.TryAdd((int)i, new LandCell((i)));
+            LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
+            for (uint i = 1; i <= 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0}, new LandCell((i)));
         }
 
         /// <summary>
@@ -506,9 +510,9 @@ namespace ACE.Server.Physics.Common
             for (var i = 0; i < numSquares; i++)
                 SWtoNEcut.Add(false);
 
-            LandCells = new ConcurrentDictionary<int, ObjCell>(1, numCells);
+            LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>(1, numCells);
             for (uint i = 0; i < numCells; i++)
-                LandCells.TryAdd((int)i, new LandCell((ID & LandDefs.BlockMask) + i));
+                LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 }, new LandCell((ID & LandDefs.BlockMask) + i));
         }
 
         /// <summary>

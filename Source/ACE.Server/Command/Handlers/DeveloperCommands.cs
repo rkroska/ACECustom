@@ -491,7 +491,7 @@ namespace ACE.Server.Command.Handlers
                     for (int y = 0; y <= 0xFE; y++)
                     {
                         var blockid = new LandblockId((byte)x, (byte)y);
-                        LandblockManager.GetLandblock(blockid, false, false);
+                        LandblockManager.GetLandblock(blockid, false, null, false);
                     }
                 }
 
@@ -1670,8 +1670,23 @@ namespace ACE.Server.Command.Handlers
 
             Console.WriteLine($"\nVisible objects to {target.Name}: {target.PhysicsObj.ObjMaint.GetVisibleObjectsCount()}");
 
-            foreach (var obj in target.PhysicsObj.ObjMaint.GetVisibleObjectsValues())
+            foreach (var obj in target.PhysicsObj.ObjMaint.GetVisibleObjectsValues(target.Location.Variation))
                 Console.WriteLine($"{obj.Name} ({obj.ID:X8})");
+        }
+
+
+        [CommandHandler("lbworldobjs", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the current landblock's world objects")]
+        public static void HandleLBWorldObjects(Session session, params string[] parameters)
+        {
+            var curLandblock = session.Player.CurrentLandblock;
+            if (curLandblock != null)
+            {
+                List<WorldObject> wos = curLandblock.GetAllWorldObjectsForDiagnostics();
+                foreach (var item in wos)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{item.Name}: {item.Guid}", ChatMessageType.Broadcast));
+                }
+            }
         }
 
         /// <summary>
@@ -1778,6 +1793,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleMyLoc(Session session, params string[] parameters)
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentLandblock: {session.Player.CurrentLandblock.Id.Landblock:X4}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentVariation: {session.Player.CurrentLandblock.VariationId:N0} ", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {session.Player.Location.ToLOCString()}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics : {session.Player.PhysicsObj.Position}", ChatMessageType.Broadcast));
         }
@@ -2474,7 +2490,7 @@ namespace ACE.Server.Command.Handlers
                 msg += $"------- IsInDeathProcess: {player.IsInDeathProcess}\n";
                 var foundOnLandblock = false;
                 if (player.CurrentLandblock != null)
-                    foundOnLandblock = LandblockManager.GetLandblock(player.CurrentLandblock.Id, false).GetObject(player.Guid) != null;
+                    foundOnLandblock = LandblockManager.GetLandblock(player.CurrentLandblock.Id, false, player.Location.Variation, false).GetObject(player.Guid) != null;
                 msg += $"------- FoundOnLandblock: {foundOnLandblock}\n";
                 var playerForcedLogOffRequested = player.ForcedLogOffRequested;
                 msg += $"------- ForcedLogOffRequested: {playerForcedLogOffRequested}\n";
@@ -3063,7 +3079,18 @@ namespace ACE.Server.Command.Handlers
             var wo = CommandHandlerHelper.GetLastAppraisedObject(session);
 
             if (wo != null)
-                session.Network.EnqueueSend(new GameMessageSystemChat($"GUID: {wo.Guid}\nWeenieClassId: {wo.WeenieClassId}\nWeenieClassName: {wo.WeenieClassName}", ChatMessageType.Broadcast));
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"GUID: {wo.Guid}\nWeenieClassId: {wo.WeenieClassId}\nWeenieClassName: {wo.WeenieClassName}",
+                    ChatMessageType.Broadcast));
+                if (wo.Location != null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Variation: {wo.Location.Variation}", ChatMessageType.Broadcast));
+                }
+                if (wo.PhysicsObj != null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Position: {wo.PhysicsObj.Position}", ChatMessageType.Broadcast));
+                }
+            }            
         }
 
         public static WorldObject LastTestAim;
@@ -3110,7 +3137,7 @@ namespace ACE.Server.Command.Handlers
             wo.Location.Pos = globalOrigin;
             wo.Location.Rotation *= zRotation;
 
-            session.Player.CurrentLandblock.AddWorldObject(wo);
+            session.Player.CurrentLandblock.AddWorldObject(wo, session.Player.Location.Variation);
 
             LastTestAim = wo;
         }
@@ -3119,23 +3146,24 @@ namespace ACE.Server.Command.Handlers
         public static void HandleReloadLandblocks(Session session, params string[] parameters)
         {
             var landblock = session.Player.CurrentLandblock;
+            var variation = session.Player.Location.Variation;
 
             var landblockId = landblock.Id.Raw | 0xFFFF;
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Reloading 0x{landblockId:X8}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Reloading 0x{landblockId:X8}, {variation ?? 0:N0}", ChatMessageType.Broadcast));
 
             // destroy all non-player server objects
             landblock.DestroyAllNonPlayerObjects();
 
             // clear landblock cache
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock, variation);
 
             // reload landblock
             var actionChain = new ActionChain();
             actionChain.AddDelayForOneTick();
             actionChain.AddAction(session.Player, () =>
             {
-                landblock.Init(true);
+                landblock.Init(variation, true);
             });
             actionChain.EnqueueChain();
         }

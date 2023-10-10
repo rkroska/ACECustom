@@ -351,7 +351,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SetProjectilePhysicsState(WorldObject obj, WorldObject target, Vector3 velocity)
         {
-            obj.InitPhysicsObj();
+            obj.InitPhysicsObj(Location.Variation);
 
             obj.ReportCollisions = true;
             obj.Missile = true;
