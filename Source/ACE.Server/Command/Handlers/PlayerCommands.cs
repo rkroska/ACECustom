@@ -992,20 +992,6 @@ namespace ACE.Server.Command.Handlers
             
         }
 
-        [CommandHandler("lbworldobjs", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current landblock's world objects")]
-        public static void HandleLBWorldObjects(Session session, params string[] parameters)
-        {
-            var curLandblock = session.Player.CurrentLandblock;
-            if (curLandblock != null)
-            {
-                List<WorldObject> wos =  curLandblock.GetAllWorldObjectsForDiagnostics();
-                foreach (var item in wos)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"{item.Name}: {item.Guid}", ChatMessageType.Broadcast));
-                }
-            }
-        }
-
         [CommandHandler("knownobjects", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current known objects")]
         public static void HandleKnownObjectList(Session session, params string[] parameters)
         {
