@@ -838,9 +838,6 @@ namespace ACE.Server.Managers
                 // Refuse Item, check Generic Flag
                 var responseEmote = NewStarterEmote(questName, databaseWeenie);
 
-                // Refuse Item, check Generic Flag
-                var responseEmote = NewStarterEmote(questName, databaseWeenie);
-
                 // If Generic Flag is Set, No Reward
                 var checkOtherQuestEmote = CheckOtherQuestEmote(databaseWeenie);
 
@@ -1391,88 +1388,6 @@ namespace ACE.Server.Managers
                 Max = 1,
                 Min = 1,
 
-            };
-
-            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);
-            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction2);
-            responseEmote.WeeniePropertiesEmoteAction.Add(responseAction3);
-
-            return responseEmote;
-        }
-
-        private static Database.Models.World.WeeniePropertiesEmote NewStarterEmote(string questName, Database.Models.World.Weenie targetNPCWeenie)
-        {
-            Database.Models.World.WeeniePropertiesEmote responseEmote = new Database.Models.World.WeeniePropertiesEmote
-            {
-                Object = targetNPCWeenie,
-                Category = (int)EmoteCategory.Refuse, //refuse = examine
-                Probability = 1,
-                WeenieClassId = 365, //Parchment: the note, or the item from the delivery
-                Style = (uint?)MotionStance.NonCombat,
-                Substyle = (uint?)MotionCommand.Wave,
-                Quest = null,
-                VendorType = (int?)VendorType.Undef,
-                MinHealth = 0,
-                MaxHealth = null,
-            };
-
-            Database.Models.World.WeeniePropertiesEmoteAction responseAction1 = new Database.Models.World.WeeniePropertiesEmoteAction
-            {
-                Emote = responseEmote,
-                Type = (uint)EmoteType.TurnToTarget,
-                Order = 0,
-                Delay = 0,
-                Extent = 0,
-                Motion = (uint?)MotionCommand.Wave,
-                Message = questName,
-                TestString = "",
-                Amount = null,
-                Amount64 = null,
-                HeroXP64 = null,
-                WealthRating = null,
-                TreasureClass = null,
-                TreasureType = null,
-                WeenieClassId = null,
-
-            };
-
-            Database.Models.World.WeeniePropertiesEmoteAction responseAction2 = new Database.Models.World.WeeniePropertiesEmoteAction
-            {
-                Emote = responseEmote,
-                Type = (uint)EmoteType.Motion,
-                Order = 1,
-                Delay = 0,
-                Extent = 0,
-                Motion = (uint?)MotionCommand.Wave,
-                Message = questName,
-                TestString = "",
-                Amount = null,
-                Amount64 = null,
-                HeroXP64 = null,
-                WealthRating = null,
-                TreasureClass = null,
-                TreasureType = null,
-                WeenieClassId = null,
-
-            };
-
-            Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
-            {
-                Emote = responseEmote,
-                Type = (uint)EmoteType.InqQuest,
-                Order = 2,
-                Delay = 0,
-                Extent = 0,
-                Motion = (uint?)MotionCommand.Wave,
-                Message = DynamicQuestFlagName,
-                TestString = "",
-                Amount = null,
-                Amount64 = null,
-                HeroXP64 = null,
-                WealthRating = null,
-                TreasureClass = null,
-                TreasureType = null,
-                WeenieClassId = null,
             };
 
             responseEmote.WeeniePropertiesEmoteAction.Add(responseAction1);
