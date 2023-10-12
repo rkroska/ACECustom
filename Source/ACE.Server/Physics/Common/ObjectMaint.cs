@@ -566,7 +566,7 @@ namespace ACE.Server.Physics.Common
             try
             {
                 RemoveVisibleObject(obj);
-                Console.WriteLine($"Destructing PhysObj: {obj.Name}, {obj.Position.Variation}");
+                //Console.WriteLine($"Destructing PhysObj: {obj.Name}, {obj.Position.Variation}");
                 if (DestructionQueue.ContainsKey(obj))
                     return false;
 
