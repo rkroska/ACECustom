@@ -148,7 +148,7 @@ namespace ACE.Server.Physics.Common
                 if (lcoord == null) return null;
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
                 
-                landblock.LandCells.TryGetValue(cacheKey, out cell);
+                landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell);
             }
             // indoor cells
             else
