@@ -116,8 +116,15 @@ namespace ACE.Server.Physics.Common
 
         public void build_visible_cells()
         {
-            VisibleCells = new Dictionary<uint, EnvCell>();
-
+            //if (VisibleCells != null && VisibleCellIDs != null && VisibleCells.Count == VisibleCellIDs.Count)
+            //{
+            //    return; // already built
+            //}
+            if (VisibleCells == null)
+            {
+                VisibleCells = new Dictionary<uint, EnvCell>();
+            }
+            
             foreach (var visibleCellID in VisibleCellIDs)
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;
