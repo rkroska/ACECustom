@@ -20,7 +20,6 @@ namespace ACE.Server.Physics.Common
         /// This is not used if PhysicsEngine.Instance.Server is true
         /// </summary>
         public static ConcurrentDictionary<VariantCacheId, Landblock> Landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
-        public static Dictionary<uint, Landblock> BlockDrawList = new Dictionary<uint, Landblock>();
 
         public static uint LoadedCellID;
         public static uint ViewerCellID;
