@@ -138,6 +138,7 @@ namespace ACE.Server.Physics.Common
                 return null;
 
             var cellID = blockCellID & 0xFFFF;
+            var cacheKey = new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 };
             ObjCell cell = null;
 
             // outdoor cells
@@ -146,28 +147,23 @@ namespace ACE.Server.Physics.Common
                 var lcoord = LandDefs.gid_to_lcoord(blockCellID, false);
                 if (lcoord == null) return null;
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
-                var cacheKey = new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 };
+                
                 landblock.LandCells.TryGetValue(cacheKey, out cell);
             }
             // indoor cells
             else
             {
-                if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0}, out cell))
+                if (landblock.LandCells.TryGetValue(cacheKey, out cell))
                     return cell;
 
-                lock (landblock.LandCellMutex)
-                {
-                    if (landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, out cell))
-                        return cell;
-
-                    cell = DBObj.GetEnvCell(blockCellID, variationId);
-                    cell.CurLandblock = landblock;
-                    cell.Pos.Variation = variationId; //todo - gross
-                    cell.VariationId = variationId;
-                    landblock.LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 }, cell);
-                    var envCell = (EnvCell)cell;
-                    envCell.PostInit(variationId);
-                }
+                cell = DBObj.GetEnvCell(blockCellID, variationId);
+                cell.CurLandblock = landblock;
+                cell.Pos.Variation = variationId; //todo - gross
+                cell.VariationId = variationId;
+                landblock.LandCells.TryAdd(cacheKey, cell);
+                var envCell = (EnvCell)cell;
+                envCell.PostInit(variationId);
+                
             }
             return cell;
         }

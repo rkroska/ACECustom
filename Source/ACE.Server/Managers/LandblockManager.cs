@@ -240,16 +240,16 @@ namespace ACE.Server.Managers
             {
                 for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
                 {
+                    var landlockToAdd = landblockGroupPendingAdditions.ElementAt(i).Value;
                     //if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
                     //{
                     //    Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
                     //}
-                    if (landblockGroupPendingAdditions.ElementAt(i).Value.IsDungeon || landblockGroupPendingAdditions.ElementAt(i).Value.VariationId.HasValue)
+                    if (landlockToAdd.IsDungeon || landlockToAdd.VariationId.HasValue)
                     {
                         // Each dungeon exists in its own group
-                        var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions.ElementAt(i).Value, landblockGroupPendingAdditions.ElementAt(i).Value.VariationId);
+                        var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
                         landblockGroups.Add(landblockGroup);
-                        //TODO: Add variation code here?
                     }
                     else
                     {
@@ -261,7 +261,7 @@ namespace ACE.Server.Managers
                             if (landblockGroups[j].IsDungeon)
                                 continue;
 
-                            var distance = landblockGroups[j].BoundaryDistance(landblockGroupPendingAdditions.ElementAt(i).Value);
+                            var distance = landblockGroups[j].BoundaryDistance(landlockToAdd);
 
                             if (distance < LandblockGroup.LandblockGroupMinSpacing)
                                 landblockGroupsIndexMatchesByDistance.Add(j);
@@ -270,7 +270,7 @@ namespace ACE.Server.Managers
                         if (landblockGroupsIndexMatchesByDistance.Count > 0)
                         {
                             // Add the landblock to the first eligible group
-                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblockGroupPendingAdditions.ElementAt(i).Value, landblockGroupPendingAdditions.ElementAt(i).Value.VariationId);
+                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landlockToAdd, landlockToAdd.VariationId);
 
                             if (landblockGroupsIndexMatchesByDistance.Count > 1)
                             {
@@ -288,12 +288,12 @@ namespace ACE.Server.Managers
                         else
                         {
                             // No close groups were found
-                            var landblockGroup = new LandblockGroup(landblockGroupPendingAdditions.ElementAt(i).Value, landblockGroupPendingAdditions.ElementAt(i).Value.VariationId);
+                            var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
                             landblockGroups.Add(landblockGroup);
                         }
                     }
 
-                    landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landblockGroupPendingAdditions.ElementAt(i).Value.Id.Landblock, Variant = landblockGroupPendingAdditions.ElementAt(i).Value.VariationId ?? 0 }, out _);                    
+                    landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId ?? 0 }, out _);                    
                     
                 }
 
