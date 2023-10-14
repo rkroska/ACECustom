@@ -1433,11 +1433,14 @@ namespace ACE.Server.Physics
                 {
                     LandDefs.AdjustToOutside(newPos);
 
+                    // lets only call get_landcell once
+                    var objCell = LScape.get_landcell(newPos.ObjCellID, newPos.Variation);
+
                     // ensure walkable slope
-                    var landcell = (LandCell)LScape.get_landcell(newPos.ObjCellID, newPos.Variation);
+                    var landcell = objCell as LandCell;
 
                     Polygon walkable = null;
-                    var terrainPoly = landcell.find_terrain_poly(newPos.Frame.Origin, ref walkable);
+                    landcell.find_terrain_poly(newPos.Frame.Origin, ref walkable);
                     if (walkable == null || !is_valid_walkable(walkable.Plane.Normal)) continue;
 
                     // account for buildings
@@ -1445,7 +1448,7 @@ namespace ACE.Server.Physics
                     // compare: rabbits occasionally spawning in buildings in yaraq,
                     // vs. lich tower @ 3D31FFFF
 
-                    var sortCell = LScape.get_landcell(newPos.ObjCellID, newPos.Variation) as SortCell;
+                    var sortCell = objCell as SortCell;
                     if (sortCell == null || !sortCell.has_building())
                     {
                         // set to ground pos
