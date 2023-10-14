@@ -2397,11 +2397,18 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
+                int maxNumToSpawn = 100; // Don't hang the server by letting folks spawn too much
                 if (weenie.IsStackable() && obj.MaxStackSize != null)
                 {
                     var fullStacks = numToSpawn / (int)obj.MaxStackSize;
-                    var lastStackAmount = numToSpawn % (int)obj.MaxStackSize;
+                    if (fullStacks > maxNumToSpawn)
+                    {
+                        fullStacks = maxNumToSpawn;
+                        numToSpawn = maxNumToSpawn * (int)obj.MaxStackSize;
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Tried to spawn too many stacks, reduced to {maxNumToSpawn}.", ChatMessageType.Broadcast));
+                    }
 
+                    var lastStackAmount = numToSpawn % (int)obj.MaxStackSize;
                     for (int i = 0; i < fullStacks; i++)
                     {
                         var stack = CreateObjectForCommand(session, weenie);
@@ -2416,6 +2423,11 @@ namespace ACE.Server.Command.Handlers
                 }
                 else
                 {
+                    if (numToSpawn > maxNumToSpawn)
+                    {
+                        numToSpawn = maxNumToSpawn;
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Tried to spawn too many objects, reduced to {maxNumToSpawn}.", ChatMessageType.Broadcast));
+                    }
                     // The number of weenies to spawn will be limited by the physics engine.
                     for (int i = 0; i < numToSpawn; i++)
                     {
@@ -2435,7 +2447,10 @@ namespace ACE.Server.Command.Handlers
                 if (lifespan != null)
                     w.Lifespan = lifespan;
 
-                w.EnterWorld();
+                if (!w.EnterWorld()) // If the last object failed to add to the landblock, don't keep trying
+                {
+                    break;
+                }
             }
 
             if (numToSpawn > 1)
