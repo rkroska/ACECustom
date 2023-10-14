@@ -58,6 +58,7 @@ namespace ACE.Server.Physics.Common
             }
             NumStabs = StaticObjectIDs.Count;
             VisibleCellIDs = envCell.VisibleCells;
+            VisibleCellIDs.Sort();
             RestrictionObj = envCell.RestrictionObj;
             SeenOutside = envCell.SeenOutside;
 
