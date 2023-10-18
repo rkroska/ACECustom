@@ -13,22 +13,22 @@ namespace ACE.Server.Physics.Common
 {
     public class EnvCell: ObjCell, IEquatable<EnvCell>
     {
-        public int NumSurfaces;
+        //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
         public uint CellStructureID;
         //public Environment Env;
-        public int NumPortals;
+        //public int NumPortals;
         public List<DatLoader.Entity.CellPortal> Portals;
         public int NumStaticObjects;
         public List<uint> StaticObjectIDs;
         public List<AFrame> StaticObjectFrames;
         public List<PhysicsObj> StaticObjects;
-        public List<ushort> LightArray;
-        public int InCellTimestamp;
+        //public List<ushort> LightArray;
+        //public int InCellTimestamp;
         public List<ushort> VisibleCellIDs;
         public new Dictionary<uint, EnvCell> VisibleCells;
-        public EnvCellFlags Flags;
+        //public EnvCellFlags Flags;
         public uint EnvironmentID;
         public DatLoader.FileTypes.EnvCell _envCell;
         public DatLoader.FileTypes.Environment Environment;
@@ -42,12 +42,12 @@ namespace ACE.Server.Physics.Common
         {
             _envCell = envCell;
 
-            Flags = envCell.Flags;
+            //Flags = envCell.Flags;
             ID = envCell.Id;
             ShadowObjectIDs = envCell.Surfaces;
             Pos = new Position(ID, new AFrame(envCell.Position), Variation);
             Portals = envCell.CellPortals;
-            NumPortals = Portals.Count;
+            //NumPortals = Portals.Count;
             StaticObjectIDs = new List<uint>();
             StaticObjectFrames = new List<AFrame>();
             NumStaticObjects = envCell.StaticObjects.Count;
@@ -74,7 +74,7 @@ namespace ACE.Server.Physics.Common
             else
                 Console.WriteLine("CellStructureID {0} not found in Environment {1}", CellStructureID, EnvironmentID);
 
-            NumSurfaces = envCell.Surfaces.Count;
+            //NumSurfaces = envCell.Surfaces.Count;
         }
 
         public void PostInit(int? variation)
@@ -121,10 +121,7 @@ namespace ACE.Server.Physics.Common
             //{
             //    return; // already built
             //}
-            if (VisibleCells == null)
-            {
-                VisibleCells = new Dictionary<uint, EnvCell>();
-            }
+            VisibleCells ??= new Dictionary<uint, EnvCell>();
             
             foreach (var visibleCellID in VisibleCellIDs)
             {
@@ -229,10 +226,9 @@ namespace ACE.Server.Physics.Common
             return null;
         }
 
-        public new EnvCell GetVisible(uint cellID)
+        public EnvCell GetVisible(uint cellID)
         {
-            EnvCell envCell = null;
-            VisibleCells.TryGetValue(cellID, out envCell);
+            VisibleCells.TryGetValue(cellID, out EnvCell envCell);
             return envCell;
         }
 

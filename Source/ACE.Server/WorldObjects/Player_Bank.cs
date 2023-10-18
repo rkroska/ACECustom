@@ -82,7 +82,7 @@ namespace ACE.Server.WorldObjects
             }
             lock (balanceLock)
             {
-                int i = 0;
+                //int i = 0;
                 var keysList = this.GetInventoryItemsOfWCID(48746);
                 foreach (var item in keysList)
                 {

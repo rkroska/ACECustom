@@ -200,13 +200,13 @@ namespace ACE.Server.WorldObjects
 
         public double lastDist;
 
-        public static double ProjectileTimeout = 30.0f;
+        public static double ProjectileTimeout = 20.0f;
 
         private readonly double physicsCreationTime = PhysicsTimer.CurrentTime;
 
         public double LastPhysicsUpdate;
 
-        public static double UpdateRate_Creature = 0.2f;
+        public static double UpdateRate_Creature = 0.3f;
 
         public bool IsLifespanSpent => Lifespan != null && GetRemainingLifespan() <= 0;
 
@@ -377,7 +377,7 @@ namespace ACE.Server.WorldObjects
                 if (elapsedSeconds >= 0.100) // Yea, that ain't good....
                 {
                     slowUpdateObjectPhysicsHits++;
-                    log.Warn($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process UpdateObjectPhysics() at loc: {Location}");
+                    log.Warn($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process WorldObject.UpdateObjectPhysics() at loc: {Location}");
 
                     // Destroy laggy projectiles
                     if (slowUpdateObjectPhysicsHits >= 5 && this is SpellProjectile spellProjectile)
@@ -396,10 +396,10 @@ namespace ACE.Server.WorldObjects
                         PhysicsObj.set_active(false);
                         spellProjectile.ProjectileImpact();
 
-                        log.Warn($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process UpdateObjectPhysics() at loc: {Location}. SpellProjectile destroyed.");
+                        log.Warn($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process WorldObject.UpdateObjectPhysics() at loc: {Location}. SpellProjectile destroyed.");
                     }
                     else
-                        log.Debug($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process UpdateObjectPhysics() at loc: {Location}");
+                        log.Debug($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process WorldObject.UpdateObjectPhysics() at loc: {Location}");
                 }
             }
         }

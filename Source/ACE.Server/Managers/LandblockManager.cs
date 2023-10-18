@@ -106,11 +106,10 @@ namespace ACE.Server.Managers
 
         private static Landblock GetLandblock(VariantCacheId landblockKey)
         {
-            lock (landblockMutex)
-            {
-                if (landblocks.TryGetValue(landblockKey, out Landblock landblock))
-                    return landblock;
-            }
+
+            if (landblocks.TryGetValue(landblockKey, out Landblock landblock))
+                return landblock;
+            
             return null;
         }
 
@@ -233,77 +232,75 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void ProcessPendingLandblockGroupAdditions()
         {
-            if (landblockGroupPendingAdditions.Count == 0)
+            if (landblockGroupPendingAdditions.IsEmpty)
                 return;
 
-            lock (landblockMutex)
+            for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
             {
-                for (int i = landblockGroupPendingAdditions.Count - 1; i >= 0; i--)
+                var landlockToAdd = landblockGroupPendingAdditions.ElementAt(i).Value;
+                //if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
+                //{
+                //    Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
+                //}
+                if (landlockToAdd.IsDungeon || landlockToAdd.VariationId.HasValue)
                 {
-                    var landlockToAdd = landblockGroupPendingAdditions.ElementAt(i).Value;
-                    //if (landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString().StartsWith("019E"))
-                    //{
-                    //    Console.WriteLine("Adding landblock: " + landblockGroupPendingAdditions.ElementAt(i).Value.Id.ToString() + ", v:" + landblockGroupPendingAdditions.ElementAt(i).Value.VariationId + " to landblockGroups");
-                    //}
-                    if (landlockToAdd.IsDungeon || landlockToAdd.VariationId.HasValue)
+                    // Each dungeon exists in its own group
+                    var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
+                    landblockGroups.Add(landblockGroup);
+                }
+                else
+                {
+                    // Find out how many groups this landblock is eligible for
+                    var landblockGroupsIndexMatchesByDistance = new List<int>();
+
+                    for (int j = 0; j < landblockGroups.Count; j++)
                     {
-                        // Each dungeon exists in its own group
-                        var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
-                        landblockGroups.Add(landblockGroup);
+                        if (landblockGroups[j].IsDungeon)
+                            continue;
+
+                        var distance = landblockGroups[j].BoundaryDistance(landlockToAdd);
+
+                        if (distance < LandblockGroup.LandblockGroupMinSpacing)
+                            landblockGroupsIndexMatchesByDistance.Add(j);
+                    }
+
+                    if (landblockGroupsIndexMatchesByDistance.Count > 0)
+                    {
+                        // Add the landblock to the first eligible group
+                        landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landlockToAdd, landlockToAdd.VariationId);
+
+                        if (landblockGroupsIndexMatchesByDistance.Count > 1)
+                        {
+                            // Merge the additional eligible groups into the first one
+                            for (int j = landblockGroupsIndexMatchesByDistance.Count - 1; j > 0; j--)
+                            {
+                                // Copy the j down into 0
+                                foreach (var landblock in landblockGroups[landblockGroupsIndexMatchesByDistance[j]])
+                                    landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock.Value, landblock.Value.VariationId);
+
+                                landblockGroups.RemoveAt(landblockGroupsIndexMatchesByDistance[j]);
+                            }
+                        }
                     }
                     else
                     {
-                        // Find out how many groups this landblock is eligible for
-                        var landblockGroupsIndexMatchesByDistance = new List<int>();
-
-                        for (int j = 0; j < landblockGroups.Count; j++)
-                        {
-                            if (landblockGroups[j].IsDungeon)
-                                continue;
-
-                            var distance = landblockGroups[j].BoundaryDistance(landlockToAdd);
-
-                            if (distance < LandblockGroup.LandblockGroupMinSpacing)
-                                landblockGroupsIndexMatchesByDistance.Add(j);
-                        }
-
-                        if (landblockGroupsIndexMatchesByDistance.Count > 0)
-                        {
-                            // Add the landblock to the first eligible group
-                            landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landlockToAdd, landlockToAdd.VariationId);
-
-                            if (landblockGroupsIndexMatchesByDistance.Count > 1)
-                            {
-                                // Merge the additional eligible groups into the first one
-                                for (int j = landblockGroupsIndexMatchesByDistance.Count - 1; j > 0; j--)
-                                {
-                                    // Copy the j down into 0
-                                    foreach (var landblock in landblockGroups[landblockGroupsIndexMatchesByDistance[j]])
-                                        landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock.Value, landblock.Value.VariationId);
-
-                                    landblockGroups.RemoveAt(landblockGroupsIndexMatchesByDistance[j]);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // No close groups were found
-                            var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
-                            landblockGroups.Add(landblockGroup);
-                        }
+                        // No close groups were found
+                        var landblockGroup = new LandblockGroup(landlockToAdd, landlockToAdd.VariationId);
+                        landblockGroups.Add(landblockGroup);
                     }
-
-                    landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId ?? 0 }, out _);                    
-                    
                 }
 
-                // Debugging todo: comment this out after enough testing
-                var count = 0;
-                foreach (var group in landblockGroups)
-                    count += group.Count;
-                if (count != loadedLandblocks.Count)
-                    log.Error($"[LANDBLOCK GROUP] ProcessPendingAdditions count ({count}) != loadedLandblocks.Count ({loadedLandblocks.Count})");
+                landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId ?? 0 }, out _);                    
+                    
             }
+
+            // Debugging todo: comment this out after enough testing
+            var count = 0;
+            foreach (var group in landblockGroups)
+                count += group.Count;
+            if (count != loadedLandblocks.Count)
+                log.Error($"[LANDBLOCK GROUP] ProcessPendingAdditions count ({count}) != loadedLandblocks.Count ({loadedLandblocks.Count})");
+            
         }
 
         public static void Tick(double portalYearTicks)
@@ -451,8 +448,7 @@ namespace ACE.Server.Managers
             }
 
             // Remove from the old landblock -- force
-            if (oldBlock != null)
-                oldBlock.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
+            oldBlock?.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
             // Add to the new landblock
             newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
         }
@@ -470,61 +466,59 @@ namespace ACE.Server.Managers
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, int? variation, bool permaload = false)
         {
             Landblock landblock;
-            //Console.WriteLine($"Get Landblock: {landblockId}, v: {variation}");
-            lock (landblockMutex)
+
+            bool setAdjacents = false;
+            var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation ?? 0 };
+            landblock = GetLandblock(cacheKey);
+
+            if (landblock == null)
             {
-                bool setAdjacents = false;
-                var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation ?? 0 };
-                landblock = GetLandblock(cacheKey);
-
-                if (landblock == null)
+                // load up this landblock                    
+                landblock = new Landblock(landblockId, variation);
+                if(!AddUpdateLandblock(landblock, variation))
                 {
-                    // load up this landblock                    
-                    landblock = new Landblock(landblockId, variation);
-                    if(!AddUpdateLandblock(landblock, variation))
-                    {
-                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
-                        return landblock;
-                    }
-
-                    if (!loadedLandblocks.TryAdd(cacheKey, landblock))
-                    {
-                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
-                        return landblock;
-                    }
-
-                    landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
-                    //if (landblock.Id.ToString().StartsWith("019E"))
-                    //{                        
-                    //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
-                    //        $"From: {new System.Diagnostics.StackTrace()}");
-                    //}
-                    landblock.Init(variation);
-
-                    setAdjacents = true;
-                }
-                else
-                {
-                    //Console.WriteLine($"Landblock found from GetLandblock: {landblockId.Raw} v: {variation}");
+                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
+                    return landblock;
                 }
 
-                if (permaload)
-                    landblock.Permaload = true;
-
-                // load adjacents, if applicable
-                if (loadAdjacents)
+                if (!loadedLandblocks.TryAdd(cacheKey, landblock))
                 {
-                    var adjacents = GetAdjacentIDs(landblock);
-                    foreach (var adjacent in adjacents)
-                        GetLandblock(adjacent, false, variation, permaload);
-
-                    setAdjacents = true;
+                    log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
+                    return landblock;
                 }
 
-                // cache adjacencies
-                if (setAdjacents)
-                    SetAdjacents(landblock, true, true);
+                landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
+                //if (landblock.Id.ToString().StartsWith("019E"))
+                //{                        
+                //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
+                //        $"From: {new System.Diagnostics.StackTrace()}");
+                //}
+                landblock.Init(variation);
+
+                setAdjacents = true;
             }
+            else
+            {
+                //Console.WriteLine($"Landblock found from GetLandblock: {landblockId.Raw} v: {variation}");
+            }
+
+            if (permaload)
+                landblock.Permaload = true;
+
+            // load adjacents, if applicable
+            if (loadAdjacents)
+            {
+                var adjacents = GetAdjacentIDs(landblock);
+                foreach (var adjacent in adjacents)
+                    GetLandblock(adjacent, false, variation, permaload);
+
+                setAdjacents = true;
+            }
+
+            // cache adjacencies
+            if (setAdjacents)
+                SetAdjacents(landblock, true, true);
+            
 
             return landblock;
         }

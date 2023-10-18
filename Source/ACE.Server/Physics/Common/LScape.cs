@@ -15,7 +15,7 @@ namespace ACE.Server.Physics.Common
         public static int MidRadius = 5;
         public static int MidWidth = 11;
 
-        private static readonly object landblockMutex = new object();
+        //private static readonly object landblockMutex = new object();
         /// <summary>
         /// This is not used if PhysicsEngine.Instance.Server is true
         /// </summary>
@@ -86,21 +86,15 @@ namespace ACE.Server.Physics.Common
             if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
 
-            lock (landblockMutex)
-            {
-                // check if landblock is already cached, this time under the lock.
-                if (Landblocks.TryGetValue(cacheKey, out landblock))
-                    return landblock;
+            // if not, load into cache
+            landblock = new Landblock(DBObj.GetCellLandblock(landblockID), variationId);
+            if (Landblocks.TryAdd(cacheKey, landblock))
+                landblock.PostInit();
+            else
+                Landblocks.TryGetValue(cacheKey, out landblock);
 
-                // if not, load into cache
-                landblock = new Landblock(DBObj.GetCellLandblock(landblockID), variationId);
-                if (Landblocks.TryAdd(cacheKey, landblock))
-                    landblock.PostInit();
-                else
-                    Landblocks.TryGetValue(cacheKey, out landblock);
-
-                return landblock;
-            }
+            return landblock;
+            
         }
 
         public static bool unload_landblock(uint landblockID, int? variationId = null)

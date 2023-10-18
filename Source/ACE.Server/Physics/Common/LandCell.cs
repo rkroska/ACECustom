@@ -10,7 +10,7 @@ namespace ACE.Server.Physics.Common
     public class LandCell: SortCell
     {
         public List<Polygon> Polygons;
-        public bool InView;
+        //public bool InView;
 
         public LandCell(): base()
         {

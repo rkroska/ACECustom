@@ -139,7 +139,7 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterReadLock();
             try
             {
-                return KnownObjects.Values.Contains(value);
+                return KnownObjects.ContainsValue(value);
             }
             finally
             {
@@ -358,7 +358,7 @@ namespace ACE.Server.Physics.Common
                 // and envcells seen from outside (all buildings)
                 var visibleObjs = PhysicsObj.CurLandblock.GetServerObjects(true);
 
-                return ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && (!(i.CurCell is EnvCell indoors) || indoors.SeenOutside)).ToList();
+                return ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && (i.CurCell is not EnvCell indoors || indoors.SeenOutside)).ToList();
             }
             finally
             {
@@ -386,14 +386,14 @@ namespace ACE.Server.Physics.Common
             // if SeenOutside, add objects from outdoor landblock
             if (cell.SeenOutside)
             {
-                var outsideObjs = PhysicsObj.CurLandblock.GetServerObjects(true).Where(i => !(i.CurCell is EnvCell indoors) || indoors.SeenOutside);
+                var outsideObjs = PhysicsObj.CurLandblock.GetServerObjects(true).Where(i => i.CurCell is not EnvCell indoors || indoors.SeenOutside);
 
                 visibleObjs.AddRange(outsideObjs);
             }
 
             if (VariationId != null)
             {
-                ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList(); //TODO: Test if this actually works?
+                visibleObjs = ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList(); //TODO: Test if this actually works?
             }
 
             return ApplyFilter(visibleObjs, type).Where(i => !i.DatObject && i.ID != PhysicsObj.ID).Distinct().ToList();
