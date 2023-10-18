@@ -143,7 +143,7 @@ namespace ACE.Server.WorldObjects
 
             var defaultState = CalculatedPhysicsState();
 
-            if (!(this is Creature))
+            if (this is not Creature)
             {
                 var isDynamic = Static == null || !Static.Value;
                 var setupTableId = SetupTableId;
@@ -426,7 +426,7 @@ namespace ACE.Server.WorldObjects
 
         public bool IsProjectileVisible(WorldObject proj)
         {
-            if (!(this is Creature) || (Ethereal ?? false))
+            if (this is not Creature || (Ethereal ?? false))
                 return true;
 
             if (PhysicsObj == null || proj.PhysicsObj == null)

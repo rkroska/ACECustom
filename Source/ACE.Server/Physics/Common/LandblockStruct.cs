@@ -42,7 +42,7 @@ namespace ACE.Server.Physics.Common
         public static List<byte> NE_Corner;
         public static List<byte> NW_Corner;
 
-        public static LandSurf LandSurf;
+        //public static LandSurf LandSurf;
 
         static LandblockStruct()
         {
@@ -55,11 +55,13 @@ namespace ACE.Server.Physics.Common
                 new Vector2(0, 0)
             });
 
-            LandUVsRotated = new Dictionary<byte, List<Vector2>>();
-            LandUVsRotated.Add(0, new List<Vector2>() { LandUVs[0], LandUVs[1], LandUVs[2], LandUVs[3] });
-            LandUVsRotated.Add(1, new List<Vector2>() { LandUVs[3], LandUVs[0], LandUVs[1], LandUVs[2] });
-            LandUVsRotated.Add(2, new List<Vector2>() { LandUVs[2], LandUVs[3], LandUVs[0], LandUVs[1] });
-            LandUVsRotated.Add(3, new List<Vector2>() { LandUVs[1], LandUVs[2], LandUVs[3], LandUVs[0] });
+            LandUVsRotated = new Dictionary<byte, List<Vector2>>
+            {
+                { 0, new List<Vector2>() { LandUVs[0], LandUVs[1], LandUVs[2], LandUVs[3] } },
+                { 1, new List<Vector2>() { LandUVs[3], LandUVs[0], LandUVs[1], LandUVs[2] } },
+                { 2, new List<Vector2>() { LandUVs[2], LandUVs[3], LandUVs[0], LandUVs[1] } },
+                { 3, new List<Vector2>() { LandUVs[1], LandUVs[2], LandUVs[3], LandUVs[0] } }
+            };
 
             SurfChar = new List<ushort>()
             {
@@ -351,7 +353,7 @@ namespace ACE.Server.Physics.Common
 
             if (LandCells != null)
             {
-                RemoveSurfaces();
+                //RemoveSurfaces();
                 LandCells = null;
             }
             VertexArray.Vertices = null;
@@ -362,7 +364,7 @@ namespace ACE.Server.Physics.Common
             // omitted vertex lighting
         }
 
-        public bool FSplitNESW(int x, int y)
+        public static bool FSplitNESW(int x, int y)
         {
             var split = x * y * 0xCCAC033 - x * 0x421BE3BD + (y * 0x6C1AC587 - 0x519B8F25) / 2147483648;
             return split % 2 != 0;
@@ -458,7 +460,6 @@ namespace ACE.Server.Physics.Common
 
             singleTextureCell = r1 != 0 ? singleRoadCell : singleRoadCell && singleTypeCell;
 
-            var regionDesc = DatManager.PortalDat.RegionDesc;
             var minimizePal = true;
 
             LandSurf.Instance.SelectTerrain(globalCellX, globalCellY, ref surfNum, ref rotation, palCodes, 1, minimizePal);
@@ -534,11 +535,11 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public void RemoveSurfaces()
-        {
-            // calls LandSurf::RemoveSurface()
-            // possibly only for rendering textures?
-        }
+        //public void RemoveSurfaces()
+        //{
+        //    // calls LandSurf::RemoveSurface()
+        //    // possibly only for rendering textures?
+        //}
 
         public void TransAdjust()
         {

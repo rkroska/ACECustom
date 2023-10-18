@@ -373,8 +373,7 @@ namespace ACE.Server.Entity
                     wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
                     wo.Location.Variation = VariationId;
 
-                    var sortCell = LScape.get_landcell(pos.ObjCellID, pos.Variation) as SortCell;
-                    if (sortCell != null && sortCell.has_building())
+                    if (LScape.get_landcell(pos.ObjCellID, pos.Variation) is SortCell sortCell && sortCell.has_building())
                     {
                         wo.Destroy();
                         return;
@@ -964,7 +963,7 @@ namespace ACE.Server.Entity
                     }
                     else if (wo.IsGenerator) // Some generators will fail random spawns if they're circumference spans over water or cliff edges
                         log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
-                    else if (wo.ProjectileTarget == null && !(wo is SpellProjectile))
+                    else if (wo.ProjectileTarget == null && wo is not SpellProjectile)
                         Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
 
                     return false;
@@ -1243,7 +1242,7 @@ namespace ACE.Server.Entity
             SaveDB();
 
             // remove all objects
-            foreach (var wo in worldObjects.Where(i => !(i.Value is Player)).ToList())
+            foreach (var wo in worldObjects.Where(i => i.Value is not Player).ToList())
             {
                 if (!wo.Value.BiotaOriginatedFromOrHasBeenSavedToDatabase())
                     wo.Value.Destroy(false);

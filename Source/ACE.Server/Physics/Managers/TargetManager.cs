@@ -57,7 +57,7 @@ namespace ACE.Server.Physics.Combat
         {
             if (PhysicsObj == null) return;
 
-            if (PhysicsTimer.CurrentTime - LastUpdateTime < 0.5f) return;
+            if (PhysicsTimer.CurrentTime - LastUpdateTime < 0.75f) return;
 
             if (TargetInfo != null && TargetInfo.TargetPosition == null)
             {

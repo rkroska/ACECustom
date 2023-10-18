@@ -7,7 +7,7 @@ namespace ACE.Server.Physics.Common
         public bool AddedOutside;
         public bool LoadCells;
         public Dictionary<uint, ObjCell> Cells;
-        public int NumCells;
+        public int NumCells { get {  return Cells.Count; } }
 
         public CellArray()
         {
@@ -18,14 +18,14 @@ namespace ACE.Server.Physics.Common
         {
             AddedOutside = false;
             LoadCells = false;
-            NumCells = 0;
+            //NumCells = 0;
         }
 
         public void SetDynamic()
         {
             AddedOutside = false;
             LoadCells = true;
-            NumCells = 0;
+            //NumCells = 0;
         }
 
         public void add_cell(uint cellID, ObjCell cell)
@@ -33,7 +33,7 @@ namespace ACE.Server.Physics.Common
             if (!Cells.ContainsKey(cellID))
             {
                 Cells.Add(cellID, cell);
-                NumCells++;
+                //NumCells++;
             }
         }
 
@@ -42,7 +42,7 @@ namespace ACE.Server.Physics.Common
             if (Cells.ContainsKey(cell.ID))
             {
                 Cells.Remove(cell.ID);
-                NumCells--;
+                //NumCells--;
             }
         }
     }

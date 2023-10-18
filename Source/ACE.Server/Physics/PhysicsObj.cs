@@ -1448,8 +1448,7 @@ namespace ACE.Server.Physics
                     // compare: rabbits occasionally spawning in buildings in yaraq,
                     // vs. lich tower @ 3D31FFFF
 
-                    var sortCell = objCell as SortCell;
-                    if (sortCell == null || !sortCell.has_building())
+                    if (objCell is not SortCell sortCell || !sortCell.has_building())
                     {
                         // set to ground pos
                         var landblock = LScape.get_landblock(newPos.ObjCellID, newPos.Variation);
@@ -1912,13 +1911,13 @@ namespace ACE.Server.Physics
 
         public void UpdateViewerDistance()
         {
-            var min_2D_degrade_dist_sq = State.HasFlag(PhysicsState.ParticleEmitter) ?
-                Render.ParticleDistance2DSquared : Render.ObjectDistance2DSquared;
+            //var min_2D_degrade_dist_sq = State.HasFlag(PhysicsState.ParticleEmitter) ?
+            //    Render.ParticleDistance2DSquared : Render.ObjectDistance2DSquared;
 
             var viewerHeading = Render.ViewerPos.GetOffset(Position);
 
             // v11??
-            var lenSq = viewerHeading.LengthSquared();
+            //var lenSq = viewerHeading.LengthSquared();
             CYpt = viewerHeading.Length();
 
             if (PartArray != null)
@@ -2301,7 +2300,7 @@ namespace ACE.Server.Physics
 
         public void enqueue_objs(IEnumerable<PhysicsObj> newlyVisible)
         {
-            if (!IsPlayer || !(WeenieObj.WorldObject is Player player))
+            if (!IsPlayer || WeenieObj.WorldObject is not Player player)
                 return;
 
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
@@ -2344,7 +2343,7 @@ namespace ACE.Server.Physics
 
         public void enqueue_obj(PhysicsObj newlyVisible)
         {
-            if (!IsPlayer || !(WeenieObj.WorldObject is Player player))
+            if (!IsPlayer || WeenieObj.WorldObject is not Player player)
                 return;
 
             var wo = newlyVisible.WeenieObj.WorldObject;
@@ -2500,7 +2499,7 @@ namespace ACE.Server.Physics
         public void find_bbox_cell_list(CellArray cellArray)
         {
             if (PartArray == null || CurCell == null) return;
-            cellArray.NumCells = 0;
+            //cellArray.NumCells = 0;
             cellArray.AddedOutside = false;
             cellArray.add_cell(CurCell.ID, CurCell);
 
@@ -2753,7 +2752,7 @@ namespace ACE.Server.Physics
             //Console.WriteLine($"handle_visible_cells({CurCell.ID:X8}) for {Name}");
 
             // remove any objects that have been in the destruction queue > 25s
-            var expiredObjs = ObjMaint.DestroyObjects();
+            _ = ObjMaint.DestroyObjects();
             //Console.WriteLine("Destroyed objects: " + expiredObjs.Count);
             //foreach (var expiredObj in expiredObjs)
             //Console.WriteLine(expiredObj.Name);
@@ -2799,8 +2798,7 @@ namespace ACE.Server.Physics
             {
                 // players and combat pets
                 var visibleTargets = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.AttackTargets, this.Position.Variation);
-
-                var newTargets = ObjMaint.AddVisibleTargets(visibleTargets);
+                _ = ObjMaint.AddVisibleTargets(visibleTargets);
             }
             else
             {
@@ -2815,8 +2813,7 @@ namespace ACE.Server.Physics
             if (WeenieObj.IsCombatPet)
             {
                 var visibleMonsters = ObjMaint.GetVisibleObjects(CurCell, ObjectMaint.VisibleObjectType.AttackTargets);
-
-                var newTargets = ObjMaint.AddVisibleTargets(visibleMonsters);
+                _ = ObjMaint.AddVisibleTargets(visibleMonsters);
             }
         }
 

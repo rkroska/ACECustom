@@ -157,7 +157,7 @@ namespace ACE.Server.Physics.Common
                 if (path.InsertType == InsertType.InitialPlacement)
                     return TransitionState.OK;
 
-                var target = transition.ObjectInfo.Object.ProjectileTarget;
+                //var target = transition.ObjectInfo.Object.ProjectileTarget;
 
                 // If we use the following: foreach (var shadowObj in ShadowObjectList), an InvalidOperationException is thrown.
                 // Very rarely though, as we iterate through it, the collection will change.
@@ -202,7 +202,7 @@ namespace ACE.Server.Physics.Common
         {
             if (cellID == 0) return null;
 
-            var objCell = new ObjCell(cellID);
+            //var objCell = new ObjCell(cellID);
             if (cellID >= 0x100)
                 return DBObj.GetEnvCell(cellID, Variation);
 
@@ -334,7 +334,7 @@ namespace ACE.Server.Physics.Common
 
         public static void find_cell_list(Position position, int numSphere, List<Sphere> sphere, CellArray cellArray, ref ObjCell currCell, SpherePath path, int? variation)
         {
-            cellArray.NumCells = 0;
+            //cellArray.NumCells = 0;
             cellArray.AddedOutside = false;            
 
             var visibleCell = GetVisible(position.ObjCellID, variation);
@@ -584,7 +584,7 @@ namespace ACE.Server.Physics.Common
 
             if ((ID & 0xFFFF) >= 0x100)
             {
-                if (!(this is EnvCell envCell))
+                if (this is not EnvCell envCell)
                 {
                     Console.WriteLine($"{ID:X8}.IsVisible({cell.ID:X8}): {ID:X8} not detected as EnvCell");
                     return false;
@@ -593,7 +593,7 @@ namespace ACE.Server.Physics.Common
             }
             else if ((cell.ID & 0xFFFF) >= 0x100)
             {
-                if (!(cell is EnvCell envCell))
+                if (cell is not EnvCell envCell)
                 {
                     Console.WriteLine($"{ID:X8}.IsVisible({cell.ID:X8}): {cell.ID:X8} not detected as EnvCell");
                     return false;
