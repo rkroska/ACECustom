@@ -724,7 +724,7 @@ namespace ACE.Server.Physics.Animation
                 SpherePath.CacheGlobalSphere(offset);
             }
 
-            var transitionState = TransitionalInsert(5);
+            var transitionState = TransitionalInsert(3); //was 5
             SpherePath.StepDown = false;
 
             if (transitionState == TransitionState.OK && CollisionInfo.ContactPlaneValid && CollisionInfo.ContactPlane.Normal.Z >= zVal &&

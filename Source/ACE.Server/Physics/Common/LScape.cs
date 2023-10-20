@@ -141,7 +141,10 @@ namespace ACE.Server.Physics.Common
                 if (lcoord == null) return null;
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
                 
-                landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell);
+                if(!landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))
+                {
+                    Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - {variationId:X8}) failed to get from dictionary, cache miss");
+                }
             }
             // indoor cells
             else
@@ -154,6 +157,7 @@ namespace ACE.Server.Physics.Common
                 cell.Pos.Variation = variationId; //todo - gross
                 cell.VariationId = variationId;
                 landblock.LandCells.TryAdd(cacheKey, cell);
+                //Console.WriteLine($"Added LB: {landblock.ID}, cell: {cell.ID}, var: {variationId}, total cache: {landblock.LandCells.Count}");
                 var envCell = (EnvCell)cell;
                 envCell.PostInit(variationId);
                 
