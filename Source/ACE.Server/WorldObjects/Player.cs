@@ -397,9 +397,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var obj = CurrentLandblock?.GetObject(objectGuid) as Creature;
-
-            if (obj == null)
+            if (CurrentLandblock?.GetObject(objectGuid) is not Creature obj)
             {
                 // Deselect the formerly selected Target
                 UpdateSelectedTarget(null);
@@ -415,9 +413,7 @@ namespace ACE.Server.WorldObjects
         {
             if (selectedTarget != null)
             {
-                var prevSelected = selectedTarget.TryGetWorldObject() as Creature;
-
-                if (prevSelected != null)
+                if (selectedTarget.TryGetWorldObject() is Creature prevSelected)
                     prevSelected.OnTargetDeselected(this);
             }
 
@@ -609,9 +605,7 @@ namespace ACE.Server.WorldObjects
                     // close any open landblock containers (chests / corpses)
                     if (LastOpenedContainerId != ObjectGuid.Invalid)
                     {
-                        var container = CurrentLandblock.GetObject(LastOpenedContainerId) as Container;
-
-                        if (container != null)
+                        if (CurrentLandblock.GetObject(LastOpenedContainerId) is Container container)
                             container.Close(this);
                     }
 
