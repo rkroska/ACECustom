@@ -503,10 +503,9 @@ namespace ACE.Server.Physics
 
         public bool SetPlacementFrame(int placementID)
         {
-            PlacementType placementFrame = null;
 
             // try to get placementID
-            Setup._dat.PlacementFrames.TryGetValue(placementID, out placementFrame);
+            Setup._dat.PlacementFrames.TryGetValue(placementID, out PlacementType placementFrame);
             if (placementFrame != null)
             {
                 Sequence.SetPlacementFrame(placementFrame.AnimFrame, placementID);

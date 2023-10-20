@@ -646,7 +646,7 @@ namespace ACE.Server.Entity
                     return .25;
                     // TODO: handle fellowship mods with > 9 players?
             }
-            return 1.0;
+            //return 1.0;
         }
 
         public static readonly int MaxDistance = 600;

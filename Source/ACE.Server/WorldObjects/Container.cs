@@ -64,30 +64,30 @@ namespace ACE.Server.WorldObjects
 
             // This is a temporary fix for objects that were loaded with this PR when Value was not treated as ephemeral. 2020-03-28
             // This can be removed later.
-            if (!(this is Creature) && Biota.PropertiesInt.ContainsKey(PropertyInt.Value))
-            {
-                var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
+            //if (this is not Creature && Biota.PropertiesInt.ContainsKey(PropertyInt.Value))
+            //{
+            //    var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
 
-                if (weenie != null && weenie.PropertiesInt.TryGetValue(PropertyInt.Value, out var value))
-                {
-                    if (biota.PropertiesInt[PropertyInt.Value] != value)
-                    {
-                        biota.PropertiesInt[PropertyInt.Value] = value;
-                        ChangesDetected = true;
-                    }
-                }
-                else
-                {
-                    biota.PropertiesInt.Remove(PropertyInt.Value);
-                    ChangesDetected = true;
-                }
-            }
+            //    if (weenie != null && weenie.PropertiesInt.TryGetValue(PropertyInt.Value, out var value))
+            //    {
+            //        if (biota.PropertiesInt[PropertyInt.Value] != value)
+            //        {
+            //            biota.PropertiesInt[PropertyInt.Value] = value;
+            //            ChangesDetected = true;
+            //        }
+            //    }
+            //    else
+            //    {
+            //        biota.PropertiesInt.Remove(PropertyInt.Value);
+            //        ChangesDetected = true;
+            //    }
+            //}
 
             InitializePropertyDictionaries();
             SetEphemeralValues(true);
 
             // A player has their possessions passed via the ctor. All other world objects must load their own inventory
-            if (!(this is Player) && !ObjectGuid.IsPlayer(ContainerId ?? 0))
+            if (this is not Player && !ObjectGuid.IsPlayer(ContainerId ?? 0))
             {
                 DatabaseManager.Shard.GetInventoryInParallel(biota.Id, false, biotas =>
                 {

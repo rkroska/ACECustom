@@ -10,7 +10,7 @@ namespace ACE.Server.Physics.Common
     public class LandCell: SortCell
     {
         public List<Polygon> Polygons;
-        public bool InView;
+        //public bool InView;
 
         public LandCell(): base()
         {
@@ -198,9 +198,12 @@ namespace ACE.Server.Physics.Common
                     if (id >> 16 != cellID >> 16)
                         continue;
 
-                    var cell = LScape.get_landcell(cellID, cellArray.Cells[id].CurLandblock.VariationId);
+                    if (!cellArray.Cells.ContainsKey(cellID))
+                    {
+                        var cell = LScape.get_landcell(cellID, cellArray.Cells[id].CurLandblock.VariationId);
 
-                    cellArray.add_cell(cellID, cell);
+                        cellArray.add_cell(cellID, cell);
+                    }
                 }
             }
         }

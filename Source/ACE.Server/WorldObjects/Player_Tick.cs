@@ -325,9 +325,9 @@ namespace ACE.Server.WorldObjects
                 var elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
                 ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Player_Tick_UpdateObjectPhysics, elapsedSeconds);
                 if (elapsedSeconds >= 1) // Yea, that ain't good....
-                    log.Warn($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process UpdateObjectPhysics() at loc: {Location}");
+                    log.Warn($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process Player.UpdateObjectPhysics() at loc: {Location}");
                 else if (elapsedSeconds >= 0.010)
-                    log.Debug($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process UpdateObjectPhysics() at loc: {Location}");
+                    log.Debug($"[PERFORMANCE][PHYSICS] {Guid}:{Name} took {(elapsedSeconds * 1000):N1} ms to process Player.UpdateObjectPhysics() at loc: {Location}");
             }
         }
 
@@ -430,6 +430,8 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            bool variationChange = Location.Variation != newPosition.Variation;
+
             try
             {
                 if (!forceUpdate) // This is needed beacuse this function might be called recursively
@@ -441,7 +443,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var distSq = Location.SquaredDistanceTo(newPosition);
 
-                    if (distSq > PhysicsGlobals.EpsilonSq || (newPosition.Variation != Location.Variation))
+                    if (distSq > PhysicsGlobals.EpsilonSq || variationChange)
                     {
                         /*var p = new Physics.Common.Position(newPosition);
                         var dist = PhysicsObj.Position.Distance(p);
@@ -510,7 +512,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!success) return false;
 
-                var landblockUpdate = (Location.Cell >> 16 != newPosition.Cell >> 16) || (Location.Variation != newPosition.Variation);
+                var landblockUpdate = (Location.Cell >> 16 != newPosition.Cell >> 16) || variationChange;
 
                 Location = new ACE.Entity.Position(newPosition);
 

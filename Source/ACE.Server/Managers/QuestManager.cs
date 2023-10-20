@@ -122,7 +122,7 @@ namespace ACE.Server.Managers
         {
             if (Debug) Console.WriteLine($"{Name}.QuestManager.HasQuestCompletes({questName})");
 
-            if (!questName.Contains("@"))
+            if (!questName.Contains('@'))
                 return HasQuest(questName);
 
             var pieces = questName.Split('@');
@@ -1554,7 +1554,7 @@ namespace ACE.Server.Managers
                 
                     context.SaveChanges();
                 }
-                catch (Exception ex) { stampedNew = false; stampedCompletion = false; }
+                catch (Exception) { stampedNew = false; stampedCompletion = false; }
             }
 
             player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();      
