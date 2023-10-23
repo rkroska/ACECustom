@@ -475,7 +475,7 @@ namespace ACE.Server.Managers
             {
                 // load up this landblock                    
                 landblock = new Landblock(landblockId, variation);
-                if(!AddUpdateLandblock(landblock, variation))
+                if(!AddUpdateLandblock(cacheKey, landblock))
                 {
                     log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8}, v:{variation} to active landblocks!");
                     return landblock;

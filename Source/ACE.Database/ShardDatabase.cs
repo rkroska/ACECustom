@@ -234,7 +234,9 @@ namespace ACE.Database
         public virtual Biota GetBiota(uint id, bool doNotAddToCache = false)
         {
             using (var context = new ShardDbContext())
+            {
                 return GetBiota(context, id, doNotAddToCache);
+            }
         }
 
         public List<Biota> GetBiotasByWcid(uint wcid)
@@ -243,12 +245,12 @@ namespace ACE.Database
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                var results = context.Biota.Where(r => r.WeenieClassId == wcid);
+                var results = context.Biota.Where(r => r.WeenieClassId == wcid).Select(r => r.Id);
 
                 var biotas = new List<Biota>();
                 foreach (var result in results)
                 {
-                    var biota = GetBiota(result.Id);
+                    var biota = GetBiota(result);
                     biotas.Add(biota);
                 }
 
@@ -265,12 +267,12 @@ namespace ACE.Database
 
                 var iType = (int)type;
 
-                var results = context.Biota.Where(r => r.WeenieType == iType);
+                var results = context.Biota.Where(r => r.WeenieType == iType).Select(r => r.Id);
 
                 var biotas = new List<Biota>();
                 foreach (var result in results)
                 {
-                    var biota = GetBiota(result.Id);
+                    var biota = GetBiota(result);
                     biotas.Add(biota);
                 }
 
@@ -425,11 +427,12 @@ namespace ACE.Database
 
                 var results = context.BiotaPropertiesIID
                     .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
+                    .Select(r => r.ObjectId)
                     .ToList();
 
                 Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
-                    var biota = GetBiota(result.ObjectId);
+                    var biota = GetBiota(result);
 
                     if (biota != null)
                     {
@@ -459,11 +462,12 @@ namespace ACE.Database
 
                 var results = context.BiotaPropertiesIID
                     .Where(r => r.Type == (ushort)PropertyInstanceId.Wielder && r.Value == parentId)
+                    .Select(r => r.ObjectId)
                     .ToList();
 
                 Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
-                    var biota = GetBiota(result.ObjectId);
+                    var biota = GetBiota(result);
 
                     if (biota != null)
                         wieldedItems.Add(biota);
@@ -486,14 +490,14 @@ namespace ACE.Database
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                var results = context.Biota.Where(b => b.Id >= min && b.Id <= max).ToList();
+                var results = context.Biota.Where(b => b.Id >= min && b.Id <= max).Select(r => r.Id).ToList();
 
                 foreach (var result in results)
                 {
-                    var biota = GetBiota(result.Id);
+                    var biota = GetBiota(result);
                     if (variationId.HasValue)
                     {
-                        if (biota.BiotaPropertiesPosition.Where(x=>x.VariationId == variationId) != null) //filter to only the objects that are the correct variation
+                        if (biota.BiotaPropertiesPosition.Any(x=>x.VariationId == variationId)) //filter to only the objects that are the correct variation
                         {
                             staticObjects.Add(biota);
                         }
@@ -522,11 +526,12 @@ namespace ACE.Database
 
                 var results = context.BiotaPropertiesPosition
                     .Where(p => p.PositionType == 1 && p.ObjCellId >= min && p.ObjCellId <= max && p.ObjectId >= 0x80000000 && p.VariationId == variationId)
+                    .Select(r => r.ObjectId)
                     .ToList();
 
                 foreach (var result in results)
                 {
-                    var biota = GetBiota(result.ObjectId);
+                    var biota = GetBiota(result);
 
                     // Filter out objects that are in a container
                     if (biota.BiotaPropertiesIID.FirstOrDefault(r => r.Type == 2 && r.Value != 0) != null)
@@ -569,9 +574,9 @@ namespace ACE.Database
                     .AsNoTracking()
                     .Where(r => !r.IsDeleted)
                     .Where(r => !(r.DeleteTime > 0))
-                    .FirstOrDefault(r => r.Name == name);
+                    .Any(r => r.Name == name);
 
-                return result == null;
+                return result == false;
             }
         }
 
@@ -589,7 +594,7 @@ namespace ACE.Database
 
         private static List<Character> GetCharacterList(uint accountID, bool includeDeleted, uint characterID = 0)
         {
-            var context = new ShardDbContext();
+            using var context = new ShardDbContext();
 
             IQueryable<Character> query;
 
@@ -628,8 +633,7 @@ namespace ACE.Database
 
         public Character GetCharacterStubByName(string name) // When searching by name, only non-deleted characters matter
         {
-            var context = new ShardDbContext();
-
+            using var context = new ShardDbContext();
             var result = context.Character
                 .FirstOrDefault(r => r.Name == name && !r.IsDeleted);
 
@@ -638,8 +642,7 @@ namespace ACE.Database
 
         public Character GetCharacterStubByGuid(uint guid)
         {
-            var context = new ShardDbContext();
-
+            using var context = new ShardDbContext();
             var result = context.Character
                 .FirstOrDefault(r => r.Id == guid);
 
@@ -685,7 +688,7 @@ namespace ACE.Database
                 }
             }
 
-            var context = new ShardDbContext();
+            using var context = new ShardDbContext();
 
             CharacterContexts.Add(character, context);
 
@@ -752,13 +755,14 @@ namespace ACE.Database
             using (var context = new ShardDbContext())
             {
                 var results = context.Character
-                    .Where(r => !r.IsDeleted)
                     .AsNoTracking()
+                    .Where(r => !r.IsDeleted)
+                    .Select(r => r.Id)
                     .ToList();
 
                 Parallel.ForEach(results, result =>
                 {
-                    var biota = GetBiota(result.Id, true);
+                    var biota = GetBiota(result, true);
 
                     if (biota != null)
                     {
@@ -767,7 +771,7 @@ namespace ACE.Database
                         biotas.Add(convertedBiota);
                     }
                     else
-                        log.Error($"ShardDatabase.GetAllPlayerBiotasInParallel() - couldn't find biota for character 0x{result.Id:X8}");
+                        log.Error($"ShardDatabase.GetAllPlayerBiotasInParallel() - couldn't find biota for character 0x{result:X8}");
                 });
             }
 
@@ -829,7 +833,7 @@ namespace ACE.Database
 
             character.Name = newName;
 
-            var context = new ShardDbContext();
+            using var context = new ShardDbContext();
 
             CharacterContexts.Add(character, context);
 
