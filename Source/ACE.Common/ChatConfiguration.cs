@@ -18,6 +18,7 @@ namespace ACE.Common
         public long ServerId { get; set; }
         public long AdminAuditId { get; set; }
         public long EventsChannelId { get; set; }
+        public long ExportsChannelId { get; set; }
 
     }
 }
