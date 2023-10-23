@@ -594,7 +594,7 @@ namespace ACE.Database
 
         private static List<Character> GetCharacterList(uint accountID, bool includeDeleted, uint characterID = 0)
         {
-            using var context = new ShardDbContext();
+            var context = new ShardDbContext();
 
             IQueryable<Character> query;
 
@@ -688,7 +688,7 @@ namespace ACE.Database
                 }
             }
 
-            using var context = new ShardDbContext();
+            var context = new ShardDbContext();
 
             CharacterContexts.Add(character, context);
 
@@ -833,7 +833,7 @@ namespace ACE.Database
 
             character.Name = newName;
 
-            using var context = new ShardDbContext();
+            var context = new ShardDbContext();
 
             CharacterContexts.Add(character, context);
 
