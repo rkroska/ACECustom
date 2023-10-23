@@ -25,6 +25,7 @@ using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Extensions;
 using ACE.Server.WorldObjects;
+using ACE.Common;
 
 namespace ACE.Server.Command.Handlers.Processors
 {
@@ -2067,6 +2068,46 @@ namespace ACE.Server.Command.Handlers.Processors
             ExportSQLWeenie(session, param, true);
         }
 
+        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
+        public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
+        {
+            var param = parameters[0];
+            var contentType = FileType.Weenie;
+
+            if (parameters.Length > 1)
+            {
+                contentType = GetContentType(parameters, ref param);
+
+                if (contentType == FileType.Undefined)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Unknown content type '{parameters[1]}'");
+                    return;
+                }
+            }
+            switch (contentType)
+            {
+                case FileType.LandblockInstance:
+                    //ExportSQLLandblock(session, param);
+                    break;
+
+                case FileType.Quest:
+                    //ExportSQLQuest(session, param);
+                    break;
+
+                case FileType.Recipe:
+                    //ExportSQLRecipe(session, param);
+                    break;
+
+                case FileType.Spell:
+                    //ExportSQLSpell(session, param);
+                    break;
+
+                case FileType.Weenie:
+                    ExportDiscordWeenie(session, param);
+                    break;
+            }
+        }
+
         [CommandHandler("export-sql", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
         public static void HandleExportSql(Session session, params string[] parameters)
         {
@@ -2193,6 +2234,52 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
+        }
+
+        public static void ExportDiscordWeenie(Session session, string param)
+        {            
+            Weenie weenie = null;
+            if (uint.TryParse(param, out var wcid))
+                weenie = DatabaseManager.World.GetWeenie(wcid);
+            else
+                weenie = DatabaseManager.World.GetWeenie(param);
+
+            if (weenie == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find weenie {param}");
+                return;
+            }
+
+            if (WeenieSQLWriter == null)
+            {
+                WeenieSQLWriter = new WeenieSQLWriter();
+                WeenieSQLWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
+                WeenieSQLWriter.SpellNames = DatabaseManager.World.GetAllSpellNames();
+                WeenieSQLWriter.TreasureDeath = DatabaseManager.World.GetAllTreasureDeath();
+                WeenieSQLWriter.TreasureWielded = DatabaseManager.World.GetAllTreasureWielded();
+                WeenieSQLWriter.PacketOpCodes = PacketOpCodeNames.Values;
+            }
+
+            MemoryStream mem = new MemoryStream();
+            StreamWriter sw = new StreamWriter(mem);
+            sw.AutoFlush = true;
+
+            try
+            {
+                WeenieSQLWriter.CreateSQLDELETEStatement(weenie, sw);
+                sw.WriteLine();
+                WeenieSQLWriter.CreateSQLINSERTStatement(weenie, sw);
+                sw.WriteLine();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+            
+            String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+            sw.Close();
+            DiscordChatManager.SendDiscordMessage(session.Player.Name, result, ConfigManager.Config.Chat.ExportsChannelId);
+            CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
         }
 
         public static void ExportSQLRecipe(Session session, string param)
