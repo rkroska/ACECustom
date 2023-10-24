@@ -420,34 +420,37 @@ namespace ACE.Database
         public List<Biota> GetInventoryInParallel(uint parentId, bool includedNestedItems)
         {
             var inventory = new ConcurrentBag<Biota>();
+            List<uint> results;
 
             using (var context = new ShardDbContext())
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                var results = context.BiotaPropertiesIID
+                results = context.BiotaPropertiesIID
                     .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
                     .Select(r => r.ObjectId)
                     .ToList();
-
-                Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
-                {
-                    var biota = GetBiota(result);
-
-                    if (biota != null)
-                    {
-                        inventory.Add(biota);
-
-                        if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
-                        {
-                            var subItems = GetInventoryInParallel(biota.Id, false);
-
-                            foreach (var subItem in subItems)
-                                inventory.Add(subItem);
-                        }
-                    }
-                });
             }
+
+
+            Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
+            {
+                var biota = GetBiota(result);
+
+                if (biota != null)
+                {
+                    inventory.Add(biota);
+
+                    if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
+                    {
+                        var subItems = GetInventoryInParallel(biota.Id, false);
+
+                        foreach (var subItem in subItems)
+                            inventory.Add(subItem);
+                    }
+                }
+            });
+            
 
             return inventory.ToList();
         }
@@ -455,24 +458,26 @@ namespace ACE.Database
         public List<Biota> GetWieldedItemsInParallel(uint parentId)
         {
             var wieldedItems = new ConcurrentBag<Biota>();
+            List<uint> results;
 
             using (var context = new ShardDbContext())
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                var results = context.BiotaPropertiesIID
+                results = context.BiotaPropertiesIID
                     .Where(r => r.Type == (ushort)PropertyInstanceId.Wielder && r.Value == parentId)
                     .Select(r => r.ObjectId)
                     .ToList();
-
-                Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
-                {
-                    var biota = GetBiota(result);
-
-                    if (biota != null)
-                        wieldedItems.Add(biota);
-                });
             }
+
+            Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
+            {
+                var biota = GetBiota(result);
+
+                if (biota != null)
+                    wieldedItems.Add(biota);
+            });
+            
 
             return wieldedItems.ToList();
         }
