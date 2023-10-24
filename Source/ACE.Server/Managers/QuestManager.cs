@@ -24,6 +24,7 @@ using ACE.Database.Models.Auth;
 using System.Reactive;
 using ACE.Entity.Adapter;
 using ACE.Entity.Enum.Properties;
+using Microsoft.EntityFrameworkCore;
 
 namespace ACE.Server.Managers
 {
@@ -1414,6 +1415,7 @@ namespace ACE.Server.Managers
         {
             using (var db = new Database.Models.Shard.ShardDbContext())
             {
+                db.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
                 var dynamicQuestRepeatHours = PropertyManager.GetLong("dynamic_quest_repeat_hours").Item;
                 var quests = db.CharacterPropertiesQuestRegistry.Where(x => x.CharacterId == player.Character.Id && x.QuestName.StartsWith("Dynamic"));
                 foreach (var q in quests)
