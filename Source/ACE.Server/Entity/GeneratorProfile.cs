@@ -202,7 +202,11 @@ namespace ACE.Server.Entity
                     continue;
                 }
 
-                if (MaxCreate == -1 || Spawned.Count < MaxCreate)
+                if (Biota.WeenieClassId == Generator.WeenieClassId)
+                {
+                    log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} ProcessQueue(): {Generator.Name} attempted to spawn itself, infinite loop avoided.");
+                }
+                else if (MaxCreate == -1 || Spawned.Count < MaxCreate)
                 {
                     var objects = Spawn();
 
