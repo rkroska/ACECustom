@@ -410,9 +410,15 @@ namespace ACE.Database
 
         public PossessedBiotas GetPossessedBiotasInParallel(uint id)
         {
-            var inventory = GetInventoryInParallel(id, true);
+            List<Biota> inventory = null;
+            List<Biota> wieldedItems = null;
+            Parallel.Invoke(
+                () => inventory = GetInventoryInParallel(id, true),
+                () => wieldedItems = GetWieldedItemsInParallel(id));
 
-            var wieldedItems = GetWieldedItemsInParallel(id);
+            //var inventory = GetInventoryInParallel(id, true);
+
+            //var wieldedItems = GetWieldedItemsInParallel(id);
 
             return new PossessedBiotas(inventory, wieldedItems);
         }
