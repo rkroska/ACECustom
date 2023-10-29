@@ -21,6 +21,11 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            if (amount > long.MaxValue)
+            {
+                return false;
+            }
+
             if ((long)amount > AvailableExperience)
             {
                 //log.Error($"{Name}.HandleActionRaiseAttribute({attribute}, {amount}) - amount > AvaiableExperience ({AvailableExperience})");
