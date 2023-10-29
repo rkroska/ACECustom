@@ -56,7 +56,12 @@ namespace ACE.Database
                     try
                     {
                         t.Start();
-                        t.Wait();
+                        bool res = t.Wait(new TimeSpan(0, 0, 4));
+                        if (!res)
+                        {
+                            log.Error($"[DATABASE] DoWork task failed due to timeout.");
+                            //_queue.Add(t); //re-add and retry?                            
+                        }
                     }
                     catch (Exception ex)
                     {
