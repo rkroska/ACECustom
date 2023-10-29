@@ -105,6 +105,19 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
+        public bool SetAttributeRank(CreatureAttribute creatureAttribute, uint rank)
+        {
+            if (rank < 0)
+            {
+                return false;
+            }
+            ulong xpCost = GetXPDeltaCostByRank(rank, 0);
+            creatureAttribute.Ranks = rank;
+            creatureAttribute.ExperienceSpent = (uint)xpCost;
+            SetExtendedAttributeExperience(creatureAttribute, xpCost);
+            return true;
+        }
+
         public void SpendAllAvailableAttributeXp(CreatureAttribute creatureAttribute, bool sendNetworkUpdate = true)
         {
             var amountRemaining = creatureAttribute.ExperienceLeft;
@@ -247,6 +260,35 @@ namespace ACE.Server.WorldObjects
                         SpentExperienceSelf = attrib.ExperienceSpent;
                     }
                     SpentExperienceSelf += amount;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        public void SetExtendedAttributeExperience(CreatureAttribute attrib, double amount)
+        {
+            switch (attrib.Attribute)
+            {
+                case PropertyAttribute.Undef:
+                    break;
+                case PropertyAttribute.Strength:
+                    SpentExperienceStrength = amount;
+                    break;
+                case PropertyAttribute.Endurance:
+                    SpentExperienceEndurance = amount;
+                    break;
+                case PropertyAttribute.Quickness:
+                    SpentExperienceQuickness = amount;
+                    break;
+                case PropertyAttribute.Coordination:
+                    SpentExperienceCoordination = amount;
+                    break;
+                case PropertyAttribute.Focus:
+                    SpentExperienceFocus = amount;
+                    break;
+                case PropertyAttribute.Self:
+                    SpentExperienceSelf = amount;
                     break;
                 default:
                     break;
