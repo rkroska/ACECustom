@@ -605,6 +605,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Something isn't parsing your command correctly, check your input and try again!", ChatMessageType.Advancement));
                 }
+                if (amt > 10)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] You can only raise your attributes by up to 10 points at a time.", ChatMessageType.Advancement));
+                    return;
+                }
                 
             }
             switch (parameters[0])
