@@ -2497,6 +2497,18 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.MaxLevel); else SetProperty(PropertyInt.MaxLevel, value.Value); }
         }
 
+        public PortalRequirement PortalReqType
+        {
+            get => (PortalRequirement)(GetProperty(PropertyInt.PortalReqType) ?? 0);
+            set { if (value == PortalRequirement.None) RemoveProperty(PropertyInt.PortalReqType); else SetProperty(PropertyInt.PortalReqType, (int)value); }
+        }
+
+        public int? PortalReqValue
+        {
+            get => GetProperty(PropertyInt.PortalReqValue);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqValue); else SetProperty(PropertyInt.PortalReqValue, value.Value); }
+        }
+
         /// <summary>
         /// <para>Used to mark when EnterWorld has completed for first time for this object's instance.</para>
         /// Currently used by Generators and Players
