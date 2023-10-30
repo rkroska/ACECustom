@@ -489,7 +489,8 @@ namespace ACE.Server.WorldObjects
 
             float distanceTo = Location.Distance2D(targetLoc.Location);
 
-            if (casterItem == null)
+            // Only do this if for some reason magicSkill wasn't passed in
+            if (casterItem == null && magicSkill == 0)
             {
                 // use init + ranks, same as acclient DetermineSpellRange -> InqSkillLevel
                 // this is much lower than base, and omits things like attribute formula + base augs + enlightenment

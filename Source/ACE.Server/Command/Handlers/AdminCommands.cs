@@ -3387,6 +3387,39 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("setattrrank", AccessLevel.Developer, CommandHandlerFlag.None, 2, "Adjusts an attribute for the last appraised mob/NPC/player", "<attribute> <delta>")]
+        public static void HandleSetAttributeRank(Session session, params string[] parameters)
+        {
+            var lastAppraised = CommandHandlerHelper.GetLastAppraisedObject(session);
+            if (lastAppraised == null || !(lastAppraised is Player))
+            {
+                ChatPacket.SendServerMessage(session, "The last appraised object was not a player.", ChatMessageType.Broadcast);
+                return;
+            }
+            var player = lastAppraised as Player;
+
+            if (parameters.Length < 2)
+            {
+                ChatPacket.SendServerMessage(session, "Usage: setattrrank <attribute> <value>: missing attribute name and/or value", ChatMessageType.Broadcast);
+                return;
+            }
+            if (!Enum.TryParse(parameters[0], out PropertyAttribute attrType))
+            {
+                ChatPacket.SendServerMessage(session, "Invalid attribute name, must be a valid attribute name (without spaces, with capitalization), valid values are: Strength,Endurance,Coordination,Quickness,Focus,Self", ChatMessageType.Broadcast);
+                return;
+            }
+            if (!UInt32.TryParse(parameters[1], out uint value))
+            {
+                ChatPacket.SendServerMessage(session, "Invalid value, must be a valid integer greater than 0", ChatMessageType.Broadcast);
+                return;
+            }
+
+            CreatureAttribute attr = player.Attributes[attrType];
+            player.SetAttributeRank(attr, value);
+            player.SaveBiotaToDatabase();
+            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, attr));
+        }
+
         // heal
         [CommandHandler("heal", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0,
             "Heals yourself (or the selected creature)",
