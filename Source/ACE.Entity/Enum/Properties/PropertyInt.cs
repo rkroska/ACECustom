@@ -636,6 +636,10 @@ namespace ACE.Entity.Enum.Properties
         LumAugmentMeleeRange                    = 9017,
         [ServerOnly]
         LumAugmentPowerBarSpeed                 = 9018,
+        [ServerOnly]
+        PortalReqType                           = 9019,
+        [ServerOnly]
+        PortalReqValue                          = 9020,
 
     }
 

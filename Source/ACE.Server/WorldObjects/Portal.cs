@@ -242,6 +242,42 @@ namespace ACE.Server.WorldObjects
                     // You must be an Advocate to interact with that portal.
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeAnAdvocateToUsePortal));
                 }
+
+                if (PortalReqType != PortalRequirement.None && PortalReqValue > 0)
+                {
+                    if (PortalReqType == PortalRequirement.Enlighten)
+                    {
+                        if (player.Enlightenment < PortalReqValue)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must enlighten {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
+                            return new ActivationResult(false);
+                        }
+                    }
+                    else if (PortalReqType == PortalRequirement.CreatureAug)
+                    {
+                        if (player.LuminanceAugmentCreatureCount < PortalReqValue)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your creature magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
+                            return new ActivationResult(false);
+                        }
+                    }
+                    else if (PortalReqType == PortalRequirement.ItemAug)
+                    {
+                        if (player.LuminanceAugmentItemCount < PortalReqValue)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your item magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
+                            return new ActivationResult(false);
+                        }
+                    }
+                    else if (PortalReqType == PortalRequirement.LifeAug)
+                    {
+                        if (player.LuminanceAugmentLifeCount < PortalReqValue)
+                        {
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your life magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
+                            return new ActivationResult(false);
+                        }
+                    }
+                }
             }
 
             if (QuestRestriction != null && !player.IgnorePortalRestrictions)
