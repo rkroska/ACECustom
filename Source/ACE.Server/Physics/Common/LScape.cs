@@ -59,7 +59,7 @@ namespace ACE.Server.Physics.Common
             {
                 
                 var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
-
+                //Console.WriteLine($"Server instance loaded landblock from manager: {lbid}");
                 return lbmLandblock.PhysicsLandblock;
             }
             VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
@@ -85,7 +85,7 @@ namespace ACE.Server.Physics.Common
 
             if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
-
+            
             // if not, load into cache
             landblock = new Landblock(DBObj.GetCellLandblock(landblockID), variationId);
             if (Landblocks.TryAdd(cacheKey, landblock))

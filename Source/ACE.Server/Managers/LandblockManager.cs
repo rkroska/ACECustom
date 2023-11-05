@@ -80,8 +80,7 @@ namespace ACE.Server.Managers
                 return result;
             if (lb == null && landblock != null)
             {
-                lock (landblockMutex)
-                    result = landblocks.TryAdd(landblockKey, landblock);
+                result = landblocks.TryAdd(landblockKey, landblock);
                     //landblocks.Add(landblockKey, landblock);
                 //Console.WriteLine("Added AddUpdateLandblock Landblock: " + landblock.Id.Raw + " v: " + landblock.VariationId);
                 //if (landblock.Id.Raw == 27197439)
@@ -91,13 +90,11 @@ namespace ACE.Server.Managers
             }
             else if (lb != null && landblock == null)
             {
-                lock (landblockMutex)
-                    result = landblocks.TryRemove(landblockKey, out Landblock removedLandblock);
+                result = landblocks.TryRemove(landblockKey, out Landblock removedLandblock);
             }
             else if (lb != null && landblock != null)
             {
-                lock (landblockMutex)
-                    result = landblocks.TryUpdate(landblockKey, landblock, lb);
+                result = landblocks.TryUpdate(landblockKey, landblock, lb);
                 //Console.WriteLine("Updated AddUpdateLandblock landblock: " + lb.Id.Raw + " : " + landblock.Id.Raw + " v: " + landblock.VariationId);
             }
 
@@ -455,8 +452,7 @@ namespace ACE.Server.Managers
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
-            lock (landblockMutex)
-                return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
+            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
         }
 
         /// <summary>
@@ -487,7 +483,11 @@ namespace ACE.Server.Managers
                     return landblock;
                 }
 
-                landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
+                bool res = landblockGroupPendingAdditions.TryAdd(cacheKey, landblock);
+                if (!res)
+                {
+                    log.Error($"LandblockManager: failed to add {landblock.Id} to landblockGroupPendingAdditions");
+                }
                 //if (landblock.Id.ToString().StartsWith("019E"))
                 //{                        
                 //    Console.WriteLine($"Landblock loading {landblock.Id} v:{landblock.VariationId}, group: {landblock.CurrentLandblockGroup}\n" +
@@ -528,8 +528,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static ConcurrentDictionary<VariantCacheId, Landblock> GetLoadedLandblocks()
         {
-            lock (landblockMutex)
-                return loadedLandblocks;
+            return loadedLandblocks;
         }
 
         /// <summary>
