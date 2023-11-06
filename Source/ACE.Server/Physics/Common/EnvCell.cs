@@ -10,6 +10,7 @@ using ACE.Server.Physics.Collision;
 using ACE.Server.Physics.Extensions;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
+using ACE.Common;
 
 namespace ACE.Server.Physics.Common
 {
@@ -125,7 +126,7 @@ namespace ACE.Server.Physics.Common
             //}
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
 
-            Parallel.ForEach(VisibleCellIDs, visibleCellID =>
+            Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;                
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);

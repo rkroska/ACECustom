@@ -709,22 +709,25 @@ namespace ACE.Database
             if (cachedLandblockInstances.TryGetValue(cacheKey, out var value))
                 return value;
 
-            var results = context.LandblockInstance
-                .Include(r => r.LandblockInstanceLink)
-                .AsNoTracking()
-                .Where(r => r.Landblock == landblock)
-                .ToList();
-
+            List<LandblockInstance> results;
             if (variation.HasValue)
             {
-                results = results.Where(r => r.VariationId == variation).ToList();
+                results = context.LandblockInstance
+                    .Include(r => r.LandblockInstanceLink)
+                    .AsNoTracking()
+                    .Where(r => r.Landblock == landblock && r.VariationId == variation)
+                    .ToList();
             }
             else
             {
-                results = results.Where(r => r.VariationId == null).ToList();
+                results = context.LandblockInstance
+                    .Include(r => r.LandblockInstanceLink)
+                    .AsNoTracking()
+                    .Where(r => r.Landblock == landblock && r.VariationId == null)
+                    .ToList();
             }
 
-            cachedLandblockInstances.TryAdd(cacheKey, results.ToList());
+            cachedLandblockInstances.TryAdd(cacheKey, results);
 
             return cachedLandblockInstances[cacheKey];
         }
