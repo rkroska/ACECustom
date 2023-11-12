@@ -1,10 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
-
+using System.Threading.Tasks;
 using ACE.Entity.Enum;
 using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Combat;
@@ -21,7 +22,8 @@ namespace ACE.Server.Physics.Common
         public uint ID;
         public LandDefs.WaterType WaterType;
         public Position Pos;
-        public List<PhysicsObj> ObjectList;
+        private ConcurrentDictionary<uint, PhysicsObj> _ObjectList;
+        public List<PhysicsObj> ObjectList { get { return _ObjectList.Values.ToList(); } }
         public List<int> LightList;
         public List<ShadowObj> ShadowObjectList;
         public List<uint> ShadowObjectIDs;
@@ -65,32 +67,22 @@ namespace ACE.Server.Physics.Common
 
         public void AddObject(PhysicsObj obj)
         {
-            readerWriterLockSlim.EnterWriteLock();
-            try
+
+            bool res = _ObjectList.TryAdd(obj.ID, obj);
+            
+            if (obj.ID == 0 || obj.Parent != null || obj.State.HasFlag(PhysicsState.Hidden) || VoyeurTable == null || !res)
+                return;
+
+            foreach (var voyeur_id in VoyeurTable)
             {
-                if (!ObjectList.Contains(obj))
+                if (voyeur_id != obj.ID && voyeur_id != 0)
                 {
-                    ObjectList.Add(obj);
+                    var voyeur = obj.GetObjectA(voyeur_id);
+                    if (voyeur == null) continue;
+
+                    var info = new DetectionInfo(obj.ID, DetectionType.EnteredDetection);
+                    voyeur.receive_detection_update(info);
                 }
-
-                if (obj.ID == 0 || obj.Parent != null || obj.State.HasFlag(PhysicsState.Hidden) || VoyeurTable == null)
-                    return;
-
-                foreach (var voyeur_id in VoyeurTable)
-                {
-                    if (voyeur_id != obj.ID && voyeur_id != 0)
-                    {
-                        var voyeur = obj.GetObjectA(voyeur_id);
-                        if (voyeur == null) continue;
-
-                        var info = new DetectionInfo(obj.ID, DetectionType.EnteredDetection);
-                        voyeur.receive_detection_update(info);
-                    }
-                }
-            }
-            finally
-            {
-                readerWriterLockSlim.ExitWriteLock();
             }
         }
 
@@ -198,36 +190,6 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell Get(uint cellID, int? Variation)
-        {
-            if (cellID == 0) return null;
-
-            //var objCell = new ObjCell(cellID);
-            if (cellID >= 0x100)
-                return DBObj.GetEnvCell(cellID, Variation);
-
-            return LandCell.Get(cellID, Variation);
-        }
-
-        public PhysicsObj GetObject(int id)
-        {
-            readerWriterLockSlim.EnterReadLock();
-            try
-            {
-                foreach (var obj in ObjectList)
-                {
-                    if (obj != null && obj.ID == id)
-                        return obj;
-                }
-
-                return null;
-            }
-            finally
-            {
-                readerWriterLockSlim.ExitReadLock();
-            }
-        }
-
         public static ObjCell GetVisible(uint cellID, int? variationId)
         {
             if (cellID == 0) return null;
@@ -243,24 +205,18 @@ namespace ACE.Server.Physics.Common
         public void Init()
         {
             Pos = new Position();
-            ObjectList = new List<PhysicsObj>();
+            _ObjectList = new ConcurrentDictionary<uint, PhysicsObj>();
             ShadowObjectList = new List<ShadowObj>();
             VoyeurTable = new List<uint>();
         }
 
         public void RemoveObject(PhysicsObj obj)
         {
-            readerWriterLockSlim.EnterWriteLock();
-            try
-            {
-                ObjectList.Remove(obj);
+
+            _ObjectList.TryRemove(new KeyValuePair<uint, PhysicsObj>(obj.ID, obj));
                 
-                update_all_voyeur(obj, DetectionType.LeftDetection);
-            }
-            finally
-            {
-                readerWriterLockSlim.ExitWriteLock();
-            }
+            update_all_voyeur(obj, DetectionType.LeftDetection);
+
         }
 
         public bool check_collisions(PhysicsObj obj)
@@ -491,17 +447,12 @@ namespace ACE.Server.Physics.Common
 
         public void init_objects()
         {
-            readerWriterLockSlim.EnterReadLock();
-            try
-            {
-                foreach (var obj in ObjectList)
-                    if (!obj.State.HasFlag(PhysicsState.Static) && !obj.is_completely_visible())
-                        obj.recalc_cross_cells();
-            }
-            finally
-            {
-                readerWriterLockSlim.ExitReadLock();
-            }
+            Parallel.ForEach(_ObjectList,
+                obj =>
+                {
+                    if (!obj.Value.State.HasFlag(PhysicsState.Static) && !obj.Value.is_completely_visible())
+                        obj.Value.recalc_cross_cells();
+                });
         }
 
         public virtual bool point_in_cell(Vector3 point)
@@ -615,21 +566,7 @@ namespace ACE.Server.Physics.Common
 
         public void AddObjectListTo(List<PhysicsObj> target)
         {
-            readerWriterLockSlim.EnterReadLock();
-            try
-            {
-                for (int i = 0; i < ObjectList.Count; i++)
-                {
-                    if (!target.Contains(ObjectList[i]))
-                    {
-                        target.Add(ObjectList[i]);
-                    }
-                }
-            }
-            finally
-            {
-                readerWriterLockSlim.ExitReadLock();
-            }
+            target.AddRange(ObjectList);
         }
     }
 }
