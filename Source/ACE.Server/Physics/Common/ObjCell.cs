@@ -350,19 +350,8 @@ namespace ACE.Server.Physics.Common
                     if (visibleCell.ID == cell.ID)
                         continue;
 
-                    var found = false;
+                    var found = visibleCell.VisibleCells.Where(x => x.Id == cell.ID).Any();
 
-                    foreach (var stab in ((EnvCell)visibleCell).VisibleCells.Values)
-                    {
-                        if (stab == null)
-                            continue;
-
-                        if (cell.ID == stab.ID)
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
                     if (!found)
                         cellArray.remove_cell(cell);
                 }
