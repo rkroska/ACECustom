@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using ACE.Server.Physics.Common;
 
 namespace ACE.Server.Physics.Animation
@@ -159,9 +160,8 @@ namespace ACE.Server.Physics.Animation
         {
             if (offset != null)
             {
-                foreach (var globSphere in GlobalSphere)
-                    globSphere.Center += offset.Value;
-
+                Parallel.ForEach(GlobalSphere, (sphere) =>
+                    { sphere.Center += offset.Value; });
                 GlobalLowPoint += offset.Value;
             }
             else

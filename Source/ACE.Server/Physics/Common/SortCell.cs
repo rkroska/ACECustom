@@ -42,15 +42,15 @@ namespace ACE.Server.Physics.Common
                 Building.find_building_transit_cells(numParts, parts, cellArray);
         }
 
-        public PhysicsObj get_object(int objectID)
-        {
-            var obj = GetObject(objectID);
+        //public PhysicsObj get_object(int objectID)
+        //{
+        //    var obj = GetObject(objectID);
 
-            if (obj == null && Building != null)
-                obj = Building.get_object(objectID);
+        //    if (obj == null && Building != null)
+        //        obj = Building.get_object(objectID);
 
-            return obj;
-        }
+        //    return obj;
+        //}
 
         public bool has_building()
         {
