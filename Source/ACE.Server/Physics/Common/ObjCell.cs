@@ -350,10 +350,13 @@ namespace ACE.Server.Physics.Common
                     if (visibleCell.ID == cell.ID)
                         continue;
 
-                    var found = visibleCell.VisibleCells.Where(x => x.Id == cell.ID).Any();
+                    if (visibleCell.VisibleCells != null)
+                    {
+                        var found = visibleCell.VisibleCells.Where(x => x.Id == cell.ID).Any();
 
-                    if (!found)
-                        cellArray.remove_cell(cell);
+                        if (!found)
+                            cellArray.remove_cell(cell);
+                    }
                 }
             }
         }
