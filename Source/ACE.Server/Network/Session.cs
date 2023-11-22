@@ -40,7 +40,7 @@ namespace ACE.Server.Network
 
         public AccessLevel AccessLevel { get; private set; }
 
-        public List<Character> Characters { get; } = new List<Character>();
+        public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>();
 
         public Player Player { get; private set; }
 
@@ -163,7 +163,7 @@ namespace ACE.Server.Network
             AccessLevel = accountAccesslevel;
         }
 
-        public void UpdateCharacters(IEnumerable<Character> characters)
+        public void UpdateCharacters(IEnumerable<LoginCharacter> characters)
         {
             Characters.Clear();
 
@@ -178,13 +178,15 @@ namespace ACE.Server.Network
             {
                 if (Characters[i].DeleteTime > 0 && Time.GetUnixTime() > Characters[i].DeleteTime)
                 {
-                    Characters[i].IsDeleted = true;
+                    //Characters[i].IsDeleted = true;
+                    DatabaseManager.Shard.GetCharacter(Characters[i].Id, x =>
+                    {
+                        DatabaseManager.Shard.SaveCharacter(x, new ReaderWriterLockSlim(), null);
 
-                    DatabaseManager.Shard.SaveCharacter(Characters[i], new ReaderWriterLockSlim(), null);
+                        PlayerManager.ProcessDeletedPlayer(Characters[i].Id);
 
-                    PlayerManager.ProcessDeletedPlayer(Characters[i].Id);
-
-                    Characters.RemoveAt(i);
+                        Characters.RemoveAt(i);
+                    });                    
                 }
             }
         }

@@ -16,6 +16,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Database.Models.Shard;
 
 namespace ACE.Server.Network.Handlers
 {
@@ -153,7 +154,7 @@ namespace ACE.Server.Network.Handlers
                 }
 
                 var possessions = player.GetAllPossessions();
-                var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                var possessedBiotas = new Collection<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>();
                 foreach (var possession in possessions)
                     possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
 
@@ -167,7 +168,7 @@ namespace ACE.Server.Network.Handlers
                     }
 
                     PlayerManager.AddOfflinePlayer(player);
-                    session.Characters.Add(player.Character);
+                    session.Characters.Add(new LoginCharacter { Id = player.Character.Id, IsPlussed = player.IsPlussed, AccountId = player.Account.AccountId, Name = player.Name });
 
                     SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Ok, player.Guid, characterCreateInfo.Name);
                 });
@@ -215,7 +216,7 @@ namespace ACE.Server.Network.Handlers
             }
 
             var character = session.Characters.SingleOrDefault(c => c.Id == guid);
-            if (character == null)
+            if (character.Id == 0)
             {
                 session.SendCharacterError(CharacterError.EnterGameCharacterNotOwned);
                 return;
@@ -294,38 +295,43 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            var character = session.Characters[(int)characterSlot];
-            if (character == null)
+            var Logcharacter = session.Characters[(int)characterSlot];
+
+            DatabaseManager.Shard.GetCharacter(Logcharacter.Id, character =>
             {
-                session.SendCharacterError(CharacterError.Delete);
-                return;
-            }
-
-            var offlinePlayer = PlayerManager.GetOfflinePlayer(session.Characters[(int)characterSlot].Id);
-
-            if (offlinePlayer == null || offlinePlayer.IsDeleted || offlinePlayer.IsPendingDeletion)
-            {
-                session.SendCharacterError(CharacterError.Delete);
-                return;
-            }
-
-            session.Network.EnqueueSend(new GameMessageCharacterDelete());
-
-            var charRestoreTime = PropertyManager.GetLong("char_delete_time", 3600).Item;
-            character.DeleteTime = (ulong)(Time.GetUnixTime() + charRestoreTime);
-            character.IsDeleted = false;
-
-            DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
-            {
-                if (result)
+                if (character == null)
                 {
-                    session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
-
-                    PlayerManager.HandlePlayerDelete(character.Id);
-                }
-                else
                     session.SendCharacterError(CharacterError.Delete);
+                    return;
+                }
+                var offlinePlayer = PlayerManager.GetOfflinePlayer(session.Characters[(int)characterSlot].Id);
+
+                if (offlinePlayer == null || offlinePlayer.IsDeleted || offlinePlayer.IsPendingDeletion)
+                {
+                    session.SendCharacterError(CharacterError.Delete);
+                    return;
+                }
+
+                session.Network.EnqueueSend(new GameMessageCharacterDelete());
+
+                var charRestoreTime = PropertyManager.GetLong("char_delete_time", 3600).Item;
+                character.DeleteTime = (ulong)(Time.GetUnixTime() + charRestoreTime);
+                character.IsDeleted = false;
+
+                DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
+                {
+                    if (result)
+                    {
+                        session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
+
+                        PlayerManager.HandlePlayerDelete(character.Id);
+                    }
+                    else
+                        session.SendCharacterError(CharacterError.Delete);
+                });
             });
+
+            
         }
 
         [GameMessage(GameMessageOpcode.CharacterRestore, SessionState.AuthConnected)]
@@ -346,7 +352,7 @@ namespace ACE.Server.Network.Handlers
             }
 
             var character = session.Characters.SingleOrDefault(c => c.Id == guid);
-            if (character == null)
+            if (character.Id == 0)
                 return;
 
             if (Time.GetUnixTime() > character.DeleteTime || character.IsDeleted)
@@ -355,32 +361,35 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            DatabaseManager.Shard.IsCharacterNameAvailable(character.Name, isAvailable =>
+            DatabaseManager.Shard.GetCharacter(character.Id, character =>
             {
-                if (!isAvailable)
+                DatabaseManager.Shard.IsCharacterNameAvailable(character.Name, isAvailable =>
                 {
-                    SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.NameInUse);
-                }
-                else
-                {
-                    character.DeleteTime = 0;
-                    character.IsDeleted = false;
-
-                    DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
+                    if (!isAvailable)
                     {
-                        var name = character.Name;
+                        SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.NameInUse);
+                    }
+                    else
+                    {
+                        character.DeleteTime = 0;
+                        character.IsDeleted = false;
 
-                        if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && session.AccessLevel > AccessLevel.Advocate)
-                            name = "+" + name;
-                        else if (!ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && character.IsPlussed)
-                            name = "+" + name;
+                        DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
+                        {
+                            var name = character.Name;
 
-                        if (result)
-                            session.Network.EnqueueSend(new GameMessageCharacterRestore(guid, name, 0u));
-                        else
-                            SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Corrupt);
-                    });
-                }
+                            if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && session.AccessLevel > AccessLevel.Advocate)
+                                name = "+" + name;
+                            else if (!ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && character.IsPlussed)
+                                name = "+" + name;
+
+                            if (result)
+                                session.Network.EnqueueSend(new GameMessageCharacterRestore(guid, name, 0u));
+                            else
+                                SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Corrupt);
+                        });
+                    }
+                });
             });
         }
     }

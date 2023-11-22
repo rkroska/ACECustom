@@ -603,6 +603,30 @@ namespace ACE.Database
             return GetCharacterList(0, true, characterId).FirstOrDefault();
         }
 
+        public List<LoginCharacter> GetCharacterListForLogin(uint accountId, bool includeDeleted)
+        {
+            return GetCharacterListForLogin(accountId, includeDeleted, 0);
+        }   
+
+        private static List<LoginCharacter> GetCharacterListForLogin(uint accountID, bool includeDeleted, uint characterID = 0)
+        {
+            var context = new ShardDbContext();
+            IQueryable<LoginCharacter> query;
+
+            if (accountID > 0)
+                query = context.Character
+                    .Where(r => r.AccountId == accountID && (includeDeleted || !r.IsDeleted))
+                    .AsNoTracking()
+                    .Select(x => new LoginCharacter { Id = x.Id, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
+            else
+                query = context.Character
+                    .Where(r => r.Id == characterID && (includeDeleted || !r.IsDeleted))
+                    .AsNoTracking()
+                    .Select(x => new LoginCharacter { Id = x.Id, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
+
+            return query.ToList();
+        }
+
         private static List<Character> GetCharacterList(uint accountID, bool includeDeleted, uint characterID = 0)
         {
             var context = new ShardDbContext();

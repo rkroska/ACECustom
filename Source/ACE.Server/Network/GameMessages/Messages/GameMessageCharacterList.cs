@@ -9,7 +9,7 @@ namespace ACE.Server.Network.GameMessages.Messages
 {
     public class GameMessageCharacterList : GameMessage
     {
-        public GameMessageCharacterList(List<Character> characters, Session session) : base(GameMessageOpcode.CharacterList, GameMessageGroup.UIQueue)
+        public GameMessageCharacterList(List<LoginCharacter> characters, Session session) : base(GameMessageOpcode.CharacterList, GameMessageGroup.UIQueue)
         {
             Writer.Write(0u);
             Writer.Write(characters.Count);

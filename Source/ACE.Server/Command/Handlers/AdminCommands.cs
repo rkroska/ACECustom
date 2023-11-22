@@ -2148,13 +2148,13 @@ namespace ACE.Server.Command.Handlers
                                 PlayerManager.AddOfflinePlayer(newPlayer);
 
                                 if (newAccountId == 0)
-                                    session.Characters.Add(newPlayer.Character);
+                                    session.Characters.Add(new Database.Models.Shard.LoginCharacter { Id = newPlayer.Character.Id, IsPlussed = newPlayer.IsPlussed, AccountId = newPlayer.Account.AccountId, Name = newPlayer.Name });
                                 else
                                 {
                                     var foundActiveSession = Network.Managers.NetworkManager.Find(newAccountId);
 
                                     if (foundActiveSession != null)
-                                        foundActiveSession.Characters.Add(newPlayer.Character);
+                                        foundActiveSession.Characters.Add(new Database.Models.Shard.LoginCharacter { Id = newPlayer.Character.Id, IsPlussed = newPlayer.IsPlussed, AccountId = newPlayer.Account.AccountId, Name = newPlayer.Name });
                                 }
 
                                 var msg = $"Successfully {(isDeletedChar ? "restored" : "copied")} the character \"{(existingCharacter.IsPlussed ? "+" : "")}{existingCharacter.Name}\" to a new character \"{newPlayer.Name}\" for the account \"{newPlayer.Account.AccountName}\".";
@@ -3627,7 +3627,7 @@ namespace ACE.Server.Command.Handlers
                 DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, null);
 
                 PlayerManager.AddOfflinePlayer(player);
-                session.Characters.Add(player.Character);
+                session.Characters.Add(new Database.Models.Shard.LoginCharacter { Id = player.Character.Id, IsPlussed = player.IsPlussed, AccountId = player.Account.AccountId, Name = player.Name });
 
                 session.LogOffPlayer();
             });
