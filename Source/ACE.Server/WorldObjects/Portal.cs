@@ -265,7 +265,7 @@ namespace ACE.Server.WorldObjects
                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your creature magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
                             return new ActivationResult(false);
                         }
-                        if (PortalReqMaxValue > PortalReqValue && player.Enlightenment > PortalReqMaxValue)
+                        if (PortalReqMaxValue > PortalReqValue && player.LuminanceAugmentCreatureCount > PortalReqMaxValue)
                         {
                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have augmented your creature magic more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
                             return new ActivationResult(false);
@@ -278,7 +278,7 @@ namespace ACE.Server.WorldObjects
                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your item magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
                             return new ActivationResult(false);
                         }
-                        if (PortalReqMaxValue > PortalReqValue && player.Enlightenment > PortalReqMaxValue)
+                        if (PortalReqMaxValue > PortalReqValue && player.LuminanceAugmentItemCount > PortalReqMaxValue)
                         {
                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have augmented your item magic more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
                             return new ActivationResult(false);
@@ -291,7 +291,7 @@ namespace ACE.Server.WorldObjects
                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your life magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
                             return new ActivationResult(false);
                         }
-                        if (PortalReqMaxValue > PortalReqValue && player.Enlightenment > PortalReqMaxValue)
+                        if (PortalReqMaxValue > PortalReqValue && player.LuminanceAugmentLifeCount > PortalReqMaxValue)
                         {
                             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have augmented your life magic more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
                             return new ActivationResult(false);
