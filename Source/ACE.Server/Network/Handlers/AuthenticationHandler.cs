@@ -230,7 +230,7 @@ namespace ACE.Server.Network.Handlers
         {
             if (WorldManager.WorldStatus == WorldManager.WorldStatusState.Open || session.AccessLevel > AccessLevel.Player)
             {
-                DatabaseManager.Shard.GetCharacters(session.AccountId, false, result =>
+                DatabaseManager.Shard.GetLoginCharacters(session.AccountId, false, result =>
                 {
                     // If you want to create default characters for accounts that have none, here is where you would do it.
 
@@ -243,7 +243,7 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        private static void SendConnectResponse(Session session, List<Character> characters)
+        private static void SendConnectResponse(Session session, List<LoginCharacter> characters)
         {
             characters = characters.OrderByDescending(o => o.LastLoginTimestamp).ToList(); // The client highlights the first character in the list. We sort so the first character sent is the one we last logged in
             session.UpdateCharacters(characters);
