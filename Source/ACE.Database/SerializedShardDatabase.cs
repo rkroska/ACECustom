@@ -213,6 +213,15 @@ namespace ACE.Database
             }));
         }
 
+        public void GetLoginCharacters(uint accountId, bool includeDeleted, Action<List<LoginCharacter>> callback)
+        {
+            _queue.Add(new Task(() =>
+            {
+                var result = BaseDatabase.GetCharacterListForLogin(accountId, includeDeleted);
+                callback?.Invoke(result);
+            }));
+        }
+
         public void GetCharacter(uint characterId, Action<Character> callback)
         {
             _queue.Add(new Task(() =>
