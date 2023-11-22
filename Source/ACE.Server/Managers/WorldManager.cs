@@ -25,6 +25,8 @@ using ACE.Server.Physics.Common;
 using Character = ACE.Database.Models.Shard.Character;
 using Position = ACE.Entity.Position;
 using System.Linq;
+using ACE.Database.Models.Shard;
+using Biota = ACE.Entity.Models.Biota;
 
 namespace ACE.Server.Managers
 {
@@ -91,7 +93,7 @@ namespace ACE.Server.Managers
                 PlayerManager.BootAllPlayers();
         }
 
-        public static void PlayerEnterWorld(Session session, Character character)
+        public static void PlayerEnterWorld(Session session, LoginCharacter character)
         {
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
 
@@ -101,12 +103,15 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            var start = DateTime.UtcNow;
-            DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
+            DatabaseManager.Shard.GetCharacter(character.Id, fullCharacter =>
             {
-                log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
-                ActionQueue.EnqueueAction(new ActionEventDelegate(() => DoPlayerEnterWorld(session, character, offlinePlayer.Biota, biotas)));
-            });
+                var start = DateTime.UtcNow;
+                DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
+                {
+                    log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
+                    ActionQueue.EnqueueAction(new ActionEventDelegate(() => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas)));
+                });
+            });            
         }
 
         private static void DoPlayerEnterWorld(Session session, Character character, Biota playerBiota, PossessedBiotas possessedBiotas)
