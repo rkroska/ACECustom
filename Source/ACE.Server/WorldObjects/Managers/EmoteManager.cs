@@ -883,6 +883,9 @@ namespace ACE.Server.WorldObjects.Managers
 
                     var debugMotion = false;
 
+                    if (emote.Motion == null)
+                        break;
+
                     if (Debug)
                         Console.Write($".{(MotionCommand)emote.Motion}");
 
