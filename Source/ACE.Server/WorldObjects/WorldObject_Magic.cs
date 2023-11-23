@@ -1328,6 +1328,7 @@ namespace ACE.Server.WorldObjects
 
             gateway.PortalReqType = portal.PortalReqType;
             gateway.PortalReqValue = portal.PortalReqValue;
+            gateway.PortalReqMaxValue = portal.PortalReqMaxValue;
 
             gateway.EnterWorld();
 
