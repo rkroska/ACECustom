@@ -183,7 +183,7 @@ namespace ACE.Server.Network
                     {
                         DatabaseManager.Shard.SaveCharacter(x, new ReaderWriterLockSlim(), null);
 
-                        PlayerManager.ProcessDeletedPlayer(Characters[i].Id);
+                        PlayerManager.ProcessDeletedPlayer(x.Id);
 
                         Characters.RemoveAt(i);
                     });                    
