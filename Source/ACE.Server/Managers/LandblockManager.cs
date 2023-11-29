@@ -273,7 +273,7 @@ namespace ACE.Server.Managers
                             {
                                 // Copy the j down into 0
                                 foreach (var landblock in landblockGroups[landblockGroupsIndexMatchesByDistance[j]])
-                                    landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock.Value, landblock.Value.VariationId);
+                                    landblockGroups[landblockGroupsIndexMatchesByDistance[0]].Add(landblock, landblock.VariationId);
 
                                 landblockGroups.RemoveAt(landblockGroupsIndexMatchesByDistance[j]);
                             }
@@ -349,7 +349,7 @@ namespace ACE.Server.Managers
                     CurrentMultiThreadedTickingLandblockGroup.Value = landblockGroup;
 
                     foreach (var landblock in landblockGroup)
-                        landblock.Value.TickPhysics(portalYearTicks, movedObjects);
+                        landblock.TickPhysics(portalYearTicks, movedObjects);
 
                     CurrentMultiThreadedTickingLandblockGroup.Value = null;
                 });
@@ -361,7 +361,7 @@ namespace ACE.Server.Managers
                 foreach (var landblockGroup in landblockGroups)
                 {
                     foreach (var landblock in landblockGroup)
-                        landblock.Value.TickPhysics(portalYearTicks, movedObjects);
+                        landblock.TickPhysics(portalYearTicks, movedObjects);
                 }
             }
 
@@ -390,7 +390,7 @@ namespace ACE.Server.Managers
                     CurrentMultiThreadedTickingLandblockGroup.Value = landblockGroup;
 
                     foreach (var landblock in landblockGroup)
-                        landblock.Value.TickMultiThreadedWork(Time.GetUnixTime());
+                        landblock.TickMultiThreadedWork(Time.GetUnixTime());
 
                     CurrentMultiThreadedTickingLandblockGroup.Value = null;
                 });
@@ -402,7 +402,7 @@ namespace ACE.Server.Managers
                 foreach (var landblockGroup in landblockGroups)
                 {
                     foreach (var landblock in landblockGroup)
-                        landblock.Value.TickMultiThreadedWork(Time.GetUnixTime());
+                        landblock.TickMultiThreadedWork(Time.GetUnixTime());
                 }
             }
         }
@@ -414,7 +414,7 @@ namespace ACE.Server.Managers
             foreach (var landblockGroup in landblockGroups)
             {
                 foreach (var landblock in landblockGroup)
-                    landblock.Value.TickSingleThreadedWork(Time.GetUnixTime());
+                    landblock.TickSingleThreadedWork(Time.GetUnixTime());
             }
         }
 

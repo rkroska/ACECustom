@@ -30,20 +30,17 @@ namespace ACE.Server.Physics.Common
 
         public void add_cell(uint cellID, ObjCell cell)
         {
-            if (!Cells.ContainsKey(cellID))
-            {
-                Cells.Add(cellID, cell);
-                //NumCells++;
-            }
+            Cells.TryAdd(cellID, cell);
+            //if (!Cells.ContainsKey(cellID))
+            //{
+            //    Cells.Add(cellID, cell);
+            //    //NumCells++;
+            //}
         }
 
         public void remove_cell(ObjCell cell)
         {
-            if (Cells.ContainsKey(cell.ID))
-            {
-                Cells.Remove(cell.ID);
-                //NumCells--;
-            }
+            Cells.Remove(cell.ID);
         }
     }
 }
