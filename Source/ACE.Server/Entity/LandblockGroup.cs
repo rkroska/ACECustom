@@ -26,7 +26,7 @@ namespace ACE.Server.Entity
     /// Removing landblocks from groups is a very efficient process
     /// Checking landblock groups for split potential does incur some overhead (~0.5 ms) which is why it's only done on intervals that are twice the Landblock.UnloadInterval.
     /// </summary>
-    public class LandblockGroup : IEnumerable<KeyValuePair<VariantCacheId, Landblock>>
+    public class LandblockGroup : IEnumerable<Landblock>
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -42,7 +42,7 @@ namespace ACE.Server.Entity
 
         public DateTime NextTrySplitTime { get; private set; } = DateTime.UtcNow.Add(TrySplitInterval);
 
-        private readonly ConcurrentDictionary<VariantCacheId, Landblock> landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
+        private readonly HashSet<Landblock> landblocks = new HashSet<Landblock>();
 
         private readonly HashSet<uint> uniqueLandblockIdsRemoved = new HashSet<uint>();
 
@@ -71,15 +71,9 @@ namespace ACE.Server.Entity
 
         public int Count => landblocks.Count;
 
-        public bool Contains(Landblock landblock, int? Variation)
-        {
-            var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = Variation ?? 0 };
-            return landblocks.ContainsKey(cacheKey);
-        }
-
         public bool Add(Landblock landblock, int? Variation)
         {
-            var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = Variation ?? 0 };
+            //var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = Variation ?? 0 };
             if (landblocks.Count > 0)
             {
                 if (IsDungeon)
@@ -95,7 +89,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (landblocks.TryAdd(cacheKey, landblock))
+            if (landblocks.Add(landblock))
             {
                 landblock.CurrentLandblockGroup = this;
 
@@ -122,7 +116,7 @@ namespace ACE.Server.Entity
         public bool Remove(Landblock landblock, int? Variation)
         {
             var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = Variation ?? 0 };
-            if (landblocks.TryRemove(cacheKey, out landblock))
+            if (landblocks.Remove(landblock))
             {
                 landblock.CurrentLandblockGroup = null;
 
@@ -145,7 +139,7 @@ namespace ACE.Server.Entity
             return false;
         }
 
-        public IEnumerator<KeyValuePair<VariantCacheId, Landblock>> GetEnumerator()
+        public IEnumerator<Landblock> GetEnumerator()
         {
             return landblocks.GetEnumerator();
         }
@@ -165,10 +159,10 @@ namespace ACE.Server.Entity
 
             foreach (var existing in landblocks)
             {
-                if (existing.Value.Id.LandblockX < xMin) xMin = existing.Value.Id.LandblockX;
-                if (existing.Value.Id.LandblockX > xMax) xMax = existing.Value.Id.LandblockX;
-                if (existing.Value.Id.LandblockY < yMin) yMin = existing.Value.Id.LandblockY;
-                if (existing.Value.Id.LandblockY > yMax) yMax = existing.Value.Id.LandblockY;
+                if (existing.Id.LandblockX < xMin) xMin = existing.Id.LandblockX;
+                if (existing.Id.LandblockX > xMax) xMax = existing.Id.LandblockX;
+                if (existing.Id.LandblockY < yMin) yMin = existing.Id.LandblockY;
+                if (existing.Id.LandblockY > yMax) yMax = existing.Id.LandblockY;
             }
 
             xCenter = xMin + ((xMax - xMin) / 2.0);
@@ -183,7 +177,7 @@ namespace ACE.Server.Entity
         {
             var landblockGroupSplitHelper = new LandblockGroupSplitHelper();
 
-            var remainingLandblocks = new List<Landblock>((IEnumerable<Landblock>)landblocks);
+            var remainingLandblocks = new List<Landblock>(landblocks);
 
             landblockGroupSplitHelper.Add(remainingLandblocks[remainingLandblocks.Count - 1]);
             remainingLandblocks.RemoveAt(remainingLandblocks.Count - 1);
@@ -215,7 +209,7 @@ namespace ACE.Server.Entity
             {
                 var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = landblock.VariationId ?? 0 };
                 // Remove the split landblocks. Do this manually, not through the public Remove() function
-                landblocks.TryRemove(cacheKey, out _);
+                landblocks.Remove(landblock);
 
                 // Add them through the proper .Add() method to the new LandblockGroup
                 newLandblockGroup.Add(landblock, landblock.VariationId);

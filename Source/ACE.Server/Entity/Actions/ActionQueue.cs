@@ -64,5 +64,10 @@ namespace ACE.Server.Entity.Actions
         {
             Queue.Clear();
         }
+
+        public int Count()
+        {
+            return Queue.Count;
+        }
     }
 }
