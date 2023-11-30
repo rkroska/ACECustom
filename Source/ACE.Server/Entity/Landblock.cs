@@ -539,10 +539,10 @@ namespace ACE.Server.Entity
             var actionQueueCount = actionQueue.Count();
             actionQueue.RunActions();
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_RunActions, stopwatch.Elapsed.TotalSeconds);
-            if (stopwatch.Elapsed.TotalSeconds > 0.100f)
-            {
-                log.Warn($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_RunActions: {stopwatch.Elapsed.TotalSeconds} seconds, Count: {actionQueueCount}");
-            }
+            //if (stopwatch.Elapsed.TotalSeconds > 0.100f)
+            //{
+            //    log.Warn($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_RunActions: {stopwatch.Elapsed.TotalSeconds} seconds, Count: {actionQueueCount}");
+            //}
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             // When a WorldObject Ticks, it can end up adding additional WorldObjects to this landblock
