@@ -5,6 +5,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Extensions;
 using ACE.Server.Physics.Entity;
+using System.Runtime.CompilerServices;
 
 namespace ACE.Server.Physics
 {
@@ -231,6 +232,7 @@ namespace ACE.Server.Physics
             Plane = new Plane(normal, dist);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool point_in_poly2D(Vector3 point, Sidedness side)
         {
             var prevIdx = 0;

@@ -1,7 +1,11 @@
+using System;
+
 namespace ACE.Common.Extensions
 {
     public static class DoubleExtensions
     {
+        private static readonly System.Buffers.SearchValues<char> digits = System.Buffers.SearchValues.Create("123456789");
+
         public static string FormatChance(this double chance)
         {
             if (chance == 1)
@@ -21,14 +25,14 @@ namespace ACE.Common.Extensions
                 {
                     extra = 0;
                 }
-                return p.Substring(0, p.IndexOf('.') + extra) + "%";
+                return string.Concat(p.AsSpan(0, p.IndexOf('.') + extra), "%");
             }
-            int i = p.IndexOfAny(new char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9' });
+            int i = p.AsSpan().IndexOfAny(digits);
             if (i < 0)
             {
                 return "0%";
             }
-            return p.Substring(0, i + 1) + "%";
+            return string.Concat(p.AsSpan(0, i + 1), "%");
         }
     }
 }

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-
+using System.Runtime.CompilerServices;
 using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -1766,6 +1766,7 @@ namespace ACE.Server.Physics
             return GetBlockDist(a.ObjCellID, b.ObjCellID);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetBlockDist(uint a, uint b)
         {
             var lbx_a = a >> 24;
@@ -2138,6 +2139,7 @@ namespace ACE.Server.Physics
             add_shadows_to_cell(CellArray);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void calc_friction(double quantum, float velocity_mag2)
         {
             if (!TransientState.HasFlag(TransientStateFlags.OnWalkable)) return;

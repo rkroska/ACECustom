@@ -2277,8 +2277,10 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             
             String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+
+            //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+            DiscordChatManager.SendDiscordFile(session.Player.Name, wcid.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, wcid.ToString() + ".sql"));
             sw.Close();
-            DiscordChatManager.SendDiscordMessage(session.Player.Name, result, ConfigManager.Config.Chat.ExportsChannelId);
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
         }
 

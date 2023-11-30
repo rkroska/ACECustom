@@ -1,5 +1,5 @@
 // Uncomment this if you want to measure the time actions take to execute and report slow ones
-#define WRAP_AND_MEASURE_ACT_WITH_STOPWATCH
+//#define WRAP_AND_MEASURE_ACT_WITH_STOPWATCH
 
 using System;
 using System.Collections.Concurrent;
@@ -63,6 +63,11 @@ namespace ACE.Server.Entity.Actions
         public void Clear()
         {
             Queue.Clear();
+        }
+
+        public int Count()
+        {
+            return Queue.Count;
         }
     }
 }
