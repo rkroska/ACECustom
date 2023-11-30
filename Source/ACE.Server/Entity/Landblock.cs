@@ -536,7 +536,7 @@ namespace ACE.Server.Entity
             // - this.SpawnEncounters
             // - Adding items back onto the landblock from failed player movements: Player_Inventory.cs DoHandleActionPutItemInContainer()
             // - Executing trade between two players: Player_Trade.cs FinalizeTrade()
-            var actionQueueCount = actionQueue.Count();
+            //var actionQueueCount = actionQueue.Count();
             actionQueue.RunActions();
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_RunActions, stopwatch.Elapsed.TotalSeconds);
             //if (stopwatch.Elapsed.TotalSeconds > 0.100f)
