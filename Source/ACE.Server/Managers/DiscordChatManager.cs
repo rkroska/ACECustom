@@ -33,6 +33,22 @@ namespace ACE.Server.Managers
             
         }
 
+        public static void SendDiscordFile(string player, string message, long channelId, FileAttachment fileContent)
+        {
+            if (ConfigManager.Config.Chat.EnableDiscordConnection)
+            {
+                try
+                {
+                    var res = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId).GetTextChannel((ulong)channelId).SendFileAsync(fileContent, player + " : " + message).Result;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error sending discord message, " + ex.Message);
+                }
+            }
+
+        }
+
         public static void Initialize()
         {
             _discordSocketClient = new DiscordSocketClient();

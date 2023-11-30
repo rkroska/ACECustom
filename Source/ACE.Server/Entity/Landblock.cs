@@ -51,6 +51,17 @@ namespace ACE.Server.Entity
 
         public LandblockId Id { get; }
 
+        public override int GetHashCode()
+        {
+            var hash = base.GetHashCode(); hash ^= VariationId.GetHashCode();
+            return hash;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return base.Equals(obj) && this.VariationId == ((Landblock)obj).VariationId;
+        }
+
         /// <summary>
         /// Flag indicates if this landblock is permanently loaded (for example, towns on high-traffic servers)
         /// </summary>
@@ -91,8 +102,6 @@ namespace ACE.Server.Entity
         public LandblockGroup CurrentLandblockGroup { get; internal set; }
 
         public List<Landblock> Adjacents = new List<Landblock>();
-
-        public List<Landblock> Variations = new List<Landblock>();
 
         private readonly ActionQueue actionQueue = new ActionQueue();
 
@@ -527,9 +536,13 @@ namespace ACE.Server.Entity
             // - this.SpawnEncounters
             // - Adding items back onto the landblock from failed player movements: Player_Inventory.cs DoHandleActionPutItemInContainer()
             // - Executing trade between two players: Player_Trade.cs FinalizeTrade()
+            //var actionQueueCount = actionQueue.Count();
             actionQueue.RunActions();
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_RunActions, stopwatch.Elapsed.TotalSeconds);
-
+            //if (stopwatch.Elapsed.TotalSeconds > 0.100f)
+            //{
+            //    log.Warn($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_RunActions: {stopwatch.Elapsed.TotalSeconds} seconds, Count: {actionQueueCount}");
+            //}
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             // When a WorldObject Ticks, it can end up adding additional WorldObjects to this landblock
