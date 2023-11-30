@@ -2278,7 +2278,7 @@ namespace ACE.Server.Command.Handlers.Processors
             
             String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
             sw.Close();
-            DiscordChatManager.SendDiscordMessage(session.Player.Name, result, ConfigManager.Config.Chat.ExportsChannelId);
+            DiscordChatManager.SendDiscordMessage(session.Player.Name,"'''" + result + "'''", ConfigManager.Config.Chat.ExportsChannelId);
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
         }
 
