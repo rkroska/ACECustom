@@ -125,13 +125,18 @@ namespace ACE.Server.Physics.Common
             //    return; // already built
             //}
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
-
-            Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
+            foreach (var visibleCellID in VisibleCellIDs)
             {
-                var blockCellID = ID & 0xFFFF0000 | visibleCellID;                
+                var blockCellID = ID & 0xFFFF0000 | visibleCellID;
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
                 VisibleCells.TryAdd(visibleCellID, cell);
-            });
+            }
+            //Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
+            //{
+            //    var blockCellID = ID & 0xFFFF0000 | visibleCellID;                
+            //    var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
+            //    VisibleCells.TryAdd(visibleCellID, cell);
+            //});
 
             //Console.WriteLine($"CellID: {this.ID}, VisibleCells Count: {VisibleCells.Count}");
         }

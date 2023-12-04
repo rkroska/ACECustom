@@ -101,8 +101,9 @@ namespace ACE.Server.WorldObjects
         public List<Creature> GetNearbyMonsters()
         {
             var monsters = new List<Creature>();
+            var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
 
-            foreach (var creature in PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature())
+            foreach (var creature in listOfCreatures)
             {
                 // why does this need to be in here?
                 if (creature.IsDead || !creature.Attackable || creature.Visibility)

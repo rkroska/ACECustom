@@ -918,7 +918,7 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterReadLock();
             try
             {
-                return VisibleTargets.Values.Select(v => v.WeenieObj.WorldObject).Where(x =>x.Location.Variation == this.PhysicsObj.Position.Variation).OfType<Creature>().ToList();
+                return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Where(x =>x.Location.Variation == this.PhysicsObj?.Position?.Variation)?.OfType<Creature>()?.ToList();
             }
             finally
             {

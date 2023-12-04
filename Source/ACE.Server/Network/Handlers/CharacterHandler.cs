@@ -17,6 +17,7 @@ using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Database.Models.Shard;
+using MySql.Data.MySqlClient;
 
 namespace ACE.Server.Network.Handlers
 {
@@ -222,7 +223,7 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            if (character.IsDeleted || character.DeleteTime > 0)
+            if (character.IsDeleted)
             {
                 session.SendCharacterError(CharacterError.EnterGameCharacterNotOwned);
                 return;
@@ -322,9 +323,14 @@ namespace ACE.Server.Network.Handlers
                 {
                     if (result)
                     {
-                        session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
+                        DatabaseManager.Shard.GetLoginCharacters(session.AccountId, false, result =>
+                        {
+                            var cs = result.OrderByDescending(o => o.LastLoginTimestamp).ToList();
+                            session.UpdateCharacters(cs);
+                            session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
 
-                        PlayerManager.HandlePlayerDelete(character.Id);
+                            PlayerManager.HandlePlayerDelete(character.Id);
+                        });
                     }
                     else
                         session.SendCharacterError(CharacterError.Delete);
@@ -353,7 +359,11 @@ namespace ACE.Server.Network.Handlers
 
             var character = session.Characters.SingleOrDefault(c => c.Id == guid);
             if (character.Id == 0)
+            {
+                session.SendCharacterError(CharacterError.EnterGameCouldntPlaceCharacter);
                 return;
+            }
+                
 
             if (Time.GetUnixTime() > character.DeleteTime || character.IsDeleted)
             {
