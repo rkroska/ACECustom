@@ -238,8 +238,8 @@ namespace ACE.Server.WorldObjects
         public List<Creature> GetAttackTargets()
         {
             var visibleTargets = new List<Creature>();
-
-            foreach (var creature in PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature())
+            var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+            foreach (var creature in listOfCreatures)
             {
                 // ensure attackable
                 if (!creature.Attackable && creature.TargetingTactic == TargetingTactic.None || creature.Teleporting) continue;
@@ -347,8 +347,8 @@ namespace ACE.Server.WorldObjects
         {
             Creature closestTarget = null;
             var closestDistSq = float.MaxValue;
-
-            foreach (var creature in PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature()) //has variant filter
+            var listOfCreature = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+            foreach (var creature in listOfCreature) //has variant filter
             {
                 if (creature is Player player && (!player.Attackable || player.Teleporting || (player.Hidden ?? false)))
                     continue;

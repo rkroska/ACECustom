@@ -48,7 +48,7 @@ namespace ACE.Server.Network
             Index = 0;
             if (Count == 1)
                 TailSent = true;
-            packetLog.DebugFormat("Sequence {0}, count {1}, DataRemaining {2}", sequence, Count, DataRemaining);
+            packetLog.DebugFormat($"Sequence {sequence}, count {Count}, DataRemaining {DataRemaining}");
         }
 
         public ServerPacketFragment GetTailFragment()
@@ -65,7 +65,7 @@ namespace ACE.Server.Network
 
         private ServerPacketFragment CreateServerFragment(ushort index)
         {
-            packetLog.DebugFormat("Creating ServerFragment for index {0}", index);
+            packetLog.DebugFormat($"Creating ServerFragment for index {index}");
             if (index >= Count)
                 throw new ArgumentOutOfRangeException("index", index, "Passed index is greater then computed count");
 
@@ -97,7 +97,7 @@ namespace ACE.Server.Network
             fragment.Header.Queue = (ushort)Message.Group;
 
             DataRemaining -= dataToSend;
-            packetLog.DebugFormat("Done creating ServerFragment for index {0}. After reading {1} DataRemaining {2}", index, dataToSend, DataRemaining);
+            packetLog.DebugFormat($"Done creating ServerFragment for index {index}. After reading {dataToSend} DataRemaining {DataRemaining}");
             return fragment;
         }
     }

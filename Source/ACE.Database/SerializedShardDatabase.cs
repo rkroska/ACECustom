@@ -231,6 +231,11 @@ namespace ACE.Database
             }));
         }
 
+        public Character GetCharacterSynchronous(uint characterId)
+        {
+            return BaseDatabase.GetCharacter(characterId);            
+        }
+        
         public void SaveCharacter(Character character, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
             _queue.Add(new Task(() =>
@@ -238,6 +243,11 @@ namespace ACE.Database
                 var result = BaseDatabase.SaveCharacter(character, rwLock);
                 callback?.Invoke(result);
             }));
+        }
+
+        public bool SaveCharacterSynchronous(Character character, ReaderWriterLockSlim rwLock)
+        {
+            return BaseDatabase.SaveCharacter(character, rwLock);
         }
 
         public void RenameCharacter(Character character, string newName, ReaderWriterLockSlim rwLock, Action<bool> callback)
