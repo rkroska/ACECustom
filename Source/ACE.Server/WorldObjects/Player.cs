@@ -900,8 +900,8 @@ namespace ACE.Server.WorldObjects
             var isDungeon = CurrentLandblock.PhysicsLandblock != null && CurrentLandblock.PhysicsLandblock.IsDungeon;
 
             var rangeSquared = LocalBroadcastRangeSq;
-
-            foreach (var creature in PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature())
+            var creatures = PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+            foreach (var creature in creatures)
             {
                 if (isDungeon && Location.Landblock != creature.Location.Landblock)
                     continue;
