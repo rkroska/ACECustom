@@ -6,6 +6,7 @@ using System.Threading;
 using ACE.Entity.Enum;
 using ACE.Server.Physics.Managers;
 using ACE.Server.WorldObjects;
+using log4net;
 
 namespace ACE.Server.Physics.Common
 {
@@ -15,6 +16,8 @@ namespace ACE.Server.Physics.Common
     /// </summary>
     public class ObjectMaint
     {
+
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         /// <summary>
         /// The client automatically removes known objects if they remain outside visibility for this amount of time
         /// </summary>
@@ -327,14 +330,22 @@ namespace ACE.Server.Physics.Common
 
         public List<Creature> GetVisibleObjectsValuesOfTypeCreature()
         {
-            rwLock.EnterReadLock();
             try
             {
-                return VisibleObjects.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                rwLock.EnterReadLock();
+                try
+                {
+                    return VisibleObjects.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                }
+                finally
+                {
+                    rwLock.ExitReadLock();
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                rwLock.ExitReadLock();
+                log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetVisibleObjectsValuesOfTypeCreature(): thrown exception: {ex.Message}, {VisibleObjects?.Count}");
+                return new List<Creature>();
             }
         }
 
@@ -744,15 +755,24 @@ namespace ACE.Server.Physics.Common
 
         public List<Creature> GetKnownObjectsValuesAsCreature()
         {
-            rwLock.EnterReadLock();
             try
             {
-                return KnownObjects.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                rwLock.EnterReadLock();
+                try
+                {
+                    return KnownObjects.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                }
+                finally
+                {
+                    rwLock.ExitReadLock();
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                rwLock.ExitReadLock();
+                log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetKnownObjectsValuesAsCreature(): thrown exception: {ex.Message}, {KnownObjects?.Count}");
+                return new List<Creature>();
             }
+            
         }
 
         /// <summary>
@@ -768,17 +788,17 @@ namespace ACE.Server.Physics.Common
             // only tracking players who know about this object
             if (!obj.IsPlayer)
             {
-                Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add a non-player");
+                log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add a non-player");
                 return false;
             }
             if (PhysicsObj.DatObject)
             {
-                Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player for dat object");
+                log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player for dat object");
                 return false;
             }
             if (obj.Position.Variation != PhysicsObj.Position.Variation)
             {
-                Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
+                log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
                 return false;
             }
 
@@ -915,15 +935,24 @@ namespace ACE.Server.Physics.Common
 
         public List<Creature> GetVisibleTargetsValuesOfTypeCreature()
         {
-            rwLock.EnterReadLock();
             try
             {
-                return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Where(x =>x.Location.Variation == this.PhysicsObj?.Position?.Variation)?.OfType<Creature>()?.ToList();
+                rwLock.EnterReadLock();
+                try
+                {
+                    return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Where(x => x.Location.Variation == this.PhysicsObj?.Position?.Variation)?.OfType<Creature>()?.ToList();
+                }
+                finally
+                {
+                    rwLock.ExitReadLock();
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                rwLock.ExitReadLock();
+                log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetVisibleTargetsValuesOfTypeCreature(): thrown exception: {ex.Message}, {VisibleObjects?.Count}");
+                return new List<Creature>();      
             }
+           
         }
 
         /// <summary>
@@ -938,7 +967,7 @@ namespace ACE.Server.Physics.Common
                 // only tracking monsters
                 if (!obj.WeenieObj.IsMonster)
                 {
-                    Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-monster");
+                    log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-monster");
                     return false;
                 }
             }
@@ -947,7 +976,7 @@ namespace ACE.Server.Physics.Common
                 // only tracking players, combat pets, and monsters of differing faction
                 if (!obj.IsPlayer && !obj.WeenieObj.IsCombatPet && (!obj.WeenieObj.IsMonster || PhysicsObj.WeenieObj.SameFaction(obj)))
                 {
-                    Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-player / non-combat pet / non-opposing faction mob");
+                    log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-player / non-combat pet / non-opposing faction mob");
                     return false;
                 }
             }
@@ -975,13 +1004,13 @@ namespace ACE.Server.Physics.Common
                 // only tracking players and combat pets
                 if (!obj.IsPlayer && !obj.WeenieObj.IsCombatPet && PhysicsObj.WeenieObj.FoeType == null)
                 {
-                    Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-player / non-combat pet");
+                    log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-player / non-combat pet");
                     return false;
                 }
             }
             if (PhysicsObj.DatObject)
             {
-                Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add player for dat object");
+                log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add player for dat object");
                 return false;
             }
 

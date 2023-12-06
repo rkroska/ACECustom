@@ -186,7 +186,7 @@ namespace ACE.Server.WorldObjects
             var item = FindObject(itemGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems | SearchLocations.Landblock);
             if (item == null)
             {
-                Console.WriteLine($"{itemGuid} not found in {this.Location.LandblockId}, {this.Location.Variation}");
+                log.Warn($"{itemGuid} not found in {this.Location.LandblockId}, {this.Location.Variation}");
             }
 
             if (IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(ItemsInTradeWindow))
