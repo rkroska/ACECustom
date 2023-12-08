@@ -218,6 +218,10 @@ namespace ACE.Server.Command.Handlers
                 {
                     iType = 4;
                 }
+                if (parameters[1] == "peas" || parameters[1] == "ps")
+                {
+                    iType = 5;
+                }
             }
 
             if (parameters.Count() == 3 || parameters.Count() == 4)
@@ -248,6 +252,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositPyreals();
                     session.Player.DepositLuminance();
                     session.Player.DepositLegendaryKeys();
+                    session.Player.DepositPeas();
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, and Legendary Keys!", ChatMessageType.System));
                 }
@@ -285,6 +290,10 @@ namespace ACE.Server.Command.Handlers
                     case 4:
                         session.Player.DepositLegendaryKeys();
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all aged legendary keys!", ChatMessageType.System));
+                        break;
+                    case 5:
+                        session.Player.DepositPeas();
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Peas as pyreals!", ChatMessageType.System));
                         break;
                     default:
                         break;

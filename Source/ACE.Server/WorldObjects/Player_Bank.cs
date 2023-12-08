@@ -135,6 +135,76 @@ namespace ACE.Server.WorldObjects
                         break;
                     }
                 }
+
+                var legeventKeysList = this.GetInventoryItemsOfWCID(500010); //25-use Legendary keys
+                foreach (var legevent in legeventKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(legevent))
+                    {
+                        BankedLegendaryKeys += legevent.Structure ?? 25;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        public void DepositPeas()
+        {
+            if (BankedPeas == null)
+            {
+                BankedPeas = 0;
+            }
+            lock (balanceLock)
+            {
+                //int i = 0;
+                var PyrealList = this.GetInventoryItemsOfWCID(8330);
+                foreach (var Pyreal in PyrealList)
+                {
+                    int val = Pyreal.Value ?? 0;
+                    if (val > 0)
+                    {
+                        this.TryConsumeFromInventoryWithNetworking(Pyreal);
+                        BankedPyreals += val;
+                    }
+                }
+
+                var GoldList = this.GetInventoryItemsOfWCID(8327);
+                foreach (var Gold in GoldList)
+                {
+                    int val = Gold.Value ?? 0;
+                    if (val > 0)
+                    {
+                        this.TryConsumeFromInventoryWithNetworking(Gold);
+                        BankedPyreals += val;
+                    }
+                }
+
+
+                var SilverList = this.GetInventoryItemsOfWCID(8331);
+                foreach (var Silver in SilverList)
+                {
+                    int val = Silver.Value ?? 0;
+                    if (val > 0)
+                    {
+                        this.TryConsumeFromInventoryWithNetworking(Silver);
+                        BankedPyreals += val;
+                    }
+                }
+
+                var CopperList = this.GetInventoryItemsOfWCID(8326);
+                foreach (var Copper in CopperList)
+                {
+                    int val = Copper.Value ?? 0;
+                    if (val > 0)
+                    {
+                        this.TryConsumeFromInventoryWithNetworking(Copper);
+                        BankedPyreals += val;
+                    }
+                }
+
             }
         }
 
@@ -278,7 +348,17 @@ namespace ACE.Server.WorldObjects
             long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount >= 10)
+                if (Amount >= 25)
+                {
+                    for (int x = 25; x < Amount; x += 25)
+                    {
+                        remainingAmount -= 25;
+                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(500010); //25 Durable legendary key
+                        this.TryCreateInInventoryWithNetworking(key);
+                        BankedLegendaryKeys -= 25;
+                    }
+                }
+                else if (Amount >= 10)
                 {
                     for (int x = 10; x < Amount; x+=10)
                     {
@@ -437,6 +517,11 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
+        }
+        public long? BankedPeas
+        {
+            get => GetProperty(PropertyInt64.BankedPeas) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPeas); else SetProperty(PropertyInt64.BankedPeas, value.Value); }
         }
     }
 }
