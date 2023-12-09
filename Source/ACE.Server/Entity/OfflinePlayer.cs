@@ -313,5 +313,10 @@ namespace ACE.Server.Entity
             get => GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
         }
+        public long? BankedEnlightenedCoins
+        {
+            get => GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenedCoins); else SetProperty(PropertyInt64.BankedEnlightenedCoins, value.Value); }
+        }
     }
 }
