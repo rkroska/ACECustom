@@ -153,9 +153,9 @@ namespace ACE.Server.WorldObjects
 
         public void DepositPeas()
         {
-            if (BankedPeas == null)
+            if (BankedPyreals == null)
             {
-                BankedPeas = 0;
+                BankedPyreals = 0;
             }
             lock (balanceLock)
             {
@@ -607,11 +607,6 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLegendaryKeys); else SetProperty(PropertyInt64.BankedLegendaryKeys, value.Value); }
-        }
-        public long? BankedPeas
-        {
-            get => GetProperty(PropertyInt64.BankedPeas) ?? 0;
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedPeas); else SetProperty(PropertyInt64.BankedPeas, value.Value); }
         }
         public long? BankedEnlightenedCoins
         {
