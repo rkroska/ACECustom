@@ -64,8 +64,6 @@ namespace ACE.Entity.Enum.Properties
         [ServerOnly]
         LumAugSummonCount     = 9018,
         [ServerOnly]
-        BankedPeas            = 9019,
-        [ServerOnly]
         BankedEnlightenedCoins = 9020,
     }
 

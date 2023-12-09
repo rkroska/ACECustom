@@ -263,7 +263,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositPeas();
                     session.Player.DepositEnlightenedCoins();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, and Legendary Keys!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, Legendary Keys and Enlightened Coins!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
