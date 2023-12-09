@@ -171,9 +171,9 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, and keys or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, keys and enlightened coins or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals, Luminance or Legendary Keys to a character.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals, Luminance, Legendary Keys and enlightened coins  to a character.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all, /bank b will show balance, etc.", ChatMessageType.System));
 
                 return;
@@ -191,6 +191,10 @@ namespace ACE.Server.Command.Handlers
             if (session.Player.BankedLegendaryKeys < 0)
             {
                 session.Player.BankedLegendaryKeys = 0;
+            }
+            if (session.Player.BankedEnlightenedCoins < 0)
+            {
+                session.Player.BankedEnlightenedCoins = 0;
             }
 
             int iType = 0;
@@ -221,6 +225,10 @@ namespace ACE.Server.Command.Handlers
                 if (parameters[1] == "peas" || parameters[1] == "ps")
                 {
                     iType = 5;
+                }
+                if (parameters[1] == "enlightenedcoins" || parameters[1] == "e")
+                {
+                    iType = 6;
                 }
             }
 
@@ -253,6 +261,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositLuminance();
                     session.Player.DepositLegendaryKeys();
                     session.Player.DepositPeas();
+                    session.Player.DepositEnlightenedCoins();
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, and Legendary Keys!", ChatMessageType.System));
                 }
@@ -294,6 +303,10 @@ namespace ACE.Server.Command.Handlers
                     case 5:
                         session.Player.DepositPeas();
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Peas as pyreals!", ChatMessageType.System));
+                        break;
+                    case 6:
+                        session.Player.DepositEnlightenedCoins();
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all enlightened coins!", ChatMessageType.System));
                         break;
                     default:
                         break;
@@ -356,6 +369,24 @@ namespace ACE.Server.Command.Handlers
                         }
                         session.Player.WithdrawLegendaryKeys(amount);
                         break;
+                    case 6:
+                        if (amount > session.Player.BankedEnlightenedCoins)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough enlightened coins banked to make this withdrawl", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount >= session.Player.GetFreeInventorySlots())
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many enlightened coins.", ChatMessageType.System));
+                            break;
+                        }
+                        session.Player.WithdrawEnlightenedCoins(amount);
+                        break;
                     default:
                         break;
                 }
@@ -391,7 +422,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Pyreals to {transferTargetName}", ChatMessageType.System));
                         }
-                        
+
                         break;
                     case 2:
                         //transfer lum
@@ -412,7 +443,7 @@ namespace ACE.Server.Command.Handlers
                         else
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Luminance to {transferTargetName}", ChatMessageType.System));
-                        }                    
+                        }
                         break;
                     case 4:
                         if (amount > session.Player.BankedLegendaryKeys)
@@ -434,7 +465,21 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Legendary Keys to {transferTargetName}", ChatMessageType.System));
                         }
                         break;
-                    default:
+                    case 6:
+                        if (amount > session.Player.BankedEnlightenedCoins)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough enlightened coins banked to make this transfer", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
+                            break;
+                        }
+                        if (session.Player.TransferEnlightenedCoins(amount, transferTargetName))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
+                        }
                         break;
                 }
             }
@@ -444,6 +489,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
             }
         }
 

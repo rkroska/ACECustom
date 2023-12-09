@@ -65,6 +65,8 @@ namespace ACE.Entity.Enum.Properties
         LumAugSummonCount     = 9018,
         [ServerOnly]
         BankedPeas            = 9019,
+        [ServerOnly]
+        BankedEnlightenedCoins = 9020,
     }
 
     public static class PropertyInt64Extensions
