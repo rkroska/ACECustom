@@ -2258,29 +2258,32 @@ namespace ACE.Server.Command.Handlers.Processors
                 WeenieSQLWriter.TreasureWielded = DatabaseManager.World.GetAllTreasureWielded();
                 WeenieSQLWriter.PacketOpCodes = PacketOpCodeNames.Values;
             }
-
-            MemoryStream mem = new MemoryStream();
-            StreamWriter sw = new StreamWriter(mem);
-            sw.AutoFlush = true;
-
-            try
+            using (MemoryStream mem = new MemoryStream())
             {
-                WeenieSQLWriter.CreateSQLDELETEStatement(weenie, sw);
-                sw.WriteLine();
-                WeenieSQLWriter.CreateSQLINSERTStatement(weenie, sw);
-                sw.WriteLine();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
-            
-            String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+                using (StreamWriter sw = new StreamWriter(mem))
+                {
+                    sw.AutoFlush = true;
 
-            //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-            DiscordChatManager.SendDiscordFile(session.Player.Name, wcid.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, wcid.ToString() + ".sql"));
-            sw.Close();
-            CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
+                    try
+                    {
+                        WeenieSQLWriter.CreateSQLDELETEStatement(weenie, sw);
+                        sw.WriteLine();
+                        WeenieSQLWriter.CreateSQLINSERTStatement(weenie, sw);
+                        sw.WriteLine();
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                    }
+
+                    String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+
+                    //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+                    DiscordChatManager.SendDiscordFile(session.Player.Name, wcid.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, wcid.ToString() + ".sql"));
+                    sw.Close();
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
+                }
+            }                                    
         }
 
         public static void ExportSQLRecipe(Session session, string param)
@@ -2459,26 +2462,31 @@ namespace ACE.Server.Command.Handlers.Processors
 
             try
             {
-                if (LandblockInstanceWriter == null)
+                using (MemoryStream mem = new MemoryStream())
                 {
-                    LandblockInstanceWriter = new LandblockInstanceWriter();
-                    LandblockInstanceWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
-                }
-                MemoryStream mem = new MemoryStream();
-                StreamWriter sw = new StreamWriter(mem);
-                sw.AutoFlush = true;
+                    using (StreamWriter sw = new StreamWriter(mem))
+                    {
+                        if (LandblockInstanceWriter == null)
+                        {
+                            LandblockInstanceWriter = new LandblockInstanceWriter();
+                            LandblockInstanceWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
+                        }
 
-                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sw, variationId);
-                sw.WriteLine();
+                        sw.AutoFlush = true;
 
-                LandblockInstanceWriter.CreateSQLINSERTStatement(instances, sw);
+                        LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sw, variationId);
+                        sw.WriteLine();
 
-                String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+                        LandblockInstanceWriter.CreateSQLINSERTStatement(instances, sw);
 
-                //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-                DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename, ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
-                sw.Close();
-                CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
+                        String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+
+                        //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename, ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
+                        sw.Close();
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
+                    }
+                }                
             }
             catch (Exception e)
             {
