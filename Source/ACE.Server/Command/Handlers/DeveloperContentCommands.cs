@@ -2071,23 +2071,22 @@ namespace ACE.Server.Command.Handlers.Processors
         [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
-            var param = parameters[0];
+            var param = parameters[0];            
             var contentType = FileType.Weenie;
 
-            if (parameters.Length > 1)
+            if (parameters[0].ToLower().Contains("landblock"))
             {
-                contentType = GetContentType(parameters, ref param);
-
-                if (contentType == FileType.Undefined)
+                contentType = FileType.LandblockInstance;
+                if (parameters.Length > 1)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Unknown content type '{parameters[1]}'");
-                    return;
+                    param = parameters[1];
                 }
             }
+
             switch (contentType)
             {
                 case FileType.LandblockInstance:
-                    //ExportSQLLandblock(session, param);
+                    ExportDiscordLandblock(session, param);
                     break;
 
                 case FileType.Quest:
@@ -2416,6 +2415,79 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
+        }
+
+        public static void ExportDiscordLandblock(Session session, string param)
+        {
+            var variationId = session.Player.Location.Variation;
+            ushort landblockId = 0;
+
+            if (!string.IsNullOrEmpty(param) && !param.ToLower().Contains("landblock"))
+            {
+                if (!ushort.TryParse(Regex.Match(param, @"[0-9A-F]{4}", RegexOptions.IgnoreCase).Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblockId))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{param} not a valid landblock");
+                    return;
+                }
+            }
+            else
+            {
+                if (!ushort.TryParse(Regex.Match(session.Player.CurrentLandblock.Id.ToString(), @"[0-9A-F]{4}", RegexOptions.IgnoreCase).Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblockId))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"{session.Player.CurrentLandblock.Id.ToString()} not a valid landblock");
+                    return;
+                }
+            }
+            
+
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, variationId);
+            if (instances == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find landblock {landblockId:X4}");
+                return;
+            }
+
+            string sql_filename = string.Empty;
+            if (variationId.HasValue)
+            {
+                sql_filename = $"{landblockId:X4}_{variationId:N0}.sql";
+            }
+            else
+            {
+                sql_filename = $"{landblockId:X4}.sql";
+            }
+
+            try
+            {
+                if (LandblockInstanceWriter == null)
+                {
+                    LandblockInstanceWriter = new LandblockInstanceWriter();
+                    LandblockInstanceWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
+                }
+                MemoryStream mem = new MemoryStream();
+                StreamWriter sw = new StreamWriter(mem);
+                sw.AutoFlush = true;
+
+                LandblockInstanceWriter.CreateSQLDELETEStatement(instances, sw, variationId);
+                sw.WriteLine();
+
+                LandblockInstanceWriter.CreateSQLINSERTStatement(instances, sw);
+
+                String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+
+                //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+                DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename, ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
+                sw.Close();
+                CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to export {sql_filename}");
+                return;
+            }
+
+            //CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename}");
         }
 
         public static void ExportSQLQuest(Session session, string questName)
