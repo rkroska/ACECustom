@@ -181,6 +181,7 @@ namespace ACE.Server.Network
                     //Characters[i].IsDeleted = true;
                     DatabaseManager.Shard.GetCharacter(Characters[i].Id, x =>
                     {
+                        x.IsDeleted = true;
                         DatabaseManager.Shard.SaveCharacter(x, new ReaderWriterLockSlim(), null);
 
                         PlayerManager.ProcessDeletedPlayer(x.Id);
