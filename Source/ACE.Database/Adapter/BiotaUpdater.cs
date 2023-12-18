@@ -683,7 +683,8 @@ namespace ACE.Database.Adapter
                     existingValue.AugmentationLevelWhenCast = value.AugmentationLevelWhenCast;
                 }
             }
-            foreach (var value in targetBiota.BiotaPropertiesEnchantmentRegistry)
+            var enchantList = targetBiota.BiotaPropertiesEnchantmentRegistry.ToList();
+            foreach (var value in enchantList)
             {
                 if (sourceBiota.PropertiesEnchantmentRegistry == null || !sourceBiota.PropertiesEnchantmentRegistry.Any(p => p.SpellId == value.SpellId && p.LayerId == value.LayerId && p.CasterObjectId == value.CasterObjectId))
                     context.BiotaPropertiesEnchantmentRegistry.Remove(value);

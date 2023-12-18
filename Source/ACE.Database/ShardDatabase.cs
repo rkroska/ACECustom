@@ -296,6 +296,11 @@ namespace ACE.Database
 
                 return true;
             }
+            catch (DbUpdateConcurrencyException dbex)
+            {
+                log.Error($"[DATABASE] DoSaveBiota 0x{biota.Id:X8}:{biota.GetProperty(PropertyString.Name)} failed with DbUpdateConcurrencyException: {dbex.GetFullMessage()}");
+                return true; // data will re-save at a later point
+            }
             catch (Exception ex)
             {
                 if (firstException == null)
