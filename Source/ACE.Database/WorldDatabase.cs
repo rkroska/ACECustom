@@ -591,7 +591,7 @@ namespace ACE.Database
 
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
-            return context.LandblockInstance.FirstOrDefault(i => i.Guid >= 0x80000000) == null;
+            return context.LandblockInstance.FirstOrDefault(i => i.Guid >= 0xF0000000) == null;
         }
 
         public bool IsWorldDatabaseGuidRangeValid()
