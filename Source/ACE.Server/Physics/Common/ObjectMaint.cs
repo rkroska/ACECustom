@@ -940,7 +940,24 @@ namespace ACE.Server.Physics.Common
                 rwLock.EnterReadLock();
                 try
                 {
-                    return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Where(x => x.Location.Variation == this.PhysicsObj?.Position?.Variation)?.OfType<Creature>()?.ToList();
+                    if (VisibleTargets.Count == 0)
+                    {
+                        return new List<Creature>();
+                    }
+                    if (VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Count() == 0)
+                    {
+                        return new List<Creature>();
+                    }
+                    int? curVariation = this.PhysicsObj?.Position?.Variation;
+                    if (curVariation.HasValue)
+                    {
+                        return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Where(x => x.Location.Variation == curVariation)?.OfType<Creature>()?.ToList();
+                    }
+                    else
+                    {
+                        return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.OfType<Creature>()?.ToList();
+                    }
+                    
                 }
                 finally
                 {
@@ -949,7 +966,7 @@ namespace ACE.Server.Physics.Common
             }
             catch (Exception ex)
             {
-                log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetVisibleTargetsValuesOfTypeCreature(): thrown exception: {ex.Message}, {VisibleObjects?.Count}");
+                log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetVisibleTargetsValuesOfTypeCreature(): thrown exception: {ex.Message}, {VisibleTargets?.Count}");
                 return new List<Creature>();      
             }
            
