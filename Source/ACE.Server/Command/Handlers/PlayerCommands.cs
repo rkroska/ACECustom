@@ -145,14 +145,14 @@ namespace ACE.Server.Command.Handlers
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Advanced Augmentation Levels:", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Creature:{session.Player.LuminanceAugmentCreatureCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Item:{session.Player.LuminanceAugmentItemCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Life:{session.Player.LuminanceAugmentLifeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"War:{session.Player.LuminanceAugmentWarCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Void:{session.Player.LuminanceAugmentVoidCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Duration: {session.Player.LuminanceAugmentSpellDurationCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Specialization: {session.Player.LuminanceAugmentSpecializeCount:N0}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Summon: {session.Player.LuminanceAugmentSummonCount:N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Creature:{session.Player.LuminanceAugmentCreatureCount:N0} - The Luminance cost for your next 1 Creature augmentation level is:{750000 + (session.Player.LuminanceAugmentCreatureCount * (750000 * 1.3)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Item:{session.Player.LuminanceAugmentItemCount:N0} - The Luminance cost for your next 1 Item augmentation level is:{1000000 + (session.Player.LuminanceAugmentItemCount * (1000000 * 1.65)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Life:{session.Player.LuminanceAugmentLifeCount:N0} - The Luminance cost for your next 1 Life augmentation level is:{975000 + (session.Player.LuminanceAugmentLifeCount * (975000 * 1.95)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"War:{session.Player.LuminanceAugmentWarCount:N0} - The Luminance cost for your next 1 War augmentation level is:{750000 + (session.Player.LuminanceAugmentWarCount * (750000 * 1.4)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Void:{session.Player.LuminanceAugmentVoidCount:N0} - The Luminance cost for your next 1 Void augmentation level is:{800000 + (session.Player.LuminanceAugmentVoidCount * (800000 * 1.6)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Duration: {session.Player.LuminanceAugmentSpellDurationCount:N0} - The Luminance cost for your next 1 Duration augmentation level is:{400000 + (session.Player.LuminanceAugmentSpellDurationCount * (400000 * 1.2)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Specialization: {session.Player.LuminanceAugmentSpecializeCount:N0} - The Luminance cost for your next 1 Specialization augmentation level is:{3000000 + (session.Player.LuminanceAugmentSpecializeCount * (3000000 * 3)):N0}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Summon: {session.Player.LuminanceAugmentSummonCount:N0} - The Luminance cost for your next 1 Summon augmentation level is:{500000 + (session.Player.LuminanceAugmentSummonCount * (500000 * 1.25)):N0}", ChatMessageType.Broadcast));
         }
 
         //custom commands
