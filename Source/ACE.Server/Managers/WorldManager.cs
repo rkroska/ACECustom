@@ -392,9 +392,22 @@ namespace ACE.Server.Managers
                 var gameWorldUpdated = UpdateGameWorld();
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.UpdateGameWorld);
 
-                ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.NetworkManager_DoSessionWork);
-                int sessionCount = NetworkManager.DoSessionWork();
-                ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.NetworkManager_DoSessionWork);
+                int sessionCount = 0;
+                try
+                {
+                    ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.NetworkManager_DoSessionWork);
+                    sessionCount = NetworkManager.DoSessionWork();
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Exception in NetworkManager.DoSessionWork", ex);
+                }
+                finally
+                {
+                    ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.NetworkManager_DoSessionWork);
+                }
+                
+                
 
                 ServerPerformanceMonitor.Tick();
 
