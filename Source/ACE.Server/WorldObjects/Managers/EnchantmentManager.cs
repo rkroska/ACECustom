@@ -15,6 +15,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects.Entity;
 using System.Runtime.CompilerServices;
+using ACE.Server.Factories.Enum;
 
 namespace ACE.Server.WorldObjects.Managers
 {
@@ -254,10 +255,10 @@ namespace ACE.Server.WorldObjects.Managers
             //calculate luminance aug additions for statmod
             var luminanceAug = 0.0f;
 
-            if (caster != null && caster is Player)
+            if (caster != null && caster is Creature)
             {
-                var player = caster as Player;
-                if (spell.School == MagicSchool.CreatureEnchantment && spell.IsSelfTargeted)
+                var player = caster as Creature;
+                if (spell.School == MagicSchool.CreatureEnchantment && (spell.IsSelfTargeted || !spell.IsBeneficial))
                 {
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
@@ -279,7 +280,7 @@ namespace ACE.Server.WorldObjects.Managers
                     else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 171
                         || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
                     {
-                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                        luminanceAug += GetItemAugPercentageRating(player.LuminanceAugmentItemCount ?? 0); //(player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }    
                     else if (spell.StatModKey == 361) //eg atlans alacrity
                     {
@@ -404,6 +405,59 @@ namespace ACE.Server.WorldObjects.Managers
             }
             return bonus;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float GetItemAugPercentageRating(long itemAugAmt)
+        {
+            float bonus = 0;
+            for (int x = 0; x < itemAugAmt; x++)
+            {
+                if (x < 50)
+                {
+                    bonus += 0.01f;
+                }
+                else if (x < 75)
+                {
+                    bonus += 0.005f;
+                }
+                else if (x < 100)
+                {
+                    bonus += 0.0025f;
+                }
+                else if (x < 125)
+                {
+                    bonus += 0.00125f;
+                }
+                else if (x < 150)
+                {
+                    bonus += 0.000625f;
+                }
+                else if (x < 175)
+                {
+                    bonus += 0.000312f;
+                }
+                else if (x < 200)
+                {
+                    bonus += 0.000156f;
+                }
+                else
+                {
+                    bonus += 0.000100f;
+                }
+            }
+            return bonus;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float GetItemAugBloodDrinkerRating(long itemAugAmt, MeleeWeaponSkill weaponSkill, WeaponType weapType, AttackType at, WorldObject weapon)
+        {
+            if (weapon.IsCleaving)
+            {
+
+            }
+            return itemAugAmt * 0.25f;
+        }
+
         /// <summary>
         /// Adds a cooldown spell to the enchantment registry
         /// </summary>
