@@ -51,7 +51,7 @@ namespace ACE.Server.WorldObjects
             // handle aetheria procs
             if (attacker is Creature wielder)
             {
-                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => Aetheria.IsAetheria(i.WeenieClassId) && i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
+                var equippedAetheria = wielder.EquippedObjects.Values.Where(i => i.HasProc && i.ProcSpellSelfTargeted == selfTarget);
 
                 // aetheria
                 foreach (var aetheria in equippedAetheria)
