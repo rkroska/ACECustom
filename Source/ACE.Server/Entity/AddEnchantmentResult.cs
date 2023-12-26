@@ -66,24 +66,24 @@ namespace ACE.Server.Entity
             Surpassed = new List<PropertiesEnchantmentRegistry>();
 
             long augmentLevel = 0;
-            if (caster is Player)
+            if (caster is Creature creature)
             {
                 switch (spell.School)
                 {
                     case ACE.Entity.Enum.MagicSchool.WarMagic:
-                        augmentLevel = ((Player)caster).LuminanceAugmentWarCount ?? 0;
+                        augmentLevel = creature.LuminanceAugmentWarCount ?? 0;
                         break;
                     case ACE.Entity.Enum.MagicSchool.LifeMagic:
-                        augmentLevel = ((Player)caster).LuminanceAugmentLifeCount ?? 0;
+                        augmentLevel = creature.LuminanceAugmentLifeCount ?? 0;
                         break;
                     case ACE.Entity.Enum.MagicSchool.ItemEnchantment:
-                        augmentLevel = ((Player)caster).LuminanceAugmentItemCount ?? 0;
+                        augmentLevel = creature.LuminanceAugmentItemCount ?? 0;
                         break;
                     case ACE.Entity.Enum.MagicSchool.CreatureEnchantment:
-                        augmentLevel = ((Player)caster).LuminanceAugmentCreatureCount ?? 0;
+                        augmentLevel = creature.LuminanceAugmentCreatureCount ?? 0;
                         break;
                     case ACE.Entity.Enum.MagicSchool.VoidMagic:
-                        augmentLevel = ((Player)caster).LuminanceAugmentVoidCount ?? 0;
+                        augmentLevel = creature.LuminanceAugmentVoidCount ?? 0;
                         break;
                     case ACE.Entity.Enum.MagicSchool.None:
                     default:
