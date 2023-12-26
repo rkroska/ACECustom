@@ -845,9 +845,17 @@ namespace ACE.Server.Network
                             else if (availableSpace >= fragment.NextSize)
                             {
                                 packetLog.DebugFormat("[{0}] Sending small message", session.LoggingIdentifier);
-                                ServerPacketFragment spf = fragment.GetNextFragment();
-                                packet.Fragments.Add(spf);
-                                availableSpace -= spf.Length;
+                                try
+                                {
+                                    ServerPacketFragment spf = fragment.GetNextFragment();
+                                    packet.Fragments.Add(spf);
+                                    availableSpace -= spf.Length;
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Error($"Error sending small message: {ex}");
+                                }
+                                
                             }
                             else
                                 fragmentSkipped = true;
