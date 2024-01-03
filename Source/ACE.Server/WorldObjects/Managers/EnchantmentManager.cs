@@ -277,7 +277,7 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.005f;
                     }
-                    else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 171
+                    else if (spell.Name.Contains("Bane") || spell.StatModKey == 171
                         || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
@@ -420,33 +420,37 @@ namespace ACE.Server.WorldObjects.Managers
                 {
                     bonus += 0.01f;
                 }
-                else if (x < 75)
-                {
-                    bonus += 0.005f;
-                }
                 else if (x < 100)
                 {
-                    bonus += 0.0025f;
-                }
-                else if (x < 125)
-                {
-                    bonus += 0.00125f;
+                    bonus += 0.0075f;
                 }
                 else if (x < 150)
                 {
-                    bonus += 0.000625f;
-                }
-                else if (x < 175)
-                {
-                    bonus += 0.000312f;
+                    bonus += 0.005625f;
                 }
                 else if (x < 200)
                 {
-                    bonus += 0.000156f;
+                    bonus += 0.004218f;
+                }
+                else if (x < 250)
+                {
+                    bonus += 0.003164f;
+                }
+                else if (x < 300)
+                {
+                    bonus += 0.002373f;
+                }
+                else if (x < 350)
+                {
+                    bonus += 0.001779f;
+                }
+                else if (x < 400)
+                {
+                    bonus += 0.001334f;
                 }
                 else
                 {
-                    bonus += 0.000100f;
+                    bonus += 0.00100f;
                 }
             }
             return bonus;
@@ -995,7 +999,7 @@ namespace ACE.Server.WorldObjects.Managers
             var modifier = 0;
             foreach (var enchantment in enchantments.Where(e => (e.StatModType & EnchantmentTypeFlags.Skill) == 0))
             {
-                if (statModKey == PropertyInt.Damage || statModKey == PropertyInt.WeaponAuraDamage)
+                if (Player != null && (statModKey == PropertyInt.Damage || statModKey == PropertyInt.WeaponAuraDamage) && Player.GetEquippedMainHand() != null)
                 {
                     modifier += ((int)enchantment.StatModValue * GetItemAugBloodDrinkerRating(Player.LuminanceAugmentItemCount ?? 0, Player.GetEquippedMainHand())).Round();
                 }
