@@ -416,35 +416,35 @@ namespace ACE.Server.WorldObjects.Managers
             float bonus = 0;
             for (int x = 0; x < itemAugAmt; x++)
             {
-                if (x < 50)
+                if (x < 100)
                 {
                     bonus += 0.01f;
                 }
-                else if (x < 100)
+                else if (x < 150)
                 {
                     bonus += 0.0075f;
                 }
-                else if (x < 150)
+                else if (x < 200)
                 {
                     bonus += 0.005625f;
                 }
-                else if (x < 200)
+                else if (x < 250)
                 {
                     bonus += 0.004218f;
                 }
-                else if (x < 250)
+                else if (x < 300)
                 {
                     bonus += 0.003164f;
                 }
-                else if (x < 300)
+                else if (x < 350)
                 {
                     bonus += 0.002373f;
                 }
-                else if (x < 350)
+                else if (x < 400)
                 {
                     bonus += 0.001779f;
                 }
-                else if (x < 400)
+                else if (x < 450)
                 {
                     bonus += 0.001334f;
                 }
