@@ -113,14 +113,19 @@ namespace ACE.Server.WorldObjects
 
             CurrentMotionState = new Motion(MotionStance.NonCombat, MotionCommand.Ready);
             //IsMonster = false;
-
-            PhysicsObj.StopCompletely(true);
+            if (PhysicsObj != null)
+            {
+                PhysicsObj.StopCompletely(true);
+            }
 
             // broadcast death animation
             var motionDeath = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
             var deathAnimLength = ExecuteMotion(motionDeath);
 
-            EmoteManager.OnDeath(lastDamager);
+            if (EmoteManager != null)
+            {
+                EmoteManager.OnDeath(lastDamager);
+            }            
 
             var dieChain = new ActionChain();
 
