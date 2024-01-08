@@ -2068,6 +2068,30 @@ namespace ACE.Server.Command.Handlers.Processors
             ExportSQLWeenie(session, param, true);
         }
 
+        [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid>")]
+        public static void HandleDiscordImport(Session session, params string[] parameters)
+        {
+            int weenieId = 0;
+            if (!int.TryParse(parameters[0], out weenieId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't parse weenie {parameters[0]}");
+                return;
+            }
+            string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, weenieId);
+
+            if (string.IsNullOrEmpty(sql))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find SQL attachment for weenie {parameters[0]}");
+                return;
+            }
+
+            using (var ctx = new WorldDbContext())
+                ctx.Database.ExecuteSqlRaw(sql);
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Imported {weenieId} from discord.");
+        }
+
+
         [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Discord.WebSocket;
 using ACE.Common;
 using Discord;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace ACE.Server.Managers
 {
@@ -27,7 +28,7 @@ namespace ACE.Server.Managers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Error sending discord message, " + ex.Message);
+                    log.Error("Error sending discord message, " + ex.Message);
                 }
             }
             
@@ -43,10 +44,49 @@ namespace ACE.Server.Managers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Error sending discord message, " + ex.Message);
+                    log.Error("Error sending discord message, " + ex.Message);
                 }
             }
 
+        }
+
+        public static string GetSQLFromDiscordMessage(int topN, int weenieClassId)
+        {
+            string res = "";
+
+            try
+            {
+                _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId)
+                    .GetTextChannel((ulong)ConfigManager.Config.Chat.WeenieUploadsChannelId)
+                    .GetMessagesAsync(limit: topN)
+                    .FlattenAsync().Result.ToList()
+                    .ForEach(x =>
+                    {
+                        if(x.Content == weenieClassId.ToString())
+                        {
+                            if(x.Attachments.Count == 1)
+                            {
+                                IAttachment attachment = x.Attachments.First();
+                                if (attachment.Filename.ToLowerInvariant().Contains(".sql"))
+                                {
+                                    using (var client = new WebClient())
+                                    {
+                                        res = client.GetStringFromURL(attachment.Url).Result;
+                                        return;
+                                    }
+                                }
+                            }
+                        }    
+                    });
+            }
+            catch (Exception ex)
+            {
+
+                log.Error("Error getting discord messages, " + ex.Message);
+            }
+            
+
+            return res;
         }
 
         public static void Initialize()
