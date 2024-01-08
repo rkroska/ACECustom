@@ -19,6 +19,7 @@ namespace ACE.Common
         public long AdminAuditId { get; set; }
         public long EventsChannelId { get; set; }
         public long ExportsChannelId { get; set; }
+        public long WeenieUploadsChannelId { get; set; }
 
     }
 }
