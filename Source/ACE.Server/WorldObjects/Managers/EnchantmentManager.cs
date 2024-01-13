@@ -15,6 +15,7 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects.Entity;
 using System.Runtime.CompilerServices;
+using ACE.Server.Factories.Enum;
 
 namespace ACE.Server.WorldObjects.Managers
 {
@@ -254,10 +255,10 @@ namespace ACE.Server.WorldObjects.Managers
             //calculate luminance aug additions for statmod
             var luminanceAug = 0.0f;
 
-            if (caster != null && caster is Player)
+            if (caster != null && caster is Creature)
             {
-                var player = caster as Player;
-                if (spell.School == MagicSchool.CreatureEnchantment && spell.IsSelfTargeted)
+                var player = caster as Creature;
+                if (spell.School == MagicSchool.CreatureEnchantment && (spell.IsSelfTargeted || !spell.IsBeneficial))
                 {
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
@@ -268,19 +269,23 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
                     }
-                    else if (spell.StatModKey == 360) //blood drinker buffed
-                    {
-                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.25f;
-                    }
+                    //else if (spell.StatModKey == 360) //blood drinker buffed - This is now calculated in the damage code, need to know player and weapon
+                    //{
+                    //    luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.25f;
+                    //}
                     else if (spell.StatModKey == 170) //spirit drinker
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.005f;
                     }
-                    else if (spell.StatModVal > 0 || spell.Name.Contains("Bane") || spell.StatModKey == 168 || spell.StatModKey == 169 || spell.StatModKey == 171
+                    else if (spell.Name.Contains("Bane") || spell.StatModKey == 171
                         || spell.StatModKey == 318 || spell.StatModKey ==  317) //banes and surges
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
-                    }    
+                    }
+                    else if (spell.StatModKey == 168 || spell.StatModKey == 169)
+                    {
+                        luminanceAug += GetItemAugPercentageRating(player.LuminanceAugmentItemCount ?? 0); //(player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
+                    }
                     else if (spell.StatModKey == 361) //eg atlans alacrity
                     {
                         luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 1.0f;
@@ -404,6 +409,67 @@ namespace ACE.Server.WorldObjects.Managers
             }
             return bonus;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float GetItemAugPercentageRating(long itemAugAmt)
+        {
+            float bonus = 0;
+            for (int x = 0; x < itemAugAmt; x++)
+            {
+                if (x < 100)
+                {
+                    bonus += 0.01f;
+                }
+                else if (x < 150)
+                {
+                    bonus += 0.0075f;
+                }
+                else if (x < 200)
+                {
+                    bonus += 0.005625f;
+                }
+                else if (x < 250)
+                {
+                    bonus += 0.004218f;
+                }
+                else if (x < 300)
+                {
+                    bonus += 0.003164f;
+                }
+                else if (x < 350)
+                {
+                    bonus += 0.002373f;
+                }
+                else if (x < 400)
+                {
+                    bonus += 0.001779f;
+                }
+                else if (x < 450)
+                {
+                    bonus += 0.001334f;
+                }
+                else
+                {
+                    bonus += 0.00100f;
+                }
+            }
+            return bonus;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static float GetItemAugBloodDrinkerRating(long itemAugAmt,  WorldObject weapon)
+        {
+            if (weapon.IsCleaving && weapon.W_AttackType == AttackType.MultiStrike) //Both cleave, multi
+            {
+                return itemAugAmt * 0.25f;
+            }
+            if (weapon.IsCleaving || weapon.W_AttackType == AttackType.MultiStrike) //Either cleave, multi
+            {
+                return itemAugAmt * 0.5f;
+            }
+            return itemAugAmt;
+        }
+
         /// <summary>
         /// Adds a cooldown spell to the enchantment registry
         /// </summary>
@@ -926,11 +992,22 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public int GetAdditiveMod(PropertyInt statModKey)
         {
-            var enchantments = GetEnchantments_TopLayer(EnchantmentTypeFlags.Additive, (uint)statModKey);
+            List<PropertiesEnchantmentRegistry> enchantments = null;
+                   
+            enchantments = GetEnchantments_TopLayer(EnchantmentTypeFlags.Additive, (uint)statModKey);
 
             var modifier = 0;
             foreach (var enchantment in enchantments.Where(e => (e.StatModType & EnchantmentTypeFlags.Skill) == 0))
-                modifier += (int)enchantment.StatModValue;
+            {
+                if (Player != null && (statModKey == PropertyInt.Damage || statModKey == PropertyInt.WeaponAuraDamage) && Player.GetEquippedMainHand() != null)
+                {
+                    modifier += ((int)enchantment.StatModValue * GetItemAugBloodDrinkerRating(Player.LuminanceAugmentItemCount ?? 0, Player.GetEquippedMainHand())).Round();
+                }
+                else
+                {
+                    modifier += (int)enchantment.StatModValue;
+                }                    
+            }
 
             return modifier;
         }
