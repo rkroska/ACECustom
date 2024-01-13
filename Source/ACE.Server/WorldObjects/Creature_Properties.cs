@@ -354,6 +354,36 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.SocietyRankRadblo); else SetProperty(PropertyInt.SocietyRankRadblo, value.Value); }
         }
 
+        public long? LuminanceAugmentCreatureCount
+        {
+            get => GetProperty(PropertyInt64.LumAugCreatureCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugCreatureCount); else SetProperty(PropertyInt64.LumAugCreatureCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentItemCount
+        {
+            get => GetProperty(PropertyInt64.LumAugItemCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugItemCount); else SetProperty(PropertyInt64.LumAugItemCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentLifeCount
+        {
+            get => GetProperty(PropertyInt64.LumAugLifeCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugLifeCount); else SetProperty(PropertyInt64.LumAugLifeCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentVoidCount
+        {
+            get => GetProperty(PropertyInt64.LumAugVoidCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugVoidCount); else SetProperty(PropertyInt64.LumAugVoidCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentWarCount
+        {
+            get => GetProperty(PropertyInt64.LumAugWarCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugWarCount); else SetProperty(PropertyInt64.LumAugWarCount, value.Value); }
+        }
+
         public FactionBits Society => Faction1Bits ?? FactionBits.None;
     }
 }
