@@ -320,7 +320,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     case 1:
                         //withdraw pyreals
-                        if (session.Player.BankedPyreals != null && amount >= session.Player.BankedPyreals)
+                        if (session.Player.BankedPyreals != null && amount > session.Player.BankedPyreals)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this withdrawl", ChatMessageType.System));
                             break;
@@ -334,7 +334,7 @@ namespace ACE.Server.Command.Handlers
                         break;
                     case 2:
                         //withdraw lum
-                        if (session.Player.BankedLuminance != null && amount >= session.Player.BankedLuminance)
+                        if (session.Player.BankedLuminance != null && amount > session.Player.BankedLuminance)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this withdrawl", ChatMessageType.System));
                             break;
@@ -352,7 +352,7 @@ namespace ACE.Server.Command.Handlers
                         session.Player.WithdrawLuminance(amount);
                         break;
                     case 4:
-                        if (session.Player.BankedLegendaryKeys != null && amount >= session.Player.BankedLegendaryKeys)
+                        if (session.Player.BankedLegendaryKeys != null && amount > session.Player.BankedLegendaryKeys)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough keys banked to make this withdrawl", ChatMessageType.System));
                             break;
@@ -370,7 +370,7 @@ namespace ACE.Server.Command.Handlers
                         session.Player.WithdrawLegendaryKeys(amount);
                         break;
                     case 6:
-                        if (session.Player.BankedEnlightenedCoins != null && amount >= session.Player.BankedEnlightenedCoins)
+                        if (session.Player.BankedEnlightenedCoins != null && amount > session.Player.BankedEnlightenedCoins)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough enlightened coins banked to make this withdrawl", ChatMessageType.System));
                             break;
