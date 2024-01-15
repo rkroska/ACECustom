@@ -372,8 +372,19 @@ namespace ACE.Server.WorldObjects
                 if (mmdCount > 0)
                 {
                     var woMMDs = WorldObjectFactory.CreateNewWorldObject(20630);
-                    woMMDs.SetStackSize(mmdCount);
-                    this.TryCreateInInventoryWithNetworking(woMMDs);
+                    while (mmdCount >= woMMDs.MaxStackSize)
+                    {
+                        var woMMDStack = WorldObjectFactory.CreateNewWorldObject(20630);
+                        woMMDStack.SetStackSize(woMMDStack.MaxStackSize);
+                        this.TryCreateInInventoryWithNetworking(woMMDStack);
+                        mmdCount -= (int)woMMDStack.MaxStackSize;
+                    }
+                    if (mmdCount > 0)
+                    {
+                        var woMMDStack = WorldObjectFactory.CreateNewWorldObject(20630);
+                        woMMDStack.SetStackSize(mmdCount);
+                        this.TryCreateInInventoryWithNetworking(woMMDStack);
+                    }
                 }
             }            
         }
