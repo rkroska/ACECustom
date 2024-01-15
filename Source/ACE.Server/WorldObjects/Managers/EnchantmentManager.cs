@@ -1001,7 +1001,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 if (Player != null && (statModKey == PropertyInt.Damage || statModKey == PropertyInt.WeaponAuraDamage) && Player.GetEquippedMainHand() != null)
                 {
-                    modifier += ((int)enchantment.StatModValue * GetItemAugBloodDrinkerRating(Player.LuminanceAugmentItemCount ?? 0, Player.GetEquippedMainHand())).Round();
+                    modifier += ((int)enchantment.StatModValue * 1 + GetItemAugBloodDrinkerRating(Player.LuminanceAugmentItemCount ?? 0, WorldObject)).Round();
                 }
                 else
                 {
