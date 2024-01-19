@@ -23,7 +23,6 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects.Entity;
 using log4net;
-
 using Position = ACE.Entity.Position;
 using Spell = ACE.Server.Entity.Spell;
 
@@ -1557,7 +1556,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.LuminanceAugmentCreatureCount = creatureAugs + 1;
                                         player.TryConsumeFromInventoryWithNetworking(300005, 1);
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
-                                    }), $"You are about to spend {curVal:N0} luminance to add 1 point to all of your creature spell effects. Are you sure?");                                                                        
+                                    }), $"You are about to spend {curVal:N0} luminance to add 1 point to all of your creature spell effects. Are you sure?");
                                 }
                                 break;
                             case "Item":
@@ -1596,22 +1595,22 @@ namespace ACE.Server.WorldObjects.Managers
                                 }
                                 else
                                 {
-                                   player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
-                                   {
-                                       if (player.BankedLuminance < curVal3)
-                                       {
-                                           player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal3:N0} luminance to use.", ChatMessageType.Broadcast));
-                                           return;
-                                       }
-                                       if (!player.SpendLuminance((long)curVal3))
-                                       {
-                                           player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
-                                           return;
-                                       }
-                                       player.LuminanceAugmentLifeCount = lifeAugs + 1;
-                                       player.TryConsumeFromInventoryWithNetworking(300007, 1);
-                                       player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
-                                   }), $"You are about to spend {curVal3:N0} luminance to add 1 point to all of your life spell effects. Are you sure?");
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal3)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal3:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal3))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentLifeCount = lifeAugs + 1;
+                                        player.TryConsumeFromInventoryWithNetworking(300007, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal3:N0} luminance to add 1 point to all of your life spell effects. Are you sure?");
                                 }
                                 break;
                             case "War":
@@ -1666,7 +1665,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.TryConsumeFromInventoryWithNetworking(300009, 1);
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} casting abilities by 1.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal5:N0} luminance to add 1 point to all of your void spell effects. Are you sure?");
-                                    
+
                                 }
                                 break;
                             case "Duration":
@@ -1749,6 +1748,266 @@ namespace ACE.Server.WorldObjects.Managers
                                         player.TryConsumeFromInventoryWithNetworking(2003001, 1);
                                         player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your summons damage resist rating by 3.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal8:N0} luminance to add 3 points to your summons damage resist rating. Are you sure?");
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                    break;
+                case EmoteType.PromptAddAugment10:
+                    if (player != null)
+                    {
+                        switch (emote.Message)
+                        {
+                            case "Creature10":
+                                long creatureAugs10 = player.LuminanceAugmentCreatureCount ?? 0;
+                                var curVal9 = emote.Amount + (creatureAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal9)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal9:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal9)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal9:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal9))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentCreatureCount = creatureAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000125, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Creature casting abilities by 10.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal9:N0} luminance to add 10 points to all of your creature spell effects. Are you sure?");
+                                }
+                                break;
+                            case "Item10":
+                                long itemAugs10 = player.LuminanceAugmentItemCount ?? 0;
+                                var curVal10 = emote.Amount + (itemAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal10)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal10:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal10)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal10:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal10))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentItemCount = itemAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000126, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Item casting abilities by 10.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal10:N0} luminance to add an equivalent points to all of your item spell effects. Are you sure?");
+                                }
+                                break;
+                            case "Life10":
+                                long lifeAugs10 = player.LuminanceAugmentLifeCount ?? 0;
+                                var curVal11 = emote.Amount + (lifeAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal11)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal11:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal11)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal11:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal11))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentLifeCount = lifeAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000127, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Life casting abilities by 10.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal11:N0} luminance to add 10 points to all of your life spell effects. Are you sure?");
+                                }
+                                break;
+                            case "War10":
+                                long warAugs10 = player.LuminanceAugmentWarCount ?? 0;
+                                var curVal12 = emote.Amount + (warAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal12)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal12:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal12)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal12:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal12))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentWarCount = warAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000128, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your War casting abilities by 10.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal12:N0} luminance to add 10 points to all of your war spell effects. Are you sure?");
+                                }
+                                break;
+                            case "Void10":
+                                long voidAugs10 = player.LuminanceAugmentVoidCount ?? 0;
+                                var curVal13 = emote.Amount + (voidAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal13)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal13:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal13)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal13:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal13))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentVoidCount = voidAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000129, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Void casting abilities by 10.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal13:N0} luminance to add 10 points to all of your void spell effects. Are you sure?");
+
+                                }
+                                break;
+                            case "Duration10":
+                                long durAugs10 = player.LuminanceAugmentSpellDurationCount ?? 0;
+                                var curVal14 = emote.Amount + (durAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal14)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal14:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal14)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal14:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal14))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentSpellDurationCount = durAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000130, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your spell Duration by 50%.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal14:N0} luminance to add 50% to the duration of all of your spell effects. Are you sure?");
+
+                                }
+                                break;
+                            case "Specialize10":
+                                long specAugs10 = player.LuminanceAugmentSpecializeCount ?? 0;
+                                var curVal15 = emote.Amount + (specAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (specAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (specAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (specAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (specAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (specAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (specAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (specAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (specAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (specAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal15)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal15:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal15)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal15:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal15))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentSpecializeCount = specAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000131, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Max Specialized Skill Credits by 10.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal15:N0} luminance to add 10 points to your max specialized skill credits. Are you sure?");
+                                }
+                                break;
+                            case "Summon10":
+                                long summonAugs10 = player.LuminanceAugmentSummonCount ?? 0;
+                                var curVal16 = emote.Amount + (summonAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (summonAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (summonAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (summonAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (summonAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (summonAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (summonAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (summonAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (summonAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (summonAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                if (player.BankedLuminance < curVal16)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal16:N0} luminance to use.", ChatMessageType.Broadcast));
+                                }
+                                else
+                                {
+                                    player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                    {
+                                        if (player.BankedLuminance < curVal16)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal16:N0} luminance to use.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        if (!player.SpendLuminance((long)curVal16))
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spend the necessary luminance. Please try again.", ChatMessageType.Broadcast));
+                                            return;
+                                        }
+                                        player.LuminanceAugmentSummonCount = summonAugs10 + 10;
+                                        player.TryConsumeFromInventoryWithNetworking(81000132, 1);
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your summons damage resist rating by 30.", ChatMessageType.Broadcast));
+                                    }), $"You are about to spend {curVal16:N0} luminance to add 30 points to your summons damage resist rating. Are you sure?");
                                 }
                                 break;
                             default:
