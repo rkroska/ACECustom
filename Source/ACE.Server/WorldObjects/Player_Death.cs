@@ -15,6 +15,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.Structure;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Common.Extensions;
 
 namespace ACE.Server.WorldObjects
 {
@@ -132,7 +133,7 @@ namespace ACE.Server.WorldObjects
 
             Session.Network.EnqueueSend(msgDeathLevel, msgVitaeCpPool);
 
-            var vitae = EnchantmentManager.UpdateVitae();
+            var vitae = EnchantmentManager.UpdateVitae(amount);
 
             var spellID = (uint)SpellId.Vitae;
             var spell = new Spell(spellID);
@@ -206,7 +207,9 @@ namespace ACE.Server.WorldObjects
             // update vitae
             // players who died in a PKLite fight do not accrue vitae
             if (!IsPKLiteDeath(topDamager))
-                InflictVitaePenalty();
+            {                
+                InflictVitaePenalty(CalculateVitaePenalty());
+            }
 
             if (IsPKDeath(topDamager) || AugmentationSpellsRemainPastDeath == 0)
             {
@@ -235,6 +238,16 @@ namespace ACE.Server.WorldObjects
             });
 
             dieChain.EnqueueChain();
+        }
+
+        /// <summary>
+        /// Returns the number of vitae points to be reduced from the player
+        /// </summary>
+        /// <returns></returns>
+        public int CalculateVitaePenalty()
+        {
+            int lvl = Level ?? 1;
+            return (int)(lvl / PropertyManager.GetLong("vitae_per_level", 5).Item);
         }
 
         /// <summary>

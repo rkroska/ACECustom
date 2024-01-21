@@ -459,6 +459,10 @@ namespace ACE.Server.WorldObjects.Managers
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static float GetItemAugBloodDrinkerRating(long itemAugAmt,  WorldObject weapon)
         {
+            if (weapon.W_WeaponType == WeaponType.TwoHanded) //TwoHanded
+            {
+                return itemAugAmt * 0.25f;
+            }
             if (weapon.IsCleaving && weapon.W_AttackType == AttackType.MultiStrike) //Both cleave, multi
             {
                 return itemAugAmt * 0.25f;
@@ -589,11 +593,10 @@ namespace ACE.Server.WorldObjects.Managers
         /// <summary>
         /// Called on player death
         /// </summary>
-        public virtual float UpdateVitae()
+        public virtual float UpdateVitae(int? vpAmt)
         {
             if (Player == null) return 0;
             PropertiesEnchantmentRegistry vitae;
-
             if (!HasVitae)
             {
                 // TODO refactor this so it uses the existing Add() method.
@@ -604,7 +607,15 @@ namespace ACE.Server.WorldObjects.Managers
                 vitae = BuildEntry(spell);
                 vitae.EnchantmentCategory = (uint)EnchantmentMask.Vitae;
                 vitae.LayerId = 1; // This should be 0 but EF Core seems to be very unhappy with 0 as the layer id now that we're using layer as part of the composite key.
-                vitae.StatModValue = 1.0f - (float)PropertyManager.GetDouble("vitae_penalty").Item;
+                if (vpAmt.HasValue)
+                {
+                    vitae.StatModValue = 1.0f - ((float)vpAmt.Value / 100);
+                }
+                else
+                {
+                    vitae.StatModValue = 1.0f - (float)PropertyManager.GetDouble("vitae_penalty").Item;
+                
+                }                               
                 WorldObject.Biota.PropertiesEnchantmentRegistry.AddEnchantment(vitae, WorldObject.BiotaDatabaseLock);
                 WorldObject.ChangesDetected = true;
             }
@@ -612,7 +623,15 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 // update existing vitae
                 vitae = GetVitae();
-                vitae.StatModValue -= (float)PropertyManager.GetDouble("vitae_penalty").Item;
+                if (vpAmt.HasValue)
+                {
+                    vitae.StatModValue += ((float)vpAmt.Value / 100);
+                }
+                else
+                {
+                    vitae.StatModValue = (float)PropertyManager.GetDouble("vitae_penalty").Item;
+
+                }
                 WorldObject.ChangesDetected = true;
             }
 
@@ -1001,7 +1020,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 if (Player != null && (statModKey == PropertyInt.Damage || statModKey == PropertyInt.WeaponAuraDamage) && Player.GetEquippedMainHand() != null)
                 {
-                    modifier += ((int)enchantment.StatModValue * 1 + GetItemAugBloodDrinkerRating(Player.LuminanceAugmentItemCount ?? 0, WorldObject)).Round();
+                    modifier += ((int)enchantment.StatModValue * 1 + GetItemAugBloodDrinkerRating(Player.LuminanceAugmentItemCount ?? 0, Player.GetEquippedMainHand())).Round();
                 }
                 else
                 {

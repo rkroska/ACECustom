@@ -514,7 +514,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="level">The player DeathLevel, their level on last death</param>
         private double VitaeCPPoolThreshold(float vitae, int level)
         {
-            return (Math.Pow(level, 2.5) * 2.5 + 20.0) * Math.Pow(vitae, 5.0) + 0.5;
+            return ((Math.Pow(level, 2.5) * 2.5 + 20.0) * Math.Pow(vitae, 5.0) + 0.5) * (1 + Enlightenment/5);
         }
 
         /// <summary>
