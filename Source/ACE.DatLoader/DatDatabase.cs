@@ -71,12 +71,21 @@ namespace ACE.DatLoader
 
             var obj = new T();
 
-            if (datReader != null)
+            try
             {
-                using (var memoryStream = new MemoryStream(datReader.Buffer))
-                using (var reader = new BinaryReader(memoryStream))
-                    obj.Unpack(reader);
+                if (datReader != null)
+                {
+                    using (var memoryStream = new MemoryStream(datReader.Buffer))
+                    using (var reader = new BinaryReader(memoryStream))
+                        obj.Unpack(reader);
+                }
             }
+            catch (Exception)
+            {
+                FileCache.TryGetValue(0, out FileType defResult);
+                return (T)defResult;
+            }
+            
 
             // Store this object in the FileCache
             obj = (T)FileCache.GetOrAdd(fileId, obj);

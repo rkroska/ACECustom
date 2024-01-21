@@ -94,9 +94,9 @@ namespace ACE.Server.WorldObjects.Managers
         /// <summary>
         /// Called on player death
         /// </summary>
-        public override float UpdateVitae()
+        public override float UpdateVitae(int? vpAmt)
         {
-            var result = base.UpdateVitae();
+            var result = base.UpdateVitae(vpAmt);
 
             ClearCache();
 
