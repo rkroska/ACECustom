@@ -625,11 +625,11 @@ namespace ACE.Server.WorldObjects.Managers
                 vitae = GetVitae();
                 if (vpAmt.HasValue)
                 {
-                    vitae.StatModValue += ((float)vpAmt.Value / 100);
+                    vitae.StatModValue -= ((float)vpAmt.Value / 100);
                 }
                 else
                 {
-                    vitae.StatModValue = (float)PropertyManager.GetDouble("vitae_penalty").Item;
+                    vitae.StatModValue -= (float)PropertyManager.GetDouble("vitae_penalty").Item;
 
                 }
                 WorldObject.ChangesDetected = true;

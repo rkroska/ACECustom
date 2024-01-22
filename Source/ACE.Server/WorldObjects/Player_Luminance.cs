@@ -23,12 +23,24 @@ namespace ACE.Server.WorldObjects
             if (xpType == XpType.Quest)
                 modifier *= questModifier;
             var quest = GetQuestCountXPBonus();
+            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05).Item;
 
             var enlightenment = GetEnglightenmentXPBonus();
             // should this be passed upstream to fellowship?
             var enchantment = GetXPAndLuminanceModifier(xpType);
-
-            var m_amount = (long)Math.Round(amount * quest * enlightenment * enchantment * modifier);
+            long m_amount = 0;
+            if (IsVPHardcore && HasVitae)
+            {
+                m_amount = (long)Math.Round(amount * modifier);
+            }
+            else if (IsVPHardcore)
+            {
+                m_amount = (long)Math.Round(amount * quest * enlightenment * enchantment * modifier * hardCoreMult);
+            }
+            else
+            {
+                m_amount = (long)Math.Round(amount * quest * enlightenment * enchantment * modifier);
+            }           
 
             GrantLuminance(m_amount, xpType, shareType);
         }

@@ -196,6 +196,8 @@ namespace ACE.Entity.Enum.Properties
         FreeMasteryResetRenewed          = 9010,
         [ServerOnly]
         ExcludeFromLeaderboards          = 9011,
+        [ServerOnly]
+        IsVPHardcore                     = 9012,
     }
 
     public static class PropertyBoolExtensions

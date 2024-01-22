@@ -1474,5 +1474,11 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugDurationCount); else SetProperty(PropertyInt64.LumAugDurationCount, value.Value); }
         }
 
+        public bool IsVPHardcore
+        {
+            get => GetProperty(PropertyBool.IsVPHardcore) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsVPHardcore); else SetProperty(PropertyBool.IsVPHardcore, value); }
+        }
+
     }
 }
