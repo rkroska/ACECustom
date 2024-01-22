@@ -47,7 +47,21 @@ namespace ACE.Server.WorldObjects
 
             var enlightenment = GetEnglightenmentXPBonus();
 
-            var m_amount = (long)Math.Round(amount * enchantment * modifier * quest * enlightenment);
+            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05).Item;
+
+            long m_amount = 0;
+            if (IsVPHardcore && HasVitae)
+            {
+                m_amount = m_amount = (long)Math.Round(amount * modifier);
+            }
+            else if (IsVPHardcore)
+            {
+                m_amount = (long)Math.Round(amount * enchantment * modifier * quest * enlightenment * hardCoreMult);
+            }
+            else
+            {
+                m_amount = (long)Math.Round(amount * enchantment * modifier * quest * enlightenment);
+            }
 
             if (m_amount < 0)
             {

@@ -207,8 +207,16 @@ namespace ACE.Server.WorldObjects
             // update vitae
             // players who died in a PKLite fight do not accrue vitae
             if (!IsPKLiteDeath(topDamager))
-            {                
-                InflictVitaePenalty(CalculateVitaePenalty());
+            {
+                if (IsVPHardcore)
+                {
+                    InflictVitaePenalty(CalculateVitaePenalty());
+                }
+                else
+                {
+                    InflictVitaePenalty();
+                }
+                
             }
 
             if (IsPKDeath(topDamager) || AugmentationSpellsRemainPastDeath == 0)
