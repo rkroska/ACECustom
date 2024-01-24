@@ -2057,6 +2057,106 @@ namespace ACE.Server.WorldObjects.Managers
 
                     }
                     break;
+                case EmoteType.SetEnvironment:
+                    if (WorldObject == null || WorldObject.CurrentLandblock == null)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        EnvironChangeType changeType = EnvironChangeType.Clear;
+                        switch (emote.Amount)
+                        {
+                            case 0:
+                                changeType = EnvironChangeType.Clear;
+                                break;
+                            case 1:
+                                changeType = EnvironChangeType.RedFog;
+                                break;
+                            case 2:
+                                changeType = EnvironChangeType.BlueFog;
+                                break;
+                            case 3:
+                                changeType = EnvironChangeType.WhiteFog;
+                                break;
+                            case 4:
+                                changeType = EnvironChangeType.GreenFog;
+                                break;
+                            case 5:
+                                changeType = EnvironChangeType.BlackFog;
+                                break;
+                            case 6:
+                                changeType = EnvironChangeType.BlackFog2;
+                                break;
+                            case 101:
+                                changeType = EnvironChangeType.RoarSound;
+                                break;
+                            case 102:
+                                changeType = EnvironChangeType.BellSound;
+                                break;
+                            case 103:
+                                changeType = EnvironChangeType.Chant1Sound;
+                                break;
+                            case 104:
+                                changeType = EnvironChangeType.Chant2Sound;
+                                break;
+                            case 105:
+                                changeType = EnvironChangeType.DarkWhispers1Sound;
+                                break;
+                            case 106:
+                                changeType = EnvironChangeType.DarkWhispers2Sound;
+                                break;
+                            case 107:
+                                changeType = EnvironChangeType.DarkLaughSound;
+                                break;
+                            case 108:
+                                changeType = EnvironChangeType.DarkWindSound;
+                                break;
+                            case 109:
+                                changeType = EnvironChangeType.DarkSpeechSound;
+                                break;
+                            case 110:
+                                changeType = EnvironChangeType.DrumsSound;
+                                break;
+                            case 111:
+                                changeType = EnvironChangeType.GhostSpeakSound;
+                                break;
+                            case 112:
+                                changeType = EnvironChangeType.BreathingSound;
+                                break;
+                            case 113:
+                                changeType = EnvironChangeType.HowlSound;
+                                break;
+                            case 114:
+                                changeType = EnvironChangeType.LostSoulsSound;
+                                break;
+                            case 117:
+                                changeType = EnvironChangeType.SquealSound;
+                                break;
+                            case 118:
+                                changeType = EnvironChangeType.Thunder1Sound;
+                                break;
+                            case 119:
+                                changeType = EnvironChangeType.Thunder2Sound;
+                                break;
+                            case 120:
+                                changeType = EnvironChangeType.Thunder3Sound;
+                                break;
+                            case 121:
+                                changeType = EnvironChangeType.Thunder4Sound;
+                                break;
+                            case 122:
+                                changeType = EnvironChangeType.Thunder5Sound;
+                                break;
+                            case 123:
+                                changeType = EnvironChangeType.Thunder6Sound;
+                                break;
+
+
+                        }
+                        WorldObject.CurrentLandblock.SendEnvironChange(changeType);
+                    }
+                    break;
                 default:
                     log.Debug($"EmoteManager.Execute - Encountered Unhandled EmoteType {(EmoteType)emote.Type} for {WorldObject.Name} ({WorldObject.WeenieClassId})");
                     break;
