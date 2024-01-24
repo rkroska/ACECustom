@@ -222,7 +222,7 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 entry.Duration = spell.Duration;
 
-                if (caster is Player player && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
+                if (caster is Player player && !spell.IsFellowshipSpell && (player.AugmentationIncreasedSpellDuration > 0 || (player.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration == 0)
                 { 
                     entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
                     //entry.Duration *= (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.001f;
@@ -258,7 +258,7 @@ namespace ACE.Server.WorldObjects.Managers
             if (caster != null && caster is Creature)
             {
                 var player = caster as Creature;
-                if (spell.School == MagicSchool.CreatureEnchantment && (spell.IsSelfTargeted || !spell.IsBeneficial))
+                if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && (spell.IsSelfTargeted || !spell.IsBeneficial))
                 {
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;

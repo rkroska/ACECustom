@@ -148,6 +148,10 @@ namespace ACE.Server.WorldObjects
             if (Creatures == null) return;
             foreach (var creatureGuid in Creatures.ToList())
             {
+                if (CurrentLandblock == null)
+                {
+                    continue;
+                }
                 var creature = CurrentLandblock.GetObject(creatureGuid) as Creature;
 
                 // verify current state of collision here
