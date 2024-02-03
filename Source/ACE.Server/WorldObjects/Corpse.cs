@@ -210,25 +210,7 @@ namespace ACE.Server.WorldObjects
         {
             base.Close(player);
 
-            if (VictimId == null)
-                return;
-
-            var victimGuid = new ObjectGuid(VictimId.Value);
-
-            if (!victimGuid.IsPlayer())
-            {
-                // monster corpses -- after anyone with access to the locked corpse loots,
-                // becomes open to anyone? or only after the killer loots?
-                IsLooted = true;
-            }
-            else
-            {
-                var killerGuid = new ObjectGuid(KillerId ?? 0);
-
-                // player corpses -- after corpse owner or killer loots, becomes open to anyone?
-                if (player != null && (player.Guid == killerGuid || player.Guid == victimGuid))
-                    IsLooted = true;
-            }
+            IsLooted = true;
         }
 
         public bool CorpseGeneratedRare
