@@ -20,8 +20,7 @@ namespace ACE.Server.Network.Packets
 
         public PacketInboundLoginRequest(ClientPacket packet)
         {
-            ClientVersion = packet.DataReader.ReadString16L(); // should be "1802" for end of retail client
-            string someString = packet.DataReader.ReadString16L();         // always "1802"
+            ClientVersion = packet.DataReader.ReadString16L(); // should be "1802" for end of retail client           
             uint len = packet.DataReader.ReadUInt32();                     // data length left in packet including ticket
             NetAuthType = (NetAuthType)packet.DataReader.ReadUInt32();
             var authFlags = (AuthFlags)packet.DataReader.ReadUInt32();
