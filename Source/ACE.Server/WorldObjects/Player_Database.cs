@@ -112,23 +112,30 @@ namespace ACE.Server.WorldObjects
             });
         }
 
-        public void SaveCharacterToDatabase()
+        public void SaveCharacterToDatabase(bool duringLogout = false)
         {
             CharacterLastRequestedDatabaseSave = DateTime.UtcNow;
             CharacterChangesDetected = false;
 
-            //DatabaseManager.Shard.SaveCharacter(Character, CharacterDatabaseLock, null);
-            DatabaseManager.Shard.SaveCharacter(Character, CharacterDatabaseLock, result =>
+            if (duringLogout)
             {
-                if (!result)
+                DatabaseManager.Shard.SaveCharacter(Character, CharacterDatabaseLock, null);
+            }
+            else
+            {
+                DatabaseManager.Shard.SaveCharacter(Character, CharacterDatabaseLock, result =>
                 {
-                    if (this is Player player)
+                    if (!result)
                     {
-                        // This will trigger a boot on next player tick
-                        CharacterSaveFailed = true;
+                        if (this is Player player)
+                        {
+                            // This will trigger a boot on next player tick
+                            CharacterSaveFailed = true;
+                        }
                     }
-                }
-            });
+                });
+            }
+            
         }
     }
 }

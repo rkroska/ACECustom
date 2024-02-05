@@ -155,7 +155,7 @@ namespace ACE.Server.Network
 
             // Live server seemed to take about 6 seconds. 4 seconds is nice because it has smooth animation, and saves the user 2 seconds every logoff
             // This could be made 0 for instant logoffs.
-            if (logOffRequestTime != DateTime.MinValue && logOffRequestTime.AddSeconds(6) <= DateTime.UtcNow)
+            if (logOffRequestTime != DateTime.MinValue && logOffRequestTime.AddSeconds(4) <= DateTime.UtcNow)
                 SendFinalLogOffMessages();
 
             // This section deviates from known retail pcaps/behavior, but appears to be the least harmful way to work around something that seemingly didn't occur to players using ThwargLauncher connecting to retail servers.
@@ -263,7 +263,7 @@ namespace ACE.Server.Network
             // What that means is, we could end up with Character changes after the Character has been saved from the initial LogOff request.
             // To make sure we commit these additional changes (if any), we check again here
             if (Player?.CharacterChangesDetected ?? false)
-                Player?.SaveCharacterToDatabase();
+                Player?.SaveCharacterToDatabase(true);
 
             Player = null;
 
