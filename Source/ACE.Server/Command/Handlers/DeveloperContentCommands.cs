@@ -1296,8 +1296,8 @@ namespace ACE.Server.Command.Handlers.Processors
                 parentObj.ChildLinks.Add(wo);
                 wo.ParentLink = parentObj;
             }
-
-            SyncInstances(session, landblock, instances, variation);
+            SaveInstanceToWorldDatabase(instance);
+            //SyncInstances(session, landblock, instances, variation);
         }
 
         /// <summary>
@@ -1512,9 +1512,44 @@ namespace ACE.Server.Command.Handlers.Processors
 
             instances.Remove(instance);
 
-            SyncInstances(session, landblock, instances, variation);
+            //SyncInstances(session, landblock, instances, variation);
+            DeleteInstanceFromWorldDatabase(instance);
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {(instance.IsLinkChild ? "child " : "")}{wo.WeenieClassId} - {wo.Name} (0x{guid:X8}) from landblock instances", ChatMessageType.Broadcast));
+        }
+
+        public static void SaveInstanceToWorldDatabase(LandblockInstance instance)
+        {
+            try
+            {
+                using (var ctx = new WorldDbContext())
+                {
+                    ctx.LandblockInstance.Add(instance);
+                    ctx.SaveChanges();
+                }
+            }
+            catch (Exception)
+            {
+                
+            }
+            
+        }
+
+        public static void DeleteInstanceFromWorldDatabase(LandblockInstance instance)
+        {
+            try
+            {
+                using (var ctx = new WorldDbContext())
+                {
+                    ctx.LandblockInstance.Remove(instance);
+                    ctx.SaveChanges();
+                }
+            }
+            catch (Exception)
+            {
+
+            }
+           
         }
 
         public static int GetNumChilds(Session session, LandblockInstanceLink link, List<LandblockInstance> instances)
