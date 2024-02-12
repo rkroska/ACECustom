@@ -2233,7 +2233,16 @@ namespace ACE.Server.WorldObjects.Managers
             if (emoteSet == null) return;
 
             // TODO: revisit if nested chains need to propagate timers
-            ExecuteEmoteSet(emoteSet, targetObject, nested);
+            try
+            {
+                ExecuteEmoteSet(emoteSet, targetObject, nested);
+            }
+            catch (StackOverflowException)
+            {
+                log.Error($"Stack Overflow while ExecuteEmoteSet - Weenie: {WorldObject.WeenieClassId}, {category}, {quest}");
+                return;
+            }
+            
         }
 
         /// <summary>
@@ -2267,6 +2276,11 @@ namespace ACE.Server.WorldObjects.Managers
                 Nested--;
                 return;
             }
+            if (Nested > 100)
+            {
+                log.Error($"[EMOTE] {WorldObject.Name}.EmoteManager.Enqueue(): Nested > 100 possible Infinite loop detected and aborted on 0x{WorldObject.Guid}:{WorldObject.WeenieClassId}");
+                return;
+            }
 
             IsBusy = true;
 
@@ -2287,6 +2301,8 @@ namespace ACE.Server.WorldObjects.Managers
 
                 return;
             }
+
+            
 
             if (delay + emote.Delay > 0)
             {
