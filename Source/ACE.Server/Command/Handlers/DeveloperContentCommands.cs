@@ -1530,9 +1530,9 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             catch (Exception)
             {
-                
+
             }
-            
+
         }
 
         public static void DeleteInstanceFromWorldDatabase(LandblockInstance instance)
@@ -1549,7 +1549,22 @@ namespace ACE.Server.Command.Handlers.Processors
             {
 
             }
-           
+        }
+
+        public static void UpdateInstanceInWorldDatabase(LandblockInstance instance)
+        {
+            try
+            {
+                using (var ctx = new WorldDbContext())
+                {
+                    ctx.LandblockInstance.Update(instance);
+                    ctx.SaveChanges();
+                }
+            }
+            catch (Exception)
+            {
+
+            }
         }
 
         public static int GetNumChilds(Session session, LandblockInstanceLink link, List<LandblockInstance> instances)
@@ -2982,8 +2997,8 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.OriginY = obj.Location.PositionY;
             instance.OriginZ = obj.Location.PositionZ;
             instance.VariationId = obj.Location.Variation;
-
-            SyncInstances(session, landblock_id, instances, variation);
+            UpdateInstanceInWorldDatabase(instance);
+            //SyncInstances(session, landblock_id, instances, variation);
         }
 
         public static Vector3? GetNudgeDir(string dir)
@@ -3122,7 +3137,8 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.AnglesY = newRotation.Y;
             instance.AnglesZ = newRotation.Z;
 
-            SyncInstances(session, landblock_id, instances, variation);
+            UpdateInstanceInWorldDatabase(instance);
+            //SyncInstances(session, landblock_id, instances, variation);
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
@@ -3228,7 +3244,8 @@ namespace ACE.Server.Command.Handlers.Processors
             instance.AnglesY = newRotation.Y;
             instance.AnglesZ = newRotation.Z;
 
-            SyncInstances(session, landblock_id, instances, variation);
+            UpdateInstanceInWorldDatabase(instance);
+            //SyncInstances(session, landblock_id, instances, variation);
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
