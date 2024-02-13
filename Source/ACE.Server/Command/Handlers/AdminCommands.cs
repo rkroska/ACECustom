@@ -795,7 +795,9 @@ namespace ACE.Server.Command.Handlers
             var player = PlayerManager.GetOnlinePlayer(playerName);
             // If the player is found, teleport the admin to the Player's location
             if (player != null)
-                session.Player.Teleport(player.Location);
+            {
+                WorldManager.ThreadSafeTeleport(session.Player, player.Location);
+            }                
             else
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.Broadcast));
         }
@@ -814,11 +816,13 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
             var currentPos = new Position(player.Location);
-            player.Teleport(session.Player.Location);
-            player.SetPosition(PositionType.TeleportedCharacter, currentPos);
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you.", ChatMessageType.Magic));
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {player.Name} to them.");
+            //player.Teleport(session.Player.Location);
+            WorldManager.ThreadSafeTeleport(player, session.Player.Location, new ActionEventDelegate(() =>
+            {
+                player.SetPosition(PositionType.TeleportedCharacter, currentPos);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you.", ChatMessageType.Magic));
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {player.Name} to them.");
+            }));           
         }
 
         /// <summary>
@@ -841,11 +845,15 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            player.Teleport(new Position(player.TeleportedCharacter));
-            player.SetPosition(PositionType.TeleportedCharacter, null);
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has returned you to your previous location.", ChatMessageType.Magic));
+            //player.Teleport(new Position(player.TeleportedCharacter));
+            WorldManager.ThreadSafeTeleport(player, new Position(player.TeleportedCharacter), new ActionEventDelegate(() =>
+            {
+                player.SetPosition(PositionType.TeleportedCharacter, null);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has returned you to your previous location.", ChatMessageType.Magic));
 
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has returned {player.Name} to their previous location.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has returned {player.Name} to their previous location.");
+            }));
+            
         }
 
         // teleallto [char]
@@ -904,7 +912,8 @@ namespace ACE.Server.Command.Handlers
                 var portalDest = new Position(weenie.GetPosition(PositionType.Destination));
                 portalDest.Variation = null;
                 WorldObject.AdjustDungeon(portalDest);
-                session.Player.Teleport(portalDest);
+                //session.Player.Teleport(portalDest);
+                WorldManager.ThreadSafeTeleport(session.Player, portalDest);
             }
         }
 
@@ -947,8 +956,8 @@ namespace ACE.Server.Command.Handlers
 
                     positionData[i] = position;
                 }
-
-                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3]));
+                
+                WorldManager.ThreadSafeTeleport(session.Player, new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3]));
             }
             catch (Exception)
             {

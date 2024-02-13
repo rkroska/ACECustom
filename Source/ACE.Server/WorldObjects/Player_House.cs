@@ -1360,13 +1360,19 @@ namespace ACE.Server.WorldObjects
             }
 
             // play script?
-            player.Teleport(house.BootSpot.Location);
+            WorldManager.ThreadSafeTeleport(player, house.BootSpot.Location, new ActionEventDelegate(() =>
+                {
+                owner = allegianceHouse ? "the allegiance" : "your";
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Booted {player.Name} from {owner} house.", ChatMessageType.Broadcast));
 
-            owner = allegianceHouse ? "the allegiance" : "your";
-            Session.Network.EnqueueSend(new GameMessageSystemChat($"Booted {player.Name} from {owner} house.", ChatMessageType.Broadcast));
+                owner = allegianceHouse ? "the allegiance" : "their";
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has booted you from {owner} house.", ChatMessageType.Broadcast));
+                }
+                )
+            );
+            //player.Teleport(house.BootSpot.Location);
 
-            owner = allegianceHouse ? "the allegiance" : "their";
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has booted you from {owner} house.", ChatMessageType.Broadcast));
+            
         }
 
         public void HandleActionBootAll(bool guests = true)
