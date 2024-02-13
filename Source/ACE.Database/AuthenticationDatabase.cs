@@ -178,7 +178,7 @@ namespace ACE.Database
             }
         }
 
-        public long? GetCountOfAccountQuests(int accountId)
+        public long? GetCountOfAccountQuests(uint accountId)
         {
             long count = 0;
             using (var context = new AuthDbContext())
@@ -193,6 +193,17 @@ namespace ACE.Database
                     .Count();
             }
             return count;
+        }
+
+        public List<AccountQuest> GetAccountQuests(uint accountId)
+        {
+            using (var context = new AuthDbContext())
+            {
+                return context.AccountQuest
+                    .AsNoTracking()
+                    .Where(r => r.AccountId == accountId)
+                    .ToList();
+            }
         }
 
         public void ConsolidateAccountQuests(int accountId, int characterId)
