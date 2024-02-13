@@ -205,11 +205,21 @@ namespace ACE.Server.Entity
             CellLandblock = DatManager.CellDat.ReadFromDat<CellLandblock>(Id.Raw | 0xFFFF);
             LandblockInfo = DatManager.CellDat.ReadFromDat<LandblockInfo>((uint)Id.Landblock << 16 | 0xFFFE);
 
+            // Remove this once we are comfortable with passing the LandblockInfo to the PhysicsLandblock
+            // This is how we get the LandblockInfo ID in the Physics Object
+            var id1 = (CellLandblock.Id - 1);
+            // This is how we get the LandblockInfo ID in this function
+            var id2 = (uint)Id.Landblock << 16 | 0xFFFE;
+            if (id1 != id2)
+            {
+                log.Warn($"Landblock {Id.Landblock} LandblockInfo ID: {id2} and Physics LandblockInfo ID: {id1} don't match!");
+            }
+
             lastActiveTime = DateTime.UtcNow;
 
             //We already read this from the Dat above, re-use it.
             //var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
-            PhysicsLandblock = new Physics.Common.Landblock(CellLandblock, variation);
+            PhysicsLandblock = new Physics.Common.Landblock(CellLandblock, variation, LandblockInfo);
         }
 
 

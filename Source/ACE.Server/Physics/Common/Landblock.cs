@@ -25,7 +25,7 @@ namespace ACE.Server.Physics.Common
         public LandDefs.Direction Dir;
         public Vector2 Closest;
         public BoundingType InView;
-        public CellLandblock _landblock;
+        //public CellLandblock _landblock;
         public LandblockInfo Info;
         public List<PhysicsObj> StaticObjects;
         public List<BuildingObj> Buildings;
@@ -42,7 +42,7 @@ namespace ACE.Server.Physics.Common
             Init();
         }
 
-        public Landblock(CellLandblock landblock, int? Variation)
+        public Landblock(CellLandblock landblock, int? Variation, LandblockInfo landblockInfo = null)
             : base(landblock)
         {
             Init();
@@ -51,10 +51,17 @@ namespace ACE.Server.Physics.Common
             //Console.WriteLine("Loading landblock " + ID.ToString("X8"));
             BlockInfoExists = landblock.HasObjects;
             if (BlockInfoExists)
-                Info = DBObj.GetLandblockInfo(ID - 1);
+            {
+                if (landblockInfo == null)
+                {
+                    landblockInfo = DBObj.GetLandblockInfo(ID - 1);
+                }
+                Info = landblockInfo;
+            }
             BlockCoord = LandDefs.blockid_to_lcoord(landblock.Id).Value;
-            _landblock = landblock;
-            
+            // Lets not store this if we don't need to
+            //_landblock = landblock;
+
             get_land_limits();
             VariationId = Variation;
         }
