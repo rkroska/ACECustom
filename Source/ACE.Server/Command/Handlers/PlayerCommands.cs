@@ -523,7 +523,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleMultiplier(Session session, params string[] paramters)
         {
-            session.Player.QuestCompletionCount = session.Player.Account.GetCharacterQuestCompletions();
+            session.Player.QuestCompletionCount = session.Player.Account.CachedQuestBonusCount;
             var qb = session.Player.GetQuestCountXPBonus();
             var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
             var en = session.Player.GetEnglightenmentXPBonus();

@@ -1525,7 +1525,13 @@ namespace ACE.Server.Managers
             {
                 return;
             }
+
             var acctId = player.Account.AccountId;
+
+            if (player.Account.HasQuestBonusAndCompletion(questName))
+            {
+                return; //no need to thrash.
+            }
 
             using (Database.Models.Auth.AuthDbContext context = new Database.Models.Auth.AuthDbContext())
             {
@@ -1541,25 +1547,30 @@ namespace ACE.Server.Managers
                             stampedCompletion = true;
                             acctQuest.NumTimesCompleted = solves;
                             context.AccountQuest.Update(acctQuest);
-                        }                        
+                            player.Account.UpdateAccountQuestsCacheByQuestName(questName, solves);
+                        }
                     }
                     else
                     {
                         context.AccountQuest.Add(new Database.Models.Auth.AccountQuest() { AccountId = acctId, Quest = questName, NumTimesCompleted = solves });
                         stampedNew = true;
+                        player.Account.UpdateAccountQuestsCacheByQuestName(questName, solves);
                     }
-                
+
                     context.SaveChangesFailed += (object sender, Microsoft.EntityFrameworkCore.SaveChangesFailedEventArgs e) =>
                     {
                         Console.WriteLine($"Failed to save quest {questName} for account {acctId}");
                     };
-                
+
                     context.SaveChanges();
                 }
                 catch (Exception) { stampedNew = false; stampedCompletion = false; }
             }
+            
+            
 
-            player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();      
+            //player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();
+            player.QuestCompletionCount = player.Account.CachedQuestBonusCount;
         }
 
         public static uint GetSpecialWeenieReward()

@@ -84,6 +84,10 @@ namespace ACE.Server.Network.Handlers
                     }
                 }
             }
+            else
+            {
+                account.QuestCountCache = DatabaseManager.Authentication.GetAccountQuests(account.AccountId);
+            }
 
             try
             {
