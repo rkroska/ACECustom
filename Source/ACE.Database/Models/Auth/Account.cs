@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Database.Models.Auth;
 
@@ -46,4 +47,76 @@ public partial class Account
     public string BanReason { get; set; }
 
     public virtual Accesslevel AccessLevelNavigation { get; set; }
+
+    public List<AccountQuest> QuestCountCache { get; set; }
+
+    public bool HasQuestBonusAndCompletion(string questName)
+    {
+        if (QuestCountCache == null)
+        {
+            QuestCountCache = this.GetAccountQuests();
+        }
+        if (QuestCountCache == null)
+        {
+            return false;
+        }
+        return QuestCountCache.Any(x => x.Quest == questName && x.NumTimesCompleted >= 1);
+    }
+
+    public bool HasQuestNotCompleted(string questName)
+    {
+        if (QuestCountCache == null)
+        {
+            QuestCountCache = this.GetAccountQuests();
+        }
+        if (QuestCountCache == null)
+        {
+            return false;
+        }
+        return QuestCountCache.Any(x => x.Quest == questName);
+    }
+
+    public long? CachedQuestBonusCount
+    {
+        get
+        {
+            if (QuestCountCache == null)
+            {
+                QuestCountCache = this.GetAccountQuests();
+            }
+            if (QuestCountCache == null)
+            {
+                return null;
+            }
+                
+            return QuestCountCache.Count + QuestCountCache.Where(x=>x.NumTimesCompleted>=1).Count();
+        }
+    }
+
+    public void UpdateAccountQuestsCacheByQuestName(string questName, uint numCompletions)
+    {
+        if (QuestCountCache == null)
+        {
+            QuestCountCache = this.GetAccountQuests();
+        }
+        if (QuestCountCache == null)
+        {
+            return;
+        }
+        var quest = QuestCountCache.FirstOrDefault(x => x.Quest == questName);
+        if (quest == null)
+        {
+            quest = new AccountQuest
+            {
+                AccountId = this.AccountId,
+                Quest = questName,
+                NumTimesCompleted = numCompletions
+            };
+            QuestCountCache.Add(quest);
+        }
+        else
+        {
+            quest.NumTimesCompleted = numCompletions;
+        }
+    }
 }
