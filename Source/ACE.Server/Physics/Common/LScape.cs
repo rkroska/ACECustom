@@ -54,7 +54,7 @@ namespace ACE.Server.Physics.Common
         public static Landblock get_landblock(uint blockCellID, int? variationId)
         {
             var landblockID = blockCellID | 0xFFFF;
-            var lbid = new LandblockId(landblockID);
+            var lbid = new LandblockId(landblockID, variationId);
             if (PhysicsEngine.Instance.Server)
             {
                 

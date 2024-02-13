@@ -292,7 +292,7 @@ namespace ACE.Server.WorldObjects
                 var newBlock = newPos.ObjCellID >> 16;
                 var newCell = newPos.ObjCellID & 0xFFFF;
 
-                Location.LandblockId = new LandblockId(newPos.ObjCellID);
+                Location.LandblockId = new LandblockId(newPos.ObjCellID, newPos.Variation);
 
                 if (prevBlock != newBlock)
                 {

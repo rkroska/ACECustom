@@ -291,7 +291,7 @@ namespace ACE.Server.WorldObjects
             var houseGuid = Monarch.Player.HouseInstance.Value;
             var landblock = (ushort)((houseGuid >> 12) & 0xFFFF);
 
-            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
+            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF), null);
             var isLoaded = LandblockManager.IsLoaded(landblockId);
 
             if (isLoaded)

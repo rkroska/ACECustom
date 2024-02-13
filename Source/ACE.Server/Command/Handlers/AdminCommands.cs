@@ -2489,7 +2489,7 @@ namespace ACE.Server.Command.Handlers
                 obj.Location = session.Player.Location.InFrontOf(dist);
             }
 
-            obj.Location.LandblockId = new LandblockId(obj.Location.GetCell());
+            obj.Location.LandblockId = new LandblockId(obj.Location.GetCell(), obj.Location.Variation);
 
             LastSpawnPos = obj.Location;
 
@@ -2907,7 +2907,7 @@ namespace ACE.Server.Command.Handlers
 
                     if (session.Player.CurrentLandblock?.AddWorldObject(item, session.Player.Location.Variation) ?? false)
                     {
-                        item.Location.LandblockId = new LandblockId(item.Location.GetCell());
+                        item.Location.LandblockId = new LandblockId(item.Location.GetCell(), item.Location.Variation);
 
                         // try slide to new position
                         var transit = item.PhysicsObj.transition(item.PhysicsObj.Position, new Physics.Common.Position(item.Location), false);

@@ -1440,7 +1440,7 @@ namespace ACE.Server.WorldObjects
 
             // use radius?
             var targetPos = Location.InFrontOf(1.1f);
-            targetPos.LandblockId = new LandblockId(targetPos.GetCell());
+            targetPos.LandblockId = new LandblockId(targetPos.GetCell(), Location.Variation);
 
             // try slide to new position
             var transit = item.PhysicsObj.transition(item.PhysicsObj.Position, new Physics.Common.Position(targetPos), false);
