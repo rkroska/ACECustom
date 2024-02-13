@@ -207,8 +207,9 @@ namespace ACE.Server.Entity
 
             lastActiveTime = DateTime.UtcNow;
 
-            var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
-            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock, variation);
+            //We already read this from the Dat above, re-use it.
+            //var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
+            PhysicsLandblock = new Physics.Common.Landblock(CellLandblock, variation);
         }
 
 
