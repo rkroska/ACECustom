@@ -766,12 +766,12 @@ namespace ACE.Server.WorldObjects
         {
 
             int nonexemptCount = 0;
-            var endpoint = this.Session.EndPoint;
-            var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(endpoint.Address.ToString());
+            var ipAddress = this.Session.EndPoint.Address;
+            var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(ipAddress.ToString());
             if(!ipAllowsUnlimited)
             {
                 var players = PlayerManager.GetAllOnline();
-                foreach (var p in players.Where(x => x.Session.EndPoint.Address.Address == endpoint.Address.Address))
+                foreach (var p in players.Where(x => ipAddress.Equals(x.Session.EndPoint.Address)))
                 {
                     if (p.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
                         continue;

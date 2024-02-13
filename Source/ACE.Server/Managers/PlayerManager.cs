@@ -300,8 +300,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in onlinePlayers.Values)
-                    results.Add(player);
+                results = onlinePlayers.Values.ToList();
             }
             finally
             {
