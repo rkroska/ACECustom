@@ -33,7 +33,7 @@ namespace ACE.Server.Tests
         public void GetLandblockTest()
         {
             Setup(false);
-            Entity.Landblock lb = LandblockManager.GetLandblock(new ACE.Entity.LandblockId(414), false, 2);
+            Entity.Landblock lb = LandblockManager.GetLandblock(new ACE.Entity.LandblockId(414, null), false, 2);
             Assert.IsNotNull(lb);
 
         }

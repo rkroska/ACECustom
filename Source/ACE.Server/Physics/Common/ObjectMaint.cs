@@ -315,6 +315,19 @@ namespace ACE.Server.Physics.Common
             }
         }
 
+        public List<PhysicsObj> GetVisibleObjectsValues()
+        {
+            rwLock.EnterReadLock();
+            try
+            {
+                return VisibleObjects.Values.ToList();
+            }
+            finally
+            {
+                rwLock.ExitReadLock();
+            }
+        }
+
         public List<PhysicsObj> GetVisibleObjectsValuesWhere(Func<PhysicsObj, bool> predicate)
         {
             rwLock.EnterReadLock();

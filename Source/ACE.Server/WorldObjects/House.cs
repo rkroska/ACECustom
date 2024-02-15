@@ -506,7 +506,7 @@ namespace ACE.Server.WorldObjects
 
                 var landblock = (ushort)((RootGuid.Full >> 12) & 0xFFFF);
 
-                var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
+                var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF), null);
                 var isLoaded = LandblockManager.IsLoaded(landblockId);
 
                 if (!isLoaded)
@@ -559,7 +559,7 @@ namespace ACE.Server.WorldObjects
         {
             var landblock = (ushort)((houseGuid >> 12) & 0xFFFF);
 
-            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
+            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF), null);
             var isLoaded = LandblockManager.IsLoaded(landblockId);
 
             if (!isLoaded)
@@ -571,7 +571,7 @@ namespace ACE.Server.WorldObjects
 
         public House GetDungeonHouse()
         {
-            var landblockId = new LandblockId(DungeonLandblockID);
+            var landblockId = new LandblockId(DungeonLandblockID, null);
             var isLoaded = LandblockManager.IsLoaded(landblockId);
 
             if (!isLoaded)

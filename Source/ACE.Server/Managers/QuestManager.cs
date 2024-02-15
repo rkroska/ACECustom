@@ -917,7 +917,7 @@ namespace ACE.Server.Managers
 
                         if (found && propPos != null)
                         {
-                            LandblockId p = new LandblockId(propPos.ObjCellId);
+                            LandblockId p = new LandblockId(propPos.ObjCellId, propPos.VariationId);
                           
                             Landblock L = LandblockManager.GetLandblock(p, false, Variation);
                             if (L != null)
@@ -957,7 +957,7 @@ namespace ACE.Server.Managers
                         {
                             if (propPos == null || propPos.ObjCellId != propPos2.ObjCellId)
                             {
-                                p2 = new LandblockId(propPos2.ObjCellId);
+                                p2 = new LandblockId(propPos2.ObjCellId, propPos2.VariationId);
                                 Landblock L2 = LandblockManager.GetLandblock(p2, false, Variation);
                                 if (L2 != null)
                                 {

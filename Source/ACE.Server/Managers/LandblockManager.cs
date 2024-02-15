@@ -163,7 +163,7 @@ namespace ACE.Server.Managers
 
         private static void PreloadLandblock(uint landblock, PreloadedLandblocks preloadLandblock)
         {
-            var landblockID = new LandblockId(landblock);
+            var landblockID = new LandblockId(landblock, null);
             GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, null, preloadLandblock.Permaload);
             log.DebugFormat("Landblock {0:X4}, ({1}) preloaded. IncludeAdjacents = {2}, Permaload = {3}", landblockID.Landblock, preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
         }
@@ -632,7 +632,7 @@ namespace ACE.Server.Managers
             if (lbx < 0 || lbx > 254 || lby < 0 || lby > 254)
                 return null;
 
-            return new LandblockId((byte)lbx, (byte)lby);
+            return new LandblockId((byte)lbx, (byte)lby, landblock.Variation_Id);
         }
 
         /// <summary>

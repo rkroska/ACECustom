@@ -51,7 +51,7 @@ namespace ACE.Server.Entity
                 iPos.LandblockId = p.LandblockId;
                 iPos.Pos = new Vector3(pos.X, pos.Y, pos.Z);
                 iPos.Rotation = p.Rotation;
-                iPos.LandblockId = new LandblockId(GetCell(iPos));
+                iPos.LandblockId = new LandblockId(GetCell(iPos), p.Variation);
                 iPos.Variation = p.Variation;
                 return iPos;
             }
@@ -65,13 +65,13 @@ namespace ACE.Server.Entity
             var landblockID = blockX << 24 | blockY << 16 | 0xFFFF;
 
             var position = new Position();
-            position.LandblockId = new LandblockId((byte)blockX, (byte)blockY);
+            position.LandblockId = new LandblockId((byte)blockX, (byte)blockY, p.Variation);
             position.PositionX = localX;
             position.PositionY = localY;
             position.PositionZ = pos.Z;
             position.Rotation = p.Rotation;
             position.Variation = p.Variation;   
-            position.LandblockId = new LandblockId(GetCell(position));
+            position.LandblockId = new LandblockId(GetCell(position), p.Variation);
             return position;
         }
 
@@ -179,9 +179,9 @@ namespace ACE.Server.Entity
             var _p2 = new Position(p2);
 
             if (_p1.Indoors)
-                _p1.LandblockId = new LandblockId(_p1.GetOutdoorCell());
+                _p1.LandblockId = new LandblockId(_p1.GetOutdoorCell(), _p1.Variation);
             if (_p2.Indoors)
-                _p2.LandblockId = new LandblockId(_p2.GetIndoorCell());
+                _p2.LandblockId = new LandblockId(_p2.GetIndoorCell(), _p2.Variation);
 
             return Math.Max(_p1.GlobalCellX, _p2.GlobalCellY);
         }
@@ -244,7 +244,7 @@ namespace ACE.Server.Entity
                 if (minZ > 0 && minZ < float.MaxValue)
                     pos.PositionZ += minZ;
 
-                pos.LandblockId = new LandblockId(pos.GetCell());
+                pos.LandblockId = new LandblockId(pos.GetCell(), pos.Variation);
             }
         }
 
@@ -262,7 +262,7 @@ namespace ACE.Server.Entity
             pos.PositionY -= yDiff * 192;
 
             //pos.ObjCellID = blockCell;
-            pos.LandblockId = new LandblockId(blockCell);
+            pos.LandblockId = new LandblockId(blockCell, pos.Variation);
         }
 
         public static void FindZ(this Position pos)

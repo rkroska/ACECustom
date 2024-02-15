@@ -945,7 +945,7 @@ namespace ACE.Server.WorldObjects
             var houseGuid = houseInstance.Value;
             var landblock = (ushort)((houseGuid >> 12) & 0xFFFF);
 
-            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
+            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF), null);
             var isLoaded = LandblockManager.IsLoaded(landblockId);
 
             if (!isLoaded)
@@ -1784,7 +1784,7 @@ namespace ACE.Server.WorldObjects
             var houseGuid = player.HouseInstance.Value;
             var landblock = (ushort)((houseGuid >> 12) & 0xFFFF);
 
-            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
+            var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF), null);
             var isLoaded = LandblockManager.IsLoaded(landblockId);
 
             if (isLoaded)

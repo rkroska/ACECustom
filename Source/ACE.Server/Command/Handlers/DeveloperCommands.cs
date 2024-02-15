@@ -395,7 +395,7 @@ namespace ACE.Server.Command.Handlers
 
             WorldObject loot = WorldObjectFactory.CreateNewWorldObject(trainingWandTarget);
             loot.Location = session.Player.Location.InFrontOf((loot.UseRadius ?? 2) > 2 ? loot.UseRadius.Value : 2);
-            loot.Location.LandblockId = new LandblockId(loot.Location.GetCell());
+            loot.Location.LandblockId = new LandblockId(loot.Location.GetCell(), loot.Location.Variation);
 
             loot.EnterWorld();
 
@@ -490,7 +490,7 @@ namespace ACE.Server.Command.Handlers
 
                     for (int y = 0; y <= 0xFE; y++)
                     {
-                        var blockid = new LandblockId((byte)x, (byte)y);
+                        var blockid = new LandblockId((byte)x, (byte)y, null);
                         LandblockManager.GetLandblock(blockid, false, null, false);
                     }
                 }
@@ -1594,7 +1594,7 @@ namespace ACE.Server.Command.Handlers
             var distance = float.Parse(parameters[0]);
 
             var newPos = new Position();
-            newPos.LandblockId = new LandblockId(lastSpawnPos.LandblockId.Raw);
+            newPos.LandblockId = new LandblockId(lastSpawnPos.LandblockId.Raw, lastSpawnPos.LandblockId.Variation_Id);
             newPos.Pos = lastSpawnPos.Pos;
             newPos.Rotation = session.Player.Location.Rotation;
 

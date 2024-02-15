@@ -686,7 +686,12 @@ namespace ACE.Server.WorldObjects
 
 
             // check for changing varation - and remove anything from knownobjects that is not in the new variation
-            HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+            if (_newPosition.Landblock == Location.Landblock)
+            {
+                HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+            }
+            
+            //HandleVariationChangeVisibleObjectCleanup(Location.Variation, newPosition.Variation);
 
             Session.Network.EnqueueSend(new GameMessagePlayerTeleport(this));
 
@@ -714,6 +719,10 @@ namespace ACE.Server.WorldObjects
 
         public void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
         {
+            if (sourceVariation == destinationVariation)
+            {
+                return;
+            }
             var knownObjs = GetKnownObjects();
 
             for (int i = 0; i < knownObjs.Count; i++)
@@ -728,6 +737,23 @@ namespace ACE.Server.WorldObjects
 
                     ObjMaint.RemoveObject(knownObj.PhysicsObj);
                     RemoveTrackedObject(knownObj, false);
+                }
+            }
+        }
+
+        public void HandleVariationChangeVisibleObjectCleanup(int? sourceVariation, int? destinationVariation)
+        {
+            if (sourceVariation == destinationVariation)
+            {
+                return;
+            }
+            var visObjects = ObjMaint.GetVisibleObjectsValues();
+            for (int i = 0; i < visObjects.Count; i++)
+            {
+                var vObj = visObjects[i];
+                if (vObj.Position.Variation != destinationVariation)
+                {
+                    ObjMaint.RemoveVisibleObject(vObj);
                 }
             }
         }
