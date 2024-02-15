@@ -688,7 +688,7 @@ namespace ACE.Server.WorldObjects
             // check for changing varation - and remove anything from knownobjects that is not in the new variation
             if (_newPosition.Landblock == Location.Landblock)
             {
-                HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+                HandleVariationChangeKnownObjectCleanup(Location.Variation, newPosition.Variation);
             }
             
             //HandleVariationChangeVisibleObjectCleanup(Location.Variation, newPosition.Variation);
@@ -717,7 +717,7 @@ namespace ACE.Server.WorldObjects
             UpdatePlayerPosition(new Position(newPosition), true);
         }
 
-        public void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
+        public void HandleVariationChangeKnownObjectCleanup(int? sourceVariation, int? destinationVariation)
         {
             if (sourceVariation == destinationVariation)
             {
@@ -730,8 +730,6 @@ namespace ACE.Server.WorldObjects
                 var knownObj = knownObjs[i];
                 if (knownObj.Location.Variation != destinationVariation)
                 {
-                    knownObj.PhysicsObj.ObjMaint.RemoveObject(PhysicsObj);
-
                     if (knownObj is Player knownPlayer)
                         knownPlayer.RemoveTrackedObject(this, false);
 
