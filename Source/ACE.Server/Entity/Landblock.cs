@@ -1146,7 +1146,11 @@ namespace ACE.Server.Entity
         public WorldObject GetObject(ObjectGuid guid, bool searchAdjacents = true, bool searchVariations = false)
         {
             if (pendingRemovals.Contains(guid))
+            {
+                //log.Warn($"Landblock.GetObject({guid.Full:X8}): Object is pending removal");
                 return null;
+            }
+                
 
             if (worldObjects.TryGetValue(guid, out var worldObject) || pendingAdditions.TryGetValue(guid, out worldObject))
                 return worldObject;

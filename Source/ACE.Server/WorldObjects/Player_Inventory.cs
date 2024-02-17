@@ -530,6 +530,10 @@ namespace ACE.Server.WorldObjects
 
             if (searchLocations.HasFlag(SearchLocations.Landblock))
             {
+                if (CurrentLandblock == null)
+                {
+                    log.ErrorFormat("Player 0x{0:X8}:{1} tried to find object 0x{2:X8}:{3} in landblock, but landblock is null.", Guid.Full, Name, objectGuid.Full, objectGuid.Type);
+                }
                 result = CurrentLandblock?.GetObject(objectGuid, true, true);
 
                 if (result != null)
