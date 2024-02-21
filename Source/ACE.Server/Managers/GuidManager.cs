@@ -6,6 +6,7 @@ using log4net;
 
 using ACE.Entity;
 using System.Collections.Concurrent;
+using System.Security.Policy;
 
 namespace ACE.Server.Managers
 {
@@ -102,6 +103,129 @@ namespace ACE.Server.Managers
             }
         }
 
+        private class DynamicGuidIterator
+        {
+            private readonly uint _max;
+            private readonly ConcurrentQueue<Tuple<DateTime, uint>> recycledGuids = new ConcurrentQueue<Tuple<DateTime, uint>>();
+            private readonly ConcurrentQueue<Tuple<uint, uint>> sequenceGapIDs = new ConcurrentQueue<Tuple<uint, uint>>();
+            private const int limitAvailableIDsReturnedInGetSequenceGaps = 10000000;
+            private uint currentGuid;
+            private Tuple<uint, uint> currentSequenceGap;
+            private static readonly TimeSpan recycleTime = TimeSpan.FromMinutes(15); //360
+
+            public DynamicGuidIterator(uint min, uint max, string name)
+            {
+                _max = max;
+                Database.DatabaseManager.Shard.GetMaxGuidFoundInRange(min, max, dbVal =>
+                {
+                    currentGuid = dbVal;
+                    if (currentGuid == InvalidGuid)
+                        currentGuid = min;
+                    else
+                        // Need to start allocating at current value in db +1
+                        currentGuid++;
+                });
+
+                Database.DatabaseManager.Shard.GetSequenceGaps(ObjectGuid.DynamicMin, limitAvailableIDsReturnedInGetSequenceGaps, gaps =>
+                {
+                    uint total = 0;
+                    foreach (var pair in gaps)
+                    {
+                        total += (pair.end - pair.start) + 1;
+                        sequenceGapIDs.Enqueue(new Tuple<uint, uint>(pair.start, pair.end));
+                    }
+                    log.Debug($"{name} GUID Sequence gaps initialized with total availableIDs of {total:N0}");
+                });                
+
+            }
+
+            public void Recycle(uint guid)
+            {
+                recycledGuids.Enqueue(new Tuple<DateTime, uint>(DateTime.UtcNow, guid));
+            }
+
+            public uint Current()
+            {
+                return currentGuid;
+            }
+
+            public uint Alloc()
+            {
+                lock(recycledGuids)
+                {
+                    if (recycledGuids.Count > 0)
+                    {
+                        for (int i = 0; i < recycledGuids.Count; i++)
+                        {
+                            if (recycledGuids.TryDequeue(out var recycledGuid) && recycledGuid != null)
+                            {
+                                if (DateTime.UtcNow - recycledGuid.Item1 > recycleTime)
+                                    return recycledGuid.Item2;
+                                else
+                                    recycledGuids.Enqueue(recycledGuid);
+                            }
+                        }
+                    }
+                }
+
+                lock (sequenceGapIDs)
+                {
+                    if (currentSequenceGap != null && currentSequenceGap.Item1 < currentSequenceGap.Item2)
+                    {
+                        var id = currentSequenceGap.Item1;
+                        currentSequenceGap = new Tuple<uint, uint>(id + 1, currentSequenceGap.Item2);
+                        return id;
+                    }
+                    else
+                    {
+                        if (sequenceGapIDs.Count > 0)
+                        {
+                            if (sequenceGapIDs.TryDequeue(out currentSequenceGap))
+                            {
+                                var id = currentSequenceGap.Item1;
+                                currentSequenceGap = new Tuple<uint, uint>(id + 1, currentSequenceGap.Item2);
+                                return id;
+                            }
+                        }                        
+                    }
+                    return currentGuid++;
+                }
+                
+            }
+
+            public override string ToString()
+            {
+                lock (sequenceGapIDs)
+                {
+                    uint total = 0;
+                    foreach (var pair in sequenceGapIDs)
+                        total += (pair.Item2 - pair.Item1) + 1;
+
+                    return $"DynamicGuidIterator: current: 0x{currentGuid:X8}, max: 0x{_max:X8}, sequence gap GUIDs available: {total:N0}, recycled GUIDs available: {recycledGuids.Count:N0}";
+                }
+            }
+
+            public (DateTime nextRecycleTime, int totalPendingRecycledGuids, uint totalSequenceGapGuids) GetRecycleDebugInfo()
+            {
+                var nextRecycleTime = DateTime.MinValue;
+                int totalPendingRecycledGuids;
+                uint totalSequenceGapGuids = 0;
+
+
+                if (recycledGuids.TryPeek(out var firstRecycledGuid))
+                    nextRecycleTime = firstRecycledGuid.Item1 + recycleTime;
+
+                totalPendingRecycledGuids = recycledGuids.Count;
+
+                foreach (var pair in sequenceGapIDs)
+                    totalSequenceGapGuids += (pair.Item1 - pair.Item2) + 1;
+
+
+                return (nextRecycleTime, totalPendingRecycledGuids, totalSequenceGapGuids);
+            }
+        }
+
+
         /// <summary>
         /// On a server with ~500 players, about 10,000,000 dynamic GUID's will be requested every 24hr period.
         /// </summary>
@@ -187,12 +311,15 @@ namespace ACE.Server.Managers
             {
 
                 // First, try to use a recycled Guid
-                if (recycledGuids.TryPeek(out var result) && DateTime.UtcNow - result.Item1 > recycleTime)
+                lock (recycledGuids)
                 {
-                    if (recycledGuids.TryDequeue(out var recycledGuid))
-                        return recycledGuid.Item2;
-                    //Console.WriteLine(result.Item2 + " Recycled Guids: " + recycledGuids.Count);
-                    //return result.Item2;
+                    if (recycledGuids.TryPeek(out var result) && DateTime.UtcNow - result.Item1 > recycleTime)
+                    {
+                        if (recycledGuids.TryDequeue(out var recycledGuid) && recycledGuid != null)
+                            return recycledGuid.Item2;
+                        //Console.WriteLine(result.Item2 + " Recycled Guids: " + recycledGuids.Count);
+                        //return result.Item2;
+                    }
                 }
 
                 lock(availableIDs)
@@ -317,11 +444,14 @@ namespace ACE.Server.Managers
 
         private static PlayerGuidAllocator playerAlloc;
         private static DynamicGuidAllocator dynamicAlloc;
+        private static DynamicGuidIterator dynamicIterator;
 
         public static void Initialize()
         {
             playerAlloc = new PlayerGuidAllocator(ObjectGuid.PlayerMin, ObjectGuid.PlayerMax, "player");
-            dynamicAlloc = new DynamicGuidAllocator(ObjectGuid.DynamicMin, ObjectGuid.DynamicMax, "dynamic");
+            //dynamicAlloc = new DynamicGuidAllocator(ObjectGuid.DynamicMin, ObjectGuid.DynamicMax, "dynamic");
+            dynamicIterator = new DynamicGuidIterator(ObjectGuid.DynamicMin, ObjectGuid.DynamicMax, "dynamicI");
+
         }
 
         /// <summary>
@@ -339,7 +469,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static ObjectGuid NewDynamicGuid()
         {
-            return new ObjectGuid(dynamicAlloc.Alloc());
+            return new ObjectGuid(dynamicIterator.Alloc());
         }
 
         /// <summary>
@@ -348,20 +478,20 @@ namespace ACE.Server.Managers
         /// <param name="guid"></param>
         public static void RecycleDynamicGuid(ObjectGuid guid)
         {
-            dynamicAlloc.Recycle(guid.Full);
+            dynamicIterator.Recycle(guid.Full);
         }
 
 
         public static string GetDynamicGuidDebugInfo()
         {
-            return dynamicAlloc.ToString();
+            return dynamicIterator.ToString();
         }
 
         public static string GetIdListCommandOutput()
         {
             var playerGuidCurrent = playerAlloc.Current();
-            var dynamicGuidCurrent = dynamicAlloc.Current();
-            var dynamicDebugInfo = dynamicAlloc.GetRecycleDebugInfo();
+            var dynamicGuidCurrent = dynamicIterator.Current();
+            var dynamicDebugInfo = dynamicIterator.GetRecycleDebugInfo();
 
             string message = $"The next Player GUID to be allocated is expected to be: 0x{playerGuidCurrent:X}\n";
 
