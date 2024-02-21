@@ -5,6 +5,7 @@ using System.Threading;
 using log4net;
 
 using ACE.Entity;
+using System.Collections.Concurrent;
 
 namespace ACE.Server.Managers
 {
@@ -110,9 +111,9 @@ namespace ACE.Server.Managers
             private uint current;
             private readonly string name;
 
-            private static readonly TimeSpan recycleTime = TimeSpan.FromMinutes(360);
+            private static readonly TimeSpan recycleTime = TimeSpan.FromMinutes(15); //360
 
-            private readonly Queue<Tuple<DateTime, uint>> recycledGuids = new Queue<Tuple<DateTime, uint>>();
+            private readonly ConcurrentQueue<Tuple<DateTime, uint>> recycledGuids = new ConcurrentQueue<Tuple<DateTime, uint>>();
 
             /// <summary>
             /// The value here is the result of two factors:
@@ -132,7 +133,7 @@ namespace ACE.Server.Managers
                 this.max = max;
 
                 // Read current value out of ShardDatabase
-                lock (this)
+                lock (availableIDs)
                 {
                     bool done = false;
                     Database.DatabaseManager.Shard.GetMaxGuidFoundInRange(min, max, dbVal =>
@@ -161,21 +162,18 @@ namespace ACE.Server.Managers
                 }
 
                 // Get available ids in the form of sequence gaps
-                lock (this)
+                lock (availableIDs)
                 {
                     bool done = false;
                     Database.DatabaseManager.Shard.GetSequenceGaps(ObjectGuid.DynamicMin, limitAvailableIDsReturnedInGetSequenceGaps, gaps =>
                     {
-                        lock (this)
-                        {
-                            availableIDs = new LinkedList<(uint start, uint end)>(gaps);
-                            uint total = 0;
-                            foreach (var pair in availableIDs)
-                                total += (pair.end - pair.start) + 1;
-                            log.Debug($"{name} GUID Sequence gaps initialized with total availableIDs of {total:N0}");
-                            done = true;
-                            Monitor.Pulse(this);
-                        }
+                        availableIDs = new LinkedList<(uint start, uint end)>(gaps);
+                        uint total = 0;
+                        foreach (var pair in availableIDs)
+                            total += (pair.end - pair.start) + 1;
+                        log.Debug($"{name} GUID Sequence gaps initialized with total availableIDs of {total:N0}");
+                        done = true;
+                        Monitor.Pulse(this);                        
                     });
 
                     while (!done)
@@ -187,29 +185,60 @@ namespace ACE.Server.Managers
 
             public uint Alloc()
             {
-                lock (this)
-                {
-                    // First, try to use a recycled Guid
-                    if (recycledGuids.TryPeek(out var result) && DateTime.UtcNow - result.Item1 > recycleTime)
-                    {
-                        recycledGuids.Dequeue();
-                        return result.Item2;
-                    }
 
-                    // Second, try to use a known available Guid
+                // First, try to use a recycled Guid
+                if (recycledGuids.TryPeek(out var result) && DateTime.UtcNow - result.Item1 > recycleTime)
+                {
+                    if (recycledGuids.TryDequeue(out var recycledGuid))
+                        return recycledGuid.Item2;
+                    //Console.WriteLine(result.Item2 + " Recycled Guids: " + recycledGuids.Count);
+                    //return result.Item2;
+                }
+
+                lock(availableIDs)
+                { 
+                // Second, try to use a known available Guid
                     if (availableIDs.First != null)
                     {
                         var id = availableIDs.First.Value.start;
 
-                        if (availableIDs.First.Value.start == availableIDs.First.Value.end)
+                        if (id == availableIDs.First.Value.end)
                         {
-                            availableIDs.RemoveFirst();
+                            try
+                            {
+                                availableIDs?.RemoveFirst();
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"Error removing first available id from {name} GUIDs: {ex.Message}");
+                                if (availableIDs == null)
+                                {
+                                    lock (availableIDs)
+                                    {
+                                        bool done = false;
+                                        Database.DatabaseManager.Shard.GetSequenceGaps(ObjectGuid.DynamicMin, limitAvailableIDsReturnedInGetSequenceGaps, gaps =>
+                                        {
+                                            availableIDs = new LinkedList<(uint start, uint end)>(gaps);
+                                            uint total = 0;
+                                            foreach (var pair in availableIDs)
+                                                total += (pair.end - pair.start) + 1;
+                                            log.Debug($"{name} GUID Sequence gaps initialized with total availableIDs of {total:N0}");
+                                            done = true;
+                                            Monitor.Pulse(availableIDs);
+                                        });
+
+                                        while (!done)
+                                            Monitor.Wait(availableIDs);
+                                    }
+                                }
+                            }
+                            
 
                             //if (availableIDs.First == null)
                             //    log.Warn($"Sequence gap GUIDs depleted on {name}");
                         }
                         else
-                            availableIDs.First.Value = (availableIDs.First.Value.start + 1, availableIDs.First.Value.end);
+                            availableIDs.First.Value = (id + 1, availableIDs.First.Value.end);
 
                         return id;
                     }
@@ -221,22 +250,22 @@ namespace ACE.Server.Managers
                             useSequenceGapExhaustedMessageDisplayed = true;
                         }
                     }
-
-                    // Lastly, use an id that increments our max
-                    if (current == max)
-                    {
-                        log.Fatal($"Out of {name} GUIDs!");
-                        return InvalidGuid;
-                    }
-
-                    if (current == max - LowIdLimit)
-                        log.Warn($"Running dangerously low on {name} GUIDs, need to defrag");
-
-                    uint ret = current;
-                    current += 1;
-
-                    return ret;
                 }
+                // Lastly, use an id that increments our max
+                if (current == max)
+                {
+                    log.Fatal($"Out of {name} GUIDs!");
+                    return InvalidGuid;
+                }
+
+                if (current == max - LowIdLimit)
+                    log.Error($"Running dangerously low on {name} GUIDs, need to defrag");
+
+                uint ret = current;
+                current += 1;
+
+                return ret;
+                
             }
 
             /// <summary>
@@ -251,13 +280,12 @@ namespace ACE.Server.Managers
 
             public void Recycle(uint guid)
             {
-                lock (this)
-                    recycledGuids.Enqueue(new Tuple<DateTime, uint>(DateTime.UtcNow, guid));
+                recycledGuids.Enqueue(new Tuple<DateTime, uint>(DateTime.UtcNow, guid));
             }
 
             public override string ToString()
             {
-                lock (this)
+                lock (availableIDs)
                 {
                     uint total = 0;
                     foreach (var pair in availableIDs)
@@ -273,16 +301,15 @@ namespace ACE.Server.Managers
                 int totalPendingRecycledGuids;
                 uint totalSequenceGapGuids = 0;
 
-                lock (this)
-                {
-                    if (recycledGuids.TryPeek(out var firstRecycledGuid))
-                        nextRecycleTime = firstRecycledGuid.Item1 + recycleTime;
 
-                    totalPendingRecycledGuids = recycledGuids.Count;
+                if (recycledGuids.TryPeek(out var firstRecycledGuid))
+                    nextRecycleTime = firstRecycledGuid.Item1 + recycleTime;
 
-                    foreach (var pair in availableIDs)
-                        totalSequenceGapGuids += (pair.end - pair.start) + 1;
-                }
+                totalPendingRecycledGuids = recycledGuids.Count;
+
+                foreach (var pair in availableIDs)
+                    totalSequenceGapGuids += (pair.end - pair.start) + 1;
+                
 
                 return (nextRecycleTime, totalPendingRecycledGuids, totalSequenceGapGuids);
             }

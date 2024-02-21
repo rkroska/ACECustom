@@ -85,8 +85,8 @@ namespace ACE.Server.Entity
         /// </summary>
         public bool IsDormant;
 
-        private readonly Dictionary<ObjectGuid, WorldObject> worldObjects = new Dictionary<ObjectGuid, WorldObject>();
-        private readonly Dictionary<ObjectGuid, WorldObject> pendingAdditions = new Dictionary<ObjectGuid, WorldObject>();
+        private readonly ConcurrentDictionary<ObjectGuid, WorldObject> worldObjects = new ConcurrentDictionary<ObjectGuid, WorldObject>();
+        private readonly ConcurrentDictionary<ObjectGuid, WorldObject> pendingAdditions = new ConcurrentDictionary<ObjectGuid, WorldObject>();
         private readonly List<ObjectGuid> pendingRemovals = new List<ObjectGuid>();
 
         // Cache used for Tick efficiency
@@ -107,9 +107,8 @@ namespace ACE.Server.Entity
 
         public int WorldObjectCount
         { get
-            {
-                lock (worldObjects)
-                    return worldObjects.Count;
+            {                
+                return worldObjects.Count;
             }
         }
 
@@ -332,7 +331,7 @@ namespace ACE.Server.Entity
                     var res = AddWorldObject(fo, variationId);
                     if (!res)
                     {
-                        Console.WriteLine($"Failed to add world object {fo.Name}, {fo.Guid} to landblock {Id.Landblock}");
+                        log.Warn($"Failed to add world object {fo.Name}, {fo.Guid} to landblock {Id.Landblock}");
                     }
                     fo.ActivateLinks(objects, shardObjects, parent);
 
@@ -1168,7 +1167,7 @@ namespace ACE.Server.Entity
                     }
                 }
             }
-
+            //log.Error($"Landblock.GetObject({guid.Full:X8}): Object not found in landblock or adjacents. Count of WorldObjects: {worldObjects.Count}, pending additions: {pendingAdditions.Count}");
             return null;
         }
 
@@ -1238,7 +1237,7 @@ namespace ACE.Server.Entity
         {
             var landblockID = Id.Raw | 0xFFFF;
 
-            //log.Debug($"Landblock.Unload({landblockID:X8})");
+            //log.Warn($"Landblock.Unload({landblockID:X8}, {VariationId})");
 
             ProcessPendingWorldObjectAdditionsAndRemovals();
 

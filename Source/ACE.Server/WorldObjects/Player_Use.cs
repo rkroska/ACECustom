@@ -41,7 +41,7 @@ namespace ACE.Server.WorldObjects
 
             if (sourceItem == null)
             {
-                log.Warn($"{Name}.HandleActionUseWithTarget({sourceObjectGuid:X8}, {targetObjectGuid:X8}): couldn't find {sourceObjectGuid:X8}");
+                log.Warn($"{Name}.HandleActionUseWithTarget({sourceObjectGuid:X8}, {targetObjectGuid:X8}): couldn't find source object {sourceObjectGuid:X8} in MyInventory, MyEquippedItems");
                 SendUseDoneEvent();
                 return;
             }
@@ -51,7 +51,7 @@ namespace ACE.Server.WorldObjects
 
             if (target == null)
             {
-                log.Warn($"{Name}.HandleActionUseWithTarget({sourceObjectGuid:X8}, {targetObjectGuid:X8}): couldn't find {targetObjectGuid:X8}");
+                log.Warn($"{Name}.HandleActionUseWithTarget({sourceObjectGuid:X8}, {targetObjectGuid:X8}): couldn't find target object {targetObjectGuid:X8}");
                 SendUseDoneEvent();
                 return;
             }
@@ -186,7 +186,7 @@ namespace ACE.Server.WorldObjects
             var item = FindObject(itemGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems | SearchLocations.Landblock);
             if (item == null)
             {
-                log.Warn($"{this.Name}: {itemGuid} not found in {this.Location.LandblockId}, {this.Location.Variation}");
+                log.Warn($"{this.Name}: {itemGuid} not found in {this.Location.LandblockId}, {this.Location.Variation}. WO Count: {this.CurrentLandblock?.WorldObjectCount}");
             }
 
             if (IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(ItemsInTradeWindow))

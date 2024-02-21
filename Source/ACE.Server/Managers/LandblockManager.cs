@@ -659,6 +659,7 @@ namespace ACE.Server.Managers
         public static void AddToDestructionQueue(Landblock landblock, int? VariationId)
         {
             var cacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = VariationId ?? 0 };
+            //log.Warn($"Landblock: {landblock.Id.Landblock}, variation: {VariationId} added to destruction queue");
             destructionQueue.TryAdd(cacheKey, landblock);
         }
 
