@@ -194,7 +194,7 @@ namespace ACE.Server.Entity
         }
 
 
-        public Landblock(LandblockId id, int? variation = null)
+        public Landblock(LandblockId id, int? variation)
         {
             //log.Debug($"Landblock({(id.Raw | 0xFFFF):X8})");
 
