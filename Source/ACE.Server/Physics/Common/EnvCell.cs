@@ -250,12 +250,12 @@ namespace ACE.Server.Physics.Common
             VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
-        public EnvCell add_visible_cell(uint cellID, int? Variation)
-        {
-            var envCell = DBObj.GetEnvCell(cellID, Variation);
-            VisibleCells.TryAdd(cellID, envCell);
-            return envCell;
-        }
+        //public EnvCell add_visible_cell(uint cellID, int? Variation)
+        //{
+        //    var envCell = DBObj.GetEnvCell(cellID, Variation);
+        //    VisibleCells.TryAdd(cellID, envCell);
+        //    return envCell;
+        //}
 
         public override void find_transit_cells(int numParts, List<PhysicsPart> parts, CellArray cellArray)
         {
@@ -418,11 +418,11 @@ namespace ACE.Server.Physics.Common
             }
         }
 
-        public static ObjCell get_visible(uint cellID, int? variationId)
-        {
-            var cell = (EnvCell)LScape.get_landcell(cellID, variationId);
-            return cell.VisibleCells.Values.First();
-        }
+        //public static ObjCell get_visible(uint cellID, int? variationId)
+        //{
+        //    var cell = (EnvCell)LScape.get_landcell(cellID, variationId);
+        //    return cell.VisibleCells.Values.First();
+        //}
 
         //public void grab_visible(List<uint> stabs)
         //{

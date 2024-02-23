@@ -534,7 +534,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns the active, non-null adjacents for a landblock
         /// </summary>
-        private static List<Landblock> GetAdjacents(Landblock landblock, int? variationId = null)
+        private static List<Landblock> GetAdjacents(Landblock landblock, int? variationId)
         {
             var adjacentIDs = GetAdjacentIDs(landblock);
 
@@ -641,7 +641,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void SetAdjacents(Landblock landblock, bool traverse = true, bool pSync = false)
         {
-            landblock.Adjacents = GetAdjacents(landblock);
+            landblock.Adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             if (pSync)
                 landblock.PhysicsLandblock.SetAdjacents(landblock.Adjacents);
@@ -744,7 +744,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void NotifyAdjacents(Landblock landblock)
         {
-            var adjacents = GetAdjacents(landblock);
+            var adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             foreach (var adjacent in adjacents)
                 SetAdjacents(adjacent, false, true);
