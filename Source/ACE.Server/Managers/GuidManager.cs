@@ -155,7 +155,7 @@ namespace ACE.Server.Managers
                 {
                     if (recycledGuids.Count > 0)
                     {
-                        for (int i = 0; i < recycledGuids.Count; i++)
+                        for (int i = 0; i < recycledGuids.Count && i < 50; i++)
                         {
                             if (recycledGuids.TryDequeue(out var recycledGuid) && recycledGuid != null)
                             {
