@@ -197,13 +197,14 @@ namespace ACE.Server.Command.Handlers
             var combinedByAverage = sortedBy5mAverage.Concat(sortedBy1hrAverage).Distinct().OrderByDescending(r => Math.Max(r.Value.Monitor5m.EventHistory.AverageEventDuration, r.Value.Monitor1h.EventHistory.AverageEventDuration)).Take(10);
 
             sb.Append($"Most Busy Landblock - By Average{'\n'}");
-            sb.Append($"~5m Hits   Avg  Long  Last - ~1h Hits   Avg  Long  Last - Location   Players  Creatures{'\n'}");
+            sb.Append($"~5m Hits   Avg  Long  Last - ~1h Hits   Avg  Long  Last - Location (v)   Players  Creatures  WorldObjects{'\n'}");
 
             foreach (var entry in combinedByAverage)
             {
-                int players = 0, creatures = 0;
+                int players = 0, creatures = 0, worldobjs = 0;
                 foreach (var worldObject in entry.Value.GetAllWorldObjectsForDiagnostics())
                 {
+                    worldobjs++;
                     if (worldObject is Player)
                         players++;
                     else if (worldObject is Creature)
@@ -212,7 +213,7 @@ namespace ACE.Server.Command.Handlers
 
                 sb.Append($"{entry.Value.Monitor5m.EventHistory.TotalEvents.ToString().PadLeft(7)} {entry.Value.Monitor5m.EventHistory.AverageEventDuration:N4} {entry.Value.Monitor5m.EventHistory.LongestEvent:N3} {entry.Value.Monitor5m.EventHistory.LastEvent:N3} - " +
                           $"{entry.Value.Monitor1h.EventHistory.TotalEvents.ToString().PadLeft(7)} {entry.Value.Monitor1h.EventHistory.AverageEventDuration:N4} {entry.Value.Monitor1h.EventHistory.LongestEvent:N3} {entry.Value.Monitor1h.EventHistory.LastEvent:N3} - " +
-                          $"0x{entry.Value.Id.Raw:X8} {players.ToString().PadLeft(7)}  {creatures.ToString().PadLeft(9)}{'\n'}");
+                          $"0x{entry.Value.Id.Raw:X8} ({entry.Value.VariationId ?? 0}) {players.ToString().PadLeft(7)}  {creatures.ToString().PadLeft(9)}  {worldobjs.ToString().PadLeft(11)}{'\n'}");
             }
 
             var sortedBy5mLong = loadedLandblocks.OrderByDescending(r => r.Value.Monitor5m.EventHistory.LongestEvent).Take(10);
@@ -221,11 +222,11 @@ namespace ACE.Server.Command.Handlers
             var combinedByLong = sortedBy5mLong.Concat(sortedBy1hrLong).Distinct().OrderByDescending(r => Math.Max(r.Value.Monitor5m.EventHistory.LongestEvent, r.Value.Monitor1h.EventHistory.LongestEvent)).Take(10);
 
             sb.Append($"Most Busy Landblock - By Longest{'\n'}");
-            sb.Append($"~5m Hits   Avg  Long  Last - ~1h Hits   Avg  Long  Last - Location   Players  Creatures{'\n'}");
+            sb.Append($"~5m Hits   Avg  Long  Last - ~1h Hits   Avg  Long  Last - Location (v)   Players  Creatures{'\n'}");
 
             foreach (var entry in combinedByLong)
             {
-                int players = 0, creatures = 0;
+                int players = 0, creatures = 0, worldobjs = 0;
                 foreach (var worldObject in entry.Value.GetAllWorldObjectsForDiagnostics())
                 {
                     if (worldObject is Player)
@@ -236,7 +237,7 @@ namespace ACE.Server.Command.Handlers
 
                 sb.Append($"{entry.Value.Monitor5m.EventHistory.TotalEvents.ToString().PadLeft(7)} {entry.Value.Monitor5m.EventHistory.AverageEventDuration:N4} {entry.Value.Monitor5m.EventHistory.LongestEvent:N3} {entry.Value.Monitor5m.EventHistory.LastEvent:N3} - " +
                           $"{entry.Value.Monitor1h.EventHistory.TotalEvents.ToString().PadLeft(7)} {entry.Value.Monitor1h.EventHistory.AverageEventDuration:N4} {entry.Value.Monitor1h.EventHistory.LongestEvent:N3} {entry.Value.Monitor1h.EventHistory.LastEvent:N3} - " +
-                          $"0x{entry.Value.Id.Raw:X8} {players.ToString().PadLeft(7)}  {creatures.ToString().PadLeft(9)}{'\n'}");
+                          $"0x{entry.Value.Id.Raw:X8} ({entry.Value.VariationId ?? 0})  {players.ToString().PadLeft(7)}  {creatures.ToString().PadLeft(9)} {worldobjs.ToString().PadLeft(11)}{'\n'}");
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, sb.ToString());
