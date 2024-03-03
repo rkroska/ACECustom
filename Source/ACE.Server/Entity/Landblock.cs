@@ -85,8 +85,8 @@ namespace ACE.Server.Entity
         /// </summary>
         public bool IsDormant;
 
-        private readonly Dictionary<ObjectGuid, WorldObject> worldObjects = new Dictionary<ObjectGuid, WorldObject>();
-        private readonly Dictionary<ObjectGuid, WorldObject> pendingAdditions = new Dictionary<ObjectGuid, WorldObject>();
+        private readonly ConcurrentDictionary<ObjectGuid, WorldObject> worldObjects = new ConcurrentDictionary<ObjectGuid, WorldObject>();
+        private readonly ConcurrentDictionary<ObjectGuid, WorldObject> pendingAdditions = new ConcurrentDictionary<ObjectGuid, WorldObject>();
         private readonly List<ObjectGuid> pendingRemovals = new List<ObjectGuid>();
 
         // Cache used for Tick efficiency

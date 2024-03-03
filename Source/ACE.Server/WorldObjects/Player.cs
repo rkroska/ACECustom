@@ -49,6 +49,10 @@ namespace ACE.Server.WorldObjects
         {
             get
             {
+                if (PhysicsObj == null)
+                {
+                    return false;
+                }
                 if (FastTick)
                     return !PhysicsObj.TransientState.HasFlag(TransientStateFlags.OnWalkable);
                 else

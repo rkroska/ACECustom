@@ -524,43 +524,32 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllPlayers().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+
             if (tarplayer == null)
             {
                 return false;
             }
-            else
-            {
-                if (tarplayer is OfflinePlayer)
-                {
-                    var offlinePlayer = tarplayer as OfflinePlayer;
-                    if (offlinePlayer.BankedLuminance == null)
-                    {
-                        return false;
-                    }
-                    if (offlinePlayer.BankedLuminance == 0) 
-                    {
-                        return false;
-                    }
 
-                    this.BankedLuminance -= Amount;
-                    (offlinePlayer).BankedLuminance += Amount;
-                }
-                else
+            if (tarplayer is IPlayer player)
+            {
+                if (!player.GetProperty(PropertyInt64.MaximumLuminance).HasValue) //luminance flagged or not
                 {
-                    var onlinePlayer = tarplayer as Player;
-                    if (!onlinePlayer.MaximumLuminance.HasValue)
-                    {
-                        return false;
-                    }
-                    this.BankedLuminance -= Amount;
-                    onlinePlayer.BankedLuminance += Amount;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLuminance, onlinePlayer.BankedLuminance ?? 0));
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
+                    return false;
                 }
+
+                player.SetProperty(PropertyInt64.BankedLuminance, (player.GetProperty(PropertyInt64.BankedLuminance) ?? 0) + Amount);
+                this.BankedLuminance -= Amount;
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                if (tarplayer is Player onlinePlayer)
+                {
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                }
                 return true;
-            }          
+            }
+
+            return false;
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
