@@ -4841,13 +4841,16 @@ namespace ACE.Server.Command.Handlers
             LootSwap.UpdateTables(folder);
         }
 
-        [CommandHandler("roll", AccessLevel.Admin, CommandHandlerFlag.None, "Rolls a number between 1-100")]
+        [CommandHandler("roll", AccessLevel.Developer, CommandHandlerFlag.None, "Rolls a number between 1-100")]
         public static void HandleRaffleroll(Session session, params string[] parameters)
         {
 
             var roll = new Random().Next(1, 100);
-            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"-=Tonight's raffle number is {roll}. Congratz to tonight's winner!=-", ChatMessageType.WorldBroadcast));
-
+            var msg = $"-=Tonight's raffle number is {roll}. Congratz to tonight's winner!=-";
+            PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
+            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
+            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
         }
     }
 }
