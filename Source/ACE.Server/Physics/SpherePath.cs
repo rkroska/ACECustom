@@ -160,16 +160,24 @@ namespace ACE.Server.Physics.Animation
         {
             if (offset != null)
             {
-                Parallel.ForEach(GlobalSphere, (sphere) =>
-                    { sphere.Center += offset.Value; });
-                GlobalLowPoint += offset.Value;
+                Vector3 offsetValue = offset.Value;
+                for (int i = 0; i < GlobalSphere.Count; i++)
+                {
+                    GlobalSphere[i].Center += offsetValue;
+                }
+                GlobalLowPoint += offsetValue;
             }
             else
             {
-                while (GlobalSphere.Count < NumSphere)
-                    GlobalSphere.Add(new Sphere());
+                if (GlobalSphere.Count < NumSphere)
+                {
+                    for (int i = GlobalSphere.Count; i < NumSphere; i++)
+                    {
+                        GlobalSphere.Add(new Sphere());
+                    }
+                }
 
-                for (var i = 0; i < NumSphere; i++)
+                for (int i = 0; i < NumSphere; i++)
                 {
                     GlobalSphere[i].Radius = LocalSphere[i].Radius;
                     GlobalSphere[i].Center = CheckPos.LocalToGlobal(LocalSphere[i].Center);
@@ -177,6 +185,7 @@ namespace ACE.Server.Physics.Animation
                 GlobalLowPoint = CheckPos.LocalToGlobal(LocalLowPoint);
             }
         }
+
 
         public void CacheLocalSpaceSphere(Position pos, float scaleZ)
         {
