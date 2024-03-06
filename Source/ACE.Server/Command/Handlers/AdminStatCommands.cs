@@ -23,6 +23,24 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        [CommandHandler("threadstats", AccessLevel.Advocate, CommandHandlerFlag.None, 0, "Displays a summary of all server thread stats")]
+        public static void HandleThreadStats(Session session, params string[] parameters)
+        {
+            var sb = new StringBuilder();
+
+            sb.Append($"Thread Stats:{'\n'}");
+
+            var proc = Process.GetCurrentProcess();
+            ProcessThreadCollection currentThreads = proc.Threads;
+            sb.Append($"Total CPU Time: {(int)proc.TotalProcessorTime.TotalHours}h {proc.TotalProcessorTime.Minutes}m {proc.TotalProcessorTime.Seconds}s, Threads: {currentThreads.Count}{'\n'}");
+            foreach (ProcessThread thread in currentThreads)
+            {
+                sb.Append($"Thread {thread.Id}, {thread.ThreadState}, {thread.WaitReason}, {thread.UserProcessorTime}");
+            }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");
+        }   
+
         // allstats
         [CommandHandler("allstats", AccessLevel.Advocate, CommandHandlerFlag.None, 0, "Displays a summary of all server statistics and usage")]
         public static void HandleAllStats(Session session, params string[] parameters)
@@ -222,13 +240,14 @@ namespace ACE.Server.Command.Handlers
             var combinedByLong = sortedBy5mLong.Concat(sortedBy1hrLong).Distinct().OrderByDescending(r => Math.Max(r.Value.Monitor5m.EventHistory.LongestEvent, r.Value.Monitor1h.EventHistory.LongestEvent)).Take(10);
 
             sb.Append($"Most Busy Landblock - By Longest{'\n'}");
-            sb.Append($"~5m Hits   Avg  Long  Last - ~1h Hits   Avg  Long  Last - Location (v)   Players  Creatures{'\n'}");
+            sb.Append($"~5m Hits   Avg  Long  Last - ~1h Hits   Avg  Long  Last - Location (v)   Players  Creatures  WorldObjects{'\n'}");
 
             foreach (var entry in combinedByLong)
             {
                 int players = 0, creatures = 0, worldobjs = 0;
                 foreach (var worldObject in entry.Value.GetAllWorldObjectsForDiagnostics())
                 {
+                    worldobjs++;
                     if (worldObject is Player)
                         players++;
                     else if (worldObject is Creature)

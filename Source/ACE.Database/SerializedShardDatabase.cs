@@ -177,11 +177,11 @@ namespace ACE.Database
 
         public void GetPossessedBiotasInParallel(uint id, Action<PossessedBiotas> callback)
         {
-            //_queue.Add(new Task(() =>
-            //{
+            _queue.Add(new Task(() =>
+            {
                 var c = BaseDatabase.GetPossessedBiotasInParallel(id);
                 callback?.Invoke(c);
-           // }));
+            }));
         }
 
         public void GetInventoryInParallel(uint parentId, bool includedNestedItems, Action<List<Biota>> callback)
