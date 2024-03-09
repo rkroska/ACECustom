@@ -719,7 +719,7 @@ namespace ACE.Server.WorldObjects
             for (int i = 0; i < knownObjs.Count; i++)
             {
                 var knownObj = knownObjs[i];
-                if (knownObj.Location.Variation != destinationVariation)
+                if (knownObj.PhysicsObj != null && knownObj.Location != null && knownObj.Location.Variation != destinationVariation)
                 {
                     knownObj.PhysicsObj.ObjMaint.RemoveObject(PhysicsObj);
 
