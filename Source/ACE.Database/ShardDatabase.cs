@@ -430,41 +430,37 @@ namespace ACE.Database
 
         public List<Biota> GetInventoryInParallel(uint parentId, bool includedNestedItems)
         {
-            var inventory = new ConcurrentBag<Biota>();
-            List<uint> results;
-
             using (var context = new ShardDbContext())
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                results = context.BiotaPropertiesIID
+                var results = context.BiotaPropertiesIID
                     .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
                     .Select(r => r.ObjectId)
                     .ToList();
-            }
 
+                var inventory = new List<Biota>();
 
-            Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
-            {
-                var biota = GetBiota(result);
-
-                if (biota != null)
+                Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
-                    inventory.Add(biota);
+                    var biota = GetBiota(result);
 
-                    if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
+                    if (biota != null)
                     {
-                        var subItems = GetInventoryInParallel(biota.Id, false);
+                        inventory.Add(biota);
 
-                        foreach (var subItem in subItems)
-                            inventory.Add(subItem);
+                        if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
+                        {
+                            var subItems = GetInventoryInParallel(biota.Id, false);
+                            inventory.AddRange(subItems);
+                        }
                     }
-                }
-            });
-            
+                });
 
-            return inventory.ToList();
+                return inventory;
+            }
         }
+
 
         public List<Biota> GetWieldedItemsInParallel(uint parentId)
         {
