@@ -66,6 +66,22 @@ namespace ACE.Server.Command.Handlers.Processors
             return FileType.Undefined;
         }
 
+        public static FileType GetContentType(string param)
+        {
+            if (param.StartsWith("landblock"))
+                return FileType.LandblockInstance;
+            else if (param.StartsWith("quest"))
+                return FileType.Quest;
+            else if (param.StartsWith("recipe"))
+                return FileType.Recipe;
+            else if (param.StartsWith("weenie"))
+                return FileType.Weenie;
+            else if (param.StartsWith("spell"))
+                return FileType.Spell;
+
+            return FileType.Undefined;
+        }
+
         [CommandHandler("import-json", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports json data from the Content folder", "<wcid>")]
         public static void HandleImportJson(Session session, params string[] parameters)
         {
@@ -2118,31 +2134,32 @@ namespace ACE.Server.Command.Handlers.Processors
             ExportSQLWeenie(session, param, true);
         }
 
-        [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid>")]
+        [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
         public static void HandleDiscordImport(Session session, params string[] parameters)
         {
-            int weenieId = 0;
-            if (!int.TryParse(parameters[0], out weenieId))
+            string identifier = parameters[0];
+            if (string.IsNullOrEmpty(identifier))
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't parse weenie {parameters[0]}");
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid identifier");
                 return;
             }
-            string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, weenieId);
+            
+            string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, identifier);
 
             if (string.IsNullOrEmpty(sql))
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find SQL attachment for weenie {parameters[0]}");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find SQL attachment for {identifier}");
                 return;
             }
 
             using (var ctx = new WorldDbContext())
                 ctx.Database.ExecuteSqlRaw(sql);
 
-            CommandHandlerHelper.WriteOutputInfo(session, $"Imported {weenieId} from discord.");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord.");
         }
 
 
-        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
+        [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
             var param = parameters[0];            
@@ -2157,6 +2174,33 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
             }
 
+            if (parameters[0].ToLower().Contains("quest"))
+            {
+                contentType = FileType.Quest;
+                if (parameters.Length > 1)
+                {
+                    param = parameters[1];
+                }
+            }
+
+            if (parameters[0].ToLower().Contains("recipe"))
+            {
+                contentType = FileType.Recipe;
+                if (parameters.Length > 1)
+                {
+                    param = parameters[1];
+                }
+            }
+
+            if (parameters[0].ToLower().Contains("spell"))
+            {
+                contentType = FileType.Spell;
+                if (parameters.Length > 1)
+                {
+                    param = parameters[1];
+                }
+            }
+
             switch (contentType)
             {
                 case FileType.LandblockInstance:
@@ -2164,15 +2208,15 @@ namespace ACE.Server.Command.Handlers.Processors
                     break;
 
                 case FileType.Quest:
-                    //ExportSQLQuest(session, param);
+                    ExportDiscordQuest(session, param);
                     break;
 
                 case FileType.Recipe:
-                    //ExportSQLRecipe(session, param);
+                    ExportDiscordRecipe(session, param);
                     break;
 
                 case FileType.Spell:
-                    //ExportSQLSpell(session, param);
+                    ExportDiscordSpell(session, param);
                     break;
 
                 case FileType.Weenie:
@@ -2358,6 +2402,72 @@ namespace ACE.Server.Command.Handlers.Processors
                     CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
                 }
             }                                    
+        }
+
+        public static void ExportDiscordRecipe(Session session, string param)
+        {
+            if (!uint.TryParse(param, out var recipeId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"{param} not a valid recipe id");
+                return;
+            }
+
+            var cookbooks = DatabaseManager.World.GetCookbooksByRecipeId(recipeId);
+            if (cookbooks == null || cookbooks.Count == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find recipe id {recipeId}");
+                return;
+            }
+
+            if (RecipeSQLWriter == null)
+            {
+                RecipeSQLWriter = new RecipeSQLWriter();
+                RecipeSQLWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
+            }
+
+            if (CookBookSQLWriter == null)
+            {
+                CookBookSQLWriter = new CookBookSQLWriter();
+                CookBookSQLWriter.WeenieNames = DatabaseManager.World.GetAllWeenieNames();
+            }
+
+            var recipe = cookbooks[0].Recipe;
+
+            var sql_filename = RecipeSQLWriter.GetDefaultFileName(recipe, cookbooks);
+
+            using (MemoryStream mem = new MemoryStream())
+            {
+                using (StreamWriter sw = new StreamWriter(mem))
+                {
+                    sw.AutoFlush = true;
+
+                    try
+                    {
+                        RecipeSQLWriter.CreateSQLDELETEStatement(recipe, sw);
+                        sw.WriteLine();
+
+                        RecipeSQLWriter.CreateSQLINSERTStatement(recipe, sw);
+                        sw.WriteLine();
+
+                        CookBookSQLWriter.CreateSQLDELETEStatement(cookbooks, sw);
+                        sw.WriteLine();
+
+                        CookBookSQLWriter.CreateSQLINSERTStatement(cookbooks, sw);
+                        sw.WriteLine();
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                    }
+
+                    String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+
+                    //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+                    DiscordChatManager.SendDiscordFile(session.Player.Name, recipeId.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, recipeId.ToString() + ".sql"));
+                    sw.Close();
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Exported recipe {recipe.Id} to Discord");
+                }
+            }
         }
 
         public static void ExportSQLRecipe(Session session, string param)
@@ -2572,6 +2682,55 @@ namespace ACE.Server.Command.Handlers.Processors
             //CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename}");
         }
 
+        public static void ExportDiscordQuest(Session session, string questName)
+        {
+
+            var quest = DatabaseManager.World.GetCachedQuest(questName);
+
+            if (quest == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find quest {questName}");
+                return;
+            }
+
+            if (QuestSQLWriter == null)
+                QuestSQLWriter = new QuestSQLWriter();
+
+            var sql_filename = questName + ".sql";
+
+            try
+            {
+                using (MemoryStream mem = new MemoryStream())
+                {
+                    using (StreamWriter sw = new StreamWriter(mem))
+                    {
+                        sw.AutoFlush = true;
+
+                        QuestSQLWriter.CreateSQLDELETEStatement(quest, sw);
+                        sw.WriteLine();
+
+                        QuestSQLWriter.CreateSQLINSERTStatement(quest, sw);
+
+                        String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
+
+                        //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename,
+                            ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
+                        sw.Close();
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to export {sql_filename}");
+                return;
+            }
+
+            //CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
+        }
+
         public static void ExportSQLQuest(Session session, string questName)
         {
             DirectoryInfo di = VerifyContentFolder(session, false);
@@ -2619,6 +2778,59 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
+        public static void ExportDiscordSpell(Session session, string param)
+        {
+            if (!uint.TryParse(param, out var spellId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"{param} not a valid spell id");
+                return;
+            }
+
+            var spell = DatabaseManager.World.GetCachedSpell(spellId);
+
+            if (spell == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find spell id {spellId}");
+                return;
+            }
+
+            if (SpellSQLWriter == null)
+                SpellSQLWriter = new SpellSQLWriter();
+
+            var sql_filename = SpellSQLWriter.GetDefaultFileName(spell);
+
+            try
+            {
+                using (MemoryStream mem = new MemoryStream())
+                {
+                    using (StreamWriter sw = new StreamWriter(mem))
+                    {
+                        sw.AutoFlush = true;
+
+                        SpellSQLWriter.CreateSQLDELETEStatement(spell, sw);
+                        sw.WriteLine();
+
+                        SpellSQLWriter.CreateSQLINSERTStatement(spell, sw);
+
+                        sw.WriteLine();
+
+                        //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
+                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename,
+                            ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
+                        sw.Close();
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Exported spell {sql_filename} to Discord");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to export {sql_filename}");
+                return;
+            }
+
+            //CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
+        }
 
         public static void ExportSQLSpell(Session session, string param)
         {
@@ -3249,6 +3461,33 @@ namespace ACE.Server.Command.Handlers.Processors
 
             // broadcast new rotation
             obj.SendUpdatePosition(true);
+        }
+
+        [CommandHandler("getnextweenieidinrange", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Finds the next WeenieID from a start value", "Usage: @getnextweenieidinrange <start>")]
+        public static void HandleGetNextWeenieIDInRange(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: @getnextweenieidinrange <start>");
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var start))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid start value: {parameters[0]}");
+                return;
+            }
+
+            var weenies = DatabaseManager.World.GetNextAvailableWeenieClassID(start);
+
+            if (weenies == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"No weenies found in range {start}");
+                return;
+            }
+
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Next available weenie id in range {start}: {weenies}");
         }
 
         [CommandHandler("generate-classnames", AccessLevel.Developer, CommandHandlerFlag.None, "Generates WeenieClassName.cs from current world database")]

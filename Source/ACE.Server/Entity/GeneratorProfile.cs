@@ -216,7 +216,10 @@ namespace ACE.Server.Entity
                         {
                             var woi = new WorldObjectInfo(obj);
 
-                            Spawned.Add(obj.Guid.Full, woi);
+                            if(!Spawned.TryAdd(obj.Guid.Full, woi))
+                            {
+                                log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} ProcessQueue(): failed to add {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) to Spawned list");
+                            }
                         }
                     }
                 }
