@@ -127,6 +127,15 @@ namespace ACE.Database
             return weenieCache.TryRemove(weenieClassId, out _);
         }
 
+        public uint GetNextAvailableWeenieClassID(uint start)
+        {
+            uint next = start;
+            while (weenieCache.ContainsKey(next))
+            {
+                next++;
+            }
+            return next;
+        }
 
 
         private bool weenieSpecificCachesPopulated;

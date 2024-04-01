@@ -20,6 +20,7 @@ namespace ACE.Common
         public long EventsChannelId { get; set; }
         public long ExportsChannelId { get; set; }
         public long WeenieUploadsChannelId { get; set; }
+        public long RaffleChannelId { get; set; }
 
     }
 }

@@ -49,7 +49,7 @@ namespace ACE.Server.Managers
 
         }
 
-        public static string GetSQLFromDiscordMessage(int topN, int weenieClassId)
+        public static string GetSQLFromDiscordMessage(int topN, string identifier)
         {
             string res = "";
 
@@ -61,7 +61,7 @@ namespace ACE.Server.Managers
                     .FlattenAsync().Result.ToList()
                     .ForEach(x =>
                     {
-                        if(x.Content == weenieClassId.ToString())
+                        if(x.Content == identifier)
                         {
                             if(x.Attachments.Count == 1)
                             {
