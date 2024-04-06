@@ -445,62 +445,51 @@ namespace ACE.Server.Entity
 
             var lvl = "";
 
+            switch (player.Enlightenment % 100)
+            {
+                case 11:
+                case 12:
+                case 13:
+                    lvl = player.Enlightenment + "th";
+                    break;
+            }
+            if (string.IsNullOrEmpty(lvl))
+            {
+                switch (player.Enlightenment % 10)
+                {
+                    case 1:
+                        lvl = player.Enlightenment + "st";
+                        break;
+                    case 2:
+                        lvl = player.Enlightenment + "nd";
+                        break;
+                    case 3:
+                        lvl = player.Enlightenment + "rd";
+                        break;
+                    default:
+                        lvl = player.Enlightenment + "th";
+                        break;
+                }
+            }
+            
             // add title
             switch (player.Enlightenment)
             {
                 case 1:
-                    player.AddTitle(CharacterTitle.Awakened);
-                    lvl = "1st";
+                    player.AddTitle(CharacterTitle.Awakened);                   
                     break;
                 case 2:
                     player.AddTitle(CharacterTitle.Enlightened);
-                    lvl = "2nd";
                     break;
                 case 3:
                     player.AddTitle(CharacterTitle.Illuminated);
-                    lvl = "3rd";
                     break;
                 case 4:
                     player.AddTitle(CharacterTitle.Transcended);
-                    lvl = "4th";
                     break;
                 case 5:
                     player.AddTitle(CharacterTitle.CosmicConscious);
-                    lvl = "5th";
-                    break;
-                case 21:
-                case 31:
-                case 41:
-                case 51:
-                case 61:
-                case 71:
-                case 81:
-                case 91:
-                    lvl = player.Enlightenment.ToString() + "st";
-                    break;
-                case 22:
-                case 32:
-                case 42:
-                case 52:
-                case 62:
-                case 72:
-                case 82:
-                case 92:
-                    lvl = player.Enlightenment.ToString() + "nd";
-                    break;
-                case 23:
-                case 33:
-                case 43:
-                case 53:
-                case 63:
-                case 73:
-                case 83:
-                case 93:
-                    lvl = player.Enlightenment.ToString() + "rd";
-                    break;
-                default:
-                    lvl = player.Enlightenment.ToString() + "th";
-                    break;
+                    break;                
             }
 
             var msg = $"{player.Name} has achieved the {lvl} level of Enlightenment!";
