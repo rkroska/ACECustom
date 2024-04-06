@@ -713,6 +713,10 @@ namespace ACE.Server.Managers
 
         private bool WeenieHasDynamicQuest(Weenie npcTarget)
         {
+            if (npcTarget == null || npcTarget.PropertiesEmote == null)
+            {
+                return false;
+            }
             return npcTarget.PropertiesEmote.Any(x => x.Quest?.StartsWith("Dynamic") == true);
         }
 
