@@ -31,11 +31,20 @@ namespace ACE.Server.Factories
                     else
                         aetheriaType = Aetheria.AetheriaYellow;
                     break;
-                default:
+                case 7:
                     chance = ThreadSafeRandom.Next(1, 9); // Example 33% between color type
                     if (chance <= 3)
                         aetheriaType = Aetheria.AetheriaBlue;
                     else if (chance <= 6)
+                        aetheriaType = Aetheria.AetheriaYellow;
+                    else
+                        aetheriaType = Aetheria.AetheriaRed;
+                    break;
+                default:
+                    chance = ThreadSafeRandom.Next(1, 8); // Example 33% between color type
+                    if (chance <= 4)
+                        aetheriaType = Aetheria.AetheriaBlue;
+                    else if (chance <= 7)
                         aetheriaType = Aetheria.AetheriaYellow;
                     else
                         aetheriaType = Aetheria.AetheriaRed;
@@ -64,7 +73,7 @@ namespace ACE.Server.Factories
             // Initial roll for an Aetheria level 1 through 3
             wo.ItemMaxLevel = 1;
 
-            var rng = ThreadSafeRandom.Next(1, 7);
+            var rng = ThreadSafeRandom.Next(1, 8);
 
             if (rng > 4)
             {

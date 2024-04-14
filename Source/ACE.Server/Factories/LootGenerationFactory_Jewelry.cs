@@ -81,7 +81,7 @@ namespace ACE.Server.Factories
             }
 
             // gear rating (t8)
-            if (roll != null && profile.Tier == 8)
+            if (roll != null && profile.Tier >= 8)
                 TryMutateGearRating(wo, profile, roll);
 
             // item value

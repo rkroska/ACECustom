@@ -284,6 +284,7 @@ namespace ACE.Server.Factories
                     break;
                 case 6:
                 case 7:
+                case 8:
                 default:
                     if (ThreadSafeRandom.Next(1, (int)(50 * dropRateMod * lootQualityMod)) == 1)
                         numMinors = 1;
@@ -337,6 +338,7 @@ namespace ACE.Server.Factories
                         numMajors = 2;
                     break;
                 case 7:
+                case 8:
                 default:
                     if (ThreadSafeRandom.Next(1, (int)(500 * dropRateMod * lootQualityMod)) == 1)
                         numMajors = 1;
@@ -354,7 +356,7 @@ namespace ACE.Server.Factories
         {
             int numEpics = 0;
 
-            if (profile.Tier < 7)
+            if (profile.Tier < 9)
                 return 0;
 
             var dropRate = PropertyManager.GetDouble("epic_cantrip_drop_rate").Item;
@@ -389,7 +391,7 @@ namespace ACE.Server.Factories
         {
             int numLegendaries = 0;
 
-            if (profile.Tier < 8)
+            if (profile.Tier < 9)
                 return 0;
 
             var dropRate = PropertyManager.GetDouble("legendary_cantrip_drop_rate").Item;
@@ -459,8 +461,11 @@ namespace ACE.Server.Factories
                 case 6:
                     highSpellTier = 7;
                     break;
-                default:
+                case 7:
                     highSpellTier = 8;
+                    break;
+                default:
+                    highSpellTier = 9;
                     break;
             }
 
@@ -512,6 +517,7 @@ namespace ACE.Server.Factories
             (1200, 1400),   // T6
             (1400, 1600),   // T7
             (1600, 1800),   // T8
+            (1800, 2000),   // T9
         };
 
         private static int RollItemMaxMana(int tier, int numSpells)
