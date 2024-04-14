@@ -1,6 +1,6 @@
 Caster Mutation #1 (500 samples):
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 30%:
         ManaConversionMod = 0
@@ -13,7 +13,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0
 
 Caster Mutation #2 (807 samples):
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 10%:
         ManaConversionMod = 0
@@ -32,7 +32,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0
 
 Caster Mutation #3 (781 samples):
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 5%:
         ManaConversionMod = 0
@@ -57,7 +57,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0
 
 Caster Mutation #4 (712 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 5%:
         ManaConversionMod = 0.02
@@ -82,7 +82,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
 
 Caster Mutation #5 (302 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 5%:
         ManaConversionMod = 0.04
@@ -107,7 +107,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
 
 Caster Mutation #6 (860 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 1, 1
+Tier chances: 0, 0, 0, 0, 0, 1, 1, 1, 0
 
     - Chance: 5%:
         ManaConversionMod = 0.05
@@ -126,3 +126,25 @@ Tier chances: 0, 0, 0, 0, 0, 1, 1, 1
 
     - Chance: 10%:
         ManaConversionMod = 0.1
+
+    Caster Mutation #7 (860 samples):
+
+    Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 5%:
+        ManaConversionMod = 0.10
+
+    - Chance: 15%:
+        ManaConversionMod = 0.11
+
+    - Chance: 20%:
+        ManaConversionMod = 0.12
+
+    - Chance: 30%:
+        ManaConversionMod = 0.13
+
+    - Chance: 20%:
+        ManaConversionMod = 0.14
+
+    - Chance: 10%:
+        ManaConversionMod = 0.15

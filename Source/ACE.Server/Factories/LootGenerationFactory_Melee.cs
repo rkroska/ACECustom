@@ -883,6 +883,9 @@ namespace ACE.Server.Factories
                 case 430:
                     index = 8;
                     break;
+                case 550:
+                    index = 9;
+                    break;
                 default:
                     index = 0;
                     break;

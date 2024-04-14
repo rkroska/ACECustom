@@ -1,13 +1,13 @@
 Staff (HeavyWeapons) Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
 	    Damage = 10
 
 Staff (HeavyWeapons) Mutation #1 (258 samples):
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 3%:
         Damage += 1
@@ -38,7 +38,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0
 
 Staff (HeavyWeapons) Mutation #2 (475 samples):
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 1
@@ -123,7 +123,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0
 
 Staff (HeavyWeapons) Mutation #3 (406 samples):
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 12
@@ -211,7 +211,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0
 
 Staff (HeavyWeapons) Mutation #4 (893 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 25
@@ -281,7 +281,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
 
 Staff (HeavyWeapons) Mutation #5 (858 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 15%:
         Damage += 30
@@ -345,7 +345,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
 
 Staff (HeavyWeapons) Mutation #6 (2,246 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 15%:
         Damage += 36
@@ -439,7 +439,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
 
 Staff (HeavyWeapons) Mutation #7 (591 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 10%:
         Damage += 45
@@ -521,7 +521,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0
 
 Staff (HeavyWeapons) Mutation #8 (804 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 1%:
         Damage += 45
@@ -633,7 +633,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
 
 Staff (HeavyWeapons) Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 10%:
         DamageVariance = 0.52
@@ -649,3 +649,97 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 10%:
         DamageVariance = 0.38
+
+Staff (HeavyWeapons) Mutation #10 (1,143 samples):
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 15%:
+        Damage += 62
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 500
+
+    - Chance: 10%:
+        Damage += 63
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 500
+
+    - Chance: 3%:
+        Damage += 64
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 500
+
+    - Chance: 2%:
+        Damage += 65
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 500
+
+    - Chance: 15%:
+        Damage += 66
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 525
+
+    - Chance: 10%:
+        Damage += 67
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 525
+
+    - Chance: 3%:
+        Damage += 68
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 525
+
+    - Chance: 2%:
+        Damage += 69
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 525
+
+    - Chance: 15%:
+        Damage += 70
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 550
+
+    - Chance: 5%:
+        Damage += 71
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 550
+
+    - Chance: 3%:
+        Damage += 72
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 550
+
+    - Chance: 2%:
+        Damage += 73
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 550
+
+    - Chance: 10%:
+        Damage += 74
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 575
+
+    - Chance: 3%:
+        Damage += 75
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 575
+
+    - Chance: 2%:
+        Damage += 76
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 575

@@ -422,3 +422,59 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
     - Chance: 2.5%:
         WeaponDefense = 1.20
 
+
+Dagger, DaggerMS (HeavyWeapons, LightWeapons, FinesseWeapons) Mutation #17:
+		
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 25%:
+        WeaponDefense = 1.15
+
+    - Chance: 15%:
+        WeaponDefense = 1.16
+
+    - Chance: 20%:
+        WeaponDefense = 1.17
+
+    - Chance: 12.5%:
+        WeaponDefense = 1.18
+
+    - Chance: 12.5%:
+        WeaponDefense = 1.19
+
+    - Chance: 7.5%:
+        WeaponDefense = 1.20
+
+    - Chance: 5%:
+        WeaponDefense = 1.21
+
+    - Chance: 2.5%:
+        WeaponDefense = 1.22
+
+Dagger, DaggerMS (HeavyWeapons, LightWeapons, FinesseWeapons) Mutation #18:
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+	- Chance: 25%:
+        WeaponOffense = 1.15
+
+    - Chance: 15%:
+        WeaponOffense = 1.16
+
+    - Chance: 20%:
+        WeaponOffense = 1.17
+
+    - Chance: 12.5%:
+        WeaponOffense = 1.18
+
+    - Chance: 12.5%:
+        WeaponOffense = 1.19
+
+    - Chance: 7.5%:
+        WeaponOffense = 1.20
+
+    - Chance: 5%:
+        WeaponOffense = 1.21
+
+    - Chance: 2.5%:
+        WeaponOffense = 1.22

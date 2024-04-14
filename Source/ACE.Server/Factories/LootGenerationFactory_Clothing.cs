@@ -117,7 +117,8 @@ namespace ACE.Server.Factories
                     wo.WieldDifficulty = profile.Tier switch
                     {
                         7 => 150,  // In this instance, used for indicating player level, rather than skill level
-                        _ => 180,  // In this instance, used for indicating player level, rather than skill level
+                        8 => 180,  // In this instance, used for indicating player level, rather than skill level
+                        _ => 500,  // In this instance, used for indicating player level, rather than skill level
                     };
                 }
             }
@@ -152,7 +153,7 @@ namespace ACE.Server.Factories
             if (profile.Tier > 6 && armorType != LootTables.ArmorType.SocietyArmor)
                 TryRollEquipmentSet(wo, profile, roll);
 
-            if (roll != null && profile.Tier == 8)
+            if (roll != null && profile.Tier >= 8)
                 TryMutateGearRating(wo, profile, roll);
 
             // item value
@@ -425,6 +426,7 @@ namespace ACE.Server.Factories
                     {
                         7 => ThreadSafeRandom.Next(0, 40),
                         8 => ThreadSafeRandom.Next(91, 115),
+                        9 => ThreadSafeRandom.Next(115, 140),
                         _ => 0,
                     };
                 }
@@ -576,7 +578,8 @@ namespace ACE.Server.Factories
                 5 => ThreadSafeRandom.Next(1, 5),
                 6 => ThreadSafeRandom.Next(1, 6),
                 7 => ThreadSafeRandom.Next(1, 7),
-                _ => ThreadSafeRandom.Next(1, 8),
+                8 => ThreadSafeRandom.Next(1, 8),
+                _ => ThreadSafeRandom.Next(1, 9),
             };
 
             var wield = skill switch
@@ -590,7 +593,8 @@ namespace ACE.Server.Factories
                     5 => 270,
                     6 => 290,
                     7 => 310,
-                    _ => 320,
+                    8 => 320,
+                    _ => 430,
                 },
                 Skill.MissileDefense => index switch
                 {
@@ -601,7 +605,8 @@ namespace ACE.Server.Factories
                     5 => 290,
                     6 => 305,
                     7 => 330,
-                    _ => 340,
+                    8 => 340,
+                    _ => 450,
                 },
                 _ => index switch
                 {
@@ -612,7 +617,8 @@ namespace ACE.Server.Factories
                     5 => 350,
                     6 => 370,
                     7 => 400,
-                    _ => 410,
+                    8 => 410,
+                    _ => 500,
                 },
             };
             return wield;
@@ -847,7 +853,7 @@ namespace ACE.Server.Factories
             // workmanship
             wo.Workmanship = WorkmanshipChance.Roll(profile.Tier);
 
-            if (roll != null && profile.Tier == 8)
+            if (roll != null && profile.Tier >= 8)
                 TryMutateGearRating(wo, profile, roll);
 
             // item value
@@ -910,6 +916,16 @@ namespace ACE.Server.Factories
                         cloakLevel = 3;
                     else if (chance <= 975)
                         cloakLevel = 4;
+                    else
+                        cloakLevel = 5;
+                    break;
+                case 9:  // From data, no chance to get a lvl 1 cloak
+                    if (chance <= 451)
+                        cloakLevel = 3;
+                    else if (chance <= 920)
+                        cloakLevel = 4;
+                    else if (chance <= 975)
+                        cloakLevel = 5;
                     else
                         cloakLevel = 5;
                     break;
@@ -990,7 +1006,7 @@ namespace ACE.Server.Factories
 
         private static bool TryMutateGearRating(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
-            if (profile.Tier != 8)
+            if (profile.Tier <= 8)
                 return false;
 
             // shields don't have gear ratings

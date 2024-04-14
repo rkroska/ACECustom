@@ -78,6 +78,14 @@ namespace ACE.Server.Factories
                             else
                                 wield = 430;
                             break;
+                        case 9:
+                            if (chance < 60)
+                                wield = 500;
+                            else if (chance < 90)
+                                wield = 525;
+                            else
+                                wield = 550;
+                            break;
                     }
                     break;
 
@@ -142,6 +150,14 @@ namespace ACE.Server.Factories
                             else
                                 wield = 385;
                             break;
+                        case 9:
+                            if (chance < 30)
+                                wield = 500;
+                            else if (chance < 80)
+                                wield = 525;
+                            else
+                                wield = 550;
+                            break;
                     }
                     break;
 
@@ -197,6 +213,16 @@ namespace ACE.Server.Factories
                                 wield = 375;
                             else
                                 wield = 385;
+                            break;
+                        case 9:
+                            if (chance < 25)
+                                wield = 0;
+                            else if (chance < 50)
+                                wield = 500;
+                            else if (chance < 85)
+                                wield = 525;
+                            else
+                                wield = 550;
                             break;
                     }
                     break;
@@ -288,6 +314,15 @@ namespace ACE.Server.Factories
                             else
                                 damageMod = .15;
                             break;
+                        case 9:
+                            chance = ThreadSafeRandom.Next(0, 99);
+                            if (chance < 50)
+                                damageMod = .14;
+                            else if (chance < 80)
+                                damageMod = .15;
+                            else
+                                damageMod = .16;
+                            break;
                     }
                     break;
                 case 18:
@@ -367,6 +402,15 @@ namespace ACE.Server.Factories
                                 damageMod = .17;
                             else
                                 damageMod = .18;
+                            break;
+                        case 9:
+                            chance = ThreadSafeRandom.Next(0, 99);
+                            if (chance < 50)
+                                damageMod = .17;
+                            else if (chance < 80)
+                                damageMod = .18;
+                            else
+                                damageMod = .19;
                             break;
                     }
                     break;
@@ -451,6 +495,17 @@ namespace ACE.Server.Factories
                                 damageMod = .19;
                             else
                                 damageMod = .20;
+                            break;
+                        case 9:
+                            chance = ThreadSafeRandom.Next(0, 99);
+                            if (chance < 50)
+                                damageMod = .18;
+                            else if (chance < 80)
+                                damageMod = .19;
+                            else if (chance < 90)
+                                damageMod = .20;
+                            else
+                                damageMod = .21;
                             break;
                     }
                     break;
@@ -537,6 +592,19 @@ namespace ACE.Server.Factories
                                 damageMod = .21;
                             else
                                 damageMod = .22;
+                            break;
+                        case 9:
+                            chance = ThreadSafeRandom.Next(0, 99);
+                            if (chance < 50)
+                                damageMod = .19;
+                            else if (chance < 80)
+                                damageMod = .20;
+                            else if (chance < 90)
+                                damageMod = .21;
+                            else if (chance < 95)
+                                damageMod = .22;
+                            else
+                                damageMod = .23;
                             break;
                     }
                     break;
@@ -629,6 +697,19 @@ namespace ACE.Server.Factories
                                 damageMod = .24;
                             else
                                 damageMod = .25;
+                            break;
+                        case 9:
+                            chance = ThreadSafeRandom.Next(0, 99);
+                            if (chance < 50)
+                                damageMod = .22;
+                            else if (chance < 80)
+                                damageMod = .23;
+                            else if (chance < 90)
+                                damageMod = .24;
+                            else if (chance < 95)
+                                damageMod = .25;
+                            else
+                                damageMod = .26;
                             break;
                     }
                     break;
@@ -841,6 +922,26 @@ namespace ACE.Server.Factories
                     else
                         meleeMod = 0.20;
                     break;
+                case 210: // No wield Casters
+                case 525: // Missile/Caster
+                case 550: // Missile/Caster
+                    if (chance <= 10)
+                        meleeMod = 0.13;
+                    else if (chance <= 25)
+                        meleeMod = 0.14;
+                    else if (chance <= 45)
+                        meleeMod = 0.15;
+                    else if (chance <= 65)
+                        meleeMod = 0.16;
+                    else if (chance <= 80)
+                        meleeMod = 0.17;
+                    else if (chance <= 90)
+                        meleeMod = 0.18;
+                    else if (chance <= 98)
+                        meleeMod = 0.19;
+                    else
+                        meleeMod = 0.20;
+                    break;
                 default:
                     meleeMod = 0.05;
                     break;
@@ -918,7 +1019,28 @@ namespace ACE.Server.Factories
                         else
                             magicMissileDefenseMod = 0;
                         break;
-                    default: // tier 8
+                    case 8: // tier 8
+                        chance = ThreadSafeRandom.Next(1, 1000);
+                        if (chance > 998)
+                            magicMissileDefenseMod = .04;
+                        else if (chance > 994)
+                            magicMissileDefenseMod = .035;
+                        else if (chance > 990)
+                            magicMissileDefenseMod = .03;
+                        else if (chance > 985)
+                            magicMissileDefenseMod = .025;
+                        else if (chance > 950)
+                            magicMissileDefenseMod = .02;
+                        else if (chance > 900)
+                            magicMissileDefenseMod = .015;
+                        else if (chance > 850)
+                            magicMissileDefenseMod = .01;
+                        else if (chance > 800)
+                            magicMissileDefenseMod = .005;
+                        else
+                            magicMissileDefenseMod = 0;
+                        break;
+                    default: // tier 9
                         chance = ThreadSafeRandom.Next(1, 1000);
                         if (chance > 998)
                             magicMissileDefenseMod = .04;
