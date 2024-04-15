@@ -263,17 +263,17 @@ namespace ACE.Server.WorldObjects.Managers
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
                 }
-                if (spell.School == MagicSchool.ItemEnchantment && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful) )
+                if (spell.School == MagicSchool.ItemEnchantment)
                 {
                     if (spell.StatModKey == 28) //impen
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
                     }
-                    else if (spell.StatModKey == 360) //blood drinker buffed
+                    else if (spell.StatModKey == 360 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful)) //blood drinker buffed
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.5f;
                     }
-                    else if (spell.StatModKey == 170) //spirit drinker
+                    else if (spell.StatModKey == 170 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful)) //spirit drinker
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.005f;
                     }
@@ -282,11 +282,11 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }
-                    else if (spell.StatModKey == 168 || spell.StatModKey == 169)
+                    else if (spell.StatModKey == 168 || spell.StatModKey == 169 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful))
                     {
                         luminanceAug += GetItemAugPercentageRating(player.LuminanceAugmentItemCount ?? 0); //(player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }
-                    else if (spell.StatModKey == 361) //eg atlans alacrity
+                    else if (spell.StatModKey == 361 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful)) //eg atlans alacrity
                     {
                         luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 1.0f;
                     }

@@ -419,6 +419,11 @@ namespace ACE.Server.WorldObjects
 
             if (isBow) { attribute = Coordination;}
 
+            if (weapon?.WeaponSkill == Skill.TwoHandedCombat)
+            {
+                return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * 0.8), isBow);
+            }
+
             if (weapon?.WeaponSkill == Skill.FinesseWeapons)
             {
                 return SkillFormula.GetAttributeMod((int)Strength.Current / 2, isBow) + (SkillFormula.GetAttributeMod((int)Coordination.Current, isBow));
