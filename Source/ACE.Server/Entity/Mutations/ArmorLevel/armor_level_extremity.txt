@@ -214,41 +214,27 @@ Armor Mutation #10:
 Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
 
     - Chance: 5%:
-        ArmorLevel += 150
-
-    - Chance: 30%:
-        ArmorLevel += 160
-
-    - Chance: 35%:
         ArmorLevel += 170
 
-    - Chance: 25%:
+    - Chance: 30%:
         ArmorLevel += 180
 
-    - Chance: 3%:
+    - Chance: 35%:
         ArmorLevel += 190
 
-    - Chance: 1%:
+    - Chance: 25%:
         ArmorLevel += 200
 
-    - Chance: 1%:
+    - Chance: 3%:
         ArmorLevel += 210
+
+    - Chance: 1%:
+        ArmorLevel += 220
+
+    - Chance: 1%:
+        ArmorLevel += 230
 
     - Chance: 100%:
         WieldRequirements = Level
-        WieldDifficulty = 200
-        WieldSkillType = 1
-
-Armor Mutation #11:
-
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
-
-    - Chance: 10%:
-
-    - Chance: 90%:
-
-        ArmorLevel += 20
-
-        WieldRequirements = Level
-        WieldDifficulty = 225
+        WieldDifficulty = 500
         WieldSkillType = 1

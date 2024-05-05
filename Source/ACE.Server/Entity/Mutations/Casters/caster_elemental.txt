@@ -205,80 +205,80 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
     - Chance: 13%:
         ElementalDamageMod = 1.185
         WieldRequirements = RawSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 7%:
         ElementalDamageMod = 1.19
         WieldRequirements = RawSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 3%:
         ElementalDamageMod = 1.195
         WieldRequirements = RawSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 2%:
         ElementalDamageMod = 1.20
         WieldRequirements = RawSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 13%:
         ElementalDamageMod = 1.205
         WieldRequirements = RawSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
    - Chance: 7%:
         ElementalDamageMod = 1.21
         WieldRequirements = RawSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
     - Chance: 3%:
         ElementalDamageMod = 1.215
         WieldRequirements = RawSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
     - Chance: 2%:
         ElementalDamageMod = 1.22
         WieldRequirements = RawSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
    - Chance: 13%:
         ElementalDamageMod = 1.225
         WieldRequirements = RawSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 7%:
         ElementalDamageMod = 1.23
         WieldRequirements = RawSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 3%:
         ElementalDamageMod = 1.235
         WieldRequirements = RawSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 2%:
         ElementalDamageMod = 1.24
         WieldRequirements = RawSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
    - Chance: 13%:
         ElementalDamageMod = 1.245
         WieldRequirements = RawSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
     - Chance: 7%:
         ElementalDamageMod = 1.25
         WieldRequirements = RawSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
     - Chance: 3%:
         ElementalDamageMod = 1.255
         WieldRequirements = RawSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
     - Chance: 2%:
         ElementalDamageMod = 1.26
         WieldRequirements = RawSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
