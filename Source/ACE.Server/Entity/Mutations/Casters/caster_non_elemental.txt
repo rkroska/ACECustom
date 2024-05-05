@@ -27,5 +27,5 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0 ,1
 
     - Chance: 100%:
         WieldRequirements = Level
-        WieldDifficulty = 250
+        WieldDifficulty = 500
         WieldSkillType = 1

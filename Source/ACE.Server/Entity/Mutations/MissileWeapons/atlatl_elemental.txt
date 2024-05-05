@@ -342,95 +342,95 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
         ElementalDamageBonus = 21
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 7%:
         ElementalDamageBonus = 22
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 3%:
         ElementalDamageBonus = 23
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 2%:
         ElementalDamageBonus = 24
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 500
+        WieldDifficulty = 425
 
     - Chance: 13%:
         ElementalDamageBonus = 22
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
     - Chance: 7%:
         ElementalDamageBonus = 23
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
     - Chance: 3%:
         ElementalDamageBonus = 24
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
     - Chance: 2%:
         ElementalDamageBonus = 25
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 525
+        WieldDifficulty = 450
 
     - Chance: 13%:
         ElementalDamageBonus = 23
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 7%:
         ElementalDamageBonus = 24
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 3%:
         ElementalDamageBonus = 25
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 2%:
         ElementalDamageBonus = 26
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 550
+        WieldDifficulty = 475
 
     - Chance: 13%:
         ElementalDamageBonus = 24
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
     - Chance: 7%:
         ElementalDamageBonus = 25
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
     - Chance: 3%:
         ElementalDamageBonus = 26
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 
     - Chance: 2%:
         ElementalDamageBonus = 27
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
-        WieldDifficulty = 575
+        WieldDifficulty = 500
 

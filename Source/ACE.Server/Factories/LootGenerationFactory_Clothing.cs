@@ -12,6 +12,9 @@ using ACE.Server.Factories.Enum;
 using ACE.Server.Factories.Tables;
 using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
+using log4net;
+using Org.BouncyCastle.Bcpg;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ACE.Server.Factories
 {
@@ -153,12 +156,15 @@ namespace ACE.Server.Factories
             if (profile.Tier > 6 && armorType != LootTables.ArmorType.SocietyArmor)
                 TryRollEquipmentSet(wo, profile, roll);
 
-            if (roll != null && profile.Tier >= 8)
+            if (roll != null && profile.Tier >= 8 && profile.Tier < 9)
                 TryMutateGearRating(wo, profile, roll);
+
+            if (roll != null && profile.Tier == 9)
+                TryMutateGearRatingT9(wo, profile, roll);
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))   // fixme: data
-                MutateValue(wo, profile.Tier, roll);
+            MutateValue(wo, profile.Tier, roll);
 
             if (wo.ItemMaxLevel.HasValue && wo.EquipmentSetId == null)
             {
@@ -787,7 +793,7 @@ namespace ACE.Server.Factories
             // even chance between 11 different types of cloaks
             var cloakType = ThreadSafeRandom.Next(0, LootTables.Cloaks.Length - 1);
 
-            var cloakWeenie  = LootTables.Cloaks[cloakType];
+            var cloakWeenie = LootTables.Cloaks[cloakType];
 
             var wo = WorldObjectFactory.CreateNewWorldObject((uint)cloakWeenie);
 
@@ -858,7 +864,7 @@ namespace ACE.Server.Factories
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))
-                MutateValue(wo, profile.Tier, roll);
+            MutateValue(wo, profile.Tier, roll);
         }
 
         private static int RollCloak_ItemMaxLevel(TreasureDeath profile)
@@ -871,7 +877,7 @@ namespace ACE.Server.Factories
             {
                 case 1:
                 case 2:
-                default:                
+                default:
                     cloakLevel = 1;
                     break;
                 case 3:
@@ -1006,7 +1012,7 @@ namespace ACE.Server.Factories
 
         private static bool TryMutateGearRating(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
-            if (profile.Tier <= 8)
+            if (profile.Tier < 8 && profile.Tier != 9)
                 return false;
 
             // shields don't have gear ratings
@@ -1021,7 +1027,7 @@ namespace ACE.Server.Factories
 
             var rng = ThreadSafeRandom.Next(0, 1);
 
-            if (roll.HasArmorLevel(wo))
+            if (roll.HasArmorLevel(wo) && profile.Tier >= 7 && profile.Tier != 9)
             {
                 // clothing w/ al, and crowns would be included in this group
                 if (rng == 0)
@@ -1054,49 +1060,102 @@ namespace ACE.Server.Factories
                 SetWieldLevelReq(wo, 180);
 
             return true;
+
         }
 
-        private static void SetWieldLevelReq(WorldObject wo, int level)
+        private static bool TryMutateGearRatingT9(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
-            if (wo.WieldRequirements == WieldRequirement.Invalid)
+            if (profile.Tier != 9)
+                return false;
+
+            // shields don't have gear ratings
+            if (wo.IsShield) return false;
+
+            var gearRatingT9 = GearRatingChance.RollT9(wo, profile, roll);
+
+            if (gearRatingT9 == 0)
+                return false;
+
+            //Console.WriteLine($"TryMutateGearRating({wo.Name}, {profile.TreasureType}, {roll.ItemType}): rolled gear rating {gearRating}");
+
+            var rngT9 = ThreadSafeRandom.Next(0, 1);
+
+            if (roll.HasArmorLevel(wo) && profile.Tier == 9)
+
             {
-                wo.WieldRequirements = WieldRequirement.Level;
-                wo.WieldSkillType = (int)Skill.Axe;  // set from examples in pcap data
-                wo.WieldDifficulty = level;
+                // clothing w/ al, and crowns would be included in this group
+                if (rngT9 == 0)
+                    wo.GearCritDamage = gearRatingT9;
+                else
+                    wo.GearCritDamageResist = gearRatingT9;
             }
-            else if (wo.WieldRequirements == WieldRequirement.Level)
+            else if (roll.IsClothing || roll.IsCloak)
             {
-                if (wo.WieldDifficulty < level)
-                    wo.WieldDifficulty = level;
+                if (rngT9 == 0)
+                    wo.GearDamage = gearRatingT9;
+                else
+                    wo.GearDamageResist = gearRatingT9;
+            }
+            else if (roll.IsJewelry)
+            {
+                if (rngT9 == 0)
+                    wo.GearHealingBoost = gearRatingT9;
+                else
+                    wo.GearMaxHealth = gearRatingT9;
             }
             else
             {
-                // this can either be empty, or in the case of covenant / olthoi armor,
-                // it could already contain a level requirement of 180, or possibly 150 in tier 8
-
-                // we want to set this level requirement to 180, in all cases
-
-                // magloot logs indicated that even if covenant / olthoi armor was not upgraded to 180 in its mutation script,
-                // a gear rating could still drop on it, and would "upgrade" the 150 to a 180
-
-                wo.WieldRequirements2 = WieldRequirement.Level;
-                wo.WieldSkillType2 = (int)Skill.Axe;  // set from examples in pcap data
-                wo.WieldDifficulty2 = level;
+                log.Error($"TryMutateGearRating({wo.Name}, {profile.TreasureType}, {roll.ItemType}): unknown item type");
+                return false;
             }
+            if (roll.ArmorType != TreasureArmorType.Society)
+                SetWieldLevelReq(wo, 580);
+
+            return true;
         }
 
-        private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
-        {
-            foreach (var kvp in LootTables.armorTypeMap)
+            private static void SetWieldLevelReq(WorldObject wo, int level)
             {
-                armorType = kvp.Key;
-                var table = kvp.Value;
+                if (wo.WieldRequirements == WieldRequirement.Invalid)
+                {
+                    wo.WieldRequirements = WieldRequirement.Level;
+                    wo.WieldSkillType = (int)Skill.Axe;  // set from examples in pcap data
+                    wo.WieldDifficulty = level;
+                }
+                else if (wo.WieldRequirements == WieldRequirement.Level)
+                {
+                    if (wo.WieldDifficulty < level)
+                        wo.WieldDifficulty = level;
+                }
+                else
+                {
+                    // this can either be empty, or in the case of covenant / olthoi armor,
+                    // it could already contain a level requirement of 180, or possibly 150 in tier 8
 
-                if (kvp.Value.Contains((int)wcid))
-                    return true;
+                    // we want to set this level requirement to 180, in all cases
+
+                    // magloot logs indicated that even if covenant / olthoi armor was not upgraded to 180 in its mutation script,
+                    // a gear rating could still drop on it, and would "upgrade" the 150 to a 180
+
+                    wo.WieldRequirements2 = WieldRequirement.Level;
+                    wo.WieldSkillType2 = (int)Skill.Axe;  // set from examples in pcap data
+                    wo.WieldDifficulty2 = level;
+                }
             }
-            armorType = null;
-            return false;
+
+            private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
+            {
+                foreach (var kvp in LootTables.armorTypeMap)
+                {
+                    armorType = kvp.Key;
+                    var table = kvp.Value;
+
+                    if (kvp.Value.Contains((int)wcid))
+                        return true;
+                }
+                armorType = null;
+                return false;
+            }
         }
     }
-}
+

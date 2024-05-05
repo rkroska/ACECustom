@@ -81,12 +81,15 @@ namespace ACE.Server.Factories
             }
 
             // gear rating (t8)
-            if (roll != null && profile.Tier >= 8)
+            if (roll != null && profile.Tier >= 8 && profile.Tier < 9)
                 TryMutateGearRating(wo, profile, roll);
+
+            if (roll != null && profile.Tier == 9)
+                TryMutateGearRatingT9(wo, profile, roll);
 
             // item value
             //  if (wo.HasMutateFilter(MutateFilter.Value))     // fixme: data
-                MutateValue(wo, profile.Tier, roll);
+            MutateValue(wo, profile.Tier, roll);
 
             if (wo != null && wo.ItemMaxLevel > 0 && wo.EquipmentSetId == null)
             {
