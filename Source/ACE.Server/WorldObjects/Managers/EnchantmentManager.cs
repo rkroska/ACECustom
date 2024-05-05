@@ -251,6 +251,7 @@ namespace ACE.Server.WorldObjects.Managers
             entry.DegradeLimit = spell.DegradeLimit;
             entry.StatModType = spell.StatModType;
             entry.StatModKey = spell.StatModKey;
+            bool selfCastEligible = (spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful;
 
             //calculate luminance aug additions for statmod
             var luminanceAug = 0.0f;
@@ -258,14 +259,19 @@ namespace ACE.Server.WorldObjects.Managers
             if (caster != null && caster is Creature)
             {
                 var player = caster as Creature;
-                if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && (spell.IsSelfTargeted || !spell.IsBeneficial))
+                if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && spell.IsBeneficial && spell.IsSelfTargeted)
                 {
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
                 }
-                if (spell.School == MagicSchool.ItemEnchantment)
+                else if (spell.School == MagicSchool.CreatureEnchantment && spell.IsHarmful)
                 {
-                    bool selfCastEligible = (spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful;
+                    luminanceAug -= player.LuminanceAugmentCreatureCount ?? 0.0f;
+                    entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
+                }
+
+                if (spell.School == MagicSchool.ItemEnchantment)
+                {                    
                     if (spell.StatModKey == 28) //impen
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
