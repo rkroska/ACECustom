@@ -38,18 +38,18 @@ namespace ACE.Server.Factories.Tables
 
         private static ChanceTable<int> ArmorRatingT9 = new ChanceTable<int>()
         {
-            ( 1, 0.00f ),
+            ( 1, 0.50f ),
             ( 2, 0.30f ),
             ( 3, 0.15f ),
-            ( 4, 0.55f ),
+            ( 4, 0.05f ),
         };
 
         private static ChanceTable<int> ClothingJewelryRatingT9 = new ChanceTable<int>()
         {
-            ( 2, 0.00f ),
+            ( 2, 0.50f ),
             ( 3, 0.30f ),
             ( 4, 0.15f ),
-            ( 5, 0.55f ),
+            ( 5, 0.05f ),
         };
 
         public static int Roll(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
