@@ -859,8 +859,10 @@ namespace ACE.Server.Factories
             // workmanship
             wo.Workmanship = WorkmanshipChance.Roll(profile.Tier);
 
-            if (roll != null && profile.Tier >= 8)
+            if (roll != null && profile.Tier <= 8)
                 TryMutateGearRating(wo, profile, roll);
+            else if (roll != null && profile.Tier == 9)
+                TryMutateGearRatingT9(wo, profile, roll);
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))
@@ -1096,6 +1098,7 @@ namespace ACE.Server.Factories
                 else
                     wo.GearDamageResist = gearRatingT9;
             }
+
             else if (roll.IsJewelry)
             {
                 if (rngT9 == 0)
@@ -1109,7 +1112,7 @@ namespace ACE.Server.Factories
                 return false;
             }
             if (roll.ArmorType != TreasureArmorType.Society)
-                SetWieldLevelReq(wo, 580);
+                SetWieldLevelReq(wo, 550);
 
             return true;
         }
