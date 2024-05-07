@@ -3,6 +3,7 @@ using log4net;
 using ACE.Database.Models.World;
 using ACE.Server.Factories.Entity;
 using ACE.Server.WorldObjects;
+using ACE.Server.Factories.Enum;
 
 namespace ACE.Server.Factories.Tables
 {
@@ -38,17 +39,17 @@ namespace ACE.Server.Factories.Tables
 
         private static ChanceTable<int> ArmorRatingT9 = new ChanceTable<int>()
         {
-            ( 1, 0.50f ),
-            ( 2, 0.30f ),
-            ( 3, 0.15f ),
+            
+            ( 2, 0.70f ),
+            ( 3, 0.25f ),
             ( 4, 0.05f ),
         };
 
         private static ChanceTable<int> ClothingJewelryRatingT9 = new ChanceTable<int>()
         {
-            ( 2, 0.50f ),
-            ( 3, 0.30f ),
-            ( 4, 0.15f ),
+            
+            ( 3, 0.70f ),
+            ( 4, 0.25f ),
             ( 5, 0.05f ),
         };
 
