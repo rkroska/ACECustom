@@ -251,6 +251,7 @@ namespace ACE.Server.WorldObjects.Managers
             entry.DegradeLimit = spell.DegradeLimit;
             entry.StatModType = spell.StatModType;
             entry.StatModKey = spell.StatModKey;
+            bool selfCastEligible = (spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful;
 
             //calculate luminance aug additions for statmod
             var luminanceAug = 0.0f;
@@ -258,22 +259,28 @@ namespace ACE.Server.WorldObjects.Managers
             if (caster != null && caster is Creature)
             {
                 var player = caster as Creature;
-                if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && (spell.IsSelfTargeted || !spell.IsBeneficial))
+                if (spell.School == MagicSchool.CreatureEnchantment && !spell.IsFellowshipSpell && spell.Id != 5753 && spell.IsBeneficial && spell.IsSelfTargeted)
                 {
                     luminanceAug += player.LuminanceAugmentCreatureCount ?? 0.0f;
                     entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
                 }
-                if (spell.School == MagicSchool.ItemEnchantment)
+                else if (spell.School == MagicSchool.CreatureEnchantment && spell.IsHarmful)
                 {
+                    luminanceAug -= player.LuminanceAugmentCreatureCount ?? 0.0f;
+                    entry.AugmentationLevelWhenCast = player.LuminanceAugmentCreatureCount ?? 0;
+                }
+
+                if (spell.School == MagicSchool.ItemEnchantment)
+                {                    
                     if (spell.StatModKey == 28) //impen
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
                     }
-                    else if (spell.StatModKey == 360 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful)) //blood drinker buffed
+                    else if (spell.StatModKey == 360 && selfCastEligible) //blood drinker buffed
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.5f;
                     }
-                    else if (spell.StatModKey == 170 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful)) //spirit drinker
+                    else if (spell.StatModKey == 170 && selfCastEligible) //spirit drinker
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.005f;
                     }
@@ -282,15 +289,18 @@ namespace ACE.Server.WorldObjects.Managers
                     {
                         luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }
-                    else if (spell.StatModKey == 168 || spell.StatModKey == 169 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful))
+                    else if (spell.StatModKey == 168 || spell.StatModKey == 169 && selfCastEligible)
                     {
                         luminanceAug += GetItemAugPercentageRating(player.LuminanceAugmentItemCount ?? 0); //(player.LuminanceAugmentItemCount ?? 0.0f) * 0.01f;
                     }
-                    else if (spell.StatModKey == 361 && ((spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful)) //eg atlans alacrity
+                    else if (spell.StatModKey == 361 && selfCastEligible) //eg atlans alacrity
                     {
                         luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 1.0f;
                     }
-                    entry.AugmentationLevelWhenCast = player.LuminanceAugmentItemCount ?? 0;
+                    if (selfCastEligible)
+                    {
+                        entry.AugmentationLevelWhenCast = player.LuminanceAugmentItemCount ?? 0;
+                    }                    
                 }
                 if (spell.School == MagicSchool.LifeMagic)
                 {
@@ -308,7 +318,7 @@ namespace ACE.Server.WorldObjects.Managers
                         else
                         {
                             luminanceAug += (player.LuminanceAugmentLifeCount ?? 0.0f) * 0.10f;
-                        }
+                        }                        
                     }
                     else if (spell.IsHarmful) //debuffs -- single point
                     {
