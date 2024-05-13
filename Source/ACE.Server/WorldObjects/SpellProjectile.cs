@@ -417,7 +417,7 @@ namespace ACE.Server.WorldObjects
             var lifeMagicDamage = 0.0f;
 
             // war/void magic
-            var baseDamage = 0;
+            long baseDamage = 0;
             var skillBonus = 0.0f;
             var finalDamage = 0.0f;
 
@@ -500,9 +500,9 @@ namespace ACE.Server.WorldObjects
                     critDamageBonus = lifeMagicDamage * 0.5f * weaponCritDamageMod;
                 }
 
-                if (sourcePlayer.LuminanceAugmentLifeCount.HasValue && sourcePlayer.LuminanceAugmentLifeCount >= 1)
+                if (sourceCreature != null && sourceCreature.LuminanceAugmentLifeCount.HasValue && sourceCreature.LuminanceAugmentLifeCount >= 1)
                 {
-                    lifeMagicDamage += sourcePlayer.LuminanceAugmentLifeCount.Value;
+                    lifeMagicDamage += sourceCreature.LuminanceAugmentLifeCount.Value;
                 }
 
                 weaponResistanceMod = GetWeaponResistanceModifier(weapon, sourceCreature, attackSkill, Spell.DamageType);
@@ -563,20 +563,20 @@ namespace ACE.Server.WorldObjects
                 }
                 baseDamage = ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
 
-                if (sourcePlayer != null)
+                if (sourceCreature != null)
                 {
                     if (Spell.School == MagicSchool.WarMagic)
                     {
-                        if (sourcePlayer.LuminanceAugmentWarCount.HasValue && sourcePlayer.LuminanceAugmentWarCount >= 1)
+                        if (sourceCreature.LuminanceAugmentWarCount.HasValue && sourceCreature.LuminanceAugmentWarCount >= 1)
                         {
-                            baseDamage += (int)sourcePlayer.LuminanceAugmentWarCount.Value;
+                            baseDamage += sourceCreature.LuminanceAugmentWarCount.Value;
                         }
                     }
                     else if (Spell.School == MagicSchool.VoidMagic)
                     {
-                        if (sourcePlayer.LuminanceAugmentVoidCount.HasValue && sourcePlayer.LuminanceAugmentVoidCount >= 1)
+                        if (sourceCreature.LuminanceAugmentVoidCount.HasValue && sourceCreature.LuminanceAugmentVoidCount >= 1)
                         {
-                            baseDamage += (int)sourcePlayer.LuminanceAugmentVoidCount.Value;
+                            baseDamage += sourceCreature.LuminanceAugmentVoidCount.Value;
                         }
                     }
                 }
@@ -938,7 +938,7 @@ namespace ACE.Server.WorldObjects
         }
 
         public static void ShowInfo(Creature observed, Spell spell, CreatureSkill skill, float criticalChance, bool criticalHit, bool critDefended, bool overpower, float weaponCritDamageMod,
-            float magicSkillBonus, int baseDamage, float critDamageBonus, float elementalDamageMod, float slayerMod,
+            float magicSkillBonus, long baseDamage, float critDamageBonus, float elementalDamageMod, float slayerMod,
             float weaponResistanceMod, float resistanceMod, float absorbMod,
             float lifeProjectileDamage, float lifeMagicDamage, float finalDamage)
         {
