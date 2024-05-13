@@ -485,7 +485,7 @@ namespace ACE.Server.WorldObjects
 
             if (_amount < 0)
             {
-                log.Error($"{Name}.TakeDamage({source?.Name} ({source?.Guid}), {damageType}, {_amount}) - negative damage, this shouldn't happen");
+                //log.Error($"{Name}.TakeDamage({source?.Name} ({source?.Guid}), {damageType}, {_amount}) - negative damage, this shouldn't happen");
                 return 0;
             }
 
