@@ -745,7 +745,15 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterReadLock();
             try
             {
-                return KnownPlayers.Values.Select(v => v.WeenieObj.WorldObject).OfType<Player>().ToList();
+                List<Player> players = new List<Player>();
+                foreach (var value in KnownPlayers.Values)
+                {
+                    if (value.WeenieObj.WorldObject is Player player)
+                    {
+                        players.Add(player);
+                    }
+                }
+                return players;
             }
             finally
             {
@@ -755,24 +763,23 @@ namespace ACE.Server.Physics.Common
 
         public List<Creature> GetKnownObjectsValuesAsCreature()
         {
+            rwLock.EnterReadLock();
             try
             {
-                rwLock.EnterReadLock();
-                try
+                List<Creature> creatures = new List<Creature>();
+                foreach (var value in KnownObjects.Values)
                 {
-                    return KnownObjects.Values.Select(v => v.WeenieObj.WorldObject).OfType<Creature>().ToList();
+                    if (value.WeenieObj.WorldObject is Creature creature)
+                    {
+                        creatures.Add(creature);
+                    }
                 }
-                finally
-                {
-                    rwLock.ExitReadLock();
-                }
+                return creatures;
             }
-            catch (Exception ex)
+            finally
             {
-                log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetKnownObjectsValuesAsCreature(): thrown exception: {ex.Message}, {KnownObjects?.Count}");
-                return new List<Creature>();
+                rwLock.ExitReadLock();
             }
-            
         }
 
         /// <summary>
@@ -944,20 +951,23 @@ namespace ACE.Server.Physics.Common
                     {
                         return new List<Creature>();
                     }
-                    if (VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Count() == 0)
-                    {
-                        return new List<Creature>();
-                    }
+
                     int? curVariation = this.PhysicsObj?.Position?.Variation;
                     if (curVariation.HasValue)
                     {
-                        return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.Where(x => x.Location.Variation == curVariation)?.OfType<Creature>()?.ToList();
+                        return VisibleTargets.Values
+                            .Where(v => v.WeenieObj.WorldObject?.Location.Variation == curVariation)
+                            .Select(v => v.WeenieObj.WorldObject)
+                            .OfType<Creature>()
+                            .ToList();
                     }
                     else
                     {
-                        return VisibleTargets?.Values?.Select(v => v.WeenieObj.WorldObject)?.OfType<Creature>()?.ToList();
+                        return VisibleTargets.Values
+                            .Select(v => v.WeenieObj.WorldObject)
+                            .OfType<Creature>()
+                            .ToList();
                     }
-                    
                 }
                 finally
                 {
@@ -967,10 +977,10 @@ namespace ACE.Server.Physics.Common
             catch (Exception ex)
             {
                 log.Warn($"{PhysicsObj.Name}.ObjectMaint.GetVisibleTargetsValuesOfTypeCreature(): thrown exception: {ex.Message}, {VisibleTargets?.Count}");
-                return new List<Creature>();      
+                return new List<Creature>();
             }
-           
         }
+
 
         /// <summary>
         /// For monster and CombatPet FindNextTarget

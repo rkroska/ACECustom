@@ -1403,10 +1403,9 @@ namespace ACE.Server.WorldObjects
                 return null;
             }
 
-            if (sendSelf)
+            if (sendSelf && this is Player self)
             {
-                if (this is Player self)
-                    self.Session.Network.EnqueueSend(msgs);
+                self.Session.Network.EnqueueSend(msgs);
             }
 
             var nearbyPlayers = PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer();
@@ -1419,6 +1418,7 @@ namespace ACE.Server.WorldObjects
             }
             return nearbyPlayers;
         }
+
 
         public List<Player> EnqueueBroadcast(List<Player> excludePlayers, bool sendSelf = true, params GameMessage[] msgs)
         {

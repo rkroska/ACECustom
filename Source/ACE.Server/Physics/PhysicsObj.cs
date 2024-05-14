@@ -2140,7 +2140,7 @@ namespace ACE.Server.Physics
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void calc_friction(double quantum, float velocity_mag2)
+        public void calc_friction(float quantum, float velocity_mag2)
         {
             if (!TransientState.HasFlag(TransientStateFlags.OnWalkable)) return;
 
@@ -2159,7 +2159,7 @@ namespace ACE.Server.Physics
                     friction = 0.2f;
             }
 
-            var scalar = (float)Math.Pow(1.0f - friction, quantum);
+            var scalar = MathF.Pow(1.0f - friction, quantum);
             Velocity *= scalar;
         }
 
