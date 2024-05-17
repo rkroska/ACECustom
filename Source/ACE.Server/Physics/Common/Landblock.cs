@@ -520,7 +520,8 @@ namespace ACE.Server.Physics.Common
 
                         var idx = ((int)lcoord.Value.Y & 7) + ((int)lcoord.Value.X & 7) * SideCellCount;
                         var cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId ?? 0 };
-                        LandCells[cacheKey].RestrictionObj = kvp.Value;
+                        if (LandCells.ContainsKey(cacheKey))
+                            LandCells[cacheKey].RestrictionObj = kvp.Value;
                     }
                 }
             }
