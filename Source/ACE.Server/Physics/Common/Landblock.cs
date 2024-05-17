@@ -37,16 +37,11 @@ namespace ACE.Server.Physics.Common
 
         public static bool UseSceneFiles = true;
 
-        public Landblock() : base()
-        {
-            Init();
-        }
-
         public Landblock(CellLandblock landblock, int? Variation)
-            : base(landblock)
+            : base(landblock, Variation)
         {
             Init();
-
+            VariationId = Variation;
             ID = landblock.Id;
             //Console.WriteLine("Loading landblock " + ID.ToString("X8"));
             BlockInfoExists = landblock.HasObjects;
@@ -56,7 +51,7 @@ namespace ACE.Server.Physics.Common
             _landblock = landblock;
             
             get_land_limits();
-            VariationId = Variation;
+            
         }
 
         public new void Init()

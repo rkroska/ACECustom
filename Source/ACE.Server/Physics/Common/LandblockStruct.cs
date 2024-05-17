@@ -77,14 +77,14 @@ namespace ACE.Server.Physics.Common
             NW_Corner = new List<byte>() { 3, 2, 1, 0 };
         }
 
-        public LandblockStruct()
+        public LandblockStruct(int? variationId)
         {
-            Init();
+            Init(variationId);
         }
 
-        public LandblockStruct(CellLandblock landblock)
+        public LandblockStruct(CellLandblock landblock, int? variationId)
         {
-            Init();
+            Init(variationId);
             Height = landblock.Height;
             Terrain = landblock.Terrain;
             // originally called from LScape.update_block()
@@ -478,7 +478,7 @@ namespace ACE.Server.Physics.Common
             //return (uint)(sizeBits + t4 + 32 * (t3 + 32 * (t2 + 32 * (t1 + 32 * (r4 + 4 * (r3 + 4 * (r2 + 4 * r1)))))));
         }
 
-        public void Init()
+        public void Init(int? variationId)
         {
             TransDir = LandDefs.Direction.Unknown;
             WaterType = LandDefs.WaterType.NotWater;
@@ -486,7 +486,7 @@ namespace ACE.Server.Physics.Common
 
             // init for landcell
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
-            for (uint i = 1; i <= 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0}, new LandCell((i)));
+            for (uint i = 1; i <= 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId ?? 0}, new LandCell((i)));
         }
 
         /// <summary>
