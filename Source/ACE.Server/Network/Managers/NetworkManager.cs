@@ -355,20 +355,22 @@ namespace ACE.Server.Network.Managers
             {
                 // The session tick outbound processes pending actions and handles outgoing messages
                 ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
-                Parallel.ForEach(sessionMap, ConfigManager.Config.Server.Threading.NetworkManagerParallelOptions, s =>
-                {
-                    if (s != null)
-                    {
-                        s.TickOutbound();
-                        if (s.PendingTermination != null && s.PendingTermination.TerminationStatus == SessionTerminationPhase.SessionWorkCompleted)
-                        {
-                            s.DropSession();
-                            s.PendingTermination.TerminationStatus = SessionTerminationPhase.WorldManagerWorkCompleted;
-                        }
-                        sessionCount++;
-                    }
-                });
+                Parallel.ForEach(sessionMap, ConfigManager.Config.Server.Threading.NetworkManagerParallelOptions, s => s?.TickOutbound());
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
+
+                // Removes sessions in the NetworkTimeout state, including sessions that have reached a timeout limit.
+                ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.DoSessionWork_RemoveSessions);
+                foreach (var session in sessionMap.Where(k => !Equals(null, k)))
+                {
+                    if (session.PendingTermination != null && session.PendingTermination.TerminationStatus == SessionTerminationPhase.SessionWorkCompleted)
+                    {
+                        session.DropSession();
+                        session.PendingTermination.TerminationStatus = SessionTerminationPhase.WorldManagerWorkCompleted;
+                    }
+
+                    sessionCount++;
+                }
+                ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_RemoveSessions);
             }
             finally
             {
@@ -376,6 +378,7 @@ namespace ACE.Server.Network.Managers
             }
             return sessionCount;
         }
+
 
 
         public static void DisconnectAllSessionsForShutdown()
