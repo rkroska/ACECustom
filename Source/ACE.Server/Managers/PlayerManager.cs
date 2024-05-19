@@ -46,7 +46,7 @@ namespace ACE.Server.Managers
         {
             var results = DatabaseManager.Shard.BaseDatabase.GetAllPlayerBiotasInParallel();
 
-            Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
+            Parallel.ForEach(results, result =>
             {
                 var offlinePlayer = new OfflinePlayer(result);
 

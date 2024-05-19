@@ -79,8 +79,11 @@ namespace ACE.Server.WorldObjects
             CharacterDatabaseLock.EnterWriteLock();
             try
             {
-                Character.CharacterOptions1 = value;
-                CharacterChangesDetected = true;
+                if (Character.CharacterOptions1 != value)
+                {
+                    Character.CharacterOptions1 = value;
+                    CharacterChangesDetected = true;
+                }
             }
             finally
             {
@@ -93,8 +96,11 @@ namespace ACE.Server.WorldObjects
             CharacterDatabaseLock.EnterWriteLock();
             try
             {
-                Character.CharacterOptions2 = value;
-                CharacterChangesDetected = true;
+                if (Character.CharacterOptions2 != value)
+                {
+                    Character.CharacterOptions2 = value;
+                    CharacterChangesDetected = true;
+                }
             }
             finally
             {
@@ -107,8 +113,11 @@ namespace ACE.Server.WorldObjects
             CharacterDatabaseLock.EnterWriteLock();
             try
             {
-                Character.GameplayOptions = value;
-                CharacterChangesDetected = true;
+                if (Character.GameplayOptions != value)
+                {
+                    Character.GameplayOptions = value;
+                    CharacterChangesDetected = true;
+                }
             }
             finally
             {

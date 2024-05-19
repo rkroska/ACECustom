@@ -166,8 +166,8 @@ namespace ACE.Server.WorldObjects.Managers
 
             if (messageType == ChatMessageType.AllChannels)
             {
-                Player.Character.TryRemoveSquelch(player.Guid.Full, 0, out _, Player.CharacterDatabaseLock);
-                Player.CharacterChangesDetected = true;
+                if (Player.Character.TryRemoveSquelch(player.Guid.Full, 0, out _, Player.CharacterDatabaseLock))
+                    Player.CharacterChangesDetected = true;
 
                 Player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} has been unsquelched.", ChatMessageType.Broadcast));
             }
@@ -242,8 +242,8 @@ namespace ACE.Server.WorldObjects.Managers
                     return;
                 }
 
-                Player.Character.TryRemoveSquelch(existing.SquelchCharacterId, player.Account.AccountId, out _, Player.CharacterDatabaseLock);
-                Player.CharacterChangesDetected = true;
+                if (Player.Character.TryRemoveSquelch(existing.SquelchCharacterId, player.Account.AccountId, out _, Player.CharacterDatabaseLock))
+                    Player.CharacterChangesDetected = true;
 
                 Player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name}'s account has been unsquelched.", ChatMessageType.Broadcast));
             }
