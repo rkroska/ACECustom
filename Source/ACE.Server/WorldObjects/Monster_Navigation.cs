@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Numerics;
 
 using ACE.Common;
@@ -271,6 +272,12 @@ namespace ACE.Server.WorldObjects
 
             if (MonsterState == State.Awake && IsMoving && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
                 IsMoving = false;
+
+            if (stopwatch.Elapsed.TotalSeconds > 1)
+            {
+                log.Error($"Timing: UpdatePosition longer than 1 second {Name}, {Guid}, {this.CurrentLandblock?.Id}, {this.CurrentLandblock.VariationId}");
+                log.Error(new StackTrace());
+            }
         }
 
         /// <summary>

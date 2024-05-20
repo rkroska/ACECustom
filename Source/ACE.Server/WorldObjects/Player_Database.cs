@@ -87,9 +87,7 @@ namespace ACE.Server.WorldObjects
             SaveBiotaToDatabase(false);
             biotas.Add((Biota, BiotaDatabaseLock));
 
-            var allPossession = GetAllPossessions();
-
-            foreach (var possession in allPossession)
+            foreach (var possession in GetAllPossessions())
             {
                 if (possession.ChangesDetected)
                 {
