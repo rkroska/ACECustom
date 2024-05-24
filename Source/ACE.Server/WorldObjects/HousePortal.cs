@@ -69,14 +69,25 @@ namespace ACE.Server.WorldObjects
                         i = housePortals[1];
                     else
                     { // there are some houses that for some reason, don't have return locations, so we'll fake the entry with a reference to the root house portal location mimicking other database entries.
-                        i = new Database.Models.World.HousePortal { ObjCellId = House.RootHouse.HousePortal.Location.Cell,
-                                                                      OriginX = House.RootHouse.HousePortal.Location.PositionX,
-                                                                      OriginY = House.RootHouse.HousePortal.Location.PositionY,
-                                                                      OriginZ = House.RootHouse.HousePortal.Location.PositionZ,
-                                                                      AnglesX = House.RootHouse.HousePortal.Location.RotationX,
-                                                                      AnglesY = House.RootHouse.HousePortal.Location.RotationY,
-                                                                      AnglesZ = House.RootHouse.HousePortal.Location.RotationZ,
-                                                                      AnglesW = House.RootHouse.HousePortal.Location.RotationW };
+                        try
+                        {
+                            i = new Database.Models.World.HousePortal
+                            {
+                                ObjCellId = House.RootHouse.HousePortal.Location.Cell,
+                                OriginX = House.RootHouse.HousePortal.Location.PositionX,
+                                OriginY = House.RootHouse.HousePortal.Location.PositionY,
+                                OriginZ = House.RootHouse.HousePortal.Location.PositionZ,
+                                AnglesX = House.RootHouse.HousePortal.Location.RotationX,
+                                AnglesY = House.RootHouse.HousePortal.Location.RotationY,
+                                AnglesZ = House.RootHouse.HousePortal.Location.RotationZ,
+                                AnglesW = House.RootHouse.HousePortal.Location.RotationW
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"HousePortal.SetLinkProperties({wo.Name}): failed to create fake HousePortal entry for LinkSpot: {ex.Message}");
+                            return;
+                        }
                     }
                 }
 
