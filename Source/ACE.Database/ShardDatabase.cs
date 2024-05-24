@@ -692,31 +692,13 @@ namespace ACE.Database
                 rwLock.EnterReadLock();
                 try
                 {
-                    Exception firstException = null;
-                    retry:
-
-                    try
-                    {
-                        cachedContext.SaveChanges();
-
-                        if (firstException != null)
-                            log.Debug($"[DATABASE] SaveCharacter-1 0x{character.Id:X8}:{character.Name} retry succeeded after initial exception of: {firstException.GetFullMessage()}");
-
-                        return true;
-                    }
-                    catch (Exception ex)
-                    {
-                        if (firstException == null)
-                        {
-                            firstException = ex;
-                            goto retry;
-                        }
-
-                        // Character name might be in use or some other fault
-                        log.Error($"[DATABASE] SaveCharacter-1 0x{character.Id:X8}:{character.Name} failed first attempt with exception: {firstException.GetFullMessage()}");
-                        log.Error($"[DATABASE] SaveCharacter-1 0x{character.Id:X8}:{character.Name} failed second attempt with exception: {ex.GetFullMessage()}");
-                        return false;
-                    }
+                    cachedContext.SaveChanges();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[DATABASE] SaveCharacter-1 0x{character.Id:X8}:{character.Name} failed with exception: {ex.GetFullMessage()}");
+                    return false;
                 }
                 finally
                 {
@@ -732,32 +714,13 @@ namespace ACE.Database
             try
             {
                 context.Character.Add(character);
-
-                Exception firstException = null;
-                retry:
-
-                try
-                {
-                    context.SaveChanges();
-
-                    if (firstException != null)
-                        log.Debug($"[DATABASE] SaveCharacter-2 0x{character.Id:X8}:{character.Name} retry succeeded after initial exception of: {firstException.GetFullMessage()}");
-
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    if (firstException == null)
-                    {
-                        firstException = ex;
-                        goto retry;
-                    }
-
-                    // Character name might be in use or some other fault
-                    log.Error($"[DATABASE] SaveCharacter-2 0x{character.Id:X8}:{character.Name} failed first attempt with exception: {firstException.GetFullMessage()}");
-                    log.Error($"[DATABASE] SaveCharacter-2 0x{character.Id:X8}:{character.Name} failed second attempt with exception: {ex.GetFullMessage()}");
-                    return false;
-                }
+                context.SaveChanges();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[DATABASE] SaveCharacter-2 0x{character.Id:X8}:{character.Name} failed with exception: {ex.GetFullMessage()}");
+                return false;
             }
             finally
             {
