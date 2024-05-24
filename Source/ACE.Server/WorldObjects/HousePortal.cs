@@ -86,7 +86,6 @@ namespace ACE.Server.WorldObjects
                         catch (Exception ex)
                         {
                             log.Error($"HousePortal.SetLinkProperties({wo.Name}): failed to create fake HousePortal entry for LinkSpot: {ex.Message}");
-                            return;
                         }
                     }
                 }
