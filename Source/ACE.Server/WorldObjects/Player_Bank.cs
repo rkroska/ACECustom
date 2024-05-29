@@ -151,6 +151,83 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        public void DepositMythicalKeys()
+        {
+            if (BankedMythicalKeys == null)
+            {
+                BankedMythicalKeys = 0;
+            }
+            lock (balanceLock)
+            {
+                //int i = 0;
+                var MythkeysList = this.GetInventoryItemsOfWCID(90000104);
+                foreach (var item in MythkeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(item))
+                    {
+                        BankedMythicalKeys += 1;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                var FiveuseKeysList = this.GetInventoryItemsOfWCID(90000108); //5 use Keys
+                foreach (var Fiveuse in FiveuseKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(Fiveuse))
+                    {
+                        BankedMythicalKeys += Fiveuse.Structure ?? 5;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+
+                var durMythKeysList = this.GetInventoryItemsOfWCID(90000109); //Durable Mythical keys
+                foreach (var durmyth in durMythKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(durmyth))
+                    {
+                        BankedMythicalKeys += durmyth.Structure ?? 10;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                var MythKeysList = this.GetInventoryItemsOfWCID(90000107); //2-use Mythical keys
+                foreach (var Myth in MythKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(Myth))
+                    {
+                        BankedMythicalKeys += Myth.Structure ?? 2;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                var MytheventKeysList = this.GetInventoryItemsOfWCID(90000110); //25-use Mythical keys
+                foreach (var Mythevent in MytheventKeysList)
+                {
+                    if (this.TryConsumeFromInventoryWithNetworking(Mythevent))
+                    {
+                        BankedMythicalKeys += Mythevent.Structure ?? 25;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
         public void DepositPeas()
         {
             if (BankedPyreals == null)
@@ -422,6 +499,41 @@ namespace ACE.Server.WorldObjects
                 }
             }
         }
+
+        public void WithdrawMythicalKeys(long Amount)
+        {
+            long remainingAmount = Amount;
+            lock (balanceLock)
+            {
+                if (Amount >= 25)
+                {
+                    for (int x = 25; x < Amount; x += 25)
+                    {
+                        remainingAmount -= 25;
+                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(90000110); //25 Durable legendary key
+                        this.TryCreateInInventoryWithNetworking(key);
+                        BankedMythicalKeys -= 25;
+                    }
+                }
+                else if (Amount >= 10)
+                {
+                    for (int x = 10; x < Amount; x += 10)
+                    {
+                        remainingAmount -= 10;
+                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(90000109); //Durable legendary key
+                        this.TryCreateInInventoryWithNetworking(key);
+                        BankedMythicalKeys -= 10;
+                    }
+                }
+                for (int i = 0; i < remainingAmount; i++)
+                {
+                    WorldObject key = WorldObjectFactory.CreateNewWorldObject(90000104); //Regular legendary key
+                    this.TryCreateInInventoryWithNetworking(key);
+                    BankedMythicalKeys -= 1;
+                }
+            }
+        }
+
         public void WithdrawEnlightenedCoins(long Amount)
         {
             long remainingAmount = Amount;
@@ -522,34 +634,86 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public bool TransferLuminance(long Amount, string CharacterDestination)
+        public bool TransferMythicalKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
-
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
             if (tarplayer == null)
             {
                 return false;
             }
-
-            if (tarplayer is IPlayer player)
+            else
             {
-                if (!player.GetProperty(PropertyInt64.MaximumLuminance).HasValue) //luminance flagged or not
+                if (tarplayer is OfflinePlayer)
                 {
-                    return false;
+                    var offlinePlayer = tarplayer as OfflinePlayer;
+                    if (offlinePlayer.BankedMythicalKeys == null)
+                    {
+                        offlinePlayer.BankedMythicalKeys = Amount;
+                    }
+                    else
+                    {
+                        offlinePlayer.BankedMythicalKeys += Amount;
+                    }
                 }
-
-                player.SetProperty(PropertyInt64.BankedLuminance, (player.GetProperty(PropertyInt64.BankedLuminance) ?? 0) + Amount);
-                this.BankedLuminance -= Amount;
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
-                if (tarplayer is Player onlinePlayer)
+                else
                 {
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                    var onlinePlayer = tarplayer as Player;
+                    if (onlinePlayer.BankedMythicalKeys == null)
+                    {
+                        onlinePlayer.BankedMythicalKeys = Amount;
+                    }
+                    else
+                    {
+                        onlinePlayer.BankedMythicalKeys += Amount;
+                    }
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedMythicalKeys, onlinePlayer.BankedMythicalKeys ?? 0));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Mythical Keys from {this.Name}", ChatMessageType.System));
                 }
+                this.BankedMythicalKeys -= Amount;
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedMythicalKeys, this.BankedMythicalKeys ?? 0));
                 return true;
             }
+        }
 
-            return false;
+        public bool TransferLuminance(long Amount, string CharacterDestination)
+        {
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            if (tarplayer == null)
+            {
+                return false;
+            }
+            else
+            {
+                if (tarplayer is OfflinePlayer)
+                {
+                    var offlinePlayer = tarplayer as OfflinePlayer;
+                    if (offlinePlayer.BankedLuminance == null)
+                    {
+                        return false;
+                    }
+                    if (offlinePlayer.BankedLuminance == 0) 
+                    {
+                        return false;
+                    }
+
+                    this.BankedLuminance -= Amount;
+                    (offlinePlayer).BankedLuminance += Amount;
+                }
+                else
+                {
+                    var onlinePlayer = tarplayer as Player;
+                    if (!onlinePlayer.MaximumLuminance.HasValue)
+                    {
+                        return false;
+                    }
+                    this.BankedLuminance -= Amount;
+                    onlinePlayer.BankedLuminance += Amount;
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLuminance, onlinePlayer.BankedLuminance ?? 0));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
+                }
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                return true;
+            }          
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
@@ -596,6 +760,12 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt64.BankedLuminance);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value); }
         }
+        public long? BankedLuminanceLogin
+        {
+            get => GetProperty(PropertyInt64.BankedLuminanceLogin);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminanceLogin); else SetProperty(PropertyInt64.BankedLuminanceLogin, value.Value); }
+
+        }
 
         public long? BankedPyreals
         {
@@ -612,6 +782,11 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenedCoins); else SetProperty(PropertyInt64.BankedEnlightenedCoins, value.Value); }
+        }
+        public long? BankedMythicalKeys
+        {
+            get => GetProperty(PropertyInt64.BankedMythicalKeys) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedMythicalKeys); else SetProperty(PropertyInt64.BankedMythicalKeys, value.Value); }
         }
     }
 }
