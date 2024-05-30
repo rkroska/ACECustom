@@ -760,12 +760,6 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt64.BankedLuminance);
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminance); else SetProperty(PropertyInt64.BankedLuminance, value.Value); }
         }
-        public long? BankedLuminanceLogin
-        {
-            get => GetProperty(PropertyInt64.BankedLuminanceLogin);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedLuminanceLogin); else SetProperty(PropertyInt64.BankedLuminanceLogin, value.Value); }
-
-        }
 
         public long? BankedPyreals
         {

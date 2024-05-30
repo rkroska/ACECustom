@@ -188,7 +188,6 @@ namespace ACE.Server.Command.Handlers
             if (session.Player.BankedLuminance < 0)
             {
                 session.Player.BankedLuminance = 0;
-                session.Player.BankedLuminanceLogin = 0;
             }
             if (session.Player.BankedLegendaryKeys < 0)
             {
