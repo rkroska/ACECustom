@@ -72,6 +72,13 @@ namespace ACE.Server.Factories.Tables
             ( 8, 0.35f ),
         };
 
+        private static ChanceTable<int> T9_SpellLevelChances = new ChanceTable<int>()
+        {
+            ( 6, 0.15f ),
+            ( 7, 0.50f ),
+            ( 8, 0.35f ),
+        };
+
         private static readonly List<ChanceTable<int>> spellLevelChances = new List<ChanceTable<int>>()
         {
             T1_SpellLevelChances,
@@ -81,7 +88,8 @@ namespace ACE.Server.Factories.Tables
             T5_SpellLevelChances,
             T6_SpellLevelChances,
             T7_SpellLevelChances,
-            T8_SpellLevelChances
+            T8_SpellLevelChances,
+            T9_SpellLevelChances,
         };
 
         /// <summary>

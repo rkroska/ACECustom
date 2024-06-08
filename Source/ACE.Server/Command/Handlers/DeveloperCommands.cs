@@ -2338,9 +2338,9 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length > 1)
                 int.TryParse(parameters[1], out tier);
 
-            if (tier < 1 || tier > 8)
+            if (tier < 1 || tier > 10)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Loot Tier must be a number between 1 and 8", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Loot Tier must be a number between 1 and 10", ChatMessageType.Broadcast));
                 return;
             }
 
@@ -2366,7 +2366,7 @@ namespace ACE.Server.Command.Handlers
         {
             var tier = 1;
             int.TryParse(parameters[0], out tier);
-            tier = Math.Clamp(tier, 1, 8);
+            tier = Math.Clamp(tier, 1, 10);
 
             var numItems = 1;
             if (parameters.Length > 1)

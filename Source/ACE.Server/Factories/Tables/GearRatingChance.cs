@@ -3,6 +3,7 @@ using log4net;
 using ACE.Database.Models.World;
 using ACE.Server.Factories.Entity;
 using ACE.Server.WorldObjects;
+using ACE.Server.Factories.Enum;
 
 namespace ACE.Server.Factories.Tables
 {
@@ -30,6 +31,28 @@ namespace ACE.Server.Factories.Tables
             ( 3, 0.05f ),
         };
 
+        private static ChanceTable<bool> RatingChanceT9 = new ChanceTable<bool>()
+        {
+            ( false, 0.75f ),
+            ( true,  0.25f ),
+        };
+
+        private static ChanceTable<int> ArmorRatingT9 = new ChanceTable<int>()
+        {
+            
+            ( 2, 0.70f ),
+            ( 3, 0.25f ),
+            ( 4, 0.05f ),
+        };
+
+        private static ChanceTable<int> ClothingJewelryRatingT9 = new ChanceTable<int>()
+        {
+            
+            ( 3, 0.70f ),
+            ( 4, 0.25f ),
+            ( 5, 0.05f ),
+        };
+
         public static int Roll(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
             // initial roll for rating chance
@@ -54,6 +77,32 @@ namespace ACE.Server.Factories.Tables
             }
 
             return rating.Roll(profile.LootQualityMod);
+        }
+
+        public static int RollT9(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
+        {
+            // initial roll for rating chance
+            if (!RatingChanceT9.RollT9(profile.LootQualityMod))
+                return 0;
+
+            // roll for the actual rating
+            ChanceTable<int> rating = null;
+
+            if (roll.HasArmorLevel(wo))
+            {
+                rating = ArmorRatingT9;
+            }
+            else if (roll.IsClothing || roll.IsJewelry || roll.IsCloak)
+            {
+                rating = ClothingJewelryRatingT9;
+            }
+            else
+            {
+                log.Error($"GearRatingChance.Roll({wo.Name}, {profile.TreasureType}, {roll.ItemType}): unknown item type");
+                return 0;
+            }
+
+            return rating.RollT9(profile.LootQualityMod);
         }
     }
 }

@@ -1,13 +1,13 @@
 Armor Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
         ArmorLevel = 110
 
 Armor Mutation #1:
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 10
@@ -35,7 +35,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0
 
 Armor Mutation #2:
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 50
@@ -60,7 +60,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0
 
 Armor Mutation #3:
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 80
@@ -85,7 +85,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0
 
 Armor Mutation #4:
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 100
@@ -110,7 +110,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
 
 Armor Mutation #5:
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 110
@@ -135,7 +135,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
 
 Armor Mutation #6:
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 120
@@ -160,7 +160,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
 
 Armor Mutation #7:
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 1, 0
 
     - Chance: 5%:
         ArmorLevel += 130
@@ -190,7 +190,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 1
 
 Armor Mutation #8:
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 10%:
 
@@ -204,7 +204,37 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
 
 Armor Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
         ArmorLevel += Random(-5, 5)
+
+ Armor Mutation #10:
+
+ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 5%:
+        ArmorLevel += 170
+
+    - Chance: 30%:
+        ArmorLevel += 180
+
+    - Chance: 35%:
+        ArmorLevel += 190
+
+    - Chance: 25%:
+        ArmorLevel += 200
+
+    - Chance: 3%:
+        ArmorLevel += 210
+
+    - Chance: 1%:
+        ArmorLevel += 220
+
+    - Chance: 1%:
+        ArmorLevel += 230
+
+    - Chance: 100%:
+        WieldRequirements = Level
+        WieldDifficulty = 500
+        WieldSkillType = 1
