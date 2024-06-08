@@ -60,6 +60,7 @@ namespace ACE.Server.Factories.Tables
             ( TreasureItemType_Orig.Pyreal,         0.34f ),
             ( TreasureItemType_Orig.SpellComponent, 0.33f ),
             ( TreasureItemType_Orig.ManaStone,      0.33f ),
+
         };
 
         /// <summary>

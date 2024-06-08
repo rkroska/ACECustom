@@ -193,6 +193,7 @@ namespace ACE.Server.Factories
                 360 => 6,
                 375 => 7,
                 385 => 8,
+                550 => 9,
                 _ => 0,  // Default/Else
             };
             return index;
@@ -328,6 +329,23 @@ namespace ACE.Server.Factories
                         eleMod = 21;
                     else
                         eleMod = 22;
+                    break;
+                case 550:
+                    chance = ThreadSafeRandom.Next(0, 99);
+                    if (chance < 20)
+                        eleMod = 30;
+                    else if (chance < 30)
+                        eleMod = 31;
+                    else if (chance < 45)
+                        eleMod = 32;
+                    else if (chance < 60)
+                        eleMod = 33;
+                    else if (chance < 75)
+                        eleMod = 34;
+                    else if (chance < 95)
+                        eleMod = 35;
+                    else
+                        eleMod = 36;
                     break;
                 default:
                     eleMod = 0;

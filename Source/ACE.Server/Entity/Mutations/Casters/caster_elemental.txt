@@ -1,6 +1,6 @@
 Caster (Elemental) Mutation #4 (1,590 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 65%:
         ElementalDamageMod = 1.01
@@ -19,7 +19,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0
 
 Caster (Elemental) Mutation #5 (1,491 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 40%:
         ElementalDamageMod = 1.02
@@ -48,7 +48,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0
 
 Caster (Elemental) Mutation #6 (4,055 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 5%:
         ElementalDamageMod = 1.02
@@ -102,7 +102,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
 
 Caster (Elemental) Mutation #7 (979 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 20%:
         ElementalDamageMod = 1.1
@@ -141,7 +141,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0
 
 Caster (Elemental) Mutation #8 (1,585 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 2%:
         ElementalDamageMod = 1.1
@@ -197,4 +197,88 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
         ElementalDamageMod = 1.18
         WieldRequirements = RawSkill
         WieldDifficulty = 385
+
+        Caster (Elemental) Mutation #8 (1,585 samples):
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 13%:
+        ElementalDamageMod = 1.185
+        WieldRequirements = RawSkill
+        WieldDifficulty = 425
+
+    - Chance: 7%:
+        ElementalDamageMod = 1.19
+        WieldRequirements = RawSkill
+        WieldDifficulty = 425
+
+    - Chance: 3%:
+        ElementalDamageMod = 1.195
+        WieldRequirements = RawSkill
+        WieldDifficulty = 425
+
+    - Chance: 2%:
+        ElementalDamageMod = 1.20
+        WieldRequirements = RawSkill
+        WieldDifficulty = 425
+
+    - Chance: 13%:
+        ElementalDamageMod = 1.205
+        WieldRequirements = RawSkill
+        WieldDifficulty = 450
+
+   - Chance: 7%:
+        ElementalDamageMod = 1.21
+        WieldRequirements = RawSkill
+        WieldDifficulty = 450
+
+    - Chance: 3%:
+        ElementalDamageMod = 1.215
+        WieldRequirements = RawSkill
+        WieldDifficulty = 450
+
+    - Chance: 2%:
+        ElementalDamageMod = 1.22
+        WieldRequirements = RawSkill
+        WieldDifficulty = 450
+
+   - Chance: 13%:
+        ElementalDamageMod = 1.225
+        WieldRequirements = RawSkill
+        WieldDifficulty = 475
+
+    - Chance: 7%:
+        ElementalDamageMod = 1.23
+        WieldRequirements = RawSkill
+        WieldDifficulty = 475
+
+    - Chance: 3%:
+        ElementalDamageMod = 1.235
+        WieldRequirements = RawSkill
+        WieldDifficulty = 475
+
+    - Chance: 2%:
+        ElementalDamageMod = 1.24
+        WieldRequirements = RawSkill
+        WieldDifficulty = 475
+
+   - Chance: 13%:
+        ElementalDamageMod = 1.245
+        WieldRequirements = RawSkill
+        WieldDifficulty = 500
+
+    - Chance: 7%:
+        ElementalDamageMod = 1.25
+        WieldRequirements = RawSkill
+        WieldDifficulty = 500
+
+    - Chance: 3%:
+        ElementalDamageMod = 1.255
+        WieldRequirements = RawSkill
+        WieldDifficulty = 500
+
+    - Chance: 2%:
+        ElementalDamageMod = 1.26
+        WieldRequirements = RawSkill
+        WieldDifficulty = 500
 

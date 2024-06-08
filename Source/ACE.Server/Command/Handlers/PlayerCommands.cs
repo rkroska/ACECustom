@@ -20,6 +20,7 @@ using ACE.Database.Models.Auth;
 using System.Xml.Linq;
 using Lifestoned.DataModel.DerethForever;
 using MySqlX.XDevAPI.Common;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -85,16 +86,16 @@ namespace ACE.Server.Command.Handlers
                         if (tplayer != null)
                         {
                             session.Player.FellowshipRecruit(tplayer);
-                        }                        
+                        }
                     }
                     return;
-                    
+
                 }
                 if (parameters[0] == "remove")
                 {
                     var tPGuid = session.Player.CurrentAppraisalTarget;
                     if (tPGuid != null)
-                    {                       
+                    {
                         session.Player.FellowshipDismissPlayer(tPGuid.Value);
                     }
                     return;
@@ -109,7 +110,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
                 if (parameters[0] == "add")
-                {                    
+                {
                     var tplayer = PlayerManager.FindByName(parameters[1]) as Player;
                     if (tplayer != null)
                     {
@@ -118,7 +119,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
                 if (parameters[0] == "remove")
-                {                    
+                {
                     var tplayer = PlayerManager.FindByName(parameters[1]) as Player;
                     if (tplayer != null)
                     {
@@ -171,10 +172,10 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, keys and enlightened coins or specify pyreals or luminance or notes and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, and keys or specify enlightened coins or pyreals or luminance or notes and an amount", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals, Luminance, Legendary Keys and enlightened coins  to a character.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all, /bank b will show balance, etc.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all except enlightened coins, /bank b will show balance, etc.", ChatMessageType.System));
 
                 return;
             }
@@ -191,6 +192,10 @@ namespace ACE.Server.Command.Handlers
             if (session.Player.BankedLegendaryKeys < 0)
             {
                 session.Player.BankedLegendaryKeys = 0;
+            }
+            if (session.Player.BankedMythicalKeys < 0)
+            {
+                session.Player.BankedMythicalKeys = 0;
             }
             if (session.Player.BankedEnlightenedCoins < 0)
             {
@@ -218,7 +223,7 @@ namespace ACE.Server.Command.Handlers
                     //trade notes
                     iType = 3;
                 }
-                if (parameters[1] == "keys" || parameters[1] == "k")
+                if (parameters[1] == "Legendarykeys" || parameters[1] == "k")
                 {
                     iType = 4;
                 }
@@ -229,6 +234,10 @@ namespace ACE.Server.Command.Handlers
                 if (parameters[1] == "enlightenedcoins" || parameters[1] == "e")
                 {
                     iType = 6;
+                }
+                if (parameters[1] == "Mythicalkeys" || parameters[1] == "mk")
+                {
+                    iType = 7;
                 }
             }
 
@@ -262,8 +271,9 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositLegendaryKeys();
                     session.Player.DepositPeas();
                     //session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositMythicalKeys();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, Legendary Keys and Enlightened Coins!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, Legendary Keys, and Mythical Keys!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
@@ -307,6 +317,10 @@ namespace ACE.Server.Command.Handlers
                     case 6:
                         session.Player.DepositEnlightenedCoins();
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all enlightened coins!", ChatMessageType.System));
+                        break;
+                    case 7:
+                        session.Player.DepositMythicalKeys();
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Mythical keys!", ChatMessageType.System));
                         break;
                     default:
                         break;
@@ -386,6 +400,24 @@ namespace ACE.Server.Command.Handlers
                             break;
                         }
                         session.Player.WithdrawEnlightenedCoins(amount);
+                        break;
+                    case 7:
+                        if (session.Player.BankedMythicalKeys != null && amount > session.Player.BankedMythicalKeys)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough Mythical keys banked to make this withdrawl", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount >= session.Player.GetFreeInventorySlots())
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many Mythical keys.", ChatMessageType.System));
+                            break;
+                        }
+                        session.Player.WithdrawMythicalKeys(amount);
                         break;
                     default:
                         break;
@@ -481,6 +513,26 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
                         }
                         break;
+                    case 7:
+                        if (session.Player.BankedMythicalKeys != null && amount >= session.Player.BankedMythicalKeys)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough Mythical keys banked to make this transfer", ChatMessageType.System));
+                            break;
+                        }
+                        if (amount <= 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
+                            break;
+                        }
+                        if (session.Player.TransferMythicalKeys(amount, transferTargetName))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Mythical Keys to {transferTargetName}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Mythical Keys to {transferTargetName}", ChatMessageType.System));
+                        }
+                        break;
                 }
             }
             if (parameters[0] == "balance" || parameters[0] == "b")
@@ -488,7 +540,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
             }
         }
@@ -523,7 +576,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleMultiplier(Session session, params string[] paramters)
         {
-            session.Player.QuestCompletionCount = session.Player.Account.CachedQuestBonusCount;
+            session.Player.QuestCompletionCount = session.Player.Account.GetCharacterQuestCompletions();
             var qb = session.Player.GetQuestCountXPBonus();
             var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
             var en = session.Player.GetEnglightenmentXPBonus();
@@ -578,23 +631,32 @@ namespace ACE.Server.Command.Handlers
             ulong xp = 0; string AttrName = ""; bool success = false;
             switch (attrAbbr)
             {
-                case "str": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out success);
+                case "str":
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out success);
                     break;
-                case "end": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out success);
+                case "end":
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out success);
                     break;
-                case "coo": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out success);
+                case "coo":
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out success);
                     break;
-                case "qui": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out success);
-                    break; 
-                case "foc": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out success);
+                case "qui":
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out success);
                     break;
-                case "sel": xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out success);
+                case "foc":
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out success);
                     break;
-                case "sta": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
+                case "sel":
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out success);
                     break;
-                case "hea": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
+                case "sta":
+                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
                     break;
-                case "man": xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
+                case "hea":
+                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
+                    break;
+                case "man":
+                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
                     break;
             }
             if (string.IsNullOrEmpty(AttrName))
@@ -607,7 +669,7 @@ namespace ACE.Server.Command.Handlers
         }
 
         public static ulong GetOrRaiseAttrib(Network.Session session, int RanksToRaise, PropertyAttribute attrib, out string AttrName, bool doRaise, out bool success)
-        {            
+        {
             if (!session.Player.Attributes.TryGetValue(attrib, out var creatureAttribute))
             {
                 success = false;
@@ -656,7 +718,7 @@ namespace ACE.Server.Command.Handlers
             int amt = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
             if (parameters.Count() == 2)
             {
-                if(!int.TryParse(parameters[1], out amt))
+                if (!int.TryParse(parameters[1], out amt))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] Something isn't parsing your command correctly, check your input and try again!", ChatMessageType.Advancement));
                 }
@@ -665,7 +727,7 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[ATTR] You can only raise your attributes by up to 10 points at a time.", ChatMessageType.Advancement));
                     return;
                 }
-                
+
             }
             switch (parameters[0])
             {
@@ -690,7 +752,7 @@ namespace ACE.Server.Command.Handlers
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Focus, out AttrName, true, out success);
                     break;
                 case "sel":
-                case "self":    
+                case "self":
                     xpCost = GetOrRaiseAttrib(session, amt, PropertyAttribute.Self, out AttrName, true, out success);
                     break;
                 case "sta":
@@ -772,7 +834,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
             }
-            
+
         }
 
         [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments")]
@@ -871,7 +933,7 @@ namespace ACE.Server.Command.Handlers
 
             for (int i = 0; i < list.Count; i++)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"{i+1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
             }
         }
 
@@ -1050,7 +1112,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock World Object Count: {session.Player.CurrentLandblock.WorldObjectCount}", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Landblock Physics Object Count: {session.Player.CurrentLandblock.PhysicsObjectCount}", ChatMessageType.Broadcast));
             }
-            
+
         }
 
         [CommandHandler("knownobjects", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows the current known objects")]
@@ -1331,7 +1393,7 @@ namespace ACE.Server.Command.Handlers
             var w = "";
             var g = "";
 
-            if (cg == "creature" || cg == "npc"|| cg == "item" || cg == "item")
+            if (cg == "creature" || cg == "npc" || cg == "item" || cg == "item")
             {
                 var objectId = new ObjectGuid();
                 if (session.Player.HealthQueryTarget.HasValue || session.Player.ManaQueryTarget.HasValue || session.Player.CurrentAppraisalTarget.HasValue)

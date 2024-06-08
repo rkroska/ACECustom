@@ -182,6 +182,16 @@ namespace ACE.Server.Factories.Tables
             ( TreasureItemType_Orig.Jewelry,          0.30f ),
         };
 
+        // Mythical Chest
+        private static ChanceTable<TreasureItemType_Orig> magicItemProfile25 = new ChanceTable<TreasureItemType_Orig>()
+        {
+            ( TreasureItemType_Orig.Weapon,           0.20f ),
+            ( TreasureItemType_Orig.Armor,            0.30f ),
+            ( TreasureItemType_Orig.Clothing,         0.15f ),
+            ( TreasureItemType_Orig.Jewelry,          0.25f ),
+            ( TreasureItemType_Orig.Cloak,            0.10f ),
+        };
+
         /// <summary>
         /// TreasureDeath.MagicItemTreasureTypeSelectionChances indexes into these profiles
         /// </summary>
@@ -211,6 +221,7 @@ namespace ACE.Server.Factories.Tables
             magicItemProfile22,
             magicItemProfile23,
             magicItemProfile24,
+            magicItemProfile25,
         };
 
         /// <summary>
