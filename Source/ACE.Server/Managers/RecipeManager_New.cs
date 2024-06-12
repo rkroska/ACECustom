@@ -354,6 +354,7 @@ namespace ACE.Server.Managers
                 case WeenieClassName.W_MATERIALACE36626FOOLPROOFREDGARNET:
                 case WeenieClassName.W_MATERIALACE36627FOOLPROOFSUNSTONE:
                 case WeenieClassName.W_MATERIALACE36628FOOLPROOFWHITESAPPHIRE:
+                case WeenieClassName.W_MATERIALACE60000FOOLPROOFONYX:
 
                     recipe = DatabaseManager.World.GetCachedRecipe(SourceToRecipe[(WeenieClassName)source.WeenieClassId]);
                     break;
@@ -594,6 +595,7 @@ namespace ACE.Server.Managers
             { WeenieClassName.W_MATERIALACE36626FOOLPROOFREDGARNET,       8008 },
             { WeenieClassName.W_MATERIALACE36627FOOLPROOFSUNSTONE,        8013 },
             { WeenieClassName.W_MATERIALACE36628FOOLPROOFWHITESAPPHIRE,   8009 },
+            { WeenieClassName.W_MATERIALACE60000FOOLPROOFONYX,         6000015},
 
             { WeenieClassName.W_LEFTHANDTETHER_CLASS,                     6798 },
             { WeenieClassName.W_LEFTHANDTETHERREMOVER_CLASS,              6799 },
