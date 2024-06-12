@@ -2137,25 +2137,33 @@ namespace ACE.Server.Command.Handlers.Processors
         [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
         public static void HandleDiscordImport(Session session, params string[] parameters)
         {
-            string identifier = parameters[0];
-            if (string.IsNullOrEmpty(identifier))
+            try
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Invalid identifier");
-                return;
+                string identifier = parameters[0];
+                if (string.IsNullOrEmpty(identifier))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Invalid identifier");
+                    return;
+                }
+
+                string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, identifier);
+
+                if (string.IsNullOrEmpty(sql))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find SQL attachment for {identifier}");
+                    return;
+                }
+
+                using (var ctx = new WorldDbContext())
+                    ctx.Database.ExecuteSqlRaw(sql);
+
+                CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord.");
+            }
+            catch (Exception e)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Error importing from discord: {e.Message}");
             }
             
-            string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, identifier);
-
-            if (string.IsNullOrEmpty(sql))
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find SQL attachment for {identifier}");
-                return;
-            }
-
-            using (var ctx = new WorldDbContext())
-                ctx.Database.ExecuteSqlRaw(sql);
-
-            CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord.");
         }
 
 
