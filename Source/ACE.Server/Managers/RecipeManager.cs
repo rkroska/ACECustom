@@ -1546,6 +1546,7 @@ namespace ACE.Server.Managers
             WeenieClassName.W_MATERIALACE36634FOOLPROOFPERIDOT,
             WeenieClassName.W_MATERIALACE36635FOOLPROOFYELLOWTOPAZ,
             WeenieClassName.W_MATERIALACE36636FOOLPROOFZIRCON,
+            WeenieClassName.W_MATERIALACE60000FOOLPROOFONYX,
         };
     }
 
