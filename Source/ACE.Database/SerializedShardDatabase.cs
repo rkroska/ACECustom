@@ -9,6 +9,7 @@ using log4net;
 using ACE.Database.Entity;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
+using System.Diagnostics;
 
 namespace ACE.Database
 {
@@ -20,6 +21,8 @@ namespace ACE.Database
         /// This is the base database that SerializedShardDatabase is a wrapper for.
         /// </summary>
         public readonly ShardDatabase BaseDatabase;
+
+        protected readonly Stopwatch stopwatch = new Stopwatch();
 
         private readonly BlockingCollection<Task> _queue = new BlockingCollection<Task>();
 
@@ -37,6 +40,7 @@ namespace ACE.Database
                 Name = "Serialized Shard Database"
             };
             _workerThread.Start();
+            stopwatch.Start();
         }
 
         public void Stop()
@@ -55,8 +59,13 @@ namespace ACE.Database
 
                     try
                     {
+                        stopwatch.Restart();
                         t.Start();
                         t.Wait();
+                        if (stopwatch.Elapsed.Seconds >= 1)
+                        {
+                            log.Error($"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -97,11 +106,11 @@ namespace ACE.Database
         /// </summary>
         public void GetMaxGuidFoundInRange(uint min, uint max, Action<uint> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetMaxGuidFoundInRange(min, max);
                 callback?.Invoke(result);
-            }));
+            }, "GetMaxGuidFoundInRange: " + min));
         }
 
         /// <summary>
@@ -110,40 +119,40 @@ namespace ACE.Database
         /// </summary>
         public void GetSequenceGaps(uint min, uint limitAvailableIDsReturned, Action<List<(uint start, uint end)>> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetSequenceGaps(min, limitAvailableIDsReturned);
                 callback?.Invoke(result);
-            }));
+            }, "GetSequenceGaps: " + min));
         }
 
 
         public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.SaveBiota(biota, rwLock);
                 callback?.Invoke(result);
-            }));
+            }, "SaveBiota: " + biota.Id));
         }
 
 
         public void SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.SaveBiotasInParallel(biotas);
                 callback?.Invoke(result);
-            }));
+            }, "SaveBiotasInParallel"));
         }
 
         public void RemoveBiota(uint id, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.RemoveBiota(id);
                 callback?.Invoke(result);
-            }));
+            }, "RemoveBiota: " + id));
         }
 
         public void RemoveBiota(uint id, Action<bool> callback, Action<TimeSpan, TimeSpan> performanceResults)
@@ -177,20 +186,20 @@ namespace ACE.Database
 
         public void GetPossessedBiotasInParallel(uint id, Action<PossessedBiotas> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var c = BaseDatabase.GetPossessedBiotasInParallel(id);
                 callback?.Invoke(c);
-            }));
+            }, "GetPossessedBiotasInParallel: " + id));
         }
 
         public void GetInventoryInParallel(uint parentId, bool includedNestedItems, Action<List<Biota>> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var c = BaseDatabase.GetInventoryInParallel(parentId, includedNestedItems);
                 callback?.Invoke(c);
-            }));
+            }, "GetInventoryInParallel: " + parentId));
 
         }
 
@@ -206,29 +215,29 @@ namespace ACE.Database
 
         public void GetCharacters(uint accountId, bool includeDeleted, Action<List<Character>> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetCharacters(accountId, includeDeleted);
                 callback?.Invoke(result);
-            }));
+            }, "GetCharacters: " + accountId ));
         }
 
         public void GetLoginCharacters(uint accountId, bool includeDeleted, Action<List<LoginCharacter>> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetCharacterListForLogin(accountId, includeDeleted);
                 callback?.Invoke(result);
-            }));
+            }, "GetCharacterListForLogin: " + accountId));
         }
 
         public void GetCharacter(uint characterId, Action<Character> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetCharacter(characterId);
                 callback?.Invoke(result);
-            }));
+            }, "GetCharacter: " + characterId));
         }
 
         public Character GetCharacterSynchronous(uint characterId)
@@ -238,11 +247,11 @@ namespace ACE.Database
         
         public void SaveCharacter(Character character, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.SaveCharacter(character, rwLock);
                 callback?.Invoke(result);
-            }));
+            }, "SaveCharacter: " + character.Id));
         }
 
         public bool SaveCharacterSynchronous(Character character, ReaderWriterLockSlim rwLock)
@@ -268,11 +277,11 @@ namespace ACE.Database
 
         public void AddCharacterInParallel(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.AddCharacterInParallel(biota, biotaLock, possessions, character, characterLock);
                 callback?.Invoke(result);
-            }));
+            }, "AddCharacterInParallel: " + character.Id));
         }
     }
 }
