@@ -43,24 +43,24 @@ namespace ACE.Server.WorldObjects
 
             // This is a temporary fix for objects that were loaded with this PR when EncumbranceVal was not treated as ephemeral. 2020-03-28
             // This can be removed later.
-            if (Biota.PropertiesInt.ContainsKey(PropertyInt.EncumbranceVal))
-            {
-                var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
+            //if (Biota.PropertiesInt.ContainsKey(PropertyInt.EncumbranceVal))
+            //{
+            //    var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
 
-                if (weenie != null && weenie.PropertiesInt.TryGetValue(PropertyInt.EncumbranceVal, out var value))
-                {
-                    if (biota.PropertiesInt[PropertyInt.EncumbranceVal] != value)
-                    {
-                        biota.PropertiesInt[PropertyInt.EncumbranceVal] = value;
-                        ChangesDetected = true;
-                    }
-                }
-                else
-                {
-                    biota.PropertiesInt.Remove(PropertyInt.EncumbranceVal);
-                    ChangesDetected = true;
-                }
-            }
+            //    if (weenie != null && weenie.PropertiesInt.TryGetValue(PropertyInt.EncumbranceVal, out var value))
+            //    {
+            //        if (biota.PropertiesInt[PropertyInt.EncumbranceVal] != value)
+            //        {
+            //            biota.PropertiesInt[PropertyInt.EncumbranceVal] = value;
+            //            ChangesDetected = true;
+            //        }
+            //    }
+            //    else
+            //    {
+            //        biota.PropertiesInt.Remove(PropertyInt.EncumbranceVal);
+            //        ChangesDetected = true;
+            //    }
+            //}
 
             // This is a temporary fix for objects that were loaded with this PR when Value was not treated as ephemeral. 2020-03-28
             // This can be removed later.
