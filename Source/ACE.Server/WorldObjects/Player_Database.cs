@@ -107,7 +107,7 @@ namespace ACE.Server.WorldObjects
                     // This will trigger a boot on next player tick
                     BiotaSaveFailed = true;
                 }
-            });
+            }, "SavePlayerToDatabase");
         }
 
         public void SaveCharacterToDatabase(bool duringLogout = false)
