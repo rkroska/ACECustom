@@ -64,7 +64,7 @@ namespace ACE.Database
                         stopwatch.Restart();
                         t.Start();
                         t.Wait();
-                        //if (stopwatch.Elapsed.Seconds >= 1)
+                        if (stopwatch.Elapsed.Seconds >= 1)
                         {
                             log.Error($"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_queue.Count}");
                         }
