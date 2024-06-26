@@ -28,6 +28,8 @@ namespace ACE.Database
 
         private Thread _workerThread;
 
+        private int MaxParallel = 5;
+
         internal SerializedShardDatabase(ShardDatabase shardDatabase)
         {
             BaseDatabase = shardDatabase;
@@ -62,9 +64,9 @@ namespace ACE.Database
                         stopwatch.Restart();
                         t.Start();
                         t.Wait();
-                        if (stopwatch.Elapsed.Seconds >= 1)
+                        //if (stopwatch.Elapsed.Seconds >= 1)
                         {
-                            log.Error($"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms");
+                            log.Error($"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_queue.Count}");
                         }
                     }
                     catch (Exception ex)
@@ -137,13 +139,13 @@ namespace ACE.Database
         }
 
 
-        public void SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas, Action<bool> callback)
+        public void SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas, Action<bool> callback, string sourceTrace)
         {
             _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.SaveBiotasInParallel(biotas);
                 callback?.Invoke(result);
-            }, "SaveBiotasInParallel"));
+            }, "SaveBiotasInParallel " + sourceTrace));
         }
 
         public void RemoveBiota(uint id, Action<bool> callback)
