@@ -135,6 +135,8 @@ namespace ACE.Entity.Enum
         StartDynamicBounty            = 126, //Custom
         PromptAddAugment10            = 127, //Custom
         SetEnvironment                = 128, //Custom
+        DecrementInt64Stat            = 129, //Custom
+        IncrementInt64Stat            = 130, //Custom
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

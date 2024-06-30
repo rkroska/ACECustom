@@ -2927,6 +2927,8 @@ namespace ACE.Server.Command.Handlers.Processors
                     mode = CacheType.Weenie;
                 if (parameters[0].Contains("wield", StringComparison.OrdinalIgnoreCase))
                     mode = CacheType.WieldedTreasure;
+                if (parameters[0].Contains("quest", StringComparison.OrdinalIgnoreCase))
+                    mode = CacheType.Quests;
             }
 
             if (mode.HasFlag(CacheType.Landblock))
@@ -2959,6 +2961,12 @@ namespace ACE.Server.Command.Handlers.Processors
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing wielded treasure cache");
                 DatabaseManager.World.ClearWieldedTreasureCache();
             }
+
+            if (mode.HasFlag(CacheType.Quests))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Clearing quest cache");
+                DatabaseManager.World.ClearAllCachedQuests();
+            }
         }
 
         [Flags]
@@ -2970,6 +2978,7 @@ namespace ACE.Server.Command.Handlers.Processors
             Spell           = 0x4,
             Weenie          = 0x8,
             WieldedTreasure = 0x10,
+            Quests          = 0x20,
             All             = 0xFFFF
         };
 

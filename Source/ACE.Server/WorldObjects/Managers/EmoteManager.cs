@@ -301,6 +301,22 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* decrements a PropertyInt64 stat by some amount */
+                case EmoteType.DecrementInt64Stat:
+
+                    // only used by 1 emote in 16PY - check for lower bounds?
+                    if (targetObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var current = targetObject.GetProperty(int64Property) ?? 0;
+                        current -= emote.Amount64 ?? 1;
+                        targetObject.SetProperty(int64Property, current);
+
+                        if (player != null)
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
+                    }
+                    break;
+
                 case EmoteType.DecrementMyQuest:
                 case EmoteType.DecrementQuest:
 
@@ -414,6 +430,21 @@ namespace ACE.Server.WorldObjects.Managers
 
                         if (player != null)
                             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, intProperty, current));
+                    }
+                    break;
+
+                /* increments a PropertyInt64 stat by some amount */
+                case EmoteType.IncrementInt64Stat:
+
+                    if (targetObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var current = targetObject.GetProperty(int64Property) ?? 0;
+                        current += emote.Amount64 ?? 1;
+                        targetObject.SetProperty(int64Property, current);
+
+                        if (player != null)
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, int64Property, current));
                     }
                     break;
 
