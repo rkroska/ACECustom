@@ -28,6 +28,8 @@ namespace ACE.Database
 
         private Thread _workerThread;
 
+        private int MaxParallel = 5;
+
         internal SerializedShardDatabase(ShardDatabase shardDatabase)
         {
             BaseDatabase = shardDatabase;
@@ -55,23 +57,36 @@ namespace ACE.Database
             {
                 try
                 {
-                    Task t = _queue.Take();
+                    if (_queue.Count > 0)
+                    {
 
-                    try
-                    {
-                        stopwatch.Restart();
-                        t.Start();
-                        t.Wait();
-                        if (stopwatch.Elapsed.Seconds >= 1)
+                        Task t = _queue.Take();
+
+                        try
                         {
-                            log.Error($"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms");
+                            stopwatch.Restart();
+                            t.Start();
+                            if (t.AsyncState != null && t.AsyncState.ToString().Contains("GetPossessedBiotasInParallel"))
+                            {
+                                //continue on background thread
+                            }
+                            else
+                            {
+                                t.Wait();
+                            }
+                            
+                            if (stopwatch.Elapsed.Seconds >= 1)
+                            {
+                                log.Error(
+                                    $"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_queue.Count}");
+                            }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] DoWork task failed with exception: {ex}");
-                        // perhaps add failure callbacks?
-                        // swallow for now.  can't block other db work because 1 fails.
+                        catch (Exception ex)
+                        {
+                            log.Error($"[DATABASE] DoWork task failed with exception: {ex}");
+                            // perhaps add failure callbacks?
+                            // swallow for now.  can't block other db work because 1 fails.
+                        }
                     }
                 }
                 catch (ObjectDisposedException)
@@ -82,6 +97,10 @@ namespace ACE.Database
                 catch (InvalidOperationException)
                 {
                     // _queue is empty and CompleteForAdding has been called -- we're done here
+                    break;
+                }
+                catch (NullReferenceException)
+                {
                     break;
                 }
             }
@@ -137,13 +156,13 @@ namespace ACE.Database
         }
 
 
-        public void SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas, Action<bool> callback)
+        public void SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas, Action<bool> callback, string sourceTrace)
         {
             _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.SaveBiotasInParallel(biotas);
                 callback?.Invoke(result);
-            }, "SaveBiotasInParallel"));
+            }, "SaveBiotasInParallel " + sourceTrace));
         }
 
         public void RemoveBiota(uint id, Action<bool> callback)
