@@ -11,6 +11,7 @@ using ACE.Entity.Models;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
+using ACE.DatLoader.Entity;
 
 namespace ACE.Server.Entity
 {
@@ -222,6 +223,19 @@ namespace ACE.Server.Entity
             }
 
             if (GeneralFailure) return 0.0f;
+
+            var isBow = Weapon != null && Weapon.IsBow;
+            long damageBonus = 0;
+            if (isBow && attacker.LuminanceAugmentMissileCount > 0)
+            {
+                damageBonus = attacker.LuminanceAugmentMissileCount.Value;
+            }
+            else if (attacker.LuminanceAugmentMeleeCount > 0)
+            {
+                damageBonus = attacker.LuminanceAugmentMeleeCount.Value;
+            }
+
+            BaseDamage += damageBonus;
 
             // get damage modifiers
             PowerMod = attacker.GetPowerMod(Weapon);

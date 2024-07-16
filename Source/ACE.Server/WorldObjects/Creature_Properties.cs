@@ -384,6 +384,18 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugWarCount); else SetProperty(PropertyInt64.LumAugWarCount, value.Value); }
         }
 
+        public long? LuminanceAugmentMeleeCount
+        {
+            get => GetProperty(PropertyInt64.LumAugMeleeCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMeleeCount); else SetProperty(PropertyInt64.LumAugMeleeCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentMissileCount
+        {
+            get => GetProperty(PropertyInt64.LumAugMissileCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMissileCount); else SetProperty(PropertyInt64.LumAugMissileCount, value.Value); }
+        }
+
         public FactionBits Society => Faction1Bits ?? FactionBits.None;
     }
 }
