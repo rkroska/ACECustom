@@ -1389,7 +1389,8 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             if (emote.ObjCellId.Value > 0)
                             {
-                                var destination = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value);
+                                var variation = emote.Stat;
+                                var destination = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, false, variation);
 
                                 WorldObject.AdjustDungeon(destination);
                                 WorldManager.ThreadSafeTeleport(player, destination);
