@@ -631,7 +631,8 @@ namespace ACE.Server.Managers
                 ("teleport_visibility_fix", new Property<long>(0, "Fixes some possible issues with invisible players and mobs. 0 = default / disabled, 1 = players only, 2 = creatures, 3 = all world objects")),
                 ("enl_50_base_lum_cost", new Property<long>(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level")),
                 ("dynamic_quest_repeat_hours", new Property<long>(20, "the number of hours before a player can do another dynamic quest")),
-                ("dynamic_quest_max_xp", new Property<long>(5000000000, "the maximum base xp rewarded from a dynamic quest"))
+                ("dynamic_quest_max_xp", new Property<long>(5000000000, "the maximum base xp rewarded from a dynamic quest")),
+                ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs"))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
