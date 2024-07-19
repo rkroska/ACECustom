@@ -2929,6 +2929,8 @@ namespace ACE.Server.Command.Handlers.Processors
                     mode = CacheType.WieldedTreasure;
                 if (parameters[0].Contains("quest", StringComparison.OrdinalIgnoreCase))
                     mode = CacheType.Quests;
+                if (parameters[0].Contains("death", StringComparison.OrdinalIgnoreCase))
+                    mode = CacheType.DeathTreasure;
             }
 
             if (mode.HasFlag(CacheType.Landblock))
@@ -2956,6 +2958,12 @@ namespace ACE.Server.Command.Handlers.Processors
                 DatabaseManager.World.ClearWeenieCache();
             }
 
+            if (mode.HasFlag(CacheType.DeathTreasure))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Clearing treasure death cache");
+                DatabaseManager.World.ClearDeathTreasureCache();
+            }
+
             if (mode.HasFlag(CacheType.WieldedTreasure))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing wielded treasure cache");
@@ -2979,6 +2987,7 @@ namespace ACE.Server.Command.Handlers.Processors
             Weenie          = 0x8,
             WieldedTreasure = 0x10,
             Quests          = 0x20,
+            DeathTreasure   = 0x40,
             All             = 0xFFFF
         };
 
