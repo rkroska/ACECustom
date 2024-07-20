@@ -67,6 +67,10 @@ namespace ACE.Entity.Enum.Properties
         BankedEnlightenedCoins = 9020,
         [ServerOnly]
         BankedMythicalKeys     = 9021,
+        [ServerOnly]
+        LumAugMeleeCount       = 9022,
+        [ServerOnly]
+        LumAugMissileCount     = 9023,
     }
 
     public static class PropertyInt64Extensions
