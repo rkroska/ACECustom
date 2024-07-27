@@ -1385,6 +1385,9 @@ namespace ACE.Server.WorldObjects.Managers
             }
             var rating = (int)Math.Round(totalBaseDamage / 8.0f);   // thanks to Xenocide for this formula!
             //Console.WriteLine($"{WorldObject.Name}.NetherDotDamageRating: {rating}");
+            long maxVoidRating = PropertyManager.GetLong("max_nether_dot_damage_rating").Item;
+            if (rating > maxVoidRating)
+                rating = (int)maxVoidRating;
             return rating;
         }
 

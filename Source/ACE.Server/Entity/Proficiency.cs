@@ -40,7 +40,7 @@ namespace ACE.Server.Entity
             if (timeDiff < 0)
             {
                 // can happen if server clock is rewound back in time
-                log.Warn($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - timeDiff: {timeDiff}");
+                //log.Warn($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - timeDiff: {timeDiff}");
                 skill.PropertiesSkill.LastUsedTime = currentTime;       // update to prevent log spam
                 return;
             }
@@ -72,10 +72,10 @@ namespace ACE.Server.Entity
                 var pp = (uint)Math.Round(difficulty * timeScale);
                 var totalXPGranted = (long)Math.Round(pp * 1.1f);   // give additional 10% of proficiency XP to unassigned XP
 
-                if (totalXPGranted > 10000)
-                {
-                    log.Warn($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - totalXPGranted: {totalXPGranted:N0}");
-                }
+                //if (totalXPGranted > 10000)
+                //{
+                    //log.Warn($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - totalXPGranted: {totalXPGranted:N0}");
+                //}
 
                 var maxLevel = Player.GetMaxLevel();
                 var remainingXP = player.GetRemainingXP(274).Value;

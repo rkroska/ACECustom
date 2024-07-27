@@ -84,6 +84,11 @@ namespace ACE.Database
             return weenieCache.Count(r => r.Value != null);
         }
 
+        public void ClearDeathTreasureCache()
+        {
+            cachedDeathTreasure.Clear();
+        }
+
         public void ClearWeenieCache()
         {
             weenieCache.Clear();
