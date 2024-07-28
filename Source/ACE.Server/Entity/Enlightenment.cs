@@ -192,8 +192,14 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 150)
             {
+                var count2 = player.GetNumInventoryItemsOfWCID(90000217); //magic number - EnlightenmentToken
                 var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
                 long reqLum150 = targetEnlightenment * baseLumCost;
+                if (count2 < player.Enlightenment + 1 - 150)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 150} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
+                    return false;
+                }
                 if (!VerifyLuminance(player, reqLum150))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum150:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
