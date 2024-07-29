@@ -179,13 +179,35 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (targetEnlightenment > 50)
+            if (targetEnlightenment > 50 && targetEnlightenment < 150)
             {
                 var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
                 long reqLum = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
+            if (targetEnlightenment > 150)
+            {
+                var count2 = player.GetNumInventoryItemsOfWCID(90000217); //magic number - EnlightenmentToken
+                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
+                long reqLum150 = targetEnlightenment * baseLumCost;
+                if (count2 < player.Enlightenment + 1 - 150)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 150} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
+                    return false;
+                }
+                if (!VerifyLuminance(player, reqLum150))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum150:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    return false;
+                }
+                if (!VerifyParagonCompleted(player))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have completed 50th Paragon to enlighten beyond level 150.", ChatMessageType.Broadcast));
                     return false;
                 }
             }
@@ -202,6 +224,11 @@ namespace ACE.Server.Entity
         public static bool VerifySocietyMaster(Player player)
         {
             return player.SocietyRankCelhan == 1001 || player.SocietyRankEldweb == 1001 || player.SocietyRankRadblo == 1001;
+        }
+
+        public static bool VerifyParagonCompleted(Player player)
+        {
+            return player.QuestManager.GetCurrentSolves("ParagonEnlCompleted") >= 1;
         }
 
         public static bool VerifyLumAugs(Player player)
@@ -264,7 +291,16 @@ namespace ACE.Server.Entity
                 long reqLum = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum);
             }
+
+            else if (player.Enlightenment + 1 > 150)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
+                var targetEnlightenment = player.Enlightenment + 1;
+                long reqLum = targetEnlightenment * baseLumCost;
+                return player.SpendLuminance(reqLum);
+            }
             return true;
+
         }
 
         public static void RemoveSociety(Player player)
