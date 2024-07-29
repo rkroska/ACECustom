@@ -82,12 +82,19 @@ namespace ACE.Server.Entity
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
                     return;
                 }
-                RemoveTokens(player);
+                if (player.Enlightenment + 1 > 5 && player.Enlightenment < 150)
+                {
+                    RemoveTokens(player);
+                }
                 RemoveAbility(player);
                 AddPerks(player);
                 if (player.Enlightenment >= 25)
                 {
                     DequipAllItems(player);
+                }
+                if (player.Enlightenment >= 150)
+                {
+                    RemoveMedallion(player);
                 }
                 player.SaveBiotaToDatabase();
             });
@@ -151,7 +158,7 @@ namespace ACE.Server.Entity
 
             //todo: check for trophies that are enl level appropriate
             //first, 1 enlightenment token per enlightenment past 5.
-            if (targetEnlightenment > 5)
+            if (targetEnlightenment > 5 && targetEnlightenment < 150)
             {
                 var count = player.GetNumInventoryItemsOfWCID(300000); //magic number - EnlightenmentToken
                 if (count < player.Enlightenment + 1 - 5)
@@ -195,9 +202,9 @@ namespace ACE.Server.Entity
                 var count2 = player.GetNumInventoryItemsOfWCID(90000217); //magic number - EnlightenmentToken
                 var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
                 long reqLum150 = targetEnlightenment * baseLumCost;
-                if (count2 < player.Enlightenment + 1 - 150)
+                if (count2 < player.Enlightenment + 1 - 5)
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 150} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
                     return false;
                 }
                 if (!VerifyLuminance(player, reqLum150))
@@ -282,9 +289,14 @@ namespace ACE.Server.Entity
             player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
         }
 
+        public static void RemoveMedallion(Player player)
+        {
+            player.TryConsumeFromInventoryWithNetworking(90000217, player.Enlightenment + 1 - 5);
+        }
+
         public static bool SpendLuminance(Player player)
         {
-            if (player.Enlightenment + 1 > 50)
+            if (player.Enlightenment + 1 > 50 && player.Enlightenment < 150)
             {
                 var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
                 var targetEnlightenment = player.Enlightenment + 1;
@@ -296,8 +308,8 @@ namespace ACE.Server.Entity
             {
                 var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
                 var targetEnlightenment = player.Enlightenment + 1;
-                long reqLum = targetEnlightenment * baseLumCost;
-                return player.SpendLuminance(reqLum);
+                long reqLum150 = targetEnlightenment * baseLumCost;
+                return player.SpendLuminance(reqLum150);
             }
             return true;
 
