@@ -16,6 +16,7 @@ using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects.Entity;
 using System.Runtime.CompilerServices;
 using ACE.Server.Factories.Enum;
+using Google.Protobuf.WellKnownTypes;
 
 namespace ACE.Server.WorldObjects.Managers
 {
@@ -188,6 +189,7 @@ namespace ACE.Server.WorldObjects.Managers
                 {
                     duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
                 }
+
                 var timeRemaining = refreshSpell.Duration + refreshSpell.StartTime;
 
                 if (duration > timeRemaining)
@@ -226,6 +228,10 @@ namespace ACE.Server.WorldObjects.Managers
                 { 
                     entry.Duration *= 1.0f + (player.AugmentationIncreasedSpellDuration * 0.2f) + ((player.LuminanceAugmentSpellDurationCount ?? 0) * 0.05f);
                     //entry.Duration *= (caster as Player).LuminanceAugmentSpellDurationCount ?? 0 * 0.001f;
+                }
+                else if (caster is Player dotPlayer && (dotPlayer.AugmentationIncreasedSpellDuration > 0 || (dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration > 0)
+                {
+                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * PropertyManager.GetDouble("void_dot_duration_aug_effect", 0.1).Item);
                 }
             }
             else
