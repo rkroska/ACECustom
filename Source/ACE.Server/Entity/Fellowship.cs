@@ -516,8 +516,15 @@ namespace ACE.Server.Entity
                 {
 
                     var fellowXpType = player == member ? XpType.Quest : XpType.Fellowship;
-
-                    member.GrantXP(perAmount, fellowXpType, shareType);
+                    if (member.HasVitae && member.IsVPHardcore)
+                    {
+                        member.GrantXP(0, fellowXpType, shareType);
+                    }
+                    else
+                    {
+                        member.GrantXP(perAmount, fellowXpType, shareType);
+                    }
+                    
                 }
             }
 
@@ -537,8 +544,17 @@ namespace ACE.Server.Entity
                     var shareAmount = (ulong)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
 
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                    if (member.HasVitae && member.IsVPHardcore)
+                    {
 
-                    member.GrantXP((long)shareAmount, fellowXpType, shareType);
+                        member.GrantXP(0, fellowXpType, shareType);
+                    }
+                    else
+                    {
+
+                        member.GrantXP((long)shareAmount, fellowXpType, shareType);
+                    }
+
                 }
 
                 return;

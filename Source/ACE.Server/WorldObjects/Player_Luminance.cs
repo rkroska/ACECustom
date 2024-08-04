@@ -31,7 +31,7 @@ namespace ACE.Server.WorldObjects
             long m_amount = 0;
             if (IsVPHardcore && HasVitae)
             {
-                m_amount = (long)Math.Round(amount * modifier);
+                m_amount = (long)Math.Round(amount * modifier * hardCoreMult);
             }
             else if (IsVPHardcore)
             {
