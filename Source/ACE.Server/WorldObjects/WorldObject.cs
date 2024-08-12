@@ -364,44 +364,6 @@ namespace ACE.Server.WorldObjects
             return isVisible;
         }
 
-        public bool IsDirectVisible(Position pos)
-        {
-            if (PhysicsObj == null)
-                return false;
-
-            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);
-
-            SightObj.State |= PhysicsState.Missile;
-
-            var startPos = new Physics.Common.Position(PhysicsObj.Position);
-            var targetPos = new Physics.Common.Position(pos);
-
-            if (PhysicsObj.GetBlockDist(startPos, targetPos) > 1)
-                return false;
-
-            // set to eye level
-            startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight();
-            targetPos.Frame.Origin.Z += SightObj.GetHeight();
-
-            var dir = Vector3.Normalize(targetPos.Frame.Origin - startPos.Frame.Origin);
-            var radsum = PhysicsObj.GetPhysicsRadius() + SightObj.GetPhysicsRadius();
-            startPos.Frame.Origin += dir * radsum;
-
-            SightObj.CurCell = PhysicsObj.CurCell;
-            SightObj.ProjectileTarget = PhysicsObj;
-
-            // perform line of sight test
-            var transition = SightObj.transition(targetPos, startPos, false);
-
-            SightObj.DestroyObject();
-
-            if (transition == null) return false;
-
-            // check if target object was reached
-            var isVisible = transition.CollisionInfo.CollideObject.FirstOrDefault(c => c.ID == PhysicsObj.ID) != null;
-            return isVisible;
-        }
-
         public bool IsMeleeVisible(WorldObject wo)
         {
             if (PhysicsObj == null || wo.PhysicsObj == null)
@@ -684,11 +646,6 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public void EnqueueBroadcastUpdateObject()
-        {
-            EnqueueBroadcast(new GameMessageUpdateObject(this));
-        }
-
         public virtual void OnCollideObject(WorldObject target)
         {
             // thrown weapons
@@ -801,30 +758,6 @@ namespace ACE.Server.WorldObjects
             return adjusted;
         }
 
-        /// <summary>
-        /// Returns a strike message based on damage type and severity
-        /// </summary>
-        public virtual string GetAttackMessage(Creature creature, DamageType damageType, uint amount)
-        {
-            var percent = (float)amount / creature.Health.Base;
-            string verb = null, plural = null;
-            Strings.GetAttackVerb(damageType, percent, ref verb, ref plural);
-            var type = damageType.GetName().ToLower();
-            return $"You {verb} {creature.Name} for {amount} points of {type} damage!";
-        }
-
-        public Dictionary<PropertyInt, int?> GetProperties(WorldObject wo)
-        {
-            var props = new Dictionary<PropertyInt, int?>();
-
-            var fields = Enum.GetValues(typeof(PropertyInt)).Cast<PropertyInt>();
-            foreach (var field in fields)
-            {
-                var prop = wo.GetProperty(field);
-                props.Add(field, prop);
-            }
-            return props;
-        }
 
         /// <summary>
         /// Returns the base damage for a weapon

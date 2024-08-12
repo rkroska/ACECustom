@@ -20,25 +20,13 @@ namespace ACE.Server.Physics.Collision
 
     public class ObjCollisionProfile
     {
-        public uint ID;
-        public Vector3 Velocity;
-        public uint WCID;
-        public ItemType ItemType;
-        public ObjCollisionProfileFlags Flags;
+        //public uint ID;
+        //public Vector3 Velocity;
+        //public uint WCID;
+        //public ItemType ItemType;
+        //public ObjCollisionProfileFlags Flags;
 
         public ObjCollisionProfile() { }
 
-        public ObjCollisionProfile(uint id, Vector3 velocity, bool missile, bool contact, bool myContact)
-        {
-            ID = id;
-            Velocity = velocity;
-
-            if (missile)
-                Flags |= ObjCollisionProfileFlags.Missile;
-            if (contact)
-                Flags |= ObjCollisionProfileFlags.Contact;
-            if (myContact)
-                Flags |= ObjCollisionProfileFlags.MyContact;
-        }
     }
 }

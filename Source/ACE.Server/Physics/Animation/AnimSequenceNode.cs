@@ -64,10 +64,6 @@ namespace ACE.Server.Physics.Animation
             return Anim.PosFrames[frameIdx];
         }
 
-        public AFrame get_pos_frame(float frameIdx)
-        {
-            return get_pos_frame((int)Math.Floor(frameIdx));
-        }
 
         public float get_starting_frame()
         {

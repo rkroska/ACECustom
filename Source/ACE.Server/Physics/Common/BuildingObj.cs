@@ -11,8 +11,8 @@ namespace ACE.Server.Physics.Common
         public List<EnvCell> BuildingCells;
         public List<BldPortal> Portals;
         public List<PartCell> LeafCells;
-        public List<ShadowPart> ShadowList;
-        public uint NumLeaves;
+        //public List<ShadowPart> ShadowList;
+        //public uint NumLeaves;
 
         public uint LandblockID { get => CurCell.ID | 0xFFFF; }
 
@@ -20,7 +20,7 @@ namespace ACE.Server.Physics.Common
         {
             Portals = new List<BldPortal>();
             LeafCells = new List<PartCell>();
-            ShadowList = new List<ShadowPart>();
+            //ShadowList = new List<ShadowPart>();
         }
 
         public void add_to_cell(SortCell newCell)
@@ -112,7 +112,7 @@ namespace ACE.Server.Physics.Common
 
             building.ID = buildingID;
 
-            building.NumLeaves = numLeaves;
+            //building.NumLeaves = numLeaves;
             building.LeafCells = new List<PartCell>();
             for (var i = 0; i < numLeaves; i++)
                 building.LeafCells.Add(null);

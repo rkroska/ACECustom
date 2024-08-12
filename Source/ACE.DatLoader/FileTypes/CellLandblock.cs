@@ -29,13 +29,6 @@ namespace ACE.DatLoader.FileTypes
 
         public List<ushort> Terrain { get; } = new List<ushort>();
 
-        public static ushort TerrainMask_Road = 0x3;
-        public static ushort TerrainMask_Type = 0x7C;
-        public static ushort TerrainMask_Scenery = 0XF800;
-
-        public static byte TerrainShift_Road = 0;
-        public static byte TerrainShift_Type = 2;
-        public static byte TerrainShift_Scenery = 11;
 
         /// <summary>
         /// Z value in-game is double this height.
@@ -67,24 +60,5 @@ namespace ACE.DatLoader.FileTypes
             reader.AlignBoundary();
         }
 
-        public static ushort GetRoad(ushort terrain)
-        {
-            return GetTerrain(terrain, TerrainMask_Road, TerrainShift_Road);
-        }
-
-        public static ushort GetType(ushort terrain)
-        {
-            return GetTerrain(terrain, TerrainMask_Type, TerrainShift_Type);
-        }
-
-        public static ushort GetScenery(ushort terrain)
-        {
-            return GetTerrain(terrain, TerrainMask_Scenery, TerrainShift_Scenery);
-        }
-
-        public static ushort GetTerrain(ushort terrain, ushort mask, byte shift)
-        {
-            return (ushort)((terrain & mask) >> shift);
-        }
     }
 }

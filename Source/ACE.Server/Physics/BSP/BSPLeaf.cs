@@ -59,11 +59,6 @@ namespace ACE.Server.Physics.BSP
             return false;
         }
 
-        public override bool point_intersects_solid(Vector3 point)
-        {
-            return NumPolys != 0;
-        }
-
         public override bool sphere_intersects_poly(Sphere checkPos, Vector3 movement, ref Polygon hitPoly, ref Vector3 contactPoint)
         {
             if (NumPolys == 0 || !Sphere.Intersects(checkPos))

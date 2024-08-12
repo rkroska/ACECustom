@@ -7,11 +7,6 @@ namespace ACE.Server.Physics.Common
     {
         public BuildingObj Building;
 
-        public SortCell(): base()
-        {
-            Init();
-        }
-
         public SortCell(uint cellID): base(cellID)
         {
             Init();

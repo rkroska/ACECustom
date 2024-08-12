@@ -32,11 +32,11 @@ namespace ACE.Server.Physics
         //public DatLoader.FileTypes.Palette ShiftPal;
         //public int CurrentRenderFrameNum;
         public PhysicsObj PhysicsObj;
-        public int PhysObjIndex;
-        public BBox BoundingBox;
-        public bool NoDraw;
+        //public int PhysObjIndex;
+        //public BBox BoundingBox;
+        //public bool NoDraw;
 
-        public static PhysicsObj PlayerObject;
+        //public static PhysicsObj PlayerObject;
 
         public PhysicsPart()
         {
@@ -64,13 +64,6 @@ namespace ACE.Server.Physics
             return GfxObj.GfxBoundBox;
         }
 
-        public uint GetPhysObjID()
-        {
-            if (PhysicsObj == null)
-                return 0;
-
-            return PhysicsObj.ID;
-        }
 
         public void InitEmpty()
         {
@@ -78,19 +71,9 @@ namespace ACE.Server.Physics
             Pos = new Position();
             //DrawPos = new Position();
             //ViewerHeading = new Vector3(0.0f, 0.0f, 1.0f);
-            PhysObjIndex = -1;
+            //PhysObjIndex = -1;
             //DegMode = 1;
             //CYpt = Int16.MaxValue;
-        }
-
-        public bool InitObjDescChanges()
-        {
-            return false;
-        }
-
-        public bool IsPartOfPlayerObj()
-        {
-            return PhysicsObj.Equals(PlayerObject);
         }
 
         public bool LoadGfxObjArray(uint rootObjectID/*, GfxObjDegradeInfo newDegrades*/)
@@ -141,7 +124,7 @@ namespace ACE.Server.Physics
 
             if (translucency == 1.0f)
             {
-                NoDraw = true;
+                //NoDraw = true;
                 return;
             }
 
@@ -155,9 +138,5 @@ namespace ACE.Server.Physics
             }
         }
 
-        public void UpdateViewerDistance()
-        {
-            // client rendering?
-        }
     }
 }

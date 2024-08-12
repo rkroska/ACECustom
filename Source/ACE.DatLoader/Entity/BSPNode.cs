@@ -10,14 +10,14 @@ namespace ACE.DatLoader.Entity
     public class BSPNode : IUnpackable
     {
         // These constants are actually strings in the dat file
-        private const uint PORT = 1347375700; // 0x504F5254
-        private const uint LEAF = 1279607110; // 0x4C454146
-        private const uint BPnn = 1112567406; // 0x42506E6E
-        private const uint BPIn = 1112557934; // 0x4250496E
-        private const uint BpIN = 1114655054; // 0x4270494E
-        private const uint BpnN = 1114664526; // 0x42706E4E
-        private const uint BPIN = 1112557902; // 0x4250494E
-        private const uint BPnN = 1112567374; // 0x42506E4E
+        //private const uint PORT = 1347375700; // 0x504F5254
+        //private const uint LEAF = 1279607110; // 0x4C454146
+        //private const uint BPnn = 1112567406; // 0x42506E6E
+        //private const uint BPIn = 1112557934; // 0x4250496E
+        //private const uint BpIN = 1114655054; // 0x4270494E
+        //private const uint BpnN = 1114664526; // 0x42706E4E
+        //private const uint BPIN = 1112557902; // 0x4250494E
+        //private const uint BPnN = 1112567374; // 0x42506E4E
         
         public string Type { get; protected set; }
 

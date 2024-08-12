@@ -27,7 +27,7 @@ namespace ACE.DatLoader.FileTypes
 
         // Used to store a custom palette. Each Key represents the PaletteIndex and the Value is the color.
         // This is used if you want to apply a non-default Palette to the image prior to extraction
-        public Dictionary<int, uint> CustomPaletteColors = new Dictionary<int, uint>();
+        //public Dictionary<int, uint> CustomPaletteColors = new Dictionary<int, uint>();
 
         public override void Unpack(BinaryReader reader)
         {
@@ -229,17 +229,6 @@ namespace ACE.DatLoader.FileTypes
             return colors;
         }
 
-        private List<int> GetPaletteIndexes()
-        {
-            List<int> colors = new List<int>();
-            using (BinaryReader reader = new BinaryReader(new MemoryStream(SourceData)))
-            {
-                for (uint y = 0; y < Height; y++)
-                    for (uint x = 0; x < Width; x++)
-                        colors.Add(reader.ReadInt16());
-            }
-            return colors;
-        }
 
         /// <summary>
         /// Generates Bitmap data from colorArray.
@@ -278,10 +267,10 @@ namespace ACE.DatLoader.FileTypes
                     Palette pal = DatManager.PortalDat.ReadFromDat<Palette>((uint)DefaultPaletteId);
 
                     // Apply any custom palette colors, if any, to our loaded palette (note, this may be all of them!)
-                    if (CustomPaletteColors.Count > 0)
-                        foreach (KeyValuePair<int, uint> entry in CustomPaletteColors)
-                            if (entry.Key <= pal.Colors.Count)
-                                pal.Colors[entry.Key] = entry.Value;
+                    //if (CustomPaletteColors.Count > 0)
+                    //    foreach (KeyValuePair<int, uint> entry in CustomPaletteColors)
+                    //        if (entry.Key <= pal.Colors.Count)
+                    //            pal.Colors[entry.Key] = entry.Value;
 
                     for (int i = 0; i < Height; i++)
                         for (int j = 0; j < Width; j++)

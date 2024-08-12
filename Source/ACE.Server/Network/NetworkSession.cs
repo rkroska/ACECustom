@@ -65,10 +65,11 @@ namespace ACE.Server.Network
 
         private static readonly TimeSpan cachedPacketPruneInterval = TimeSpan.FromSeconds(5);
         private DateTime lastCachedPacketPruneTime;
+
         /// <summary>
         /// Number of seconds to retain cachedPackets
         /// </summary>
-        private const int cachedPacketRetentionTime = 200;
+        private const int cachedPacketRetentionTime = 180;
 
         /// <summary>
         /// This is referenced by multiple thread:<para />
