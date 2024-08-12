@@ -40,13 +40,6 @@ namespace ACE.Server.Entity
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static float AdjacencyLoadRange { get; } = 96f;
-        public static float OutdoorChatRange { get; } = 75f;
-        public static float IndoorChatRange { get; } = 25f;
-        public static float MaxXY { get; } = 192f;
-        public static float MaxObjectRange { get; } = 192f;
-        public static float MaxObjectGhostRange { get; } = 250f;
-
         public int? VariationId { get; set; }
 
         public LandblockId Id { get; }
@@ -162,10 +155,8 @@ namespace ACE.Server.Entity
         /// collision detection and physics simulation
         /// </summary>
         public LandblockMesh LandblockMesh { get; private set; }
-        public List<ModelMesh> LandObjects { get; private set; }
+
         public List<ModelMesh> Buildings { get; private set; }
-        public List<ModelMesh> WeenieMeshes { get; private set; }
-        public List<ModelMesh> Scenery { get; private set; }
 
 
         public readonly RateMonitor Monitor5m = new RateMonitor();

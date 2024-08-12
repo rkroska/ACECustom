@@ -16,7 +16,7 @@ namespace ACE.Server.Physics.Common
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public uint ID;
-        public double UpdateTime;
+        //public double UpdateTime;
         public readonly WorldObjectInfo WorldObjectInfo;
         public WorldObject WorldObject => WorldObjectInfo?.TryGetWorldObject();
 
@@ -174,28 +174,7 @@ namespace ACE.Server.Physics.Common
             return 0;
         }
 
-        public void InqCollisionProfile(ObjCollisionProfile prof)
-        {
-            if (WorldObject == null)
-                return;
-
-            prof.WCID = ID;
-            prof.ItemType = WorldObject.ItemType;
-
-            if (WorldObject is Creature)
-                prof.Flags |= ObjCollisionProfileFlags.Creature;
-
-            if (WorldObject is Player)
-                prof.Flags |= ObjCollisionProfileFlags.Player;
-
-            if (WorldObject.Attackable)
-                prof.Flags |= ObjCollisionProfileFlags.Attackable;
-
-            if (WorldObject is Door)
-                prof.Flags |= ObjCollisionProfileFlags.Door;
-        }
-
-        public int DoCollision(ObjCollisionProfile prof, ObjectGuid guid, PhysicsObj target)
+        public int DoCollision(ObjectGuid guid, PhysicsObj target)
         {
             var wo = WorldObject;
 

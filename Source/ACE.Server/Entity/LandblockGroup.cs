@@ -115,7 +115,7 @@ namespace ACE.Server.Entity
 
         public bool Remove(Landblock landblock, int? Variation)
         {
-            var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = Variation ?? 0 };
+            //var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = Variation ?? 0 };
             if (landblocks.Remove(landblock))
             {
                 landblock.CurrentLandblockGroup = null;
@@ -207,7 +207,7 @@ namespace ACE.Server.Entity
 
             foreach (var landblock in landblockGroupSplitHelper)
             {
-                var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = landblock.VariationId ?? 0 };
+                //var cacheKey = new VariantCacheId { Landblock = landblock.Id.Landblock, Variant = landblock.VariationId ?? 0 };
                 // Remove the split landblocks. Do this manually, not through the public Remove() function
                 landblocks.Remove(landblock);
 

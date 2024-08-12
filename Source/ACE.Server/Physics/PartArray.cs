@@ -14,7 +14,7 @@ namespace ACE.Server.Physics
     /// </summary>
     public class PartArray
     {
-        public uint State;
+        //public uint State;
         public PhysicsObj Owner;
         public Sequence Sequence;
         public MotionTableManager MotionTableManager;
@@ -22,7 +22,7 @@ namespace ACE.Server.Physics
         public int NumParts;
         public List<PhysicsPart> Parts;
         public Vector3 Scale;
-        public AnimationFrame LastAnimFrame;
+        //public AnimationFrame LastAnimFrame;
 
         public PartArray()
         {
@@ -32,15 +32,15 @@ namespace ACE.Server.Physics
 
         public void AddPartsShadow(ObjCell objCell, int numShadowParts)
         {
-            List<int> clipPlaneList = null;
+            //List<int> clipPlaneList = null;
 
-            if (numShadowParts > 1)
-                clipPlaneList = objCell.ClipPlanes;
+            //if (numShadowParts > 1)
+            //    clipPlaneList = objCell.ClipPlanes;
 
             for (var i = 0; i < NumParts; i++)
             {
                 if (Parts[i] != null)
-                    objCell.AddPart(Parts[i], clipPlaneList, objCell.Pos.Frame, numShadowParts);
+                    objCell.AddPart(Parts[i], null, objCell.Pos.Frame, numShadowParts);
             }
         }
 
@@ -61,11 +61,11 @@ namespace ACE.Server.Physics
             {
                 if (part.GfxObj.PhysicsBSP != null)
                 {
-                    State |= 0x10000;
+                    //State |= 0x10000;
                     return true;
                 }
             }
-            State &= 0xFFFEFFFF;
+            //State &= 0xFFFEFFFF;
             return false;
         }
 
@@ -111,10 +111,6 @@ namespace ACE.Server.Physics
             return setup;
         }
 
-        public void DestroyLights()
-        {
-            // gfx omitted from server
-        }
 
         public void DestroyParts()
         {
@@ -135,16 +131,6 @@ namespace ACE.Server.Physics
             return MotionTableManager.PerformMovement(mvs, Sequence);
         }
 
-        public int DoObjDescChanges(int objDesc)
-        {
-            return -1;
-        }
-
-        public int DoObjDescChangesFromDefault(int objDesc)
-        {
-            return -1;
-        }
-
         public TransitionState FindObjCollisions(Transition transition)
         {
             foreach (var part in Parts)
@@ -156,35 +142,12 @@ namespace ACE.Server.Physics
             return TransitionState.OK;
         }
 
-        public BBox GetBoundingBox()
-        {
-            var bbox = new BBox();
-
-            // accumulate from each part
-            foreach (var part in Parts)
-            {
-                var partBox = part.GetBoundingBox();
-                partBox.ConvertToGlobal(part.Pos);
-                partBox.BuildBoundingBox(bbox);
-            }
-            return bbox;
-        }
 
         public List<CylSphere> GetCylSphere()
         {
             return Setup.CylSphere;
         }
 
-        public uint GetDataID()
-        {
-            if (Setup._dat.Id != 0)
-                return Setup._dat.Id;
-
-            if (NumParts == 1)
-                return Parts[0].GfxObj.ID;
-
-            return 0;
-        }
 
         public float GetHeight()
         {
@@ -206,19 +169,6 @@ namespace ACE.Server.Physics
             return Setup._dat.Radius * Scale.Z;
         }
 
-        public Sphere GetSelectionSphere(Sphere selectionSphere)
-        {
-            if (Setup == null) return null;
-            return new Sphere(selectionSphere.Center * Scale, selectionSphere.Radius * Scale.Z);
-        }
-
-        public uint GetSetupID()
-        {
-            if (Setup != null)
-                return Setup._dat.Id;
-
-            return 0;
-        }
 
         public Sphere GetSortingSphere()
         {
@@ -265,11 +215,6 @@ namespace ACE.Server.Physics
                 MotionTableManager.UseTime();
         }
 
-        public bool HasAnims()
-        {
-            return Sequence.HasAnims();
-        }
-
         public void InitDefaults()
         {
             if (Setup._dat.DefaultAnimation != 0)
@@ -291,23 +236,6 @@ namespace ACE.Server.Physics
         {
             if (MotionTableManager != null)
                 MotionTableManager.initialize_state(Sequence);
-        }
-
-        public void InitLights()
-        {
-            // lighting omitted for server
-        }
-
-        public bool InitObjDescChanges()
-        {
-            var result = false;
-            if (Setup == null) return false;
-            foreach (var part in Parts)
-            {
-                if (part != null && part.InitObjDescChanges())
-                    result = true;
-            }
-            return result;
         }
 
         public void InitPals()
@@ -343,7 +271,7 @@ namespace ACE.Server.Physics
                 for (var i = 0; i < NumParts; i++)
                 {
                     Parts[i].PhysicsObj = Owner;
-                    Parts[i].PhysObjIndex = i;
+                    //Parts[i].PhysObjIndex = i;
                 }
                 
                 if (Setup._dat.DefaultScale != null && Setup._dat.DefaultScale.Count == NumParts)
@@ -355,25 +283,6 @@ namespace ACE.Server.Physics
             }
 
             return false;
-        }
-
-        public bool MorphToExistingObject(PartArray obj)
-        {
-            DestroyParts();
-            Setup = obj.Setup;
-            // add reference?
-            Scale = new Vector3(obj.Scale.X, obj.Scale.Y, obj.Scale.Z);
-            NumParts = obj.NumParts;
-            Parts = new List<PhysicsPart>((int)obj.NumParts);
-            InitPals();
-            for (var i = 0; i < NumParts; i++)
-            {
-                Parts[i] = PhysicsPart.MakePhysicsPart(obj.Parts[i]);
-                Parts[i].PhysicsObj = Owner;
-                Parts[i].PhysObjIndex = i;
-                // removed palette references
-            }
-            return true;
         }
 
         public void RemoveParts(ObjCell cell)
@@ -402,10 +311,6 @@ namespace ACE.Server.Physics
             // gfx omitted from server
         }
 
-        public void SetLightingInternal(float luminosity, float diffuse)
-        {
-            // gfx omitted from server
-        }
 
         public bool SetMeshID(uint meshDID)
         {
@@ -448,28 +353,6 @@ namespace ACE.Server.Physics
             }
         }
 
-        public bool SetPart(List<DatLoader.Entity.AnimationPartChange> changes)
-        {
-            if (Setup == null) return false;
-
-            var success = true;
-            foreach (var change in changes)
-            {
-                var partIdx = change.PartIndex;
-
-                if (partIdx < NumParts)
-                {
-                    if (Parts[partIdx] != null)
-                    {
-                        if (Parts[partIdx].SetPart(change.PartID))
-                            continue;
-                    }
-                }
-                success = false;
-            }
-            return success;
-        }
-
         public void SetDiffusionInternal(float diff)
         {
             // gfx omitted from server
@@ -480,10 +363,6 @@ namespace ACE.Server.Physics
             // gfx omitted from server
         }
 
-        public bool SetPartLightingInternal(int partIdx, float luminosity, float diffuse)
-        {
-            return false;
-        }
 
 
         public void SetPartLuminosityInternal(int partIdx, float luminosity)
@@ -491,10 +370,6 @@ namespace ACE.Server.Physics
             // gfx omitted from server
         }
 
-        public void SetPartTextureVelocityInternal(int partIdx, float du, float dv)
-        {
-            // gfx omitted from server
-        }
 
         public void SetPartTranslucencyInternal(int partIdx, float translucency)
         {
@@ -559,10 +434,6 @@ namespace ACE.Server.Physics
             return true;
         }
 
-        public void SetTextureVelocityInternal(float du, float dv)
-        {
-            // gfx omitted from server
-        }
 
         public void SetTranslucencyInternal(float translucency)
         {
@@ -602,12 +473,6 @@ namespace ACE.Server.Physics
             var numParts = Math.Min(NumParts, curFrame.Frames.Count);
             for (var i = 0; i < numParts; i++)
                 Parts[i].Pos.Frame.Combine(frame, new AFrame(curFrame.Frames[i]), Scale);
-        }
-
- 
-        public void UpdateViewerDistance(float cypt, Vector3 heading)
-        {
-            foreach (var part in Parts) part.UpdateViewerDistance();
         }
 
         public void calc_cross_cells_static(ObjCell cell, CellArray cellArray)

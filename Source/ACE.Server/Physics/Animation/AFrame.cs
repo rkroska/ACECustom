@@ -34,11 +34,6 @@ namespace ACE.Server.Physics.Animation
             Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
         }
 
-        public AFrame(ACE.Entity.Frame frame)
-        {
-            Origin = frame.Origin;
-            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
-        }
 
         public static AFrame Combine(AFrame a, AFrame b)
         {
@@ -67,25 +62,9 @@ namespace ACE.Server.Physics.Animation
             return Vector3.Transform(point, rotate);
         }
 
-        public void InterpolateOrigin(AFrame from, AFrame to, float t)
-        {
-            Origin = Vector3.Lerp(from.Origin, to.Origin, t);
-        }
-
         public void InterpolateRotation(AFrame from, AFrame to, float t)
         {
             Orientation = Quaternion.Lerp(from.Orientation, to.Orientation, t);
-        }
-
-        public bool IsEqual(AFrame frame)
-        {
-            // implement IEquatable
-            return frame.Equals(this);  
-        }
-
-        public bool IsQuaternionEqual(AFrame frame)
-        {
-            return Orientation.Equals(frame.Orientation);
         }
 
         public bool IsValid()
@@ -120,12 +99,6 @@ namespace ACE.Server.Physics.Animation
             GRotate(angles);
         }
 
-        public void Rotate(Quaternion rotation)
-        {
-            Orientation = Quaternion.Multiply(rotation, Orientation);
-            Orientation = Quaternion.Normalize(Orientation);
-        }
-
         public void Subtract(AFrame frame)
         {
             Origin -= Vector3.Transform(frame.Origin, frame.Orientation);
@@ -133,16 +106,6 @@ namespace ACE.Server.Physics.Animation
             Orientation *= Quaternion.Inverse(frame.Orientation);
         }
 
-        public bool close_rotation(AFrame a, AFrame b)
-        {
-            var ao = a.Orientation;
-            var bo = b.Orientation;
-
-            return Math.Abs(ao.X - bo.X) < PhysicsGlobals.EPSILON &&
-                   Math.Abs(ao.Y - bo.Y) < PhysicsGlobals.EPSILON &&
-                   Math.Abs(ao.Z - bo.Z) < PhysicsGlobals.EPSILON &&
-                   Math.Abs(ao.W - bo.W) < PhysicsGlobals.EPSILON;
-        }
 
         public float get_heading()
         {
@@ -171,10 +134,6 @@ namespace ACE.Server.Physics.Animation
             return rotate;
         }
 
-        public void rotate_around_axis_to_vector(int axis, Vector3 dir)
-        {
-            // will implement when actually needed...
-        }
 
         public void set_heading(float degrees)
         {
@@ -188,12 +147,6 @@ namespace ACE.Server.Physics.Animation
 
             var newHeading = get_heading();
             //Console.WriteLine("new_heading: " + newHeading);
-        }
-
-        public void set_position(AFrame frame)
-        {
-            var offset = frame.Origin - Origin;
-            Origin += Vector3.Transform(offset, Orientation);
         }
 
         public void set_rotate(Quaternion orientation)
@@ -213,11 +166,6 @@ namespace ACE.Server.Physics.Animation
 
             var rotate = Quaternion.CreateFromYawPitchRoll(xRot, 0, zRot);
             set_rotate(rotate);
-        }
-
-        public override string ToString()
-        {
-            return $"[{Origin.X} {Origin.Y} {Origin.Z}] {Orientation.W} {Orientation.X} {Orientation.Y} {Orientation.Z}";
         }
 
         public bool Equals(AFrame frame)

@@ -110,28 +110,6 @@ namespace ACE.Server.WorldObjects
             PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
         }
 
-        /// <summary>
-        /// Called when the TurnTo process has completed
-        /// </summary>
-        public void OnTurnComplete()
-        {
-            var dir = Vector3.Normalize(AttackTarget.Location.ToGlobal() - Location.ToGlobal());
-            Location.Rotate(dir);
-
-            IsTurning = false;
-
-            if (!IsRanged)
-                StartMove();
-        }
-
-        /// <summary>
-        /// Starts the process of monster moving towards target
-        /// </summary>
-        public void StartMove()
-        {
-            LastMoveTime = Timers.RunningTime;
-            IsMoving = true;
-        }
 
         /// <summary>
         /// Called when the MoveTo process has completed
@@ -158,13 +136,6 @@ namespace ACE.Server.WorldObjects
             IsMoving = false;
         }
 
-        /// <summary>
-        /// Estimates the time it will take the monster to turn and move towards target
-        /// </summary>
-        public float EstimateTargetTime()
-        {
-            return EstimateTurnTo() + EstimateMoveTo();
-        }
 
         /// <summary>
         /// Estimates the time it will take the monster to turn towards target
@@ -172,14 +143,6 @@ namespace ACE.Server.WorldObjects
         public float EstimateTurnTo()
         {
             return GetRotateDelay(AttackTarget);
-        }
-
-        /// <summary>
-        /// Estimates the time it will take the monster to move towards target
-        /// </summary>
-        public float EstimateMoveTo()
-        {
-            return GetDistanceToTarget() / MoveSpeed;
         }
 
         /// <summary>
@@ -224,15 +187,6 @@ namespace ACE.Server.WorldObjects
             return cylDist;
         }
 
-        /// <summary>
-        /// Returns the destination position the monster is attempting to move to
-        /// to perform a melee attack
-        /// </summary>
-        public Vector3 GetDestination()
-        {
-            var dir = Vector3.Normalize(Location.ToGlobal() - AttackTarget.Location.ToGlobal());
-            return AttackTarget.Location.Pos + dir * (AttackTarget.PhysicsObj.GetRadius() + PhysicsObj.GetRadius());
-        }
 
         /// <summary>
         /// Primary movement handler, determines if target in range
@@ -291,13 +245,13 @@ namespace ACE.Server.WorldObjects
 
             if (Location.LandblockId.Raw != newPos.ObjCellID)
             {
-                var prevBlockCell = Location.LandblockId.Raw;
+                //var prevBlockCell = Location.LandblockId.Raw;
                 var prevBlock = Location.LandblockId.Raw >> 16;
-                var prevCell = Location.LandblockId.Raw & 0xFFFF;
+                //var prevCell = Location.LandblockId.Raw & 0xFFFF;
 
-                var newBlockCell = newPos.ObjCellID;
+                //var newBlockCell = newPos.ObjCellID;
                 var newBlock = newPos.ObjCellID >> 16;
-                var newCell = newPos.ObjCellID & 0xFFFF;
+                //var newCell = newPos.ObjCellID & 0xFFFF;
 
                 Location.LandblockId = new LandblockId(newPos.ObjCellID);
 
@@ -374,17 +328,7 @@ namespace ACE.Server.WorldObjects
             return (float)runRate;
         }
 
-        /// <summary>
-        /// Sets the corpse to the final position
-        /// </summary>
-        public void SetFinalPosition()
-        {
-            if (AttackTarget == null) return;
 
-            var playerDir = AttackTarget.Location.GetCurrentDir();
-            Location.Pos = AttackTarget.Location.Pos + playerDir * (AttackTarget.PhysicsObj.GetRadius() + PhysicsObj.GetRadius());
-            SendUpdatePosition();
-        }
 
         /// <summary>
         /// Returns TRUE if monster is facing towards the target
@@ -435,7 +379,7 @@ namespace ACE.Server.WorldObjects
         }
 
         public static float DefaultHomeRadius = 192.0f;
-        public static float DefaultHomeRadiusSq = DefaultHomeRadius * DefaultHomeRadius;
+        //public static float DefaultHomeRadiusSq = DefaultHomeRadius * DefaultHomeRadius;
 
         private float? homeRadiusSq;
 

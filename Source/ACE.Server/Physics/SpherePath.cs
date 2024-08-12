@@ -240,7 +240,7 @@ namespace ACE.Server.Physics.Animation
 
         public TransitionState PrecipiceSlide(Transition transition)
         {
-            var collisions = transition.CollisionInfo;
+            //var collisions = transition.CollisionInfo;
             Vector3 collisionNormal = Vector3.Zero;
             var found = Walkable.find_crossed_edge(WalkableCheckPos, WalkableUp, ref collisionNormal);
 
