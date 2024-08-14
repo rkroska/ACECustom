@@ -178,7 +178,7 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
 
             var postCastTime = GetPostCastTime(spell);
-            var animTime = preCastTime + postCastTime;
+            //var animTime = preCastTime + postCastTime;
 
             //Console.WriteLine($"{Name}.MagicAttack(): preCastTime({preCastTime}), postCastTime({postCastTime})");
 

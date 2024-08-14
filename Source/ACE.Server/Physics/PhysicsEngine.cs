@@ -35,25 +35,25 @@ namespace ACE.Server.Physics
 
     public class PhysicsEngine
     {
-        public ObjectMaint ObjMaint;
+        //public ObjectMaint ObjMaint;
         public SmartBox SmartBox;
-        public PhysicsObj Player;
-        public List<PhysicsObj> Iter;
+        //public PhysicsObj Player;
+        //public List<PhysicsObj> Iter;
 
         public static PhysicsEngine Instance;
         public bool Server;
 
         //public static List<PhysicsObj> StaticAnimatingObjects; // This is not used
-        public static double LastUpdate;
+        //public static double LastUpdate;
 
         static PhysicsEngine()
         {
             //StaticAnimatingObjects = new List<PhysicsObj>();
         }
 
-        public PhysicsEngine(ObjectMaint objMaint, SmartBox smartBox)
+        public PhysicsEngine(SmartBox smartBox)
         {
-            ObjMaint = objMaint;
+            //ObjMaint = objMaint;
             SmartBox = smartBox;
 
             SmartBox.Physics = this;
@@ -70,63 +70,6 @@ namespace ACE.Server.Physics
             StaticAnimatingObjects.Remove(obj);
         }*/
 
-        public static bool SetObjectMovement(PhysicsObj obj, object buffer, int size, int movementTimestamp, int serverControlTimestamp, bool autonomous)
-        {
-            var checkTime = false;
-            var lastMoveTime = obj.UpdateTimes[1];
-            if (Math.Abs(movementTimestamp - lastMoveTime) > Int16.MaxValue)
-                checkTime = movementTimestamp < lastMoveTime;
-            else
-                checkTime = lastMoveTime < movementTimestamp;
-            if (checkTime)
-                obj.UpdateTimes[1] = movementTimestamp;
-            else
-                return false;
 
-            var lastServerTime = obj.UpdateTimes[5];
-            if (Math.Abs(serverControlTimestamp - lastServerTime) > Int16.MaxValue)
-                checkTime = serverControlTimestamp < lastServerTime;
-            else
-                checkTime = lastServerTime < serverControlTimestamp;
-            if (checkTime)
-                obj.UpdateTimes[5] = serverControlTimestamp;
-            else
-                return false;
-
-            var isPlayer = obj.WeenieObj != null && !obj.WeenieObj.IsPlayer();
-            if (!isPlayer || !autonomous)
-            {
-                obj.LastMoveWasAutonomous = autonomous;
-                if (isPlayer) return true;
-            }
-            return false;
-        }
-
-        public void SetPlayer(PhysicsObj player)
-        {
-            Player = player;
-        }
-
-        public void UseTime()
-        {
-            var deltaTime = PhysicsTimer.CurrentTime - LastUpdate;
-            if (deltaTime < 0.0f)
-            {
-                LastUpdate = PhysicsTimer.CurrentTime;
-                return;
-            }
-            if (deltaTime < PhysicsGlobals.MinQuantum) return;
-
-            foreach (var obj in Iter)
-            {
-                obj.update_object();
-                if (Player.Equals(obj))
-                    SmartBox.PlayerPhysicsUpdatedCallback();
-            }
-            //foreach (var obj in StaticAnimatingObjects)
-            //    obj.animate_static_object();
-
-            LastUpdate = PhysicsTimer.CurrentTime;
-        }
     }
 }

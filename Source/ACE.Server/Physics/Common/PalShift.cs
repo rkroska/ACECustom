@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,8 +10,8 @@ namespace ACE.Server.Physics.Common
     {
         public int CurTex;
         public List<PalShiftTex> LandTex;
-        public List<SubPalette> SubPals;
-        public uint MaxSubs;
+        //public List<SubPalette> SubPals;
+        //public uint MaxSubs;
 
         public uint SelectRot(int x, int y, ref LandDefs.Rotation rot, List<uint> palCode, int size, uint palID, ref int rIndex, bool minimizePal)
         {

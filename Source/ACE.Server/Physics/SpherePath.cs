@@ -20,7 +20,7 @@ namespace ACE.Server.Physics.Animation
         public List<Sphere> GlobalSphere;           // 12
         public Vector3 GlobalLowPoint;              // 16
         public List<Sphere> LocalSpaceSphere;       // 20
-        public Vector3 LocalSpaceLowPoint;          // 24
+        //public Vector3 LocalSpaceLowPoint;          // 24
         public List<Sphere> LocalSpaceCurrCenter;   // 28
         public List<Sphere> GlobalCurrCenter;       // 32
         public Position LocalSpacePos;              // 36
@@ -53,7 +53,7 @@ namespace ACE.Server.Physics.Animation
         public Vector3 WalkableUp;                  // 120
         public Position WalkablePos;                // 124
         public float WalkableScale;                 // 128
-        public bool CellArrayValid;                 // 132
+        //public bool CellArrayValid;                 // 132
         public bool NegStepUp;                      // 133
         public Vector3 NegCollisionNormal;          // 134
         public bool NegPolyHit;                     // 138
@@ -122,7 +122,7 @@ namespace ACE.Server.Physics.Animation
 
         public void AddOffsetToCheckPos(Vector3 offset)
         {
-            CellArrayValid = false;
+            //CellArrayValid = false;
             CheckPos.Frame.Origin += offset;
             CacheGlobalSphere(offset);
         }
@@ -212,7 +212,7 @@ namespace ACE.Server.Physics.Animation
             }
             LocalSpacePos = new Position(pos);
             LocalSpaceZ = pos.GlobalToLocalVec(Vector3.UnitZ);
-            LocalSpaceLowPoint = LocalSpaceSphere[0].Center - (LocalSpaceZ * LocalSpaceSphere[0].Radius);
+            //LocalSpaceLowPoint = LocalSpaceSphere[0].Center - (LocalSpaceZ * LocalSpaceSphere[0].Radius);
         }
 
         public bool CheckWalkables()
@@ -240,7 +240,7 @@ namespace ACE.Server.Physics.Animation
 
         public TransitionState PrecipiceSlide(Transition transition)
         {
-            var collisions = transition.CollisionInfo;
+            //var collisions = transition.CollisionInfo;
             Vector3 collisionNormal = Vector3.Zero;
             var found = Walkable.find_crossed_edge(WalkableCheckPos, WalkableUp, ref collisionNormal);
 
@@ -267,7 +267,7 @@ namespace ACE.Server.Physics.Animation
         {
             CheckPos = new Position(BackupCheckPos);
             CheckCell = BackupCell;
-            CellArrayValid = false;
+            //CellArrayValid = false;
             CacheGlobalSphere(null);
         }
 
@@ -281,7 +281,7 @@ namespace ACE.Server.Physics.Animation
         {
             CheckPos = new Position(position);
             CheckCell = cell;
-            CellArrayValid = false;
+            //CellArrayValid = false;
             CacheGlobalSphere(null);
         }
 

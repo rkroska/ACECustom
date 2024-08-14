@@ -31,12 +31,12 @@ namespace ACE.Server.Physics.Common
     {
         public Position Pos;
         public SetPositionFlags Flags;
-        public Vector3 Line;
+        //public Vector3 Line;
         public float RadX;
         public float RadY;
         public int NumTries;
 
-        public static int Default_NumTries = 20;
+        public static int Default_NumTries = 10;
 
         public SetPosition() { }
 

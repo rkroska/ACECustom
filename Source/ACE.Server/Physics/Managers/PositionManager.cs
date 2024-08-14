@@ -7,7 +7,7 @@ namespace ACE.Server.Physics.Animation
     {
         public InterpolationManager InterpolationManager;
         public StickyManager StickyManager;
-        public ConstraintManager ConstraintManager;
+        //public ConstraintManager ConstraintManager;
         public PhysicsObj PhysicsObj;
 
         public PositionManager() { }
@@ -23,16 +23,8 @@ namespace ACE.Server.Physics.Animation
                 InterpolationManager.adjust_offset(frame, quantum);
             if (StickyManager != null)
                 StickyManager.adjust_offset(frame, quantum);
-            if (ConstraintManager != null)
-                ConstraintManager.adjust_offset(frame, quantum);
-        }
-
-        public void ConstrainTo(Position position, float startDistance, float maxDistance)
-        {
-            if (ConstraintManager == null)
-                ConstraintManager = ConstraintManager.Create(PhysicsObj);
-
-            ConstraintManager.ConstrainTo(position, startDistance, maxDistance);
+            //if (ConstraintManager != null)
+            //    ConstraintManager.adjust_offset(frame, quantum);
         }
 
         public static PositionManager Create(PhysicsObj physicsObj)
@@ -62,10 +54,10 @@ namespace ACE.Server.Physics.Animation
 
         public bool IsFullyConstrained()
         {
-            if (ConstraintManager == null)
+            //if (ConstraintManager == null)
                 return false;
-            else
-                return ConstraintManager.IsFullyConstrained();
+            //else
+            //    return ConstraintManager.IsFullyConstrained();
         }
 
         public bool IsInterpolating()
@@ -86,8 +78,8 @@ namespace ACE.Server.Physics.Animation
                 InterpolationManager.SetPhysicsObject(obj);
             if (StickyManager != null)
                 StickyManager.SetPhysicsObject(obj);
-            if (ConstraintManager != null)
-                ConstraintManager.SetPhysicsObject(obj);
+            //if (ConstraintManager != null)
+            //    ConstraintManager.SetPhysicsObject(obj);
         }
 
         public void StickTo(uint objectID, float radius, float height)
@@ -104,11 +96,6 @@ namespace ACE.Server.Physics.Animation
                 InterpolationManager.StopInterpolating();
         }
 
-        public void Unconstrain()
-        {
-            if (ConstraintManager != null)
-                ConstraintManager.Unconstrain();
-        }
 
         public void Unstick()
         {
@@ -124,8 +111,8 @@ namespace ACE.Server.Physics.Animation
             if (StickyManager != null)
                 StickyManager.UseTime();
 
-            if (ConstraintManager != null)
-                ConstraintManager.UseTime();
+            //if (ConstraintManager != null)
+            //    ConstraintManager.UseTime();
         }
     }
 }

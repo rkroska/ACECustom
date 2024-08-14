@@ -27,41 +27,41 @@ namespace ACE.Server.Physics.Common
         public List<Polygon> Polygons;
         //public List<int> SurfaceStrips;     // SurfaceTriStrips
         //public int BlockSurfaceIndex;
-        public readonly object LandCellMutex = new object();
+        //public readonly object LandCellMutex = new object();
         public ConcurrentDictionary<VariantCacheId, ObjCell> LandCells;
         public List<bool> SWtoNEcut { get; set; }
 
         // client-only
-        public static List<Vector2> LandUVs;
-        public static Dictionary<byte, List<Vector2>> LandUVsRotated;
+        //public static List<Vector2> LandUVs;
+        //public static Dictionary<byte, List<Vector2>> LandUVsRotated;
 
         public static List<ushort> SurfChar;
 
-        public static List<byte> SW_Corner;
-        public static List<byte> SE_Corner;
-        public static List<byte> NE_Corner;
-        public static List<byte> NW_Corner;
+        //public static List<byte> SW_Corner;
+        //public static List<byte> SE_Corner;
+        //public static List<byte> NE_Corner;
+        //public static List<byte> NW_Corner;
 
         //public static LandSurf LandSurf;
 
         static LandblockStruct()
         {
-            LandUVs = new List<Vector2>(4);
-            LandUVs.AddRange(new List<Vector2>()
-            {
-                new Vector2(0, 1),
-                new Vector2(1, 1),
-                new Vector2(1, 0),
-                new Vector2(0, 0)
-            });
+            //LandUVs = new List<Vector2>(4);
+            //LandUVs.AddRange(new List<Vector2>()
+            //{
+            //    new Vector2(0, 1),
+            //    new Vector2(1, 1),
+            //    new Vector2(1, 0),
+            //    new Vector2(0, 0)
+            //});
 
-            LandUVsRotated = new Dictionary<byte, List<Vector2>>
-            {
-                { 0, new List<Vector2>() { LandUVs[0], LandUVs[1], LandUVs[2], LandUVs[3] } },
-                { 1, new List<Vector2>() { LandUVs[3], LandUVs[0], LandUVs[1], LandUVs[2] } },
-                { 2, new List<Vector2>() { LandUVs[2], LandUVs[3], LandUVs[0], LandUVs[1] } },
-                { 3, new List<Vector2>() { LandUVs[1], LandUVs[2], LandUVs[3], LandUVs[0] } }
-            };
+            //LandUVsRotated = new Dictionary<byte, List<Vector2>>
+            //{
+            //    { 0, new List<Vector2>() { LandUVs[0], LandUVs[1], LandUVs[2], LandUVs[3] } },
+            //    { 1, new List<Vector2>() { LandUVs[3], LandUVs[0], LandUVs[1], LandUVs[2] } },
+            //    { 2, new List<Vector2>() { LandUVs[2], LandUVs[3], LandUVs[0], LandUVs[1] } },
+            //    { 3, new List<Vector2>() { LandUVs[1], LandUVs[2], LandUVs[3], LandUVs[0] } }
+            //};
 
             SurfChar = new List<ushort>()
             {
@@ -71,10 +71,10 @@ namespace ACE.Server.Physics.Common
                 0, 0, 0, 0, 0, 0, 0, 0
             };
 
-            SW_Corner = new List<byte>() { 0, 3, 2, 1 };
-            SE_Corner = new List<byte>() { 1, 0, 3, 2 };
-            NE_Corner = new List<byte>() { 2, 1, 0, 3 };
-            NW_Corner = new List<byte>() { 3, 2, 1, 0 };
+            //SW_Corner = new List<byte>() { 0, 3, 2, 1 };
+            //SE_Corner = new List<byte>() { 1, 0, 3, 2 };
+            //NE_Corner = new List<byte>() { 2, 1, 0, 3 };
+            //NW_Corner = new List<byte>() { 3, 2, 1, 0 };
         }
 
         public LandblockStruct(int? variationId)
@@ -290,35 +290,35 @@ namespace ACE.Server.Physics.Common
                     }
                     var vType = VertexArray.Type;
 
-                    if (SWtoNEcut[idx / 2])
-                    {
-                        if (vType == VertexType.CSWVertexType)
-                        {
-                            Polygons[idx].PosUVIndices = new List<byte>();
-                            Polygons[idx].PosUVIndices.Add(SW_Corner[(int)rotation]);
-                            Polygons[idx].PosUVIndices.Add(SE_Corner[(int)rotation]);
-                            Polygons[idx].PosUVIndices.Add(NE_Corner[(int)rotation]);
+                    //if (SWtoNEcut[idx / 2])
+                    //{
+                    //    if (vType == VertexType.CSWVertexType)
+                    //    {
+                    //        Polygons[idx].PosUVIndices = new List<byte>();
+                    //        Polygons[idx].PosUVIndices.Add(SW_Corner[(int)rotation]);
+                    //        Polygons[idx].PosUVIndices.Add(SE_Corner[(int)rotation]);
+                    //        Polygons[idx].PosUVIndices.Add(NE_Corner[(int)rotation]);
 
-                            Polygons[idx + 1].PosUVIndices = new List<byte>();
-                            Polygons[idx + 1].PosUVIndices.Add(SW_Corner[(int)rotation]);
-                            Polygons[idx + 1].PosUVIndices.Add(NE_Corner[(int)rotation]);
-                            Polygons[idx + 1].PosUVIndices.Add(NW_Corner[(int)rotation]);
-                        }
-                    } else
-                    {
-                        if (vType == VertexType.CSWVertexType)
-                        {
-                            Polygons[idx].PosUVIndices = new List<byte>();
-                            Polygons[idx].PosUVIndices.Add(SW_Corner[(int)rotation]);
-                            Polygons[idx].PosUVIndices.Add(SE_Corner[(int)rotation]);
-                            Polygons[idx].PosUVIndices.Add(NW_Corner[(int)rotation]);
+                    //        Polygons[idx + 1].PosUVIndices = new List<byte>();
+                    //        Polygons[idx + 1].PosUVIndices.Add(SW_Corner[(int)rotation]);
+                    //        Polygons[idx + 1].PosUVIndices.Add(NE_Corner[(int)rotation]);
+                    //        Polygons[idx + 1].PosUVIndices.Add(NW_Corner[(int)rotation]);
+                    //    }
+                    //} else
+                    //{
+                    //    if (vType == VertexType.CSWVertexType)
+                    //    {
+                    //        Polygons[idx].PosUVIndices = new List<byte>();
+                    //        Polygons[idx].PosUVIndices.Add(SW_Corner[(int)rotation]);
+                    //        Polygons[idx].PosUVIndices.Add(SE_Corner[(int)rotation]);
+                    //        Polygons[idx].PosUVIndices.Add(NW_Corner[(int)rotation]);
 
-                            Polygons[idx + 1].PosUVIndices = new List<byte>();
-                            Polygons[idx + 1].PosUVIndices.Add(NE_Corner[(int)rotation]);
-                            Polygons[idx + 1].PosUVIndices.Add(NW_Corner[(int)rotation]);
-                            Polygons[idx + 1].PosUVIndices.Add(SE_Corner[(int)rotation]);
-                        }
-                    }
+                    //        Polygons[idx + 1].PosUVIndices = new List<byte>();
+                    //        Polygons[idx + 1].PosUVIndices.Add(NE_Corner[(int)rotation]);
+                    //        Polygons[idx + 1].PosUVIndices.Add(NW_Corner[(int)rotation]);
+                    //        Polygons[idx + 1].PosUVIndices.Add(SE_Corner[(int)rotation]);
+                    //    }
+                    //}
                     Polygons[idx].PosSurface = (short)surfNum;
                     Polygons[idx + 1].PosSurface = (short)surfNum;
                 }

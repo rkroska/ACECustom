@@ -77,44 +77,6 @@ namespace ACE.Server.Physics.BSP
             }
         }
 
-        public void LinkPortals(List<BSPPortal> portals)
-        {
-            var current = this;
-
-            for (var i = portals.Count - 1; i >= 0; --i)
-            {
-                var nextPortal = portals[i];
-                current.PosNode = nextPortal;
-                if (i > 0)
-                    nextPortal.PosNode = portals[i - 1];
-
-                current = nextPortal;
-            }
-        }
-
-        public List<BSPPortal> PurgePortals()
-        {
-            var portals = new List<BSPPortal>();
-
-            if (PosNode != null)
-            {
-                portals.AddRange(PosNode.PurgePortals());
-                PosNode = null;
-            }
-
-            if (NegNode != null)
-            {
-                portals.AddRange(NegNode.PurgePortals());
-                NegNode = null;
-            }
-            return portals;
-        }
-
-        public int TraceRay(Ray ray, float delta, Vector3 collisionNormal)
-        {
-            return -1;  // unused?
-        }
-
         public bool box_intersects_cell_bsp(BBox box)
         {
             var corners = box.GetCorners();
@@ -138,10 +100,6 @@ namespace ACE.Server.Physics.BSP
             return true;
         }
 
-        public void build_draw_portals_only(int portalPolyOrPortalContents)
-        {
-            // for rendering
-        }
 
         public virtual void find_walkable(SpherePath path, Sphere validPos, ref Polygon polygon, Vector3 movement, Vector3 up, ref bool changed)
         {
@@ -208,13 +166,6 @@ namespace ACE.Server.Physics.BSP
             }
         }
 
-        public virtual bool point_intersects_solid(Vector3 point)
-        {
-            if (Vector3.Dot(point, SplittingPlane.Normal) + SplittingPlane.D > 0.0f)
-                return PosNode.point_intersects_solid(point);
-            else
-                return NegNode.point_intersects_solid(point);
-        }
 
         public BoundingType sphere_intersects_cell_bsp(Sphere curSphere)
         {

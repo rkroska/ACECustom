@@ -72,7 +72,7 @@ namespace ACE.Server.Physics.Common
                     //if (landscapeTex != null)
                         //surface.UseTextureMap(landscapeTex, SurfaceHandler.TexMerge);
 
-                    surface.Info = texInfo;
+                    //surface.Info = texInfo;
                 }
             }
             return surface;

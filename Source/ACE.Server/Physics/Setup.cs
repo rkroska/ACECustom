@@ -36,10 +36,10 @@ namespace ACE.Server.Physics
         public int NumSphere;
         public List<Sphere> Sphere;
         public Sphere SortingSphere;
-        public Sphere SelectionSphere;
+        //public Sphere SelectionSphere;
 
         // dynamic
-        public PhysicsObj Owner;
+        //public PhysicsObj Owner;
         public int NumParts;
         public List<uint> PartIDs { get => _dat.Parts; }
         public List<PhysicsPart> Parts;
@@ -76,7 +76,7 @@ namespace ACE.Server.Physics
             //StepDownHeight = setupModel.StepDownHeight;
             //StepUpHeight = setupModel.StepUpHeight;
             SortingSphere = new Sphere(setupModel.SortingSphere);
-            SelectionSphere = new Sphere(setupModel.SelectionSphere);
+            //SelectionSphere = new Sphere(setupModel.SelectionSphere);
             // lights
             //DefaultAnimID = setupModel.DefaultAnimation;
             //DefaultScriptID = setupModel.DefaultScript;
@@ -91,13 +91,6 @@ namespace ACE.Server.Physics
         public static Setup Get(uint setupID)
         {
             return new Setup(DBObj.GetSetup(setupID));
-        }
-
-        public LocationType GetHoldingLocation(int location_idx)
-        {
-            LocationType locationType = null;
-            _dat.HoldingLocations.TryGetValue(location_idx, out locationType);
-            return locationType;
         }
 
         public static Setup MakeParticleSetup(int numParticles)
@@ -132,10 +125,5 @@ namespace ACE.Server.Physics
             return setup;
         }
 
-        public List<int> GetSubDataIDs()
-        {
-            // gets a list of all the data IDs from all parts and tables
-            return null;
-        }
     }
 }

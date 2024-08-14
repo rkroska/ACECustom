@@ -1017,12 +1017,12 @@ namespace ACE.Database
         {
             foreach (var kvp in materialBase)
             {
-                var materialCode = kvp.Key;
+                //var materialCode = kvp.Key;
                 var tiers = kvp.Value;
 
                 foreach (var kvp2 in tiers)
                 {
-                    var tier = kvp2.Key;
+                    //var tier = kvp2.Key;
                     var list = kvp2.Value;
 
                     var totalProbability = list.Sum(i => i.Probability);
@@ -1091,12 +1091,12 @@ namespace ACE.Database
         {
             foreach (var kvp in materialColor)
             {
-                var material = kvp.Key;
+                //var material = kvp.Key;
                 var colorCodes = kvp.Value;
 
                 foreach (var kvp2 in colorCodes)
                 {
-                    var colorCode = kvp2.Key;
+                    //var colorCode = kvp2.Key;
                     var list = kvp2.Value;
 
                     var totalProbability = list.Sum(i => i.Probability);
@@ -1166,12 +1166,12 @@ namespace ACE.Database
         {
             foreach (var kvp in materialGroups)
             {
-                var materialGroup = kvp.Key;
+                //var materialGroup = kvp.Key;
                 var tiers = kvp.Value;
 
                 foreach (var kvp2 in tiers)
                 {
-                    var tier = kvp2.Key;
+                    //var tier = kvp2.Key;
                     var list = kvp2.Value;
 
                     var totalProbability = list.Sum(i => i.Probability);

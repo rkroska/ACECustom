@@ -91,7 +91,7 @@ namespace ACE.DatLoader.FileTypes
             if (attackFrameCache.TryGetValue(attackFrameParams, out var attackFrames))
                 return attackFrames;
 
-            var motionTable = DatManager.PortalDat.ReadFromDat<MotionTable>(motionTableId);
+            //var motionTable = DatManager.PortalDat.ReadFromDat<MotionTable>(motionTableId);
 
             var defaultMotion = GetDefaultMotion(stance);
 
@@ -192,7 +192,7 @@ namespace ACE.DatLoader.FileTypes
 
         public ACE.Entity.Position GetAnimationFinalPositionFromStart(ACE.Entity.Position position, float objScale, MotionCommand currentMotionState, MotionStance style, MotionCommand motion)
         {
-            float length = 0; // init our length var...will return as 0 if not found
+            //float length = 0; // init our length var...will return as 0 if not found
 
             ACE.Entity.Position finalPosition = new ACE.Entity.Position();
 
@@ -245,7 +245,7 @@ namespace ACE.DatLoader.FileTypes
                         else
                             numFrames = (uint)(anim.HighFrame - anim.LowFrame);
 
-                        length += numFrames / Math.Abs(anim.Framerate); // Framerates can be negative, which tells the client to play in reverse
+                        //length += numFrames / Math.Abs(anim.Framerate); // Framerates can be negative, which tells the client to play in reverse
                     }
                 }
             }

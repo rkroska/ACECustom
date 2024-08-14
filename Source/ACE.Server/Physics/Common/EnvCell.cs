@@ -33,7 +33,7 @@ namespace ACE.Server.Physics.Common
         public new ConcurrentDictionary<uint, EnvCell> VisibleCells;
         //public EnvCellFlags Flags;
         public uint EnvironmentID;
-        public DatLoader.FileTypes.EnvCell _envCell;
+        //public DatLoader.FileTypes.EnvCell _envCell;
         public DatLoader.FileTypes.Environment Environment;
 
         public EnvCell() : base()
@@ -43,11 +43,11 @@ namespace ACE.Server.Physics.Common
 
         public EnvCell(DatLoader.FileTypes.EnvCell envCell, int? Variation): base()
         {
-            _envCell = envCell;
+            //_envCell = envCell;
 
             //Flags = envCell.Flags;
             ID = envCell.Id;
-            ShadowObjectIDs = envCell.Surfaces;
+            //ShadowObjectIDs = envCell.Surfaces;
             Pos = new Position(ID, new AFrame(envCell.Position), Variation);
             Portals = envCell.CellPortals;
             //NumPortals = Portals.Count;
@@ -59,7 +59,7 @@ namespace ACE.Server.Physics.Common
                 StaticObjectIDs.Add(staticObj.Id);
                 StaticObjectFrames.Add(new AFrame(staticObj.Frame));
             }
-            NumStabs = StaticObjectIDs.Count;
+            //NumStabs = StaticObjectIDs.Count;
             VisibleCellIDs = envCell.VisibleCells.Distinct().ToList();
             VisibleCellIDs.Sort();
             RestrictionObj = envCell.RestrictionObj;

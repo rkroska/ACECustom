@@ -6,11 +6,11 @@ namespace ACE.Server.Physics.Common
 {
     public class PartCell
     {
-        public List<ShadowPart> ShadowPartList { get; set; }
+        //public List<ShadowPart> ShadowPartList { get; set; }
 
         public PartCell()
         {
-            ShadowPartList = new List<ShadowPart>();
+            //ShadowPartList = new List<ShadowPart>();
         }
 
         public void AddPart(PhysicsPart part, List<int> planes, AFrame frame, int numShadowParts)

@@ -12,11 +12,6 @@ namespace ACE.Server.Physics.Common
         public List<Polygon> Polygons;
         //public bool InView;
 
-        public LandCell(): base()
-        {
-            Init();
-        }
-
         public LandCell(uint cellID): base(cellID)
         {
             Init();

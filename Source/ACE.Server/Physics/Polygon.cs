@@ -18,8 +18,8 @@ namespace ACE.Server.Physics
         public int NumPoints;
         public StipplingType Stippling;
         public CullMode SidesType;
-        public List<byte> PosUVIndices;   // texture coordinates unused by server
-        public List<byte> NegUVIndices;
+        //public List<byte> PosUVIndices;   // texture coordinates unused by server
+        //public List<byte> NegUVIndices;
         public short PosSurface;
         public short NegSurface;
         public Plane Plane;             // not directly in this DAT structure
@@ -261,32 +261,6 @@ namespace ACE.Server.Physics
             return true;
         }
 
-        public bool point_in_polygon(Vector3 point)
-        {
-            var lastVertex = Vertices[NumPoints - 1];
-
-            foreach (var vertex in Vertices)
-            {
-                var cross = Vector3.Cross(Plane.Normal, vertex - lastVertex);
-                var dp = Vector3.Dot(cross, point - lastVertex.Origin);
-
-                if (dp < 0.0f) return false;
-
-                lastVertex = vertex;
-            }
-            return true;
-        }
-
-        public bool polygon_hits_ray(Ray ray, ref float time)
-        {
-            if (SidesType == CullMode.Landblock && Vector3.Dot(Plane.Normal, ray.Dir) > 0.0f)   // dist?
-                return false;
-
-            if (!Plane.compute_time_of_intersection(ray, ref time))
-                return false;
-
-            return point_in_polygon(ray.Point + ray.Dir * time);
-        }
 
         public bool polygon_hits_sphere(Sphere sphere, ref Vector3 contactPoint)
         {

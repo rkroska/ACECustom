@@ -155,7 +155,7 @@ namespace ACE.Server.Entity
             if (damageSource == null)
                 damageSource = attacker;
 
-            var damage = damageEvent.DoCalculateDamage(attacker, defender, damageSource);
+            damageEvent.DoCalculateDamage(attacker, defender, damageSource);
 
             damageEvent.HandleLogging(attacker, defender);
 
