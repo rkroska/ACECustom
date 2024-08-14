@@ -1568,7 +1568,12 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             case "Creature":
                                 long creatureAugs = player.LuminanceAugmentCreatureCount ?? 0;
-                                var curVal = emote.Amount + (creatureAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost = emote.Amount + (creatureAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if creatureAugs >= 2750
+                                var additionalCreatureCostMultiplier = (creatureAugs >= 2750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal = baseCost * additionalCreatureCostMultiplier;
                                 if (player.BankedLuminance < curVal)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1595,7 +1600,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Item":
                                 long itemAugs = player.LuminanceAugmentItemCount ?? 0;
-                                var curVal2 = emote.Amount + (itemAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost2 = emote.Amount + (itemAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if itemAugs >= 1250
+                                var additionalItemCostMultiplier = (itemAugs >= 1250) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal2 = baseCost2 * additionalItemCostMultiplier;
                                 if (player.BankedLuminance < curVal2)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal2:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1622,7 +1632,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Life":
                                 long lifeAugs = player.LuminanceAugmentLifeCount ?? 0;
-                                var curVal3 = emote.Amount + (lifeAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost3 = emote.Amount + (lifeAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if lifeAugs >= 1000
+                                var additionalLifeCostMultiplier = (lifeAugs >= 1000) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal3 = baseCost3 * additionalLifeCostMultiplier;
                                 if (player.BankedLuminance < curVal3)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal3:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1649,7 +1664,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "War":
                                 long warAugs = player.LuminanceAugmentWarCount ?? 0;
-                                var curVal4 = emote.Amount + (warAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost4 = emote.Amount + (warAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if warAugs >= 1750
+                                var additionalWarCostMultiplier = (warAugs >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal4 = baseCost4 * additionalWarCostMultiplier;
                                 if (player.BankedLuminance < curVal4)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal4:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1676,7 +1696,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Void":
                                 long voidAugs = player.LuminanceAugmentVoidCount ?? 0;
-                                var curVal5 = emote.Amount + (voidAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost5 = emote.Amount + (voidAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if voidAugs >= 1750
+                                var additionalVoidCostMultiplier = (voidAugs >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal5 = baseCost5 * additionalVoidCostMultiplier;
                                 if (player.BankedLuminance < curVal5)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal5:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1704,7 +1729,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Duration":
                                 long durAugs = player.LuminanceAugmentSpellDurationCount ?? 0;
-                                var curVal6 = emote.Amount + (durAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost6 = emote.Amount + (durAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if durAugs >= 1000
+                                var additionalDurationCostMultiplier = (durAugs >= 1000) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal6 = baseCost6 * additionalDurationCostMultiplier;
                                 if (player.BankedLuminance < curVal6)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal6:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1786,7 +1816,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Melee":
                                 long meleeAugs = player.LuminanceAugmentMeleeCount ?? 0;
-                                var curVal9 = emote.Amount + (meleeAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost9 = emote.Amount + (meleeAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if meleeAugs >= 1750
+                                var additionalMeleeCostMultiplier = (meleeAugs >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal9 = baseCost9 * additionalMeleeCostMultiplier;
                                 if (player.BankedLuminance < curVal9)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal9:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1813,7 +1848,12 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Missile":
                                 long missileAugs = player.LuminanceAugmentMissileCount ?? 0;
-                                var curVal10 = emote.Amount + (missileAugs * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost10 = emote.Amount + (missileAugs * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost if missileAugs >= 1750
+                                var additionalMissileCostMultiplier = (missileAugs >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal10 = baseCost10 * additionalMissileCostMultiplier;
                                 if (player.BankedLuminance < curVal10)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal10:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1851,11 +1891,21 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             case "Creature10":
                                 long creatureAugs10 = player.LuminanceAugmentCreatureCount ?? 0;
-                                var curVal9 = emote.Amount + (creatureAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (creatureAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (creatureAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (creatureAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (creatureAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (creatureAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost = emote.Amount + (creatureAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (creatureAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost multiplier if creatureAugs10 >= 2750
+                                var additionalCreatureCostMultiplier = (creatureAugs10 >= 2750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal9 = baseCost * additionalCreatureCostMultiplier;
                                 if (player.BankedLuminance < curVal9)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal9:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1882,11 +1932,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Item10":
                                 long itemAugs10 = player.LuminanceAugmentItemCount ?? 0;
-                                var curVal10 = emote.Amount + (itemAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (itemAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (itemAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (itemAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (itemAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (itemAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost10 = emote.Amount + (itemAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (itemAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost multiplier if itemAugs10 >= 1250
+                                var additionalItemCostMultiplier = (itemAugs10 >= 1250) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal10 = baseCost10 * additionalItemCostMultiplier;
                                 if (player.BankedLuminance < curVal10)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal10:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1913,11 +1973,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Life10":
                                 long lifeAugs10 = player.LuminanceAugmentLifeCount ?? 0;
-                                var curVal11 = emote.Amount + (lifeAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (lifeAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (lifeAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (lifeAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (lifeAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (lifeAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost11 = emote.Amount + (lifeAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (lifeAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost multiplier if lifeAugs10 >= 1000
+                                var additionalLifeCostMultiplier = (lifeAugs10 >= 1000) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal11 = baseCost11 * additionalLifeCostMultiplier;
                                 if (player.BankedLuminance < curVal11)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal11:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1944,11 +2014,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "War10":
                                 long warAugs10 = player.LuminanceAugmentWarCount ?? 0;
-                                var curVal12 = emote.Amount + (warAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (warAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (warAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (warAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (warAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (warAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost12 = emote.Amount + (warAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (warAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost multiplier if warAugs10 >= 1750
+                                var additionalWarCostMultiplier = (warAugs10 >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal12 = baseCost12 * additionalWarCostMultiplier;
                                 if (player.BankedLuminance < curVal12)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal12:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -1975,11 +2055,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Void10":
                                 long voidAugs10 = player.LuminanceAugmentVoidCount ?? 0;
-                                var curVal13 = emote.Amount + (voidAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (voidAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (voidAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (voidAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (voidAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (voidAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost13 = emote.Amount + (voidAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (voidAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost multiplier if voidAugs10 >= 1750
+                                var additionalVoidCostMultiplier = (voidAugs10 >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal13 = baseCost13 * additionalVoidCostMultiplier;
                                 if (player.BankedLuminance < curVal13)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal13:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -2007,11 +2097,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Duration10":
                                 long durAugs10 = player.LuminanceAugmentSpellDurationCount ?? 0;
-                                var curVal14 = emote.Amount + (durAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (durAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (durAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (durAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (durAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (durAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost14 = emote.Amount + (durAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (durAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+
+                                // Apply additional cost multiplier if durAugs10 >= 1000
+                                var additionalDurationCostMultiplier = (durAugs10 >= 1000) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal14 = baseCost14 * additionalDurationCostMultiplier;
                                 if (player.BankedLuminance < curVal14)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal14:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -2101,12 +2201,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Melee10":
                                 long meleeAugs10 = player.LuminanceAugmentMeleeCount ?? 0;
-                                var curVal17 = emote.Amount + (meleeAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (meleeAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (meleeAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (meleeAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (meleeAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (meleeAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (meleeAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (meleeAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (meleeAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (meleeAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost17 = emote.Amount + (meleeAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (meleeAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
 
+                                // Apply additional cost multiplier if meleeAugs10 >= 1750
+                                var additionalMeleeCostMultiplier = (meleeAugs10 >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal17 = baseCost17 * additionalMeleeCostMultiplier;
                                 if (player.BankedLuminance < curVal17)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal17:N0} luminance to use.", ChatMessageType.Broadcast));
@@ -2133,12 +2242,21 @@ namespace ACE.Server.WorldObjects.Managers
                                 break;
                             case "Missile10":
                                 long missileAugs10 = player.LuminanceAugmentMissileCount ?? 0;
-                                var curVal18 = emote.Amount + (missileAugs10 * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (missileAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (missileAugs10 + 2) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (missileAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (missileAugs10 + 4) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (missileAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (missileAugs10 + 6) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (missileAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
-                                    + (emote.Amount + (missileAugs10 + 8) * (emote.Amount * (1 + emote.Percent))) + (emote.Amount + (missileAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
+                                // Calculate base cost
+                                var baseCost18 = emote.Amount + (missileAugs10 * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 1) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 2) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 3) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 4) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 5) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 6) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 7) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 8) * (emote.Amount * (1 + emote.Percent)))
+                                    + (emote.Amount + (missileAugs10 + 9) * (emote.Amount * (1 + emote.Percent)));
 
+                                // Apply additional cost multiplier if missileAugs10 >= 1750
+                                var additionalMissileCostMultiplier = (missileAugs10 >= 1750) ? 4 : 1.0; // Adjust multiplier as needed
+                                var curVal18 = baseCost18 * additionalMissileCostMultiplier;
                                 if (player.BankedLuminance < curVal18)
                                 {
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {curVal18:N0} luminance to use.", ChatMessageType.Broadcast));
