@@ -26,7 +26,7 @@ namespace ACE.Server.Physics.Animation
     {
         public PhysicsObj Object;
         public ObjectInfoState State;
-        public float Scale;
+        //public float Scale;
         public float StepUpHeight;
         public float StepDownHeight;
         public bool Ethereal;
@@ -42,7 +42,7 @@ namespace ACE.Server.Physics.Animation
         {
             Object = obj;
             State = state;   // copy constructor?
-            Scale = Object.Scale;
+            //Scale = Object.Scale;
             StepUpHeight = Object.GetStepUpHeight();
             StepDownHeight = Object.GetStepDownHeight();
             Ethereal = Object.State.HasFlag(PhysicsState.Ethereal);
