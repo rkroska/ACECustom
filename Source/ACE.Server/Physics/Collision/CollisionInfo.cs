@@ -20,10 +20,10 @@ namespace ACE.Server.Physics.Collision
         public Vector3 SlidingNormal;
         public bool CollisionNormalValid;
         public Vector3 CollisionNormal;
-        public Vector3 AdjustOffset;
-        public int NumCollideObject;
+        //public Vector3 AdjustOffset;
+        //public int NumCollideObject;
         public List<PhysicsObj> CollideObject;
-        public PhysicsObj LastCollidedObject;
+        //public PhysicsObj LastCollidedObject;
         public bool CollidedWithEnvironment;
         public int FramesStationaryFall;
 
@@ -69,10 +69,6 @@ namespace ACE.Server.Physics.Collision
                 return;
 
             CollideObject.Add(obj);
-            NumCollideObject++;
-
-            if (state != TransitionState.OK)
-                LastCollidedObject = obj;
         }
     }
 }

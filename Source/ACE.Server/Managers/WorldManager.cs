@@ -52,7 +52,7 @@ namespace ACE.Server.Managers
 
         static WorldManager()
         {
-            Physics = new PhysicsEngine(new ObjectMaint(), new SmartBox());
+            Physics = new PhysicsEngine(new SmartBox());
             Physics.Server = true;
         }
 

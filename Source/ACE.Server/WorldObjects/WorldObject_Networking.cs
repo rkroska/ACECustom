@@ -651,14 +651,9 @@ namespace ACE.Server.WorldObjects
             else
                 physicsState &= ~PhysicsState.Inelastic;
             ////HasDefaultAnim              = 0x00040000,
-            if (PhysicsObj != null && PhysicsObj.HasDefaultAnimation && CSetup.DefaultAnimation > 0)
-                physicsState |= PhysicsState.HasDefaultAnim;
-            else
+
                 physicsState &= ~PhysicsState.HasDefaultAnim;
             ////HasDefaultScript            = 0x00080000,
-            if (PhysicsObj != null && PhysicsObj.HasDefaultScript && CSetup.DefaultScript > 0)
-                physicsState |= PhysicsState.HasDefaultScript;
-            else
                 physicsState &= ~PhysicsState.HasDefaultScript;
             ////Cloaked                     = 0x00100000,
             if (Cloaked ?? false)

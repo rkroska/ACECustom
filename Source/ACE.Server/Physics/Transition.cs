@@ -89,7 +89,7 @@ namespace ACE.Server.Physics.Animation
 
         public void BuildCellArray(ref ObjCell newCell)
         {
-            SpherePath.CellArrayValid = true;
+            //SpherePath.CellArrayValid = true;
             SpherePath.HitsInteriorCell = false;
 
             ObjCell.find_cell_list(CellArray, ref newCell, SpherePath, VariationId);
@@ -152,7 +152,7 @@ namespace ACE.Server.Physics.Animation
         {
             var result = TransitionState.OK;
 
-            SpherePath.CellArrayValid = true;
+            //SpherePath.CellArrayValid = true;
             SpherePath.HitsInteriorCell = false;
 
             //ObjCell newCell = null;
@@ -197,7 +197,7 @@ namespace ACE.Server.Physics.Animation
                 SpherePath.AdjustCheckPos(checkPos.ObjCellID);
                 SpherePath.SetCheckPos(checkPos, null);
 
-                SpherePath.CellArrayValid = true;
+                //SpherePath.CellArrayValid = true;
 
                 return result;
             }
@@ -313,7 +313,7 @@ namespace ACE.Server.Physics.Animation
             else
             {
                 SpherePath.Walkable = null;
-                SpherePath.CellArrayValid = true;
+                //SpherePath.CellArrayValid = true;
 
                 transitionState = TransitionState.Collided;
                 return true;
@@ -329,7 +329,7 @@ namespace ACE.Server.Physics.Animation
             CollisionInfo.ContactPlaneValid = false;
             CollisionInfo.ContactPlaneIsWater = false;
 
-            if (validCell) SpherePath.CellArrayValid = true;
+            //if (validCell) SpherePath.CellArrayValid = true;
 
             return transitionState;
         }
@@ -522,7 +522,7 @@ namespace ACE.Server.Physics.Animation
                 if ((ObjectInfo.State & ObjectInfoState.FreeRotate) == 0)  // ?
                     SpherePath.CurPos.Frame.set_rotate(SpherePath.EndPos.Frame.Orientation);
 
-                SpherePath.CellArrayValid = true;
+                //SpherePath.CellArrayValid = true;
                 SpherePath.HitsInteriorCell = false;
 
                 ObjCell empty = null;
@@ -716,7 +716,7 @@ namespace ACE.Server.Physics.Animation
 
             if (!SpherePath.StepUp)
             {
-                SpherePath.CellArrayValid = false;
+                //SpherePath.CellArrayValid = false;
 
                 var offset = new Vector3(0, 0, -stepDownHeight);
 

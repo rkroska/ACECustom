@@ -230,18 +230,6 @@ namespace ACE.Server.Entity
                 member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
         }
 
-        private void SendMessageAndUpdate(string message)
-        {
-            var fellowshipMembers = GetFellowshipMembers();
-
-            foreach (var member in fellowshipMembers.Values)
-            {
-                member.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Fellowship));
-
-                member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
-            }
-        }
-
         private void SendBroadcastAndUpdate(string message)
         {
             var fellowshipMembers = GetFellowshipMembers();

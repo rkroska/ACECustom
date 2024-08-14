@@ -80,7 +80,7 @@ namespace ACE.Server.WorldObjects
             // should this be called each launch?
             AttackHeight = ChooseAttackHeight();
 
-            var dist = GetDistanceToTarget();
+            //var dist = GetDistanceToTarget();
             //Console.WriteLine("RangeAttack: " + dist);
 
             if (DebugMove)
@@ -120,7 +120,7 @@ namespace ACE.Server.WorldObjects
 
                 if (AttackTarget != null)
                 {
-                    var projectile = LaunchProjectile(launcher, ammo, AttackTarget, origin, orientation, velocity);
+                    LaunchProjectile(launcher, ammo, AttackTarget, origin, orientation, velocity);
                     UpdateAmmoAfterLaunch(ammo);
                 }
             });
