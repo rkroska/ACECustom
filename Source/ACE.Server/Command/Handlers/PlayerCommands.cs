@@ -162,6 +162,11 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
+            if (session.Player.IsBusy)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You are to busy to complete this deposit!", ChatMessageType.System));
+                return;
+            }
 
             if (session.Player == null)
                 return;
