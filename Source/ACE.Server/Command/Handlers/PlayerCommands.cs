@@ -164,7 +164,7 @@ namespace ACE.Server.Command.Handlers
         {
             if (session.Player.IsBusy)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"You are to busy to complete this deposit!", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again!", ChatMessageType.System));
                 return;
             }
 
