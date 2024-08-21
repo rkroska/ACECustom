@@ -162,12 +162,6 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
-            if (session.Player.IsBusy)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again!", ChatMessageType.System));
-                return;
-            }
-
             if (session.Player == null)
                 return;
             if (session.Player.IsOlthoiPlayer)
@@ -269,6 +263,13 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "deposit" || parameters[0] == "d")
             {
+
+                if (session.Player.IsBusy)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again!", ChatMessageType.System));
+                    return;
+                }
+
                 //deposit
                 if (parameters.Count() == 1) //only means all
                 {
