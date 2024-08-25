@@ -506,10 +506,20 @@ namespace ACE.Server.WorldObjects
 
             var stanceMod = this is Player player ? player.GetDefenseStanceMod() : 1.0f;
 
+            long lumAugDefense = 0;
+            if (combatType == CombatType.Melee)
+            {
+                lumAugDefense = this.LuminanceAugmentMeleeDefenseCount ?? 0;
+            }
+            else if (combatType == CombatType.Missile)
+            {
+                lumAugDefense = this.LuminanceAugmentMissleDefenseCount ?? 0;
+            }
+
             //if (this is Player)
                 //Console.WriteLine($"StanceMod: {stanceMod}");
 
-            var effectiveDefense = (uint)Math.Round(GetCreatureSkill(defenseSkill).Current * defenseMod * burdenMod * stanceMod + defenseImbues);
+            var effectiveDefense = (uint)Math.Round(GetCreatureSkill(defenseSkill).Current * defenseMod * burdenMod * stanceMod + defenseImbues + lumAugDefense);
 
             if (IsExhausted) effectiveDefense = 0;
 
