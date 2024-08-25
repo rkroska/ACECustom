@@ -2236,7 +2236,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         }
                                         player.LuminanceAugmentMeleeCount = meleeAugs10 + 10;
                                         player.TryConsumeFromInventoryWithNetworking(81000133, 1);
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} damage by 10.", ChatMessageType.Broadcast));
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Melee damage by 10.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal17:N0} luminance to add 10 points to all of your melee damage. Are you sure?");
                                 }
                                 break;
@@ -2277,7 +2277,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         }
                                         player.LuminanceAugmentMissileCount = missileAugs10 + 10;
                                         player.TryConsumeFromInventoryWithNetworking(81000134, 1);
-                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your {emote.Message} damage by 10.", ChatMessageType.Broadcast));
+                                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have succesfully increased your Missile damage by 10.", ChatMessageType.Broadcast));
                                     }), $"You are about to spend {curVal18:N0} luminance to add 10 points to all of your missile damage. Are you sure?");
                                 }
                                 break;
