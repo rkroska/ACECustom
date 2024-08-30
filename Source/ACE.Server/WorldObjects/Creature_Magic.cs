@@ -172,10 +172,11 @@ namespace ACE.Server.WorldObjects
         public uint GetEffectiveMagicDefense()
         {
             var current = GetCreatureSkill(Skill.MagicDefense).Current;
+            var lumAug = this.LuminanceAugmentMagicDefenseCount ?? 0;
             var weaponDefenseMod = GetWeaponMagicDefenseModifier(this);
             var defenseImbues = (uint)GetDefenseImbues(ImbuedEffectType.MagicDefense);
 
-            var effectiveMagicDefense = (uint)Math.Round((current * weaponDefenseMod) + defenseImbues);
+            var effectiveMagicDefense = (uint)Math.Round((current * weaponDefenseMod) + defenseImbues + lumAug);
 
             //Console.WriteLine($"EffectiveMagicDefense: {effectiveMagicDefense}");
 
