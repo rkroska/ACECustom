@@ -71,6 +71,12 @@ namespace ACE.Entity.Enum.Properties
         LumAugMeleeCount       = 9022,
         [ServerOnly]
         LumAugMissileCount     = 9023,
+        [ServerOnly]
+        LumAugMeleeDefenseCount = 9024,
+        [ServerOnly]
+        LumAugMissileDefenseCount = 9025,
+        [ServerOnly]
+        LumAugMagicDefenseCount = 9026,
     }
 
     public static class PropertyInt64Extensions

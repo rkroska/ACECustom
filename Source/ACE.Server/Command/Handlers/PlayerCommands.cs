@@ -162,6 +162,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
+
             if (session.Player.IsBusy)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again.", ChatMessageType.System));
@@ -269,6 +270,13 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "deposit" || parameters[0] == "d")
             {
+
+                if (session.Player.IsBusy)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again!", ChatMessageType.System));
+                    return;
+                }
+
                 //deposit
                 if (parameters.Count() == 1) //only means all
                 {
@@ -856,7 +864,7 @@ namespace ACE.Server.Command.Handlers
             }
             using (var context = new AuthDbContext())
             {
-                if (parameters[0] == "qb")
+                if (parameters[0]?.ToLower() == "qb")
                 {
                     list = cache.GetTopQB(context);
                     if (list.Count > 0)
@@ -865,7 +873,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "level")
+                if (parameters[0]?.ToLower() == "level")
                 {
                     list = cache.GetTopLevel(context);
                     if (list.Count > 0)
@@ -874,7 +882,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "enl")
+                if (parameters[0]?.ToLower() == "enl")
                 {
                     list = cache.GetTopEnl(context);
                     if (list.Count > 0)
@@ -883,7 +891,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "title")
+                if (parameters[0]?.ToLower() == "title")
                 {
                     list = cache.GetTopTitle(context);
                     if (list.Count > 0)
@@ -892,7 +900,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters.Length > 0 && parameters[0] == "augs")
+                if (parameters.Length > 0 && parameters[0]?.ToLower() == "augs")
                 {
                     list = cache.GetTopAugs(context);
                     if (list.Count > 0)
@@ -901,7 +909,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "deaths")
+                if (parameters[0]?.ToLower() == "deaths")
                 {
                     list = cache.GetTopDeaths(context);
                     if (list.Count > 0)
@@ -910,7 +918,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "bank")
+                if (parameters[0]?.ToLower() == "bank")
                 {
                     list = cache.GetTopBank(context);
                     if (list.Count > 0)
@@ -919,7 +927,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "lum")
+                if (parameters[0]?.ToLower() == "lum")
                 {
                     list = cache.GetTopLum(context);
                     if (list.Count > 0)
@@ -928,13 +936,18 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (parameters[0] == "attr")
+                if (parameters[0]?.ToLower() == "attr")
                 {
                     list = cache.GetTopAttr(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
                     }
+                }
+
+                if (parameters[0]?.ToLower() == "gymnos")
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
                 }
             }
 

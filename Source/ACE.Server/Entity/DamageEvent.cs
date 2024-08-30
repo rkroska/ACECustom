@@ -270,6 +270,21 @@ namespace ACE.Server.Entity
             if (playerDefender != null && (playerDefender.IsLoggingOut || playerDefender.PKLogout))
                 CriticalChance = 1.0f;
 
+            // Define a configurable parameter for critical damage adjustment
+            float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier").Item;
+
+            float luminanceAugmentBonus = 0;
+            if (attacker.LuminanceAugmentMissileCount > 0)
+            {
+                luminanceAugmentBonus += attacker.LuminanceAugmentMissileCount.Value * luminanceAugmentCritDamageMultiplier;
+            }
+            if (attacker.LuminanceAugmentMeleeCount > 0)
+            {
+                luminanceAugmentBonus += attacker.LuminanceAugmentMeleeCount.Value * luminanceAugmentCritDamageMultiplier;
+            }
+
+            // Inside the critical hit check
+
             if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
             {
                 if (playerDefender != null && playerDefender.AugmentationCriticalDefense > 0)
@@ -285,13 +300,12 @@ namespace ACE.Server.Entity
                 {
                     IsCritical = true;
 
-                    // verify: CriticalMultiplier only applied to the additional crit damage,
-                    // whereas CD/CDR applied to the total damage (base damage + additional crit damage)
-                    CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender);
+                    // Update the CriticalDamageMod to include luminance augment bonus
+                    CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender) + luminanceAugmentBonus;
 
                     CriticalDamageRatingMod = Creature.GetPositiveRatingMod(attacker.GetCritDamageRating());
 
-                    // recklessness excluded from crits
+                    // Recklessness excluded from crits
                     RecklessnessMod = 1.0f;
                     DamageRatingMod = Creature.AdditiveCombine(DamageRatingBaseMod, CriticalDamageRatingMod, SneakAttackMod, HeritageMod);
 
