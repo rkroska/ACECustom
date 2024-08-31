@@ -2605,7 +2605,7 @@ namespace ACE.Server.Command.Handlers
 
             session.Player.TryCreateInInventoryWithNetworking(obj);
 
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) in their inventory.");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) x{obj.StackSize} in their inventory.");
         }
 
         [CommandHandler("crack", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Cracks the most recently appraised locked target.", "[. open it too]")]
