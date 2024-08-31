@@ -162,13 +162,6 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
-
-            if (session.Player.IsBusy)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot deposit while teleporting or busy. Complete your movement and try again.", ChatMessageType.System));
-                return;
-            }
-
             if (session.Player == null)
                 return;
             if (session.Player.IsOlthoiPlayer)
@@ -486,6 +479,11 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferLuminance(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
+                            if
+                               (session.Player.IsAdmin)
+                            {
+                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Luminance to {transferTargetName}");
+                            }
                         }
                         else
                         {
@@ -526,6 +524,11 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferEnlightenedCoins(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
+                            if
+                               (session.Player.IsAdmin)
+                            {
+                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Enlightened coins to {transferTargetName}");
+                            }
                         }
                         break;
                     case 7:
