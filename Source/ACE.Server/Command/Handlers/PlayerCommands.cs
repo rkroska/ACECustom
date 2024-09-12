@@ -480,7 +480,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
                             if
-                               (session.Player.IsAdmin)
+                               (session.Player.IsPlussed)
                             {
                                 PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Luminance to {transferTargetName}");
                             }
@@ -525,7 +525,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
                             if
-                               (session.Player.IsAdmin)
+                               (session.Player.IsPlussed)
                             {
                                 PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Enlightened coins to {transferTargetName}");
                             }
