@@ -2475,6 +2475,8 @@ namespace ACE.Server.Command.Handlers
                 obj.Location = session.Player.Location.InFrontOf(5f, true);
             else
             {
+                obj.CreatedByAccountId = session.Player.Account.AccountId;
+
                 var dist = Math.Max(2, obj.UseRadius ?? 2);
 
                 obj.Location = session.Player.Location.InFrontOf(dist);

@@ -1266,6 +1266,11 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
+            if (wo.WeenieType != WeenieType.Creature)
+            {
+                wo.CreatedByAccountId = session.Player.Account.AccountId;
+            }
+
             var isLinkChild = parentInstance != null;
 
             if (!wo.Stuck && !isLinkChild)
