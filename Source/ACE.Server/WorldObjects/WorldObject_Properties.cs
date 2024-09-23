@@ -2518,7 +2518,13 @@ namespace ACE.Server.WorldObjects
         public uint? CreatedByAccountId
         {
             get => GetProperty(PropertyDataId.CreatedByAccountId);
-            set { if (!value.HasValue) RemoveProperty(PropertyDataId.CreatedByAccountId); else SetProperty(PropertyDataId.CreatedByAccountId, value.Value); }
+            set {
+                if (!GetProperty(PropertyDataId.CreatedByAccountId).HasValue)
+                {
+                    if (!value.HasValue) RemoveProperty(PropertyDataId.CreatedByAccountId);
+                    else SetProperty(PropertyDataId.CreatedByAccountId, value.Value);
+                }
+            }
         }
 
         /// <summary>

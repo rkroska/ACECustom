@@ -1941,6 +1941,15 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            if (propType.Equals("PropertyDataId", StringComparison.OrdinalIgnoreCase))
+            {
+                if ((PropertyDataId)result == PropertyDataId.CreatedByAccountId)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{prop} can not be changed in this way", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+
             if (value == "null")
             {
                 if (propType.Equals("PropertyInt", StringComparison.OrdinalIgnoreCase))
