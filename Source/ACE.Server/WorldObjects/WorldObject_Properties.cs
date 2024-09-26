@@ -2515,6 +2515,18 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue); else SetProperty(PropertyInt.PortalReqMaxValue, value.Value); }
         }
 
+        public uint? CreatedByAccountId
+        {
+            get => GetProperty(PropertyDataId.CreatedByAccountId);
+            set {
+                if (!GetProperty(PropertyDataId.CreatedByAccountId).HasValue)
+                {
+                    if (!value.HasValue) RemoveProperty(PropertyDataId.CreatedByAccountId);
+                    else SetProperty(PropertyDataId.CreatedByAccountId, value.Value);
+                }
+            }
+        }
+
         /// <summary>
         /// <para>Used to mark when EnterWorld has completed for first time for this object's instance.</para>
         /// Currently used by Generators and Players
