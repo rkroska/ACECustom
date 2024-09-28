@@ -771,5 +771,15 @@ namespace ACE.Server.WorldObjects
             0x5965,     // Gauntlet Arena Two (Radiant Blood)
             0x596B,     // Gauntlet Staging Area (All Societies)
         };
+
+        public bool IsInMarketplace => Location != null ? Marketplace_Landblocks.Contains(Location.LandblockId.Landblock) : false;
+
+        /// <summary>
+        /// landblock required for using /clap command
+        /// </summary>
+        public static HashSet<ushort> Marketplace_Landblocks = new HashSet<ushort>()
+        {
+            0x016C,     // Marketplace
+        };
     }
 }

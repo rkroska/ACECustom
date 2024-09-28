@@ -564,6 +564,73 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("clap", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Deposit Enlightened Coins using items", "Usage: /clap <amount>")]
+        public static void HandleClap(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            if (session.Player.QuestManager.GetCurrentSolves("AutoCraftingEnabled") < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You must have received the AutoCraftingEnabled quest stamp in order to use this command.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var Marketplace = session.Player.IsInMarketplace;
+            if (session.Player.CurrentLandblock != null && session.Player.IsInMarketplace == false)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You must be in the Marketplace to use this command.", ChatMessageType.System));
+                return;
+            }
+
+            if (parameters.Length == 0 || !ushort.TryParse(parameters[0], out ushort clapAmount) || clapAmount < 1 || clapAmount > 10000)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid amount specified. Please provide a value between 1 and 10000.", ChatMessageType.System));
+                return;
+            }
+
+            int requiredAmount = clapAmount;
+            int ClapCost = requiredAmount * 250000;
+
+            // Check inventory for items
+            if (session.Player.BankedPyreals < ClapCost)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough banked pyreals to perform this action", ChatMessageType.Broadcast));
+                return;
+            }
+            int item2Count = session.Player.GetNumInventoryItemsOfWCID(42636); //magic number - Red Aetheria
+            if (item2Count < requiredAmount)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough Red Coalesced Aetheria to perform this action", ChatMessageType.Broadcast));
+                return;
+            }
+            int item3Count = session.Player.GetNumInventoryItemsOfWCID(34276); //magic number - Empyrean Trinket
+
+            if (item3Count < requiredAmount)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You do not have enough Ancient Empyrean Trinkets to perform this action.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // Remove items from inventory
+            if (!session.Player.TryConsumeFromInventoryWithNetworking(42636, requiredAmount) ||
+        !session.Player.TryConsumeFromInventoryWithNetworking(34276, requiredAmount))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove items from inventory.", ChatMessageType.System));
+                return;
+            }
+
+            // Withdraw Pyreals
+            session.Player.BankedPyreals -= ClapCost;
+
+            // Deposit Enlightened Coins
+            var depoistamount = clapAmount;
+            session.Player.BankedEnlightenedCoins += depoistamount;
+
+            // Notify the player
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {clapAmount} Enlightened Coins!", ChatMessageType.Broadcast));
+        }
+
         [CommandHandler("enl", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Enlightenment Alias", "")]
         public static void HandleEnlShort(Session session, params string[] parameters)
         {
