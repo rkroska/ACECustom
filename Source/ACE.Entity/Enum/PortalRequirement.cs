@@ -6,6 +6,19 @@ namespace ACE.Entity.Enum
          CreatureAug = 1,
          ItemAug     = 2,
          LifeAug     = 3,
-         Enlighten   = 4
+         Enlighten   = 4,
+         QuestBonus  = 5,
+           
      }
- }
+
+    public enum PortalRequirement2
+    {
+        None = 0,
+        CreatureAug = 1,
+        ItemAug = 2,
+        LifeAug = 3,
+        Enlighten = 4,
+        QuestBonus = 5,
+
+    }
+}

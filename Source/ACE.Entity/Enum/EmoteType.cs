@@ -137,6 +137,7 @@ namespace ACE.Entity.Enum
         SetEnvironment                = 128, //Custom
         DecrementInt64Stat            = 129, //Custom
         IncrementInt64Stat            = 130, //Custom
+        QuestCompletionCount          = 131, //Custom
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001
