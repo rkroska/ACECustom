@@ -2515,6 +2515,24 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue); else SetProperty(PropertyInt.PortalReqMaxValue, value.Value); }
         }
 
+        public PortalRequirement2 PortalReqType2
+        {
+            get => (PortalRequirement2)(GetProperty(PropertyInt.PortalReqType2) ?? 0);
+            set { if (value == PortalRequirement2.None) RemoveProperty(PropertyInt.PortalReqType2); else SetProperty(PropertyInt.PortalReqType2, (int)value); }
+        }
+
+        public int? PortalReqValue2
+        {
+            get => GetProperty(PropertyInt.PortalReqValue2);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqValue2); else SetProperty(PropertyInt.PortalReqValue2, value.Value); }
+        }
+
+        public int? PortalReqMaxValue2
+        {
+            get => GetProperty(PropertyInt.PortalReqMaxValue2);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue2); else SetProperty(PropertyInt.PortalReqMaxValue2, value.Value); }
+        }
+
         public uint? CreatedByAccountId
         {
             get => GetProperty(PropertyDataId.CreatedByAccountId);
