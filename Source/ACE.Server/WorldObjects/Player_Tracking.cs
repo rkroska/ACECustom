@@ -42,6 +42,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetKnownObjects()
         {
+            if (ObjMaint == null)
+            {
+                return null;
+            }
             return ObjMaint.GetKnownObjectsValuesWhere(i => i?.WeenieObj.WorldObject != null).Select(o => o.WeenieObj.WorldObject).ToList();
         }
 

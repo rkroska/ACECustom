@@ -686,8 +686,15 @@ namespace ACE.Server.WorldObjects
 
 
             // check for changing varation - and remove anything from knownobjects that is not in the new variation
-            HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
-
+            try
+            {
+                HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+            }
+            catch (Exception e)
+            {
+                log.Warn(e.Message);
+            }
+            
             Session.Network.EnqueueSend(new GameMessagePlayerTeleport(this));
 
             // load quickly, but player can load into landblock before server is finished loading
@@ -715,7 +722,10 @@ namespace ACE.Server.WorldObjects
         public void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
         {
             var knownObjs = GetKnownObjects();
-
+            if (knownObjs == null)
+            {
+                return;
+            }
             for (int i = 0; i < knownObjs.Count; i++)
             {
                 var knownObj = knownObjs[i];
