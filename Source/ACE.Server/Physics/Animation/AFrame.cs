@@ -37,17 +37,22 @@ namespace ACE.Server.Physics.Animation
 
         public static AFrame Combine(AFrame a, AFrame b)
         {
-            var frame = new AFrame();
-            frame.Origin = a.Origin + Vector3.Transform(b.Origin, a.Orientation);
-            frame.Orientation = Quaternion.Multiply(a.Orientation, b.Orientation);
-            return frame;
+            return new AFrame
+            {
+                Origin = a.Origin + Vector3.Transform(b.Origin, a.Orientation),
+                Orientation = a.Orientation * b.Orientation
+            };
         }
+
 
         public void Combine(AFrame a, AFrame b, Vector3 scale)
         {
-            Origin = a.Origin + Vector3.Transform(b.Origin * scale, a.Orientation);
-            Orientation = Quaternion.Multiply(a.Orientation, b.Orientation);
+            var scaledOrigin = b.Origin * scale;
+            var transformedOrigin = Vector3.Transform(scaledOrigin, a.Orientation);
+            Origin = a.Origin + transformedOrigin;
+            Orientation = a.Orientation * b.Orientation;
         }
+
 
         public Vector3 GlobalToLocal(Vector3 point)
         {
@@ -127,27 +132,19 @@ namespace ACE.Server.Physics.Animation
             return heading;
         }
 
-        public static Quaternion get_rotate_offset(Vector3 offset)
-        {
-            var rotate = Quaternion.CreateFromYawPitchRoll(offset.X, offset.Y, offset.Z);
-            rotate = Quaternion.Normalize(rotate);
-            return rotate;
-        }
-
 
         public void set_heading(float degrees)
         {
-            //Console.WriteLine($"set_heading({degrees})");
+            var rads = degrees * (MathF.PI / 180.0f); // Inline conversion to radians
 
-            var rads = degrees.ToRadians();
+            var sinRads = MathF.Sin(rads);
+            var cosRads = MathF.Cos(rads);
 
             var matrix = Matrix4x4.CreateFromQuaternion(Orientation);
-            var heading = new Vector3((float)Math.Sin(rads), (float)Math.Cos(rads), matrix.M23 + matrix.M13);
+            var heading = new Vector3(sinRads, cosRads, matrix.M23 + matrix.M13);
             set_vector_heading(heading);
-
-            var newHeading = get_heading();
-            //Console.WriteLine("new_heading: " + newHeading);
         }
+
 
         public void set_rotate(Quaternion orientation)
         {
@@ -156,17 +153,17 @@ namespace ACE.Server.Physics.Animation
 
         public void set_vector_heading(Vector3 heading)
         {
-            var normal = heading;
-            if (Vec.NormalizeCheckSmall(ref normal)) return;
+            if (Vec.NormalizeCheckSmall(ref heading)) return;
 
-            var zDeg = 450.0f - ((float)Math.Atan2(normal.Y, normal.X)).ToDegrees();
+            var zDeg = 450.0f - ((float)Math.Atan2(heading.Y, heading.X)).ToDegrees();
             var zRot = -(zDeg % 360.0f).ToRadians();
 
-            var xRot = (float)Math.Asin(normal.Z);
+            var xRot = (float)Math.Asin(heading.Z);
 
             var rotate = Quaternion.CreateFromYawPitchRoll(xRot, 0, zRot);
             set_rotate(rotate);
         }
+
 
         public bool Equals(AFrame frame)
         {
