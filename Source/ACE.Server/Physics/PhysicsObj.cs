@@ -1238,21 +1238,35 @@ namespace ACE.Server.Physics
 
         public void UpdateChild(PhysicsObj childObj, int partIdx, AFrame childFrame)
         {
-            var frame = partIdx >= PartArray.NumParts ?
-                AFrame.Combine(Position.Frame, childFrame) : AFrame.Combine(PartArray.Parts[partIdx].Pos.Frame, childFrame);
+            AFrame frame;
+            if (partIdx >= PartArray.NumParts)
+            {
+                frame = AFrame.Combine(Position.Frame, childFrame);
+            }
+            else
+            {
+                frame = AFrame.Combine(PartArray.Parts[partIdx].Pos.Frame, childFrame);
+            }
 
             childObj.set_frame(frame);
 
-            //if (childObj.ParticleManager != null) childObj.ParticleManager.UpdateParticles();
-            if (childObj.ScriptManager != null) childObj.ScriptManager.UpdateScripts();
+            if (childObj.ScriptManager != null)
+            {
+                childObj.ScriptManager.UpdateScripts();
+            }
         }
+
 
         public void UpdateChildrenInternal()
         {
-            if (PartArray == null || Children == null || Children.NumObjects == 0) return;
+            if (PartArray == null || Children?.NumObjects == 0) return;
 
-            for (var i = 0; i < Children.Objects.Count; i++)
-                UpdateChild(Children.Objects[i], Children.PartNumbers[i], Children.Frames[i]);
+            var childrenObjects = Children.Objects;
+            var childrenPartNumbers = Children.PartNumbers;
+            var childrenFrames = Children.Frames;
+
+            for (var i = 0; i < childrenObjects.Count; i++)
+                UpdateChild(childrenObjects[i], childrenPartNumbers[i], childrenFrames[i]);
         }
 
         public int InitialUpdates;
@@ -1265,9 +1279,10 @@ namespace ACE.Server.Physics
             if ((TransientState & TransientStateFlags.CheckEthereal) != 0)
                 set_ethereal(false, false);
 
-            //JumpedThisFrame = false;
-            var newPos = new Position(Position.ObjCellID);
-            newPos.Variation = Position.Variation;
+            var newPos = new Position(Position.ObjCellID)
+            {
+                Variation = Position.Variation
+            };
             UpdatePositionInternal(quantum, ref newPos.Frame);
 
             if (PartArray != null && PartArray.GetNumSphere() != 0)
@@ -1298,7 +1313,7 @@ namespace ACE.Server.Physics
 
 
                     // temporarily modified while debug path is examined
-                    if (transit != null && transit.SpherePath.CurCell != null)
+                    if (transit?.SpherePath.CurCell != null)
                     {
                         CachedVelocity = Position.GetOffset(transit.SpherePath.CurPos) / (float)quantum;
 
@@ -1328,19 +1343,11 @@ namespace ACE.Server.Physics
                 InitialUpdates++;
             }
 
-            //if (DetectionManager != null) DetectionManager.CheckDetection();
-
-            if (TargetManager != null) TargetManager.HandleTargetting();
-
-            if (MovementManager != null) MovementManager.UseTime();
-
-            if (PartArray != null) PartArray.HandleMovement();
-
-            if (PositionManager != null) PositionManager.UseTime();
-
-            //if (ParticleManager != null) ParticleManager.UpdateParticles();
-
-            if (ScriptManager != null) ScriptManager.UpdateScripts();
+            TargetManager?.HandleTargetting();
+            MovementManager?.UseTime();
+            PartArray?.HandleMovement();
+            PositionManager?.UseTime();
+            ScriptManager?.UpdateScripts();
         }
 
         public static int GetBlockDist(Position a, Position b)
@@ -1355,17 +1362,18 @@ namespace ACE.Server.Physics
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetBlockDist(uint a, uint b)
         {
-            var lbx_a = a >> 24;
-            var lby_a = (a >> 16) & 0xFF;
+            int lbx_a = (int)(a >> 24);
+            int lby_a = (int)((a >> 16) & 0xFF);
 
-            var lbx_b = b >> 24;
-            var lby_b = (b >> 16) & 0xFF;
+            int lbx_b = (int)(b >> 24);
+            int lby_b = (int)((b >> 16) & 0xFF);
 
-            var dx = (int)Math.Abs((int)lbx_a - lbx_b);
-            var dy = (int)Math.Abs((int)lby_a - lby_b);
+            int dx = Math.Abs(lbx_a - lbx_b);
+            int dy = Math.Abs(lby_a - lby_b);
 
             return Math.Max(dx, dy);
         }
+
 
         /// <summary>
         /// This is for legacy movement system
@@ -2498,19 +2506,14 @@ namespace ACE.Server.Physics
                 if (shadowObj.Cell == null) continue;
                 var cell = shadowObj.Cell;
                 shadowObj.Cell.remove_shadow_object(shadowObj);
-                if (PartArray != null)
-                    PartArray.RemoveParts(cell);
+                PartArray?.RemoveParts(cell);
             }
-            NumShadowObjects = 0;   // should be ShadowObjects.Count
-            var i = 0;
-            while (true)
+            NumShadowObjects = ShadowObjects.Count;
+
+            if (Children == null) return;
+            for (int i = 0; i < Children.NumObjects; i++)
             {
-                var totalChilds = Children == null ? 0 : Children.NumObjects;
-                if (i >= totalChilds) break;
-                if (Children != null)
-                    Children.Objects[i++].remove_shadows_from_cells();
-                else
-                    remove_shadows_from_cells();
+                Children.Objects[i].remove_shadows_from_cells();
             }
         }
 
@@ -2541,18 +2544,6 @@ namespace ACE.Server.Physics
             {
                 CollisionTable.Remove(end);
                 report_object_collision_end(end);
-            }
-        }
-
-        public void report_collision_start()
-        {
-            if (CollisionTable == null || ObjMaint == null) return;
-
-            foreach (var objectID in CollisionTable.Keys)
-            {
-                var obj = ServerObjectManager.GetObjectA(objectID);
-                if (obj != null)
-                    report_object_collision(obj, TransientState.HasFlag(TransientStateFlags.Contact));
             }
         }
 
@@ -2708,26 +2699,6 @@ namespace ACE.Server.Physics
                 PartArray.SetCellID(newCellID);
         }
 
-        /// <summary>
-        /// Sets the elasticity for a physics object
-        /// </summary>
-        /// <param name="elasticity">A value between 0 and MaxElasticity</param>
-        /// <returns>boolean success</returns>
-        public bool set_elasticity(float elasticity)
-        {
-            if (elasticity < 0.0f)
-            {
-                Elasticity = 0.0f;
-                return true;
-            }
-
-            if (elasticity < PhysicsGlobals.MaxElasticity)
-                Elasticity = elasticity;
-            else
-                Elasticity = PhysicsGlobals.MaxElasticity;
-
-            return true;
-        }
 
         /// <summary>
         /// Sets the ethereal (semi-transparent/walkthrough) flags
@@ -2762,7 +2733,7 @@ namespace ACE.Server.Physics
         public void set_frame(AFrame frame)
         {
             if (!frame.IsValid() && frame.IsValidExceptForHeading())
-                frame.Orientation = new Quaternion(0, 0, 0, 0);
+                frame.Orientation = Quaternion.Identity;
 
             Position.Frame = new AFrame(frame);
             //Position.Frame.Origin = frame.Origin;
@@ -2810,12 +2781,7 @@ namespace ACE.Server.Physics
             var globalVec = Position.LocalToGlobalVec(newVel);
             set_velocity(globalVec, sendEvent);
         }
-
-        public bool set_nodraw(bool nodraw, bool sendEvent)
-        {
-            // needed for server physics?
-            return true;
-        }
+        
 
         public void set_object_guid(ObjectGuid guid)
         {
@@ -3015,30 +2981,36 @@ namespace ACE.Server.Physics
             trans.VariationId = newPos.Variation;
 
             if (PartArray == null || PartArray.GetNumSphere() == 0)
+            {
                 trans.InitSphere(1, PhysicsGlobals.DummySphere, 1.0f);
+            }
             else
             {
-                var sphere = PartArray != null ? PartArray.GetSphere() : null;
-                if (PartArray != null)
-                    trans.InitSphere(PartArray.GetNumSphere(), sphere, Scale);
-                else
-                    trans.InitSphere(0, sphere, Scale);
+                var numSpheres = PartArray.GetNumSphere();
+                var sphere = PartArray.GetSphere();
+                trans.InitSphere(numSpheres, sphere, Scale);
             }
 
             trans.InitPath(CurCell, oldPos, newPos);
 
             if ((TransientState & TransientStateFlags.StationaryStuck) != 0)
+            {
                 trans.CollisionInfo.FramesStationaryFall = 3;
+            }
             else if ((TransientState & TransientStateFlags.StationaryStop) != 0)
+            {
                 trans.CollisionInfo.FramesStationaryFall = 2;
+            }
             else if ((TransientState & TransientStateFlags.StationaryFall) != 0)
+            {
                 trans.CollisionInfo.FramesStationaryFall = 1;
+            }
 
             var validPos = trans.FindValidPosition();
             trans.CleanupTransition();
-            if (!validPos) return null;
-            return trans;
+            return validPos ? trans : null;
         }
+
 
         public void unset_parent()
         {

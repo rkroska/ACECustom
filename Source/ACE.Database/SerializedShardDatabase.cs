@@ -10,6 +10,7 @@ using ACE.Database.Entity;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using System.Diagnostics;
+using System.Linq;
 
 namespace ACE.Database
 {
@@ -66,7 +67,11 @@ namespace ACE.Database
                         {
                             stopwatch.Restart();
                             t.Start();
-                            if (t.AsyncState != null && t.AsyncState.ToString().Contains("GetPossessedBiotasInParallel"))
+                            if (t.AsyncState != null && (t.AsyncState.ToString().Contains("GetPossessedBiotasInParallel") ||
+                                                         t.AsyncState.ToString().Contains("GetMaxGuidFoundInRange") ||
+                                                         t.AsyncState.ToString().Contains("GetSequenceGaps") ||
+                                                         t.AsyncState.ToString().Contains("GetInventoryInParallel") ||
+                                                         t.AsyncState.ToString().Contains("GetCharacter")))
                             {
                                 //continue on background thread
                             }
@@ -178,28 +183,28 @@ namespace ACE.Database
         {
             var initialCallTime = DateTime.UtcNow;
 
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task( (x) =>
             {
                 var taskStartTime = DateTime.UtcNow;
                 var result = BaseDatabase.RemoveBiota(id);
                 var taskCompletedTime = DateTime.UtcNow;
                 callback?.Invoke(result);
                 performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
-            }));
+            }, "RemoveBiota2:" + id));
         }
 
         public void RemoveBiotasInParallel(IEnumerable<uint> ids, Action<bool> callback, Action<TimeSpan, TimeSpan> performanceResults)
         {
             var initialCallTime = DateTime.UtcNow;
 
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var taskStartTime = DateTime.UtcNow;
                 var result = BaseDatabase.RemoveBiotasInParallel(ids);
                 var taskCompletedTime = DateTime.UtcNow;
                 callback?.Invoke(result);
                 performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
-            }));
+            }, "RemoveBiotasInParallel: " +ids.Count()));
         }
 
 
