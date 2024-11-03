@@ -6,6 +6,7 @@ using System.Linq;
 using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Server.Factories.Tables.Wcids;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -646,8 +647,46 @@ namespace ACE.Server.Entity
                     return .35;
                 case 9:
                     return .3;
+                case 10:
+                    return .29;
+                case 11:
+                    return .268;
+                case 12:
+                    return .248;
+                case 13:
+                    return .232;
+                case 14:
+                    return .218;
+                case 15:
+                    return .206;
+                case 16:
+                    return .196;
+                case 17:
+                    return .186;
+                case 18:
+                    return .178;
+                case 19:
+                    return .171;
+                case 20:
+                    return .164;
+                case 21:
+                    return .158;
+                case 22:
+                    return .152;
+                case 23:
+                    return .147;
+                case 24:
+                    return .143;
+                case 25:
+                    return .139;
+                case 26:
+                    return .135;
+                case 27:
+                    return .131;
+                case 28:
+                    return .128;
                 default:
-                    return .25;
+                    return .125;
                     // TODO: handle fellowship mods with > 9 players?
             }
             //return 1.0;
