@@ -536,16 +536,27 @@ namespace ACE.Server.WorldObjects
 
         public void WithdrawEnlightenedCoins(long Amount)
         {
-            long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount > 0)
+                long remainingAmount = Amount;
+                WorldObject templateCoin = WorldObjectFactory.CreateNewWorldObject(300004); // Assume 300004 is the ID for Enlightened Coins
+                int maxStackSize = (int)templateCoin.MaxStackSize;
+
+                while (remainingAmount >= maxStackSize)
                 {
-                    WorldObject coins = WorldObjectFactory.CreateNewWorldObject(300004);
-                    coins.SetStackSize((int)Amount);
-                    this.TryCreateInInventoryWithNetworking(coins);
-                    BankedEnlightenedCoins -= Amount;
-                    Amount = 0;
+                    WorldObject coinStack = WorldObjectFactory.CreateNewWorldObject(300004);
+                    coinStack.SetStackSize(maxStackSize);
+                    this.TryCreateInInventoryWithNetworking(coinStack);
+                    BankedEnlightenedCoins -= maxStackSize;
+                    remainingAmount -= maxStackSize;
+                }
+
+                if (remainingAmount > 0)
+                {
+                    WorldObject remainingCoinStack = WorldObjectFactory.CreateNewWorldObject(300004);
+                    remainingCoinStack.SetStackSize((int)remainingAmount);
+                    this.TryCreateInInventoryWithNetworking(remainingCoinStack);
+                    BankedEnlightenedCoins -= remainingAmount;
                 }
             }
         }
