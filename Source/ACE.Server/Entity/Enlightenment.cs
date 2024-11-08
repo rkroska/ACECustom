@@ -317,29 +317,33 @@ namespace ACE.Server.Entity
 
         public static void RemoveSociety(Player player)
         {
-            player.QuestManager.Erase("SocietyMember");
-            player.QuestManager.Erase("CelestialHandMember");
-            player.QuestManager.Erase("EnlightenedCelestialHandMaster");
-            player.QuestManager.Erase("EldrytchWebMember");
-            player.QuestManager.Erase("EnlightenedEldrytchWebMaster");
-            player.QuestManager.Erase("RadiantBloodMember");
-            player.QuestManager.Erase("EnlightenedRadiantBloodMaster");
+            // Leave society alone if server prop is false
+            if (PropertyManager.GetBool("enl_removes_society").Item)
+            {
+                player.QuestManager.Erase("SocietyMember");
+                player.QuestManager.Erase("CelestialHandMember");
+                player.QuestManager.Erase("EnlightenedCelestialHandMaster");
+                player.QuestManager.Erase("EldrytchWebMember");
+                player.QuestManager.Erase("EnlightenedEldrytchWebMaster");
+                player.QuestManager.Erase("RadiantBloodMember");
+                player.QuestManager.Erase("EnlightenedRadiantBloodMaster");
 
-            if (player.SocietyRankCelhan == 1001)
-                player.QuestManager.Stamp("EnlightenedCelestialHandMaster"); // after rejoining society, player can get promoted instantly to master when speaking to promotions officer
-            if (player.SocietyRankEldweb == 1001)
-                player.QuestManager.Stamp("EnlightenedEldrytchWebMaster");   // after rejoining society, player can get promoted instantly to master when speaking to promotions officer
-            if (player.SocietyRankRadblo == 1001)
-                player.QuestManager.Stamp("EnlightenedRadiantBloodMaster");  // after rejoining society, player can get promoted instantly to master when speaking to promotions officer
+                if (player.SocietyRankCelhan == 1001)
+                    player.QuestManager.Stamp("EnlightenedCelestialHandMaster"); // after rejoining society, player can get promoted instantly to master when speaking to promotions officer
+                if (player.SocietyRankEldweb == 1001)
+                    player.QuestManager.Stamp("EnlightenedEldrytchWebMaster");   // after rejoining society, player can get promoted instantly to master when speaking to promotions officer
+                if (player.SocietyRankRadblo == 1001)
+                    player.QuestManager.Stamp("EnlightenedRadiantBloodMaster");  // after rejoining society, player can get promoted instantly to master when speaking to promotions officer
 
-            player.Faction1Bits = null;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Faction1Bits, 0));
-            //player.SocietyRankCelhan = null;
-            //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankCelhan, 0));
-            //player.SocietyRankEldweb = null;
-            //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankEldweb, 0));
-            //player.SocietyRankRadblo = null;
-            //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankRadblo, 0));
+                player.Faction1Bits = null;
+                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Faction1Bits, 0));
+                //player.SocietyRankCelhan = null;
+                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankCelhan, 0));
+                //player.SocietyRankEldweb = null;
+                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankEldweb, 0));
+                //player.SocietyRankRadblo = null;
+                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankRadblo, 0));
+            }
         }
 
         public static void RemoveLevel(Player player)
