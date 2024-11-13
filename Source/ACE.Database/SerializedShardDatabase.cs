@@ -26,8 +26,10 @@ namespace ACE.Database
         protected readonly Stopwatch stopwatch = new Stopwatch();
 
         private readonly BlockingCollection<Task> _queue = new BlockingCollection<Task>();
+        private readonly BlockingCollection<Task> _readOnlyQueue = new BlockingCollection<Task>();
 
         private Thread _workerThread;
+        private Thread _workerThreadReadOnly;
 
         private int MaxParallel = 5;
 
@@ -40,18 +42,60 @@ namespace ACE.Database
         {
             _workerThread = new Thread(DoWork)
             {
-                Name = "Serialized Shard Database"
+                Name = "Serialized Shard Database - Saving"
+            };
+            _workerThreadReadOnly = new Thread(DoReadOnlyWork)
+            {
+                Name = "Serialized Shard Database - Reading"
             };
             _workerThread.Start();
+            _workerThreadReadOnly.Start();
             stopwatch.Start();
         }
 
         public void Stop()
         {
             _queue.CompleteAdding();
+            _readOnlyQueue.CompleteAdding();
             _workerThread.Join();
+            _workerThreadReadOnly.Join();
         }
 
+        private void DoReadOnlyWork()
+        {
+            while (!_readOnlyQueue.IsAddingCompleted)
+            {
+                try
+                {
+                    if (_readOnlyQueue.Count > 0)
+                    {
+                        Task t = _readOnlyQueue.Take();
+                        try
+                        {
+                            t.Start();
+                        }
+                        catch (Exception e)
+                        {
+                            log.Error($"[DATABASE] DoReadOnlyWork task failed with exception: {e}");
+                        }
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // the _queue has been disposed, we're good
+                    break;
+                }
+                catch (InvalidOperationException)
+                {
+                    // _queue is empty and CompleteForAdding has been called -- we're done here
+                    break;
+                }
+                catch (NullReferenceException)
+                {
+                    break;
+                }
+            }
+        }
         private void DoWork()
         {
             while (!_queue.IsAddingCompleted)
@@ -130,7 +174,7 @@ namespace ACE.Database
         /// </summary>
         public void GetMaxGuidFoundInRange(uint min, uint max, Action<uint> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetMaxGuidFoundInRange(min, max);
                 callback?.Invoke(result);
@@ -143,7 +187,7 @@ namespace ACE.Database
         /// </summary>
         public void GetSequenceGaps(uint min, uint limitAvailableIDsReturned, Action<List<(uint start, uint end)>> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetSequenceGaps(min, limitAvailableIDsReturned);
                 callback?.Invoke(result);
@@ -210,7 +254,7 @@ namespace ACE.Database
 
         public void GetPossessedBiotasInParallel(uint id, Action<PossessedBiotas> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var c = BaseDatabase.GetPossessedBiotasInParallel(id);
                 callback?.Invoke(c);
@@ -219,7 +263,7 @@ namespace ACE.Database
 
         public void GetInventoryInParallel(uint parentId, bool includedNestedItems, Action<List<Biota>> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var c = BaseDatabase.GetInventoryInParallel(parentId, includedNestedItems);
                 callback?.Invoke(c);
@@ -230,7 +274,7 @@ namespace ACE.Database
 
         public void IsCharacterNameAvailable(string name, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _readOnlyQueue.Add(new Task(() =>
             {
                 var result = BaseDatabase.IsCharacterNameAvailable(name);
                 callback?.Invoke(result);
@@ -239,7 +283,7 @@ namespace ACE.Database
 
         public void GetCharacters(uint accountId, bool includeDeleted, Action<List<Character>> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetCharacters(accountId, includeDeleted);
                 callback?.Invoke(result);
@@ -248,7 +292,7 @@ namespace ACE.Database
 
         public void GetLoginCharacters(uint accountId, bool includeDeleted, Action<List<LoginCharacter>> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetCharacterListForLogin(accountId, includeDeleted);
                 callback?.Invoke(result);
@@ -257,7 +301,7 @@ namespace ACE.Database
 
         public void GetCharacter(uint characterId, Action<Character> callback)
         {
-            _queue.Add(new Task((x) =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.GetCharacter(characterId);
                 callback?.Invoke(result);

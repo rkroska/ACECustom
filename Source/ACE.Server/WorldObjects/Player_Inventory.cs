@@ -38,7 +38,7 @@ namespace ACE.Server.WorldObjects
                     results.AddRange(container.Inventory.Values);
             }
 
-            results.AddRange(EquippedObjects.Values);
+            results.AddRange(EquippedObjects.Values.Distinct());
 
             return results;
         }
