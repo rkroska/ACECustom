@@ -6,7 +6,6 @@ using System.Linq;
 using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
-using ACE.Server.Factories.Tables.Wcids;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -646,7 +645,7 @@ namespace ACE.Server.Entity
                 case 8:
                     return .35;
                 case 9:
-                    return .3;
+                    return .32;
                 case 10:
                     return .29;
                 case 11:

@@ -115,9 +115,15 @@ namespace ACE.Server.WorldObjects
             // even before the CreatePlayer, but doing it here
             if (SquelchManager.HasSquelches)
                 SquelchManager.SendSquelchDB();
-
-            AuditItemSpells();
-            AuditEquippedItems();
+            try
+            {
+                AuditItemSpells();
+                AuditEquippedItems();
+            }
+            catch (Exception x)
+            {
+                log.Error($"Error occurred during audit: {x}");
+            }
 
             //HandleMissingXp();
             //HandleSkillCreditRefund();
