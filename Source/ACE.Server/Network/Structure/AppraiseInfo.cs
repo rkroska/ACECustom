@@ -190,33 +190,42 @@ namespace ACE.Server.Network.Structure
                 PropertiesString.Clear();
 
                 var longDesc = "";
-
-                if (slumLord.HouseOwner.HasValue && slumLord.HouseOwner.Value > 0)
+                if (slumLord.House == null)
                 {
-                    longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !PropertyManager.GetBool("house_rent_enabled").Item ? "" : "not ")}been paid.\n";
+                    longDesc = $"This house is not configured correctly, please contact your Server Admin.\n";
 
                     PropertiesInt.Clear();
                 }
+
                 else
                 {
-                    //longDesc = $"This house is {(slumLord.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n"; // this was the retail msg.
-                    longDesc = $"This {(slumLord.House.HouseType == HouseType.Undef ? "house" : slumLord.House.HouseType.ToString().ToLower())} is {(slumLord.House.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n";
+                    if (slumLord.HouseOwner.HasValue && slumLord.HouseOwner.Value > 0)
+                    {
+                        longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !PropertyManager.GetBool("house_rent_enabled").Item ? "" : "not ")}been paid.\n";
 
-                    var discardInts = PropertiesInt.Where(x => x.Key != PropertyInt.HouseStatus && x.Key != PropertyInt.HouseType && x.Key != PropertyInt.MinLevel && x.Key != PropertyInt.MaxLevel && x.Key != PropertyInt.AllegianceMinLevel && x.Key != PropertyInt.AllegianceMaxLevel).Select(x => x.Key).ToList();
-                    foreach (var key in discardInts)
-                        PropertiesInt.Remove(key);
-                }
+                        PropertiesInt.Clear();
+                    }
+                    else
+                    {
+                        //longDesc = $"This house is {(slumLord.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n"; // this was the retail msg.
+                        longDesc = $"This {(slumLord.House.HouseType == HouseType.Undef ? "house" : slumLord.House.HouseType.ToString().ToLower())} is {(slumLord.House.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n";
 
-                if (slumLord.HouseRequiresMonarch)
-                    longDesc += "You must be a monarch to purchase and maintain this dwelling.\n";
+                        var discardInts = PropertiesInt.Where(x => x.Key != PropertyInt.HouseStatus && x.Key != PropertyInt.HouseType && x.Key != PropertyInt.MinLevel && x.Key != PropertyInt.MaxLevel && x.Key != PropertyInt.AllegianceMinLevel && x.Key != PropertyInt.AllegianceMaxLevel).Select(x => x.Key).ToList();
+                        foreach (var key in discardInts)
+                            PropertiesInt.Remove(key);
+                    }
 
-                if (slumLord.AllegianceMinLevel.HasValue)
-                {
-                    var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
-                    if (allegianceMinLevel == -1)
-                        allegianceMinLevel = slumLord.AllegianceMinLevel.Value;
+                    if (slumLord.HouseRequiresMonarch)
+                        longDesc += "You must be a monarch to purchase and maintain this dwelling.\n";
 
-                    longDesc += $"Restricted to characters of allegiance rank {allegianceMinLevel} or greater.\n";
+                    if (slumLord.AllegianceMinLevel.HasValue)
+                    {
+                        var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
+                        if (allegianceMinLevel == -1)
+                            allegianceMinLevel = slumLord.AllegianceMinLevel.Value;
+
+                        longDesc += $"Restricted to characters of allegiance rank {allegianceMinLevel} or greater.\n";
+                    }
                 }
 
                 PropertiesString.Add(PropertyString.LongDesc, longDesc);
