@@ -63,15 +63,18 @@ namespace ACE.Server.WorldObjects
 
             // sent house profile
             var houseProfile = GetHouseProfile();
-
+            if (houseProfile.DwellingID == 0)
+                return;
+            
             player.Session.Network.EnqueueSend(new GameEventHouseProfile(player.Session, Guid, houseProfile));
+            
         }
 
         public HouseProfile GetHouseProfile()
         {
             var houseProfile = new HouseProfile();
 
-            houseProfile.DwellingID = HouseId.Value;
+            houseProfile.DwellingID = (HouseId ?? 0);
 
             if (House != null)
             {
