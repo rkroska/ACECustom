@@ -534,6 +534,10 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Ready to handle out-of-order packet {1}", session.LoggingIdentifier, packet.Header.Sequence);
                 HandleOrderedPacket(packet);
+                if (outOfOrderPackets.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 
@@ -546,6 +550,10 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Ready to handle out of order fragment {1}", session.LoggingIdentifier, lastReceivedFragmentSequence + 1);
                 HandleFragment(message);
+                if (outOfOrderFragments.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 

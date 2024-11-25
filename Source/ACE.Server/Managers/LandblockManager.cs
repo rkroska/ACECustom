@@ -38,7 +38,7 @@ namespace ACE.Server.Managers
         /// X, Y, Variation dimensions
         /// </summary>
         //private static readonly Landblock[,,] landblocks = new Landblock[255, 255, 999];
-        public static ConcurrentDictionary<VariantCacheId, Landblock> landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
+        public static readonly ConcurrentDictionary<VariantCacheId, Landblock> landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
 
         /// <summary>
         /// A lookup table of all the currently loaded landblocks
@@ -61,15 +61,6 @@ namespace ACE.Server.Managers
                 lock (landblockMutex)
                     return landblockGroups.Count;
             }
-        }
-
-        /// <summary>
-        /// Add or update a landblock in the landblock dictionary
-        /// </summary>
-        private static bool AddUpdateLandblock(Landblock landblock, int? VariationId)
-        {
-            VariantCacheId key = new VariantCacheId(){ Landblock = landblock.Id.Landblock, Variant = VariationId ?? 0 };
-            return AddUpdateLandblock(key, landblock);
         }
 
         private static bool AddUpdateLandblock(VariantCacheId landblockKey, Landblock landblock)
