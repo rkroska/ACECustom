@@ -662,7 +662,7 @@ namespace ACE.Server.Physics.Common
         {
             var results = new List<PhysicsObj>(ServerObjects);
 
-            if (includeAdjacents)
+            if (includeAdjacents && adjacents?.Count > 0)
             {
                 foreach (var adjacent in adjacents)
                     results.AddRange(adjacent.ServerObjects);

@@ -37,9 +37,9 @@ namespace ACE.Server.Network
         private readonly Object[] currentBundleLocks = new Object[(int)GameMessageGroup.QueueMax];
         private readonly NetworkBundle[] currentBundles = new NetworkBundle[(int)GameMessageGroup.QueueMax];
 
-        private ConcurrentDictionary<uint, ClientPacket> outOfOrderPackets = new ConcurrentDictionary<uint, ClientPacket>();
-        private ConcurrentDictionary<uint, MessageBuffer> partialFragments = new ConcurrentDictionary<uint, MessageBuffer>();
-        private ConcurrentDictionary<uint, ClientMessage> outOfOrderFragments = new ConcurrentDictionary<uint, ClientMessage>();
+        private readonly ConcurrentDictionary<uint, ClientPacket> outOfOrderPackets = new ConcurrentDictionary<uint, ClientPacket>();
+        private readonly ConcurrentDictionary<uint, MessageBuffer> partialFragments = new ConcurrentDictionary<uint, MessageBuffer>();
+        private readonly ConcurrentDictionary<uint, ClientMessage> outOfOrderFragments = new ConcurrentDictionary<uint, ClientMessage>();
 
         private DateTime nextSend = DateTime.UtcNow;
 
@@ -69,7 +69,7 @@ namespace ACE.Server.Network
         /// <summary>
         /// Number of seconds to retain cachedPackets
         /// </summary>
-        private const int cachedPacketRetentionTime = 180;
+        private const int cachedPacketRetentionTime = 120;
 
         /// <summary>
         /// This is referenced by multiple thread:<para />
@@ -534,6 +534,10 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Ready to handle out-of-order packet {1}", session.LoggingIdentifier, packet.Header.Sequence);
                 HandleOrderedPacket(packet);
+                if (outOfOrderPackets.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 
@@ -546,6 +550,10 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Ready to handle out of order fragment {1}", session.LoggingIdentifier, lastReceivedFragmentSequence + 1);
                 HandleFragment(message);
+                if (outOfOrderFragments.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 
@@ -812,10 +820,13 @@ namespace ACE.Server.Network
                     {
                         packetLog.DebugFormat("[{0}] Sending large fragment", session.LoggingIdentifier);
                         ServerPacketFragment spf = firstMessage.GetNextFragment();
-                        packet.Fragments.Add(spf);
-                        availableSpace -= spf.Length;
-                        if (firstMessage.DataRemaining <= 0)
-                            fragments.Remove(firstMessage);
+                        if (spf != null)
+                        {
+                            packet.Fragments.Add(spf);
+                            availableSpace -= spf.Length;
+                            if (firstMessage.DataRemaining <= 0)
+                                fragments.Remove(firstMessage);
+                        }
                     }
                     // Otherwise we'll write any optional headers and process any small messages that will fit
                     else
@@ -840,8 +851,11 @@ namespace ACE.Server.Network
                             {
                                 packetLog.DebugFormat("[{0}] Sending tail fragment", session.LoggingIdentifier);
                                 ServerPacketFragment spf = fragment.GetTailFragment();
-                                packet.Fragments.Add(spf);
-                                availableSpace -= spf.Length;
+                                if(spf != null)
+                                {
+                                    packet.Fragments.Add(spf);
+                                    availableSpace -= spf.Length;
+                                }
                             }
                             // Otherwise will this message fit in the remaining space?
                             else if (availableSpace >= fragment.NextSize)
@@ -850,8 +864,11 @@ namespace ACE.Server.Network
                                 try
                                 {
                                     ServerPacketFragment spf = fragment.GetNextFragment();
-                                    packet.Fragments.Add(spf);
-                                    availableSpace -= spf.Length;
+                                    if (spf != null)
+                                    {
+                                        packet.Fragments.Add(spf);
+                                        availableSpace -= spf.Length;
+                                    }
                                 }
                                 catch (Exception ex)
                                 {

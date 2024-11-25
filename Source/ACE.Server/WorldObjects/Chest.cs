@@ -133,7 +133,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     // another player has this chest open -- ensure they are within range
-                    var currentViewer = CurrentLandblock.GetObject(Viewer) as Player;
+                    var currentViewer = CurrentLandblock?.GetObject(Viewer) as Player;
 
                     if (currentViewer == null)
                         Close(null);    // current viewer not found, close it
