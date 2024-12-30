@@ -63,7 +63,7 @@ namespace ACE.Common
         /// <para>Any value higher than this results in acclient crashing upon connection to server.</para>
         /// <para>Date: Thistledown 2, 401 P.Y. | Time: Morntide-and-Half (1073741828)</para>
         /// </summary>
-        public static readonly double MaxValue = (yearTicks * 391) + (monthTicks * 5) + (dayTicks * 1) + 4; // Thistledown 2, 401 P.Y. - Morntide-and-Half (1073741828)
+        public static readonly double MaxValue = (yearTicks * 391 * 2) + (monthTicks * 5) + (dayTicks * 1) + 4; // Thistledown 2, 401 P.Y. - Morntide-and-Half (1073741828)
 
         /// <summary>
         /// Months of the Portal Year
