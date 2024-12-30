@@ -4,17 +4,17 @@ namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyFloat : ushort
     {
-        // properties marked as ServerOnly are properties we never saw in PCAPs, from here:
-        // http://ac.yotesfan.com/ace_object/not_used_enums.php
-        // source: @OptimShi
-        // description attributes are used by the weenie editor for a cleaner display name
+        // No properties are sent to the client unless they featured an attribute.
+        // SendOnLogin gets sent to players in the PlayerDescription event
+        // AssessmentProperty gets sent in successful appraisal
 
-        Undef                          = 0,
+        Undef = 0,
         HeartbeatInterval              = 1,
         [Ephemeral]
         HeartbeatTimestamp             = 2,
         HealthRate                     = 3,
         StaminaRate                    = 4,
+        [AssessmentProperty]
         ManaRate                       = 5,
         HealthUponResurrection         = 6,
         StaminaUponResurrection        = 7,
@@ -39,6 +39,7 @@ namespace ACE.Entity.Enum.Properties
         MaximumVelocity                = 26,
         RotationSpeed                  = 27,
         MotionTimestamp                = 28,
+        [AssessmentProperty]
         WeaponDefense                  = 29,
         WimpyLevel                     = 30,
         VisualAwarenessRange           = 31,
@@ -99,6 +100,7 @@ namespace ACE.Entity.Enum.Properties
         Shade2                         = 84,
         Shade3                         = 85,
         Shade4                         = 86,
+        [AssessmentProperty]
         ItemEfficiency                 = 87,
         ItemManaUpdateTimestamp        = 88,
         SpellGestureSpeedMod           = 89,
@@ -113,6 +115,7 @@ namespace ACE.Entity.Enum.Properties
         UseTimestamp                   = 98,
         [Ephemeral]
         UseLockTimestamp               = 99,
+        [AssessmentProperty]
         HealkitMod                     = 100,
         FrozenTimestamp                = 101,
         HealthRateMod                  = 102,
@@ -163,21 +166,29 @@ namespace ACE.Entity.Enum.Properties
         [Ephemeral]
         AppraisalRequestedTimestamp    = 142,
         AppraisalHeartbeatDueTimestamp = 143,
+        [AssessmentProperty]
         ManaConversionMod              = 144,
         LastPkAttackTimestamp          = 145,
         FellowshipUpdateTimestamp      = 146,
+        [AssessmentProperty]
         CriticalFrequency              = 147,
         LimboStartTimestamp            = 148,
+        [AssessmentProperty]
         WeaponMissileDefense           = 149,
+        [AssessmentProperty]
         WeaponMagicDefense             = 150,
         IgnoreShield                   = 151,
+        [AssessmentProperty]
         ElementalDamageMod             = 152,
         StartMissileAttackTimestamp    = 153,
         LastRareUsedTimestamp          = 154,
+        [AssessmentProperty]
         IgnoreArmor                    = 155,
         ProcSpellRate                  = 156,
+        [AssessmentProperty]
         ResistanceModifier             = 157,
         AllegianceGagTimestamp         = 158,
+        [AssessmentProperty]
         AbsorbMagicDamage              = 159,
         CachedMaxAbsorbMagicDamage     = 160,
         GagDuration                    = 161,
@@ -187,6 +198,7 @@ namespace ACE.Entity.Enum.Properties
         HealingModifier                = 164,
         ArmorModVsNether               = 165,
         ResistNether                   = 166,
+        [AssessmentProperty]
         CooldownDuration               = 167,
         [SendOnLogin]
         WeaponAuraOffense              = 168,
@@ -197,56 +209,27 @@ namespace ACE.Entity.Enum.Properties
         [SendOnLogin]
         WeaponAuraManaConv             = 171,
 
-        [ServerOnly]
+        /* Custom Properties */
         PCAPRecordedWorkmanship        = 8004,
-        [ServerOnly]
         PCAPRecordedVelocityX          = 8010,
-        [ServerOnly]
         PCAPRecordedVelocityY          = 8011,
-        [ServerOnly]
         PCAPRecordedVelocityZ          = 8012,
-        [ServerOnly]
         PCAPRecordedAccelerationX      = 8013,
-        [ServerOnly]
         PCAPRecordedAccelerationY      = 8014,
-        [ServerOnly]
         PCAPRecordedAccelerationZ      = 8015,
-        [ServerOnly]
         PCAPRecordeOmegaX              = 8016,
-        [ServerOnly]
         PCAPRecordeOmegaY              = 8017,
-        [ServerOnly]
         PCAPRecordeOmegaZ              = 8018,
-        [ServerOnly]
         PreviousLevelCost              = 9000,
-        [ServerOnly]
         TotalExperienceDouble          = 9001,
-        [ServerOnly]
         SpentExperienceStrength        = 9002,
-        [ServerOnly]
         SpentExperienceEndurance       = 9003,
-        [ServerOnly]
         SpentExperienceCoordination    = 9004,
-        [ServerOnly]
         SpentExperienceQuickness       = 9005,
-        [ServerOnly]
         SpentExperienceFocus           = 9006,
-        [ServerOnly]
         SpentExperienceSelf            = 9007,
-        [ServerOnly]
         SpentExperienceHealth          = 9008,
-        [ServerOnly]
         SpentExperienceStamina         = 9009,
-        [ServerOnly]
         SpentExperienceMana            = 9010,
-    }
-
-    public static class PropertyFloatExtensions
-    {
-        public static string GetDescription(this PropertyFloat prop)
-        {
-            var description = prop.GetAttributeOfType<DescriptionAttribute>();
-            return description?.Description ?? prop.ToString();
-        }
     }
 }
