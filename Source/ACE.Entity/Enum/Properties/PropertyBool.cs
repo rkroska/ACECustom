@@ -167,7 +167,6 @@ namespace ACE.Entity.Enum.Properties
         [SendOnLogin]
         Account15Days                    = 127,
         HadNoVitae                       = 128,
-        [SendOnLogin]
         NoOlthoiTalk                     = 129,
         [AssessmentProperty]
         AutowieldLeft                    = 130,
