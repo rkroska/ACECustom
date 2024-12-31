@@ -357,6 +357,8 @@ namespace ACE.Server.Network.Structure
             PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            
+            Console.Error.WriteLine($"wo.Name: {wo.WeenieClassName} Int: {PropertiesInt.Count}, Int64: {PropertiesInt64.Count}, Bool: {PropertiesBool.Count}, Float: {PropertiesFloat.Count}, String: {PropertiesString.Count}, DID: {PropertiesDID.Count}, IID: {PropertiesIID.Count}");
 
             if (wo is Player player)
             {
