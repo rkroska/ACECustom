@@ -14,6 +14,7 @@ using ACE.DatLoader;
 using ACE.Server.Command;
 using ACE.Server.Managers;
 using ACE.Server.Network.Managers;
+using ACE.Server.Mods;
 
 namespace ACE.Server
 {
@@ -150,6 +151,9 @@ namespace ACE.Server
 
             log.Info("Initializing ConfigManager...");
             ConfigManager.Initialize();
+
+            log.Info("Initializing ModManager...");
+            ModManager.Initialize();
 
             if (ConfigManager.Config.Server.WorldName != "ACEmulator")
             {
@@ -332,6 +336,11 @@ namespace ACE.Server
             // This should be last
             log.Info("Initializing CommandManager...");
             CommandManager.Initialize();
+
+            //Register mod commands
+            log.Info("Registering ModManager commands...");
+            ModManager.RegisterCommands();
+            ModManager.ListMods();
 
             if (!PropertyManager.GetBool("world_closed", false).Item)
             {
