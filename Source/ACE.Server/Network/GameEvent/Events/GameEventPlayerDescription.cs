@@ -81,7 +81,7 @@ namespace ACE.Server.Network.GameEvent.Events
                 }
             }
 
-            var _propertiesInt64 = Session.Player.GetAllPropertyInt64().Where(x => ClientProperties.PropertiesInt64.Contains((ushort)x.Key)).ToDictionary(i => i.Key, i => i.Value);
+            var _propertiesInt64 = Session.Player.GetAllPropertyInt64().Where(x => SendOnLoginProperties.PropertiesInt64.Contains((ushort)x.Key)).ToDictionary(i => i.Key, i => i.Value);
 
             if (_propertiesInt64.Count != 0)
             {
