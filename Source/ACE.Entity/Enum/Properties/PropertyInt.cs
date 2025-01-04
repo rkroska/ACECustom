@@ -16,6 +16,8 @@ namespace ACE.Entity.Enum.Properties
         CreatureType = 2,
         PaletteTemplate = 3,
         ClothingPriority = 4,
+        [AssessmentProperty]
+        [SendOnLogin]
         EncumbranceVal = 5, // ENCUMB_VAL_INT,
         ItemsCapacity = 6,
         [SendOnLogin]
