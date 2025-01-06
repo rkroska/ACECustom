@@ -30,7 +30,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Locking mechanism provides concurrent access to collections
         /// </summary>
-        private static readonly object landblockMutex = new object();
+        private static readonly ReaderWriterLockSlim landblockLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
 
         /// <summary>
         /// A table of all the landblocks in the world map
@@ -58,8 +58,16 @@ namespace ACE.Server.Managers
         {
             get
             {
-                lock (landblockMutex)
-                    return landblockGroups.Count;
+               landblockLock.EnterReadLock();
+               try
+               {
+                   return landblockGroups.Count;
+               }
+               finally
+               {
+                    landblockLock.ExitReadLock();
+                }
+                    
             }
         }
 
@@ -671,36 +679,43 @@ namespace ACE.Server.Managers
                     bool unloadFailed = false;
                     
                     destructionQueue.TryRemove(cacheKey, out _);
-                    lock (landblockMutex)
+                    landblockLock.EnterWriteLock();
+                    try
                     {
                         // remove from list of managed landblocks
                         if (loadedLandblocks.Remove(cacheKey, out landblock))
-                        {                            
+                        {
                             AddUpdateLandblock(cacheKey, null);
 
                             // remove from landblock group
-                            for (int i = landblockGroups.Count - 1; i >= 0 ; i--)
+                            for (int i = landblockGroups.Count - 1; i >= 0; i--)
                             {
                                 if (landblockGroups[i].Remove(landblock, landblock.VariationId))
                                 {
                                     if (landblockGroups[i].Count == 0)
                                         landblockGroups.RemoveAt(i);
-                                    else if (ConfigManager.Config.Server.Threading.MultiThreadedLandblockGroupPhysicsTicking || ConfigManager.Config.Server.Threading.MultiThreadedLandblockGroupTicking) // Only try to split if multi-threading is enabled
+                                    else if (ConfigManager.Config.Server.Threading
+                                                 .MultiThreadedLandblockGroupPhysicsTicking ||
+                                             ConfigManager.Config.Server.Threading
+                                                 .MultiThreadedLandblockGroupTicking) // Only try to split if multi-threading is enabled
                                     {
                                         swTrySplitEach.Restart();
                                         var splits = landblockGroups[i].TryThrottledSplit();
                                         swTrySplitEach.Stop();
 
                                         if (swTrySplitEach.Elapsed.TotalMilliseconds > 3)
-                                            log.Warn($"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
+                                            log.Warn(
+                                                $"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
                                         else if (swTrySplitEach.Elapsed.TotalMilliseconds > 1)
-                                            log.Debug($"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
+                                            log.Debug(
+                                                $"[LANDBLOCK GROUP] TrySplit for {landblockGroups[i]} took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
 
                                         if (splits != null)
                                         {
                                             if (splits.Count > 0)
                                             {
-                                                log.Debug($"[LANDBLOCK GROUP] TrySplit resulted in {splits.Count} split(s) and took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
+                                                log.Debug(
+                                                    $"[LANDBLOCK GROUP] TrySplit resulted in {splits.Count} split(s) and took: {swTrySplitEach.Elapsed.TotalMilliseconds:N2} ms");
                                                 log.Debug($"[LANDBLOCK GROUP] split for old: {landblockGroups[i]}");
                                             }
 
@@ -721,7 +736,10 @@ namespace ACE.Server.Managers
                         else
                             unloadFailed = true;
                     }
-
+                    finally
+                    {
+                        landblockLock.ExitWriteLock();
+                    }
                     if (unloadFailed)
                         log.Error($"LandblockManager: failed to unload {landblock.Id.Raw:X8}");
                 }
@@ -745,10 +763,15 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void AddAllActiveLandblocksToDestructionQueue()
         {
-            lock (landblockMutex)
+            landblockLock.EnterWriteLock();
+            try
             {
                 foreach (var landblock in loadedLandblocks)
                     AddToDestructionQueue(landblock.Value, landblock.Key.Variant);
+            }
+            finally
+            {
+                landblockLock.ExitWriteLock();
             }
         }
 
@@ -779,12 +802,17 @@ namespace ACE.Server.Managers
 
         public static void DoEnvironChange(EnvironChangeType environChangeType)
         {
-            lock (landblockMutex)
+            landblockLock.EnterWriteLock();
+            try
             {
                 if (environChangeType.IsFog())
                     SetGlobalFogColor(environChangeType);
                 else
                     SendGlobalEnvironSound(environChangeType);
+            }
+            finally
+            {
+                landblockLock.ExitWriteLock();
             }
         }
     }
