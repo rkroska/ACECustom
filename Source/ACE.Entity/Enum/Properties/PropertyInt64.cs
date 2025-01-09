@@ -53,5 +53,6 @@ namespace ACE.Entity.Enum.Properties
         LumAugMeleeDefenseCount = 9024,
         LumAugMissileDefenseCount = 9025,
         LumAugMagicDefenseCount = 9026,
+        BankedWeaklyEnlightenedCoins = 9027,
     }
 }
