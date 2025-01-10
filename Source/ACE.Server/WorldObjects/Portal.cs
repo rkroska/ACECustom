@@ -255,8 +255,6 @@ namespace ACE.Server.WorldObjects
                 var canSolve = player.QuestManager.CanSolve(QuestRestriction);
                 var success = hasQuest && !canSolve;
 
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Debug: QuestRestriction - hasQuest: {hasQuest}, canSolve: {canSolve}, success: {success}", ChatMessageType.System));
-
                 if (!success)
                 {
                     player.QuestManager.HandlePortalQuestError(QuestRestriction);
@@ -320,7 +318,7 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 default:
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Debug: Unhandled requirement type {reqType} in {requirementLabel}", ChatMessageType.System));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($" Unhandled requirement type {reqType} in {requirementLabel}", ChatMessageType.System));
                     return false;
             }
 
@@ -330,7 +328,6 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Debug: {requirementLabel} passed for {reqType} with value {reqValue}", ChatMessageType.System));
             return true;
         }
 
