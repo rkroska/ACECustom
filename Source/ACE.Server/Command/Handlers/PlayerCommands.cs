@@ -620,7 +620,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("clap", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Deposit Enlightened Coins and Weakly Enlightened Coins using items from your pack. It will take the lower of the red Aetheria/Empyrean and blue Aetheria/Falatacot and deposit that amount.", "Usage: /clap")]
+        [CommandHandler("clap", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Deposit Enlightened Coins and Weakly Enlightened Coins using items from your pack. It will take the lower of the Red Coalesced Aetheria/Empyrean Trinket and Blue Coalesced Aetheria/Falatacot (including powders) and deposit that amount.", "Usage: /clap all")]
         public static void HandleClap(Session session, params string[] parameters)
         {
             if (session.Player == null)
@@ -634,29 +634,31 @@ namespace ACE.Server.Command.Handlers
 
             int ClapCostPerUnit = 250000;
 
-            // Inventory counts for Red Coalesced Aetheria + Empyrean Trinkets
+            // Inventory counts for Red Coalesced Aetheria + Red Powder + Empyrean Trinkets
             var redAetheriaItems = session.Player.GetInventoryItemsOfWCID(42636) // Coalesced Aetheria WCID
                 .Where(item => item.EquipmentSetId == null) // Check for Coalesced Aetheria
                 .ToList();
-
             int redAetheriaCount = redAetheriaItems.Count;
+            int redPowderCount = session.Player.GetNumInventoryItemsOfWCID(42644); // Red Powder WCID
+            int totalRedAetheriaCount = redAetheriaCount + redPowderCount; // Combine Red Aetheria and Red Powder
             int empyreanTrinketCount = session.Player.GetNumInventoryItemsOfWCID(34276); // Empyrean Trinket
 
-            // Inventory counts for Blue Coalesced Aetheria + Falatacot Trinkets
+            // Inventory counts for Blue Coalesced Aetheria + Blue Powder + Falatacot Trinkets
             var blueAetheriaItems = session.Player.GetInventoryItemsOfWCID(42635) // Coalesced Aetheria WCID
                 .Where(item => item.EquipmentSetId == null) // Check for Coalesced Aetheria
                 .ToList();
-
             int blueAetheriaCount = blueAetheriaItems.Count;
+            int bluePowderCount = session.Player.GetNumInventoryItemsOfWCID(300019); // Blue Powder WCID
+            int totalBlueAetheriaCount = blueAetheriaCount + bluePowderCount; // Combine Blue Aetheria and Blue Powder
             int falatacotTrinketCount = session.Player.GetNumInventoryItemsOfWCID(34277); // Falatacot Trinket
 
             // Calculate the maximum amount of coins that can be crafted for each type
-            int redComboCount = Math.Min(redAetheriaCount, empyreanTrinketCount);
-            int blueComboCount = Math.Min(blueAetheriaCount, falatacotTrinketCount);
+            int redComboCount = Math.Min(totalRedAetheriaCount, empyreanTrinketCount);
+            int blueComboCount = Math.Min(totalBlueAetheriaCount, falatacotTrinketCount);
 
-            // Ensure the player has enough banked pyreals to cover the total cost
-            int totalCoinsToCraft = redComboCount + blueComboCount;
-            int totalClapCost = totalCoinsToCraft * ClapCostPerUnit;
+            // Calculate MMD cost only for Coalesced Aetheria (Red and Blue)
+            int totalClapCost = (redComboCount - redPowderCount > 0 ? Math.Min(redComboCount, redAetheriaCount) : 0) * ClapCostPerUnit +
+                                (blueComboCount - bluePowderCount > 0 ? Math.Min(blueComboCount, blueAetheriaCount) : 0) * ClapCostPerUnit;
 
             if (session.Player.BankedPyreals < totalClapCost)
             {
@@ -666,11 +668,21 @@ namespace ACE.Server.Command.Handlers
 
             // Consume items and bank coins
             // Red Aetheria + Empyrean Trinkets
-            foreach (var item in redAetheriaItems.Take(redComboCount))
+            int redItemsToConsume = redComboCount;
+            foreach (var item in redAetheriaItems.Take(Math.Min(redItemsToConsume, redAetheriaCount)))
             {
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Coalesced Aetheria from inventory.", ChatMessageType.System));
+                    return;
+                }
+                redItemsToConsume--;
+            }
+            if (redItemsToConsume > 0)
+            {
+                if (!session.Player.TryConsumeFromInventoryWithNetworking(42644, redItemsToConsume)) // Red Powder
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Powder from inventory.", ChatMessageType.System));
                     return;
                 }
             }
@@ -684,11 +696,21 @@ namespace ACE.Server.Command.Handlers
             session.Player.BankedEnlightenedCoins += redComboCount;
 
             // Blue Aetheria + Falatacot Trinkets
-            foreach (var item in blueAetheriaItems.Take(blueComboCount))
+            int blueItemsToConsume = blueComboCount;
+            foreach (var item in blueAetheriaItems.Take(Math.Min(blueItemsToConsume, blueAetheriaCount)))
             {
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Coalesced Aetheria from inventory.", ChatMessageType.System));
+                    return;
+                }
+                blueItemsToConsume--;
+            }
+            if (blueItemsToConsume > 0)
+            {
+                if (!session.Player.TryConsumeFromInventoryWithNetworking(300019, blueItemsToConsume)) // Blue Powder
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Powder from inventory.", ChatMessageType.System));
                     return;
                 }
             }
@@ -699,13 +721,14 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            session.Player.BankedWeaklyEnlightenedCoins += blueComboCount; // Replace with the actual property for Weakly Enlightened Coins
+            // Award 3 Weakly Enlightened Coins per crafting unit
+            session.Player.BankedWeaklyEnlightenedCoins += blueComboCount * 3; // Replace with the actual property for Weakly Enlightened Coins
 
-            // Deduct ClapCost for both combinations
+            // Deduct ClapCost for Coalesced Aetheria only
             session.Player.BankedPyreals -= totalClapCost;
 
             // Notify the player
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redComboCount} Enlightened Coins and {blueComboCount} Weakly Enlightened Coins! Total cost: {totalClapCost} pyreals.", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redComboCount} Enlightened Coins and {blueComboCount * 3} Weakly Enlightened Coins! Total cost (Coalesced Aetheria only): {totalClapCost} pyreals.", ChatMessageType.Broadcast));
         }
 
         [CommandHandler("enl", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Enlightenment Alias", "")]
