@@ -1835,11 +1835,11 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        // copychar < character name >, < copy name >
+        // copychar < character name >, < copy name >[, accountName]
         [CommandHandler("copychar", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2,
             "Copies an existing character into your character list.",
-            "< Existing Character Name >, < New Character Name >\n" +
-            "Given the name of an existing character \"character name\", this command makes a copy of that character with the name \"copy name\" and places it into your character list.")]
+            "< Existing Character Name >, < New Character Name >(, < Account Name >)\n" +
+            "Given the name of an existing character \"character name\", this command makes a copy of that character with the name \"copy name\" and places it into your character list or the specified account character list.")]
         public static void HandleCopychar(Session session, params string[] parameters)
         {
             // usage: @copychar < character name >, < copy name >
@@ -1865,11 +1865,36 @@ namespace ACE.Server.Command.Handlers
             newCharName = newCharName.First().ToString().ToUpper() + newCharName.Substring(1);
 
             var existingPlayer = PlayerManager.FindByName(existingCharName);
-
-            if (existingPlayer == null || session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account").Item)
+            if (existingPlayer == null)
             {
-                //CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Does the character exist _AND_ is not currently logged in? Is the new character name already taken, or is the account out of free character slots?", ChatMessageType.Broadcast);
-                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Does the character exist? Is the new character name already taken, or is the account out of free character slots?", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\"! Character doesn't exist.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            if (names.Length > 2)
+            {
+                string newAccountName = names[2].TrimStart(' ').TrimEnd(' ').ToLower();
+
+                var account = DatabaseManager.Authentication.GetAccountByName(newAccountName);
+
+                if (account == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Error, cannot restore. Account \"{newAccountName}\" is not in database.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                if (PlayerManager.IsAccountAtMaxCharacterSlots(account.AccountName))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Error, cannot restore. Account \"{newAccountName}\" has no free character slots.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                DoCopyChar(session, existingCharName, existingPlayer.Guid.Full, false, newCharName, account.AccountId);
+                return;
+            }
+            else if ( session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account").Item)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Account is out of free character slots.", ChatMessageType.Broadcast);
                 return;
             }
 
