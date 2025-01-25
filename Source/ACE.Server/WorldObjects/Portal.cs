@@ -13,6 +13,8 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
+using ACE.Database;
+using System.Net;
 
 namespace ACE.Server.WorldObjects
 {
@@ -120,6 +122,25 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private static readonly float minTimeSinceLastPortal = 3.5f;
 
+        private (bool success, string message) CheckIPQuestRestriction(Player player)
+        {
+            if (string.IsNullOrEmpty(QuestRestriction))
+                return (true, string.Empty); // No restriction, allow access.
+
+            string playerIp = new IPAddress(player.Session.Player.Account.LastLoginIP).ToString();
+            //Console.WriteLine($"[IPQuest] Checking restriction for quest: {QuestRestriction}, playerIp: {playerIp}, characterId: {player.Character.Id}");
+
+            int maxAttempts = 2; // Default max IP attempts; can be fetched dynamically if needed.
+            var quest = DatabaseManager.World.GetCachedQuest(QuestRestriction);
+            if (quest != null)
+            {
+                maxAttempts = (int)quest.IpLootLimit; // Use quest-specific limit if defined.
+            }
+
+            (bool success, string message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, player.Character.Id, maxAttempts);
+            return (success, message);
+        }
+
         public override ActivationResult CheckUseRequirements(WorldObject activator)
         {
             if (!(activator is Player player))
@@ -127,6 +148,37 @@ namespace ACE.Server.WorldObjects
 
             if (player.Teleporting)
                 return new ActivationResult(false);
+
+            // Check if the portal has an IPQuest string
+            var ipQuestName = GetProperty(PropertyString.IPQuest);
+            if (!string.IsNullOrEmpty(ipQuestName))
+            {
+                string playerIp = new IPAddress(player.Account.LastLoginIP).ToString();
+
+                var quest = DatabaseManager.World.GetCachedQuest(ipQuestName);
+                if (quest != null)
+                {
+                    (bool success, string message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(
+                        quest.Id,
+                        playerIp,
+                        player.Character.Id,
+                        (int)quest.IpLootLimit
+                    );
+
+                    if (!success)
+                    {
+                        // Custom message for portal restrictions
+                        var customMessage = "You cannot use this portal. Your IP-wide limit has been reached.";
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(customMessage, ChatMessageType.Broadcast));
+                        return new ActivationResult(false);
+                    }
+                }
+                else
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Portal is restricted but the linked quest is missing!", ChatMessageType.System));
+                    return new ActivationResult(false);
+                }
+            }
 
             if (Destination == null)
             {
@@ -163,6 +215,17 @@ namespace ACE.Server.WorldObjects
 
             if (!player.IgnorePortalRestrictions)
             {
+                // Add IPQuest restriction check
+                if (!string.IsNullOrEmpty(QuestRestriction))
+                {
+                    var (success, message) = CheckIPQuestRestriction(player); // Custom method for IPQuest
+                    if (!success)
+                    {
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
+                        return new ActivationResult(false);
+                    }
+                }
+
                 if (player.Level < MinLevel)
                 {
                     // You are not powerful enough to interact with that portal!

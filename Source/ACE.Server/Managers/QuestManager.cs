@@ -398,7 +398,6 @@ namespace ACE.Server.Managers
 
             return true;
         }
-
         /// <summary>
         /// Returns the time remaining until the player can solve this quest again
         /// </summary>
@@ -626,7 +625,7 @@ namespace ACE.Server.Managers
             player.Session.Network.EnqueueSend(error);
         }
 
-        public void HandlePortalQuestError(string questName)
+        public void HandlePortalQuestError(string questName, string customMessage = null)
         {
             var player = Creature as Player;
 
@@ -641,6 +640,12 @@ namespace ACE.Server.Managers
                 var error = new GameEventWeenieError(player.Session, WeenieError.QuestSolvedTooLongAgo);
                 var text = new GameMessageSystemChat("You completed the quest this portal requires too long ago!", ChatMessageType.Magic); // This msg wasn't sent in retail PCAP, leading to a completely silent fail when using the portal with an expired flag.
                 player.Session.Network.EnqueueSend(text, error);
+            }
+            else if (!string.IsNullOrEmpty(customMessage))
+            {
+                // Custom error message for IPQuest restriction
+                var error = new GameMessageSystemChat(customMessage, ChatMessageType.Broadcast);
+                player.Session.Network.EnqueueSend(error);
             }
         }
 
