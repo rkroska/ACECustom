@@ -423,7 +423,7 @@ namespace ACE.Server.Managers
             if (CanScaleQuestMinDelta(quest))
                 nextSolveTime = playerQuest.LastTimeCompleted + (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate", 1).Item);
             else
-                nextSolveTime = playerQuest.LastTimeCompleted + quest.MinDelta;
+                nextSolveTime = playerQuest.LastTimeCompleted + (uint)quest.MinDelta;
 
             if (currentTime >= nextSolveTime)
                 return TimeSpan.MinValue;   // can solve again now - next solve time expired
@@ -550,6 +550,27 @@ namespace ACE.Server.Managers
                 Console.WriteLine("Player ID: " + quest.CharacterId.ToString("X8"));
                 Console.WriteLine("----");
             }
+        }
+
+        public bool CanPlayerLootIPQuestItem(string questName, string playerIp, Network.Session session)
+        {
+            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            if (quest == null)
+                return true; // If the quest doesn't exist, allow looting
+
+            uint characterId = session.Player.Character.Id;
+            int maxAttempts = (int)quest.IpLootLimit; // Max two unique characters per IP
+
+            // Check and increment solves count
+            var (success, message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, characterId, maxAttempts);
+            if (!success)
+            {
+               // Console.WriteLine($"Loot blocked for quest: {questName}, playerIp: {playerIp}, characterId: {characterId}. Reason: {message}");
+                session.Player.SendMessage(message, ChatMessageType.Broadcast);
+                return false;
+            }
+
+            return true; // Allow looting
         }
 
         public void Stamp(string questFormat)
