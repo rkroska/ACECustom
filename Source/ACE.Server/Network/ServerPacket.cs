@@ -52,8 +52,9 @@ namespace ACE.Server.Network
             if (Data != null && Data.Length > 0)
             {
                 var body = Data.GetBuffer();
-                Buffer.BlockCopy(body, 0, buffer, offset, (int)Data.Length);
-                offset += (int)Data.Length;
+                int dataLength = (int)Data.Length;
+                Buffer.BlockCopy(body, 0, buffer, offset, dataLength);
+                offset += dataLength;
 
                 payloadChecksum += Hash32.Calculate(body, (int)Data.Length);
             }
