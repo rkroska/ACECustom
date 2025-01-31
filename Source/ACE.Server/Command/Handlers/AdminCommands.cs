@@ -1915,6 +1915,10 @@ namespace ACE.Server.Command.Handlers
                     {
                         DatabaseManager.Shard.IsCharacterNameAvailable(newCharName, isAvailable =>
                         {
+                            if (isAvailable)
+                            {
+                                isAvailable = (PlayerManager.FindByName(newCharName) == null);
+                            }
                             if (!isAvailable)
                             {
                                 CommandHandlerHelper.WriteOutputInfo(session, $"{newCharName} is not available to use for the {(isDeletedChar ? "restored" : "copied")} character name, try another name.", ChatMessageType.Broadcast);
