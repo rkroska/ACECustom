@@ -398,6 +398,7 @@ namespace ACE.Server.Managers
 
             return true;
         }
+
         /// <summary>
         /// Returns the time remaining until the player can solve this quest again
         /// </summary>
@@ -422,7 +423,7 @@ namespace ACE.Server.Managers
             if (CanScaleQuestMinDelta(quest))
                 nextSolveTime = playerQuest.LastTimeCompleted + (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate", 1).Item);
             else
-                nextSolveTime = playerQuest.LastTimeCompleted + (uint)quest.MinDelta;
+                nextSolveTime = playerQuest.LastTimeCompleted + quest.MinDelta;
 
             if (currentTime >= nextSolveTime)
                 return TimeSpan.MinValue;   // can solve again now - next solve time expired
@@ -551,27 +552,6 @@ namespace ACE.Server.Managers
             }
         }
 
-        public bool CanPlayerLootIPQuestItem(string questName, string playerIp, Network.Session session)
-        {
-            var quest = DatabaseManager.World.GetCachedQuest(questName);
-            if (quest == null)
-                return true; // If the quest doesn't exist, allow looting
-
-            uint characterId = session.Player.Character.Id;
-            int maxAttempts = (int)quest.IpLootLimit; // Max two unique characters per IP
-
-            // Check and increment solves count
-            var (success, message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, characterId, maxAttempts);
-            if (!success)
-            {
-               // Console.WriteLine($"Loot blocked for quest: {questName}, playerIp: {playerIp}, characterId: {characterId}. Reason: {message}");
-                session.Player.SendMessage(message, ChatMessageType.Broadcast);
-                return false;
-            }
-
-            return true; // Allow looting
-        }
-
         public void Stamp(string questFormat)
         {
             var questName = GetQuestName(questFormat);
@@ -625,7 +605,7 @@ namespace ACE.Server.Managers
             player.Session.Network.EnqueueSend(error);
         }
 
-        public void HandlePortalQuestError(string questName, string customMessage = null)
+        public void HandlePortalQuestError(string questName)
         {
             var player = Creature as Player;
 
@@ -640,12 +620,6 @@ namespace ACE.Server.Managers
                 var error = new GameEventWeenieError(player.Session, WeenieError.QuestSolvedTooLongAgo);
                 var text = new GameMessageSystemChat("You completed the quest this portal requires too long ago!", ChatMessageType.Magic); // This msg wasn't sent in retail PCAP, leading to a completely silent fail when using the portal with an expired flag.
                 player.Session.Network.EnqueueSend(text, error);
-            }
-            else if (!string.IsNullOrEmpty(customMessage))
-            {
-                // Custom error message for IPQuest restriction
-                var error = new GameMessageSystemChat(customMessage, ChatMessageType.Broadcast);
-                player.Session.Network.EnqueueSend(error);
             }
         }
 
