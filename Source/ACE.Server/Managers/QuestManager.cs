@@ -561,7 +561,7 @@ namespace ACE.Server.Managers
             int maxAttempts = (int)quest.IpLootLimit; // Max two unique characters per IP
 
             // Check and increment solves count
-            var (success, message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, characterId, maxAttempts);
+            var (success, message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, characterId, maxAttempts);
             if (!success)
             {
                // Console.WriteLine($"Loot blocked for quest: {questName}, playerIp: {playerIp}, characterId: {characterId}. Reason: {message}");

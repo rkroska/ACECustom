@@ -956,7 +956,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Check if the player is allowed to loot the item
-            var (success, message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(
+            var (success, message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(
                 questId: quest.Id,
                 playerIp: playerIp,
                 characterId: Session.Player.Character.Id,

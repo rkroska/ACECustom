@@ -25,7 +25,6 @@ namespace ACE.Database.Models.World
         public virtual DbSet<LandblockInstanceLink> LandblockInstanceLink { get; set; }
         public virtual DbSet<PointsOfInterest> PointsOfInterest { get; set; }
         public virtual DbSet<Quest> Quest { get; set; }
-        public virtual DbSet<QuestIpTracking> QuestIpTracking { get; set; }
         public virtual DbSet<Recipe> Recipe { get; set; }
         public virtual DbSet<RecipeMod> RecipeMod { get; set; }
         public virtual DbSet<RecipeModsBool> RecipeModsBool { get; set; }
@@ -413,35 +412,6 @@ namespace ACE.Database.Models.World
                     .IsRequired()
                     .HasColumnName("name")
                     .HasComment("Unique Name of Quest");
-            });
-
-            modelBuilder.Entity<QuestIpTracking>(entity =>
-            {
-                entity.ToTable("quest_ip_tracking");
-
-                entity.HasKey(e => new { e.QuestId, e.IpAddress });
-
-                entity.Property(e => e.QuestId)
-                      .HasColumnName("quest_id")
-                      .IsRequired();
-
-                entity.Property(e => e.IpAddress)
-                      .HasColumnName("ip_address")
-                      .HasMaxLength(45)
-                      .IsRequired();
-
-                entity.Property(e => e.SolvesCount)
-                      .HasColumnName("solves_count")
-                      .IsRequired()
-                      .HasDefaultValue(0);
-
-                entity.Property(e => e.LastSolveTime)
-                      .HasColumnName("last_solve_time");
-
-                entity.HasOne(e => e.Quest)
-                      .WithMany(q => q.QuestIpTrackings)
-                      .HasForeignKey(e => e.QuestId)
-                      .HasConstraintName("quest_ip_tracking_ibfk_1"); // Ensure the foreign key name matches
             });
 
             modelBuilder.Entity<Recipe>(entity =>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ACE.Database.Models.Shard;
 
 #nullable disable
 
@@ -16,6 +17,6 @@ namespace ACE.Database.Models.World
         public bool IsIpRestricted { get; set; }
         public int? IpLootLimit { get; set; }
 
-        public ICollection<QuestIpTracking> QuestIpTrackings { get; set; }
+        public virtual ICollection<QuestIpTracking> QuestIpTrackings { get; set; } = new HashSet<QuestIpTracking>();
     }
 }

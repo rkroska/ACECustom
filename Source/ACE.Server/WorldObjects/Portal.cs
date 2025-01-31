@@ -137,7 +137,7 @@ namespace ACE.Server.WorldObjects
                 maxAttempts = (int)quest.IpLootLimit; // Use quest-specific limit if defined.
             }
 
-            (bool success, string message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, player.Character.Id, maxAttempts);
+            (bool success, string message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, player.Character.Id, maxAttempts);
             return (success, message);
         }
 
@@ -156,9 +156,55 @@ namespace ACE.Server.WorldObjects
                 string playerIp = new IPAddress(player.Account.LastLoginIP).ToString();
 
                 var quest = DatabaseManager.World.GetCachedQuest(ipQuestName);
+
+                if (player.Level < MinLevel)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreNotPowerfulEnoughToUsePortal));
+
+                if (player.Level > MaxLevel && MaxLevel != 0 && MaxLevel != 999)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreTooPowerfulToUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoPk) && player.PlayerKillerStatus == PlayerKillerStatus.PK)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.PKsMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoPKLite) && player.PlayerKillerStatus == PlayerKillerStatus.PKLite)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.PKLiteMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoNPK) && player.PlayerKillerStatus == PlayerKillerStatus.NPK)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.NonPKsMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.OnlyOlthoiPCs) && !player.IsOlthoiPlayer)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.OnlyOlthoiMayUsePortal));
+
+                if ((PortalRestrictions.HasFlag(PortalBitmask.NoOlthoiPCs) || IsGateway) && player.IsOlthoiPlayer)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.OlthoiMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoVitae) && player.HasVitae)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMayNotUsePortalWithVitae));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoNewAccounts) && !player.Account15Days)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeTwoWeeksOldToUsePortal));
+
+                if (player.AccountRequirements < AccountRequirements)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.MustPurchaseThroneOfDestinyToUsePortal));
+
+                if ((AdvocateQuest ?? false) && !player.IsAdvocate)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeAnAdvocateToUsePortal));
+
+                if (PortalReqType != PortalRequirement.None && PortalReqValue.GetValueOrDefault() > 0)
+                {
+                    if (!CheckPortalRequirement(player, PortalReqType, PortalReqValue.GetValueOrDefault(), PortalReqMaxValue.GetValueOrDefault(), "Primary Requirement"))
+                        return new ActivationResult(false);
+
+                    if (PortalReqType2 != PortalRequirement2.None && PortalReqValue2.GetValueOrDefault() > 0)
+                    {
+                        if (!CheckPortalRequirement(player, PortalReqType2, PortalReqValue2.GetValueOrDefault(), PortalReqMaxValue2.GetValueOrDefault(), "Secondary Requirement"))
+                            return new ActivationResult(false);
+                    }
+                }
+
                 if (quest != null)
                 {
-                    (bool success, string message) = DatabaseManager.World.IncrementAndCheckIPQuestAttempts(
+                    (bool success, string message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(
                         quest.Id,
                         playerIp,
                         player.Character.Id,
