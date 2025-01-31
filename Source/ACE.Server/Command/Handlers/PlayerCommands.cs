@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 using log4net;
@@ -20,6 +21,7 @@ using ACE.Database.Models.Auth;
 using System.Xml.Linq;
 using Lifestoned.DataModel.DerethForever;
 using MySqlX.XDevAPI.Common;
+using Org.BouncyCastle.Utilities.Net;
 using static System.Net.Mime.MediaTypeNames;
 //using ACE.Server.Factories;
 //using Org.BouncyCastle.Ocsp;
@@ -1149,10 +1151,26 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>
+        /// Rate limiter for /passwd command
+        /// </summary>
+        private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);
+
         // quest info (uses GDLe formatting to match plugin expectations)
         [CommandHandler("myquests", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows your quest log")]
         public static void HandleQuests(Session session, params string[] parameters)
         {
+            if (PropertyManager.GetBool("myquest_throttle_enabled").Item)
+            {
+                var currentTime = DateTime.UtcNow;
+
+                if (currentTime - session.LastMyQuestsCommandTime < MyQuests)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {MyQuests.TotalSeconds} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+            }
+
             if (!PropertyManager.GetBool("quest_info_enabled").Item)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"myquests\" is not currently enabled on this server.", ChatMessageType.Broadcast));
@@ -1167,14 +1185,13 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            var questMessages = new List<string>();
             foreach (var playerQuest in quests)
             {
-                var text = "";
                 var questName = QuestManager.GetQuestName(playerQuest.QuestName);
                 var quest = DatabaseManager.World.GetCachedQuest(questName);
                 if (quest == null)
                 {
-                    //Console.WriteLine($"Couldn't find quest {playerQuest.QuestName}");
                     continue;
                 }
 
@@ -1182,10 +1199,13 @@ namespace ACE.Server.Command.Handlers
                 if (QuestManager.CanScaleQuestMinDelta(quest))
                     minDelta = (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate").Item);
 
-                text += $"{playerQuest.QuestName.ToLower()} - {playerQuest.NumTimesCompleted} solves ({playerQuest.LastTimeCompleted})";
-                text += $"\"{quest.Message}\" {quest.MaxSolves} {minDelta}";
+                var text = $"{playerQuest.QuestName.ToLower()} - {playerQuest.NumTimesCompleted} solves ({playerQuest.LastTimeCompleted}) \"{quest.Message}\" {quest.MaxSolves} {minDelta}";
+                questMessages.Add(text);
+            }
 
-                session.Network.EnqueueSend(new GameMessageSystemChat(text, ChatMessageType.Broadcast));
+            foreach (var message in questMessages)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
             }
         }
 

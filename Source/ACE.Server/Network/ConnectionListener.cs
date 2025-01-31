@@ -80,11 +80,10 @@ namespace ACE.Server.Network
 
         private void OnDataReceive(IAsyncResult result)
         {
-            EndPoint clientEndPoint = null;
+            EndPoint clientEndPoint = new IPEndPoint(listeningHost, 0);
 
             try
             {
-                clientEndPoint = new IPEndPoint(listeningHost, 0);
                 int dataSize = Socket.EndReceiveFrom(result, ref clientEndPoint);
 
                 IPEndPoint ipEndpoint = (IPEndPoint)clientEndPoint;

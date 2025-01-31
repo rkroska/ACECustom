@@ -9,16 +9,26 @@ namespace ACE.Server.Network.GameAction.Actions
         [GameAction(GameActionType.AllegianceUpdateRequest)]
         public static void Handle(ClientMessage message, Session session)
         {
-            var uiPanel = Convert.ToBoolean(message.Payload.ReadUInt32());
+            try
+            {
+                var uiPanel = Convert.ToBoolean(message.Payload.ReadUInt32());
 
-            var player = session.Player;
+                var player = session.Player;
 
-            var allegiance = player != null ? player.Allegiance : null;
-            var allegianceNode = player != null ? player.AllegianceNode : null;
+                var allegiance = player != null ? player.Allegiance : null;
+                var allegianceNode = player != null ? player.AllegianceNode : null;
 
-            var allegianceUpdate = new GameEventAllegianceUpdate(session, allegiance, allegianceNode);
+                var allegianceUpdate = new GameEventAllegianceUpdate(session, allegiance, allegianceNode);
+                session.Network.EnqueueSend(allegianceUpdate, new GameEventAllegianceAllegianceUpdateDone(session));
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                session.Network.EnqueueSend(null, new GameEventAllegianceAllegianceUpdateDone(session));
+            }
+            
 
-            session.Network.EnqueueSend(allegianceUpdate, new GameEventAllegianceAllegianceUpdateDone(session));
+           
         }
     }
 }
