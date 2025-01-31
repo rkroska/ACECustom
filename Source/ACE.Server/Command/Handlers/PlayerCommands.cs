@@ -1171,6 +1171,8 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
+            session.LastMyQuestsCommandTime = DateTime.UtcNow;
+
             if (!PropertyManager.GetBool("quest_info_enabled").Item)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"myquests\" is not currently enabled on this server.", ChatMessageType.Broadcast));
