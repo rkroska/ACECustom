@@ -402,6 +402,10 @@ namespace ACE.Entity
         /// </summary>
         public float SquaredDistanceTo(Position p)
         {
+            if (p is null)
+            {
+                return 999;
+            }
             if (p.LandblockId == this.LandblockId)
             {
                 var dx = this.PositionX - p.PositionX;

@@ -140,10 +140,10 @@ namespace ACE.Server.WorldObjects
                 }
                 AvailableExperience += addAmount;
 
-                var xpTotalUpdate = new GameMessagePrivateUpdatePropertyFloat(this, PropertyFloat.TotalExperienceDouble, TotalExperienceDouble ?? 0);
+                //var xpTotalUpdate = new GameMessagePrivateUpdatePropertyFloat(this, PropertyFloat.TotalExperienceDouble, TotalExperienceDouble ?? 0);
                 var xpAvailUpdate = new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0);
-                Session.Network.EnqueueSend(xpTotalUpdate, xpAvailUpdate);
-
+                //Session.Network.EnqueueSend(xpTotalUpdate, xpAvailUpdate);
+                Session.Network.EnqueueSend(xpAvailUpdate); //client doesn't use TotalExperienceDouble, it's serverside only, sending this causes additional chatter
                 CheckForLevelup();
             }
 
