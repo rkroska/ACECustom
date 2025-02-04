@@ -708,13 +708,13 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
         WieldSkillType = WeaponSkill
         WieldDifficulty = 550
 
-    - Chance: 3%:
+    - Chance: 5%:
         Damage += 83
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
         WieldDifficulty = 550
 
-    - Chance: 2%:
+    - Chance: 5%:
         Damage += 84
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
