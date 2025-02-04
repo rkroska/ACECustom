@@ -75,7 +75,8 @@ namespace ACE.Server.WorldObjects
 
             UpdateLumAllegiance(amount);
 
-            UpdateLuminance();
+            // 20250203 - Don't spam the client with properties it doesn't use
+            //UpdateLuminance();
         }
 
         /// <summary>
