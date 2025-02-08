@@ -13,8 +13,6 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
-using ACE.Database;
-using System.Net;
 
 namespace ACE.Server.WorldObjects
 {
@@ -149,6 +147,7 @@ namespace ACE.Server.WorldObjects
             if (player.Teleporting)
                 return new ActivationResult(false);
 
+
             // Check if the portal has an IPQuest string
             var ipQuestName = GetProperty(PropertyString.IPQuest);
             if (!string.IsNullOrEmpty(ipQuestName))
@@ -261,17 +260,6 @@ namespace ACE.Server.WorldObjects
 
             if (!player.IgnorePortalRestrictions)
             {
-                // Add IPQuest restriction check
-                if (!string.IsNullOrEmpty(QuestRestriction))
-                {
-                    var (success, message) = CheckIPQuestRestriction(player); // Custom method for IPQuest
-                    if (!success)
-                    {
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
-                        return new ActivationResult(false);
-                    }
-                }
-
                 if (player.Level < MinLevel)
                 {
                     // You are not powerful enough to interact with that portal!

@@ -88,23 +88,12 @@ namespace ACE.Entity.Enum.Properties
         PCAPRecordedServerName          = 8031,
         PCAPRecordedCharacterName       = 8032,
 
-        /* custom */
-        AllegianceMotd                  = 9001,
-        AllegianceMotdSetBy             = 9002,
-        AllegianceSpeakerTitle          = 9003,
-        AllegianceSeneschalTitle        = 9004,
-        AllegianceCastellanTitle        = 9005,
-        GodState                        = 9006,
-        TinkerLog                       = 9007,
-        IPQuest                         = 9008,
-    }
-
-    public static class PropertyStringExtensions
-    {
-        public static string GetDescription(this PropertyString prop)
-        {
-            var description = prop.GetAttributeOfType<DescriptionAttribute>();
-            return description?.Description ?? prop.ToString();
-        }
+        AllegianceMotd = 9001,
+        AllegianceMotdSetBy = 9002,
+        AllegianceSpeakerTitle = 9003,
+        AllegianceSeneschalTitle = 9004,
+        AllegianceCastellanTitle = 9005,
+        GodState = 9006,
+        TinkerLog = 9007,
     }
 }

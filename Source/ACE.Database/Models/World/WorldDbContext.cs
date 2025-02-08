@@ -391,14 +391,6 @@ namespace ACE.Database.Models.World
                     .HasColumnName("max_Solves")
                     .HasComment("Maximum number of times Quest can be completed");
 
-                entity.Property(e => e.IpLootLimit)
-                    .HasColumnName("ip_loot_limit") // Ensure correct casing
-                    .HasComment("Maximum number of times Quest can be completed per IP");
-
-                entity.Property(e => e.IsIpRestricted)
-                    .HasColumnName("is_ip_restricted") // Ensure correct casing
-                    .HasComment("Indicates if the quest is IP restricted");
-
                 entity.Property(e => e.Message)
                     .HasColumnType("text")
                     .HasColumnName("message")

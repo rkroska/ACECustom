@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
-using System.Net;
 
 using ACE.Database;
 using ACE.DatLoader;
@@ -934,7 +933,7 @@ namespace ACE.Server.WorldObjects
 
             return true;
         }
-
+      
         private bool HandleIPQuestItem(WorldObject item, Container itemRootOwner, Container containerRootOwner, uint itemGuid)
         {
             // Fetch the IPQuest property
@@ -1012,27 +1011,6 @@ namespace ACE.Server.WorldObjects
                 out Container itemRootOwner, out WorldObject item, out Container containerRootOwner, out Container container, out bool itemWasEquipped))
             {
                 return;
-            }
-
-            // Determine if movement is between the player and the world (i.e., picking up or dropping the item)
-            bool isWorldInteraction = (itemRootOwner != this && containerRootOwner == this) || (itemRootOwner == this && containerRootOwner != this);
-
-            if (isWorldInteraction && itemRootOwner != this) // Picking up from the world
-            {
-                // Handle IPQuest items specifically
-                var ipQuestName = item.GetProperty(PropertyString.IPQuest);
-                if (!string.IsNullOrEmpty(ipQuestName))
-                {
-                    if (!HandleIPQuestItem(item, itemRootOwner, containerRootOwner, itemGuid))
-                    {
-                        //Console.WriteLine($"IPQuest logic blocked the item pick-up: {ipQuestName}");
-                        return; // IP logic blocked the action
-                    }
-                }
-                else
-                {
-                    //Console.WriteLine($"Skipping IPQuest logic: Item does not have PropertyString.IPQuest.");
-                }
             }
 
             if ((itemRootOwner == this && containerRootOwner != this) || (itemRootOwner != this && containerRootOwner == this)) // Movement is between the player and the world

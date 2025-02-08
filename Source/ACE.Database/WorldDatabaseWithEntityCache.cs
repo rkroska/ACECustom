@@ -13,7 +13,6 @@ using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Model;
-using ACE.Database.Models.Shard;
 
 namespace ACE.Database
 {
@@ -83,6 +82,11 @@ namespace ACE.Database
         public int GetWeenieCacheCount()
         {
             return weenieCache.Count(r => r.Value != null);
+        }
+
+        public void ClearDeathTreasureCache()
+        {
+            cachedDeathTreasure.Clear();
         }
 
         public void ClearWeenieCache()
@@ -1254,7 +1258,6 @@ namespace ACE.Database
         {
             cachedWieldedTreasure.Clear();
         }
-
         public void ClearDeathTreasureCache()
         {
             cachedDeathTreasure.Clear();
