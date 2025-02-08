@@ -14,6 +14,8 @@ namespace ACE.Database
 
         private static SerializedShardDatabase serializedShardDb;
 
+        public static ShardDatabase ShardDB { get; private set; }
+
         public static SerializedShardDatabase Shard { get; private set; }
 
         public static ShardConfigDatabase ShardConfig { get; } = new ShardConfigDatabase();
@@ -49,12 +51,15 @@ namespace ACE.Database
                 return;
             }
 
+            ShardDB = new ShardDatabase();
+
             // By default, we hold on to player biotas a little bit longer to help with offline updates like pass-up xp, allegiance updates, etc...
             var shardDb = new ShardDatabaseWithCaching(TimeSpan.FromMinutes(Common.ConfigManager.Config.Server.ShardPlayerBiotaCacheTime), TimeSpan.FromMinutes(Common.ConfigManager.Config.Server.ShardNonPlayerBiotaCacheTime));
             serializedShardDb = new SerializedShardDatabase(shardDb);
             Shard = serializedShardDb;
 
             shardDb.Exists(true);
+            ShardDB.Exists(true);
         }
 
         public static bool AutoPromoteNextAccountToAdmin { get; set; }

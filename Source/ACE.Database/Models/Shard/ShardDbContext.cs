@@ -1,4 +1,5 @@
 using System;
+using ACE.Database.Models.World;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -57,6 +58,7 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<ConfigPropertiesLong> ConfigPropertiesLong { get; set; }
         public virtual DbSet<ConfigPropertiesString> ConfigPropertiesString { get; set; }
         public virtual DbSet<HousePermission> HousePermission { get; set; }
+        public virtual DbSet<QuestIpTracking> QuestIpTracking { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -1555,6 +1557,38 @@ namespace ACE.Database.Models.Shard
                     .WithMany(p => p.HousePermission)
                     .HasForeignKey(d => d.HouseId)
                     .HasConstraintName("biota_Id_house_Id");
+            });
+
+            modelBuilder.Entity<QuestIpTracking>(entity =>
+            {
+                entity.ToTable("quest_ip_tracking");
+
+                // Define Composite Primary Key (Remove [Key] attributes from entity class)
+                entity.HasKey(e => new { e.QuestId, e.IpAddress });
+
+                entity.Property(e => e.QuestId)
+                      .HasColumnName("quest_id")
+                      .IsRequired();
+
+                entity.Property(e => e.IpAddress)
+                      .HasColumnName("ip_address")
+                      .HasMaxLength(45)
+                      .IsRequired();
+
+                entity.Property(e => e.SolvesCount)
+                      .HasColumnName("solves_count")
+                      .IsRequired()
+                      .HasDefaultValue(0);
+
+                entity.Property(e => e.LastSolveTime)
+                      .HasColumnName("last_solve_time");
+
+                // Foreign Key Relationship to Quest Table
+                entity.HasOne(e => e.Quest)
+                      .WithMany(q => q.QuestIpTrackings)
+                      .HasForeignKey(e => e.QuestId)
+                      .OnDelete(DeleteBehavior.Cascade)
+                      .HasConstraintName("quest_ip_tracking_ibfk_1");
             });
 
             OnModelCreatingPartial(modelBuilder);

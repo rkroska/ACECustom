@@ -120,6 +120,25 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private static readonly float minTimeSinceLastPortal = 3.5f;
 
+        private (bool success, string message) CheckIPQuestRestriction(Player player)
+        {
+            if (string.IsNullOrEmpty(QuestRestriction))
+                return (true, string.Empty); // No restriction, allow access.
+
+            string playerIp = new IPAddress(player.Session.Player.Account.LastLoginIP).ToString();
+            //Console.WriteLine($"[IPQuest] Checking restriction for quest: {QuestRestriction}, playerIp: {playerIp}, characterId: {player.Character.Id}");
+
+            int maxAttempts = 2; // Default max IP attempts; can be fetched dynamically if needed.
+            var quest = DatabaseManager.World.GetCachedQuest(QuestRestriction);
+            if (quest != null)
+            {
+                maxAttempts = (int)quest.IpLootLimit; // Use quest-specific limit if defined.
+            }
+
+            (bool success, string message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, player.Character.Id, maxAttempts);
+            return (success, message);
+        }
+
         public override ActivationResult CheckUseRequirements(WorldObject activator)
         {
             if (!(activator is Player player))
@@ -127,6 +146,84 @@ namespace ACE.Server.WorldObjects
 
             if (player.Teleporting)
                 return new ActivationResult(false);
+
+
+            // Check if the portal has an IPQuest string
+            var ipQuestName = GetProperty(PropertyString.IPQuest);
+            if (!string.IsNullOrEmpty(ipQuestName))
+            {
+                string playerIp = new IPAddress(player.Account.LastLoginIP).ToString();
+
+                var quest = DatabaseManager.World.GetCachedQuest(ipQuestName);
+
+                if (player.Level < MinLevel)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreNotPowerfulEnoughToUsePortal));
+
+                if (player.Level > MaxLevel && MaxLevel != 0 && MaxLevel != 999)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreTooPowerfulToUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoPk) && player.PlayerKillerStatus == PlayerKillerStatus.PK)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.PKsMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoPKLite) && player.PlayerKillerStatus == PlayerKillerStatus.PKLite)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.PKLiteMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoNPK) && player.PlayerKillerStatus == PlayerKillerStatus.NPK)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.NonPKsMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.OnlyOlthoiPCs) && !player.IsOlthoiPlayer)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.OnlyOlthoiMayUsePortal));
+
+                if ((PortalRestrictions.HasFlag(PortalBitmask.NoOlthoiPCs) || IsGateway) && player.IsOlthoiPlayer)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.OlthoiMayNotUsePortal));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoVitae) && player.HasVitae)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMayNotUsePortalWithVitae));
+
+                if (PortalRestrictions.HasFlag(PortalBitmask.NoNewAccounts) && !player.Account15Days)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeTwoWeeksOldToUsePortal));
+
+                if (player.AccountRequirements < AccountRequirements)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.MustPurchaseThroneOfDestinyToUsePortal));
+
+                if ((AdvocateQuest ?? false) && !player.IsAdvocate)
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeAnAdvocateToUsePortal));
+
+                if (PortalReqType != PortalRequirement.None && PortalReqValue.GetValueOrDefault() > 0)
+                {
+                    if (!CheckPortalRequirement(player, PortalReqType, PortalReqValue.GetValueOrDefault(), PortalReqMaxValue.GetValueOrDefault(), "Primary Requirement"))
+                        return new ActivationResult(false);
+
+                    if (PortalReqType2 != PortalRequirement2.None && PortalReqValue2.GetValueOrDefault() > 0)
+                    {
+                        if (!CheckPortalRequirement(player, PortalReqType2, PortalReqValue2.GetValueOrDefault(), PortalReqMaxValue2.GetValueOrDefault(), "Secondary Requirement"))
+                            return new ActivationResult(false);
+                    }
+                }
+
+                if (quest != null)
+                {
+                    (bool success, string message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(
+                        quest.Id,
+                        playerIp,
+                        player.Character.Id,
+                        (int)quest.IpLootLimit
+                    );
+
+                    if (!success)
+                    {
+                        // Custom message for portal restrictions
+                        var customMessage = "You cannot use this portal. Your IP-wide limit has been reached.";
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(customMessage, ChatMessageType.Broadcast));
+                        return new ActivationResult(false);
+                    }
+                }
+                else
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Portal is restricted but the linked quest is missing!", ChatMessageType.System));
+                    return new ActivationResult(false);
+                }
+            }
 
             if (Destination == null)
             {

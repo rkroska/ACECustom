@@ -1258,5 +1258,19 @@ namespace ACE.Database
         {
             cachedWieldedTreasure.Clear();
         }
+        public void ClearDeathTreasureCache()
+        {
+            cachedDeathTreasure.Clear();
+        }
+
+        public int? GetQuestIdByName(string questName)
+        {
+            using (var context = new WorldDbContext())
+            {
+                var quest = context.Quest
+                    .FirstOrDefault(q => q.Name.ToLower() == questName.ToLower()); // Case-insensitive match
+                return (int)quest?.Id;
+            }
+        }
     }
 }

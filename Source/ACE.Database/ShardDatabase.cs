@@ -18,6 +18,7 @@ using ACE.Database.Entity;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Database.Models.World;
 
 namespace ACE.Database
 {
@@ -869,6 +870,114 @@ namespace ACE.Database
             finally
             {
                 rwLock.ExitReadLock();
+            }
+        }
+
+        private string FormatCooldown(TimeSpan time)
+        {
+            if (time.TotalDays >= 1)
+                return $"{(int)time.TotalDays}d {(int)time.Hours}h {(int)time.Minutes}m {(int)time.Seconds}s";
+            if (time.TotalHours >= 1)
+                return $"{(int)time.Hours}h {(int)time.Minutes}m {(int)time.Seconds}s";
+            if (time.TotalMinutes >= 1)
+                return $"{(int)time.Minutes}m {(int)time.Seconds}s";
+            return $"{(int)time.Seconds}s";
+        }
+
+        public (bool, string) IncrementAndCheckIPQuestAttempts(uint questId, string playerIp, uint characterId, int maxAttempts)
+        {
+            using (var context = new WorldDbContext())
+            using (var shardContext = new ShardDbContext())
+            {
+                var quest = context.Quest.FirstOrDefault(q => q.Id == questId);
+                if (quest == null)
+                {
+                    //Console.WriteLine($"Quest with id {questId} does not exist.");
+                    return (false, "Invalid quest data.");
+                }
+
+                // ---- Character-specific cooldown ----
+                var characterTracking = shardContext.CharacterPropertiesQuestRegistry
+                    .FirstOrDefault(q => q.CharacterId == characterId && q.QuestName == quest.Name);
+
+                if (characterTracking == null)
+                {
+                    characterTracking = new CharacterPropertiesQuestRegistry
+                    {
+                        CharacterId = characterId,
+                        QuestName = quest.Name,
+                        LastTimeCompleted = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                        NumTimesCompleted = 1
+                    };
+                    shardContext.CharacterPropertiesQuestRegistry.Add(characterTracking);
+                }
+                else
+                {
+                    var timeSinceLastComplete = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - characterTracking.LastTimeCompleted;
+                    if (timeSinceLastComplete < quest.MinDelta)
+                    {
+                        var remainingCooldown = TimeSpan.FromSeconds(quest.MinDelta - timeSinceLastComplete);
+                        //Console.WriteLine($"[Blocked] Character cooldown active for questId: {questId}, characterId: {characterId}. Remaining cooldown: {remainingCooldown.TotalSeconds}s.");
+                        return (false, $"You have solved this quest too recently! You may complete this quest again in {FormatCooldown(remainingCooldown)}.");
+                    }
+
+                    characterTracking.LastTimeCompleted = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                    characterTracking.NumTimesCompleted++;
+                }
+
+                // ---- IP-wide solve count enforcement ----
+                var ipTracking = shardContext.QuestIpTracking.FirstOrDefault(q => q.QuestId == questId && q.IpAddress == playerIp);
+                if (ipTracking == null)
+                {
+                    ipTracking = new QuestIpTracking
+                    {
+                        QuestId = questId,
+                        IpAddress = playerIp,
+                        SolvesCount = 1,
+                        LastSolveTime = DateTime.UtcNow
+                    };
+                    shardContext.QuestIpTracking.Add(ipTracking);
+                }
+                else
+                {
+                    // Check if MinDelta has expired
+                    var timeSinceLastSolve = (DateTime.UtcNow - ipTracking.LastSolveTime)?.TotalSeconds ?? double.MaxValue;
+                    if (timeSinceLastSolve >= quest.MinDelta)
+                    {
+                        //Console.WriteLine($"[IP Tracking] Cooldown expired for playerIp: {playerIp}, questId: {questId}. Resetting SolvesCount.");
+                        ipTracking.SolvesCount = 0; // Reset solves count if cooldown expired
+                        ipTracking.LastSolveTime = DateTime.UtcNow;
+                    }
+
+                    // Enforce maxAttempts
+                    if (ipTracking.SolvesCount >= maxAttempts)
+                    {
+                        //Console.WriteLine($"[Blocked] IP-based max attempts reached for questId: {questId}, playerIp: {playerIp}. Blocking loot.");
+                        return (false, "You cannot loot this item. Your IP-wide limit has been reached.");
+                    }
+
+                    ipTracking.SolvesCount++;
+                    ipTracking.LastSolveTime = DateTime.UtcNow;
+                }
+
+                // Save changes
+                shardContext.SaveChanges();
+                context.SaveChanges();
+
+                //Console.WriteLine($"[Success] Loot allowed for questId: {questId}, playerIp: {playerIp}, characterId: {characterId}.");
+                return (true, string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the quest IP tracking entry for a specific quest and IP.
+        /// </summary>
+        public QuestIpTracking GetQuestIpTracking(int questId, string playerIp)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.QuestIpTracking
+                    .FirstOrDefault(q => q.QuestId == questId && q.IpAddress == playerIp);
             }
         }
     }

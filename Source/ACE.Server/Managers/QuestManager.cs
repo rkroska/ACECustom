@@ -551,7 +551,28 @@ namespace ACE.Server.Managers
                 Console.WriteLine("----");
             }
         }
+      
+        public bool CanPlayerLootIPQuestItem(string questName, string playerIp, Network.Session session)
+        {
+            var quest = DatabaseManager.World.GetCachedQuest(questName);
+            if (quest == null)
+                return true; // If the quest doesn't exist, allow looting
 
+            uint characterId = session.Player.Character.Id;
+            int maxAttempts = (int)quest.IpLootLimit; // Max two unique characters per IP
+
+            // Check and increment solves count
+            var (success, message) = DatabaseManager.ShardDB.IncrementAndCheckIPQuestAttempts(quest.Id, playerIp, characterId, maxAttempts);
+            if (!success)
+            {
+               // Console.WriteLine($"Loot blocked for quest: {questName}, playerIp: {playerIp}, characterId: {characterId}. Reason: {message}");
+                session.Player.SendMessage(message, ChatMessageType.Broadcast);
+                return false;
+            }
+
+            return true; // Allow looting
+        }
+      
         public void Stamp(string questFormat)
         {
             var questName = GetQuestName(questFormat);
