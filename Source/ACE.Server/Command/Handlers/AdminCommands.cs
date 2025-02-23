@@ -2361,7 +2361,7 @@ namespace ACE.Server.Command.Handlers
                 return null;
             }
 
-            if (!weenie.DisableCreate())
+            if (weenie.DisableCreate())
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot spawn {weenie.ClassName} because it is restricted", ChatMessageType.Broadcast));
                 return null;
