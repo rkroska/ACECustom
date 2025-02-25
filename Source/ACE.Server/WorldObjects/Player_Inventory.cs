@@ -533,7 +533,13 @@ namespace ACE.Server.WorldObjects
                 result = CurrentLandblock?.GetObject(objectGuid, true, true);
 
                 if (result != null)
+                {
+                    // Don't describe objects the player can't see
+                    if (result.Visibility && !Adminvision)
+                        return null;
+
                     return result;
+                }
             }
 
             if (searchLocations.HasFlag(SearchLocations.LastUsedContainer))
@@ -594,7 +600,13 @@ namespace ACE.Server.WorldObjects
                 result = GetKnownObjects().FirstOrDefault(o => o.Guid == objectGuid);
 
                 if (result != null)
+                {
+                    // Don't describe objects the player can't see
+                    if (result.Visibility && !Adminvision)
+                        return null;
+
                     return result;
+                }
             }
 
             if (searchLocations.HasFlag(SearchLocations.LastUsedHook))
@@ -3203,11 +3215,14 @@ namespace ACE.Server.WorldObjects
 
             if ((target.Character.CharacterOptions1 & (int)CharacterOptions1.AllowGive) != (int)CharacterOptions1.AllowGive)
             {
-                Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, WeenieErrorWithString._IsNotAcceptingGiftsRightNow, target.Name));
-                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
-                var msg = new GameMessageSystemChat($"{Name} tries to give you {(item.StackSize > 1 ? $"{item.StackSize} " : "")}{item.GetNameWithMaterial(item.StackSize)}.", ChatMessageType.Broadcast);
-                target.Session.Network.EnqueueSend(msg);
-                return;
+                if (!IsAdmin)
+                {
+                    Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, WeenieErrorWithString._IsNotAcceptingGiftsRightNow, target.Name));
+                    Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                    var msg = new GameMessageSystemChat($"{Name} tries to give you {(item.StackSize > 1 ? $"{item.StackSize} " : "")}{item.GetNameWithMaterial(item.StackSize)}.", ChatMessageType.Broadcast);
+                    target.Session.Network.EnqueueSend(msg);
+                    return;
+                }
             }
 
             if (target.IsLoggingOut)
