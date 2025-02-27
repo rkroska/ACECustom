@@ -2241,13 +2241,14 @@ namespace ACE.Server.Command.Handlers
 
             var blockStart = landblock << 16;
             var blockEnd = blockStart | 0xFFFF;
+            var variation = session.Player.Location.Variation ?? 0;
 
             using (var ctx = new WorldDbContext())
             {
                 var query = from weenie in ctx.Weenie
                             join wstr in ctx.WeeniePropertiesString on weenie.ClassId equals wstr.ObjectId
                             join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                            where weenie.Type == (int)WeenieType.Portal && wpos.PositionType == (int)PositionType.Destination && wpos.ObjCellId >= blockStart && wpos.ObjCellId <= blockEnd
+                            where weenie.Type == (int)WeenieType.Portal && wpos.PositionType == (int)PositionType.Destination && wpos.ObjCellId >= blockStart && wpos.ObjCellId <= blockEnd && (wpos.VariationId ?? 0) == variation
                             select wstr;
 
                 var results = query.ToList();
