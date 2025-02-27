@@ -129,6 +129,17 @@ namespace ACE.Database
                 return context.Biota.Count();
         }
 
+        public int GetServerQuestCompletions(string questName)
+        {
+            int retVal = 0;
+            if (!string.IsNullOrEmpty(questName))
+            {
+                using var context = new ShardDbContext();
+                retVal = context.CharacterPropertiesQuestRegistry.Where(x => x.QuestName == questName).Sum(x => x.NumTimesCompleted);
+            }
+            return retVal;
+        }
+
         [Flags]
         enum PopulatedCollectionFlags
         {
