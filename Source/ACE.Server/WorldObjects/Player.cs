@@ -641,8 +641,9 @@ namespace ACE.Server.WorldObjects
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
-            SavePlayerToDatabase();
-            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+            SavePlayerToDatabase(true);
+            // Don't set the player offline until they have successfully saved
+            //PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
             log.Debug($"[LOGOUT] Account {Account.AccountName} exited the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }
