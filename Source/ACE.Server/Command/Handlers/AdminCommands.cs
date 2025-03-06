@@ -4904,5 +4904,34 @@ namespace ACE.Server.Command.Handlers
                 session.Player.SendMessage($"You must specify a quest name.");
             }
         }
+
+
+        [CommandHandler("setplayeroffline", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2,
+           "Sets a player as offline.",
+           "< Character Name >\n" +
+           "Sets a player as offline, used in case a player gets stuck online for a prolonged period of time.")]
+        public static void HandlePlayerOffline(Session session, params string[] parameters)
+        {
+            var names = string.Join(" ", parameters).Split(",");
+
+            var playerName = names[0].TrimStart(' ').TrimEnd(' ');
+            var onlinePlayer = PlayerManager.GetOnlinePlayer(playerName);
+            if (onlinePlayer == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Player \"{playerName}\" not found.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            bool success = PlayerManager.SwitchPlayerFromOnlineToOffline(onlinePlayer);
+
+            if (success)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Player \"{playerName}\" successfully set as offline.", ChatMessageType.Broadcast);
+            }
+            else
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Player \"{playerName}\" is already offline.", ChatMessageType.Broadcast);
+            }
+        }
     }
 }
