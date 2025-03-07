@@ -77,7 +77,7 @@ namespace ACE.Server.WorldObjects
         /// Saves the character to the persistent database. Includes Stats, Position, Skills, etc.<para />
         /// Will also save any possessions that are marked with ChangesDetected.
         /// </summary>
-        public void SavePlayerToDatabase()
+        public void SavePlayerToDatabase(bool duringLogout = false)
         {
             if (CharacterChangesDetected)
                 SaveCharacterToDatabase();
@@ -100,6 +100,11 @@ namespace ACE.Server.WorldObjects
 
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
+                if (duringLogout)
+                {
+                    // Don't set the player offline until they have been successfully saved
+                    PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                }
                 log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTime).TotalMilliseconds:N0} ms to process the request.");
 
                 if (!result)
