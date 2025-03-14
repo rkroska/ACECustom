@@ -60,10 +60,10 @@ namespace ACE.Server.WorldObjects
                 Fellowship.SplitLuminance((ulong)amount, xpType, shareType, this);
             }
             else
-                AddLuminance(amount, xpType);
+                AddLuminance(amount, xpType, shareType);
         }
 
-        private void AddLuminance(long amount, XpType xpType)
+        private void AddLuminance(long amount, XpType xpType, ShareType shareType)
         {
             if (!BankedLuminance.HasValue)
             {
@@ -73,7 +73,8 @@ namespace ACE.Server.WorldObjects
             if (xpType == XpType.Quest || xpType == XpType.Kill)
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
 
-            UpdateLumAllegiance(amount);
+            if (shareType.HasFlag(ShareType.Allegiance))
+                UpdateLumAllegiance(amount);
 
             // 20250203 - Don't spam the client with properties it doesn't use
             //UpdateLuminance();
