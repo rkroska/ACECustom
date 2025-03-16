@@ -18,6 +18,7 @@ using ACE.Database.Entity;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Database.Models.Auth;
 
 namespace ACE.Database
 {
@@ -136,6 +137,25 @@ namespace ACE.Database
             {
                 using var context = new ShardDbContext();
                 retVal = context.CharacterPropertiesQuestRegistry.Where(x => x.QuestName == questName).Sum(x => x.NumTimesCompleted);
+            }
+            return retVal;
+        }
+
+        public List<Leaderboard> GetTopQuestCompletions(string questName)
+        {
+            List<Leaderboard> retVal = [];
+            if (!string.IsNullOrEmpty(questName))
+            {
+                using var context = new ShardDbContext();
+                retVal = [.. context.CharacterPropertiesQuestRegistry
+                    .Where(x => x.QuestName == questName)
+                    .GroupBy(x => x.Character.Name)
+                    .Select(x => new Leaderboard {
+                        Character = x.Key
+                        , Score = (ulong)x.Sum(s => s.NumTimesCompleted)
+                    })
+                    .OrderByDescending(x => x.Score)
+                    .Take(25)];
             }
             return retVal;
         }
