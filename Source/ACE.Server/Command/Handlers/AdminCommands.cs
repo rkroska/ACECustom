@@ -4890,18 +4890,37 @@ namespace ACE.Server.Command.Handlers
             DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
         }
 
-        [CommandHandler("serverquestcompletions", AccessLevel.Developer, CommandHandlerFlag.None, "Get Total Completions of a Quest for all Characters")]
+        [CommandHandler("serverquestcompletions", AccessLevel.Developer, CommandHandlerFlag.None, "Get Total Completions of a Quest for all Characters, if the top parameter is passed will list top 25 player completion counts", "<quest_name>, optional: top")]
         public static void HandleServerQuestCompletions(Session session, params string[] parameters)
         {
             if (parameters.Length > 0)
             {
                 var questName = parameters[0];
-                var completions = DatabaseManager.Shard.BaseDatabase.GetServerQuestCompletions(questName);
-                session.Player.SendMessage($"The quest {questName} has been completed {completions} times.");
+                if (parameters.Length > 1 && string.Equals("Top", parameters[1], StringComparison.OrdinalIgnoreCase))
+                {
+                    var list = DatabaseManager.Shard.BaseDatabase.GetTopQuestCompletions(questName);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Top 25 Completions for quest {questName}", ChatMessageType.Broadcast));
+                        for (int i = 0; i < list.Count; i++)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"The quest {questName} has not been completed yet.", ChatMessageType.Broadcast));
+                    }
+                }
+                else
+                {
+                    var completions = DatabaseManager.Shard.BaseDatabase.GetServerQuestCompletions(questName);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"The quest {questName} has been completed {completions} times.", ChatMessageType.Broadcast));
+                }
             }
             else
             {
-                session.Player.SendMessage($"You must specify a quest name.");
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a quest name.", ChatMessageType.Broadcast));
             }
         }
     }
