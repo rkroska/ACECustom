@@ -111,7 +111,13 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageParentEvent(wo.Wielder, wo));
             }
             else
+            {
+                // Don't tell the client to delete something it has never seen
+                if (wo.Visibility && !Adminvision)
+                    return;
+
                 Session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+            }
 
             if (wo is Creature creature)
             {
