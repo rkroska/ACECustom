@@ -96,7 +96,9 @@ namespace ACE.Server.WorldObjects
 
         public WorldObject Wielder;
 
-        public WorldObject() { }
+        public WorldObject(ObjectGuid guid) {
+            Guid = guid;
+        }
 
         /// <summary>
         /// A new biota will be created taking all of its values from weenie.
@@ -130,6 +132,17 @@ namespace ACE.Server.WorldObjects
             SetEphemeralValues();
             InitializeGenerator();
             InitializeHeartbeats();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is WorldObject @object &&
+                   EqualityComparer<ObjectGuid>.Default.Equals(Guid, @object.Guid);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(Guid);
         }
 
         public bool BumpVelocity { get; set; }

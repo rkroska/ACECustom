@@ -3229,5 +3229,10 @@ namespace ACE.Server.Physics
             if (obj == null) return false;
             return ID == obj.ID;
         }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(ID);
+        }
     }
 }
