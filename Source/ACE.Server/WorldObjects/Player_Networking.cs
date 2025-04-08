@@ -229,10 +229,17 @@ namespace ACE.Server.WorldObjects
             // Player objects don't get a placement
             Placement = null;
             Session.Network.EnqueueSend(new GameMessagePlayerCreate(Guid), new GameMessageCreateObject(this));
+            try
+            {
+                SendInventoryAndWieldedItems();
 
-            SendInventoryAndWieldedItems();
+                SendContractTrackerTable();
+            }
+            catch (Exception x)
+            {
+                log.Error($"Error occurred during SendSelf: {x}, player: {this.Name}");
+            }
 
-            SendContractTrackerTable();
         }
 
         public void SendPropertyUpdatesAndOverrides()
