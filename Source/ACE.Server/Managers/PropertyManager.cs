@@ -677,7 +677,7 @@ namespace ACE.Server.Managers
                 ("void_pvp_modifier", new Property<double>(0.5, "Scales the amount of damage players take from Void Magic. Defaults to 0.5, as per retail. For earlier content where DRR isn't as readily available, this can be adjusted for balance.")),
                 ("xp_modifier", new Property<double>(1.0, "scales the amount of xp received by players")),
                 ("melee/missile_aug_crit_modifier", new Property<double>(0.002, "the maximum crit damage bonus from melee and missile augs")),
-                ("finess_attribute_multiplier", new Property<double>(1.5, "the multiplier applied to coordination for calculating finesse weapons attribute damage modifiers")),
+                ("finesse_attribute_multiplier", new Property<double>(1.5, "the multiplier applied to coordination for calculating finesse weapons attribute damage modifiers")),
                 ("light_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to strength for calculating light weapons attribute damage modifiers")),
                 ("heavy_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to strength for calculating heavy weapons attribute damage modifiers")),
                 ("twohanded_attribute_multiplier", new Property<double>(0.8, "the multiplier applied to strength for calculating two handed weapons attribute damage modifiers")),
