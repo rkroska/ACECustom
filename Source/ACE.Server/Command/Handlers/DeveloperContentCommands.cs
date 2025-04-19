@@ -2201,7 +2201,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 // Dynamically define the target folder path using ModManager.ModPath
                 string modDirectory = ModManager.ModPath;  // This is "c:\\ACE\\Mods\\" or wherever your mods are stored
                 string customClothingBaseDirectory = "CustomClothingBase";  // The subfolder for your mod
-                string jsonFolder = "Json";  // The "Json" subfolder where JSON files will be stored
+                string jsonFolder = "json";  // The "Json" subfolder where JSON files will be stored
                 string folderPath = Path.Combine(modDirectory, customClothingBaseDirectory, jsonFolder);
 
                 // Combine folder path with the identifier to create the full file path
