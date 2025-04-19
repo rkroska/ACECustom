@@ -2479,16 +2479,16 @@ namespace ACE.Server.Command.Handlers
 
             if (!string.IsNullOrEmpty(playerName))
             {
-                var plr = PlayerManager.FindByName(playerName);
+                var plr = PlayerManager.FindByName(playerName, out bool isOnline);
                 if (plr != null)
                 {
-                    target = PlayerManager.GetOnlinePlayer(plr.Guid);
-
-                    if (target == null)
+                    if (!isOnline)
                     {
                         CommandHandlerHelper.WriteOutputInfo(session, $"Unable to force log off for {plr.Name}: Player is not online.");
                         return;
                     }
+
+                    target = (Player)plr;
                 }
                 else
                 {
