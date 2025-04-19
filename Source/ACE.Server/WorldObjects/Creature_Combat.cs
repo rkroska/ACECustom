@@ -7,6 +7,7 @@ using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
@@ -414,26 +415,34 @@ namespace ACE.Server.WorldObjects
         {
             var isBow = weapon != null && weapon.IsBow;
 
-            //var attribute = isBow || GetCurrentWeaponSkill() == Skill.FinesseWeapons ? Coordination : Strength;
-            var attribute = isBow || weapon?.WeaponSkill == Skill.FinesseWeapons ? Coordination : Strength;
-
-            if (isBow) { attribute = Coordination;}
-
-            if (weapon?.WeaponSkill == Skill.TwoHandedCombat)
+            if (isBow)
             {
-                return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * 0.8), isBow);
+                var attributeMultiplier = PropertyManager.GetDouble("missile_attribute_multiplier").Item;
+                return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
 
             if (weapon?.WeaponSkill == Skill.FinesseWeapons)
             {
-                return SkillFormula.GetAttributeMod((int)Strength.Current / 2, isBow) + (SkillFormula.GetAttributeMod((int)Coordination.Current, isBow));
+                var attributeMultiplier = PropertyManager.GetDouble("finesse_attribute_multiplier").Item;
+                return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
-            else if (!isBow)
+            if (weapon?.WeaponSkill == Skill.TwoHandedCombat)
             {
-                return SkillFormula.GetAttributeMod((int)Strength.Current, isBow);
+                var attributeMultiplier = PropertyManager.GetDouble("twohanded_attribute_multiplier").Item;
+                return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
+            }
+            if (weapon?.WeaponSkill == Skill.LightWeapons)
+            {
+                var attributeMultiplier = PropertyManager.GetDouble("light_attribute_multiplier").Item;
+                return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
+            }
+            if (weapon?.WeaponSkill == Skill.HeavyWeapons)
+            {
+                var attributeMultiplier = PropertyManager.GetDouble("heavy_attribute_multiplier").Item;
+                return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
 
-            return SkillFormula.GetAttributeMod((int)attribute.Current, isBow);
+            return SkillFormula.GetAttributeMod((int)Strength.Current, isBow);
         }
 
         /// <summary>
