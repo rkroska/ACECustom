@@ -39,6 +39,18 @@ namespace ACE.Server.WorldObjects
             IsTurning = false;
             IsMoving = false;
 
+            // Reset fog to Clear upon death only if the creature was enraged
+            if (IsEnraged && CurrentLandblock != null)
+            {
+                var fogResetType = EnvironChangeType.Clear;
+                CurrentLandblock.SendEnvironChange(fogResetType);
+                //Console.WriteLine("[DEBUG] EnvironChange reset to Clear upon mob death (Enraged state detected).");
+            }
+            else if (IsEnraged)
+            {
+                //Console.WriteLine("[ERROR] CurrentLandblock is null. Unable to reset fog upon mob death.");
+            }
+
             //QuestManager.OnDeath(lastDamager?.TryGetAttacker());
 
             if (KillQuest != null)

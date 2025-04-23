@@ -151,8 +151,18 @@ namespace ACE.Server.Physics
         /// </summary>
         public bool Intersects(Sphere sphere)
         {
+            return IntersectsWithScaling(sphere, 1.0f);
+        }
+
+        public bool IntersectsEnragedHotspot(Sphere sphere)
+        {
+            return IntersectsWithScaling(sphere, 7.0f);
+        }
+
+        private bool IntersectsWithScaling(Sphere sphere, float scalingFactor)
+        {
             var delta = sphere.Center - Center;
-            var radSum = Radius + sphere.Radius;
+            var radSum = (Radius + sphere.Radius) * scalingFactor;
             return delta.LengthSquared() < radSum * radSum;
         }
 
