@@ -490,7 +490,11 @@ namespace ACE.Server.WorldObjects
             grappleLoopCTS?.Cancel();
             grappleLoopCTS = new CancellationTokenSource();
 
-            _ = Task.Run(() => StartGrappleLoopAsync(grappleLoopCTS.Token));
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(6), grappleLoopCTS.Token);
+                await StartGrappleLoopAsync(grappleLoopCTS.Token);
+            });
         }
 
         private async Task StartGrappleLoopAsync(CancellationToken ct)
