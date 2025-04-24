@@ -474,7 +474,11 @@ namespace ACE.Server.WorldObjects
             hotspotLoopCTS?.Cancel();
             hotspotLoopCTS = new CancellationTokenSource();
 
-            _ = Task.Run(() => StartHotspotSpawnLoopAsync(hotspotLoopCTS.Token));
+             _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), hotspotLoopCTS.Token);
+                await StartHotspotSpawnLoopAsync(hotspotLoopCTS.Token);
+            });
         }
 
 
@@ -510,7 +514,7 @@ namespace ACE.Server.WorldObjects
 
                             await Task.Delay(2500, ct);
                             if (targetPlayer != null && this != null && !ct.IsCancellationRequested)
-                                MoveTargetToMe(targetPlayer);
+                                await MoveTargetToMeAsync(targetPlayer);
 
                             await Task.Delay(random.Next(8000, 12000), ct);
                         }
@@ -519,7 +523,7 @@ namespace ACE.Server.WorldObjects
                     {
                         lastGrappleTarget = playersInRange.First();
                         if (!ct.IsCancellationRequested)
-                            MoveTargetToMe(lastGrappleTarget);
+                            await MoveTargetToMeAsync(lastGrappleTarget);
                     }
 
                     await Task.Delay(30000, ct);
@@ -565,36 +569,22 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        // **Helper function to move a player to the mob's position**
-        private async void MoveTargetToMe(Player targetPlayer)
+        private async Task MoveTargetToMeAsync(Player targetPlayer)
         {
             if (targetPlayer == null || this == null) return;
 
-            //Console.WriteLine($"[DEBUG] Moving {targetPlayer.Name} to {Name}'s location...");
-
-            // **Broadcast a warning message first**
             BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
 
-            // **Use ThreadSafeTeleport for movement**
             var destination = new Position(this.Location);
-            destination.Rotation = targetPlayer.Location.Rotation; // Keep their facing direction
+            destination.Rotation = targetPlayer.Location.Rotation;
 
             WorldManager.ThreadSafeTeleport(targetPlayer, destination);
 
-            // **Add a delay before switching attack target to allow for proper initialization**
-            await Task.Delay(2500); // Wait 2.5 seconds before swapping target
-
-            // **Set this player as the mob’s new target after being pulled in**
+            await Task.Delay(2500); // Allow positioning before attack switch
             this.AttackTarget = targetPlayer;
-           // Console.WriteLine($"[DEBUG] {targetPlayer.Name} is now the new target of {Name} after being grappled.");
-
-            // **Ensure the mob AI registers the new target properly**
             this.WakeUp();
 
-            // **Ensure AI doesn't immediately switch back by delaying other target evaluations**
-            await Task.Delay(6000); // Lock target for 6 seconds before normal AI processing resumes
-
-           // Console.WriteLine($"[DEBUG] Successfully moved {targetPlayer.Name} to {Name}'s location using direct teleport.");
+            await Task.Delay(6000); // Target lock window
         }
 
         /// <summary>
