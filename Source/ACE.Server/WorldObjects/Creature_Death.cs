@@ -39,6 +39,9 @@ namespace ACE.Server.WorldObjects
             IsTurning = false;
             IsMoving = false;
 
+            grappleLoopCTS?.Cancel();
+            hotspotLoopCTS?.Cancel();
+
             // Reset fog to Clear upon death only if the creature was enraged
             if (IsEnraged && CurrentLandblock != null)
             {

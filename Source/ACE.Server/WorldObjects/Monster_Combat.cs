@@ -467,96 +467,101 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        private void StartGrappleLoopWithDelay()
+        private CancellationTokenSource hotspotLoopCTS;
+
+        public void StartHotspotSpawnLoopWithDelay()
         {
-            Task.Run(async () =>
-            {
-                await Task.Delay(6000); // Wait 6 seconds before the first grapple
-                StartGrappleLoop(); // Start the grapple loop
-            });
+            hotspotLoopCTS?.Cancel();
+            hotspotLoopCTS = new CancellationTokenSource();
+
+            _ = Task.Run(() => StartHotspotSpawnLoopAsync(hotspotLoopCTS.Token));
         }
 
-        private void StartHotspotSpawnLoopWithDelay()
+
+        private CancellationTokenSource grappleLoopCTS;
+
+        public void StartGrappleLoopWithDelay()
         {
-            Task.Run(async () =>
-            {
-                await Task.Delay(4000); // Wait 4 seconds before first AOE attack
-                StartHotspotSpawnLoop();
-            });
+            // Cancel any existing loop
+            grappleLoopCTS?.Cancel();
+            grappleLoopCTS = new CancellationTokenSource();
+
+            _ = Task.Run(() => StartGrappleLoopAsync(grappleLoopCTS.Token));
         }
 
-        private async void StartGrappleLoop()
+        private async Task StartGrappleLoopAsync(CancellationToken ct)
         {
-            //Console.WriteLine("[DEBUG] Grapple loop started.");
             var random = new Random();
 
-            while (IsEnraged && IsAlive)
+            try
             {
-                var playersInRange = GetPlayersInRange(250.0f);
-                if (playersInRange.Count > 1)
+                while (IsEnraged && IsAlive && !ct.IsCancellationRequested)
                 {
-                    var validTargets = playersInRange.Where(p => p != lastHotspotTarget).ToList();
-                    if (validTargets.Count > 0)
+                    var playersInRange = GetPlayersInRange(250.0f);
+                    if (playersInRange.Count > 1)
                     {
-                        var targetPlayer = validTargets[random.Next(validTargets.Count)];
-                        lastGrappleTarget = targetPlayer; // Store grapple target
-                       // Console.WriteLine($"[DEBUG] Targeted {targetPlayer.Name} for grapple effect.");
-
-                        // **Broadcast Grapple Warning**
-                        BroadcastMessage($"{Name} Lashes out, attempting to drag his next victim closer!", 250.0f);
-
-                        // **Delay before executing the grapple (2.5 seconds)**
-                        await Task.Delay(2500);
-
-                        if (targetPlayer != null && this != null)
+                        var validTargets = playersInRange.Where(p => p != lastHotspotTarget).ToList();
+                        if (validTargets.Count > 0)
                         {
-                            MoveTargetToMe(targetPlayer);
-                           // Console.WriteLine($"[DEBUG] {targetPlayer.Name} pulled to {Name}'s location.");
+                            var targetPlayer = validTargets[random.Next(validTargets.Count)];
+                            lastGrappleTarget = targetPlayer;
+
+                            BroadcastMessage($"{Name} Lashes out, attempting to drag his next victim closer!", 250.0f);
+
+                            await Task.Delay(2500, ct);
+                            if (targetPlayer != null && this != null && !ct.IsCancellationRequested)
+                                MoveTargetToMe(targetPlayer);
+
+                            await Task.Delay(random.Next(8000, 12000), ct);
                         }
-
-                        // **Wait before the next grapple** (random between 8-12 seconds)
-                        int nextGrappleTime = random.Next(8000, 12000);
-                        await Task.Delay(nextGrappleTime);
                     }
-                }
-                else if (playersInRange.Count == 1)
-                {
-                    lastGrappleTarget = playersInRange.First();
-                    MoveTargetToMe(lastGrappleTarget);
-                   // Console.WriteLine($"[DEBUG] {lastGrappleTarget.Name} pulled to {Name}'s location (only target available).");
-                }
+                    else if (playersInRange.Count == 1)
+                    {
+                        lastGrappleTarget = playersInRange.First();
+                        if (!ct.IsCancellationRequested)
+                            MoveTargetToMe(lastGrappleTarget);
+                    }
 
-                await Task.Delay(30000); // Repeat every 30 seconds
+                    await Task.Delay(30000, ct);
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // Expected on shutdown or despawn
             }
         }
 
-        private async void StartHotspotSpawnLoop()
+
+        private async Task StartHotspotSpawnLoopAsync(CancellationToken ct)
         {
             var random = new Random();
 
-            while (IsEnraged && IsAlive && CanAOE)
+            try
             {
-                var playersInRange = GetPlayersInRange(250.0f);
-                if (playersInRange.Count > 0)
+                while (IsEnraged && IsAlive && CanAOE && !ct.IsCancellationRequested)
                 {
-                    var targetPlayer = playersInRange[random.Next(playersInRange.Count)];
-
-                    // Ensure we do not target the same player who was just grappled
-                    if (targetPlayer == lastGrappleTarget && playersInRange.Count > 1)
+                    var playersInRange = GetPlayersInRange(250.0f);
+                    if (playersInRange.Count > 0)
                     {
-                        targetPlayer = playersInRange.FirstOrDefault(p => p != lastGrappleTarget) ?? targetPlayer;
+                        var targetPlayer = playersInRange[random.Next(playersInRange.Count)];
+
+                        if (targetPlayer == lastGrappleTarget && playersInRange.Count > 1)
+                        {
+                            targetPlayer = playersInRange.FirstOrDefault(p => p != lastGrappleTarget) ?? targetPlayer;
+                        }
+
+                        lastHotspotTarget = targetPlayer;
+                        //Console.WriteLine($"[DEBUG] Targeted {targetPlayer.Name} for hotspot spawn.");
+                        SpawnObjectAtPlayer(targetPlayer);
                     }
-                    lastHotspotTarget = targetPlayer;
 
-                    //Console.WriteLine($"[DEBUG] Targeted {targetPlayer.Name} for hotspot spawn.");
-
-                    // **Spawn an object at the player's location**
-                    SpawnObjectAtPlayer(targetPlayer);
+                    int nextHotspotTime = random.Next(10000, 15000);
+                    await Task.Delay(nextHotspotTime, ct);
                 }
-
-                // **Wait before spawning another hotspot** (random between 10-15 seconds)
-                int nextHotspotTime = random.Next(10000, 15000);
-                await Task.Delay(nextHotspotTime);
+            }
+            catch (TaskCanceledException)
+            {
+                // Clean cancel; no logging necessary
             }
         }
 
