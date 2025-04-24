@@ -468,34 +468,51 @@ namespace ACE.Server.WorldObjects
         }
 
         private CancellationTokenSource hotspotLoopCTS;
+        private Task? hotspotLoopTask;
 
         public void StartHotspotSpawnLoopWithDelay()
         {
             hotspotLoopCTS?.Cancel();
             hotspotLoopCTS = new CancellationTokenSource();
 
-             _ = Task.Run(async () =>
+            hotspotLoopTask = Task.Run(async () =>
             {
-                await Task.Delay(TimeSpan.FromSeconds(5), hotspotLoopCTS.Token);
-                await StartHotspotSpawnLoopAsync(hotspotLoopCTS.Token);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), hotspotLoopCTS.Token);
+                    await StartHotspotSpawnLoopAsync(hotspotLoopCTS.Token);
+                }
+                catch (Exception ex) when (ex is not TaskCanceledException)
+                {
+                    Logger.Warn(ex, $"{Name}: hotspot loop terminated unexpectedly.");
+                }
             });
         }
+
 
 
         private CancellationTokenSource grappleLoopCTS;
+        private Task? grappleLoopTask;
 
         public void StartGrappleLoopWithDelay()
         {
-            // Cancel any existing loop
             grappleLoopCTS?.Cancel();
             grappleLoopCTS = new CancellationTokenSource();
 
-            _ = Task.Run(async () =>
+            grappleLoopTask = Task.Run(async () =>
             {
-                await Task.Delay(TimeSpan.FromSeconds(6), grappleLoopCTS.Token);
-                await StartGrappleLoopAsync(grappleLoopCTS.Token);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), grappleLoopCTS.Token);
+                    await StartGrappleLoopAsync(grappleLoopCTS.Token);
+                }
+                catch (Exception ex) when (ex is not TaskCanceledException)
+                {
+                    Logger.Warn(ex, $"{Name}: grapple loop terminated unexpectedly.");
+                }
             });
         }
+
 
         private async Task StartGrappleLoopAsync(CancellationToken ct)
         {
