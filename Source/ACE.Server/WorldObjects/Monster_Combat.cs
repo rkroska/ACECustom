@@ -484,7 +484,7 @@ namespace ACE.Server.WorldObjects
                 }
                 catch (Exception ex) when (ex is not TaskCanceledException)
                 {
-                    Logger.Warn(ex, $"{Name}: hotspot loop terminated unexpectedly.");
+                    Console.WriteLine($"{Name}: hotspot loop terminated unexpectedly.");
                 }
             });
         }
@@ -508,7 +508,7 @@ namespace ACE.Server.WorldObjects
                 }
                 catch (Exception ex) when (ex is not TaskCanceledException)
                 {
-                    Logger.Warn(ex, $"{Name}: grapple loop terminated unexpectedly.");
+                    Console.WriteLine($"{Name}: grapple loop terminated unexpectedly.");
                 }
             });
         }
@@ -535,7 +535,7 @@ namespace ACE.Server.WorldObjects
 
                             await Task.Delay(2500, ct);
                             if (targetPlayer != null && this != null && !ct.IsCancellationRequested)
-                                await MoveTargetToMeAsync(targetPlayer);
+                                await MoveTargetToMeAsync(targetPlayer, ct);
 
                             await Task.Delay(random.Next(8000, 12000), ct);
                         }
@@ -544,7 +544,7 @@ namespace ACE.Server.WorldObjects
                     {
                         lastGrappleTarget = playersInRange.First();
                         if (!ct.IsCancellationRequested)
-                            await MoveTargetToMeAsync(lastGrappleTarget);
+                            await MoveTargetToMeAsync(lastGrappleTarget, ct);
                     }
 
                     await Task.Delay(30000, ct);
@@ -590,9 +590,10 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        private async Task MoveTargetToMeAsync(Player targetPlayer)
+        private async Task MoveTargetToMeAsync(Player targetPlayer, CancellationToken ct = default)
         {
-            if (targetPlayer == null || this == null) return;
+            if (targetPlayer == null || ct.IsCancellationRequested)
+                return;
 
             BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
 
@@ -601,12 +602,17 @@ namespace ACE.Server.WorldObjects
 
             WorldManager.ThreadSafeTeleport(targetPlayer, destination);
 
-            await Task.Delay(2500); // Allow positioning before attack switch
+            // Wait before switching target
+            await Task.Delay(2500, ct);
+            if (ct.IsCancellationRequested) return;
+
             this.AttackTarget = targetPlayer;
             this.WakeUp();
 
-            await Task.Delay(6000); // Target lock window
+            // Delay further AI switching
+            await Task.Delay(6000, ct);
         }
+
 
         /// <summary>
         /// Retrieves all players within a specified range of the current creature.
