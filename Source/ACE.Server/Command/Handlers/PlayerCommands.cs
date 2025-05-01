@@ -661,9 +661,9 @@ namespace ACE.Server.Command.Handlers
             int blueComboCount = Math.Min(totalBlueAetheriaCount, falatacotTrinketCount);
 
             // Calculate MMD cost only for Coalesced Aetheria and Chunks (Red and Blue)
-            int totalClapCost =
-                ((redComboCount - redPowderCount > 0 ? Math.Min(redComboCount, redAetheriaCount + redChunkCount) : 0) * ClapCostPerUnit) +
-                ((blueComboCount - bluePowderCount > 0 ? Math.Min(blueComboCount, blueAetheriaCount + blueChunkCount) : 0) * ClapCostPerUnit);
+            int redNonPowderUsed = Math.Min(redComboCount, redAetheriaCount + redChunkCount);
+            int blueNonPowderUsed = Math.Min(blueComboCount, blueAetheriaCount + blueChunkCount);
+            int totalClapCost = (redNonPowderUsed + blueNonPowderUsed) * ClapCostPerUnit;
 
             if (session.Player.BankedPyreals < totalClapCost)
             {
