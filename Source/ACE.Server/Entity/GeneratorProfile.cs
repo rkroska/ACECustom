@@ -247,8 +247,10 @@ namespace ACE.Server.Entity
             if (RegenLocationType.HasFlag(RegenLocationType.Treasure))
             {
                 objects = TreasureGenerator();
+                if (objects == null)
+                    return null;
 
-                if (objects != null && objects.Count > 0)
+                if (objects.Count > 0)
                 {
                     Generator.GeneratedTreasureItem = true;
                     GeneratedTreasureItem = true;
