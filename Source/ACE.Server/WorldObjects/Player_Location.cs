@@ -786,6 +786,9 @@ namespace ACE.Server.WorldObjects
                     if (p.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
                         continue;
 
+                    if (p.IsPlussed)
+                        continue;
+
                     if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
                     {
                         p.SendMessage($"Booting due to exceeding {ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress} allowed outside of exempt areas.");

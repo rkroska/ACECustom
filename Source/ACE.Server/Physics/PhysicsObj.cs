@@ -379,7 +379,9 @@ namespace ACE.Server.Physics
             return result;
         }
 
-        public bool is_touching(PhysicsObj obj)
+        public bool IsTouching(PhysicsObj obj,
+    Func<Sphere, Sphere, bool> sphereIntersectionCheck,
+    Func<Sphere, CylSphere, Vector3, float, bool> cylSphereIntersectionCheck)
         {
             // custom for hotspots
 
@@ -414,7 +416,7 @@ namespace ACE.Server.Physics
                     var playerSphere = new Sphere(Position.Frame.LocalToGlobal(pSphere.Center), pSphere.Radius);
                     var globSphere = new Sphere(obj.Position.Frame.LocalToGlobal(sphere.Center), sphere.Radius);
 
-                    if (playerSphere.Intersects(globSphere))
+                    if (sphereIntersectionCheck(playerSphere, globSphere))
                         return true;
                 }
 
@@ -427,12 +429,27 @@ namespace ACE.Server.Physics
                     var disp = center - lowpoint;
                     var radsum = pSphere.Radius + cylsphere.Radius - PhysicsGlobals.EPSILON;
 
-                    if (cylsphere.CollidesWithSphere(pSphere, disp, radsum))
+                    if (cylSphereIntersectionCheck(pSphere, cylsphere, disp, radsum))
                         return true;
                 }
             }
             return false;
         }
+
+        public bool is_touching(PhysicsObj obj)
+        {
+            return IsTouching(obj,
+                (Sphere s1, Sphere s2) => s1.Intersects(s2),
+                (Sphere s, CylSphere cs, Vector3 d, float r) => cs.CollidesWithSphere(s, d, r));
+        }
+
+        public bool is_touchingEnragedHotspot(PhysicsObj obj)
+        {
+            return IsTouching(obj,
+                (Sphere s1, Sphere s2) => s1.IntersectsEnragedHotspot(s2),
+                (Sphere s, CylSphere cs, Vector3 d, float r) => cs.CollidesWithSphereEnragedHotspot(s, d, r));
+        }
+
 
         public SetPositionError ForceIntoCell(ObjCell newCell, Position pos)
         {
