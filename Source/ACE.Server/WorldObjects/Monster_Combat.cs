@@ -23,6 +23,7 @@ using ACE.Server.Physics;
 using ACE.Server.Command;
 using ACE.Server.Command.Handlers;
 using ACE.Server.Physics.Combat;
+using System.Threading;
 
 namespace ACE.Server.WorldObjects
 {
