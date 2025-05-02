@@ -781,7 +781,7 @@ namespace ACE.Server.WorldObjects
             if(!ipAllowsUnlimited)
             {
                 var players = PlayerManager.GetAllOnline();
-                foreach (var p in players.Where(x => x.Session.EndPoint.Address.Address == endpoint.Address.Address))
+                foreach (var p in players.Where(x => x.Session.EndPoint.Address.Equals(endpoint.Address)))
                 {
                     if (p.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
                         continue;
