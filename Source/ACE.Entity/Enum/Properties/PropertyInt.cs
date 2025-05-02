@@ -695,6 +695,9 @@ namespace ACE.Entity.Enum.Properties
         PortalReqType2                          = 9022,
         PortalReqValue2                         = 9023,
         PortalReqMaxValue2                      = 9024,
+        EnrageFogColor                          = 9025,
+        EnrageSound                             = 9026,
+        EnrageVisualEffect                      = 9027,
 
     }
 
