@@ -198,7 +198,7 @@ namespace ACE.Server.WorldObjects
 
         private void ActivateCommon(Creature creature, bool isActive, Func<Creature, bool> isDamageable)
         {
-            if (!IsActive) return;
+            if (!isActive) return;
 
             var amount = DamageNext;
             var iAmount = (int)Math.Round(amount);
