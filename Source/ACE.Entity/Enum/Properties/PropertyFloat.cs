@@ -233,5 +233,8 @@ namespace ACE.Entity.Enum.Properties
         SpentExperienceHealth          = 9008,
         SpentExperienceStamina         = 9009,
         SpentExperienceMana            = 9010,
+        EnrageDamageMultiplier         = 9011,
+        EnrageDamageReduction          = 9012,
+        EnrageThreshold                = 9013,
     }
 }

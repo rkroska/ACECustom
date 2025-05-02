@@ -756,6 +756,18 @@ namespace ACE.Server.WorldObjects
 
             WorldObject equippedCloak = null;
 
+            if (target.CanEnrage && !target.IsEnraged && target.Health.Current > 0)
+            {
+                var healthPercentage = (float)target.Health.Current / target.Health.MaxValue;
+                var enrageThreshold = (float)(target.GetProperty(PropertyFloat.EnrageThreshold) ?? 0.2f); // Default to 20%
+
+                if (healthPercentage <= enrageThreshold)
+                {
+                    target.Enrage(); // Trigger enrage
+                    //Console.WriteLine($"[DEBUG] {target.Name} has enraged due to magic damage!");
+                }
+            }
+
             // handle life projectiles for stamina / mana
             if (Spell.Category == SpellCategory.StaminaLowering)
             {
@@ -804,6 +816,14 @@ namespace ACE.Server.WorldObjects
                 }
 
                 damage *= damageRatingMod * damageResistRatingMod;
+
+                // Apply enrage damage reduction for the defender
+                if (target.IsEnraged)
+                {
+                    var enrageReduction = target.EnrageDamageReduction ?? 0.0f; // Default to 0% reduction
+                    damage *= (1.0f - enrageReduction);
+                    //Console.WriteLine($"[DEBUG] Enrage Damage Reduction Applied by Defender: {enrageReduction * 100}%, Final Damage: {damage}");
+                }
 
                 percent = damage / target.Health.MaxValue;
 
