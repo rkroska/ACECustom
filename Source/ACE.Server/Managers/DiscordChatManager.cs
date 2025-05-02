@@ -108,7 +108,7 @@ namespace ACE.Server.Managers
                                 if (attachment.Filename.ToLowerInvariant().Contains(".json"))
                                 {
                                     // Using HttpClient to download the JSON
-                                    using (var client = new HttpClient())
+                                    using (var client = new System.Net.Http.HttpClient())
                                     {
                                         res = client.GetStringAsync(attachment.Url).Result; // Fetching the JSON content synchronously
                                         return;
