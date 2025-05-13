@@ -35,10 +35,6 @@ namespace ACE.Server.Physics.BSP
             return RootNode.Sphere;
         }
 
-        public void RemoveNonPortalNodes()
-        {
-            RootNode.LinkPortals(RootNode.PurgePortals());
-        }
 
         public bool adjust_to_plane(Sphere checkPos, Vector3 curPos, Polygon hitPoly, Vector3 contactPoint)
         {
@@ -87,11 +83,6 @@ namespace ACE.Server.Physics.BSP
         public bool box_intersects_cell_bsp(BBox box)
         {
             return RootNode.box_intersects_cell_bsp(box);
-        }
-
-        public void build_draw_portals_only(int portalPolyOrPortalContents)
-        {
-            // for rendering
         }
 
         public TransitionState check_walkable(SpherePath path, Sphere checkPos, float scale)

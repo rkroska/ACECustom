@@ -76,6 +76,11 @@ namespace ACE.Server.WorldObjects
 
             if (firstUpdate)
             {
+                if (CurrentMotionState == null)
+                {
+                    log.Warn($"[Monster_Tick] 0x{Guid} {Name} has a null CurrentMotionState setting to NonCombat");
+                    CurrentMotionState = new ACE.Server.Entity.Motion(MotionStance.NonCombat, MotionCommand.Ready);
+                }
                 if (CurrentMotionState.Stance == MotionStance.NonCombat)
                     DoAttackStance();
 

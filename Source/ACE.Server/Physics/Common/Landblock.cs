@@ -17,21 +17,21 @@ namespace ACE.Server.Physics.Common
     public class Landblock: LandblockStruct
     {
         public Vector2 BlockCoord;
-        public AFrame BlockFrame;
-        public float MinZ;
-        public float MaxZ;
+        //public AFrame BlockFrame;
+        //public float MinZ;
+        //public float MaxZ;
         public bool DynObjsInitDone;
         public bool BlockInfoExists;
-        public LandDefs.Direction Dir;
-        public Vector2 Closest;
-        public BoundingType InView;
-        public CellLandblock _landblock;
+        //public LandDefs.Direction Dir;
+        //public Vector2 Closest;
+        //public BoundingType InView;
+        //public CellLandblock _landblock;
         public LandblockInfo Info;
         public List<PhysicsObj> StaticObjects;
         public List<BuildingObj> Buildings;
         public List<ushort> StabList;
-        public List<LandCell> DrawArray;
-        public List<PhysicsObj> Scenery;
+        //public List<LandCell> DrawArray;
+        //public List<PhysicsObj> Scenery;
         public List<PhysicsObj> ServerObjects { get; set; }
 
 
@@ -48,7 +48,7 @@ namespace ACE.Server.Physics.Common
             if (BlockInfoExists)
                 Info = DBObj.GetLandblockInfo(ID - 1);
             BlockCoord = LandDefs.blockid_to_lcoord(landblock.Id).Value;
-            _landblock = landblock;
+            //_landblock = landblock;
             
             get_land_limits();
             
@@ -56,9 +56,9 @@ namespace ACE.Server.Physics.Common
 
         public new void Init()
         {
-            InView = BoundingType.Outside;
-            Dir = LandDefs.Direction.Unknown;
-            Closest = new Vector2(-1, -1);
+            //InView = BoundingType.Outside;
+            //Dir = LandDefs.Direction.Unknown;
+            //Closest = new Vector2(-1, -1);
             BlockCoord = new Vector2();
             StaticObjects = new List<PhysicsObj>();
             Buildings = new List<BuildingObj>();
@@ -174,8 +174,8 @@ namespace ACE.Server.Physics.Common
                 if (height < minHeight) minHeight = height;
                 if (height > maxHeight) maxHeight = height;
             }
-            MinZ = LandDefs.LandHeightTable[minHeight]/* + 1.0f*/;
-            MaxZ = LandDefs.LandHeightTable[maxHeight]/* + 200.0f*/;
+            //MinZ = LandDefs.LandHeightTable[minHeight]/* + 1.0f*/;
+            //MaxZ = LandDefs.LandHeightTable[maxHeight]/* + 200.0f*/;
         }
 
         public void get_land_scenes()
@@ -183,7 +183,7 @@ namespace ACE.Server.Physics.Common
             //Console.WriteLine("Loading scenery for " + ID.ToString("X8"));
             
             // ported from Scenery
-            Scenery = new List<PhysicsObj>();
+            //Scenery = new List<PhysicsObj>();
 
             // get the landblock cell offsets
             var blockX = (ID >> 24) * 8;
@@ -276,7 +276,7 @@ namespace ACE.Server.Physics.Common
                         physicsObj.add_obj_to_cell(cell, pos.Frame, VariationId);
                         var scale = ObjectDesc.ScaleObj(obj, globalCellX, globalCellY, j);
                         physicsObj.SetScaleStatic(scale);
-                        Scenery.Add(physicsObj);
+                        //Scenery.Add(physicsObj);
                     }
                 }
             }
@@ -524,33 +524,33 @@ namespace ACE.Server.Physics.Common
                 get_land_scenes();
         }
 
-        public void notify_change_size()
-        {
-            release_visible_cells();
-            release_objs();
-            destroy_static_objects();
-            destroy_buildings();
-            Closest = new Vector2(-1, -1);
-        }
+        //public void notify_change_size()
+        //{
+        //    release_visible_cells();
+        //    release_objs();
+        //    destroy_static_objects();
+        //    destroy_buildings();
+        //    //Closest = new Vector2(-1, -1);
+        //}
 
-        public void release_all()
-        {
-            release_objs();
-            release_visible_cells();
-        }
+        //public void release_all()
+        //{
+        //    release_objs();
+        //    release_visible_cells();
+        //}
 
-        public void release_objs()
-        {
-            if (SideVertexCount != 9) return;
+        //public void release_objs()
+        //{
+        //    if (SideVertexCount != 9) return;
 
-            for (var i = 0; i < SideCellCount; i++)
-            {
-                var cacheKey = new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 };
-                var cell = (ObjCell)LandCells[cacheKey];
-                cell.release_objects();
-            }
-            DynObjsInitDone = false;
-        }
+        //    for (var i = 0; i < SideCellCount; i++)
+        //    {
+        //        var cacheKey = new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 };
+        //        var cell = (ObjCell)LandCells[cacheKey];
+        //        cell.release_objects();
+        //    }
+        //    DynObjsInitDone = false;
+        //}
 
         /// <summary>
         /// Release shadow objects pointing to cells in this landblock
@@ -662,7 +662,7 @@ namespace ACE.Server.Physics.Common
         {
             var results = new List<PhysicsObj>(ServerObjects);
 
-            if (includeAdjacents)
+            if (includeAdjacents && adjacents?.Count > 0)
             {
                 foreach (var adjacent in adjacents)
                     results.AddRange(adjacent.ServerObjects);

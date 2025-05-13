@@ -9,6 +9,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Physics;
 
 namespace ACE.Server.WorldObjects
 {
@@ -75,7 +76,15 @@ namespace ACE.Server.WorldObjects
                 {
                     if (Creatures != null && Creatures.Any())
                     {
-                        Activate();
+                        //check if the hotspot is enraged
+                        if (EnragedHotspot)
+                        {
+                            ActivateEnragedHotspot();
+                        }
+                        else
+                        {
+                            Activate();
+                        }
                         NextActionLoop.EnqueueChain();
                     }
                     else
@@ -143,7 +152,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.AffectsAis); else SetProperty(PropertyBool.AffectsAis, value); }
         }
 
-        private void Activate()
+        public bool EnragedHotspot
+        {
+            get => GetProperty(PropertyBool.EnragedHotspot) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.EnragedHotspot); else SetProperty(PropertyBool.EnragedHotspot, value); }
+        }
+
+        private void ActivateCommon(Func<PhysicsObj, bool> collisionCheck, Action<Creature> activationAction)
         {
             if (Creatures == null) return;
             foreach (var creatureGuid in Creatures.ToList())
@@ -155,19 +170,35 @@ namespace ACE.Server.WorldObjects
                 var creature = CurrentLandblock.GetObject(creatureGuid) as Creature;
 
                 // verify current state of collision here
-                if (creature == null || !creature.PhysicsObj.is_touching(PhysicsObj))
+                if (creature == null || !collisionCheck(creature.PhysicsObj))
                 {
                     //Console.WriteLine($"{Name} ({Guid}).OnCollideObjectEnd({creature?.Name})");
                     Creatures.Remove(creatureGuid);
                     continue;
                 }
-                Activate(creature);
+                activationAction(creature);
             }
         }
 
-        private void Activate(Creature creature)
+        private void Activate()
         {
-            if (!IsHot) return;
+            ActivateCommon(
+                (PhysicsObj obj) => obj.is_touching(PhysicsObj),
+                (Creature creature) => Activate(creature)
+            );
+        }
+
+        private void ActivateEnragedHotspot()
+        {
+            ActivateCommon(
+                (PhysicsObj obj) => obj.is_touchingEnragedHotspot(PhysicsObj),
+                (Creature creature) => ActivateEnragedHotspot(creature)
+            );
+        }
+
+        private void ActivateCommon(Creature creature, bool isActive, Func<Creature, bool> isDamageable)
+        {
+            if (!isActive) return;
 
             var amount = DamageNext;
             var iAmount = (int)Math.Round(amount);
@@ -220,6 +251,16 @@ namespace ACE.Server.WorldObjects
             // perform activation emote
             if (ActivationResponse.HasFlag(ActivationResponse.Emote))
                 OnEmote(creature);
+        }
+
+        private void Activate(Creature creature)
+        {
+            ActivateCommon(creature, IsHot, (Creature c) => !c.Invincible && !c.IsDead);
+        }
+
+        private void ActivateEnragedHotspot(Creature creature)
+        {
+            ActivateCommon(creature, EnragedHotspot, (Creature c) => !c.Invincible && !c.IsDead);
         }
     }
 }

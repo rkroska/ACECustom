@@ -17,7 +17,7 @@ namespace ACE.Common
 
         private static double hourTicks     = dayTicks / hoursInADay;
         private static double minuteTicks   = hourTicks / 60;
-        private static double secondTicks   = minuteTicks / 60;
+        //private static double secondTicks   = minuteTicks / 60;
 
         private static double monthTicks    = dayTicks * daysInAMonth;
         private static double yearTicks     = monthTicks * monthsInAYear;
@@ -25,11 +25,11 @@ namespace ACE.Common
         private static double dayZeroTicks  = 0; // Morningthaw 1, 10 P.Y. - Morntide-and-Half
         private static double hourOneTicks  = 210; // Morningthaw 1, 10 P.Y. - Midsong
         private static double dayOneTicks   = dayZeroTicks + hourOneTicks + (hourTicks * 8); // Morningthaw 2, 10 P.Y. - Darktide
-        private static double yearOneTicks  = dayOneTicks + (dayTicks * 359); // Morningthaw 1, 11 P.Y. - Darktide
-        private static double yearZeroTicks = dayOneTicks + (dayTicks * 269); // Snowreap 1, 10 P.Y. - Darktide
+        //private static double yearOneTicks  = dayOneTicks + (dayTicks * 359); // Morningthaw 1, 11 P.Y. - Darktide
+       // private static double yearZeroTicks = dayOneTicks + (dayTicks * 269); // Snowreap 1, 10 P.Y. - Darktide
 
-        private static DateTime dayZero_RealWorld       = new DateTime(1999, 4, 1, 10, 30, 00);
-        private static DateTime dayOne_RealWorld        = new DateTime(1999, 4, 2, 00, 00, 00);
+        //private static DateTime dayZero_RealWorld       = new DateTime(1999, 4, 1, 10, 30, 00);
+        //private static DateTime dayOne_RealWorld        = new DateTime(1999, 4, 2, 00, 00, 00);
 
         private static DateTime retailDayOne_RealWorld  = new DateTime(1999, 11, 2, 00, 00, 00);
         private static DateTime retailDayLast_RealWorld = new DateTime(2017, 1, 7, 12, 00, 00);
@@ -37,22 +37,22 @@ namespace ACE.Common
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Derethian Date, Portal Year and Time when the worlds first opened.</para>
         /// </summary>
-        private static DerethDateTime retailDayOne_Derethian            = new DerethDateTime(10, Months.Leafcull, 1, Hours.Darktide);
+        //private static DerethDateTime retailDayOne_Derethian            = new DerethDateTime(10, Months.Leafcull, 1, Hours.Darktide);
 
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Lore Corrected Derethian Date, Portal Year and Time when the worlds first opened.</para>
         /// </summary>
-        private static DerethDateTime retailDayOne_Derethian_Lore       = ConvertRealWorldToLoreDateTime(new DateTime(1999, 11, 2, 00, 00, 00));
+        //private static DerethDateTime retailDayOne_Derethian_Lore       = ConvertRealWorldToLoreDateTime(new DateTime(1999, 11, 2, 00, 00, 00));
 
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Derethian Date, Portal Year and Time when the worlds closed.</para>
         /// </summary>
-        private static DerethDateTime retailDayLast_Derethian           = new DerethDateTime(206, Months.Solclaim, 7, Hours.Gloaming);
+        //private static DerethDateTime retailDayLast_Derethian           = new DerethDateTime(206, Months.Solclaim, 7, Hours.Gloaming);
 
         /// <summary>
         /// <para>A <see cref="DerethDateTime"/> instance set to the Lore Corrected Derethian Date, Portal Year and Time when the worlds closed.</para>
         /// </summary>
-        private static DerethDateTime retailDayLast_Derethian_Lore      = ConvertRealWorldToLoreDateTime(new DateTime(2017, 1, 31, 12, 00, 00));
+        //private static DerethDateTime retailDayLast_Derethian_Lore      = ConvertRealWorldToLoreDateTime(new DateTime(2017, 1, 31, 12, 00, 00));
 
         /// <summary>
         /// <para>Date: Morningthaw 1, 10 P.Y. | Time: Morntide-and-Half (0)</para>
@@ -63,7 +63,7 @@ namespace ACE.Common
         /// <para>Any value higher than this results in acclient crashing upon connection to server.</para>
         /// <para>Date: Thistledown 2, 401 P.Y. | Time: Morntide-and-Half (1073741828)</para>
         /// </summary>
-        public static readonly double MaxValue = (yearTicks * 391) + (monthTicks * 5) + (dayTicks * 1) + 4; // Thistledown 2, 401 P.Y. - Morntide-and-Half (1073741828)
+        public static readonly double MaxValue = (yearTicks * 391 * 2) + (monthTicks * 5) + (dayTicks * 1) + 4; // Thistledown 2, 401 P.Y. - Morntide-and-Half (1073741828)
 
         /// <summary>
         /// Months of the Portal Year
@@ -118,18 +118,6 @@ namespace ACE.Common
             Gloaming_and_Half
         }
 
-        /// <summary>
-        /// Days of the Week
-        /// </summary>
-        public enum Days
-        {
-            FirstDay = 1,
-            StarDay,
-            EarthDay,
-            MoonsDay,
-            ElderDay,
-            FreeDay,
-        }
 
         /// <summary>
         /// Time of Day
@@ -305,7 +293,7 @@ namespace ACE.Common
         /// <summary>
         /// Gets the hour name component of the time represented by this instance.
         /// </summary>
-        public Hours TimeName { get { return (Hours)Hour; } }
+        //public Hours TimeName { get { return (Hours)Hour; } }
 
         /// <summary>
         /// Gets the time of day for this instance.
@@ -358,17 +346,6 @@ namespace ACE.Common
         }
 
         /// <summary>
-        /// Indicates whether this instance of <see cref="DerethDateTime"/> is within the night time range for the current day.
-        /// </summary>
-        public bool IsNight
-        {
-            get
-            {
-                return IsNighttime;
-            }
-        }
-
-        /// <summary>
         /// Gets the season for this instance.
         /// </summary>
         public Seasons Season
@@ -417,86 +394,7 @@ namespace ACE.Common
             }
         }
 
-        /// <summary>
-        /// Returns an indication whether the instance is within the specified season.
-        /// </summary>
-        public bool IsSeason(Seasons seasonToCheckFor)
-        {
-            if (Season == seasonToCheckFor)
-                return true;
-            return false;
-        }
 
-        /// <summary>
-        /// Indicates whether this instance of <see cref="DerethDateTime"/> is within the winter season.
-        /// </summary>
-        public bool IsWinter
-        {
-            get
-            {
-                if (Season == Seasons.Winter)
-                    return true;
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Indicates whether this instance of <see cref="DerethDateTime"/> is within the spring season.
-        /// </summary>
-        public bool IsSpring
-        {
-            get
-            {
-                if (Season == Seasons.Spring)
-                    return true;
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Indicates whether this instance of <see cref="DerethDateTime"/> is within the summer season.
-        /// </summary>
-        public bool IsSummer
-        {
-            get
-            {
-                if (Season == Seasons.Summer)
-                    return true;
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Indicates whether this instance of <see cref="DerethDateTime"/> is within the autumn season.
-        /// </summary>
-        public bool IsAutumn
-        {
-            get
-            {
-                if (Season == Seasons.Autumn)
-                    return true;
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Indicates whether this instance of <see cref="DerethDateTime"/> is within the fall (autumn) season.
-        /// </summary>
-        public bool IsFall { get { return IsAutumn; } }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="DerethDateTime"/> class to set to <see cref="MinValue"/>.
-        /// <para>Date: Morningthaw 1, 10 P.Y. | Time: Morntide-and-Half</para>
-        /// </summary>
-        public DerethDateTime()
-        {
-            // Morningthaw 1, 10 P.Y. - Morntide-and-Half
-            Ticks = MinValue;
-            Year = 10;
-            Month = (int)Months.Morningthaw;
-            Day = 1;
-            Hour = (int)Hours.Morntide_and_Half;
-        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DerethDateTime"/> class to a specified number of ticks.
@@ -604,82 +502,7 @@ namespace ACE.Common
             return ticks;
         }
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="DerethDateTime"/> class to the specified year, month, day and hour.
-        /// </summary>
-        /// <param name="year">The portal year (10 through 401).</param>
-        /// <param name="month">The month (<see cref="Months"/>).
-        /// <para>Note: The odd integer is due to the calendar portal year actually beginning on Morningthaw and not Snowreap.</para></param>
-        /// <param name="day">The day (1 through 30).<para>There are 30 days for each month in the portal year.</para></param>
-        /// <param name="time">The hour or time (of day) (<see cref="Hours"/>).<para>Each day begins at Darktide and ends at Gloaming-and-Half.</para></param>
-        public DerethDateTime(int year = 10, Months month = Months.Morningthaw, int day = 1, Hours time = Hours.Darktide)
-        {
-            if (year < 10 || year > 401)
-                throw new ArgumentOutOfRangeException("year", "year is less than 10 or greater than 401");
-            if ((int)month < (int)Months.Snowreap || (int)month > (int)Months.Frostfell)
-                throw new ArgumentOutOfRangeException("month", "month is less than " + Months.Snowreap + " or greater than " + Months.Frostfell);
-            if (day < 1 || day > daysInAMonth)
-                throw new ArgumentOutOfRangeException("day", $"day is {day}, less than 1 or greater than " + daysInAMonth);
-            if ((int)time < (int)Hours.Darktide || (int)time > (int)Hours.Gloaming_and_Half)
-                throw new ArgumentOutOfRangeException("time", "time is less than " + Hours.Darktide + " or greater than " + Hours.Gloaming_and_Half);
-
-            Year = year;
-            Month = (int)month;
-            Day = day;
-
-            Hour = (int)time;
-
-            if (month == Months.Wintersebb && year > 10)
-                Ticks = GetTicksFromDateTime(true);
-            else
-                Ticks = GetTicksFromDateTime();
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that adds the specified number of ticks to the value of this instance.
-        /// </summary>
-        /// <param name="numOfTicksToAdd">A number of ticks. The numOfTicksToAdd parameter can be negative or positive.</param>
-        public DerethDateTime AddTicks(double numOfTicksToAdd)
-        {
-            if ((Ticks + numOfTicksToAdd) < MinValue | (Ticks + numOfTicksToAdd) > MaxValue)
-                throw new ArgumentOutOfRangeException("numOfTicksToAdd", "numOfTicksToAdd results in less than DerethDateTime.MinValue or greater than DerethDateTime.MaxValue");
-
-            return new DerethDateTime(ticks: Ticks + numOfTicksToAdd);
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that subtracts the specified number of ticks from the value of this instance.
-        /// </summary>
-        /// <param name="numOfTicksToSubtract">A number of ticks. The numOfTicksToSubtract parameter can be negative or positive.</param>
-        public DerethDateTime SubtractTicks(double numOfTicksToSubtract)
-        {
-            if ((Ticks + numOfTicksToSubtract) < MinValue | (Ticks + numOfTicksToSubtract) > MaxValue)
-                throw new ArgumentOutOfRangeException("numOfTicksToSubtract", "numOfTicksToSubtract results in less than DerethDateTime.MinValue or greater than DerethDateTime.MaxValue");
-
-            return new DerethDateTime(ticks: Ticks - numOfTicksToSubtract);
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that adds the specified number of years to the value of this instance.
-        /// </summary>
-        /// <param name="numOfYearsToAdd">A number of years. The numOfYearsToAdd parameter can be negative or positive.</param>
-        public DerethDateTime AddYears(int numOfYearsToAdd)
-        {
-            if ((Year + numOfYearsToAdd) < 10 | (Year + numOfYearsToAdd) > 401)
-                throw new ArgumentOutOfRangeException("numOfYearsToAdd", "numOfYearsToAdd results in a portal year less than 10 or greater than 401");
-            return new DerethDateTime(year: Year + numOfYearsToAdd, month: Month, day: Day, hour: Hour);
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that subtracts the specified number of years from the value of this instance.
-        /// </summary>
-        /// <param name="numOfYearsToSubtract">A number of years. The numOfYearsToSubtract parameter can be negative or positive.</param>
-        public DerethDateTime SubtractYears(int numOfYearsToSubtract)
-        {
-            if ((Year - numOfYearsToSubtract) < 10 | (Year - numOfYearsToSubtract) > 401)
-                throw new ArgumentOutOfRangeException("numOfYearsToSubtract", "numOfYearsToSubtract results in a portal year less than 10 or greater than 401");
-            return new DerethDateTime(year: Year - numOfYearsToSubtract, month: Month, day: Day, hour: Hour);
-        }
+        
 
         /// <summary>
         /// Returns a new <see cref="DerethDateTime"/> that adds the specified number of months to the value of this instance.
@@ -729,17 +552,6 @@ namespace ACE.Common
                 throw new ArgumentOutOfRangeException("numOfMonthsToAdd", "numOfMonthsToAdd results in a portal year less than 10 or greater than 401");
 
             return new DerethDateTime(year: newYear, month: newMonth, day: Day, hour: Hour);
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that subtracts the specified number of months from the value of this instance.
-        /// </summary>
-        /// <param name="numOfMonthsToSubtract">A number of months. The numOfMonthsToSubtract parameter can be negative or positive.</param>
-        public DerethDateTime SubtractMonths(int numOfMonthsToSubtract)
-        {
-            int opposite = numOfMonthsToSubtract * -1;
-
-            return new DerethDateTime(ticks: Ticks).AddMonths(opposite);
         }
 
         /// <summary>
@@ -805,17 +617,6 @@ namespace ACE.Common
                 throw new ArgumentOutOfRangeException("numOfDaysToAdd", "numOfDaysToAdd results in a portal year less than 10 or greater than 401");
 
             return new DerethDateTime(year: newYear, month: newMonth, day: newDay, hour: Hour);
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that subtracts the specified number of days from the value of this instance.
-        /// </summary>
-        /// <param name="numOfDaysToSubtract">A number of days. The numOfDaysToSubtract parameter can be negative or positive.</param>
-        public DerethDateTime SubtractDays(int numOfDaysToSubtract)
-        {
-            int opposite = numOfDaysToSubtract * -1;
-
-            return new DerethDateTime(ticks: Ticks).AddDays(opposite);
         }
 
         /// <summary>
@@ -898,58 +699,6 @@ namespace ACE.Common
             return new DerethDateTime(year: newYear, month: newMonth, day: newDay, hour: newHour);
         }
 
-        /// <summary>
-        /// Returns a new <see cref="DerethDateTime"/> that subtracts the specified number of hours from the value of this instance.
-        /// </summary>
-        /// <param name="numOfHoursToSubtract">A number of hours. The numOfDaysToSubtract parameter can be negative or positive.</param>
-        public DerethDateTime SubtractHours(int numOfHoursToSubtract)
-        {
-            int opposite = numOfHoursToSubtract * -1;
-
-            return new DerethDateTime(ticks: Ticks).AddHours(opposite);
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime"/> object to its equivalent string representation using the following format:
-        /// <para>Date: MonthName ##, ### P.Y.  Time: HourName</para>
-        /// Example: Date: Wintersebb 1, 10 P.Y.  Time: Morntide-and-Half
-        /// </summary>
-        public override string ToString()
-        {
-            return "Date: " + Enum.GetName(typeof(Months), Month) + " " + Day + ", " + Year + " P.Y.  Time: " + Enum.GetName(typeof(Hours), Hour).Replace("_", "-");
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime.Month"/> object to its equivalent string representation.
-        /// </summary>
-        public string MonthToString()
-        {
-            return Enum.GetName(typeof(Months), Month);
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime.MonthName"/> object to its equivalent string representation.
-        /// </summary>
-        public string MonthNameToString()
-        {
-            return Enum.GetName(typeof(Months), MonthName);
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime.Hour"/> object to its equivalent string representation.
-        /// </summary>
-        public string HourToString()
-        {
-            return Enum.GetName(typeof(Hours), Hour).Replace("_", "-");
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime.HourName"/> object to its equivalent string representation.
-        /// </summary>
-        public string HourNameToString()
-        {
-            return Enum.GetName(typeof(Hours), HourName).Replace("_", "-");
-        }
 
         /// <summary>
         /// Converts the value of the current <see cref="DerethDateTime.Time"/> object to its equivalent string representation.
@@ -967,29 +716,6 @@ namespace ACE.Common
             return Enum.GetName(typeof(Months), Month) + " " + Day + ", " + Year + " P.Y.";
         }
 
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime"/> object to its equivalent string representation of the portal year.
-        /// </summary>
-        public string PYToString()
-        {
-            return Year + " P.Y.";
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime"/> object to its equivalent string representation of the portal year.
-        /// </summary>
-        public string PortalYearString()
-        {
-            return Year + " P.Y.";
-        }
-
-        /// <summary>
-        /// Converts the value of the current <see cref="DerethDateTime"/> object to its equivalent string representation of the portal year.
-        /// </summary>
-        public string YearToString()
-        {
-            return Year + " P.Y.";
-        }
 
         /// <summary>
         /// Returns a new <see cref="DerethDateTime"/> that coverts the value of argument to Derethian Date and Time.
@@ -1084,11 +810,6 @@ namespace ACE.Common
         /// Converts the <see cref="DateTime.UtcNow"/> object to a new <see cref="DerethDateTime"/> object set to Lore Time.
         /// </summary>
         public static DerethDateTime UtcNowToLoreTime => ConvertRealWorldToLoreDateTime(DateTime.UtcNow);
-
-        /// <summary>
-        /// Converts the <see cref="DateTime.UtcNow"/> object to a new <see cref="DerethDateTime"/> object set to GDLE Time.
-        /// </summary>
-        public static DerethDateTime UtcNowToGDLETime => new DerethDateTime((DateTime.UtcNow - new DateTime(1999, 9, 1)).TotalSeconds);
 
         /// <summary>
         /// Converts the <see cref="DateTime.UtcNow"/> object to a new <see cref="DerethDateTime"/> object set to EMU Standard Sync Time.

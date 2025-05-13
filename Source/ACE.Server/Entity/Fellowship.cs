@@ -230,18 +230,6 @@ namespace ACE.Server.Entity
                 member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
         }
 
-        private void SendMessageAndUpdate(string message)
-        {
-            var fellowshipMembers = GetFellowshipMembers();
-
-            foreach (var member in fellowshipMembers.Values)
-            {
-                member.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Fellowship));
-
-                member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
-            }
-        }
-
         private void SendBroadcastAndUpdate(string message)
         {
             var fellowshipMembers = GetFellowshipMembers();
@@ -516,8 +504,15 @@ namespace ACE.Server.Entity
                 {
 
                     var fellowXpType = player == member ? XpType.Quest : XpType.Fellowship;
-
-                    member.GrantXP(perAmount, fellowXpType, shareType);
+                    if (member.HasVitae && member.IsVPHardcore)
+                    {
+                        member.GrantXP(0, fellowXpType, shareType);
+                    }
+                    else
+                    {
+                        member.GrantXP(perAmount, fellowXpType, shareType);
+                    }
+                    
                 }
             }
 
@@ -537,8 +532,17 @@ namespace ACE.Server.Entity
                     var shareAmount = (ulong)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
 
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                    if (member.HasVitae && member.IsVPHardcore)
+                    {
 
-                    member.GrantXP((long)shareAmount, fellowXpType, shareType);
+                        member.GrantXP(0, fellowXpType, shareType);
+                    }
+                    else
+                    {
+
+                        member.GrantXP((long)shareAmount, fellowXpType, shareType);
+                    }
+
                 }
 
                 return;
@@ -641,9 +645,47 @@ namespace ACE.Server.Entity
                 case 8:
                     return .35;
                 case 9:
-                    return .3;
+                    return .32;
+                case 10:
+                    return .29;
+                case 11:
+                    return .268;
+                case 12:
+                    return .248;
+                case 13:
+                    return .232;
+                case 14:
+                    return .218;
+                case 15:
+                    return .206;
+                case 16:
+                    return .196;
+                case 17:
+                    return .186;
+                case 18:
+                    return .178;
+                case 19:
+                    return .171;
+                case 20:
+                    return .164;
+                case 21:
+                    return .158;
+                case 22:
+                    return .152;
+                case 23:
+                    return .147;
+                case 24:
+                    return .143;
+                case 25:
+                    return .139;
+                case 26:
+                    return .135;
+                case 27:
+                    return .131;
+                case 28:
+                    return .128;
                 default:
-                    return .25;
+                    return .125;
                     // TODO: handle fellowship mods with > 9 players?
             }
             //return 1.0;

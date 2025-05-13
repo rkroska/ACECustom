@@ -2515,6 +2515,72 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue); else SetProperty(PropertyInt.PortalReqMaxValue, value.Value); }
         }
 
+        public PortalRequirement2 PortalReqType2
+        {
+            get => (PortalRequirement2)(GetProperty(PropertyInt.PortalReqType2) ?? 0);
+            set { if (value == PortalRequirement2.None) RemoveProperty(PropertyInt.PortalReqType2); else SetProperty(PropertyInt.PortalReqType2, (int)value); }
+        }
+
+        public int? PortalReqValue2
+        {
+            get => GetProperty(PropertyInt.PortalReqValue2);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqValue2); else SetProperty(PropertyInt.PortalReqValue2, value.Value); }
+        }
+
+        public int? PortalReqMaxValue2
+        {
+            get => GetProperty(PropertyInt.PortalReqMaxValue2);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue2); else SetProperty(PropertyInt.PortalReqMaxValue2, value.Value); }
+        }
+
+        public uint? CreatedByAccountId
+        {
+            get => GetProperty(PropertyDataId.CreatedByAccountId);
+            set {
+                if (!GetProperty(PropertyDataId.CreatedByAccountId).HasValue)
+                {
+                    if (!value.HasValue) RemoveProperty(PropertyDataId.CreatedByAccountId);
+                    else SetProperty(PropertyDataId.CreatedByAccountId, value.Value);
+                }
+            }
+        }
+
+        public float? EnrageDamageMultiplier
+        {
+            get => (float?)GetProperty(PropertyFloat.EnrageDamageMultiplier);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.EnrageDamageMultiplier); else SetProperty(PropertyFloat.EnrageDamageMultiplier, value.Value); }
+        }
+
+        public float? EnrageDamageReduction
+        {
+            get => (float?)GetProperty(PropertyFloat.EnrageDamageReduction);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.EnrageDamageReduction); else SetProperty(PropertyFloat.EnrageDamageReduction, value.Value); }
+        }
+
+        public float? EnrageThreshold
+        {
+            get => (float?)GetProperty(PropertyFloat.EnrageThreshold);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.EnrageThreshold); else SetProperty(PropertyFloat.EnrageThreshold, value.Value); }
+        }
+
+        public int? EnrageFogColor
+        {
+            get => GetProperty(PropertyInt.EnrageFogColor);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.EnrageFogColor); else SetProperty(PropertyInt.EnrageFogColor, value.Value); }
+        }
+
+        public int? EnrageSound
+        {
+            get => GetProperty(PropertyInt.EnrageSound);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.EnrageSound); else SetProperty(PropertyInt.EnrageSound, value.Value); }
+        }
+
+        public int? EnrageVisualEffect
+        {
+            get => GetProperty(PropertyInt.EnrageVisualEffect);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.EnrageVisualEffect); else SetProperty(PropertyInt.EnrageVisualEffect, value.Value); }
+        }
+
         /// <summary>
         /// <para>Used to mark when EnterWorld has completed for first time for this object's instance.</para>
         /// Currently used by Generators and Players

@@ -12,6 +12,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using ACE.DatLoader.Entity;
+using ACE.Entity.Enum.Properties;
 
 namespace ACE.Server.Entity
 {
@@ -155,7 +156,7 @@ namespace ACE.Server.Entity
             if (damageSource == null)
                 damageSource = attacker;
 
-            var damage = damageEvent.DoCalculateDamage(attacker, defender, damageSource);
+            damageEvent.DoCalculateDamage(attacker, defender, damageSource);
 
             damageEvent.HandleLogging(attacker, defender);
 
@@ -213,6 +214,14 @@ namespace ACE.Server.Entity
             else
                 GetBaseDamage(attacker, AttackMotion ?? MotionCommand.Invalid, AttackHook);
 
+            // NEW: Apply enrage multiplier if the attacker is a mob and enraged
+            if (attacker.IsEnraged && !(attacker is Player))
+            {
+                var enrageMultiplier = attacker.EnrageDamageMultiplier ?? 1.0f;
+                BaseDamage *= enrageMultiplier;
+               // Console.WriteLine($"[DEBUG] Mob Attacker Enrage Multiplier Applied: {enrageMultiplier}, Updated Base Damage: {BaseDamage}");
+            }
+
             if (DamageType == DamageType.Undef)
             {
                 if ((attacker?.Guid.IsPlayer() ?? false) || (damageSource?.Guid.IsPlayer() ?? false))
@@ -259,6 +268,8 @@ namespace ACE.Server.Entity
             // damage before mitigation
             DamageBeforeMitigation = BaseDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
 
+            //Console.WriteLine($"[DEBUG] Damage Before Mitigation: {DamageBeforeMitigation}");
+
             // critical hit?
             var attackSkill = attacker.GetCreatureSkill(attacker.GetCurrentWeaponSkill());
             CriticalChance = WorldObject.GetWeaponCriticalChance(Weapon, attacker, attackSkill, defender);
@@ -269,6 +280,21 @@ namespace ACE.Server.Entity
 
             if (playerDefender != null && (playerDefender.IsLoggingOut || playerDefender.PKLogout))
                 CriticalChance = 1.0f;
+
+            // Define a configurable parameter for critical damage adjustment
+            float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier").Item;
+
+            float luminanceAugmentBonus = 0;
+            if (attacker.LuminanceAugmentMissileCount > 0)
+            {
+                luminanceAugmentBonus += attacker.LuminanceAugmentMissileCount.Value * luminanceAugmentCritDamageMultiplier;
+            }
+            if (attacker.LuminanceAugmentMeleeCount > 0)
+            {
+                luminanceAugmentBonus += attacker.LuminanceAugmentMeleeCount.Value * luminanceAugmentCritDamageMultiplier;
+            }
+
+            // Inside the critical hit check
 
             if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
             {
@@ -285,20 +311,32 @@ namespace ACE.Server.Entity
                 {
                     IsCritical = true;
 
-                    // verify: CriticalMultiplier only applied to the additional crit damage,
-                    // whereas CD/CDR applied to the total damage (base damage + additional crit damage)
-                    CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender);
+                    // Update the CriticalDamageMod to include luminance augment bonus
+                    CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender) + luminanceAugmentBonus;
+
+                    // NEW: Apply enrage multiplier if attacker is a mob and enraged
+                    if (attacker.IsEnraged && !(attacker is Player))
+                    {
+                        CriticalDamageMod *= attacker.EnrageDamageMultiplier ?? 1.0f;
+                        //Console.WriteLine($"[DEBUG] CriticalDamageMod After Mob Attacker Enrage Multiplier: {CriticalDamageMod}");
+                    }
+
+                    // Calculate damage before mitigation
+                    DamageBeforeMitigation = BaseDamageMod.MaxDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod * CriticalDamageMod;
+
+                    //Console.WriteLine($"[DEBUG] Damage Before Mitigation (Critical): {DamageBeforeMitigation}");
 
                     CriticalDamageRatingMod = Creature.GetPositiveRatingMod(attacker.GetCritDamageRating());
 
-                    // recklessness excluded from crits
+                    // Recklessness excluded from crits
                     RecklessnessMod = 1.0f;
                     DamageRatingMod = Creature.AdditiveCombine(DamageRatingBaseMod, CriticalDamageRatingMod, SneakAttackMod, HeritageMod);
 
                     if (pkBattle)
                         DamageRatingMod = Creature.AdditiveCombine(DamageRatingMod, PkDamageMod);
 
-                    DamageBeforeMitigation = BaseDamageMod.MaxDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod * CriticalDamageMod;
+                    DamageBeforeMitigation *= Creature.AdditiveCombine(CriticalDamageRatingMod, 1.0f); // Apply only crit bonus
+
                 }
             }
 
@@ -378,8 +416,17 @@ namespace ACE.Server.Entity
             // calculate final output damage
             Damage = DamageBeforeMitigation * ArmorMod * ShieldMod * ResistanceMod * DamageResistanceRatingMod;
 
+            // NEW: Apply enrage damage reduction to the final output damage if the defender is a mob and enraged
+            if (defender.IsEnraged && !(defender is Player))
+            {
+                var damageReduction = defender.EnrageDamageReduction ?? 0.0f; // Default to no reduction
+                Damage *= (1.0f - damageReduction); // Apply reduction (e.g., 0.5 = 50% reduction)
+                //Console.WriteLine($"[DEBUG] Final Mob Defender Enrage Damage Reduction Applied: {damageReduction * 100}%, Final Damage: {Damage}");
+            }
+
             DamageMitigated = DamageBeforeMitigation - Damage;
 
+            //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");
             return Damage;
         }
 

@@ -5,14 +5,14 @@ namespace ACE.Server.Physics.Common
 {
     public class RenderSurface
     {
-        public Texture _texture;
+        //public Texture _texture;
 
         public int Width;
         public int Height;
-        public SurfacePixelFormat Format;
+        //public SurfacePixelFormat Format;
         public int Length;
         public byte[] Data;
-        public uint? DefaultPaletteID;
+        //public uint? DefaultPaletteID;
 
         public RenderSurface()
         {
@@ -20,14 +20,14 @@ namespace ACE.Server.Physics.Common
 
         public RenderSurface(Texture texture)
         {
-            _texture = texture;
+            //_texture = texture;
 
             Width = texture.Width;
             Height = texture.Height;
-            Format = texture.Format;
+            //Format = texture.Format;
             Length = texture.Length;
             Data = texture.SourceData;
-            DefaultPaletteID = texture.DefaultPaletteId;
+            //DefaultPaletteID = texture.DefaultPaletteId;
         }
 
         // RenderSurfaceD3D.Create()
@@ -35,7 +35,7 @@ namespace ACE.Server.Physics.Common
         {
             Width = (int)width;
             Height = (int)height;
-            Format = format;
+            //Format = format;
 
             // get bits per pixel in PFDesc
             var bitsPerPixel = 32;

@@ -142,7 +142,6 @@ namespace ACE.Server.WorldObjects
 
                 if (timeSinceLastPortal < minTimeSinceLastPortal)
                 {
-                    // prevent message spam
                     if (player.LastPortalTeleportTimestampError != null)
                     {
                         var timeSinceLastPortalError = currentTime - player.LastPortalTeleportTimestampError.Value;
@@ -170,23 +169,16 @@ namespace ACE.Server.WorldObjects
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreNotPowerfulEnoughToUsePortal));
                 }
 
-                if (player.Level > MaxLevel && MaxLevel != 0 && MaxLevel != 999)
-                {
-                    // You are too powerful to interact with that portal!
-                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreTooPowerfulToUsePortal));
-                }
-
-                //var playerPkLevel = player.PkLevel;
-
-                //if (PropertyManager.GetBool("pk_server").Item)
-                //    playerPkLevel = PKLevel.PK;
-                //else if (PropertyManager.GetBool("pkl_server").Item)
-                //    playerPkLevel = PKLevel.PKLite;
-
                 if (PortalRestrictions == PortalBitmask.Undef)
                 {
                     // Players may not interact with that portal.
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.PlayersMayNotUsePortal));
+                }
+
+                if (player.Level > MaxLevel && MaxLevel != 0 && MaxLevel != 999)
+                {
+                    // You are too powerful to interact with that portal!
+                    return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouAreTooPowerfulToUsePortal));
                 }
 
                 if (PortalRestrictions.HasFlag(PortalBitmask.NoPk) && player.PlayerKillerStatus == PlayerKillerStatus.PK)
@@ -206,7 +198,6 @@ namespace ACE.Server.WorldObjects
                     // Non-player killers may not interact with that portal!
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.NonPKsMayNotUsePortal));
                 }
-
                 if (PortalRestrictions.HasFlag(PortalBitmask.OnlyOlthoiPCs) && !player.IsOlthoiPlayer)
                 {
                     // Only Olthoi may pass through this portal!
@@ -243,59 +234,17 @@ namespace ACE.Server.WorldObjects
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeAnAdvocateToUsePortal));
                 }
 
-                if (PortalReqType != PortalRequirement.None && PortalReqValue > 0)
+                if (PortalReqType != PortalRequirement.None && PortalReqValue.GetValueOrDefault() > 0)
                 {
-                    if (PortalReqType == PortalRequirement.Enlighten)
+                    // Primary requirement check
+                    if (!CheckPortalRequirement(player, PortalReqType, PortalReqValue.GetValueOrDefault(), PortalReqMaxValue.GetValueOrDefault(), "Primary Requirement"))
+                        return new ActivationResult(false);
+
+                    // Secondary requirement check
+                    if (PortalReqType2 != PortalRequirement2.None && PortalReqValue2.GetValueOrDefault() > 0)
                     {
-                        if (player.Enlightenment < PortalReqValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must enlighten {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
+                        if (!CheckPortalRequirement(player, PortalReqType2, PortalReqValue2.GetValueOrDefault(), PortalReqMaxValue2.GetValueOrDefault(), "Secondary Requirement"))
                             return new ActivationResult(false);
-                        }
-                        if (PortalReqMaxValue > PortalReqValue && player.Enlightenment > PortalReqMaxValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have enlightened more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
-                    }
-                    else if (PortalReqType == PortalRequirement.CreatureAug)
-                    {
-                        if (player.LuminanceAugmentCreatureCount < PortalReqValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your creature magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
-                        if (PortalReqMaxValue > PortalReqValue && player.LuminanceAugmentCreatureCount > PortalReqMaxValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have augmented your creature magic more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
-                    }
-                    else if (PortalReqType == PortalRequirement.ItemAug)
-                    {
-                        if (player.LuminanceAugmentItemCount < PortalReqValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your item magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
-                        if (PortalReqMaxValue > PortalReqValue && player.LuminanceAugmentItemCount > PortalReqMaxValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have augmented your item magic more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
-                    }
-                    else if (PortalReqType == PortalRequirement.LifeAug)
-                    {
-                        if (player.LuminanceAugmentLifeCount < PortalReqValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must augment your life magic {PortalReqValue} times to interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
-                        if (PortalReqMaxValue > PortalReqValue && player.LuminanceAugmentLifeCount > PortalReqMaxValue)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have augmented your life magic more than {PortalReqMaxValue} times and cannot interact with that portal!", ChatMessageType.System));
-                            return new ActivationResult(false);
-                        }
                     }
                 }
             }
@@ -304,7 +253,6 @@ namespace ACE.Server.WorldObjects
             {
                 var hasQuest = player.QuestManager.HasQuest(QuestRestriction);
                 var canSolve = player.QuestManager.CanSolve(QuestRestriction);
-
                 var success = hasQuest && !canSolve;
 
                 if (!success)
@@ -314,13 +262,73 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // handle quest initial flagging
             if (Quest != null)
             {
                 EmoteManager.OnQuest(player);
             }
 
             return new ActivationResult(true);
+        }
+
+        private bool CheckPortalRequirement(Player player, Enum reqType, int reqValue, int reqMaxValue, string requirementLabel)
+        {
+            string message = string.Empty;
+
+            // Use a switch-case to handle both PortalRequirement and PortalRequirement2
+            switch (reqType)
+            {
+                case PortalRequirement.CreatureAug:
+                case PortalRequirement2.CreatureAug:
+                    if (player.LuminanceAugmentCreatureCount < reqValue)
+                        message = $"You must augment your creature magic {reqValue} times to interact with that portal!";
+                    else if (reqMaxValue > reqValue && player.LuminanceAugmentCreatureCount > reqMaxValue)
+                        message = $"You have augmented your creature magic more than {reqMaxValue} times and cannot interact with that portal!";
+                    break;
+
+                case PortalRequirement.ItemAug:
+                case PortalRequirement2.ItemAug:
+                    if (player.LuminanceAugmentItemCount < reqValue)
+                        message = $"You must augment your item magic {reqValue} times to interact with that portal!";
+                    else if (reqMaxValue > reqValue && player.LuminanceAugmentItemCount > reqMaxValue)
+                        message = $"You have augmented your item magic more than {reqMaxValue} times and cannot interact with that portal!";
+                    break;
+
+                case PortalRequirement.LifeAug:
+                case PortalRequirement2.LifeAug:
+                    if (player.LuminanceAugmentLifeCount < reqValue)
+                        message = $"You must augment your life magic {reqValue} times to interact with that portal!";
+                    else if (reqMaxValue > reqValue && player.LuminanceAugmentLifeCount > reqMaxValue)
+                        message = $"You have augmented your life magic more than {reqMaxValue} times and cannot interact with that portal!";
+                    break;
+
+                case PortalRequirement.Enlighten:
+                case PortalRequirement2.Enlighten:
+                    if (player.Enlightenment < reqValue)
+                        message = $"You must enlighten {reqValue} times to interact with that portal!";
+                    else if (reqMaxValue > reqValue && player.Enlightenment > reqMaxValue)
+                        message = $"You have enlightened more than {reqMaxValue} times and cannot interact with that portal!";
+                    break;
+
+                case PortalRequirement.QuestBonus:
+                case PortalRequirement2.QuestBonus:
+                    if (player.QuestCompletionCount < reqValue)
+                        message = $"You must have {reqValue} quest bonus to interact with that portal!";
+                    else if (reqMaxValue > reqValue && player.QuestCompletionCount > reqMaxValue)
+                        message = $"Your quest bonus is too superior to interact with this portal. {reqMaxValue} is the highest quest bonus allowable!";
+                    break;
+
+                default:
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($" Unhandled requirement type {reqType} in {requirementLabel}", ChatMessageType.System));
+                    return false;
+            }
+
+            if (!string.IsNullOrEmpty(message))
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+                return false;
+            }
+
+            return true;
         }
 
         public override void ActOnUse(WorldObject activator)

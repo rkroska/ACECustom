@@ -9,7 +9,6 @@ namespace ACE.Server.Network
 {
     internal class MessageFragment
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static readonly ILog packetLog = LogManager.GetLogger(System.Reflection.Assembly.GetEntryAssembly(), "Packets");
 
         public GameMessage Message { get; private set; }
@@ -67,21 +66,34 @@ namespace ACE.Server.Network
         {
             packetLog.DebugFormat($"Creating ServerFragment for index {index}");
             if (index >= Count)
-                throw new ArgumentOutOfRangeException("index", index, "Passed index is greater then computed count");
+            {
+                packetLog.Error($"Passed index {index} is greater then computed count {Count}");
+                return null;
+            }
+                
 
             var position = index * PacketFragment.MaxFragmentDataSize;
             if (position > DataLength)
-                throw new ArgumentOutOfRangeException("index", index, "Passed index computes to invalid position size");
+            {
+                packetLog.Error($"Passed index {index} computes to invalid position size, datalength: {DataLength}");
+                return null;
+            }
 
             if (DataRemaining <= 0)
-                throw new InvalidOperationException("There is no data remaining");
+            {
+                packetLog.Error("There is no data remaining");
+                return null;
+            }
 
             var dataToSend = DataLength - position;
             if (dataToSend > PacketFragment.MaxFragmentDataSize)
                 dataToSend = PacketFragment.MaxFragmentDataSize;
 
             if (DataRemaining < dataToSend)
-                throw new InvalidOperationException("More data to send then data remaining!");
+            {
+                packetLog.Error("More data to send then data remaining!");
+                return null;
+            }
 
             // Read data starting at position reading dataToSend bytes
             Message.Data.Seek(position, SeekOrigin.Begin);

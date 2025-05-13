@@ -50,11 +50,8 @@ namespace ACE.Server.WorldObjects
             var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05).Item;
 
             long m_amount = 0;
-            if (IsVPHardcore && HasVitae)
-            {
-                m_amount = m_amount = (long)Math.Round(amount * modifier);
-            }
-            else if (IsVPHardcore)
+
+            if (IsVPHardcore)
             {
                 m_amount = (long)Math.Round(amount * enchantment * modifier * quest * enlightenment * hardCoreMult);
             }
@@ -143,10 +140,10 @@ namespace ACE.Server.WorldObjects
                 }
                 AvailableExperience += addAmount;
 
-                var xpTotalUpdate = new GameMessagePrivateUpdatePropertyFloat(this, PropertyFloat.TotalExperienceDouble, TotalExperienceDouble ?? 0);
+                //var xpTotalUpdate = new GameMessagePrivateUpdatePropertyFloat(this, PropertyFloat.TotalExperienceDouble, TotalExperienceDouble ?? 0);
                 var xpAvailUpdate = new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0);
-                Session.Network.EnqueueSend(xpTotalUpdate, xpAvailUpdate);
-
+                //Session.Network.EnqueueSend(xpTotalUpdate, xpAvailUpdate);
+                Session.Network.EnqueueSend(xpAvailUpdate); //client doesn't use TotalExperienceDouble, it's serverside only, sending this causes additional chatter
                 CheckForLevelup();
             }
 

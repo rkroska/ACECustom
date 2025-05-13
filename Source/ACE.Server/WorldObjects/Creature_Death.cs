@@ -39,6 +39,21 @@ namespace ACE.Server.WorldObjects
             IsTurning = false;
             IsMoving = false;
 
+            grappleLoopCTS?.Cancel();
+            hotspotLoopCTS?.Cancel();
+
+            // Reset fog to Clear upon death only if the creature was enraged
+            if (IsEnraged && CurrentLandblock != null)
+            {
+                var fogResetType = EnvironChangeType.Clear;
+                CurrentLandblock.SendEnvironChange(fogResetType);
+                //Console.WriteLine("[DEBUG] EnvironChange reset to Clear upon mob death (Enraged state detected).");
+            }
+            else if (IsEnraged)
+            {
+                //Console.WriteLine("[ERROR] CurrentLandblock is null. Unable to reset fog upon mob death.");
+            }
+
             //QuestManager.OnDeath(lastDamager?.TryGetAttacker());
 
             if (KillQuest != null)
@@ -770,6 +785,16 @@ namespace ACE.Server.WorldObjects
             0x5964,     // Gauntlet Arena One (Radiant Blood)
             0x5965,     // Gauntlet Arena Two (Radiant Blood)
             0x596B,     // Gauntlet Staging Area (All Societies)
+        };
+
+        public bool IsInMarketplace => Location != null ? Marketplace_Landblocks.Contains(Location.LandblockId.Landblock) : false;
+
+        /// <summary>
+        /// landblock required for using /clap command
+        /// </summary>
+        public static HashSet<ushort> Marketplace_Landblocks = new HashSet<ushort>()
+        {
+            0x016C,     // Marketplace
         };
     }
 }

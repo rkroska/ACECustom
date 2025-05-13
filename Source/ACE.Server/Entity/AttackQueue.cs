@@ -8,15 +8,15 @@ namespace ACE.Server.Entity
 {
     public class AttackQueue
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        //private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        public Player Player;
+        //public Player Player;
 
         public Queue<float> PowerAccuracy;
 
         public AttackQueue(Player player)
         {
-            Player = player;
+            //Player = player;
 
             PowerAccuracy = new Queue<float>();
         }

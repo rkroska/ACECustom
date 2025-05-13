@@ -1150,7 +1150,7 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
                 else if (parameters.Length > 1 && parameters[1] == "name")
-                {                    
+                {
                     var playerName = "";
                     for (var i = 2; i < parameters.Length; i++)
                         playerName += $"{parameters[i]} ";
@@ -1482,7 +1482,7 @@ namespace ACE.Server.Command.Handlers
                 msg += "@adminhouse payrent off / on: sets the targeted house to not require / require normal maintenance payments.\n";
 
                 session.Player.SendMessage(msg);
-            }    
+            }
         }
 
         private static void DumpHouse(Session session, House targetHouse, WorldObject wo)
@@ -1560,7 +1560,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.SendMessage(msg, ChatMessageType.System);
                 }
 
-                session.Player.SendMessage(AppendHouseLinkDump(house), ChatMessageType.System);                
+                session.Player.SendMessage(AppendHouseLinkDump(house), ChatMessageType.System);
 
                 if (house.HouseType == HouseType.Villa || house.HouseType == HouseType.Mansion)
                 {
@@ -1780,7 +1780,7 @@ namespace ACE.Server.Command.Handlers
 
                     var names = string.Join(" ", parameters).Split(",");
 
-                    var newCharName = names[1].TrimStart(' ').TrimEnd(' ');                    
+                    var newCharName = names[1].TrimStart(' ').TrimEnd(' ');
 
                     if (newCharName.StartsWith("+"))
                         newCharName = newCharName.Substring(1);
@@ -1835,11 +1835,11 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        // copychar < character name >, < copy name >
+        // copychar < character name >, < copy name >[, accountName]
         [CommandHandler("copychar", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2,
             "Copies an existing character into your character list.",
-            "< Existing Character Name >, < New Character Name >\n" +
-            "Given the name of an existing character \"character name\", this command makes a copy of that character with the name \"copy name\" and places it into your character list.")]
+            "< Existing Character Name >, < New Character Name >(, < Account Name >)\n" +
+            "Given the name of an existing character \"character name\", this command makes a copy of that character with the name \"copy name\" and places it into your character list or the specified account character list.")]
         public static void HandleCopychar(Session session, params string[] parameters)
         {
             // usage: @copychar < character name >, < copy name >
@@ -1865,11 +1865,36 @@ namespace ACE.Server.Command.Handlers
             newCharName = newCharName.First().ToString().ToUpper() + newCharName.Substring(1);
 
             var existingPlayer = PlayerManager.FindByName(existingCharName);
-
-            if (existingPlayer == null || session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account").Item)
+            if (existingPlayer == null)
             {
-                //CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Does the character exist _AND_ is not currently logged in? Is the new character name already taken, or is the account out of free character slots?", ChatMessageType.Broadcast);
-                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Does the character exist? Is the new character name already taken, or is the account out of free character slots?", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\"! Character doesn't exist.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            if (names.Length > 2)
+            {
+                string newAccountName = names[2].TrimStart(' ').TrimEnd(' ').ToLower();
+
+                var account = DatabaseManager.Authentication.GetAccountByName(newAccountName);
+
+                if (account == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Error, cannot restore. Account \"{newAccountName}\" is not in database.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                if (PlayerManager.IsAccountAtMaxCharacterSlots(account.AccountName))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Error, cannot restore. Account \"{newAccountName}\" has no free character slots.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                DoCopyChar(session, existingCharName, existingPlayer.Guid.Full, false, newCharName, account.AccountId);
+                return;
+            }
+            else if ( session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account").Item)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Account is out of free character slots.", ChatMessageType.Broadcast);
                 return;
             }
 
@@ -1890,6 +1915,10 @@ namespace ACE.Server.Command.Handlers
                     {
                         DatabaseManager.Shard.IsCharacterNameAvailable(newCharName, isAvailable =>
                         {
+                            if (isAvailable)
+                            {
+                                isAvailable = (PlayerManager.FindByName(newCharName) == null);
+                            }
                             if (!isAvailable)
                             {
                                 CommandHandlerHelper.WriteOutputInfo(session, $"{newCharName} is not available to use for the {(isDeletedChar ? "restored" : "copied")} character name, try another name.", ChatMessageType.Broadcast);
@@ -2332,6 +2361,12 @@ namespace ACE.Server.Command.Handlers
                 return null;
             }
 
+            if (weenie.DisableCreate())
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot spawn {weenie.ClassName} because it is restricted", ChatMessageType.Broadcast));
+                return null;
+            }
+
             return weenie;
         }
 
@@ -2469,12 +2504,14 @@ namespace ACE.Server.Command.Handlers
             var obj = WorldObjectFactory.CreateNewWorldObject(weenie);
 
             //if (obj.TimeToRot == null)
-                //obj.TimeToRot = double.MaxValue;
+            //obj.TimeToRot = double.MaxValue;
 
             if (obj.WeenieType == WeenieType.Creature)
                 obj.Location = session.Player.Location.InFrontOf(5f, true);
             else
             {
+                obj.CreatedByAccountId = session.Player.Account.AccountId;
+
                 var dist = Math.Max(2, obj.UseRadius ?? 2);
 
                 obj.Location = session.Player.Location.InFrontOf(dist);
@@ -2605,7 +2642,7 @@ namespace ACE.Server.Command.Handlers
 
             session.Player.TryCreateInInventoryWithNetworking(obj);
 
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) in their inventory.");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) x{obj.StackSize} in their inventory.");
         }
 
         [CommandHandler("crack", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Cracks the most recently appraised locked target.", "[. open it too]")]
@@ -2738,7 +2775,7 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must select a player to send them a message.", ChatMessageType.Broadcast));
                 return;
-            }    
+            }
 
             var wo = session.Player.CurrentLandblock?.GetObject(objectId);
 
@@ -2778,9 +2815,9 @@ namespace ACE.Server.Command.Handlers
                 foreach (var item in session.Player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
             }
-            
 
-            
+
+
         }
 
         // event
@@ -4851,6 +4888,40 @@ namespace ACE.Server.Command.Handlers
             DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
             DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
             DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
+        }
+
+        [CommandHandler("serverquestcompletions", AccessLevel.Developer, CommandHandlerFlag.None, "Get Total Completions of a Quest for all Characters, if the top parameter is passed will list top 25 player completion counts", "<quest_name>, optional: top")]
+        public static void HandleServerQuestCompletions(Session session, params string[] parameters)
+        {
+            if (parameters.Length > 0)
+            {
+                var questName = parameters[0];
+                if (parameters.Length > 1 && string.Equals("Top", parameters[1], StringComparison.OrdinalIgnoreCase))
+                {
+                    var list = DatabaseManager.Shard.BaseDatabase.GetTopQuestCompletions(questName);
+                    if (list.Count > 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Top 25 Completions for quest {questName}", ChatMessageType.Broadcast));
+                        for (int i = 0; i < list.Count; i++)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"The quest {questName} has not been completed yet.", ChatMessageType.Broadcast));
+                    }
+                }
+                else
+                {
+                    var completions = DatabaseManager.Shard.BaseDatabase.GetServerQuestCompletions(questName);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"The quest {questName} has been completed {completions} times.", ChatMessageType.Broadcast));
+                }
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a quest name.", ChatMessageType.Broadcast));
+            }
         }
     }
 }

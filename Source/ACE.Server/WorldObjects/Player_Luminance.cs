@@ -31,7 +31,7 @@ namespace ACE.Server.WorldObjects
             long m_amount = 0;
             if (IsVPHardcore && HasVitae)
             {
-                m_amount = (long)Math.Round(amount * modifier);
+                m_amount = (long)Math.Round(amount * modifier * hardCoreMult);
             }
             else if (IsVPHardcore)
             {
@@ -60,10 +60,10 @@ namespace ACE.Server.WorldObjects
                 Fellowship.SplitLuminance((ulong)amount, xpType, shareType, this);
             }
             else
-                AddLuminance(amount, xpType);
+                AddLuminance(amount, xpType, shareType);
         }
 
-        private void AddLuminance(long amount, XpType xpType)
+        private void AddLuminance(long amount, XpType xpType, ShareType shareType)
         {
             if (!BankedLuminance.HasValue)
             {
@@ -73,9 +73,11 @@ namespace ACE.Server.WorldObjects
             if (xpType == XpType.Quest || xpType == XpType.Kill)
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You've banked {amount:N0} Luminance.", ChatMessageType.Broadcast));
 
-            UpdateLumAllegiance(amount);
+            if (shareType.HasFlag(ShareType.Allegiance))
+                UpdateLumAllegiance(amount);
 
-            UpdateLuminance();
+            // 20250203 - Don't spam the client with properties it doesn't use
+            //UpdateLuminance();
         }
 
         /// <summary>
@@ -124,7 +126,7 @@ namespace ACE.Server.WorldObjects
         private void UpdateLuminance()
         {
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, AvailableLuminance ?? 0));
-            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
+            //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
         }
     }
 }

@@ -115,9 +115,15 @@ namespace ACE.Server.WorldObjects
             // even before the CreatePlayer, but doing it here
             if (SquelchManager.HasSquelches)
                 SquelchManager.SendSquelchDB();
-
-            AuditItemSpells();
-            AuditEquippedItems();
+            try
+            {
+                AuditItemSpells();
+                AuditEquippedItems();
+            }
+            catch (Exception x)
+            {
+                log.Error($"Error occurred during audit: {x}");
+            }
 
             //HandleMissingXp();
             //HandleSkillCreditRefund();
@@ -223,10 +229,17 @@ namespace ACE.Server.WorldObjects
             // Player objects don't get a placement
             Placement = null;
             Session.Network.EnqueueSend(new GameMessagePlayerCreate(Guid), new GameMessageCreateObject(this));
+            try
+            {
+                SendInventoryAndWieldedItems();
 
-            SendInventoryAndWieldedItems();
+                SendContractTrackerTable();
+            }
+            catch (Exception x)
+            {
+                log.Error($"Error occurred during SendSelf: {x}, player: {this.Name}");
+            }
 
-            SendContractTrackerTable();
         }
 
         public void SendPropertyUpdatesAndOverrides()

@@ -448,6 +448,26 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* inq questbonus amount */
+                case EmoteType.QuestCompletionCount:
+
+                    if (targetObject != null)
+                    {
+                        var QB = targetObject.GetProperty((PropertyInt64)emote.Stat);
+
+                        if (QB == null && HasValidTestNoQuality(emote.Message))
+                        {
+                            ExecuteEmoteSet(EmoteCategory.TestNoQuality, emote.Message, targetObject, true);
+                        }
+                        else
+                        {
+                            QB ??= 0;
+                            success = QB != null && QB >= (emote.Min64 ?? long.MinValue) && QB <= (emote.Max64 ?? long.MaxValue);
+                            ExecuteEmoteSet(success ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure, emote.Message, targetObject, true);
+                        }
+                    }
+                    break;
+
                 case EmoteType.IncrementMyQuest:
                 case EmoteType.IncrementQuest:
 
@@ -1889,7 +1909,6 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         totalCost += baseCost + ((voidAugs + i) * (baseCost * (1 + percentIncrease)));
                                     }
-
                                     // Apply the cost multipliers based on the augment thresholds
                                     double additionalMultiplier = 1.0;
                                     if (voidAugs >= 2500)
@@ -2114,7 +2133,6 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         totalCost += baseCost + ((durationAugs + i) * (baseCost * (1 + percentIncrease)));
                                     }
-
                                     // Apply the cost multipliers based on the augment thresholds
                                     double additionalMultiplier = 1.0;
                                     if (durationAugs >= 2000)

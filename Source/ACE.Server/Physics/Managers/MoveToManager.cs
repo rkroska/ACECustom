@@ -21,7 +21,7 @@ namespace ACE.Server.Physics.Animation
         public float OriginalDistance;
         public double OriginalDistanceTime;
         public int FailProgressCount;
-        public uint SoughtObjectID;
+        //public uint SoughtObjectID;
         public uint TopLevelObjectID;
         public float SoughtObjectRadius;
         public float SoughtObjectHeight;
@@ -82,7 +82,7 @@ namespace ACE.Server.Physics.Animation
             SoughtPosition = new Position();
             CurrentTargetPosition = new Position();
 
-            SoughtObjectID = 0;
+            //SoughtObjectID = 0;
             TopLevelObjectID = 0;
             SoughtObjectRadius = 0;
             SoughtObjectHeight = 0;
@@ -120,7 +120,7 @@ namespace ACE.Server.Physics.Animation
             PhysicsObj.StopCompletely(false);
 
             StartingPosition = new Position(PhysicsObj.Position);
-            SoughtObjectID = objectID;
+            //SoughtObjectID = objectID;
             SoughtObjectRadius = radius;
             SoughtObjectHeight = height;
             MovementType = MovementType.MoveToObject;
@@ -241,7 +241,7 @@ namespace ACE.Server.Physics.Animation
                 PhysicsObj.StopCompletely(false);
 
             MovementType = MovementType.TurnToObject;
-            SoughtObjectID = objectID;
+            //SoughtObjectID = objectID;
 
             CurrentTargetPosition.Frame.set_heading(movementParams.DesiredHeading);
 
@@ -750,11 +750,6 @@ namespace ACE.Server.Physics.Animation
         {
             if (PendingActions.Count > 0)
                 PendingActions.RemoveAt(0);
-        }
-
-        public void SetPhysicsObject(PhysicsObj obj)
-        {
-            PhysicsObj = obj;
         }
 
         public void SetWeenieObject(WeenieObject wobj)

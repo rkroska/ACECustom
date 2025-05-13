@@ -26,6 +26,10 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Extensions;
 using ACE.Server.WorldObjects;
 using ACE.Common;
+using ACE.DatLoader.FileTypes;
+using ACE.DatLoader;
+using Discord;
+using ACE.Server.Mods;
 
 namespace ACE.Server.Command.Handlers.Processors
 {
@@ -1266,6 +1270,11 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
+            if (wo.WeenieType != WeenieType.Creature)
+            {
+                wo.CreatedByAccountId = session.Player.Account.AccountId;
+            }
+
             var isLinkChild = parentInstance != null;
 
             if (!wo.Stuck && !isLinkChild)
@@ -1283,6 +1292,7 @@ namespace ACE.Server.Command.Handlers.Processors
             wo.Location.PositionZ += 0.05f;
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Creating new landblock instance {(isLinkChild ? "child object " : "")}@ {loc.ToLOCString()}\n{wo.WeenieClassId} - {wo.Name} ({nextStaticGuid:X8})", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created a new landblock instance {(isLinkChild ? "child object " : "")}@ {loc.ToLOCString()}\n [WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: ({nextStaticGuid:X8})");
 
             if (!wo.EnterWorld())
             {
@@ -1532,6 +1542,7 @@ namespace ACE.Server.Command.Handlers.Processors
             DeleteInstanceFromWorldDatabase(instance);
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {(instance.IsLinkChild ? "child " : "")}{wo.WeenieClassId} - {wo.Name} (0x{guid:X8}) from landblock instances", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has removed {(instance.IsLinkChild ? "child " : "")}[WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: (0x{guid:X8}) from landblock instances");
         }
 
         public static void SaveInstanceToWorldDatabase(LandblockInstance instance)
@@ -2166,6 +2177,114 @@ namespace ACE.Server.Command.Handlers.Processors
             
         }
 
+        [CommandHandler("import-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports JSON content from Discord to the server folder", "<filename>")]
+        public static void HandleDiscordJsonImport(Session session, params string[] parameters)
+        {
+            try
+            {
+                string identifier = parameters[0];
+                if (string.IsNullOrEmpty(identifier))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Invalid identifier");
+                    return;
+                }
+
+                // Get the JSON file content from Discord
+                string jsonContent = DiscordChatManager.GetJsonFromDiscordMessage(20, identifier);
+
+                if (string.IsNullOrEmpty(jsonContent))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find JSON attachment for {identifier}");
+                    return;
+                }
+
+                // Dynamically define the target folder path using ModManager.ModPath
+                string modDirectory = ModManager.ModPath;  // This is "c:\\ACE\\Mods\\" or wherever your mods are stored
+                string customClothingBaseDirectory = "CustomClothingBase";  // The subfolder for your mod
+                string jsonFolder = "json";  // The "Json" subfolder where JSON files will be stored
+                string folderPath = Path.Combine(modDirectory, customClothingBaseDirectory, jsonFolder);
+
+                // Combine folder path with the identifier to create the full file path
+                string filePath = Path.Combine(folderPath, $"{identifier}.json");
+
+                // Ensure the folder exists
+                if (!Directory.Exists(folderPath))
+                {
+                    Directory.CreateDirectory(folderPath);
+                }
+
+                // Write the JSON content to the file
+                File.WriteAllText(filePath, jsonContent);
+
+                CommandHandlerHelper.WriteOutputInfo(session, $"Successfully imported JSON file {identifier} to {filePath}");
+            }
+            catch (Exception e)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Error importing JSON from Discord: {e.Message}");
+            }
+        }
+
+        private static string getFilename(uint fileId)
+        {
+            string directory = ModManager.GetModContainerByName("CustomClothingBase").FolderPath;
+            string jsonFilename = Path.Combine(directory, "json", $"{fileId:X8}.json");
+            return jsonFilename;
+        }
+
+        [CommandHandler("export-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports a ClothingBase entry to JSON and sends it to Discord.")]
+        public static void HandleExportClothingToDiscord(Session session, params string[] parameters)
+        {
+            if (parameters == null || parameters.Length < 1)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: export-discord-clothing <id>");
+                return;
+            }
+
+            uint clothingBaseId;
+            if (!uint.TryParse(parameters[0], out clothingBaseId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid ClothingBase ID format.");
+                return;
+            }
+
+            if (clothingBaseId < 0x10000000 || clothingBaseId > 0x10FFFFFF)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"{clothingBaseId:X8} is not a valid ClothingBase between 0x10000000 and 0x10FFFFFF");
+                return;
+            }
+
+            if (!DatManager.PortalDat.AllFiles.ContainsKey(clothingBaseId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"ClothingBase {clothingBaseId:X8} not found.");
+                return;
+            }
+
+            // Export logic - Create JSON and send directly to Discord without saving to a file
+            var cbToExport = DatManager.PortalDat.ReadFromDat<ClothingTable>(clothingBaseId);
+            var json = JsonConvert.SerializeObject(cbToExport, Formatting.Indented);
+
+            try
+            {
+                // Convert the JSON string to a MemoryStream for sending it as a file
+                using (MemoryStream mem = new MemoryStream())
+                {
+                    using (StreamWriter sw = new StreamWriter(mem))
+                    {
+                        sw.AutoFlush = true;
+                        sw.WriteLine(json); // Write the JSON content to the memory stream
+
+                        // Send the JSON content to Discord as a file
+                        DiscordChatManager.SendDiscordFile(session.Player.Name, $"ClothingBase {clothingBaseId:X8}.json", (long)ConfigManager.Config.Chat.ClothingModExportChannelId, new Discord.FileAttachment(mem, $"{clothingBaseId:X8}.json"));
+
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Exported ClothingBase {clothingBaseId:X8} to Discord.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Error exporting ClothingBase {clothingBaseId:X8} to Discord: {ex.Message}");
+            }
+        }
 
         [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)

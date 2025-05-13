@@ -496,7 +496,7 @@ namespace ACE.Server.Physics
 
             // Gravity value pulled from ACE property
             var g = PhysicsGlobals.Gravity;
-            var b = (4 * a + 4 * c - g * time * time) / 8;
+            //var b = (4 * a + 4 * c - g * time * time) / 8;
 
             velocityVector.Z = (2 * a - 2 * c + g * time * time) / (time * 2) * -1;
 
@@ -626,7 +626,7 @@ namespace ACE.Server.Physics
             //fire_velocity.Z = -(3 * a - 4 * b + c) / t;
 
             var g = gravity;
-            var b = (4 * a + 4 * c - g * t * t) / 8;
+            //var b = (4 * a + 4 * c - g * t * t) / 8;
 
             fire_velocity.Z = (2 * a - 2 * c + g * t * t) / (t * 2) * -1;
 

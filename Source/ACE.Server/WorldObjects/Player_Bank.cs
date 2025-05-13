@@ -295,6 +295,20 @@ namespace ACE.Server.WorldObjects
                 coin += (long)item.StackSize;
 
             DepositEnlightenedCoins(coin);
+            this.SavePlayerToDatabase();
+        }
+
+        public void DepositWeaklyEnlightenedCoins()
+        {
+            var EnlList = this.GetInventoryItemsOfWCID(300003);
+            long coin = 0;
+
+            foreach (var item in EnlList)
+            {
+                coin += (long)item.StackSize;
+            }
+            DepositWeaklyEnlightenedCoins(coin);
+            this.SavePlayerToDatabase();
         }
 
         public void DepositEnlightenedCoins(long amount)
@@ -314,6 +328,30 @@ namespace ACE.Server.WorldObjects
                     {
                         this.TryConsumeFromInventoryWithNetworking(coin);
                         BankedEnlightenedCoins += val;
+                    }
+                }
+            }
+        }
+
+        public void DepositWeaklyEnlightenedCoins(long amount)
+        {
+            if (BankedWeaklyEnlightenedCoins == null)
+            {
+                BankedWeaklyEnlightenedCoins = 0;
+            }
+            lock (balanceLock)
+
+            {
+                //int i = 0;
+                var WeakEnlList = this.GetInventoryItemsOfWCID(300003);
+                foreach (var coin in WeakEnlList)
+
+                {
+                    int val = coin.Value ?? 0;
+                    if (val > 0)
+                    {
+                        this.TryConsumeFromInventoryWithNetworking(coin);
+                        BankedWeaklyEnlightenedCoins += val;
                     }
                 }
             }
@@ -353,7 +391,7 @@ namespace ACE.Server.WorldObjects
 
             }
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
-            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+            //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
         }
 
         /// <summary>
@@ -410,7 +448,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, this.AvailableLuminance ?? 0));
-            Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+            //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
         }
 
         public void WithdrawPyreals(long Amount)
@@ -536,16 +574,54 @@ namespace ACE.Server.WorldObjects
 
         public void WithdrawEnlightenedCoins(long Amount)
         {
-            long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount > 0)
+                long remainingAmount = Amount;
+                WorldObject templateCoin = WorldObjectFactory.CreateNewWorldObject(300004); // Assume 300004 is the ID for Enlightened Coins
+                int maxStackSize = (int)templateCoin.MaxStackSize;
+
+                while (remainingAmount >= maxStackSize)
                 {
-                    WorldObject coins = WorldObjectFactory.CreateNewWorldObject(300004);
-                    coins.SetStackSize((int)Amount);
-                    this.TryCreateInInventoryWithNetworking(coins);
-                    BankedEnlightenedCoins -= Amount;
-                    Amount = 0;
+                    WorldObject coinStack = WorldObjectFactory.CreateNewWorldObject(300004);
+                    coinStack.SetStackSize(maxStackSize);
+                    this.TryCreateInInventoryWithNetworking(coinStack);
+                    BankedEnlightenedCoins -= maxStackSize;
+                    remainingAmount -= maxStackSize;
+                }
+
+                if (remainingAmount > 0)
+                {
+                    WorldObject remainingCoinStack = WorldObjectFactory.CreateNewWorldObject(300004);
+                    remainingCoinStack.SetStackSize((int)remainingAmount);
+                    this.TryCreateInInventoryWithNetworking(remainingCoinStack);
+                    BankedEnlightenedCoins -= remainingAmount;
+                }
+            }
+        }
+
+        public void WithdrawWeaklyEnlightenedCoins(long Amount)
+        {
+            lock (balanceLock)
+            {
+                long remainingAmount = Amount;
+                WorldObject templateCoin = WorldObjectFactory.CreateNewWorldObject(300003); // Assume 300004 is the ID for Enlightened Coins
+                int maxStackSize = (int)templateCoin.MaxStackSize;
+
+                while (remainingAmount >= maxStackSize)
+                {
+                    WorldObject coinStack = WorldObjectFactory.CreateNewWorldObject(300003);
+                    coinStack.SetStackSize(maxStackSize);
+                    this.TryCreateInInventoryWithNetworking(coinStack);
+                    BankedWeaklyEnlightenedCoins -= maxStackSize;
+                    remainingAmount -= maxStackSize;
+                }
+
+                if (remainingAmount > 0)
+                {
+                    WorldObject remainingCoinStack = WorldObjectFactory.CreateNewWorldObject(300003);
+                    remainingCoinStack.SetStackSize((int)remainingAmount);
+                    this.TryCreateInInventoryWithNetworking(remainingCoinStack);
+                    BankedWeaklyEnlightenedCoins -= remainingAmount;
                 }
             }
         }
@@ -583,12 +659,11 @@ namespace ACE.Server.WorldObjects
                     {
                         onlinePlayer.BankedPyreals += Amount;
                     }
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedPyreals, onlinePlayer.BankedPyreals ?? 0));
+                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedPyreals, onlinePlayer.BankedPyreals ?? 0));
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
                 }
                 this.BankedPyreals -= Amount;
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
-                
+                //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
                 return true;
             }
         }
@@ -625,11 +700,11 @@ namespace ACE.Server.WorldObjects
                     {
                         onlinePlayer.BankedLegendaryKeys += Amount;
                     }
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLegendaryKeys, onlinePlayer.BankedLegendaryKeys ?? 0));
+                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLegendaryKeys, onlinePlayer.BankedLegendaryKeys ?? 0));
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
                 }
                 this.BankedLegendaryKeys -= Amount;
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
+                //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
                 return true;
             }
         }
@@ -666,11 +741,20 @@ namespace ACE.Server.WorldObjects
                     {
                         onlinePlayer.BankedMythicalKeys += Amount;
                     }
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedMythicalKeys, onlinePlayer.BankedMythicalKeys ?? 0));
+                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedMythicalKeys, onlinePlayer.BankedMythicalKeys ?? 0));
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Mythical Keys from {this.Name}", ChatMessageType.System));
+                    if (Amount > 1)
+                    {
+                        onlinePlayer.SavePlayerToDatabase();
+                    }
                 }
                 this.BankedMythicalKeys -= Amount;
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedMythicalKeys, this.BankedMythicalKeys ?? 0));
+                //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedMythicalKeys, this.BankedMythicalKeys ?? 0));
+                if (Amount > 1)
+                {
+                    this.SavePlayerToDatabase();
+                }
+
                 return true;
             }
         }
@@ -708,10 +792,18 @@ namespace ACE.Server.WorldObjects
                     }
                     this.BankedLuminance -= Amount;
                     onlinePlayer.BankedLuminance += Amount;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLuminance, onlinePlayer.BankedLuminance ?? 0));
+                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLuminance, onlinePlayer.BankedLuminance ?? 0));
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Luminance from {this.Name}", ChatMessageType.System));
+                    if (Amount > 100000)
+                    {
+                        onlinePlayer.SavePlayerToDatabase();
+                    }
                 }
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                if (Amount > 100000)
+                {
+                    this.SavePlayerToDatabase();
+                }
                 return true;
             }          
         }
@@ -747,13 +839,69 @@ namespace ACE.Server.WorldObjects
                     {
                         onlinePlayer.BankedEnlightenedCoins += Amount;
                     }
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLegendaryKeys, onlinePlayer.BankedLegendaryKeys ?? 0));
+                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedEnlightenedCoins, onlinePlayer.BankedEnlightenedCoins ?? 0));
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightend Coins from {this.Name}", ChatMessageType.System));
+                    if (Amount > 10)
+                    {
+                        onlinePlayer.SavePlayerToDatabase();
+                    }
+
                 }
                 this.BankedEnlightenedCoins -= Amount;
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedEnlightenedCoins, this.BankedEnlightenedCoins ?? 0));
+                //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedEnlightenedCoins, this.BankedEnlightenedCoins ?? 0));
+                if (Amount > 10)
+                {
+                    this.SavePlayerToDatabase();
+                }
                 return true;
             }
+        }
+        public bool TransferWeaklyEnlightenedCoins(long Amount, string CharacterDestination)
+        {
+            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            if (tarplayer == null)
+            {
+                return false;
+            }
+            else
+            {
+                if (tarplayer is OfflinePlayer)
+                {
+                    var offlinePlayer = tarplayer as OfflinePlayer;
+                    if (offlinePlayer.BankedWeaklyEnlightenedCoins == null)
+                    {
+                        offlinePlayer.BankedWeaklyEnlightenedCoins = Amount;
+                    }
+                    else
+                    {
+                        offlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
+                    }
+                }
+                else
+                {
+                    var onlinePlayer = tarplayer as Player;
+                    if (onlinePlayer.BankedWeaklyEnlightenedCoins == null)
+                    {
+                        onlinePlayer.BankedWeaklyEnlightenedCoins = Amount;
+                    }
+                    else
+                    {
+                        onlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
+                    }
+                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedWeaklyEnlightenedCoins, onlinePlayer.BankedWeaklyEnlightenedCoins ?? 0));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightend Coins from {this.Name}", ChatMessageType.System));
+                    if (Amount > 10)
+                    {
+                        onlinePlayer.SavePlayerToDatabase();
+                    }
+
+                }
+                this.BankedWeaklyEnlightenedCoins -= Amount;
+                //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedWeaklyEnlightenedCoins, this.BankedWeaklyEnlightenedCoins ?? 0));
+                if (Amount > 10)
+                    this.SavePlayerToDatabase();
+            }
+                return true;
         }
         public long? BankedLuminance
         {
@@ -776,6 +924,11 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedEnlightenedCoins); else SetProperty(PropertyInt64.BankedEnlightenedCoins, value.Value); }
+        }
+        public long? BankedWeaklyEnlightenedCoins
+        {
+            get => GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.BankedWeaklyEnlightenedCoins); else SetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins, value.Value); }
         }
         public long? BankedMythicalKeys
         {

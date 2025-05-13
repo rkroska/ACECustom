@@ -172,6 +172,11 @@ namespace ACE.Entity.Models
             return weenie.GetProperty(PropertyBool.Stuck) ?? false;
         }
 
+        public static bool DisableCreate(this Weenie weenie)
+        {
+            return weenie.GetProperty(PropertyBool.DisableCreate) ?? false;
+        }
+
         public static bool RequiresBackpackSlotOrIsContainer(this Weenie weenie)
         {
             var requiresBackPackSlot = weenie.GetProperty(PropertyBool.RequiresBackpackSlot) ?? false;

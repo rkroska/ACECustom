@@ -190,33 +190,42 @@ namespace ACE.Server.Network.Structure
                 PropertiesString.Clear();
 
                 var longDesc = "";
-
-                if (slumLord.HouseOwner.HasValue && slumLord.HouseOwner.Value > 0)
+                if (slumLord.House == null)
                 {
-                    longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !PropertyManager.GetBool("house_rent_enabled").Item ? "" : "not ")}been paid.\n";
+                    longDesc = $"This house is not configured correctly, please contact your Server Admin.\n";
 
                     PropertiesInt.Clear();
                 }
+
                 else
                 {
-                    //longDesc = $"This house is {(slumLord.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n"; // this was the retail msg.
-                    longDesc = $"This {(slumLord.House.HouseType == HouseType.Undef ? "house" : slumLord.House.HouseType.ToString().ToLower())} is {(slumLord.House.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n";
+                    if (slumLord.HouseOwner.HasValue && slumLord.HouseOwner.Value > 0)
+                    {
+                        longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !PropertyManager.GetBool("house_rent_enabled").Item ? "" : "not ")}been paid.\n";
 
-                    var discardInts = PropertiesInt.Where(x => x.Key != PropertyInt.HouseStatus && x.Key != PropertyInt.HouseType && x.Key != PropertyInt.MinLevel && x.Key != PropertyInt.MaxLevel && x.Key != PropertyInt.AllegianceMinLevel && x.Key != PropertyInt.AllegianceMaxLevel).Select(x => x.Key).ToList();
-                    foreach (var key in discardInts)
-                        PropertiesInt.Remove(key);
-                }
+                        PropertiesInt.Clear();
+                    }
+                    else
+                    {
+                        //longDesc = $"This house is {(slumLord.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n"; // this was the retail msg.
+                        longDesc = $"This {(slumLord.House.HouseType == HouseType.Undef ? "house" : slumLord.House.HouseType.ToString().ToLower())} is {(slumLord.House.HouseStatus == HouseStatus.Disabled ? "not " : "")}available for purchase.\n";
 
-                if (slumLord.HouseRequiresMonarch)
-                    longDesc += "You must be a monarch to purchase and maintain this dwelling.\n";
+                        var discardInts = PropertiesInt.Where(x => x.Key != PropertyInt.HouseStatus && x.Key != PropertyInt.HouseType && x.Key != PropertyInt.MinLevel && x.Key != PropertyInt.MaxLevel && x.Key != PropertyInt.AllegianceMinLevel && x.Key != PropertyInt.AllegianceMaxLevel).Select(x => x.Key).ToList();
+                        foreach (var key in discardInts)
+                            PropertiesInt.Remove(key);
+                    }
 
-                if (slumLord.AllegianceMinLevel.HasValue)
-                {
-                    var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
-                    if (allegianceMinLevel == -1)
-                        allegianceMinLevel = slumLord.AllegianceMinLevel.Value;
+                    if (slumLord.HouseRequiresMonarch)
+                        longDesc += "You must be a monarch to purchase and maintain this dwelling.\n";
 
-                    longDesc += $"Restricted to characters of allegiance rank {allegianceMinLevel} or greater.\n";
+                    if (slumLord.AllegianceMinLevel.HasValue)
+                    {
+                        var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
+                        if (allegianceMinLevel == -1)
+                            allegianceMinLevel = slumLord.AllegianceMinLevel.Value;
+
+                        longDesc += $"Restricted to characters of allegiance rank {allegianceMinLevel} or greater.\n";
+                    }
                 }
 
                 PropertiesString.Add(PropertyString.LongDesc, longDesc);
@@ -341,13 +350,13 @@ namespace ACE.Server.Network.Structure
 
         private void BuildProperties(WorldObject wo)
         {
-            PropertiesInt = wo.GetAllPropertyInt().Where(x => ClientProperties.PropertiesInt.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => ClientProperties.PropertiesInt64.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesBool = wo.GetAllPropertyBools().Where(x => ClientProperties.PropertiesBool.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesFloat = wo.GetAllPropertyFloat().Where(x => ClientProperties.PropertiesDouble.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesString = wo.GetAllPropertyString().Where(x => ClientProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesDID = wo.GetAllPropertyDataId().Where(x => ClientProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => ClientProperties.PropertiesInstanceId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesBool = wo.GetAllPropertyBools().Where(x => AssessmentProperties.PropertiesBool.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesFloat = wo.GetAllPropertyFloat().Where(x => AssessmentProperties.PropertiesDouble.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
 
             if (wo is Player player)
             {

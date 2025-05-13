@@ -60,79 +60,6 @@ namespace ACE.Server.Physics
             Radius = sphere.Radius;
         }
 
-        public static readonly float ThresholdMed = 1.0f / 3.0f;
-        public static readonly float ThresholdHigh = 2.0f / 3.0f;
-
-        public static Quadrant Attack(Position targetPos, float targetRadius, float targetHeight, Position attackPos, Vector2 left, Vector2 right, float attackRadius, float attackHeight)
-        {
-            var center = attackPos.LocalToLocal(targetPos, Vector3.Zero);
-
-            if (attackHeight < 0.0f || attackHeight > targetHeight)
-                return Quadrant.None;
-
-            var radsum = targetRadius + attackRadius;
-
-            var distSq = center.LengthSquared2D();
-            if (distSq > radsum * radsum)
-                return Quadrant.None;
-
-            var hitLoc = targetPos.LocalToLocal(attackPos, Vector3.Zero);
-
-            var quadrant = hitLoc.X <= 0.0f ? Quadrant.Left : Quadrant.Right;
-
-            quadrant |= hitLoc.Y > 0.0f ? Quadrant.Front : Quadrant.Back;
-
-            if (attackHeight < targetHeight * ThresholdMed)
-                quadrant |= Quadrant.Low;
-            else if (attackHeight < targetHeight * ThresholdHigh)
-                quadrant |= Quadrant.Medium;
-            else
-                quadrant |= Quadrant.High;
-
-            // 2d cross product?
-            var attack_ht = center.Y * left.X - center.X * left.Y;
-            var right_dist = center.X * right.Y - center.Y * right.X;
-
-            if (attack_ht <= 0.0f && right_dist <= 0.0f)
-                return quadrant;
-
-            if (left.X * right.Y - left.Y * right.X >= 0.0f)
-            {
-                if (right_dist * attack_ht <= 0.0f || attack_ht <= targetRadius || right_dist <= targetRadius)
-                    return quadrant;
-                else
-                    return Quadrant.None;
-            }
-
-            if (attack_ht < 0.0f)
-            {
-                if (right_dist <= targetRadius)
-                    return quadrant;
-                else
-                    return Quadrant.None;
-            }
-
-            if (right_dist >= 0.0f)
-            {
-                if (distSq <= targetRadius * targetRadius)
-                    return quadrant;
-                else
-                    return Quadrant.None;
-            }
-
-            if (attack_ht < 0.0f)
-            {
-                if (right_dist <= targetRadius)
-                    return quadrant;
-                else
-                    return Quadrant.None;
-            }
-
-            if (attack_ht <= targetRadius)
-                return quadrant;
-            else
-                return Quadrant.None;
-        }
 
         /// <summary>
         /// Redirects a sphere to be on collision course towards a point
@@ -224,8 +151,18 @@ namespace ACE.Server.Physics
         /// </summary>
         public bool Intersects(Sphere sphere)
         {
+            return IntersectsWithScaling(sphere, 1.0f);
+        }
+
+        public bool IntersectsEnragedHotspot(Sphere sphere)
+        {
+            return IntersectsWithScaling(sphere, 7.0f);
+        }
+
+        private bool IntersectsWithScaling(Sphere sphere, float scalingFactor)
+        {
             var delta = sphere.Center - Center;
-            var radSum = Radius + sphere.Radius;
+            var radSum = (Radius + sphere.Radius) * scalingFactor;
             return delta.LengthSquared() < radSum * radSum;
         }
 
@@ -373,6 +310,7 @@ namespace ACE.Server.Physics
 
             return TransitionState.Adjusted;
         }
+
 
         /// <summary>
         /// Handles the collision when an object lands on a sphere
@@ -569,13 +507,16 @@ namespace ACE.Server.Physics
         /// </summary>
         public TransitionState StepSphereUp(Transition transition, Sphere checkPos, Vector3 disp, float radsum)
         {
-            radsum += PhysicsGlobals.EPSILON;
-            if (transition.ObjectInfo.StepUpHeight < radsum - disp.Z)
+            var stepUpHeight = transition.ObjectInfo.StepUpHeight;
+            var globCenter = transition.SpherePath.GlobalCurrCenter[0].Center;
+            var collisionNormal = globCenter - Center;
+
+            var radsumMinusZ = radsum - disp.Z;
+
+            if (stepUpHeight < radsumMinusZ)
                 return SlideSphere(transition, disp, radsum, 0);
             else
             {
-                var globCenter = transition.SpherePath.GlobalCurrCenter[0].Center;
-                var collisionNormal = globCenter - Center;
                 if (transition.StepUp(collisionNormal))
                     return TransitionState.OK;
                 else

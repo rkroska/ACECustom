@@ -396,6 +396,42 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMissileCount); else SetProperty(PropertyInt64.LumAugMissileCount, value.Value); }
         }
 
+        public long? LuminanceAugmentMeleeDefenseCount
+        {
+            get => GetProperty(PropertyInt64.LumAugMeleeDefenseCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMeleeDefenseCount); else SetProperty(PropertyInt64.LumAugMeleeDefenseCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentMissleDefenseCount
+        {
+            get => GetProperty(PropertyInt64.LumAugMissileDefenseCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMissileDefenseCount); else SetProperty(PropertyInt64.LumAugMissileDefenseCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentMagicDefenseCount
+        {
+            get => GetProperty(PropertyInt64.LumAugMagicDefenseCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMagicDefenseCount); else SetProperty(PropertyInt64.LumAugMagicDefenseCount, value.Value); }
+        }
+
+        public bool CanEnrage
+        {
+            get => GetProperty(PropertyBool.CanEnrage) ?? false; // Default to false
+            set { if (!value) RemoveProperty(PropertyBool.CanEnrage); else SetProperty(PropertyBool.CanEnrage, value); }
+        }
+
+        public bool CanGrapple
+        {
+            get => GetProperty(PropertyBool.CanGrapple) ?? false; // Default to false
+            set { if (!value) RemoveProperty(PropertyBool.CanGrapple); else SetProperty(PropertyBool.CanGrapple, value); }
+        }
+
+        public bool CanAOE
+        {
+            get => GetProperty(PropertyBool.CanAOE) ?? false; // Default to false
+            set { if (!value) RemoveProperty(PropertyBool.CanAOE); else SetProperty(PropertyBool.CanAOE, value); }
+        }
+
         public FactionBits Society => Faction1Bits ?? FactionBits.None;
     }
 }

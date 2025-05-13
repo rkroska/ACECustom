@@ -37,9 +37,9 @@ namespace ACE.Server.Network
         private readonly Object[] currentBundleLocks = new Object[(int)GameMessageGroup.QueueMax];
         private readonly NetworkBundle[] currentBundles = new NetworkBundle[(int)GameMessageGroup.QueueMax];
 
-        private ConcurrentDictionary<uint, ClientPacket> outOfOrderPackets = new ConcurrentDictionary<uint, ClientPacket>();
-        private ConcurrentDictionary<uint, MessageBuffer> partialFragments = new ConcurrentDictionary<uint, MessageBuffer>();
-        private ConcurrentDictionary<uint, ClientMessage> outOfOrderFragments = new ConcurrentDictionary<uint, ClientMessage>();
+        private readonly ConcurrentDictionary<uint, ClientPacket> outOfOrderPackets = new ConcurrentDictionary<uint, ClientPacket>();
+        private readonly ConcurrentDictionary<uint, MessageBuffer> partialFragments = new ConcurrentDictionary<uint, MessageBuffer>();
+        private readonly ConcurrentDictionary<uint, ClientMessage> outOfOrderFragments = new ConcurrentDictionary<uint, ClientMessage>();
 
         private DateTime nextSend = DateTime.UtcNow;
 
@@ -65,6 +65,7 @@ namespace ACE.Server.Network
 
         private static readonly TimeSpan cachedPacketPruneInterval = TimeSpan.FromSeconds(5);
         private DateTime lastCachedPacketPruneTime;
+
         /// <summary>
         /// Number of seconds to retain cachedPackets
         /// </summary>
@@ -256,20 +257,11 @@ namespace ACE.Server.Network
             if ((packet.Header.Flags & PacketHeaderFlags.RequestRetransmit) == PacketHeaderFlags.RequestRetransmit
                 && !((packet.Header.Flags & PacketHeaderFlags.EncryptedChecksum) == PacketHeaderFlags.EncryptedChecksum))
             {
-                List<uint> uncached = null;
+                var uncached = packet.HeaderOptional.RetransmitData
+                    .Where(sequence => !Retransmit(sequence))
+                    .ToList();
 
-                foreach (uint sequence in packet.HeaderOptional.RetransmitData)
-                {
-                    if (!Retransmit(sequence))
-                    {
-                        if (uncached == null)
-                            uncached = new List<uint>();
-
-                        uncached.Add(sequence);
-                    }
-                }
-
-                if (uncached != null)
+                if (uncached.Any())
                 {
                     // Sends a response packet w/ PacketHeader.RejectRetransmit
                     var packetRejectRetransmit = new PacketRejectRetransmit(uncached);
@@ -326,11 +318,12 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Packet {1} received out of order", session.LoggingIdentifier, packet.Header.Sequence);
 
-                if (!outOfOrderPackets.ContainsKey(packet.Header.Sequence))
-                    outOfOrderPackets.TryAdd(packet.Header.Sequence, packet);
-
-                if (desiredSeq + 2 <= packet.Header.Sequence && DateTime.UtcNow - LastRequestForRetransmitTime > new TimeSpan(0, 0, 1))
+                if (outOfOrderPackets.TryAdd(packet.Header.Sequence, packet) &&
+                    desiredSeq + 2 <= packet.Header.Sequence &&
+                    DateTime.UtcNow - LastRequestForRetransmitTime > TimeSpan.FromSeconds(1))
+                {
                     DoRequestForRetransmission(packet.Header.Sequence);
+                }
 
                 return;
             }
@@ -342,7 +335,7 @@ namespace ACE.Server.Network
             // Processing stage
             // If we reach here, this is a packet we should proceed with processing.
             HandleOrderedPacket(packet);
-        
+
             // Process data now in sequence
             // Finally check if we have any out of order packets or fragments we need to process;
             CheckOutOfOrderPackets();
@@ -533,6 +526,10 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Ready to handle out-of-order packet {1}", session.LoggingIdentifier, packet.Header.Sequence);
                 HandleOrderedPacket(packet);
+                if (outOfOrderPackets.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 
@@ -545,15 +542,19 @@ namespace ACE.Server.Network
             {
                 packetLog.DebugFormat("[{0}] Ready to handle out of order fragment {1}", session.LoggingIdentifier, lastReceivedFragmentSequence + 1);
                 HandleFragment(message);
+                if (outOfOrderFragments.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 
         //private List<EchoStamp> EchoStamps = new List<EchoStamp>();
 
-        private static int EchoLogInterval = 5;
-        private static int EchoInterval = 10;
-        private static float EchoThreshold = 2.0f;
-        private static float DiffThreshold = 0.01f;
+        private const int EchoLogInterval = 5;
+        private const int EchoInterval = 10;
+        private const float EchoThreshold = 2.0f;
+        private const float DiffThreshold = 0.01f;
 
         private float lastClientTime;
         private DateTime lastServerTime;
@@ -765,7 +766,7 @@ namespace ACE.Server.Network
 
         /// <summary>
         /// This function handles turning a bundle of messages (representing all messages accrued in a timeslice),
-        /// into 1 or more packets, combining multiple messages into one packet or spliting large message across
+        /// into 1 or more packets, combining multiple messages into one packet or splitting large messages across
         /// several packets as needed.
         /// </summary>
         /// <param name="bundle"></param>
@@ -773,28 +774,29 @@ namespace ACE.Server.Network
         {
             packetLog.DebugFormat("[{0}] Sending Bundle", session.LoggingIdentifier);
 
+            // Pull all messages out and create MessageFragment objects
+            var totalFragments = bundle.MessageCount;
+            var fragments = new MessageFragment[totalFragments];
+            for (int i = 0; i < totalFragments; i++)
+                fragments[i] = new MessageFragment(bundle.Dequeue(), ConnectionData.FragmentSequence++);
+
+            packetLog.DebugFormat("[{0}] Bundle Fragment Count: {1}", session.LoggingIdentifier, totalFragments);
+
+            var hdrSize = PacketFragmentHeader.HeaderSize;
+            int processedCount = 0;
+            int lowerBoundIdx = 0;
             bool writeOptionalHeaders = true;
 
-            List<MessageFragment> fragments = new List<MessageFragment>();
-
-            // Pull all messages out and create MessageFragment objects
-            while (bundle.HasMoreMessages)
+            // Loop through while we have fragments
+            while (processedCount < totalFragments || writeOptionalHeaders)
             {
-                var message = bundle.Dequeue();
+                if (isReleased)
+                    return;
 
-                var fragment = new MessageFragment(message, ConnectionData.FragmentSequence++);
-                fragments.Add(fragment);
-            }
+                var packet = new ServerPacket();
+                var packetHeader = packet.Header;
 
-            packetLog.DebugFormat("[{0}] Bundle Fragment Count: {1}", session.LoggingIdentifier, fragments.Count);
-
-            // Loop through while we have fragements
-            while (fragments.Count > 0 || writeOptionalHeaders)
-            {
-                ServerPacket packet = new ServerPacket();
-                PacketHeader packetHeader = packet.Header;
-
-                if (fragments.Count > 0)
+                if (processedCount < totalFragments)
                     packetHeader.Flags |= PacketHeaderFlags.BlobFragments;
 
                 if (bundle.EncryptedChecksum)
@@ -803,18 +805,26 @@ namespace ACE.Server.Network
                 int availableSpace = ServerPacket.MaxPacketSize;
 
                 // Pull first message and see if it is a large one
-                var firstMessage = fragments.FirstOrDefault();
+                MessageFragment firstMessage = null;
+                while (lowerBoundIdx < totalFragments && (firstMessage = fragments[lowerBoundIdx]) == null)
+                {
+                    lowerBoundIdx++;
+                }
+
                 if (firstMessage != null)
                 {
                     // If a large message send only this one, filling the whole packet
                     if (firstMessage.DataRemaining >= availableSpace)
                     {
                         packetLog.DebugFormat("[{0}] Sending large fragment", session.LoggingIdentifier);
-                        ServerPacketFragment spf = firstMessage.GetNextFragment();
+                        var spf = firstMessage.GetNextFragment();
                         packet.Fragments.Add(spf);
                         availableSpace -= spf.Length;
                         if (firstMessage.DataRemaining <= 0)
-                            fragments.Remove(firstMessage);
+                        {
+                            processedCount++;
+                            fragments[lowerBoundIdx++] = null;
+                        }
                     }
                     // Otherwise we'll write any optional headers and process any small messages that will fit
                     else
@@ -827,64 +837,54 @@ namespace ACE.Server.Network
                                 availableSpace -= (int)packet.Data.Length;
                         }
 
-                        // Create a list to remove completed messages after iterator
-                        List<MessageFragment> removeList = new List<MessageFragment>();
-
-                        foreach (MessageFragment fragment in fragments)
+                        for (int seekIdx = lowerBoundIdx; seekIdx < totalFragments; seekIdx++)
                         {
+                            var fragment = fragments[seekIdx];
+                            if (fragment == null)
+                                continue;
+
                             bool fragmentSkipped = false;
 
                             // Is this a large fragment and does it have a tail that needs sending?
-                            if (!fragment.TailSent && availableSpace >= fragment.TailSize)
+                            if (availableSpace >= hdrSize && !fragment.TailSent && availableSpace >= fragment.TailSize)
                             {
                                 packetLog.DebugFormat("[{0}] Sending tail fragment", session.LoggingIdentifier);
-                                ServerPacketFragment spf = fragment.GetTailFragment();
+                                var spf = fragment.GetTailFragment();
                                 packet.Fragments.Add(spf);
                                 availableSpace -= spf.Length;
                             }
                             // Otherwise will this message fit in the remaining space?
-                            else if (availableSpace >= fragment.NextSize)
+                            else if (availableSpace >= hdrSize && availableSpace >= fragment.NextSize)
                             {
                                 packetLog.DebugFormat("[{0}] Sending small message", session.LoggingIdentifier);
-                                try
-                                {
-                                    ServerPacketFragment spf = fragment.GetNextFragment();
-                                    packet.Fragments.Add(spf);
-                                    availableSpace -= spf.Length;
-                                }
-                                catch (Exception ex)
-                                {
-                                    log.Error($"Error sending small message: {ex}");
-                                }
-                                
+                                var spf = fragment.GetNextFragment();
+                                packet.Fragments.Add(spf);
+                                availableSpace -= spf.Length;
                             }
                             else
                                 fragmentSkipped = true;
 
                             // If message is out of data, set to remove it
                             if (fragment.DataRemaining <= 0)
-                                removeList.Add(fragment);
+                            {
+                                processedCount++;
+                                if (seekIdx == lowerBoundIdx)
+                                    lowerBoundIdx++;
+                                fragments[seekIdx] = null;
+                            }
 
                             // UIQueue messages must go out in order. Otherwise, you might see an NPC's tells in an order that doesn't match their defined emotes.
                             if (fragmentSkipped && group == GameMessageGroup.UIQueue)
                                 break;
                         }
-
-                        // Remove all completed messages
-                        fragments.RemoveAll(x => removeList.Contains(x));
                     }
                 }
                 // If no messages, write optional headers
-                else
+                else if (writeOptionalHeaders)
                 {
                     packetLog.DebugFormat("[{0}] No messages, just sending optional headers", session.LoggingIdentifier);
-                    if (writeOptionalHeaders)
-                    {
-                        writeOptionalHeaders = false;
-                        WriteOptionalHeaders(bundle, packet);
-                        if (packet.Data != null)
-                            availableSpace -= (int)packet.Data.Length;
-                    }
+                    writeOptionalHeaders = false;
+                    WriteOptionalHeaders(bundle, packet);
                 }
                 EnqueueSend(packet);
             }

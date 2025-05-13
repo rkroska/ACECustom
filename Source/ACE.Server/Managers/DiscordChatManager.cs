@@ -88,6 +88,46 @@ namespace ACE.Server.Managers
             return res;
         }
 
+        public static string GetJsonFromDiscordMessage(int topN, string identifier)
+        {
+            string res = "";
+
+            try
+            {
+                _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId)
+                    .GetTextChannel((ulong)ConfigManager.Config.Chat.ClothingModUploadChannelId)
+                    .GetMessagesAsync(limit: topN)
+                    .FlattenAsync().Result.ToList()
+                    .ForEach(x =>
+                    {
+                        if (x.Content == identifier)
+                        {
+                            if (x.Attachments.Count == 1)
+                            {
+                                IAttachment attachment = x.Attachments.First();
+                                if (attachment.Filename.ToLowerInvariant().Contains(".json"))
+                                {
+                                    // Using HttpClient to download the JSON
+                                    using (var client = new System.Net.Http.HttpClient())
+                                    {
+                                        res = client.GetStringAsync(attachment.Url).Result; // Fetching the JSON content synchronously
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                log.Error("Error getting discord messages, " + ex.Message);
+            }
+
+            return res;
+        }
+
+
+
         public static void Initialize()
         {
             _discordSocketClient = new DiscordSocketClient();
