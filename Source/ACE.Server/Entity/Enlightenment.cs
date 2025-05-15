@@ -86,15 +86,16 @@ namespace ACE.Server.Entity
                 {
                     RemoveTokens(player);
                 }
+                else if
+                (player.Enlightenment >= 150)
+                {
+                    RemoveMedallion(player);
+                }
                 RemoveAbility(player);
                 AddPerks(player);
                 if (player.Enlightenment >= 25)
                 {
                     DequipAllItems(player);
-                }
-                if (player.Enlightenment >= 150)
-                {
-                    RemoveMedallion(player);
                 }
                 player.SaveBiotaToDatabase();
             });
@@ -218,8 +219,6 @@ namespace ACE.Server.Entity
                     return false;
                 }
             }
-
-
             return true;
         }
 
