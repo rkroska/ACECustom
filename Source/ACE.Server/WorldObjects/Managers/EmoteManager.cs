@@ -1616,9 +1616,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
                                     }
-                                    else if (creatureAugs >= 1750)
+                                    else if (creatureAugs >= 2750)
                                     {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
                                     }
 
                                     totalCost *= additionalMultiplier;
@@ -1692,9 +1692,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
                                     }
-                                    else if (itemAugs >= 1750)
+                                    else if (itemAugs >= 1250)
                                     {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1250
                                     }
 
                                     totalCost *= additionalMultiplier;
@@ -1767,9 +1767,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
                                     }
-                                    else if (lifeAugs >= 1750)
+                                    else if (lifeAugs >= 1000)
                                     {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1000
                                     }
 
                                     totalCost *= additionalMultiplier;
@@ -2139,9 +2139,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     {
                                         additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
                                     }
-                                    else if (durationAugs >= 1750)
+                                    else if (durationAugs >= 1000)
                                     {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1000
                                     }
 
                                     totalCost *= additionalMultiplier;
