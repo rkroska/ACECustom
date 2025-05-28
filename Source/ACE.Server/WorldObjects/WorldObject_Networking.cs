@@ -173,11 +173,7 @@ namespace ACE.Server.WorldObjects
             if ((weenieFlags & WeenieHeaderFlag.HouseRestrictions) != 0)
             {
                 var house = this as House;
-                if (house is null)
-                {
-                    log.Warn($"SerializeCreateObject(): World Object with Guid {Guid} based on Weenie {WeenieClassId} has HouseRestrictions flag but is not a house");
-                }
-                else
+                if (house != null)
                 {
                     // if house object is in dungeon,
                     // send the permissions from the outdoor house
@@ -194,6 +190,11 @@ namespace ACE.Server.WorldObjects
 
                     writer.Write(new RestrictionDB(house));
                 }
+                else
+                {
+                    log.Warn($"SerializeCreateObject(): World Object with Guid {Guid} based on Weenie {WeenieClassId} has HouseRestrictions flag but is not a house");
+                }
+
             }
 
             if ((weenieFlags & WeenieHeaderFlag.HookItemTypes) != 0)
