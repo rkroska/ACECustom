@@ -173,21 +173,28 @@ namespace ACE.Server.WorldObjects
             if ((weenieFlags & WeenieHeaderFlag.HouseRestrictions) != 0)
             {
                 var house = this as House;
-
-                // if house object is in dungeon,
-                // send the permissions from the outdoor house
-                if (house.HouseType != HouseType.Apartment && house.CurrentLandblock.IsDungeon)
+                if (house != null)
                 {
-                    house = house.RootHouse;
+                    // if house object is in dungeon,
+                    // send the permissions from the outdoor house
+                    if (house.HouseType != HouseType.Apartment && house.CurrentLandblock.IsDungeon)
+                    {
+                        house = house.RootHouse;
+                    }
+                    else
+                    {
+                        // if mansion or villa, send permissions from master copy
+                        if (house.HouseType == HouseType.Villa || house.HouseType == HouseType.Mansion)
+                            house = house.RootHouse;
+                    }
+
+                    writer.Write(new RestrictionDB(house));
                 }
                 else
                 {
-                    // if mansion or villa, send permissions from master copy
-                    if (house.HouseType == HouseType.Villa || house.HouseType == HouseType.Mansion)
-                        house = house.RootHouse;
+                    log.Warn($"SerializeCreateObject(): World Object with Guid {Guid} based on Weenie {WeenieClassId} has HouseRestrictions flag but is not a house");
                 }
 
-                writer.Write(new RestrictionDB(house));
             }
 
             if ((weenieFlags & WeenieHeaderFlag.HookItemTypes) != 0)
