@@ -953,8 +953,14 @@ namespace ACE.Server.WorldObjects.Managers
                     if (WorldObject == null || WorldObject.CurrentMotionState == null) break;
 
                     // TODO: REFACTOR ME
-                    if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style.HasValue && emoteSet.Substyle.HasValue && emote.Motion.HasValue)
+                    if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style.HasValue)
                     {
+                        if (!emoteSet.Substyle.HasValue || !emote.Motion.HasValue)
+                        {
+                            log.Warn($"{WorldObject.Name} has an invalid motion emote with a missing Substyle or Motion value");
+                            break;
+                        }
+
                         var startingMotion = new Motion(emoteSet.Style.Value, emoteSet.Substyle.Value);
                         motion = new Motion(emoteSet.Style.Value, emote.Motion.Value, emote.Extent);
 
