@@ -953,17 +953,17 @@ namespace ACE.Server.WorldObjects.Managers
                     if (WorldObject == null || WorldObject.CurrentMotionState == null) break;
 
                     // TODO: REFACTOR ME
-                    if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style != null)
+                    if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style.HasValue && emoteSet.Substyle.HasValue && emote.Motion.HasValue)
                     {
-                        var startingMotion = new Motion((MotionStance)emoteSet.Style, (MotionCommand)emoteSet.Substyle);
-                        motion = new Motion((MotionStance)emoteSet.Style, (MotionCommand)emote.Motion, emote.Extent);
+                        var startingMotion = new Motion(emoteSet.Style.Value, emoteSet.Substyle.Value);
+                        motion = new Motion(emoteSet.Style.Value, emote.Motion.Value, emote.Extent);
 
                         if (WorldObject.CurrentMotionState.Stance != startingMotion.Stance)
                         {
                             if (WorldObject.CurrentMotionState.Stance == MotionStance.Invalid)
                             {
                                 if (debugMotion)
-                                    Console.WriteLine($"{WorldObject.Name} running starting motion {(MotionStance)emoteSet.Style}, {(MotionCommand)emoteSet.Substyle}");
+                                    Console.WriteLine($"{WorldObject.Name} running starting motion {emoteSet.Style.Value}, {emoteSet.Substyle.Value}");
 
                                 delay = WorldObject.ExecuteMotion(startingMotion);
                             }
