@@ -955,9 +955,9 @@ namespace ACE.Server.WorldObjects.Managers
                     // TODO: REFACTOR ME
                     if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style.HasValue)
                     {
-                        if (!emoteSet.Substyle.HasValue || !emote.Motion.HasValue)
+                        if (!emoteSet.Substyle.HasValue)
                         {
-                            log.Warn($"{WorldObject.Name} has an invalid motion emote with a missing Substyle or Motion value");
+                            log.Warn($"{WorldObject.Name} has an invalid motion emote with a missing Substyle value");
                             break;
                         }
 
