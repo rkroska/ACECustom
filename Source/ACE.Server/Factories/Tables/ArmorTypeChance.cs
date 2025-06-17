@@ -139,6 +139,8 @@ namespace ACE.Server.Factories.Tables
 
         public static TreasureArmorType Roll(int tier)
         {
+            tier = Math.Clamp(tier, 1, 9);
+
             return armorTiers[tier - 1].Roll();
         }
     }
