@@ -1,9 +1,8 @@
-using System.Collections.Generic;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Database.Models.World;
+using log4net;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Factories.Tables
 {
@@ -203,7 +202,8 @@ namespace ACE.Server.Factories.Tables
         /// <param name="treasureDeath">The chances are based on treasureDeath.Tier, and can be increased with treasureDeath.LootQualityMod</param>
         private static bool RollTierChance(TreasureDeath treasureDeath)
         {
-            var tierChance = QualityChancePerTier[treasureDeath.Tier - 1];
+            var tier = Math.Clamp(treasureDeath.Tier, 1, 9);
+            var tierChance = QualityChancePerTier[tier - 1];
 
             // use for initial roll? logic seems backwards here...
             var rng = ThreadSafeRandom.NextInterval(treasureDeath.LootQualityMod);

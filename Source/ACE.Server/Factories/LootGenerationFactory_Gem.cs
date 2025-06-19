@@ -74,7 +74,8 @@ namespace ACE.Server.Factories
         private static void AssignMagic_Gem(WorldObject wo, TreasureDeath profile)
         {
             var spellLevelIdx = ThreadSafeRandom.Next(0, 1);
-            var spellLevel = LootTables.GemSpellIndexMatrix[profile.Tier - 1][spellLevelIdx];
+            var tier = Math.Clamp(profile.Tier, 1, 8);
+            var spellLevel = LootTables.GemSpellIndexMatrix[tier - 1][spellLevelIdx];
 
             var magicSchool = ThreadSafeRandom.Next(0, 1);
 

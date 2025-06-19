@@ -199,6 +199,8 @@ namespace ACE.Server.Factories.Tables.Wcids
 
         public static WeenieClassName Roll(int tier)
         {
+            tier = Math.Clamp(tier, 1, 9);
+
             return casterTiers[tier - 1].Roll();
         }
 

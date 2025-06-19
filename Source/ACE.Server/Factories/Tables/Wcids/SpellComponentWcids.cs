@@ -1,9 +1,9 @@
-using System.Collections.Generic;
-
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Server.Factories.Entity;
 using ACE.Server.Factories.Enum;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Factories.Tables.Wcids
 {
@@ -87,8 +87,8 @@ namespace ACE.Server.Factories.Tables.Wcids
                 if (level8SpellComponent)
                     return Roll_Level8SpellComponent(profile);
             }
-
-            var table = peaTiers[profile.Tier - 1];
+            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var table = peaTiers[tier - 1];
 
             return table.Roll(profile.LootQualityMod);
         }

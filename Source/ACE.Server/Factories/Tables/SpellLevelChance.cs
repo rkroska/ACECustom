@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using ACE.Server.Factories.Entity;
@@ -97,6 +98,8 @@ namespace ACE.Server.Factories.Tables
         /// </summary>
         public static int Roll(int tier)
         {
+            tier = Math.Clamp(tier, 1, 9);
+
             return spellLevelChances[tier - 1].Roll();
         }
     }

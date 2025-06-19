@@ -1254,7 +1254,9 @@ namespace ACE.Server.Factories
 
         private static void MutateCoins(WorldObject wo, TreasureDeath profile)
         {
-            var tierRange = coinRanges[profile.Tier - 1];
+            var tier = Math.Clamp(profile.Tier, 1, 9);
+
+            var tierRange = coinRanges[tier - 1];
 
             // flat rng range, according to magloot corpse logs
             var rng = ThreadSafeRandom.Next(tierRange.min, tierRange.max);
