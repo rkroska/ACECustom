@@ -1,7 +1,7 @@
-using System.Collections.Generic;
-
 using ACE.Database.Models.World;
 using ACE.Server.Factories.Entity;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Factories.Tables
 {
@@ -76,7 +76,8 @@ namespace ACE.Server.Factories.Tables
         /// </summary>
         public static int Roll(TreasureDeath profile)
         {
-            var table = petLevelChances[profile.Tier - 1];
+            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var table = petLevelChances[tier - 1];
 
             return table.Roll(profile.LootQualityMod);
         }
