@@ -115,8 +115,9 @@ namespace ACE.Server.Factories.Tables.Wcids
 
         public static WeenieClassName Roll(TreasureDeath profile)
         {
+            var tier = Math.Clamp(profile.Tier, 1, 9);
             // todo: verify t7 / t8 chances
-            var table = consumeTiers[profile.Tier - 1];
+            var table = consumeTiers[tier - 1];
 
             // quality mod?
             return table.Roll(profile.LootQualityMod);

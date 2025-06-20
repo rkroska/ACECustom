@@ -1,9 +1,9 @@
-using System.Collections.Generic;
-
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Server.Factories.Entity;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Factories.Tables
 {
@@ -72,7 +72,8 @@ namespace ACE.Server.Factories.Tables
 
         public static int Roll_ItemMaxLevel(TreasureDeath profile)
         {
-            var table = cloakLevels[profile.Tier - 1];
+            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var table = cloakLevels[tier - 1];
 
             return table.Roll(profile.LootQualityMod);
         }
