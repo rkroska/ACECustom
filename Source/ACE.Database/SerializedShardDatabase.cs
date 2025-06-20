@@ -67,18 +67,22 @@ namespace ACE.Database
             {
                 try
                 {
-                    if (_readOnlyQueue.Count > 0)
+                    Task t;
+
+                    bool tasked = _readOnlyQueue.TryTake(out t);
+                    try
                     {
-                        Task t = _readOnlyQueue.Take();
-                        try
+                        if (!tasked)
                         {
-                            t.Start();
-                        }
-                        catch (Exception e)
-                        {
-                            log.Error($"[DATABASE] DoReadOnlyWork task failed with exception: {e}");
-                        }
+                            // no task to process, continue
+                            continue;
+                        }   
+                        t.Start();
                     }
+                    catch (Exception e)
+                    {
+                        log.Error($"[DATABASE] DoReadOnlyWork task failed with exception: {e}");
+                    }                   
                 }
                 catch (ObjectDisposedException)
                 {
@@ -102,41 +106,44 @@ namespace ACE.Database
             {
                 try
                 {
-                    if (_queue.Count > 0)
+
+                    Task t;
+                    bool tasked = _queue.TryTake(out t);
+
+                    try
                     {
-
-                        Task t = _queue.Take();
-
-                        try
+                        if (!tasked)
                         {
-                            stopwatch.Restart();
-                            t.Start();
-                            if (t.AsyncState != null && (t.AsyncState.ToString().Contains("GetPossessedBiotasInParallel") ||
-                                                         t.AsyncState.ToString().Contains("GetMaxGuidFoundInRange") ||
-                                                         t.AsyncState.ToString().Contains("GetSequenceGaps") ||
-                                                         t.AsyncState.ToString().Contains("GetInventoryInParallel") ||
-                                                         t.AsyncState.ToString().Contains("GetCharacter")))
-                            {
-                                //continue on background thread
-                            }
-                            else
-                            {
-                                t.Wait();
-                            }
-                            
-                            if (stopwatch.Elapsed.Seconds >= 1)
-                            {
-                                log.Error(
-                                    $"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_queue.Count}");
-                            }
+                            continue; // no task to process, continue
                         }
-                        catch (Exception ex)
+                        stopwatch.Restart();
+                        t.Start();
+                        if (t.AsyncState != null && (t.AsyncState.ToString().Contains("GetPossessedBiotasInParallel") ||
+                                                        t.AsyncState.ToString().Contains("GetMaxGuidFoundInRange") ||
+                                                        t.AsyncState.ToString().Contains("GetSequenceGaps") ||
+                                                        t.AsyncState.ToString().Contains("GetInventoryInParallel") ||
+                                                        t.AsyncState.ToString().Contains("GetCharacter")))
                         {
-                            log.Error($"[DATABASE] DoWork task failed with exception: {ex}");
-                            // perhaps add failure callbacks?
-                            // swallow for now.  can't block other db work because 1 fails.
+                            //continue on background thread
+                        }
+                        else
+                        {
+                            t.Wait();
+                        }
+                            
+                        if (stopwatch.Elapsed.Seconds >= 5)
+                        {
+                            log.Error(
+                                $"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_queue.Count}");
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[DATABASE] DoWork task failed with exception: {ex}");
+                        // perhaps add failure callbacks?
+                        // swallow for now.  can't block other db work because 1 fails.
+                    }
+                    
                 }
                 catch (ObjectDisposedException)
                 {

@@ -20,21 +20,29 @@ namespace ACE.Server.Physics.Animation
 
     public class Transition
     {
-        public ObjectInfo ObjectInfo;
+        private const float StepDownDefaultHeight = 0.039999999f;
+        private const float MaxSteps = 1000;
+
+        public readonly ObjectInfo ObjectInfo;
         public SpherePath SpherePath;
         public CollisionInfo CollisionInfo;
         public CellArray CellArray;
         public int? VariationId;
         //public ObjCell NewCellPtr;
 
+        // Reusable objects to reduce allocations
+        private Vector3 _tempVector = new Vector3();
+
         public Transition()
         {
-            Init();
+            ObjectInfo = new ObjectInfo();
+            SpherePath = new SpherePath();
+            CollisionInfo = new CollisionInfo();
+            CellArray = new CellArray();
         }
 
-        public Vector3 AdjustOffset(Vector3 _offset)
+        public Vector3 AdjustOffset(Vector3 offset)
         {
-            var offset = new Vector3(_offset.X, _offset.Y, _offset.Z);
             var checkSlide = false;
 
             var slidingAngle = Vector3.Dot(offset, CollisionInfo.SlidingNormal);
@@ -159,10 +167,10 @@ namespace ACE.Server.Physics.Animation
             var newCell = ObjCell.EmptyCell;    // null check?
             ObjCell.find_cell_list(CellArray, ref newCell, SpherePath, VariationId);
 
-            for (var i = 0; i < CellArray.Cells.Count; i++)
+            foreach (var cellEntry in CellArray.Cells)
             {
-                var cell = CellArray.Cells.Values.ElementAt(i);
-                if (cell == null || cell.Equals(currCell)) continue;
+                var cell = cellEntry.Value;
+                if (cell?.Equals(currCell) != false) continue;
 
                 var collides = cell.FindCollisions(this);
                 switch (collides)
@@ -224,8 +232,10 @@ namespace ACE.Server.Physics.Animation
             if (stepHeight > globSphere.Radius * 2)
                 stepHeight *= 0.5f;
 
-            var offset = new Vector3(0, 0, -stepHeight);
-            SpherePath.AddOffsetToCheckPos(offset);
+            _tempVector.X = 0;
+            _tempVector.Y = 0;
+            _tempVector.Z = -stepHeight;
+            SpherePath.AddOffsetToCheckPos(_tempVector);
 
             var transitionState = TransitionalInsert(1);
 
@@ -503,11 +513,8 @@ namespace ACE.Server.Physics.Animation
 
             CalcNumSteps(ref offset, ref offsetPerStep, ref numSteps);  // restructure as retval?
 
-            //var maxSteps = 30;
-            var maxSteps = 1000;
-            if (numSteps > maxSteps && !ObjectInfo.Object.IsSightObj)
+            if (numSteps > MaxSteps && !ObjectInfo.Object.IsSightObj)
             {
-                //Console.WriteLine("NumSteps: " + numSteps);
                 return false;
             }
 
@@ -600,15 +607,6 @@ namespace ACE.Server.Physics.Animation
                 return FindTransitionalPosition();
             else
                 return FindPlacementPosition();
-        }
-
-        public void Init()
-        {
-            ObjectInfo = new ObjectInfo();
-            SpherePath = new SpherePath();
-            CollisionInfo = new CollisionInfo();
-            CellArray = new CellArray();
-            //NewCellPtr = new ObjCell();
         }
 
         public void InitContactPlane(uint cellID, Plane contactPlane, bool isWater)
@@ -718,10 +716,12 @@ namespace ACE.Server.Physics.Animation
             {
                 //SpherePath.CellArrayValid = false;
 
-                var offset = new Vector3(0, 0, -stepDownHeight);
+                _tempVector.X = 0;
+                _tempVector.Y = 0;
+                _tempVector.Z = -stepDownHeight;
 
                 SpherePath.CheckPos.Frame.Origin.Z -= stepDownHeight;
-                SpherePath.CacheGlobalSphere(offset);
+                SpherePath.CacheGlobalSphere(_tempVector);
             }
 
             var transitionState = TransitionalInsert(3); //was 5
@@ -750,7 +750,7 @@ namespace ACE.Server.Physics.Animation
             SpherePath.StepUp = true;
             SpherePath.StepUpNormal = new Vector3(collisionNormal.X, collisionNormal.Y, collisionNormal.Z);
 
-            var stepDownHeight = 0.039999999f;  // set global?
+            var stepDownHeight = StepDownDefaultHeight;
 
             var zLandingValue = PhysicsGlobals.LandingZ;
 
@@ -846,7 +846,7 @@ namespace ACE.Server.Physics.Animation
                             }
 
                             var zVal = PhysicsGlobals.LandingZ;
-                            var stepDownHeight = 0.039999999f;  // set global
+                            var stepDownHeight = StepDownDefaultHeight;
 
                             if ((ObjectInfo.State & ObjectInfoState.OnWalkable) != 0)
                             {
