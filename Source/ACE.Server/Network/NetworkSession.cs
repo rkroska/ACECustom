@@ -591,21 +591,7 @@ namespace ACE.Server.Network
 
                 if (echoDiff >= EchoInterval)
                 {
-                    log.Error($"{session.Player.Name} - disconnected for speedhacking");
-
-                    var actionChain = new ActionChain();
-                    actionChain.AddAction(session.Player, () =>
-                    {
-                        //session.Network.EnqueueSend(new GameMessageBootAccount(session));
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"TimeSync: client speed error", ChatMessageType.Broadcast));
-                        session.LogOffPlayer();
-
-                        echoDiff = 0;
-                        lastDiff = 0;
-                        lastClientTime = 0;
-
-                    });
-                    actionChain.EnqueueChain();
+                    ForceLogOff($"TimeSync: client speed error", $"{session.Player.Name} - disconnected for speedhacking");
                 }
             }
             else if (echoDiff > 0)
@@ -673,7 +659,30 @@ namespace ACE.Server.Network
             else
                 log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty.");
 
+            ForceLogOff($"NetworkSession error: client and server are out of sync", $"{session.Player.Name} - disconnected to prevent retransmit thrashing");
+
             return false;
+        }
+
+        private void ForceLogOff(string clientMessage, string errorMessage = "")
+        {
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                log.Error(errorMessage);
+            }
+
+            var actionChain = new ActionChain();
+            actionChain.AddAction(session.Player, () =>
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(clientMessage, ChatMessageType.Broadcast));
+                session.LogOffPlayer();
+
+                echoDiff = 0;
+                lastDiff = 0;
+                lastClientTime = 0;
+
+            });
+            actionChain.EnqueueChain();
         }
 
         private void FlushPackets()
