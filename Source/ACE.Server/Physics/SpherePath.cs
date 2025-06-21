@@ -59,11 +59,6 @@ namespace ACE.Server.Physics.Animation
         public bool NegPolyHit;                     // 138
         public bool PlacementAllowsSliding;         // 139
 
-        // Add reusable objects to reduce allocations
-        private readonly Vector3 _tempVector = new Vector3();
-        private readonly Sphere _tempSphere = new Sphere();
-
-        // Pre-allocate lists in constructor
         public SpherePath()
         {
             LocalSpacePos = new Position();
@@ -71,13 +66,14 @@ namespace ACE.Server.Physics.Animation
             CheckPos = new Position();
             BackupCheckPos = new Position();
             WalkableCheckPos = new Sphere();
+            //NumSphere = 2;
 
-            // Pre-allocate with capacity for common case
-            LocalSphere = new List<Sphere>(2);
-            GlobalSphere = new List<Sphere>(2);
-            LocalSpaceSphere = new List<Sphere>(2);
-            LocalSpaceCurrCenter = new List<Sphere>(2);
-            GlobalCurrCenter = new List<Sphere>(2);
+            LocalSphere = new List<Sphere>();
+            GlobalSphere = new List<Sphere>();
+            LocalSpaceSphere = new List<Sphere>();
+
+            LocalSpaceCurrCenter = new List<Sphere>();
+            GlobalCurrCenter = new List<Sphere>();
 
             Init();
         }
@@ -124,9 +120,9 @@ namespace ACE.Server.Physics.Animation
             LocalLowPoint.Z -= LocalSphere[0].Radius;
         }
 
-        // Modify methods to use object pooling
         public void AddOffsetToCheckPos(Vector3 offset)
         {
+            //CellArrayValid = false;
             CheckPos.Frame.Origin += offset;
             CacheGlobalSphere(offset);
         }
@@ -147,18 +143,13 @@ namespace ACE.Server.Physics.Animation
             CheckPos.ObjCellID = cellID;
         }
 
-        // Optimize CacheGlobalCurrCenter to avoid allocations when possible
         public void CacheGlobalCurrCenter()
         {
-            // Ensure lists have enough capacity without resizing
             while (GlobalCurrCenter.Count < NumSphere)
                 GlobalCurrCenter.Add(new Sphere());
 
             for (var i = 0; i < NumSphere; i++)
-            {
-                // Avoid creating new vectors by updating existing ones
                 GlobalCurrCenter[i].Center = CurPos.LocalToGlobal(LocalSphere[i].Center);
-            }
         }
 
         /// <summary>
@@ -170,9 +161,7 @@ namespace ACE.Server.Physics.Animation
             if (offset != null)
             {
                 Vector3 offsetValue = offset.Value;
-                // Avoid bounds checking in the loop by caching Count
-                int count = GlobalSphere.Count;
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < GlobalSphere.Count; i++)
                 {
                     GlobalSphere[i].Center += offsetValue;
                 }
@@ -180,11 +169,9 @@ namespace ACE.Server.Physics.Animation
             }
             else
             {
-                // Pre-size the list to avoid resizing during the loop
                 if (GlobalSphere.Count < NumSphere)
                 {
-                    GlobalSphere.Capacity = Math.Max(GlobalSphere.Capacity, NumSphere);
-                    while (GlobalSphere.Count < NumSphere)
+                    for (int i = GlobalSphere.Count; i < NumSphere; i++)
                     {
                         GlobalSphere.Add(new Sphere());
                     }
@@ -199,51 +186,41 @@ namespace ACE.Server.Physics.Animation
             }
         }
 
+
         public void CacheLocalSpaceSphere(Position pos, float scaleZ)
         {
             var invScale = 1.0f / scaleZ;
 
-            // Pre-size lists to avoid resizing
-            if (LocalSpaceCurrCenter.Count < NumSphere)
-            {
-                LocalSpaceCurrCenter.Capacity = Math.Max(LocalSpaceCurrCenter.Capacity, NumSphere);
-                while (LocalSpaceCurrCenter.Count < NumSphere)
-                    LocalSpaceCurrCenter.Add(new Sphere());
-            }
+            while (LocalSpaceCurrCenter.Count < NumSphere)
+                LocalSpaceCurrCenter.Add(new Sphere());
 
-            if (LocalSpaceSphere.Count < NumSphere)
-            {
-                LocalSpaceSphere.Capacity = Math.Max(LocalSpaceSphere.Capacity, NumSphere);
-                while (LocalSpaceSphere.Count < NumSphere)
-                    LocalSpaceSphere.Add(new Sphere());
-            }
+            while (LocalSpaceSphere.Count < NumSphere)
+                LocalSpaceSphere.Add(new Sphere());
 
             for (var i = 0; i < NumSphere; i++)
             {
+                // pos = the cell location in global space
+                // curpos = the current player position in global space
+                // localsphere = the sphere relative to the player
+
+                // localspacecurrcenter = curpos in local space
+                // localspacesphere = checkpos in local space
                 LocalSpaceCurrCenter[i].Center = pos.LocalToLocal(CurPos, LocalSphere[i].Center) * invScale;
 
                 LocalSpaceSphere[i].Radius = LocalSphere[i].Radius * invScale;
                 LocalSpaceSphere[i].Center = pos.LocalToLocal(CheckPos, LocalSphere[i].Center) * invScale;
             }
-            
-            // Reuse existing Position if possible
-            if (LocalSpacePos == null)
-                LocalSpacePos = new Position(pos);
-            else
-                CopyPosition(pos, LocalSpacePos);
-                
+            LocalSpacePos = new Position(pos);
             LocalSpaceZ = pos.GlobalToLocalVec(Vector3.UnitZ);
+            //LocalSpaceLowPoint = LocalSpaceSphere[0].Center - (LocalSpaceZ * LocalSpaceSphere[0].Radius);
         }
 
-        // Optimize CheckWalkables to avoid Sphere allocation
         public bool CheckWalkables()
         {
             if (Walkable == null) return true;
 
-            // Reuse _tempSphere instead of allocating new one
-            _tempSphere.Center = WalkableCheckPos.Center;
-            _tempSphere.Radius = WalkableCheckPos.Radius * 0.5f;
-            return Walkable.check_walkable(_tempSphere, WalkableUp);
+            var walkCheckPos = new Sphere(WalkableCheckPos.Center, WalkableCheckPos.Radius * 0.5f);
+            return Walkable.check_walkable(walkCheckPos, WalkableUp);
         }
 
         public Vector3 GetCurPosCheckPosBlockOffset()
@@ -288,21 +265,23 @@ namespace ACE.Server.Physics.Animation
 
         public void RestoreCheckPos()
         {
-            CopyPosition(BackupCheckPos, CheckPos);
+            CheckPos = new Position(BackupCheckPos);
             CheckCell = BackupCell;
+            //CellArrayValid = false;
             CacheGlobalSphere(null);
         }
 
         public void SaveCheckPos()
         {
             BackupCell = CheckCell;
-            CopyPosition(CheckPos, BackupCheckPos);
+            BackupCheckPos = new Position(CheckPos);
         }
 
         public void SetCheckPos(Position position, ObjCell cell)
         {
-            CopyPosition(position, CheckPos);
+            CheckPos = new Position(position);
             CheckCell = cell;
+            //CellArrayValid = false;
             CacheGlobalSphere(null);
         }
 
@@ -310,13 +289,8 @@ namespace ACE.Server.Physics.Animation
         {
             Collide = true;
             BackupCell = CheckCell;
-            CopyPosition(CheckPos, BackupCheckPos);
-            
-            // Avoid creating new Vector3
-            StepUpNormal.X = collisionNormal.X;
-            StepUpNormal.Y = collisionNormal.Y;
-            StepUpNormal.Z = collisionNormal.Z;
-            
+            BackupCheckPos = new Position(CheckPos);
+            StepUpNormal = new Vector3(collisionNormal.X, collisionNormal.Y, collisionNormal.Z);
             WalkInterp = 1.0f;
         }
 
@@ -324,11 +298,7 @@ namespace ACE.Server.Physics.Animation
         {
             NegStepUp = stepUp;
             NegPolyHit = true;
-            
-            // Avoid creating new Vector3, use negation in place
-            NegCollisionNormal.X = -collisionNormal.X;
-            NegCollisionNormal.Y = -collisionNormal.Y;
-            NegCollisionNormal.Z = -collisionNormal.Z;
+            NegCollisionNormal = -collisionNormal;
         }
 
         public void SetWalkable(Sphere sphere, Polygon poly, Vector3 zAxis, Position localPos, float scale)
@@ -353,14 +323,6 @@ namespace ACE.Server.Physics.Animation
             collisions.ContactPlaneIsWater = false;
 
             return GlobalSphere[0].SlideSphere(transition, ref StepUpNormal, GlobalCurrCenter[0].Center);
-        }
-
-        // copy position data without allocations
-        public void CopyPosition(Position source, Position target)
-        {
-            target.ObjCellID = source.ObjCellID;
-            target.Frame.Origin = source.Frame.Origin;
-            target.Frame.Orientation = source.Frame.Orientation;
         }
     }
 }
