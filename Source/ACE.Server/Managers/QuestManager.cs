@@ -67,7 +67,7 @@ namespace ACE.Server.Managers
             }
         }
 
-        public static bool Debug = false;
+        private static readonly bool Debug = false;
 
         /// <summary>
         /// Constructs a new QuestManager for a Player / Creature
@@ -364,7 +364,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns the maximum # of solves for this quest
         /// </summary>
-        public int GetMaxSolves(string questFormat)
+        public static int GetMaxSolves(string questFormat)
         {
             var questName = GetQuestName(questFormat);
 
@@ -697,13 +697,6 @@ namespace ACE.Server.Managers
             player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
         }
 
-        /// <summary>
-        /// Called when a player kills Creature
-        /// </summary>
-        public void OnDeath(WorldObject killer)
-        {
-        }
-
         public static string RandomString(int length)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz!@#$^&";
@@ -711,7 +704,7 @@ namespace ACE.Server.Managers
                 .Select(s => s[ThreadSafeRandom.Next(0, s.Length - 1)]).ToArray());
         }
 
-        private bool WeenieHasDynamicQuest(Weenie npcTarget)
+        private static bool WeenieHasDynamicQuest(Weenie npcTarget)
         {
             if (npcTarget == null || npcTarget.PropertiesEmote == null)
             {
@@ -1402,7 +1395,7 @@ namespace ACE.Server.Managers
             return responseEmote;
         }
 
-        public void AbandonDynamicQuests(Player player)
+        public static void AbandonDynamicQuests(Player player)
         {
             using (var db = new Database.Models.Shard.ShardDbContext())
             {
@@ -1415,7 +1408,7 @@ namespace ACE.Server.Managers
             }
         }
 
-        public bool IsDynamicQuestEligible(Player player)
+        public static bool IsDynamicQuestEligible(Player player)
         {
             using (var db = new Database.Models.Shard.ShardDbContext())
             {
@@ -1521,7 +1514,7 @@ namespace ACE.Server.Managers
             SetQuestCompletions(questFormat, questBits);
         }
 
-        public void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, out bool stampedCompletion, uint solves = 0)
+        private static void UpdatePlayerQuestCompletions(Player player, string questName, out bool stampedNew, out bool stampedCompletion, uint solves = 0)
         {
             stampedNew = false;
             stampedCompletion = false;

@@ -900,11 +900,10 @@ namespace ACE.Server.WorldObjects
                 return objDesc;
             }
 
-            if (item.ClothingBaseEffects.ContainsKey(SetupTableId))
+            if (item.ClothingBaseEffects.TryGetValue(SetupTableId, out ClothingBaseEffect clothingBaseEffect))
             // Check if the ClothingBase is applicable for this Setup. (Gear Knights, this is usually you.)
             {
                 // Add the model and texture(s)
-                ClothingBaseEffect clothingBaseEffect = item.ClothingBaseEffects[SetupTableId];
                 foreach (CloObjectEffect t in clothingBaseEffect.CloObjectEffects)
                 {
                     byte partNum = (byte)t.Index;
@@ -1281,7 +1280,7 @@ namespace ACE.Server.WorldObjects
             return animLength;
         }
 
-        public static bool EnqueueBroadcastMotion_Physics = true;
+        private static readonly bool EnqueueBroadcastMotion_Physics = true;
 
         public void EnqueueBroadcastMotion(Motion motion, float? maxRange = null, bool? applyPhysics = null)
         {

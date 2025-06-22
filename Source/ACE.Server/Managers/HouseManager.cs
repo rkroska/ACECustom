@@ -39,7 +39,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// HouseManager actions to run when slumlord inventory has completed loading
         /// </summary>
-        private static Dictionary<uint, List<HouseCallback>> SlumlordCallbacks = new Dictionary<uint, List<HouseCallback>>();
+        private static readonly Dictionary<uint, List<HouseCallback>> SlumlordCallbacks = new Dictionary<uint, List<HouseCallback>>();
 
         /// <summary>
         /// The rate at which HouseManager.Tick() executes
@@ -254,9 +254,9 @@ namespace ACE.Server.Managers
 
             if (PropertyManager.GetBool("house_per_char").Item)
             {
-                var results = playerHouses.Where(i => i.Value.Count() > 1).OrderByDescending(i => i.Value.Count());
+                var results = playerHouses.Where(i => i.Value.Count > 1).OrderByDescending(i => i.Value.Count);
 
-                if (results.Count() > 0)
+                if (results.Any())
                     Console.WriteLine("Multi-house owners:");
 
                 foreach (var playerHouse in results)
@@ -269,9 +269,9 @@ namespace ACE.Server.Managers
             }
             else
             {
-                var results = accountHouses.Where(i => i.Value.Count() > 1).OrderByDescending(i => i.Value.Count());
+                var results = accountHouses.Where(i => i.Value.Count > 1).OrderByDescending(i => i.Value.Count);
 
-                if (results.Count() > 0)
+                if (results.Any())
                     Console.WriteLine("Multi-house owners:");
 
                 foreach (var accountHouse in results)

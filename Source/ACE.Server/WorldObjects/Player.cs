@@ -668,13 +668,6 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameMessageSystemChat($"Bypass Housing Barriers now set to: {IgnoreHouseBarriers}", ChatMessageType.Broadcast));
         }
 
-        public void SendAutonomousPosition()
-        {
-            // Session.Network.EnqueueSend(new GameMessageAutonomousPosition(this));
-        }
-
-
-
         public void HandleActionFinishBarber(ClientMessage message)
         {
             // Read the payload sent from the client...

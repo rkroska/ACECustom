@@ -84,16 +84,6 @@ namespace ACE.Entity
             return Vector3.Normalize(Vector3.Transform(Vector3.UnitY, Rotation));
         }
 
-        /// <summary>
-        /// Returns this vector as a unit vector
-        /// with a length of 1
-        /// </summary>
-        public Vector3 Normalize(Vector3 v)
-        {
-            var invLen = 1.0f / v.Length();
-            return v * invLen;
-        }
-
         public Position InFrontOf(double distanceInFront, bool rotate180 = false)
         {
             float qw = RotationW; // north
@@ -384,7 +374,7 @@ namespace ACE.Entity
             }
         }
 
-        private uint GetCellFromBase(uint baseX, uint baseY)
+        private static uint GetCellFromBase(uint baseX, uint baseY)
         {
             byte blockX = (byte)(baseX >> 3);
             byte blockY = (byte)(baseY >> 3);
