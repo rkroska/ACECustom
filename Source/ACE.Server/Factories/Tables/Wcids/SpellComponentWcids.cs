@@ -48,7 +48,7 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( WeenieClassName.peascarabpyreal, 0.25f ),
         };
 
-        private static ChanceTable<WeenieClassName> T9_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T9_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.peascarabsilver, 0.25f ),
             ( WeenieClassName.peascarabgold,   0.50f ),
