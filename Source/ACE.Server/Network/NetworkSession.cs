@@ -659,9 +659,19 @@ namespace ACE.Server.Network
             else
                 log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty.");
 
-            ForceLogOff($"NetworkSession error: client and server are out of sync", $"{session.Player.Name} - disconnected to prevent retransmit thrashing");
+            // If this session is attached to a player log them off to avoid retransmit floods
+            if (session.Player != null)
+            {
+                ForceLogOff($"NetworkSession error: client and server are out of sync", $"{session.Player.Name} - disconnected to prevent retransmit flood");
+            }
+            else
+            {
+                log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}) - disconnected to prevent retransmit flood.");
+                session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
+            }
 
-            return false;
+
+                return false;
         }
 
         private void ForceLogOff(string clientMessage, string errorMessage = "")
