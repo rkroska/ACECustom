@@ -175,8 +175,7 @@ namespace ACE.Server.Network.Structure
 
             if (wo is Portal)
             {
-                if (PropertiesInt.ContainsKey(PropertyInt.EncumbranceVal))
-                    PropertiesInt.Remove(PropertyInt.EncumbranceVal);
+                PropertiesInt.Remove(PropertyInt.EncumbranceVal);
             }
 
             if (wo is SlumLord slumLord)
@@ -328,8 +327,7 @@ namespace ACE.Server.Network.Structure
 
             if (wo is CraftTool && (wo.ItemType == ItemType.TinkeringMaterial || wo.WeenieClassId >= 36619 && wo.WeenieClassId <= 36628 || wo.WeenieClassId >= 36634 && wo.WeenieClassId <= 36636))
             {
-                if (PropertiesInt.ContainsKey(PropertyInt.Structure))
-                    PropertiesInt.Remove(PropertyInt.Structure);
+                PropertiesInt.Remove(PropertyInt.Structure);
             }
 
             if (!Success)

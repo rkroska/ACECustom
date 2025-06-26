@@ -66,7 +66,7 @@ namespace ACE.Server.Managers
                             if(x.Attachments.Count == 1)
                             {
                                 IAttachment attachment = x.Attachments.First();
-                                if (attachment.Filename.ToLowerInvariant().Contains(".sql"))
+                                if (attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
                                 {
                                     using (var client = new WebClient())
                                     {
@@ -105,7 +105,7 @@ namespace ACE.Server.Managers
                             if (x.Attachments.Count == 1)
                             {
                                 IAttachment attachment = x.Attachments.First();
-                                if (attachment.Filename.ToLowerInvariant().Contains(".json"))
+                                if (attachment.Filename.Contains(".json", StringComparison.InvariantCultureIgnoreCase))
                                 {
                                     // Using HttpClient to download the JSON
                                     using (var client = new System.Net.Http.HttpClient())

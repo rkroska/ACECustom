@@ -50,7 +50,7 @@ namespace ACE.Server.Network
 
         // Ack should be sent after a 2 second delay, so start enabled with the delay.
         // Sending this too early seems to cause issues with clients disconnecting.
-        private bool sendAck = true;
+        private readonly bool sendAck = true;
         private DateTime nextAck = DateTime.UtcNow.AddMilliseconds(timeBetweenAck);
 
         private uint lastReceivedPacketSequence = 1;
@@ -261,7 +261,7 @@ namespace ACE.Server.Network
                     .Where(sequence => !Retransmit(sequence))
                     .ToList();
 
-                if (uncached.Any())
+                if (uncached.Count != 0)
                 {
                     // Sends a response packet w/ PacketHeader.RejectRetransmit
                     var packetRejectRetransmit = new PacketRejectRetransmit(uncached);
@@ -644,7 +644,7 @@ namespace ACE.Server.Network
                 return true;
             }
 
-            if (cachedPackets.Count > 0)
+            if (!cachedPackets.IsEmpty)
             {
                 // This is to catch a race condition between .Count and .Min() and .Max()
                 try

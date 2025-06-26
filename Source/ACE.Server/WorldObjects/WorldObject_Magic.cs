@@ -353,7 +353,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Plays the caster/target effects for a spell
         /// </summary>
-        protected void DoSpellEffects(Spell spell, WorldObject caster, WorldObject target, bool projectileHit = false)
+        protected static void DoSpellEffects(Spell spell, WorldObject caster, WorldObject target, bool projectileHit = false)
         {
             if (spell.CasterEffect != 0 && (!spell.IsProjectile || !projectileHit))
                 caster.EnqueueBroadcast(new GameMessageScript(caster.Guid, spell.CasterEffect, spell.Formula.Scale));
@@ -684,7 +684,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Checks for death from a boost / transfer spell
         /// </summary>
-        private void HandleBoostTransferDeath(Creature caster, Creature target)
+        private static void HandleBoostTransferDeath(Creature caster, Creature target)
         {
             if (caster != null && caster.IsDead)
             {
@@ -1338,7 +1338,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Handles casting SpellType.PortalSending spells
         /// </summary>
-        private void HandleCastSpell_PortalSending(Spell spell, Creature targetCreature, WorldObject itemCaster)
+        private static void HandleCastSpell_PortalSending(Spell spell, Creature targetCreature, WorldObject itemCaster)
         {
             if (targetCreature is Player targetPlayer)
             {

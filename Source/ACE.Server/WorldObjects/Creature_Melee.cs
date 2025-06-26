@@ -30,29 +30,9 @@ namespace ACE.Server.WorldObjects
         public bool TwoHandedCombat { get => CurrentMotionState?.Stance == MotionStance.TwoHandedSwordCombat || CurrentMotionState?.Stance == MotionStance.TwoHandedStaffCombat; }
 
         /// <summary>
-        /// Determines if a weapon can double or triple strike,
-        /// and appends the appropriate multistrike prefix to a MotionCommand
-        /// </summary>
-        public string MultiStrike(AttackType attackType, string action)
-        {
-            if ((attackType & AttackType.MultiStrike) == 0)
-                return action;
-
-            var doubleStrike = action.EndsWith("Thrust") ? AttackType.DoubleThrust : AttackType.DoubleSlash;
-            var tripleStrike = (AttackType)((int)doubleStrike * 2);
-
-            if (attackType.HasFlag(tripleStrike))
-                return $"Triple{action}";
-            if (attackType.HasFlag(doubleStrike))
-                return $"Double{action}";
-            else
-                return action;
-        }
-
-        /// <summary>
         /// Returns the attack types for a weapon
         /// </summary>
-        public AttackType GetWeaponAttackType(WorldObject weapon)
+        protected static AttackType GetWeaponAttackType(WorldObject weapon)
         {
             if (weapon == null)
                 return AttackType.Undef;

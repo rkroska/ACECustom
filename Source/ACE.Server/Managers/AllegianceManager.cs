@@ -54,8 +54,8 @@ namespace ACE.Server.Managers
             if (monarch == null) return null;
 
             // is this allegiance already loaded / cached?
-            if (Players.ContainsKey(monarch.Guid))
-                return Players[monarch.Guid].Allegiance;
+            if (Players.TryGetValue(monarch.Guid, out AllegianceNode monarchNode))
+                return monarchNode.Allegiance;
 
             // try to load biota
             var allegianceID = DatabaseManager.Shard.BaseDatabase.GetAllegianceID(monarch.Guid.Full);
@@ -158,10 +158,7 @@ namespace ACE.Server.Managers
                 var player = member.Key;
                 var allegianceNode = member.Value;
 
-                if (!Players.ContainsKey(player))
-                    Players.Add(player, allegianceNode);
-                else
-                    Players[player] = allegianceNode;
+                Players[player] = allegianceNode;
             }
         }
 

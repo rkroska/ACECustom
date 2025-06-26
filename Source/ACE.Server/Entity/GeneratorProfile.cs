@@ -161,7 +161,7 @@ namespace ACE.Server.Entity
         /// Determines the spawn times for initial object spawning,
         /// and for respawning
         /// </summary>
-        public DateTime GetSpawnTime()
+        private static DateTime GetSpawnTime()
         {
                 return DateTime.UtcNow;
         }
@@ -443,7 +443,7 @@ namespace ACE.Server.Entity
             return true;
         }
 
-        public bool VerifyWalkableSlope(WorldObject obj)
+        private static bool VerifyWalkableSlope(WorldObject obj)
         {
             if (!obj.Location.Indoors && !obj.Location.IsWalkable() && !VerifyWalkableSlopeExcludedLandblocks.Contains(obj.Location.LandblockId.Landblock))
             {
@@ -459,7 +459,7 @@ namespace ACE.Server.Entity
         /// TODO gmriggs
         /// Hack until this can be looked into more.
         /// </summary>
-        public static HashSet<ushort> VerifyWalkableSlopeExcludedLandblocks = new HashSet<ushort>()
+        private static HashSet<ushort> VerifyWalkableSlopeExcludedLandblocks = new HashSet<ushort>()
         {
             0x9EE5,     // Northwatch Castle
             0xF92F,     // Freebooter Keep

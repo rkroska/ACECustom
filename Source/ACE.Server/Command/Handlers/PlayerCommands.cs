@@ -779,7 +779,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("dynamicabandon", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Abandons the most recent dynamic quest", "")]
         public static void AbandonDynamicQuest(Session session, params string[] parameters)
         {
-            session.Player.QuestManager.AbandonDynamicQuests(session.Player);
+            QuestManager.AbandonDynamicQuests(session.Player);
         }
 
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]

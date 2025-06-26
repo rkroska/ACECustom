@@ -135,14 +135,12 @@ namespace ACE.Server.WorldObjects
             if (CurrentMotionState.Stance == MotionStance.NonCombat || CurrentMotionState.Stance == MotionStance.Invalid || IsMonster)
                 return 0.0f;
 
-            var combatStance = GetCombatStance();
-
-            float peace1 = 0.0f, unarmed = 0.0f, peace2 = 0.0f;
+            float unarmed = 0.0f, peace2 = 0.0f;
 
             // this is now handled as a proper 2-step process in HandleActionChangeCombatMode / NextUseTime
 
             // FIXME: just call generic method to switch to HandCombat first
-            peace1 = MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, MotionCommand.Ready, MotionCommand.NonCombat);
+            float peace1 = MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, MotionCommand.Ready, MotionCommand.NonCombat);
             /*if (CurrentMotionState.Stance != MotionStance.HandCombat && combatStance != MotionStance.HandCombat)
             {
                 unarmed = MotionTable.GetAnimationLength(MotionTableId, MotionStance.NonCombat, MotionCommand.Ready, MotionCommand.HandCombat);
@@ -347,7 +345,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Adds the shield stance to an existing combat stance
         /// </summary>
-        public MotionStance AddShieldStance(MotionStance combatStance)
+        private MotionStance AddShieldStance(MotionStance combatStance)
         {
             switch (combatStance)
             {
@@ -649,19 +647,6 @@ namespace ACE.Server.WorldObjects
             }
 
             return resistance;
-        }
-
-        /// <summary>
-        /// Reduces a creatures's attack skill while exhausted
-        /// </summary>
-        public uint GetExhaustedSkill(uint attackSkill)
-        {
-            var halfSkill = (uint)Math.Round(attackSkill / 2.0f);
-
-            uint maxPenalty = 50;
-            var reducedSkill = attackSkill >= maxPenalty ? attackSkill - maxPenalty : 0;
-
-            return Math.Max(reducedSkill, halfSkill);
         }
 
         /// <summary>
@@ -1232,7 +1217,7 @@ namespace ACE.Server.WorldObjects
         /// True  = Formula A / ratings method
         /// False = Formula B / critical defense method
         /// </summary>
-        public static bool OverpowerMethod = false;
+        private static bool OverpowerMethod = false;
 
         public static bool GetOverpower(Creature attacker, Creature defender)
         {
@@ -1321,8 +1306,7 @@ namespace ACE.Server.WorldObjects
                 return 0.0f;
 
             var overpowerChance = (attacker.Overpower ?? 0) * 0.01f;
-            var overpowerResistChance = 0f;
-            overpowerResistChance = (defender.OverpowerResist ?? 0) * 0.01f;
+            float overpowerResistChance = (defender.OverpowerResist ?? 0) * 0.01f;
             if (defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) > OverpowerResistAdditionThreshold)
             {
                 overpowerResistChance += (int)(defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) - OverpowerResistAdditionThreshold) / 50;

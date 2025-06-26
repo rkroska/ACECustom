@@ -270,7 +270,7 @@ namespace ACE.Server.WorldObjects
             return new ActivationResult(true);
         }
 
-        private bool CheckPortalRequirement(Player player, Enum reqType, int reqValue, int reqMaxValue, string requirementLabel)
+        private static bool CheckPortalRequirement(Player player, Enum reqType, int reqValue, int reqMaxValue, string requirementLabel)
         {
             string message = string.Empty;
 

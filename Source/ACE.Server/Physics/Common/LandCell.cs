@@ -60,7 +60,7 @@ namespace ACE.Server.Physics.Common
             return objInfo.ValidateWalkable(checkPos, walkable.Plane, WaterType != LandDefs.WaterType.NotWater, waterDepth, transition, ID);
         }
 
-        public new static LandCell Get(uint cellID, int? variationId)
+        public static LandCell Get(uint cellID, int? variationId)
         {
             return (LandCell)LScape.get_landcell(cellID, variationId);
         }

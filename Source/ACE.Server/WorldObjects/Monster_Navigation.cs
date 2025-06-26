@@ -282,8 +282,8 @@ namespace ACE.Server.WorldObjects
         {
             if (AttackTarget == null) return;
 
-            var dist = GetDistanceToTarget();
-            var angle = GetAngle(AttackTarget);
+            //var dist = GetDistanceToTarget();
+            //var angle = GetAngle(AttackTarget);
             //Console.WriteLine("Dist: " + dist);
             //Console.WriteLine("Angle: " + angle);
         }
@@ -378,7 +378,7 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.HomeRadius); else SetProperty(PropertyFloat.HomeRadius, value.Value); }
         }
 
-        public static float DefaultHomeRadius = 192.0f;
+        private static readonly float DefaultHomeRadius = 192.0f;
         //public static float DefaultHomeRadiusSq = DefaultHomeRadius * DefaultHomeRadius;
 
         private float? homeRadiusSq;

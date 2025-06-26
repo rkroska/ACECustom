@@ -72,11 +72,10 @@ namespace ACE.Server.WorldObjects
         /// Returns the effective AL for 1 piece of armor/clothing
         /// </summary>
         /// <param name="armor">A piece of armor or clothing</param>
-        public float GetArmorMod(WorldObject armor, DamageType damageType, bool ignoreMagicArmor)
+        private static float GetArmorMod(WorldObject armor, DamageType damageType, bool ignoreMagicArmor)
         {
             // get base armor/resistance level
             var baseArmor = armor.GetProperty(PropertyInt.ArmorLevel) ?? 0;
-            var armorType = armor.GetProperty(PropertyInt.ArmorType) ?? 0;
             var resistance = Creature.GetResistance(armor, damageType);
 
             /*Console.WriteLine(armor.Name);

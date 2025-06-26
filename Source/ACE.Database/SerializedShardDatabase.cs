@@ -31,8 +31,6 @@ namespace ACE.Database
         private Thread _workerThread;
         private Thread _workerThreadReadOnly;
 
-        private int MaxParallel = 5;
-
         internal SerializedShardDatabase(ShardDatabase shardDatabase)
         {
             BaseDatabase = shardDatabase;

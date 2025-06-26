@@ -30,7 +30,7 @@ namespace ACE.Server.Physics.Common
         //public List<ushort> LightArray;
         //public int InCellTimestamp;
         public List<ushort> VisibleCellIDs;
-        public new ConcurrentDictionary<uint, EnvCell> VisibleCells;
+        public ConcurrentDictionary<uint, EnvCell> VisibleCells;
         //public EnvCellFlags Flags;
         public uint EnvironmentID;
         //public DatLoader.FileTypes.EnvCell _envCell;
@@ -452,6 +452,11 @@ namespace ACE.Server.Physics.Common
                 return false;
 
             return ID == envCell.ID;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as EnvCell);
         }
 
         public override int GetHashCode()

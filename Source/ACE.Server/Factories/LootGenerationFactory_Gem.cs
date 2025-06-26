@@ -13,7 +13,7 @@ namespace ACE.Server.Factories
 {
     public static partial class LootGenerationFactory
     {
-        private static WorldObject CreateGem(TreasureDeath profile, bool isMagical, bool mutate = true)
+        private static Gem CreateGem(TreasureDeath profile, bool isMagical, bool mutate = true)
         {
             var idx = profile.Tier - 1;
 

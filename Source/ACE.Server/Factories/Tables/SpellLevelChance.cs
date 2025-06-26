@@ -18,7 +18,7 @@ namespace ACE.Server.Factories.Tables
             8: 7-8 (should be 6-8)
         */
 
-        private static ChanceTable<int> T1_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T1_SpellLevelChances = new ChanceTable<int>()
         {
             // 15/60/25?
             ( 1, 0.25f ),
@@ -26,54 +26,54 @@ namespace ACE.Server.Factories.Tables
             ( 3, 0.25f ),
         };
 
-        private static ChanceTable<int> T2_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T2_SpellLevelChances = new ChanceTable<int>()
         {
             ( 3, 0.25f ),
             ( 4, 0.50f ),
             ( 5, 0.25f ),
         };
 
-        private static ChanceTable<int> T3_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T3_SpellLevelChances = new ChanceTable<int>()
         {
             ( 4, 0.25f ),
             ( 5, 0.50f ),
             ( 6, 0.25f ),
         };
 
-        private static ChanceTable<int> T4_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T4_SpellLevelChances = new ChanceTable<int>()
         {
             ( 5, 0.75f ),
             ( 6, 0.25f ),
         };
 
-        private static ChanceTable<int> T5_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T5_SpellLevelChances = new ChanceTable<int>()
         {
             ( 5, 0.30f ),
             ( 6, 0.50f ),
             ( 7, 0.20f ),
         };
 
-        private static ChanceTable<int> T6_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T6_SpellLevelChances = new ChanceTable<int>()
         {
             ( 6, 0.60f ),
             ( 7, 0.40f ),
         };
 
-        private static ChanceTable<int> T7_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T7_SpellLevelChances = new ChanceTable<int>()
         {
             ( 6, 0.25f ),
             ( 7, 0.50f ),
             ( 8, 0.25f ),
         };
 
-        private static ChanceTable<int> T8_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T8_SpellLevelChances = new ChanceTable<int>()
         {
             ( 6, 0.15f ),
             ( 7, 0.50f ),
             ( 8, 0.35f ),
         };
 
-        private static ChanceTable<int> T9_SpellLevelChances = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T9_SpellLevelChances = new ChanceTable<int>()
         {
             ( 6, 0.15f ),
             ( 7, 0.50f ),

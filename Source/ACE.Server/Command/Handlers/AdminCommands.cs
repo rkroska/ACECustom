@@ -3926,7 +3926,7 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
 
-                        var maxSolves = creature.QuestManager.GetMaxSolves(questName);
+                        var maxSolves = QuestManager.GetMaxSolves(questName);
                         var maxSolvesBinary = Convert.ToString(maxSolves, 2);
 
                         var questEntry = "";

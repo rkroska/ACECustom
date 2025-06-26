@@ -23,7 +23,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// The maximum # of fellowship members
         /// </summary>
-        public static int MaxFellows = 29;
+        private static readonly int MaxFellows = 29;
 
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
@@ -697,7 +697,7 @@ namespace ACE.Server.Entity
         /// Returns the amount to scale the XP for a fellow
         /// based on distance from the earner
         /// </summary>
-        public double GetDistanceScalar(Player earner, Player fellow, XpType xpType)
+        public static double GetDistanceScalar(Player earner, Player fellow, XpType xpType)
         {
             if (earner == null || fellow == null)
                 return 0.0f;

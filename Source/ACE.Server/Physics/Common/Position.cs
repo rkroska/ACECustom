@@ -286,6 +286,16 @@ namespace ACE.Server.Physics.Common
             return ObjCellID == pos.ObjCellID && Frame.Equals(pos.Frame) && Variation == pos.Variation;
         }
 
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as Position);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(ObjCellID, Variation, Frame.GetHashCode());
+        }
+
         public override string ToString()
         {
             if (Variation != null)

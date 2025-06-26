@@ -8,47 +8,47 @@ namespace ACE.Server.Factories.Tables.Wcids
 {
     public static class HealKitWcids
     {
-        private static ChanceTable<WeenieClassName> T1_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T1_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitcrude,     0.75f ),
             ( WeenieClassName.healingkitplain,     0.25f ),
         };
 
-        private static ChanceTable<WeenieClassName> T2_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T2_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitcrude,     0.25f ),
             ( WeenieClassName.healingkitplain,     0.50f ),
             ( WeenieClassName.healingkitgood,      0.25f ),
         };
 
-        private static ChanceTable<WeenieClassName> T3_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T3_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitplain,     0.25f ),
             ( WeenieClassName.healingkitgood,      0.50f ),
             ( WeenieClassName.healingkitexcellent, 0.25f ),
         };
 
-        private static ChanceTable<WeenieClassName> T4_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T4_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitgood,      0.25f ),
             ( WeenieClassName.healingkitexcellent, 0.50f ),
             ( WeenieClassName.healingkitpeerless,  0.25f ),
         };
 
-        private static ChanceTable<WeenieClassName> T5_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T5_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitexcellent, 0.25f ),
             ( WeenieClassName.healingkitpeerless,  0.50f ),
             ( WeenieClassName.healingkittreated,   0.25f ),
         };
 
-        private static ChanceTable<WeenieClassName> T6_T8_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T6_T8_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitpeerless,  0.25f ),
             ( WeenieClassName.healingkittreated,   0.75f ),
         };
 
-        private static ChanceTable<WeenieClassName> T9_Chances = new ChanceTable<WeenieClassName>()
+        private static readonly ChanceTable<WeenieClassName> T9_Chances = new ChanceTable<WeenieClassName>()
         {
             ( WeenieClassName.healingkitpeerless,  0.25f ),
             ( WeenieClassName.healingkittreated,   0.75f ),

@@ -133,7 +133,7 @@ namespace ACE.Server.WorldObjects
             return mvp;
         }
 
-        public MovementParameters GetTurnToParams(bool stopCompletely = false)
+        private static MovementParameters GetTurnToParams(bool stopCompletely = false)
         {
             var mvp = new MovementParameters();
 

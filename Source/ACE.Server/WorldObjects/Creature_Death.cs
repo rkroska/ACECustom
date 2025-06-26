@@ -771,7 +771,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// A list of landblocks the player gains no xp from creature kills
         /// </summary>
-        public static HashSet<ushort> NoDeathXP_Landblocks = new HashSet<ushort>()
+        private static HashSet<ushort> NoDeathXP_Landblocks = new HashSet<ushort>()
         {
             0x00B0,     // Colosseum Arena One
             0x00B1,     // Colosseum Arena Two
@@ -792,7 +792,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// landblock required for using /clap command
         /// </summary>
-        public static HashSet<ushort> Marketplace_Landblocks = new HashSet<ushort>()
+        private static HashSet<ushort> Marketplace_Landblocks = new HashSet<ushort>()
         {
             0x016C,     // Marketplace
         };
