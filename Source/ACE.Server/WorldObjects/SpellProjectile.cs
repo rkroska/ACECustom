@@ -693,7 +693,7 @@ namespace ACE.Server.WorldObjects
         /// Calculates the damage reduction modifier for bows and casters
         /// with 'Magic Absorbing' property
         /// </summary>
-        public float AbsorbMagic(Creature target, WorldObject item)
+        private static float AbsorbMagic(Creature target, WorldObject item)
         {
             // https://asheron.fandom.com/wiki/Category:Magic_Absorbing
 
@@ -864,7 +864,6 @@ namespace ACE.Server.WorldObjects
             {
                 string verb = null, plural = null;
                 Strings.GetAttackVerb(Spell.DamageType, percent, ref verb, ref plural);
-                var type = Spell.DamageType.GetName().ToLower();
 
                 var critMsg = critical ? "Critical hit! " : "";
                 var sneakMsg = sneakAttackMod > 1.0f ? "Sneak Attack! " : "";

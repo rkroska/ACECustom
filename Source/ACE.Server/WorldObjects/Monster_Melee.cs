@@ -406,14 +406,14 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns the creature armor for a body part
         /// </summary>
-        public List<WorldObject> GetArmorLayers(Player target, BodyPart bodyPart)
+        public List<WorldObject> GetArmorLayers(BodyPart bodyPart)
         {
             //Console.WriteLine("BodyPart: " + bodyPart);
             //Console.WriteLine("===");
 
             var coverageMask = BodyParts.GetCoverageMask(bodyPart);
 
-            var equipped = target.EquippedObjects.Values.Where(e => e is Clothing && (e.ClothingPriority & coverageMask) != 0).ToList();
+            var equipped = EquippedObjects.Values.Where(e => e is Clothing && (e.ClothingPriority & coverageMask) != 0).ToList();
 
             return equipped;
         }
@@ -535,7 +535,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns the natural resistance to DamageType for a piece of armor
         /// </summary>
-        public double GetResistance(WorldObject armor, DamageType damageType)
+        public static double GetResistance(WorldObject armor, DamageType damageType)
         {
             switch (damageType)
             {
@@ -558,22 +558,6 @@ namespace ACE.Server.WorldObjects
                 default:
                     return 0.0;
             }
-        }
-
-        /// <summary>
-        /// Displays all of the natural resistances for a piece of armor
-        /// </summary>
-        public void ShowResistance(WorldObject armor)
-        {
-            Console.WriteLine("Resistance:");
-            Console.WriteLine("Slashing: " + armor.GetProperty(PropertyFloat.ArmorModVsSlash));
-            Console.WriteLine("Piercing: " + armor.GetProperty(PropertyFloat.ArmorModVsPierce));
-            Console.WriteLine("Bludgeoning: " + armor.GetProperty(PropertyFloat.ArmorModVsBludgeon));
-            Console.WriteLine("Fire: " + armor.GetProperty(PropertyFloat.ArmorModVsFire));
-            Console.WriteLine("Ice: " + armor.GetProperty(PropertyFloat.ArmorModVsCold));
-            Console.WriteLine("Acid: " + armor.GetProperty(PropertyFloat.ArmorModVsAcid));
-            Console.WriteLine("Lightning: " + armor.GetProperty(PropertyFloat.ArmorModVsElectric));
-            Console.WriteLine("Nether: " + armor.GetProperty(PropertyFloat.ArmorModVsNether));
         }
 
         /// <summary>

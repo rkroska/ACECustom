@@ -2736,7 +2736,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var dist = player.Location.Distance2D(fellow.Location);
 
-                var distanceScalar = fellowship.GetDistanceScalar(player, fellow, XpType.Kill);
+                var distanceScalar = Fellowship.GetDistanceScalar(player, fellow, XpType.Kill);
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{fellow.Name}: {Math.Round(dist):N0} ({distanceScalar:F2}) - {fellow.Location}", ChatMessageType.Broadcast));
             }
@@ -2762,7 +2762,7 @@ namespace ACE.Server.Command.Handlers
                 var dist2d = session.Player.Location.Distance2D(fellow.Location);
                 var dist3d = session.Player.Location.DistanceTo(fellow.Location);
 
-                var scalar = session.Player.Fellowship.GetDistanceScalar(session.Player, fellow, XpType.Kill);
+                var scalar = Fellowship.GetDistanceScalar(session.Player, fellow, XpType.Kill);
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{fellow.Name} | 2d: {dist2d:N0} | 3d: {dist3d:N0} | Scalar: {scalar:N0}", ChatMessageType.Broadcast));
             }

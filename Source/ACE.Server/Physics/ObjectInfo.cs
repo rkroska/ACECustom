@@ -33,9 +33,9 @@ namespace ACE.Server.Physics.Animation
         public bool StepDown;
         public uint TargetID;
 
-        public float GetWalkableZ()
+        public static float GetWalkableZ()
         {
-            return Object.get_walkable_z();
+            return PhysicsObj.get_walkable_z();
         }
 
         public void Init(PhysicsObj obj, ObjectInfoState state)

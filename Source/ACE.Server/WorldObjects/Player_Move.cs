@@ -179,7 +179,7 @@ namespace ACE.Server.WorldObjects
             MoveTo_Tick();
         }
 
-        public static float MoveToRate = 0.1f;
+        private static readonly float MoveToRate = 0.1f;
 
         public void MoveTo_Tick()
         {
@@ -230,7 +230,7 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public MovementParameters GetChargeParameters()
+        private static MovementParameters GetChargeParameters()
         {
             var mvp = new MovementParameters();
 
