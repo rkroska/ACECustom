@@ -203,7 +203,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (targetEnlightenment > 150 && targetEnlightenment <300)
+            if (targetEnlightenment > 150 && targetEnlightenment < 300)
             {
                 var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
                 long reqLum150 = targetEnlightenment * baseLumCost;

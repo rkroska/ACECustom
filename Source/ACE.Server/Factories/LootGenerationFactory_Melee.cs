@@ -4,7 +4,6 @@ using System.Linq;
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
-using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Mutations;
 using ACE.Server.Factories.Entity;
 using ACE.Server.Factories.Enum;

@@ -198,7 +198,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
         WieldRequirements = RawSkill
         WieldDifficulty = 385
 
-        Caster (Elemental) Mutation #8 (1,585 samples):
+Caster (Elemental) Mutation #9 (1,585 samples):
 
 Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
@@ -282,7 +282,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
         WieldRequirements = RawSkill
         WieldDifficulty = 500
 
-        Caster (Elemental) Mutation #9 (1,585 samples):
+Caster (Elemental) Mutation #10 (1,585 samples):
 
 Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
 
