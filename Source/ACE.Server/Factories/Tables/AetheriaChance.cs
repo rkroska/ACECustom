@@ -53,7 +53,7 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<int> T10_ItemMaxLevel = new ChanceTable<int>()
         {
 
-            ( 6, 0.33f ),
+            ( 6, 0.35f ),
             ( 7, 0.25f ),
             ( 8, 0.20f ),
             ( 9, 0.15f ),
