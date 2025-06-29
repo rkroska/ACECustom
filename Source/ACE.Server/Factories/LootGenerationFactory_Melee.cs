@@ -4,6 +4,7 @@ using System.Linq;
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Mutations;
 using ACE.Server.Factories.Entity;
 using ACE.Server.Factories.Enum;
@@ -22,35 +23,33 @@ namespace ACE.Server.Factories
             var wcid = 0;
             var weaponType = 0;
 
-            var eleType = ThreadSafeRandom.Next(0, 4);
-
             if (weaponSkill == MeleeWeaponSkill.Undef)
-                weaponSkill = (MeleeWeaponSkill)ThreadSafeRandom.Next(1, 4);
+                weaponSkill = (MeleeWeaponSkill)ThreadSafeRandom.Next(1, 5); // Nether weapons added
 
-            switch (weaponSkill)                
+            switch (weaponSkill)
             {
                 case MeleeWeaponSkill.HeavyWeapons:
-
-                    weaponType = ThreadSafeRandom.Next(0, LootTables.HeavyWeaponsMatrix.Length - 1);
-                    wcid = LootTables.HeavyWeaponsMatrix[weaponType][eleType];
+                    weaponType = ThreadSafeRandom.Next(0, LootTables.HeavyWeaponsMatrix.Length);
+                    var heavySet = LootTables.HeavyWeaponsMatrix[weaponType];
+                    wcid = heavySet[ThreadSafeRandom.Next(0, heavySet.Length)];
                     break;
 
                 case MeleeWeaponSkill.LightWeapons:
-
-                    weaponType = ThreadSafeRandom.Next(0, LootTables.LightWeaponsMatrix.Length - 1);
-                    wcid = LootTables.LightWeaponsMatrix[weaponType][eleType];
+                    weaponType = ThreadSafeRandom.Next(0, LootTables.LightWeaponsMatrix.Length);
+                    var lightSet = LootTables.LightWeaponsMatrix[weaponType];
+                    wcid = lightSet[ThreadSafeRandom.Next(0, lightSet.Length)];
                     break;
 
                 case MeleeWeaponSkill.FinesseWeapons:
-
-                    weaponType = ThreadSafeRandom.Next(0, LootTables.FinesseWeaponsMatrix.Length - 1);
-                    wcid = LootTables.FinesseWeaponsMatrix[weaponType][eleType];
+                    weaponType = ThreadSafeRandom.Next(0, LootTables.FinesseWeaponsMatrix.Length);
+                    var finesseSet = LootTables.FinesseWeaponsMatrix[weaponType];
+                    wcid = finesseSet[ThreadSafeRandom.Next(0, finesseSet.Length)];
                     break;
 
                 case MeleeWeaponSkill.TwoHandedCombat:
-
-                    weaponType = ThreadSafeRandom.Next(0, LootTables.TwoHandedWeaponsMatrix.Length - 1);
-                    wcid = LootTables.TwoHandedWeaponsMatrix[weaponType][eleType];
+                    weaponType = ThreadSafeRandom.Next(0, LootTables.TwoHandedWeaponsMatrix.Length);
+                    var twohandSet = LootTables.TwoHandedWeaponsMatrix[weaponType];
+                    wcid = twohandSet[ThreadSafeRandom.Next(0, twohandSet.Length)];
                     break;
             }
 
@@ -64,12 +63,15 @@ namespace ACE.Server.Factories
                     return null;
                 }
             }
+
             if (wo != null && wo.ItemMaxLevel > 0 && wo.EquipmentSetId == null)
             {
                 MutateItemLevel(wo, profile);
             }
+
             return wo;
         }
+
 
         private static bool MutateMeleeWeapon(WorldObject wo, TreasureDeath profile, bool isMagical, TreasureRoll roll = null)
         {
@@ -163,6 +165,8 @@ namespace ACE.Server.Factories
 
             // long description
             wo.LongDesc = GetLongDesc(wo);
+
+            TryMutateGearRatingForWeapons(wo, profile, roll);
 
             return true;
         }

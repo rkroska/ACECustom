@@ -1,33 +1,33 @@
-using System.Collections.Generic;
-
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Server.Factories.Entity;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Factories.Tables
 {
     public static class CloakChance
     {
-        private static ChanceTable<int> T1_ItemMaxLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T1_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 1, 1.0f )
         };
 
-        private static ChanceTable<int> T2_ItemMaxLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T2_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 1, 0.99f ),
             ( 2, 0.01f ),
         };
 
-        private static ChanceTable<int> T3_T4_ItemMaxLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T3_T4_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 1, 0.44f ),
             ( 2, 0.55f ),
             ( 3, 0.01f ),
         };
 
-        private static ChanceTable<int> T5_ItemMaxLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T5_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 1, 0.04f ),
             ( 2, 0.40f ),
@@ -35,7 +35,7 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.01f ),
         };
 
-        private static ChanceTable<int> T6_ItemMaxLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T6_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 1, 0.04f ),
             ( 2, 0.30f ),
@@ -43,21 +43,28 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.01f ),
         };
 
-        private static ChanceTable<int> T7_T8_ItemMaxLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T7_T8_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 2, 0.45f ),
             ( 3, 0.50f ),
             ( 4, 0.04f ),
             ( 5, 0.01f ),
         };
-        private static ChanceTable<int> T9_ItemMaxLevel = new ChanceTable<int>()
+
+        private static readonly ChanceTable<int> T9_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 3, 0.65f ),
             ( 4, 0.30f ),
             ( 5, 0.05f ),
         };
 
-        private static List<ChanceTable<int>> cloakLevels = new List<ChanceTable<int>>()
+        private static readonly ChanceTable<int> T10_ItemMaxLevel = new ChanceTable<int>()
+        {
+            ( 4, 0.75f ),
+            ( 5, 0.25f ),
+        };
+
+        private static readonly List<ChanceTable<int>> cloakLevels = new List<ChanceTable<int>>()
         {
             T1_ItemMaxLevel,
             T2_ItemMaxLevel,
@@ -68,11 +75,13 @@ namespace ACE.Server.Factories.Tables
             T7_T8_ItemMaxLevel,
             T7_T8_ItemMaxLevel,
             T9_ItemMaxLevel,
+            T10_ItemMaxLevel,
         };
 
         public static int Roll_ItemMaxLevel(TreasureDeath profile)
         {
-            var table = cloakLevels[profile.Tier - 1];
+            var tier = Math.Clamp(profile.Tier, 1, 10);
+            var table = cloakLevels[tier - 1];
 
             return table.Roll(profile.LootQualityMod);
         }

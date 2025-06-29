@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Common;
@@ -112,7 +113,7 @@ namespace ACE.Server.Factories
                     wo.WieldSkillType = (int)wieldSkill;
                     wo.WieldDifficulty = GetCovenantWieldReq(profile.Tier, wieldSkill);
                 }
-                else if (profile.Tier > 6)
+                else if (profile.Tier > 6 && profile.Tier < 10)
                 {
                     wo.WieldRequirements = WieldRequirement.Level;
                     wo.WieldSkillType = (int)Skill.Axe;  // Set by examples from PCAP data
@@ -125,7 +126,7 @@ namespace ACE.Server.Factories
                     };
                 }
             }
-            else if (profile.Tier > 6 && !wo.HasArmorLevel())
+            else if (profile.Tier > 6 && profile.Tier <10 && !wo.HasArmorLevel())
             {
                 // normally this is handled in the mutation script for armor
                 // for clothing, just calling the generic method here
@@ -161,6 +162,9 @@ namespace ACE.Server.Factories
 
             if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
+
+            if (roll != null && profile.Tier == 10)
+                TryMutateGearRatingT10(wo, profile, roll);
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))   // fixme: data
@@ -200,12 +204,15 @@ namespace ACE.Server.Factories
             var wieldSkillType = wo.WieldSkillType;
             var wieldDifficulty = wo.WieldDifficulty;
 
-            //Console.WriteLine($"Mutating {wo.Name} with {scriptName}");
+            // Skip mutation if Tier 10 to avoid overwriting T10 wield logic
+            bool success = true;
+            if (profile.Tier < 10)
+            {
+                var mutationFilter = MutationCache.GetMutation(scriptName);
+                success = mutationFilter.TryMutate(wo, profile.Tier);
+            }
 
-            var mutationFilter = MutationCache.GetMutation(scriptName);
-
-            var success = mutationFilter.TryMutate(wo, profile.Tier);
-
+            // Restore society armor wield values (if mutated)
             if (armorType == LootTables.ArmorType.SocietyArmor)
             {
                 wo.WieldRequirements = wieldRequirements;
@@ -863,6 +870,8 @@ namespace ACE.Server.Factories
                 TryMutateGearRating(wo, profile, roll);
             else if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
+            else if (roll != null && profile.Tier == 10)
+                TryMutateGearRatingT10(wo, profile, roll);
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))
@@ -1117,7 +1126,112 @@ namespace ACE.Server.Factories
             return true;
         }
 
-            private static void SetWieldLevelReq(WorldObject wo, int level)
+        private static bool TryMutateGearRatingT10(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
+        {
+            if (profile.Tier != 10)
+                return false;
+
+            bool applied = false;
+            bool isArmorType = roll.HasArmorLevel(wo) || roll.IsClothing || roll.IsCloak;
+            bool isJewelry = roll.IsJewelry;
+            bool isShield = wo.IsShield;
+
+            // 🛡️ Shields
+            if (isShield)
+            {
+                // Always try rolling each type of rating
+                void TryAssignRating(Action<int> assign)
+                {
+                    var val = GearRatingChance.RollT10(wo, profile, roll);
+                    if (val > 0) assign(val);
+                }
+
+                TryAssignRating(v => wo.GearCritDamageResist = v);
+                TryAssignRating(v => wo.GearDamageResist = v);
+                TryAssignRating(v => wo.GearNetherResistRating = v);
+                TryAssignRating(v => wo.GearCritDamage = v);
+                TryAssignRating(v => wo.GearDamage = v);
+                TryAssignRating(v => wo.GearHealingBoost = v);
+
+                // 🛡️ Special: GearMaxHealth uses flat range instead of RollT10
+                int healthBonus = ThreadSafeRandom.Next(100, 200); // Inclusive: 100–200
+                wo.GearMaxHealth = healthBonus;
+
+                // 10% chance to roll Magic Absorb
+                if (ThreadSafeRandom.Next(0, 100) < 10)
+                {
+                    int absorb = ThreadSafeRandom.Next(1, 3); // Rolls 1 or 2
+                    wo.AbsorbMagicDamage = absorb;
+                }
+
+                applied = true;
+            }
+
+            // 🎯 Armor/Underclothes/Cloaks
+            else if (isArmorType)
+            {
+                var netherResist = GearRatingChance.RollT10(wo, profile, roll);
+                if (netherResist > 0)
+                    wo.GearNetherResistRating = netherResist;
+
+                if (ThreadSafeRandom.Next(0, 2) == 0)
+                {
+                    var dmg = GearRatingChance.RollT10(wo, profile, roll);
+                    if (dmg > 0) wo.GearDamage = dmg;
+                }
+                else
+                {
+                    var dmgResist = GearRatingChance.RollT10(wo, profile, roll);
+                    if (dmgResist > 0) wo.GearDamageResist = dmgResist;
+                }
+
+                if (ThreadSafeRandom.Next(0, 2) == 0)
+                {
+                    var crit = GearRatingChance.RollT10(wo, profile, roll);
+                    if (crit > 0) wo.GearCritDamage = crit;
+                }
+                else
+                {
+                    var critResist = GearRatingChance.RollT10(wo, profile, roll);
+                    if (critResist > 0) wo.GearCritDamageResist = critResist;
+                }
+
+                applied = true;
+            }
+
+            // 💍 Jewelry
+            else if (isJewelry)
+            {
+                var rating = GearRatingChance.RollT10(wo, profile, roll);
+                if (rating > 0)
+                {
+                    if (ThreadSafeRandom.Next(0, 2) == 0)
+                        wo.GearHealingBoost = rating;
+                    else
+                        wo.GearMaxHealth = rating;
+
+                    applied = true;
+                    SetWieldT10(wo, 725, profile.Tier);
+                }
+            }
+
+            else
+            {
+                log.Error($"TryMutateGearRating({wo.Name}, {profile.TreasureType}, {roll.ItemType}): unknown item type");
+                return false;
+            }
+
+            if (applied && roll.ArmorType != TreasureArmorType.Society)
+            {
+                SetWieldT10(wo, 725, profile.Tier);
+            }
+
+            return applied;
+        }
+
+
+
+        private static void SetWieldLevelReq(WorldObject wo, int level)
             {
                 if (wo.WieldRequirements == WieldRequirement.Invalid)
                 {
@@ -1146,7 +1260,35 @@ namespace ACE.Server.Factories
                 }
             }
 
-            private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
+        private static void SetWieldT10(WorldObject wo, int requiredLevel, int tier)
+        {
+            if (tier < 10)
+                return;
+
+            // Use a placeholder Skill enum the client can display
+            const Skill MeleeD = Skill.MeleeDefense;
+
+            // Assign to primary or secondary wield requirement
+            if (wo.WieldRequirements == WieldRequirement.Invalid)
+            {
+                wo.WieldRequirements = WieldRequirement.RawSkill;
+                wo.WieldSkillType = (int)MeleeD;
+                wo.WieldDifficulty = requiredLevel;
+            }
+            else if (wo.WieldRequirements == WieldRequirement.RawSkill && wo.WieldSkillType == (int)MeleeD)
+            {
+                if (wo.WieldDifficulty < requiredLevel)
+                    wo.WieldDifficulty = requiredLevel;
+            }
+            else
+            {
+                wo.WieldRequirements2 = WieldRequirement.RawSkill;
+                wo.WieldSkillType2 = (int)MeleeD;
+                wo.WieldDifficulty2 = requiredLevel;
+            }
+        }
+
+        private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
             {
                 foreach (var kvp in LootTables.armorTypeMap)
                 {

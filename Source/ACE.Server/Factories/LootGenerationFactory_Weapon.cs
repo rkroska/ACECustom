@@ -1,6 +1,7 @@
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Server.Factories.Tables;
+using ACE.Server.Factories.Entity;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Factories
@@ -18,8 +19,8 @@ namespace ACE.Server.Factories
 
             return chance switch
             {
-                var rate when (rate < 43) => CreateMeleeWeapon(profile, isMagical),
-                var rate when (rate > 42 && rate < 79) => CreateMissileWeapon(profile, isMagical),
+                var rate when (rate < 34) => CreateMeleeWeapon(profile, isMagical),
+                var rate when (rate > 33 && rate < 67) => CreateMissileWeapon(profile, isMagical),
                 _ => CreateCaster(profile, isMagical),
             };
         }
@@ -39,6 +40,31 @@ namespace ACE.Server.Factories
             //Console.WriteLine($"WeaponSpeedMod: {weaponSpeedMod}");
 
             return weaponSpeedMod;
+        }
+
+        private static bool TryMutateGearRatingForWeapons(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
+        {
+            if (profile.Tier != 10)
+                return false;
+
+            int gearRating = GearRatingChance.RollT10(wo, profile, roll); // Make sure this supports weapon types
+
+            if (gearRating == 0)
+                return false;
+
+            int rollType = ThreadSafeRandom.Next(0, 2); // 0 or 1
+
+            if (roll.IsCaster || roll.IsMeleeWeapon || roll.IsMissileWeapon)
+            {
+                if (rollType == 0)
+                    wo.GearDamage = gearRating;
+                else
+                    wo.GearCritDamage = gearRating;
+
+                return true;
+            }
+
+            return false;
         }
     }
 }

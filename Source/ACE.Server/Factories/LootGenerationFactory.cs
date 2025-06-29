@@ -815,6 +815,7 @@ namespace ACE.Server.Factories
             (600, 4000),    // T7
             (600, 4500),    // T8
             (800, 5000),    // T9
+            (1000, 6000),   // T10
         };
 
         private static int Roll_ItemValue(WorldObject wo, int tier)
@@ -888,7 +889,7 @@ namespace ACE.Server.Factories
             var materialMod = MaterialTable.GetValueMod(wo.MaterialType);
             var gemValue = GemMaterialChance.GemValue(wo.GemType);
 
-            var tierMod = ItemValue_TierMod[Math.Clamp(tier, 1, 9) - 1];
+            var tierMod = ItemValue_TierMod[Math.Clamp(tier, 1, 10) - 1];
 
             var newValue = (int)wo.Value * valueFactor + materialMod * tierMod + gemValue;
 
@@ -938,6 +939,7 @@ namespace ACE.Server.Factories
             2000,   // T7
             3000,   // T8
             4000,   // T9
+            5000,   // T10
         };
 
         /// <summary>
@@ -1250,11 +1252,14 @@ namespace ACE.Server.Factories
             (250, 5000), // T7
             (250, 5000), // T8
             (500, 10000),// T9
+            (1000, 15000), //T10
         };
 
         private static void MutateCoins(WorldObject wo, TreasureDeath profile)
         {
-            var tierRange = coinRanges[profile.Tier - 1];
+            var tier = Math.Clamp(profile.Tier, 1, 10);
+
+            var tierRange = coinRanges[tier - 1];
 
             // flat rng range, according to magloot corpse logs
             var rng = ThreadSafeRandom.Next(tierRange.min, tierRange.max);
@@ -1300,23 +1305,28 @@ namespace ACE.Server.Factories
             if (profile.Tier < 7)
                 return;
 
-            var wieldLevelReq = 150;
+            int wieldLevelReq;
 
-            if (profile.Tier >= 8)
+            if (profile.Tier >= 10)
+                return;  // Let SetWieldT10 handle it instead
+
+            else if (profile.Tier == 9)
             {
-                // t8 had a 90% chance for 180
-                // loot quality mod?
+                wieldLevelReq = 500; // T9
+            }
+            else if (profile.Tier >= 8)
+            {
+                // T8: 90% chance to be 180, otherwise fallback
                 var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
-
-                if (rng < 0.9f)
-                    wieldLevelReq = 180;
+                wieldLevelReq = (rng < 0.9f) ? 180 : 150;
+            }
+            else
+            {
+                wieldLevelReq = 150; // Default for T7
             }
 
             wo.WieldRequirements = WieldRequirement.Level;
             wo.WieldDifficulty = wieldLevelReq;
-
-            // as per retail pcaps, must be set to appear in client
-            wo.WieldSkillType = 1;  
         }
     }         
 }

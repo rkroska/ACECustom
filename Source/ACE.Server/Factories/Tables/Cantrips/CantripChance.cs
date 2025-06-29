@@ -14,26 +14,26 @@ namespace ACE.Server.Factories.Tables
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static ChanceTable<int> T1_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T1_NumCantrips = new ChanceTable<int>()
         {
             ( 0, 0.95f ),
             ( 1, 0.05f ),
         };
 
-        private static ChanceTable<int> T2_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T2_NumCantrips = new ChanceTable<int>()
         {
             ( 0, 0.90f ),
             ( 1, 0.10f ),
         };
 
-        private static ChanceTable<int> T3_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T3_NumCantrips = new ChanceTable<int>()
         {
             ( 0, 0.725f ),
             ( 1, 0.250f ),
             ( 2, 0.025f ),
         };
 
-        private static ChanceTable<int> T4_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T4_NumCantrips = new ChanceTable<int>()
         {
             ( 0, 0.62f ),
             ( 1, 0.32f ),
@@ -41,7 +41,7 @@ namespace ACE.Server.Factories.Tables
             ( 3, 0.005f ),
         };
 
-        private static ChanceTable<int> T5_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T5_NumCantrips = new ChanceTable<int>()
         {
             ( 0, 0.40f ),
             ( 1, 0.42f ),
@@ -50,7 +50,7 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.001f ),
         };
 
-        private static ChanceTable<int> T6_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T6_NumCantrips = new ChanceTable<int>()
         {
             ( 0, 0.25f ),
             ( 1, 0.40f ),
@@ -60,7 +60,7 @@ namespace ACE.Server.Factories.Tables
             ( 5, 0.001f ),
         };
 
-        private static ChanceTable<int> T7_T8_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T7_T8_NumCantrips = new ChanceTable<int>()
         {
             ( 1, 0.81f ),
             ( 2, 0.17f ),
@@ -68,12 +68,19 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.004f ),
         };
 
-        private static ChanceTable<int> T9_NumCantrips = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T9_NumCantrips = new ChanceTable<int>()
         {
             ( 1, 0.81f ),
             ( 2, 0.17f ),
             ( 3, 0.016f ),
             ( 4, 0.004f ),
+        };
+
+        private static readonly ChanceTable<int> T10_NumCantrips = new ChanceTable<int>()
+        {
+            ( 2, 0.75f ),
+            ( 3, 0.18f ),
+            ( 4, 0.07f ),
         };
 
         private static readonly List<ChanceTable<int>> _numCantrips = new List<ChanceTable<int>>()
@@ -87,51 +94,53 @@ namespace ACE.Server.Factories.Tables
             T7_T8_NumCantrips,
             T7_T8_NumCantrips,
             T9_NumCantrips,
+            T10_NumCantrips,
         };
 
         public static int RollNumCantrips(TreasureDeath profile)
         {
-            return numCantrips[profile.Tier - 1].Roll(profile.LootQualityMod);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
+            return numCantrips[tier - 1].Roll(profile.LootQualityMod);
         }
 
 
-        private static ChanceTable<int> T1_T2_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T1_T2_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 1.0f )
         };
 
-        private static ChanceTable<int> T3_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T3_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 0.97f ),
             ( 2, 0.03f ),
         };
 
-        private static ChanceTable<int> T4_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T4_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 0.90f ),
             ( 2, 0.10f ),
         };
 
-        private static ChanceTable<int> T5_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T5_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 0.85f ),
             ( 2, 0.15f ),
         };
 
-        private static ChanceTable<int> T6_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T6_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 0.80f ),
             ( 2, 0.20f ),
         };
 
-        private static ChanceTable<int> T7_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T7_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 0.15f ),
             ( 2, 0.60f ),
             ( 3, 0.25f )
         };
 
-        private static ChanceTable<int> T8_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T8_CantripLevel = new ChanceTable<int>()
         {
             ( 1, 0.02f ),
             ( 2, 0.46f ),
@@ -139,12 +148,20 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.10f )
         };
 
-        private static ChanceTable<int> T9_CantripLevel = new ChanceTable<int>()
+        private static readonly ChanceTable<int> T9_CantripLevel = new ChanceTable<int>()
         {
 
             ( 2, 0.46f ),
             ( 3, 0.36f ),
             ( 4, 0.18f )
+        };
+
+        private static readonly ChanceTable<int> T10_CantripLevel = new ChanceTable<int>()
+        {
+
+            ( 2, 0.34f ),
+            ( 3, 0.46f ),
+            ( 4, 0.20f )
         };
 
         private static readonly List<ChanceTable<int>> _cantripLevels = new List<ChanceTable<int>>()
@@ -158,11 +175,13 @@ namespace ACE.Server.Factories.Tables
             T7_CantripLevel,
             T8_CantripLevel,
             T9_CantripLevel,
+            T10_CantripLevel,
         };
 
         public static int RollCantripLevel(TreasureDeath profile)
         {
-            return cantripLevels[profile.Tier - 1].Roll(profile.LootQualityMod);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
+            return cantripLevels[tier - 1].Roll(profile.LootQualityMod);
         }
 
 

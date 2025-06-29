@@ -41,12 +41,23 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( 4, 0.0100f ),
             ( 5, 0.0005f ),
         };
+
         private static ChanceTable<int> T9_ItemMaxLevel = new ChanceTable<int>()
         {
             
             ( 3, 0.5500f ),
             ( 4, 0.4195f ),
             ( 5, 0.0305f ),
+        };
+
+        private static ChanceTable<int> T10_ItemMaxLevel = new ChanceTable<int>()
+        {
+
+            ( 6, 0.33f ),
+            ( 7, 0.25f ),
+            ( 8, 0.20f ),
+            ( 9, 0.15f ),
+            ( 10, 0.05f ),
         };
 
         private static readonly List<ChanceTable<int>> itemMaxLevels = new List<ChanceTable<int>>()
@@ -56,7 +67,17 @@ namespace ACE.Server.Factories.Tables.Wcids
             T7_ItemMaxLevel,
             T8_ItemMaxLevel,
             T9_ItemMaxLevel,
+            T10_ItemMaxLevel,
         };
+
+        public static int Roll_ItemMaxLevel(int tier)
+        {
+            if (tier < 5 || tier > 10)
+                return 0;
+
+            var table = itemMaxLevels[tier - 5];
+            return table.Roll();
+        }
 
         public static int Roll_ItemMaxLevel(TreasureDeath profile)
         {

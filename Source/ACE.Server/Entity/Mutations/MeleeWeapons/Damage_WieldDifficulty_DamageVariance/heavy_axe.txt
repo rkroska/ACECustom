@@ -1,13 +1,13 @@
 Axe (HeavyWeapons) Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
 	    Damage = 12
 
 Axe (HeavyWeapons) Mutation #1 (199 samples):
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 3%:
         Damage += 1
@@ -38,7 +38,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
 
 Axe (HeavyWeapons) Mutation #2 (337 samples):
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 1
@@ -123,7 +123,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
 
 Axe (HeavyWeapons) Mutation #3 (311 samples):
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 13
@@ -205,7 +205,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
 
 Axe (HeavyWeapons) Mutation #4 (732 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 28
@@ -263,7 +263,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
 Axe (HeavyWeapons) Mutation #5 (623 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 32
@@ -327,7 +327,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
 Axe (HeavyWeapons) Mutation #6 (1,692 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 15%:
         Damage += 37
@@ -427,7 +427,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
 
 Axe (HeavyWeapons) Mutation #7 (439 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 10%:
         Damage += 47
@@ -515,7 +515,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
 
 Axe (HeavyWeapons) Mutation #8 (646 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 0.5%:
         Damage += 47
@@ -633,7 +633,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
 Axe (HeavyWeapons) Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 10%:
         DamageVariance = 0.99
@@ -653,7 +653,7 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
 Axe (HeavyWeapons) Mutation #10 (646 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 15%:
         Damage += 75
@@ -750,3 +750,79 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
         WieldDifficulty = 575
+
+        Axe (HeavyWeapons) Mutation #11 (646 samples):
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 15%:
+        Damage += 118
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 10%:
+        Damage += 119
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 6%:
+        Damage += 120
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 4%:
+        Damage += 121
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 13%:
+        Damage += 130
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 10%:
+        Damage += 131
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 7%:
+        Damage += 132
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 5%:
+        Damage += 133
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 12%:
+        Damage += 142
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 8%:
+        Damage += 143
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 6%:
+        Damage += 144
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 4%:
+        Damage += 145
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
