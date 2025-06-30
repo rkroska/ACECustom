@@ -23,7 +23,7 @@ namespace ACE.Server.Factories.Tables
             ( TreasureArmorType.Platemail,      0.25f ),
         };
 
-        private static ChanceTable<TreasureArmorType> T3_Chances = new ChanceTable<TreasureArmorType>()
+        private static readonly ChanceTable<TreasureArmorType> T3_Chances = new ChanceTable<TreasureArmorType>()
         {
             ( TreasureArmorType.Leather,        0.22f ),
             ( TreasureArmorType.StuddedLeather, 0.22f ),

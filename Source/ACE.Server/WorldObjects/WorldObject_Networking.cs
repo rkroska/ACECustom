@@ -173,21 +173,28 @@ namespace ACE.Server.WorldObjects
             if ((weenieFlags & WeenieHeaderFlag.HouseRestrictions) != 0)
             {
                 var house = this as House;
-
-                // if house object is in dungeon,
-                // send the permissions from the outdoor house
-                if (house.HouseType != HouseType.Apartment && house.CurrentLandblock.IsDungeon)
+                if (house != null)
                 {
-                    house = house.RootHouse;
+                    // if house object is in dungeon,
+                    // send the permissions from the outdoor house
+                    if (house.HouseType != HouseType.Apartment && house.CurrentLandblock.IsDungeon)
+                    {
+                        house = house.RootHouse;
+                    }
+                    else
+                    {
+                        // if mansion or villa, send permissions from master copy
+                        if (house.HouseType == HouseType.Villa || house.HouseType == HouseType.Mansion)
+                            house = house.RootHouse;
+                    }
+
+                    writer.Write(new RestrictionDB(house));
                 }
                 else
                 {
-                    // if mansion or villa, send permissions from master copy
-                    if (house.HouseType == HouseType.Villa || house.HouseType == HouseType.Mansion)
-                        house = house.RootHouse;
+                    log.Warn($"SerializeCreateObject(): World Object with Guid {Guid} based on Weenie {WeenieClassId} has HouseRestrictions flag but is not a house");
                 }
 
-                writer.Write(new RestrictionDB(house));
             }
 
             if ((weenieFlags & WeenieHeaderFlag.HookItemTypes) != 0)
@@ -893,11 +900,10 @@ namespace ACE.Server.WorldObjects
                 return objDesc;
             }
 
-            if (item.ClothingBaseEffects.ContainsKey(SetupTableId))
+            if (item.ClothingBaseEffects.TryGetValue(SetupTableId, out ClothingBaseEffect clothingBaseEffect))
             // Check if the ClothingBase is applicable for this Setup. (Gear Knights, this is usually you.)
             {
                 // Add the model and texture(s)
-                ClothingBaseEffect clothingBaseEffect = item.ClothingBaseEffects[SetupTableId];
                 foreach (CloObjectEffect t in clothingBaseEffect.CloObjectEffects)
                 {
                     byte partNum = (byte)t.Index;
@@ -1274,7 +1280,7 @@ namespace ACE.Server.WorldObjects
             return animLength;
         }
 
-        public static bool EnqueueBroadcastMotion_Physics = true;
+        private static readonly bool EnqueueBroadcastMotion_Physics = true;
 
         public void EnqueueBroadcastMotion(Motion motion, float? maxRange = null, bool? applyPhysics = null)
         {

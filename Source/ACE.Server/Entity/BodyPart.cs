@@ -26,11 +26,11 @@ namespace ACE.Server.Entity
 
     public class BodyParts
     {
-        public static BodyPart Upper = BodyPart.Head | BodyPart.Chest | BodyPart.UpperArm;
-        public static BodyPart Mid = BodyPart.Chest | BodyPart.Abdomen | BodyPart.UpperArm | BodyPart.LowerArm | BodyPart.Hand | BodyPart.UpperLeg;
-        public static BodyPart Lower = BodyPart.Foot | BodyPart.LowerLeg;
+        private static readonly BodyPart Upper = BodyPart.Head | BodyPart.Chest | BodyPart.UpperArm;
+        private static readonly BodyPart Mid = BodyPart.Chest | BodyPart.Abdomen | BodyPart.UpperArm | BodyPart.LowerArm | BodyPart.Hand | BodyPart.UpperLeg;
+        private static readonly BodyPart Lower = BodyPart.Foot | BodyPart.LowerLeg;
 
-        public static Dictionary<BodyPart, int> Indices;
+        public static readonly Dictionary<BodyPart, int> Indices;
 
         static BodyParts()
         {

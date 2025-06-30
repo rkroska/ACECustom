@@ -34,7 +34,7 @@ namespace ACE.Server.WorldObjects.Managers
 
         public WorldObject WorldObject => _proxy ?? _worldObject;
 
-        private WorldObject _worldObject;
+        private readonly WorldObject _worldObject;
         private WorldObject _proxy;
 
         /// <summary>
@@ -953,17 +953,23 @@ namespace ACE.Server.WorldObjects.Managers
                     if (WorldObject == null || WorldObject.CurrentMotionState == null) break;
 
                     // TODO: REFACTOR ME
-                    if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style != null)
+                    if (emoteSet.Category != EmoteCategory.Vendor && emoteSet.Style.HasValue)
                     {
-                        var startingMotion = new Motion((MotionStance)emoteSet.Style, (MotionCommand)emoteSet.Substyle);
-                        motion = new Motion((MotionStance)emoteSet.Style, (MotionCommand)emote.Motion, emote.Extent);
+                        if (!emoteSet.Substyle.HasValue)
+                        {
+                            log.Warn($"{WorldObject.Name} has an invalid motion emote with a missing Substyle value");
+                            break;
+                        }
+
+                        var startingMotion = new Motion(emoteSet.Style.Value, emoteSet.Substyle.Value);
+                        motion = new Motion(emoteSet.Style.Value, emote.Motion.Value, emote.Extent);
 
                         if (WorldObject.CurrentMotionState.Stance != startingMotion.Stance)
                         {
                             if (WorldObject.CurrentMotionState.Stance == MotionStance.Invalid)
                             {
                                 if (debugMotion)
-                                    Console.WriteLine($"{WorldObject.Name} running starting motion {(MotionStance)emoteSet.Style}, {(MotionCommand)emoteSet.Substyle}");
+                                    Console.WriteLine($"{WorldObject.Name} running starting motion {emoteSet.Style.Value}, {emoteSet.Substyle.Value}");
 
                                 delay = WorldObject.ExecuteMotion(startingMotion);
                             }
@@ -1563,7 +1569,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.StartDynamicQuest:
                     if (player != null)
                     {
-                        if (player.QuestManager.IsDynamicQuestEligible(player))
+                        if (QuestManager.IsDynamicQuestEligible(player))
                         {
                             player.QuestManager.ComputeDynamicQuest("Dynamic_1", player.Session, false);
                         }
@@ -2506,7 +2512,7 @@ namespace ACE.Server.WorldObjects.Managers
             if (category == EmoteCategory.Refuse && questName != null)
             {
                 emoteSet = emoteSet.Where(e => e.Quest != null && e.Quest.Equals(questName, StringComparison.OrdinalIgnoreCase));
-                if (emoteSet.Count() == 0 && _worldObject.Biota.DynamicEmoteList != null) //pre-refresh dynamic quests
+                if (!emoteSet.Any() && _worldObject.Biota.DynamicEmoteList != null) //pre-refresh dynamic quests
                 {
                     emoteSet = _worldObject.Biota.DynamicEmoteList.Where(e => e.Quest == questName);
                 }
@@ -2701,7 +2707,7 @@ namespace ACE.Server.WorldObjects.Managers
             }
         }
 
-        private bool EmoteIsBranchingType(PropertiesEmoteAction emote)
+        private static bool EmoteIsBranchingType(PropertiesEmoteAction emote)
         {
             if (emote == null)
                 return false;
@@ -2825,7 +2831,7 @@ namespace ACE.Server.WorldObjects.Managers
             //result = result.Replace("%p", $"{???}"); // patron?
 
             // Find quest in standard or LSD custom usage for %tqt and %CDtime
-            var embeddedQuestName = result.Contains("@") ? message.Split("@")[0] : null;
+            var embeddedQuestName = result.Contains('@') ? message.Split("@")[0] : null;
             var questName = !string.IsNullOrWhiteSpace(embeddedQuestName) ? embeddedQuestName : quest;
 
             // LSD custom tqt usage
@@ -2845,7 +2851,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                 result = result.Replace("%fqt", !string.IsNullOrWhiteSpace(quest) && targetPlayer.Fellowship != null ? targetPlayer.Fellowship.QuestManager.GetNextSolveTime(questName).GetFriendlyString() : "");
 
-                result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetMaxSolves(questName).ToString() : "");
+                result = result.Replace("%tqm", !string.IsNullOrWhiteSpace(quest) ? QuestManager.GetMaxSolves(questName).ToString() : "");
 
                 result = result.Replace("%tqc", !string.IsNullOrWhiteSpace(quest) ? targetPlayer.QuestManager.GetCurrentSolves(questName).ToString() : "");
             }

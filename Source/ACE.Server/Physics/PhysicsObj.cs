@@ -186,7 +186,7 @@ namespace ACE.Server.Physics
             }
         }
 
-        public ObjCell AdjustPosition(Position position, Vector3 low_pt, bool dontCreateCells, bool searchCells)
+        private static ObjCell AdjustPosition(Position position, Vector3 low_pt, bool searchCells)
         {
             var cellID = position.ObjCellID & 0xFFFF;
             //Console.WriteLine("AdjustPosition variation: {0:X4}", position.Variation);
@@ -243,7 +243,7 @@ namespace ACE.Server.Physics
                 PartArray.CheckForCompletedMotions();
         }
 
-        public bool CheckPositionInternal(ObjCell newCell, Position newPos, Transition transition, SetPosition setPos)
+        private static bool CheckPositionInternal(ObjCell newCell, Position newPos, Transition transition, SetPosition setPos)
         {
             transition.InitPath(newCell, null, newPos);
 
@@ -477,7 +477,7 @@ namespace ACE.Server.Physics
             return PartArray.GetHeight();
         }
 
-        public PhysicsObj GetObjectA(uint objectID)
+        public static PhysicsObj GetObjectA(uint objectID)
         {
             return ServerObjectManager.GetObjectA(objectID);
         }
@@ -969,7 +969,7 @@ namespace ACE.Server.Physics
         {
             if (CurCell == null) prepare_to_enter_world();
 
-            var newCell = AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, setPos.Flags.HasFlag(SetPositionFlags.DontCreateCells), true);
+            var newCell = AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, true);
 
             if (newCell == null)
             {
@@ -1078,7 +1078,7 @@ namespace ACE.Server.Physics
                 PartArray.SetScaleInternal(new Vector3(scale, scale, scale));
         }
 
-        public static float ScatterThreshold_Z = 10.0f;
+        private static float ScatterThreshold_Z = 10.0f;
 
         public SetPositionError SetScatterPositionInternal(SetPosition setPos, Transition transition)
         {
@@ -1542,12 +1542,9 @@ namespace ACE.Server.Physics
                     if (cell == null) continue; // fixme
 
                     var shadowObj = new ShadowObj(this, cell);
-                    if (!ShadowObjects.ContainsKey(cell.ID))
-                        ShadowObjects.Add(cell.ID, shadowObj);
-                    else
-                        ShadowObjects[cell.ID] = shadowObj;
+                    ShadowObjects[cell.ID] = shadowObj;
 
-                    if (cell != null) cell.AddShadowObject(shadowObj);
+                    cell.AddShadowObject(shadowObj);
 
                     if (PartArray != null)
                         PartArray.AddPartsShadow(cell, NumShadowObjects);
@@ -1726,7 +1723,7 @@ namespace ACE.Server.Physics
         /// This is to mitigate possible decal crashes w/ CO messages being sent
         /// for objects when the client landblock is very early in the loading state
         /// </summary>
-        public static TimeSpan TeleportCreateObjectDelay = TimeSpan.FromSeconds(1);
+        private static TimeSpan TeleportCreateObjectDelay = TimeSpan.FromSeconds(1);
 
         public void enqueue_objs(IEnumerable<PhysicsObj> newlyVisible)
         {
@@ -2066,7 +2063,7 @@ namespace ACE.Server.Physics
             return CachedVelocity;
         }
 
-        public float get_walkable_z()
+        public static float get_walkable_z()
         {
             return PhysicsGlobals.FloorZ;
         }
@@ -2219,9 +2216,9 @@ namespace ACE.Server.Physics
             if (CurCell == null || obj.CurCell == null)
             {
                 if (CurCell == null)
-                    log.Error($"{Name}.handle_visible_obj({obj.Name}): CurCell null");
+                    log.Error($"{Name}({ID:X8}).handle_visible_obj({obj.Name}): CurCell null");
                 else
-                    log.Error($"{Name}.handle_visible_obj({obj.Name}): obj.CurCell null");
+                    log.Error($"{Name}({ID:X8}).handle_visible_obj({obj.Name}): obj.CurCell null");
 
                 return false;
             }
@@ -3051,7 +3048,7 @@ namespace ACE.Server.Physics
                 PositionManager.Unstick();
         }
 
-        public static float TickRate = 1.0f / 30.0f;
+        private static float TickRate = 1.0f / 30.0f;
 
         public bool update_object()
         {

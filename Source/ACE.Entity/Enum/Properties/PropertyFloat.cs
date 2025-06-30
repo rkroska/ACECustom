@@ -76,6 +76,7 @@ namespace ACE.Entity.Enum.Properties
         LogoffTimestamp = 60,
         EconRecoveryInterval = 61,
         WeaponOffense = 62,
+        [AssessmentProperty]
         DamageMod = 63,
         ResistSlash = 64,
         ResistPierce = 65,

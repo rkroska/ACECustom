@@ -50,20 +50,18 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.04f ),
             ( 5, 0.01f ),
         };
-
         private static readonly ChanceTable<int> T9_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 3, 0.65f ),
             ( 4, 0.30f ),
             ( 5, 0.05f ),
         };
-
+      
         private static readonly ChanceTable<int> T10_ItemMaxLevel = new ChanceTable<int>()
         {
             ( 4, 0.75f ),
             ( 5, 0.25f ),
         };
-
         private static readonly List<ChanceTable<int>> cloakLevels = new List<ChanceTable<int>>()
         {
             T1_ItemMaxLevel,
