@@ -74,8 +74,11 @@ namespace ACE.Server.Factories
 
                         wieldDifficulty = profile.Tier switch
                         {
-                            7 => 150, // In this instance, used for indicating player level, rather than skill level
-                            _ => 180, // In this instance, used for indicating player level, rather than skill level
+                            7 => 150,
+                            8 => 180,
+                            9 => 500,
+                            10 => 750,
+                            _ => 180,
                         };
                     }
                 }
@@ -354,7 +357,7 @@ namespace ACE.Server.Factories
                     else
                         magicMod = 5;
                     break;
-                default:
+                case 9:
                     chance = ThreadSafeRandom.Next(1, 1000);
                     if (chance > 900)
                         magicMod = 10;
@@ -368,6 +371,30 @@ namespace ACE.Server.Factories
                         magicMod = 6;
                     else
                         magicMod = 5;
+                    break;
+                case 10:
+                    chance = ThreadSafeRandom.Next(1, 1000);
+                    if (chance > 950)
+                        magicMod = 12;
+                    else if (chance > 850)
+                        magicMod = 11;
+                    else if (chance > 700)
+                        magicMod = 10;
+                    else
+                        magicMod = 9;
+                    break;
+                default:
+                    chance = ThreadSafeRandom.Next(1, 1000);
+                    if (chance > 980)
+                        magicMod = 8;
+                    else if (chance > 900)
+                        magicMod = 7;
+                    else if (chance > 800)
+                        magicMod = 6;
+                    else if (chance > 700)
+                        magicMod = 5;
+                    else
+                        magicMod = 4;
                     break;
             }
 

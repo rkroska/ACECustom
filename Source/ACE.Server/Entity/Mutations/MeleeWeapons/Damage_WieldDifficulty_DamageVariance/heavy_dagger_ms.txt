@@ -1,13 +1,13 @@
 DaggerMS (HeavyWeapons) Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
 	    Damage = 4
 
 DaggerMS (HeavyWeapons) Mutation #1 (94 samples):
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 3%:
         Damage += 1
@@ -38,7 +38,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #2 (120 samples):
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 1
@@ -123,7 +123,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #3 (117 samples):
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 5
@@ -199,7 +199,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #4 (283 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 14
@@ -239,7 +239,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #5 (232 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 25%:
         Damage += 17
@@ -279,7 +279,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #6 (613 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 25%:
         Damage += 20
@@ -331,7 +331,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #7 (186 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 10%:
         Damage += 25
@@ -383,7 +383,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
 
 DaggerMS (HeavyWeapons) Mutation #8 (276 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 1%:
         Damage += 25
@@ -459,7 +459,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
 DaggerMS (HeavyWeapons) Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 10%:
         DamageVariance = 0.58
@@ -478,7 +478,7 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     DaggerMS (HeavyWeapons) Mutation #10 (276 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 15%:
         Damage += 47
@@ -533,3 +533,79 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
         WieldDifficulty = 575
+
+        DaggerMS (HeavyWeapons) Mutation #11 (276 samples):
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 15%:
+        Damage += 61
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 10%:
+        Damage += 62
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 6%:
+        Damage += 63
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 4%:
+        Damage += 64
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 13%:
+        Damage += 65
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 10%:
+        Damage += 66
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 7%:
+        Damage += 67
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 5%:
+        Damage += 68
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 12%:
+        Damage += 69
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 8%:
+        Damage += 70
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 6%:
+        Damage += 71
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 4%:
+        Damage += 72
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800

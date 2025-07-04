@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 
 using ACE.Common;
 using ACE.Database.Models.World;
+using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Factories.Tables;
 using ACE.Server.Factories.Tables.Wcids;
@@ -66,37 +68,52 @@ namespace ACE.Server.Factories
             0x6006C36,  // 3
             0x6006C37,  // 4
             0x6006C38,  // 5
+            0x6006C39,  // 6
+            0x6006C3A,  // 7
+            0x6006C3B,  // 8
+            0x6006C3C,  // 9
+            0x6006C33,  // 10
         };
 
         private static void MutateAetheria(WorldObject wo, int tier)
         {
-            // Initial roll for an Aetheria level 1 through 3
-            wo.ItemMaxLevel = 1;
-
-            var rng = ThreadSafeRandom.Next(1, 8);
-
-            if (rng > 4)
+            if (tier == 10)
             {
-                if (rng > 6)
-                    wo.ItemMaxLevel = 3;
-                else
-                    wo.ItemMaxLevel = 2;
+                wo.ItemMaxLevel = AetheriaChance.Roll_ItemMaxLevel(tier);
+
             }
-
-            // Perform an additional roll check for a chance at a higher Aetheria level for tiers 6+
-            if (tier > 5)
+            else
             {
-                if (ThreadSafeRandom.Next(1, 50) == 1)
+                // Default base roll for lower tiers: 1–3
+                wo.ItemMaxLevel = 1;
+                var rng = ThreadSafeRandom.Next(1, 8);
+
+                if (rng > 4)
                 {
-                    wo.ItemMaxLevel = 4;
-                    if (tier > 6 && ThreadSafeRandom.Next(1, 5) == 1)
+                    if (rng > 6)
+                        wo.ItemMaxLevel = 3;
+                    else
+                        wo.ItemMaxLevel = 2;
+                }
+
+                // Tier 6+ bonus chance for level 4–5
+                if (tier > 5)
+                {
+                    if (ThreadSafeRandom.Next(1, 50) == 1)
                     {
-                        wo.ItemMaxLevel = 5;
+                        wo.ItemMaxLevel = 4;
+                        if (tier > 6 && ThreadSafeRandom.Next(1, 5) == 1)
+                        {
+                            wo.ItemMaxLevel = 5;
+                        }
                     }
                 }
             }
+
+            // Apply icon overlay
             wo.IconOverlayId = IconOverlay_ItemMaxLevel[wo.ItemMaxLevel.Value - 1];
         }
+
 
         private static WorldObject CreateCoalescedMana(TreasureDeath profile)
         {
@@ -121,8 +138,25 @@ namespace ACE.Server.Factories
         private static void MutateAetheria_New(WorldObject wo, TreasureDeath profile)
         {
             wo.ItemMaxLevel = AetheriaChance.Roll_ItemMaxLevel(profile);
-
             wo.IconOverlayId = IconOverlay_ItemMaxLevel[wo.ItemMaxLevel.Value - 1];
+
+            if (profile.Tier == 10 && wo.ItemMaxLevel >= 6)
+            {
+                int roll = ThreadSafeRandom.Next(0, 2);
+                int rating = ThreadSafeRandom.Next(1, 4);
+
+                if (roll == 0)
+                    wo.GearCrit = rating;
+                else
+                    wo.GearCritDamageResist = rating;
+
+                // Apply Wield Requirement: Melee Defense 750
+                wo.WieldRequirements = WieldRequirement.RawSkill;
+                wo.WieldSkillType = (int)Skill.MeleeDefense;
+                wo.WieldDifficulty = 725;
+
+                //Console.WriteLine($"[Aetheria Rating] Tier 10 | Level {wo.ItemMaxLevel} | {(roll == 0 ? "Crit" : "CritResist")} +{rating}");
+            }
         }
 
         private static bool GetMutateAetheriaData(uint wcid)

@@ -103,9 +103,9 @@ namespace ACE.Server.Factories
 
                 var spellLevels = SpellLevelProgression.GetSpellLevels(spell);
 
-                if (spellLevels.Count != 8)
+                if (spellLevels.Count < spellLevel)
                 {
-                    log.Error($"RollSpellLevels({wo.Name}, {spell}) - spell level progression returned {spellLevels.Count}, expected 8");
+                    log.Error($"RollSpellLevels({wo.Name}, {spell}) - invalid spell level {spellLevel} for spell with only {spellLevels.Count} levels");
                     continue;
                 }
 
@@ -182,6 +182,7 @@ namespace ACE.Server.Factories
             0.60f,  // T7
             0.60f,  // T8
             0.60f,  // T9
+            0.60f, // T10
         };
 
         private static readonly List<float> EnchantmentChances_Caster = new List<float>()
@@ -195,6 +196,7 @@ namespace ACE.Server.Factories
             0.75f,  // T7
             0.75f,  // T8
             0.75f,  // T9
+            0.75f, // T10
         };
 
         private static int RollNumEnchantments_Armor_Weapon(WorldObject wo, TreasureDeath profile, TreasureRoll roll)

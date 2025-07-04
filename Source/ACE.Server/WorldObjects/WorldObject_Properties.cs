@@ -2881,6 +2881,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.NetherResistRating); else SetProperty(PropertyInt.NetherResistRating, value.Value); }
         }
 
+        public int? GearNetherResistRating
+        {
+            get => GetProperty(PropertyInt.GearNetherResist);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.GearNetherResist); else SetProperty(PropertyInt.GearNetherResist, value.Value); }
+        }
+
         public int? PKDamageRating
         {
             get => GetProperty(PropertyInt.PKDamageRating);

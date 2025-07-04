@@ -153,6 +153,8 @@ namespace ACE.Server.Factories
 
             // long description
             wo.LongDesc = GetLongDesc(wo);
+
+            TryMutateGearRatingForWeapons(wo, profile, roll);
         }
 
         private static string GetMissileScript(TreasureWeaponType weaponType, bool isElemental = false)

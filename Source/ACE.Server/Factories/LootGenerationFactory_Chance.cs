@@ -86,6 +86,14 @@ namespace ACE.Server.Factories
                             else
                                 wield = 550;
                             break;
+                        case 10:
+                            if (chance < 60)
+                                wield = 650;
+                            else if (chance < 90)
+                                wield = 725;
+                            else
+                                wield = 800;
+                            break;
                     }
                     break;
 
@@ -158,6 +166,14 @@ namespace ACE.Server.Factories
                             else
                                 wield = 550;
                             break;
+                        case 10:
+                            if (chance < 30)
+                                wield = 650;
+                            else if (chance < 80)
+                                wield = 725;
+                            else
+                                wield = 800;
+                            break;
                     }
                     break;
 
@@ -223,6 +239,16 @@ namespace ACE.Server.Factories
                                 wield = 525;
                             else
                                 wield = 550;
+                            break;
+                        case 10:
+                            if (chance < 25)
+                                wield = 0;
+                            else if (chance < 50)
+                                wield = 650;
+                            else if (chance < 85)
+                                wield = 725;
+                            else
+                                wield = 800;
                             break;
                     }
                     break;
@@ -1060,6 +1086,27 @@ namespace ACE.Server.Factories
                             magicMissileDefenseMod = .005;
                         else
                             magicMissileDefenseMod = 0;
+                        break;
+                    case 10: // new Tier 10 logic
+                        chance = ThreadSafeRandom.Next(1, 1000);
+                        if (chance > 998)
+                            magicMissileDefenseMod = .05;
+                        else if (chance > 994)
+                            magicMissileDefenseMod = .045;
+                        else if (chance > 990)
+                            magicMissileDefenseMod = .04;
+                        else if (chance > 985)
+                            magicMissileDefenseMod = .035;
+                        else if (chance > 950)
+                            magicMissileDefenseMod = .03;
+                        else if (chance > 900)
+                            magicMissileDefenseMod = .02;
+                        else if (chance > 850)
+                            magicMissileDefenseMod = .015;
+                        else if (chance > 800)
+                            magicMissileDefenseMod = .01;
+                        else
+                            magicMissileDefenseMod = .005;
                         break;
                 }
             }

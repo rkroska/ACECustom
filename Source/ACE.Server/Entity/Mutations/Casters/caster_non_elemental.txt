@@ -1,6 +1,6 @@
 Caster (NonElemental) Mutation #7 (116 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 100%:
         WieldRequirements = Level
@@ -9,7 +9,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
 
 Caster (NonElemental) Mutation #8 (208 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 10%:
         WieldRequirements = Level
@@ -23,9 +23,18 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     Caster (NonElemental) Mutation #9 (208 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0 ,1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 100%:
         WieldRequirements = Level
         WieldDifficulty = 500
+        WieldSkillType = 1
+
+        Caster (NonElemental) Mutation #10 (208 samples):
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0 ,0, 1
+
+    - Chance: 100%:
+        WieldRequirements = Level
+        WieldDifficulty = 750
         WieldSkillType = 1

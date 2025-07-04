@@ -49,28 +49,5 @@ namespace ACE.Server.Factories.Entity
 
             return this.Last(i => i.chance > 0).result;
         }
-
-        public T RollT9(float qualityMod = 0.0f)
-        {
-            if (!verified)
-                VerifyTable();
-
-            var total = 0.0f;
-
-            //var rng = ThreadSafeRandom.NextIntervalMax(qualityMod);
-            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
-
-            foreach (var entry in this)
-            {
-                total += entry.chance;
-
-                if (rng < total && total >= qualityMod)
-                    return entry.result;
-            }
-
-            //Console.WriteLine($"Rolled {rng}, everything >= {total}");
-
-            return this.Last(i => i.chance > 0).result;
-        }
     }
 }

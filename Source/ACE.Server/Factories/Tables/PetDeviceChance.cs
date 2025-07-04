@@ -58,6 +58,12 @@ namespace ACE.Server.Factories.Tables
             ( 200, 0.4125f ),
         };
 
+        private static readonly ChanceTable<int> T10_PetLevelChances = new ChanceTable<int>()
+        {
+            ( 180, 0.40f ),
+            ( 200, 0.60f ),
+        };
+
         private static readonly List<ChanceTable<int>> petLevelChances = new List<ChanceTable<int>>()
         {
             T1_T3_PetLevelChances,
@@ -69,6 +75,7 @@ namespace ACE.Server.Factories.Tables
             T7_PetLevelChances,
             T8_PetLevelChances,
             T9_PetLevelChances,
+            T10_PetLevelChances
         };
 
         /// <summary>
@@ -76,7 +83,7 @@ namespace ACE.Server.Factories.Tables
         /// </summary>
         public static int Roll(TreasureDeath profile)
         {
-            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
             var table = petLevelChances[tier - 1];
 
             return table.Roll(profile.LootQualityMod);

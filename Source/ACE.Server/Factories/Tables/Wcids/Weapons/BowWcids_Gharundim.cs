@@ -72,6 +72,25 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( WeenieClassName.ace31801_electriccompoundbow, 0.07f ),
         };
 
+        private static ChanceTable<WeenieClassName> T10_Chances = new ChanceTable<WeenieClassName>()
+        {
+            ( WeenieClassName.bowslashing,                  0.075f ),
+            ( WeenieClassName.bowpiercing,                  0.075f ),
+            ( WeenieClassName.bowblunt,                     0.065f ),
+            ( WeenieClassName.bowacid,                      0.065f ),
+            ( WeenieClassName.bowfire,                      0.065f ),
+            ( WeenieClassName.bowfrost,                     0.065f ),
+            ( WeenieClassName.bowelectric,                  0.065f ),
+            ( WeenieClassName.ace31798_slashingcompoundbow, 0.075f ),
+            ( WeenieClassName.ace31804_piercingcompoundbow, 0.075f ),
+            ( WeenieClassName.ace31800_bluntcompoundbow,    0.065f ),
+            ( WeenieClassName.ace31799_acidcompoundbow,     0.065f ),
+            ( WeenieClassName.ace31802_firecompoundbow,     0.065f ),
+            ( WeenieClassName.ace31803_frostcompoundbow,    0.065f ),
+            ( WeenieClassName.ace31801_electriccompoundbow, 0.065f ),
+            ( WeenieClassName.ace64454611_corruptbow, 0.05f),
+        };
+
         private static readonly List<ChanceTable<WeenieClassName>> bowTiers = new List<ChanceTable<WeenieClassName>>()
         {
             T1_T4_Chances,
@@ -83,6 +102,7 @@ namespace ACE.Server.Factories.Tables.Wcids
             T6_T8_Chances,
             T6_T8_Chances,
             T9_Chances,
+            T10_Chances,
         };
 
         public static WeenieClassName Roll(int tier)

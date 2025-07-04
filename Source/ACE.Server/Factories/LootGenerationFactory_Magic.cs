@@ -68,6 +68,11 @@ namespace ACE.Server.Factories
                 wo.ItemSpellcraft = RollSpellcraft(wo, roll);
 
                 AddActivationRequirements(wo, roll);
+
+                if (profile.Tier == 10 && wo.WeenieType == WeenieType.Caster)
+                {
+                    TryMutateGearRatingForWeapons(wo, profile, roll);
+                }
             }
         }
 
@@ -370,21 +375,33 @@ namespace ACE.Server.Factories
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
             // 25% base chance for no epics for tier 7
-            if (ThreadSafeRandom.Next(1, 4) > 1)
+            if (profile.Tier == 10)
             {
-                // 1% chance for 1 Epic, 0.1% chance for 2 Epics,
-                // 0.01% chance for 3 Epics, 0.001% chance for 4 Epics 
-                if (ThreadSafeRandom.Next(1, (int)(100 * dropRateMod * lootQualityMod)) == 1)
+                if (ThreadSafeRandom.Next(1, (int)(80 * dropRateMod * lootQualityMod)) == 1)
                     numEpics = 1;
-                if (ThreadSafeRandom.Next(1, (int)(1000 * dropRateMod * lootQualityMod)) == 1)
+                if (ThreadSafeRandom.Next(1, (int)(800 * dropRateMod * lootQualityMod)) == 1)
                     numEpics = 2;
-                if (ThreadSafeRandom.Next(1, (int)(10000 * dropRateMod * lootQualityMod)) == 1)
+                if (ThreadSafeRandom.Next(1, (int)(8000 * dropRateMod * lootQualityMod)) == 1)
                     numEpics = 3;
-                if (ThreadSafeRandom.Next(1, (int)(100000 * dropRateMod * lootQualityMod)) == 1)
+                if (ThreadSafeRandom.Next(1, (int)(80000 * dropRateMod * lootQualityMod)) == 1)
                     numEpics = 4;
             }
+            else
+            {
+                if (ThreadSafeRandom.Next(1, 4) > 1) // 75% chance to enter
+                {
+                    if (ThreadSafeRandom.Next(1, (int)(100 * dropRateMod * lootQualityMod)) == 1)
+                        numEpics = 1;
+                    if (ThreadSafeRandom.Next(1, (int)(1000 * dropRateMod * lootQualityMod)) == 1)
+                        numEpics = 2;
+                    if (ThreadSafeRandom.Next(1, (int)(10000 * dropRateMod * lootQualityMod)) == 1)
+                        numEpics = 3;
+                    if (ThreadSafeRandom.Next(1, (int)(100000 * dropRateMod * lootQualityMod)) == 1)
+                        numEpics = 4;
+                }
+            }
 
-            return numEpics;
+                return numEpics;
         }
 
         private static int GetNumLegendaryCantrips(TreasureDeath profile)
@@ -404,12 +421,28 @@ namespace ACE.Server.Factories
             if (PropertyManager.GetBool("loot_quality_mod").Item && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
-            // 1% chance for a legendary, 0.02% chance for 2 legendaries
-            if (ThreadSafeRandom.Next(1, (int)(100 * dropRateMod * lootQualityMod)) == 1)
-                numLegendaries = 1;
-            if (ThreadSafeRandom.Next(1, (int)(500 * dropRateMod * lootQualityMod)) == 1)
-                numLegendaries = 2;
-
+            if (profile.Tier == 10)
+            {
+                if (ThreadSafeRandom.Next(1, (int)(60 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 1;
+                if (ThreadSafeRandom.Next(1, (int)(300 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 2;
+                if (ThreadSafeRandom.Next(1, (int)(3600 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 3;
+                if (ThreadSafeRandom.Next(1, (int)(36000 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 4;
+            }
+            else
+            {
+                if (ThreadSafeRandom.Next(1, (int)(100 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 1;
+                if (ThreadSafeRandom.Next(1, (int)(500 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 2;
+                if (ThreadSafeRandom.Next(1, (int)(6000 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 3;
+                if (ThreadSafeRandom.Next(1, (int)(60000 * dropRateMod * lootQualityMod)) == 1)
+                    numLegendaries = 4;
+            }
             return numLegendaries;
         }
 
@@ -518,6 +551,7 @@ namespace ACE.Server.Factories
             (1400, 1600),   // T7
             (1600, 1800),   // T8
             (1800, 2000),   // T9
+            (2000, 2500),   // T10
         };
 
         private static int RollItemMaxMana(int tier, int numSpells)

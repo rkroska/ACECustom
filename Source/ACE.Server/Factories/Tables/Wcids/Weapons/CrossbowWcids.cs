@@ -72,6 +72,25 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( WeenieClassName.ace31808_electriccompoundcrossbow, 0.07f ),
         };
 
+        private static ChanceTable<WeenieClassName> T10_Chances = new ChanceTable<WeenieClassName>()
+        {
+            ( WeenieClassName.crossbowslashing,                  0.075f ),
+            ( WeenieClassName.crossbowpiercing,                  0.075f ),
+            ( WeenieClassName.crossbowblunt,                     0.065f ),
+            ( WeenieClassName.crossbowacid,                      0.065f ),
+            ( WeenieClassName.crossbowfire,                      0.065f ),
+            ( WeenieClassName.crossbowfrost,                     0.065f ),
+            ( WeenieClassName.crossbowelectric,                  0.065f ),
+            ( WeenieClassName.ace31805_slashingcompoundcrossbow, 0.075f ),
+            ( WeenieClassName.ace31811_piercingcompoundcrossbow, 0.075f ),
+            ( WeenieClassName.ace31807_bluntcompoundcrossbow,    0.065f ),
+            ( WeenieClassName.ace31806_acidcompoundcrossbow,     0.065f ),
+            ( WeenieClassName.ace31809_firecompoundcrossbow,     0.065f ),
+            ( WeenieClassName.ace31810_frostcompoundcrossbow,    0.065f ),
+            ( WeenieClassName.ace31808_electriccompoundcrossbow, 0.065f ),
+            ( WeenieClassName.ace64454612_corruptxbow, 0.05f ),
+        };
+
         private static readonly List<ChanceTable<WeenieClassName>> crossbowTiers = new List<ChanceTable<WeenieClassName>>()
         {
             T1_T4_Chances,
@@ -83,6 +102,7 @@ namespace ACE.Server.Factories.Tables.Wcids
             T6_T8_Chances,
             T6_T8_Chances,
             T9_Chances,
+            T10_Chances,
         };
 
         public static WeenieClassName Roll(int tier)

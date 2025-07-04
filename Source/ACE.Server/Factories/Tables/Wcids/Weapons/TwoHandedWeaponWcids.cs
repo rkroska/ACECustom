@@ -61,11 +61,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Assagais = new ChanceTable<WeenieClassName>()
         {
             // two-handed - spear
-            ( WeenieClassName.ace41036_assagai,          0.40f ),
+            ( WeenieClassName.ace41036_assagai,          0.30f ),
             ( WeenieClassName.ace41037_acidassagai,      0.15f ),
             ( WeenieClassName.ace41038_lightningassagai, 0.15f ),
             ( WeenieClassName.ace41039_flamingassagai,   0.15f ),
             ( WeenieClassName.ace41040_frostassagai,     0.15f ),
+            ( WeenieClassName.ace64454609_corruptassagai,     0.10f ),
         };
 
         private static ChanceTable<WeenieClassName> Corsecas = new ChanceTable<WeenieClassName>()
@@ -101,11 +102,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Nodachis = new ChanceTable<WeenieClassName>()
         {
             // two-handed - sword
-            ( WeenieClassName.ace40760_nodachi,          0.40f ),
+            ( WeenieClassName.ace40760_nodachi,          0.30f ),
             ( WeenieClassName.ace40761_acidnodachi,      0.15f ),
             ( WeenieClassName.ace40762_lightningnodachi, 0.15f ),
             ( WeenieClassName.ace40763_flamingnodachi,   0.15f ),
             ( WeenieClassName.ace40764_frostnodachi,     0.15f ),
+            ( WeenieClassName.ace64454610_corruptnodachi,     0.10f ),
         };
 
         private static ChanceTable<WeenieClassName> Shashqas = new ChanceTable<WeenieClassName>()
