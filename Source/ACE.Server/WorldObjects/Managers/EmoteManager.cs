@@ -201,6 +201,11 @@ namespace ACE.Server.WorldObjects.Managers
                             log.Error($"{WorldObject.Name} ({WorldObject.Guid}) EmoteManager.CastSpell - unknown spell {emote.SpellId}");
                             break;
                         }
+                        if (creature == null)
+                        {
+                            log.Error($"{WorldObject.Name} ({WorldObject.Guid}) EmoteManager.CastSpell - creature is null");
+                            break;
+                        }
 
                         creature.CheckForHumanPreCast(spell);
 
