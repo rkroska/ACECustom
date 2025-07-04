@@ -1,6 +1,6 @@
 Shield Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
         ArmorLevel = 70
@@ -151,7 +151,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0
 
 Shield Mutation #7:
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 1, 0, 0
 
     - Chance: 5%:
         ArmorLevel += 70
@@ -181,7 +181,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 1
 
 Shield Mutation #8:
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 10%:
 
@@ -195,7 +195,44 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1
 
 Shield Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
         ArmorLevel += Random(-5, 5)
+
+        Shield Mutation #10:
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 5%:
+        ArmorLevel += 100
+
+    - Chance: 10%:
+        ArmorLevel += 110
+
+    - Chance: 20%:
+        ArmorLevel += 120
+
+    - Chance: 30%:
+        ArmorLevel += 130
+
+    - Chance: 20%:
+        ArmorLevel += 140
+
+    - Chance: 10%:
+        ArmorLevel += 150
+
+    - Chance: 5%:
+        ArmorLevel += 160
+
+        Shield Mutation #11:
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 10%:
+
+    - Chance: 90%:
+
+        ArmorLevel += 300
+
+        Shield Mutation #12:

@@ -3816,6 +3816,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         var numTimesCompleted = quest.NumTimesCompleted;
                         session.Player.SendMessage($"{questName} stamped with {numTimesCompleted} completions.");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has added {questName} with {numTimesCompleted} completions to {creature.Name} ");
                     }
                     else
                     {
@@ -4927,6 +4928,8 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (string.Equals("Player", parameters[1], StringComparison.OrdinalIgnoreCase))
                     {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid parameter '{parameters[1]}'. Use 'top' or 'player <player_name>'.", ChatMessageType.Broadcast));
+                    }
                         if (parameters.Length < 3 || string.IsNullOrEmpty(parameters[2]))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a player name.", ChatMessageType.Broadcast));

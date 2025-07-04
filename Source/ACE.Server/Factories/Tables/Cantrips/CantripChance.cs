@@ -76,6 +76,13 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.004f ),
         };
 
+        private static readonly ChanceTable<int> T10_NumCantrips = new ChanceTable<int>()
+        {
+            ( 2, 0.75f ),
+            ( 3, 0.18f ),
+            ( 4, 0.07f ),
+        };
+
         private static readonly List<ChanceTable<int>> _numCantrips = new List<ChanceTable<int>>()
         {
             T1_NumCantrips,
@@ -87,11 +94,12 @@ namespace ACE.Server.Factories.Tables
             T7_T8_NumCantrips,
             T7_T8_NumCantrips,
             T9_NumCantrips,
+            T10_NumCantrips,
         };
 
         public static int RollNumCantrips(TreasureDeath profile)
         {
-            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
             return numCantrips[tier - 1].Roll(profile.LootQualityMod);
         }
 
@@ -148,6 +156,14 @@ namespace ACE.Server.Factories.Tables
             ( 4, 0.18f )
         };
 
+        private static readonly ChanceTable<int> T10_CantripLevel = new ChanceTable<int>()
+        {
+
+            ( 2, 0.34f ),
+            ( 3, 0.46f ),
+            ( 4, 0.20f )
+        };
+
         private static readonly List<ChanceTable<int>> _cantripLevels = new List<ChanceTable<int>>()
         {
             T1_T2_CantripLevel,
@@ -159,11 +175,12 @@ namespace ACE.Server.Factories.Tables
             T7_CantripLevel,
             T8_CantripLevel,
             T9_CantripLevel,
+            T10_CantripLevel,
         };
 
         public static int RollCantripLevel(TreasureDeath profile)
         {
-            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
             return cantripLevels[tier - 1].Roll(profile.LootQualityMod);
         }
 

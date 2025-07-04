@@ -54,6 +54,12 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( WeenieClassName.lockpickpeer,     0.75f ),
         };
 
+        private static readonly ChanceTable<WeenieClassName> T10_Chances = new ChanceTable<WeenieClassName>()
+        {
+            ( WeenieClassName.lockpicksuperb,   0.15f ),
+            ( WeenieClassName.lockpickpeer,     0.85f ),
+        };
+
         private static readonly List<ChanceTable<WeenieClassName>> lockpickTiers = new List<ChanceTable<WeenieClassName>>()
         {
             T1_Chances,
@@ -64,12 +70,13 @@ namespace ACE.Server.Factories.Tables.Wcids
             T6_T8_Chances,
             T6_T8_Chances,
             T6_T8_Chances,
-            T9_Chances
+            T9_Chances,
+            T10_Chances
         };
 
         public static WeenieClassName Roll(TreasureDeath profile)
         {
-            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
             // todo: verify t7 / t8 chances
             var table = lockpickTiers[tier - 1];
 

@@ -87,9 +87,14 @@ namespace ACE.Server.Entity
                     RemoveTokens(player);
                 }
                 else if
-                (player.Enlightenment >= 150)
+                (player.Enlightenment >= 150 && player.Enlightenment < 300)
                 {
                     RemoveMedallion(player);
+                }
+                else if
+                (player.Enlightenment >= 300)
+                {
+                    RemoveSigil(player);
                 }
                 RemoveAbility(player);
                 AddPerks(player);
@@ -198,7 +203,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (targetEnlightenment > 150)
+            if (targetEnlightenment > 150 && targetEnlightenment < 300)
             {
                 var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
                 long reqLum150 = targetEnlightenment * baseLumCost;
@@ -219,6 +224,28 @@ namespace ACE.Server.Entity
                     return false;
                 }
             }
+
+            if (targetEnlightenment > 300)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost").Item;
+                long reqLum300 = targetEnlightenment * baseLumCost;
+                if (!VerifyLuminance(player, reqLum300))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum300:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    return false;
+                }
+                var count2 = player.GetNumInventoryItemsOfWCID(300101189); //magic number - EnlightenmentSigil
+                if (count2 < player.Enlightenment + 1 - 5)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Sigils to continue.", ChatMessageType.Broadcast));
+                    return false;
+                }
+                if (!VerifyParagonArmorCompleted(player))
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have completed 50th Armor Paragon to enlighten beyond level 300.", ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
             return true;
         }
 
@@ -235,6 +262,11 @@ namespace ACE.Server.Entity
         public static bool VerifyParagonCompleted(Player player)
         {
             return player.QuestManager.GetCurrentSolves("ParagonEnlCompleted") >= 1;
+        }
+
+        public static bool VerifyParagonArmorCompleted(Player player)
+        {
+            return player.QuestManager.GetCurrentSolves("ParagonArmorCompleted") >= 1;
         }
 
         public static bool VerifyLumAugs(Player player)
@@ -293,6 +325,11 @@ namespace ACE.Server.Entity
             player.TryConsumeFromInventoryWithNetworking(90000217, player.Enlightenment + 1 - 5);
         }
 
+        public static void RemoveSigil(Player player)
+        {
+            player.TryConsumeFromInventoryWithNetworking(300101189, player.Enlightenment + 1 - 5);
+        }
+
         public static bool SpendLuminance(Player player)
         {
             if (player.Enlightenment + 1 > 50 && player.Enlightenment < 150)
@@ -303,12 +340,20 @@ namespace ACE.Server.Entity
                 return player.SpendLuminance(reqLum);
             }
 
-            else if (player.Enlightenment + 1 > 150)
+            else if (player.Enlightenment + 1 > 150 && player.Enlightenment < 300)
             {
                 var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum150);
+            }
+
+            else if (player.Enlightenment + 1 > 300)
+            {
+                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost").Item;
+                var targetEnlightenment = player.Enlightenment + 1;
+                long reqLum300 = targetEnlightenment * baseLumCost;
+                return player.SpendLuminance(reqLum300);
             }
             return true;
 

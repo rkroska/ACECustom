@@ -55,6 +55,12 @@ namespace ACE.Server.Factories.Tables.Wcids
             ( WeenieClassName.peascarabpyreal, 0.25f ),
         };
 
+        private static readonly ChanceTable<WeenieClassName> T10_Chances = new ChanceTable<WeenieClassName>()
+        {
+            ( WeenieClassName.peascarabgold,   0.75f ),
+            ( WeenieClassName.peascarabpyreal, 0.25f ),
+        };
+
         private static readonly List<ChanceTable<WeenieClassName>> peaTiers = new List<ChanceTable<WeenieClassName>>()
         {
             T1_Chances,
@@ -65,7 +71,8 @@ namespace ACE.Server.Factories.Tables.Wcids
             T6_T8_Chances,
             T6_T8_Chances,
             T6_T8_Chances,
-            T9_Chances
+            T9_Chances,
+            T10_Chances
         };
 
         // level 8 spell components have a chance of dropping in t7 / t8
@@ -87,7 +94,7 @@ namespace ACE.Server.Factories.Tables.Wcids
                 if (level8SpellComponent)
                     return Roll_Level8SpellComponent(profile);
             }
-            var tier = Math.Clamp(profile.Tier, 1, 9);
+            var tier = Math.Clamp(profile.Tier, 1, 10);
             var table = peaTiers[tier - 1];
 
             return table.Roll(profile.LootQualityMod);

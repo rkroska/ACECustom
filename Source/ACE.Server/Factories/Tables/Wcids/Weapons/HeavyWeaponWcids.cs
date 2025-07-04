@@ -11,11 +11,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> BattleAxes = new ChanceTable<WeenieClassName>()
         {
             // heavy - axe
-            ( WeenieClassName.axebattle,         0.40f ),
+            ( WeenieClassName.axebattle,         0.30f ),
             ( WeenieClassName.axebattleacid,     0.15f ),
             ( WeenieClassName.axebattleelectric, 0.15f ),
             ( WeenieClassName.axebattlefire,     0.15f ),
             ( WeenieClassName.axebattlefrost,    0.15f ),
+            ( WeenieClassName.ace64454600_corruptbattleaxe, 0.10f),
         };
 
         private static ChanceTable<WeenieClassName> LugianHammers = new ChanceTable<WeenieClassName>()
@@ -61,11 +62,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Jambiyas = new ChanceTable<WeenieClassName>()
         {
             // heavy - dagger (multi-strike)
-            ( WeenieClassName.jambiya,         0.40f ),
+            ( WeenieClassName.jambiya,         0.30f ),
             ( WeenieClassName.jambiyaacid,     0.15f ),
             ( WeenieClassName.jambiyaelectric, 0.15f ),
             ( WeenieClassName.jambiyafire,     0.15f ),
             ( WeenieClassName.jambiyafrost,    0.15f ),
+            ( WeenieClassName.ace64454602_corruptjambiya,    0.10f ),
         };
 
         private static ChanceTable<WeenieClassName> Stilettos = new ChanceTable<WeenieClassName>()
@@ -91,11 +93,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Maces = new ChanceTable<WeenieClassName>()
         {
             // heavy - mace
-            ( WeenieClassName.mace,         0.40f ),
+            ( WeenieClassName.mace,         0.30f ),
             ( WeenieClassName.maceacid,     0.15f ),
             ( WeenieClassName.maceelectric, 0.15f ),
             ( WeenieClassName.macefire,     0.15f ),
             ( WeenieClassName.macefrost,    0.15f ),
+            ( WeenieClassName.ace64454601_corruptmace, 0.10f ),
         };
 
         private static ChanceTable<WeenieClassName> Mazules = new ChanceTable<WeenieClassName>()
