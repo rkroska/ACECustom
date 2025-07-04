@@ -130,7 +130,7 @@ namespace ACE.Database
                 return context.Biota.Count();
         }
 
-        public int GetServerQuestCompletions(string questName)
+        public static int GetServerQuestCompletions(string questName)
         {
             int retVal = 0;
             if (!string.IsNullOrEmpty(questName))
@@ -141,7 +141,18 @@ namespace ACE.Database
             return retVal;
         }
 
-        public List<Leaderboard> GetTopQuestCompletions(string questName)
+        public static int GetPlayerQuestCompletions(string questName, string playerName)
+        {
+            int retVal = 0;
+            if (!string.IsNullOrEmpty(questName) && !string.IsNullOrEmpty(playerName))
+            {
+                using var context = new ShardDbContext();
+                retVal = context.CharacterPropertiesQuestRegistry.Where(x => x.QuestName == questName && x.Character.Name == playerName).Sum(x => x.NumTimesCompleted);
+            }
+            return retVal;
+        }
+
+        public static List<Leaderboard> GetTopQuestCompletions(string questName)
         {
             List<Leaderboard> retVal = [];
             if (!string.IsNullOrEmpty(questName))
