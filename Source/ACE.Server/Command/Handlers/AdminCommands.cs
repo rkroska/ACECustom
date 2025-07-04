@@ -4928,8 +4928,6 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (string.Equals("Player", parameters[1], StringComparison.OrdinalIgnoreCase))
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid parameter '{parameters[1]}'. Use 'top' or 'player <player_name>'.", ChatMessageType.Broadcast));
-                    }
                         if (parameters.Length < 3 || string.IsNullOrEmpty(parameters[2]))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a player name.", ChatMessageType.Broadcast));
@@ -4944,7 +4942,7 @@ namespace ACE.Server.Command.Handlers
                     else
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid parameter '{parameters[1]}'. Use 'top' or 'player <player_name>'.", ChatMessageType.Broadcast));
-                    }    
+                    }
                 }
             }
             else
