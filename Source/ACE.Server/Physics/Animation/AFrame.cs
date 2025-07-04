@@ -180,5 +180,10 @@ namespace ACE.Server.Physics.Animation
 
             return orientationEpsilonEqual;
         }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as AFrame);
+        }
     }
 }

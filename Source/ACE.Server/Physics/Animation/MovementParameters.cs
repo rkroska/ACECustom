@@ -183,7 +183,7 @@ namespace ACE.Server.Physics.Animation
                 holdKey = HoldKey.None;
         }
 
-        public float get_desired_heading(uint motion, bool movingAway)
+        public static float get_desired_heading(uint motion, bool movingAway)
         {
             switch (motion)
             {

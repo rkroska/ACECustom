@@ -91,7 +91,7 @@ namespace ACE.Server.Physics.BSP
             return true;
         }
 
-        public bool box_intersects_cell_bsp_inner(BSPNode node, List<Vector3> corners)
+        private static bool box_intersects_cell_bsp_inner(BSPNode node, List<Vector3> corners)
         {
             foreach (var corner in corners)
                 if (node.SplittingPlane.GetSide(corner) != Side.Behind)
@@ -322,6 +322,11 @@ namespace ACE.Server.Physics.BSP
                 hash = (hash * 397) ^ NegNode.GetHashCode();
 
             return hash;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as BSPNode);
         }
     }
 }
