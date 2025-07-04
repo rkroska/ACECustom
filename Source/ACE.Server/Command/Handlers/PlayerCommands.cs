@@ -178,7 +178,7 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, luminance, and keys or specify enlightened coins or pyreals or luminance or notes and an amount", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, Pyreal/Gold/Silver/Copper peas, luminance, and keys or specify enlightened coins or pyreals or luminance or notes and an amount.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals, Luminance, Legendary Keys and enlightened coins  to a character.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all except enlightened coins and weakly enlightened coins, /bank b will show balance, etc.", ChatMessageType.System));
@@ -294,7 +294,7 @@ namespace ACE.Server.Command.Handlers
                     //session.Player.DepositEnlightenedCoins();
                     session.Player.DepositMythicalKeys();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Luminance, Legendary Keys, and Mythical Keys!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, and Mythical Keys!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
