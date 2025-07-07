@@ -55,6 +55,11 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Your current landblock is not found, for some reason (logged)", ChatMessageType.Broadcast));
                         return;
                     }
+                    if (session.Player.CurrentLandblock.Id.Landblock == 0x016C)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Your current landblock is in the Marketplace, and cannot be used to form landblock fellowships", ChatMessageType.Broadcast));
+                        return;
+                    }
                     bool currentPlayerOver50 = session.Player.Level >= 50;
                     foreach (var player in session.Player.CurrentLandblock.players)
                     {

@@ -187,6 +187,7 @@ namespace ACE.Server.Factories
                 }
 
                 itemChance = ThreadSafeRandom.Next(1, 100);
+
                 if (itemChance <= profile.MagicItemChance)
                 {
                     numItems = ThreadSafeRandom.Next(profile.MagicItemMinAmount, profile.MagicItemMaxAmount);
@@ -198,7 +199,7 @@ namespace ACE.Server.Factories
                         if (lootWorldObject != null)
                             loot.Add(lootWorldObject);
                     }
-                }
+                }                                
 
                 itemChance = ThreadSafeRandom.Next(1, 100);
                 if (itemChance <= profile.MundaneItemChance)
@@ -223,6 +224,11 @@ namespace ACE.Server.Factories
                 }
 
                 return loot;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error generating loot on profile: {profile.Id}");
+                return new List<WorldObject>();
             }
             finally
             {
