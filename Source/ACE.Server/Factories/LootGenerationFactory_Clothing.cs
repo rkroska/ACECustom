@@ -125,7 +125,7 @@ namespace ACE.Server.Factories
                     };
                 }
             }
-            else if (profile.Tier > 6 && profile.Tier <10 && !wo.HasArmorLevel())
+            else if (profile.Tier > 6 && profile.Tier < 10 && !wo.HasArmorLevel())
             {
                 // normally this is handled in the mutation script for armor
                 // for clothing, just calling the generic method here
@@ -203,15 +203,12 @@ namespace ACE.Server.Factories
             var wieldSkillType = wo.WieldSkillType;
             var wieldDifficulty = wo.WieldDifficulty;
 
-            // Skip mutation if Tier 10 to avoid overwriting T10 wield logic
-            bool success = true;
-            if (profile.Tier < 10)
-            {
-                var mutationFilter = MutationCache.GetMutation(scriptName);
-                success = mutationFilter.TryMutate(wo, profile.Tier);
-            }
+            //Console.WriteLine($"Mutating {wo.Name} with {scriptName}");
 
-            // Restore society armor wield values (if mutated)
+            var mutationFilter = MutationCache.GetMutation(scriptName);
+
+            var success = mutationFilter.TryMutate(wo, profile.Tier);
+
             if (armorType == LootTables.ArmorType.SocietyArmor)
             {
                 wo.WieldRequirements = wieldRequirements;
@@ -1231,33 +1228,33 @@ namespace ACE.Server.Factories
 
 
         private static void SetWieldLevelReq(WorldObject wo, int level)
+        {
+            if (wo.WieldRequirements == WieldRequirement.Invalid)
             {
-                if (wo.WieldRequirements == WieldRequirement.Invalid)
-                {
-                    wo.WieldRequirements = WieldRequirement.Level;
-                    wo.WieldSkillType = (int)Skill.Axe;  // set from examples in pcap data
-                    wo.WieldDifficulty = level;
-                }
-                else if (wo.WieldRequirements == WieldRequirement.Level)
-                {
-                    if (wo.WieldDifficulty < level)
-                        wo.WieldDifficulty = level;
-                }
-                else
-                {
-                    // this can either be empty, or in the case of covenant / olthoi armor,
-                    // it could already contain a level requirement of 180, or possibly 150 in tier 8
-
-                    // we want to set this level requirement to 180, in all cases
-
-                    // magloot logs indicated that even if covenant / olthoi armor was not upgraded to 180 in its mutation script,
-                    // a gear rating could still drop on it, and would "upgrade" the 150 to a 180
-
-                    wo.WieldRequirements2 = WieldRequirement.Level;
-                    wo.WieldSkillType2 = (int)Skill.Axe;  // set from examples in pcap data
-                    wo.WieldDifficulty2 = level;
-                }
+                wo.WieldRequirements = WieldRequirement.Level;
+                wo.WieldSkillType = (int)Skill.Axe;  // set from examples in pcap data
+                wo.WieldDifficulty = level;
             }
+            else if (wo.WieldRequirements == WieldRequirement.Level)
+            {
+                if (wo.WieldDifficulty < level)
+                    wo.WieldDifficulty = level;
+            }
+            else
+            {
+                // this can either be empty, or in the case of covenant / olthoi armor,
+                // it could already contain a level requirement of 180, or possibly 150 in tier 8
+
+                // we want to set this level requirement to 180, in all cases
+
+                // magloot logs indicated that even if covenant / olthoi armor was not upgraded to 180 in its mutation script,
+                // a gear rating could still drop on it, and would "upgrade" the 150 to a 180
+
+                wo.WieldRequirements2 = WieldRequirement.Level;
+                wo.WieldSkillType2 = (int)Skill.Axe;  // set from examples in pcap data
+                wo.WieldDifficulty2 = level;
+            }
+        }
 
         private static void SetWieldT10(WorldObject wo, int requiredLevel, int tier)
         {
@@ -1288,18 +1285,18 @@ namespace ACE.Server.Factories
         }
 
         private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
+        {
+            foreach (var kvp in LootTables.armorTypeMap)
             {
-                foreach (var kvp in LootTables.armorTypeMap)
-                {
-                    armorType = kvp.Key;
-                    var table = kvp.Value;
+                armorType = kvp.Key;
+                var table = kvp.Value;
 
-                    if (kvp.Value.Contains((int)wcid))
-                        return true;
-                }
-                armorType = null;
-                return false;
+                if (kvp.Value.Contains((int)wcid))
+                    return true;
             }
+            armorType = null;
+            return false;
         }
     }
+}
 
