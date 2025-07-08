@@ -342,6 +342,9 @@ namespace ACE.Server
             ModManager.RegisterCommands();
             ModManager.ListMods();
 
+            DateTime buildDate = new FileInfo(Assembly.GetExecutingAssembly().Location).LastWriteTime;
+            log.Info($"Server Build Date: {buildDate}");
+
             if (!PropertyManager.GetBool("world_closed", false).Item)
             {
                 WorldManager.Open(null);
