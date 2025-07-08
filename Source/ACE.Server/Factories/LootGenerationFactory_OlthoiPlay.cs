@@ -147,7 +147,7 @@ namespace ACE.Server.Factories
 
             var slag = WorldObjectFactory.CreateNewWorldObject((uint)slagWcid);
 
-            slag.SetStackSize(totalSlag);
+            slag.SetStackSize(totalSlag * 100);
 
             player.OlthoiLootTimestamp = currentTime;
 
