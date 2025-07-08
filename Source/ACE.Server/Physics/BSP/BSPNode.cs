@@ -277,6 +277,9 @@ namespace ACE.Server.Physics.BSP
 
         public bool Equals(BSPNode node)
         {
+            if (node == null)
+                return false;
+
             if (Sphere != null && !Sphere.Equals(node.Sphere) || !SplittingPlane.is_equal(node.SplittingPlane) || Type != node.Type || Typename != null && !Typename.Equals(node.Typename) || NumPolys != node.NumPolys)
                 return false;
 
@@ -326,7 +329,9 @@ namespace ACE.Server.Physics.BSP
 
         public override bool Equals(object obj)
         {
-            return Equals(obj as BSPNode);
+            if (obj is BSPNode node)
+                return Equals(node);
+            return false;
         }
     }
 }

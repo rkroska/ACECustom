@@ -583,7 +583,9 @@ namespace ACE.Server.Physics
 
         public override bool Equals(object obj)
         {
-            return Equals(obj as Sphere);
+            if (obj is Sphere sphere)
+                return Equals(sphere);
+            return false;
         }
     }
 }
