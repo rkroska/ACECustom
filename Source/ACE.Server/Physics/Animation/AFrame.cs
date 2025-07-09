@@ -173,10 +173,10 @@ namespace ACE.Server.Physics.Animation
 
             if (!originEpsilonEqual) return false;
 
-            var orientationEpsilonEqual = Math.Abs(frame.Orientation.X - frame.Orientation.X) <= PhysicsGlobals.EPSILON &&
-                Math.Abs(frame.Orientation.Y - frame.Orientation.Y) <= PhysicsGlobals.EPSILON &&
-                Math.Abs(frame.Orientation.Z - frame.Orientation.Z) <= PhysicsGlobals.EPSILON &&
-                Math.Abs(frame.Orientation.W - frame.Orientation.W) <= PhysicsGlobals.EPSILON;
+            var orientationEpsilonEqual = Math.Abs(frame.Orientation.X - Orientation.X) <= PhysicsGlobals.EPSILON &&
+                Math.Abs(frame.Orientation.Y - Orientation.Y) <= PhysicsGlobals.EPSILON &&
+                Math.Abs(frame.Orientation.Z - Orientation.Z) <= PhysicsGlobals.EPSILON &&
+                Math.Abs(frame.Orientation.W - Orientation.W) <= PhysicsGlobals.EPSILON;
 
             return orientationEpsilonEqual;
         }

@@ -38,11 +38,11 @@ namespace ACE.Server.Network.Structure
         /// </summary>
         private static float GetArmorMod(WorldObject armor, DamageType damageType)
         {
+            if (armor == null)
+                return 1.0f;
+
             var type = armor.EnchantmentManager.GetImpenBaneKey(damageType);
             var baseResistance = armor.GetProperty(type) ?? 1.0f;
-
-            if (armor == null)
-                return (float)baseResistance;
 
             // banes/lures
             var resistanceMod = armor != null ? armor.EnchantmentManager.GetArmorModVsType(damageType) : 0.0f;
