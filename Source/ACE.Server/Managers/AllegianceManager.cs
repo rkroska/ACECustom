@@ -49,6 +49,10 @@ namespace ACE.Server.Managers
         {
             if (player == null) return null;
 
+            // If no Monarch, no Allegiance
+            if (player.MonarchId == null)
+                return null;
+
             var monarch = GetMonarch(player);
 
             if (monarch == null) return null;
@@ -61,22 +65,24 @@ namespace ACE.Server.Managers
             var allegianceID = DatabaseManager.Shard.BaseDatabase.GetAllegianceID(monarch.Guid.Full);
             var biota = allegianceID != null ? DatabaseManager.Shard.BaseDatabase.GetBiota(allegianceID.Value) : null;
 
-            Allegiance allegiance;
+            Allegiance allegiance = null;
 
             if (biota != null)
             {
                 var entityBiota = ACE.Database.Adapter.BiotaConverter.ConvertToEntityBiota(biota);
 
                 allegiance = new Allegiance(entityBiota);
+
+                if (allegiance.TotalMembers == 1)
+                    return null;
             }
             else
-                allegiance = new Allegiance(monarch.Guid);
-
-            if (allegiance.TotalMembers == 1)
-                return null;
-
-            if (biota == null)
             {
+                // Ignore 1-man Allegiances
+                var members = AllegianceManager.FindAllPlayers(monarch.Guid);
+                if (members.Count <= 1)
+                    return null;
+
                 allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
                 allegiance.MonarchId = monarch.Guid.Full;
                 allegiance.Init(monarch.Guid);
@@ -84,11 +90,15 @@ namespace ACE.Server.Managers
                 allegiance.SaveBiotaToDatabase();
             }
 
-            AddPlayers(allegiance);
+            if (allegiance != null)
+            {
 
-            //if (!Allegiances.ContainsKey(allegiance.Guid))
+                AddPlayers(allegiance);
+
+                //if (!Allegiances.ContainsKey(allegiance.Guid))
                 //Allegiances.Add(allegiance.Guid, allegiance);
-            Allegiances[allegiance.Guid] = allegiance;
+                Allegiances[allegiance.Guid] = allegiance;
+            }
 
             return allegiance;
         }
