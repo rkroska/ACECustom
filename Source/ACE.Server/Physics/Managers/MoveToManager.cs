@@ -421,7 +421,7 @@ namespace ACE.Server.Physics.Animation
 
             if (!PhysicsObj.IsAnimating)
             {
-                var heading = MovementParams.get_desired_heading(CurrentCommand, MovingAway) + curPos.heading(CurrentTargetPosition);
+                var heading = MovementParameters.get_desired_heading(CurrentCommand, MovingAway) + curPos.heading(CurrentTargetPosition);
                 if (heading >= 360.0f) heading -= 360.0f;
 
                 var diff = heading - PhysicsObj.get_heading();

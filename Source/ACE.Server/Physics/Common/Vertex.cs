@@ -67,5 +67,10 @@ namespace ACE.Server.Physics.Entity
 
             return hash;
         }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as Vertex);
+        }
     }
 }

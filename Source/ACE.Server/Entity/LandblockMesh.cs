@@ -157,7 +157,7 @@ namespace ACE.Server.Entity
         /// <param name="cellX">The horizontal cell position within the landblock</param>
         /// <param name="cellY">The vertical cell position within the landblock</param>
         /// <returns>TRUE if NW-SE split, FALSE if NE-SW split</returns>
-        public bool GetSplitDir(LandblockId id, int cellX, int cellY)
+        public static bool GetSplitDir(LandblockId id, int cellX, int cellY)
         {
             // get the global tile offsets
             var x = (id.LandblockX * 8) + cellX;
