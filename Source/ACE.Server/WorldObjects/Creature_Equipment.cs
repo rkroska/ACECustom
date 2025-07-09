@@ -454,7 +454,7 @@ namespace ACE.Server.WorldObjects
         }
 
 
-        protected bool IsInChildLocation(WorldObject item)
+        protected static bool IsInChildLocation(WorldObject item)
         {
             if (item.CurrentWieldedLocation == null)
                 return false;

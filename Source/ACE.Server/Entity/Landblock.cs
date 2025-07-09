@@ -734,7 +734,7 @@ namespace ACE.Server.Entity
 
         private void ProcessPendingWorldObjectAdditionsAndRemovals()
         {
-            if (pendingAdditions.Count > 0)
+            if (!pendingAdditions.IsEmpty)
             {
                 foreach (var kvp in pendingAdditions)
                 {
@@ -1289,7 +1289,7 @@ namespace ACE.Server.Entity
             }
         }
 
-        private void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas)
         {
             if (wo.ChangesDetected)
             {

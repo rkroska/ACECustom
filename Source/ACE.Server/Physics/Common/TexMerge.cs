@@ -156,7 +156,7 @@ namespace ACE.Server.Physics.Common
             return TerrainDesc[0].TerrainTex;
         }
 
-        public List<LandDefs.TerrainType> GetTerrainCodes(uint pcode)
+        private static List<LandDefs.TerrainType> GetTerrainCodes(uint pcode)
         {
             var pcodes = new List<LandDefs.TerrainType>();
 
@@ -241,7 +241,7 @@ namespace ACE.Server.Physics.Common
             return terrainTex;
         }
 
-        public List<uint> GetRoadCode(uint pcode, ref bool all_road)
+        private static List<uint> GetRoadCode(uint pcode, ref bool all_road)
         {
             var rcode = Enumerable.Repeat(0u, 2).ToList();
 

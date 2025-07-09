@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Numerics;
-
 using ACE.DatLoader;
 using ACE.DatLoader.Entity;
 using ACE.DatLoader.FileTypes;
@@ -20,6 +14,12 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Sequence;
 using ACE.Server.Network.Structure;
 using ACE.Server.Physics;
+using ACE.Server.Physics.Animation;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Numerics;
 
 namespace ACE.Server.WorldObjects
 {
@@ -1308,7 +1308,7 @@ namespace ACE.Server.WorldObjects
             var minterp = PhysicsObj.get_minterp();
             var rawState = minterp.RawState;
 
-            var allowJump = minterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
+            var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
             rawState.CurrentStyle = (uint)motion.Stance;
             rawState.ForwardCommand = (uint)motion.MotionState.ForwardCommand;

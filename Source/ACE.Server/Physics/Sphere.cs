@@ -127,7 +127,7 @@ namespace ACE.Server.Physics
         /// <param name="radSum">The sum of the radii between this sphere and the other sphere</param>
         /// <returns>A 0-1 interval along the movement path for the time of collision, or -1 non-collision</returns>
         /// <remarks>Verify this could be different from original AC, which seems to return a negative interval?</remarks>
-        public double FindTimeOfCollision(Vector3 movement, Vector3 spherePos, float radSum)
+        public static double FindTimeOfCollision(Vector3 movement, Vector3 spherePos, float radSum)
         {
             var distSq = movement.LengthSquared();
             if (distSq < PhysicsGlobals.EPSILON) return -1;
@@ -579,6 +579,13 @@ namespace ACE.Server.Physics
             hash = (hash * 397) ^ Radius.GetHashCode();
 
             return hash;
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is Sphere sphere)
+                return Equals(sphere);
+            return false;
         }
     }
 }

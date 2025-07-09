@@ -63,7 +63,7 @@ namespace ACE.Server.Physics.Animation
                 TargetID = obj.ProjectileTarget.ID;
         }
 
-        public bool IsValidWalkable(Vector3 normal)
+        public static bool IsValidWalkable(Vector3 normal)
         {
             return PhysicsObj.is_valid_walkable(normal);
         }

@@ -47,11 +47,6 @@ namespace ACE.Server.Physics.Animation
             DefaultStyle = mtable.DefaultStyle;
         }
 
-        public MotionTable Allocator()
-        {
-            return new MotionTable();
-        }
-
         public bool DoObjectMotion(uint motion, MotionState currState, Sequence sequence, float speedMod, ref uint numAnims)
         {
             return GetObjectSequence(motion, currState, sequence, speedMod, ref numAnims, false);
@@ -355,7 +350,7 @@ namespace ACE.Server.Physics.Animation
             return false;
         }
 
-        public void add_motion(Sequence sequence, MotionData motionData, float speed)
+        private static void add_motion(Sequence sequence, MotionData motionData, float speed)
         {
             if (motionData == null) return;
 
@@ -369,7 +364,7 @@ namespace ACE.Server.Physics.Animation
             }
         }
 
-        public void change_cycle_speed(Sequence sequence, MotionData motionData, float substateMod, float speedMod)
+        private static void change_cycle_speed(Sequence sequence, MotionData motionData, float substateMod, float speedMod)
         {
             if (Math.Abs(substateMod) > PhysicsGlobals.EPSILON)
                 sequence.multiply_cyclic_animation_framerate(speedMod / substateMod);
@@ -378,14 +373,14 @@ namespace ACE.Server.Physics.Animation
                 sequence.multiply_cyclic_animation_framerate(0);
         }
 
-        public void combine_motion(Sequence sequence, MotionData motionData, float speed)
+        private static void combine_motion(Sequence sequence, MotionData motionData, float speed)
         {
             if (motionData == null) return;
 
             sequence.CombinePhysics(motionData.Velocity * speed, motionData.Omega * speed);
         }
 
-        public void subtract_motion(Sequence sequence, MotionData motionData, float speed)
+        private static void subtract_motion(Sequence sequence, MotionData motionData, float speed)
         {
             if (motionData == null) return;
 

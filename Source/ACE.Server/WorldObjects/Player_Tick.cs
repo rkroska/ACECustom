@@ -17,6 +17,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Sequence;
 using ACE.Server.Network.Structure;
 using ACE.Server.Physics;
+using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Common;
 
 namespace ACE.Server.WorldObjects
@@ -200,7 +201,7 @@ namespace ACE.Server.WorldObjects
         public void OnMoveToState_ClientMethod(MoveToState moveToState)
         {
             var rawState = moveToState.RawMotionState;
-            var prevState = LastMoveToState?.RawMotionState ?? RawMotionState.None;
+            var prevState = LastMoveToState?.RawMotionState ?? Network.Structure.RawMotionState.None;
 
             var mvp = new Physics.Animation.MovementParameters();
             mvp.HoldKeyToApply = rawState.CurrentHoldKey;
@@ -281,7 +282,7 @@ namespace ACE.Server.WorldObjects
                 minterp.RawState.SideStepCommand = 0;
             }
 
-            var allowJump = minterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
+            var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
             //PhysicsObj.cancel_moveto();
 

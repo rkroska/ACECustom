@@ -122,7 +122,7 @@ namespace ACE.Server.Physics.Common
             return true;
         }
 
-        public LandDefs.Rotation GetBeginRotation(int x, int y, List<uint> pCode, bool minimizePal)
+        private static LandDefs.Rotation GetBeginRotation(int x, int y, List<uint> pCode, bool minimizePal)
         {
             if (minimizePal)
             {

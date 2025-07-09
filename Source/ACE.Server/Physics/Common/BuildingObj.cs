@@ -97,12 +97,6 @@ namespace ACE.Server.Physics.Common
                 add_cells_recursive(visibleCell);
         }
 
-        public PhysicsObj get_object(int objectID)
-        {
-            // visited cells?
-            return null;
-        }
-
         public static BuildingObj makeBuilding(uint buildingID, List<CBldPortal> portals, uint numLeaves)
         {
             var building = new BuildingObj();

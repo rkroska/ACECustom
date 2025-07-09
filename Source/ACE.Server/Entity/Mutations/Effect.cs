@@ -115,7 +115,7 @@ namespace ACE.Server.Entity.Mutations
             return true;
         }
 
-        public bool Validate(WorldObject wo, EffectArgument result, EffectArgument arg1, EffectArgument arg2, MutationEffectType type)
+        public static bool Validate(WorldObject wo, EffectArgument result, EffectArgument arg1, EffectArgument arg2, MutationEffectType type)
         {
             /*if (!result.IsValid)
             {

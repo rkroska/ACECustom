@@ -10,11 +10,6 @@ namespace ACE.Server.Physics.BSP
 
         public BSPPortal() : base() { }
 
-        public void portal_draw_portals_only(int portalPolyOrPortalContents)
-        {
-            // rendering stuff
-        }
-
         public bool Equals(BSPPortal portal)
         {
             if (!base.Equals(portal) || NumPortals != portal.NumPortals)
@@ -38,6 +33,11 @@ namespace ACE.Server.Physics.BSP
                 hash = (hash * 397) ^ Portals[i].GetHashCode();
 
             return hash;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as BSPPortal);
         }
     }
 }

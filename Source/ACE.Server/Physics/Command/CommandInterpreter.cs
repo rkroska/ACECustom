@@ -310,11 +310,6 @@ namespace ACE.Server.Physics.Command
             Disable();
         }
 
-        public void HandleMouseMovementCommand(CmdStruct cmdStruct)
-        {
-
-        }
-
         public virtual void HandleNewForwardMovement()
         {
             // vfptr[17](0, 1) - SetAutoRun
@@ -654,7 +649,7 @@ namespace ACE.Server.Physics.Command
             }
         }
 
-        public void MovePlayer_NonAutonomous(MotionCommand command, bool start, float speed, HoldKey holdKey)
+        private static void MovePlayer_NonAutonomous(MotionCommand command, bool start, float speed, HoldKey holdKey)
         {
             if (start)
             {
@@ -688,11 +683,6 @@ namespace ACE.Server.Physics.Command
             {
                 // vfptr[8].OnAction
             }
-        }
-
-        public bool NukeCommand(MotionCommand command, bool start, float speed, bool mouse, bool newHoldRun)
-        {
-            return false;
         }
 
         public bool PlayerIsDead()

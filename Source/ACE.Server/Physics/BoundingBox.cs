@@ -92,7 +92,7 @@ namespace ACE.Server.Physics
         /// <summary>
         /// Builds the matrix transformation
         /// </summary>
-        public Matrix4x4 GetTransform(ModelMesh model)
+        private static Matrix4x4 GetTransform(ModelMesh model)
         {
             var scale = Matrix4x4.CreateScale(model.Scale);
             var rotate = Matrix4x4.CreateFromQuaternion(new Quaternion(model.Frame.Orientation.X, model.Frame.Orientation.Y, model.Frame.Orientation.Z, model.Frame.Orientation.W));
@@ -143,11 +143,6 @@ namespace ACE.Server.Physics
             return (Min.X <= b.Max.X && Max.X >= b.Min.X) &&
                    (Min.Y <= b.Max.Y && Max.Y >= b.Min.Y) &&
                    (Min.Z <= b.Max.Z && Max.Z >= b.Min.Z);
-        }
-
-        public void ConvertToGlobal()
-        {
-
         }
 
         /// <summary>

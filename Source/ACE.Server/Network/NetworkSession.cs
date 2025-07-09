@@ -467,8 +467,7 @@ namespace ACE.Server.Network
                         // The buffer is complete, so we can go ahead and handle
                         packetLog.DebugFormat("[{0}] Buffer {1} is complete", session.LoggingIdentifier, buffer.Sequence);
                         message = buffer.TryGetMessage();
-                        MessageBuffer removed = null;
-                        partialFragments.TryRemove(fragment.Header.Sequence, out removed);
+                        partialFragments.TryRemove(fragment.Header.Sequence, out _);
                     }
                 }
                 else
