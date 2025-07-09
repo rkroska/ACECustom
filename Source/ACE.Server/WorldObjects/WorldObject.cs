@@ -77,6 +77,7 @@ namespace ACE.Server.WorldObjects
         public bool IsTwoHanded => WeaponSkill == Skill.TwoHandedCombat;
         public bool IsBow { get => DefaultCombatStyle != null && (DefaultCombatStyle == CombatStyle.Bow || DefaultCombatStyle == CombatStyle.Crossbow); }
         public bool IsAtlatl { get => DefaultCombatStyle != null && DefaultCombatStyle == CombatStyle.Atlatl; }
+        public bool IsMissileWeapon => DefaultCombatStyle != null && (DefaultCombatStyle == CombatStyle.Bow || DefaultCombatStyle == CombatStyle.Crossbow || DefaultCombatStyle == CombatStyle.Atlatl || DefaultCombatStyle == CombatStyle.ThrownWeapon);
         public bool IsAmmoLauncher { get => IsBow || IsAtlatl; }
         public bool IsThrownWeapon { get => DefaultCombatStyle != null && DefaultCombatStyle == CombatStyle.ThrownWeapon; }
         public bool IsRanged { get => IsAmmoLauncher || IsThrownWeapon; }
