@@ -4944,7 +4944,7 @@ namespace ACE.Server.Command.Handlers
                     else
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid parameter '{parameters[1]}'. Use 'top' or 'player <player_name>'.", ChatMessageType.Broadcast));
-                    }    
+                    }
                 }
             }
             else
