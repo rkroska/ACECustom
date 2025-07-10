@@ -487,5 +487,10 @@ namespace ACE.Server.Entity
         /// Number * NumberVariance = the minimum # of spells to dispel
         /// </summary>
         public float NumberVariance { get => _spell.NumberVariance ?? 0; }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as Spell);
+        }
     }
 }

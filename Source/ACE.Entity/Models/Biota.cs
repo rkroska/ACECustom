@@ -13,6 +13,9 @@ namespace ACE.Entity.Models
     /// </summary>
     public class Biota : IWeenie
     {
+        public Biota()
+        {
+        }
         public uint Id { get; set; }
         public uint WeenieClassId { get; set; }
         public WeenieType WeenieType { get; set; }
@@ -56,5 +59,16 @@ namespace ACE.Entity.Models
 
         // Biota dynamic quest addition
         public List<PropertiesEmote> DynamicEmoteList { get; set; }
+
+        public override bool Equals(object obj)
+        {
+            return obj is Biota biota &&
+                   Id == biota.Id;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(Id);
+        }
     }
 }

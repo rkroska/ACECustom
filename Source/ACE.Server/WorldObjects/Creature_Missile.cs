@@ -67,13 +67,6 @@ namespace ACE.Server.WorldObjects
             return animLength + animLength2;
         }
 
-        public Vector3 GetDir2D(Vector3 source, Vector3 dest)
-        {
-            var diff = dest - source;
-            diff.Z = 0;
-            return Vector3.Normalize(diff);
-        }
-
         /// <summary>
         /// Launches a projectile from player to target
         /// </summary>
@@ -386,7 +379,7 @@ namespace ACE.Server.WorldObjects
             obj.PhysicsObj.set_active(true);
         }
 
-        public Sound GetLaunchMissileSound(WorldObject weapon)
+        public static Sound GetLaunchMissileSound(WorldObject weapon)
         {
             switch (weapon.DefaultCombatStyle)
             {

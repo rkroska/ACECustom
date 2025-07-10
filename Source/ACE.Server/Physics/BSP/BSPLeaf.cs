@@ -120,5 +120,10 @@ namespace ACE.Server.Physics.BSP
 
             return hash;
         }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as BSPLeaf);
+        }
     }
 }

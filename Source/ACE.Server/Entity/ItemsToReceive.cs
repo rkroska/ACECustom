@@ -76,7 +76,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Returns the number of slots required for the items
         /// </summary>
-        private int GetItemSlotAndBurdenRequirements(uint weenieClassId, int amount, out int requiredEncumbrance, out bool requiresBackpackSlot)
+        private static int GetItemSlotAndBurdenRequirements(uint weenieClassId, int amount, out int requiredEncumbrance, out bool requiresBackpackSlot)
         {
             requiredEncumbrance = 0;
             requiresBackpackSlot = false;

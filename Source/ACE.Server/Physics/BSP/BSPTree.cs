@@ -222,7 +222,7 @@ namespace ACE.Server.Physics.BSP
             return TransitionState.OK;
         }
 
-        public TransitionState NegPolyHit(SpherePath path, Polygon hitPoly, bool stepUp)
+        private static TransitionState NegPolyHit(SpherePath path, Polygon hitPoly, bool stepUp)
         {
             var collisionNormal = path.LocalSpacePos.LocalToGlobalVec(hitPoly.Plane.Normal);
             path.SetNegPolyHit(stepUp, collisionNormal);
@@ -282,7 +282,7 @@ namespace ACE.Server.Physics.BSP
             return TransitionState.Collided;
         }
 
-        public TransitionState placement_insert_inner(Sphere validPos, SpherePath path, int i)
+        private static TransitionState placement_insert_inner(Sphere validPos, SpherePath path, int i)
         {
             if (i == 0)
                 return TransitionState.OK;
@@ -298,7 +298,7 @@ namespace ACE.Server.Physics.BSP
             return RootNode.point_inside_cell_bsp(origin);
         }
 
-        public TransitionState slide_sphere(Transition transition, Vector3 collisionNormal)
+        private static TransitionState slide_sphere(Transition transition, Vector3 collisionNormal)
         {
             // modifies collision normal?
             var path = transition.SpherePath;
@@ -349,7 +349,7 @@ namespace ACE.Server.Physics.BSP
             return TransitionState.OK;
         }
 
-        public TransitionState step_sphere_up(Transition transition, Vector3 collisionNormal)
+        private static TransitionState step_sphere_up(Transition transition, Vector3 collisionNormal)
         {
             var path = transition.SpherePath;
             var globNormal = path.LocalSpacePos.LocalToGlobalVec(collisionNormal);
@@ -369,6 +369,11 @@ namespace ACE.Server.Physics.BSP
         public override int GetHashCode()
         {
             return RootNode.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as BSPTree);
         }
     }
 }
