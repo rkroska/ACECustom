@@ -1491,7 +1491,7 @@ namespace ACE.Server.WorldObjects
             // walk the allegiance tree from this node, update monarch ids
             if (Allegiance.Members.TryGetValue(player.Guid, out var targetNode))
             {
-                player.UpdateProperty(PropertyInstanceId.Monarch, Guid.Full, true);
+                player.UpdateProperty(PropertyInstanceId.Monarch, player.Guid.Full, true);
             }
 
             targetNode.Walk((node) =>
