@@ -220,9 +220,9 @@ namespace ACE.Server.Entity
 
             if (GeneralFailure) return 0.0f;
 
-            var isBow = Weapon != null && Weapon.IsBow;
+            var isMissile = Weapon != null && Weapon.IsMissileWeapon;
             long damageBonus = 0;
-            if (isBow && attacker.LuminanceAugmentMissileCount > 0)
+            if (isMissile && attacker.LuminanceAugmentMissileCount > 0)
             {
                 damageBonus = attacker.LuminanceAugmentMissileCount.Value;
             }
@@ -272,13 +272,22 @@ namespace ACE.Server.Entity
             float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier").Item;
 
             float luminanceAugmentBonus = 0;
-            if (attacker.LuminanceAugmentMissileCount > 0)
+
+            switch (CombatType)
             {
-                luminanceAugmentBonus += attacker.LuminanceAugmentMissileCount.Value * luminanceAugmentCritDamageMultiplier;
-            }
-            if (attacker.LuminanceAugmentMeleeCount > 0)
-            {
-                luminanceAugmentBonus += attacker.LuminanceAugmentMeleeCount.Value * luminanceAugmentCritDamageMultiplier;
+                case CombatType.Melee:
+                    if (attacker.LuminanceAugmentMeleeCount > 0)
+                    {
+                        luminanceAugmentBonus = attacker.LuminanceAugmentMeleeCount.Value * luminanceAugmentCritDamageMultiplier;
+                    }
+                    break;
+
+                case CombatType.Missile:
+                    if (attacker.LuminanceAugmentMissileCount > 0)
+                    {
+                        luminanceAugmentBonus = attacker.LuminanceAugmentMissileCount.Value * luminanceAugmentCritDamageMultiplier;
+                    }
+                    break;
             }
 
             // Inside the critical hit check
