@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Timers;
 
 using log4net;
 
@@ -33,7 +34,27 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static readonly Dictionary<uint, DateTime> lastFshipListUsage = new Dictionary<uint, DateTime>();
+        private static readonly ConcurrentDictionary<uint, DateTime> lastFshipListUsage = new ConcurrentDictionary<uint, DateTime>();
+
+        static PlayerCommands()
+        {
+            // Run cleanup every minute
+            var cleanupTimer = new Timer(180_000);
+            cleanupTimer.Elapsed += (_, _) => CleanupOldCooldowns();
+            cleanupTimer.Start();
+        }
+
+        private static void CleanupOldCooldowns()
+        {
+            var cutoff = DateTime.UtcNow.AddSeconds(-10);
+            foreach (var kvp in lastFshipListUsage)
+            {
+                if (kvp.Value < cutoff)
+                {
+                    lastFshipListUsage.TryRemove(kvp.Key, out _);
+                }
+            }
+        }
 
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
@@ -129,6 +150,9 @@ namespace ACE.Server.Command.Handlers
                                 return;
                             }
                         }
+                        
+                        // Update last usage time
+                        lastFshipListUsage.AddOrUpdate(playerGuid, DateTime.UtcNow, (key, oldValue) => DateTime.UtcNow);
 
                         if (session.Player.CurrentLandblock == null)
                         {
