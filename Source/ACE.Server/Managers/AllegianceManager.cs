@@ -462,8 +462,6 @@ namespace ACE.Server.Managers
 
             if (allegiance == null) return;
 
-            allegiance.Members.TryGetValue(player.Guid, out var allegianceNode);
-
             var players = new List<IPlayer>() { player };
 
             if (player.PatronId != null)
@@ -477,26 +475,29 @@ namespace ACE.Server.Managers
             player.PatronId = null;
             player.UpdateProperty(PropertyInstanceId.Monarch, null, true);
 
-            // vassals now become monarchs...
-            foreach (var vassalNode in allegianceNode.Vassals.Values)
+            if (allegiance.Members.TryGetValue(player.Guid, out var allegianceNode))
             {
-                var vassal = PlayerManager.FindByGuid(vassalNode.PlayerGuid);
-
-                if (vassal == null) continue;
-
-                vassal.PatronId = null;
-                vassal.UpdateProperty(PropertyInstanceId.Monarch, null, true);
-
-                // walk the allegiance tree from this node, update monarch ids
-                vassalNode.Walk((node) =>
+                // vassals now become monarchs...
+                foreach (var vassalNode in allegianceNode.Vassals.Values)
                 {
-                    node.Player.UpdateProperty(PropertyInstanceId.Monarch, vassalNode.PlayerGuid.Full, true);
+                    var vassal = PlayerManager.FindByGuid(vassalNode.PlayerGuid);
 
-                    node.Player.SaveBiotaToDatabase();
+                    if (vassal == null) continue;
 
-                }, false);
+                    vassal.PatronId = null;
+                    vassal.UpdateProperty(PropertyInstanceId.Monarch, null, true);
 
-                players.Add(vassal);
+                    // walk the allegiance tree from this node, update monarch ids
+                    vassalNode.Walk((node) =>
+                    {
+                        node.Player.UpdateProperty(PropertyInstanceId.Monarch, vassalNode.PlayerGuid.Full, true);
+
+                        node.Player.SaveBiotaToDatabase();
+
+                    }, false);
+
+                    players.Add(vassal);
+                }
             }
 
             RemoveCache(allegiance);
