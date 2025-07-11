@@ -1616,7 +1616,7 @@ namespace ACE.Server.WorldObjects
             }
 
             if (spell.SpreadAngle == 360)
-                radsum *= 0.6f;
+                radsum *= 0.8f;
 
             baseOffset.Y += radsum;
 
