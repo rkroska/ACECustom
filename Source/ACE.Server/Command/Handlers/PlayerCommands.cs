@@ -33,6 +33,8 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static readonly Dictionary<uint, DateTime> lastFshipListUsage = new Dictionary<uint, DateTime>();
+
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
         {
@@ -44,6 +46,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship create <name> to create a fellowship", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship leave", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship disband", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship list to show fellows and leaders in your landblock", ChatMessageType.Broadcast));
             }
 
             if (parameters.Count() == 1)
@@ -107,6 +110,112 @@ namespace ACE.Server.Command.Handlers
                     if (tPGuid != null)
                     {
                         session.Player.FellowshipDismissPlayer(tPGuid.Value);
+                    }
+                    return;
+                }
+                if (parameters[0] == "list")
+                {
+                    try
+                    {
+                        // Check cooldown timer
+                        var playerGuid = session.Player.Guid.Full;
+                        if (lastFshipListUsage.TryGetValue(playerGuid, out DateTime lastUsage))
+                        {
+                            var timeSinceLastUse = DateTime.UtcNow - lastUsage;
+                            if (timeSinceLastUse.TotalSeconds < 10)
+                            {
+                                var remainingTime = 10 - (int)timeSinceLastUse.TotalSeconds;
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Please wait {remainingTime} seconds before using this command again.", ChatMessageType.Broadcast));
+                                return;
+                            }
+                        }
+
+                        if (session.Player.CurrentLandblock == null)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Your current landblock is not found, for some reason (logged)", ChatMessageType.Broadcast));
+                            return;
+                        }
+
+                        var fellowshipsInLandblock = new Dictionary<uint, (Fellowship fellowship, Player leader, bool leaderInLandblock)>();
+
+                        // Check all players in the current landblock
+                        foreach (var player in session.Player.CurrentLandblock.players)
+                        {
+                            try
+                            {
+                                if (!player.IsMule && (player.CloakStatus == CloakStatus.Player || player.CloakStatus == CloakStatus.Off || player.CloakStatus == CloakStatus.Undef))
+                                {
+                                    // Check if player is in a fellowship
+                                    if (player.Fellowship != null)
+                                    {
+                                        var fellowship = player.Fellowship;
+                                        var fellowshipGuid = fellowship.FellowshipLeaderGuid;
+                                        
+                                        // Check if this player is the leader
+                                        bool isLeader = fellowship.FellowshipLeaderGuid == player.Guid.Full;
+                                        
+                                        if (!fellowshipsInLandblock.ContainsKey(fellowshipGuid))
+                                        {
+                                            // Find the leader (might not be in this landblock)
+                                            var leader = PlayerManager.FindByGuid(fellowshipGuid) as Player;
+                                            fellowshipsInLandblock[fellowshipGuid] = (fellowship, leader, isLeader);
+                                        }
+                                        else if (isLeader)
+                                        {
+                                            // Update to show leader is in landblock
+                                            var current = fellowshipsInLandblock[fellowshipGuid];
+                                            fellowshipsInLandblock[fellowshipGuid] = (current.fellowship, current.leader, true);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Warn($"Error processing player in fship list command: {ex.Message}");
+                                continue; // Skip this player and continue with others
+                            }
+                        }
+
+                        // Display results
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Fellowships in your landblock:", ChatMessageType.Broadcast));
+                        
+                        if (fellowshipsInLandblock.Count > 0)
+                        {
+                            foreach (var kvp in fellowshipsInLandblock)
+                            {
+                                try
+                                {
+                                    var (fellowship, leader, leaderInLandblock) = kvp.Value;
+                                    var memberCount = fellowship.GetFellowshipMembers().Count;
+                                    var isFull = memberCount >= 29; // Max fellowship size is 29
+                                    var statusText = isFull ? " (FULL)" : "";
+                                    var leaderStatus = leaderInLandblock ? "" : " (Leader not in LB)";
+                                    
+                                    var leaderName = leader?.Name ?? "Unknown";
+                                    session.Network.EnqueueSend(new GameMessageSystemChat($"  '{fellowship.FellowshipName}' led by {leaderName}{statusText}{leaderStatus}", ChatMessageType.Broadcast));
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Warn($"Error displaying fellowship in fship list command: {ex.Message}");
+                                    continue; // Skip this fellowship and continue with others
+                                }
+                            }
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"No fellowships found in your landblock.", ChatMessageType.Broadcast));
+                        }
+                        
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                        
+                        // Update last usage time
+                        lastFshipListUsage[playerGuid] = DateTime.UtcNow;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error in fship list command: {ex.Message}");
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: An error occurred while processing the command. Please try again.", ChatMessageType.Broadcast));
                     }
                     return;
                 }
