@@ -226,7 +226,14 @@ namespace ACE.Server.WorldObjects
             {
                 // vassal breaking from patron
                 PatronId = null;
-                UpdateProperty(PropertyInstanceId.Monarch, null, true);
+                if (AllegianceNode.Vassals.Count > 0)
+                {
+                    UpdateProperty(PropertyInstanceId.Monarch, Guid.Full, true);
+                }
+                else
+                {
+                    UpdateProperty(PropertyInstanceId.Monarch, null, true);
+                }
 
                 // walk the allegiance tree from this node, update monarch ids
                 AllegianceNode.Walk((node) =>
@@ -1482,7 +1489,10 @@ namespace ACE.Server.WorldObjects
             player.UpdateProperty(PropertyInstanceId.Monarch, null, true);
 
             // walk the allegiance tree from this node, update monarch ids
-            Allegiance.Members.TryGetValue(player.Guid, out var targetNode);
+            if (Allegiance.Members.TryGetValue(player.Guid, out var targetNode))
+            {
+                player.UpdateProperty(PropertyInstanceId.Monarch, player.Guid.Full, true);
+            }
 
             targetNode.Walk((node) =>
             {
