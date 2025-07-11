@@ -36,6 +36,8 @@ namespace ACE.Server.Command.Handlers
 
         private static readonly ConcurrentDictionary<uint, DateTime> lastFshipListUsage = new ConcurrentDictionary<uint, DateTime>();
 
+        public static readonly int MaxFellows = 29;
+
         static PlayerCommands()
         {
             // Run cleanup every minute
@@ -212,7 +214,7 @@ namespace ACE.Server.Command.Handlers
                                 {
                                     var (fellowship, leader, leaderInLandblock) = kvp.Value;
                                     var memberCount = fellowship.GetFellowshipMembers().Count;
-                                    var isFull = memberCount >= 29; // Max fellowship size is 29
+                                    var isFull = memberCount >= MaxFellows;
                                     var statusText = isFull ? " (FULL)" : "";
                                     var leaderStatus = leaderInLandblock ? "" : " (Leader not in LB)";
                                     
