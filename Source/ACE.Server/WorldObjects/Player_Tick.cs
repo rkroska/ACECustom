@@ -35,6 +35,9 @@ namespace ACE.Server.WorldObjects
         private double houseRentWarnTimestamp;
         private const double houseRentWarnInterval = 3600;
 
+        private DateTime _lastLumUpdateSent = DateTime.MinValue;
+        private bool _pendingLumUpdate = false;
+
         public void Player_Tick(double currentUnixTime)
         {
             if (CharacterSaveFailed)
@@ -103,6 +106,20 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (houseRentWarnTimestamp == 0)
                     houseRentWarnTimestamp = Time.GetFutureUnixTime(houseRentWarnInterval);
+            }
+            // Throttled luminance update
+            ThrottledLuminanceUpdate();
+        }
+
+        private void ThrottledLuminanceUpdate()
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastLumUpdateSent).TotalSeconds >= 60 && _pendingLumUpdate)
+            {
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, BankedLuminance ?? 0));
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableLuminance, AvailableLuminance ?? 0));
+                _lastLumUpdateSent = now;
+                _pendingLumUpdate = false;
             }
         }
 

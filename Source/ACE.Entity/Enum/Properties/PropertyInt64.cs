@@ -30,7 +30,9 @@ namespace ACE.Entity.Enum.Properties
         AllegianceXPReceived  = 9002,
         VerifyXp              = 9003,
 
+        [SendOnLogin]
         BankedPyreals         = 9004,
+        [SendOnLogin]
         BankedLuminance       = 9005,
         QuestCount            = 9006,
         LumAugCreatureCount   = 9007,
@@ -42,17 +44,21 @@ namespace ACE.Entity.Enum.Properties
         AllegianceLumCached   = 9012,
         AllegianceLumGenerated= 9013,
         AllegianceLumReceived = 9014,
+        [SendOnLogin]
         BankedLegendaryKeys   = 9015,
         LumAugDurationCount   = 9016,
         LumAugSpecializeCount = 9017,
         LumAugSummonCount     = 9018,
+        [SendOnLogin]
         BankedEnlightenedCoins = 9020,
+        [SendOnLogin]
         BankedMythicalKeys     = 9021,
         LumAugMeleeCount       = 9022,
         LumAugMissileCount     = 9023,
         LumAugMeleeDefenseCount = 9024,
         LumAugMissileDefenseCount = 9025,
         LumAugMagicDefenseCount = 9026,
+        [SendOnLogin]
         BankedWeaklyEnlightenedCoins = 9027,
     }
 }
