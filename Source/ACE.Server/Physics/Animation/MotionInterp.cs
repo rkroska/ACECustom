@@ -767,7 +767,7 @@ namespace ACE.Server.Physics.Animation
             return WeenieError.YouCantJumpWhileInTheAir;
         }
 
-        public WeenieError motion_allows_jump(uint substate)
+        public static WeenieError motion_allows_jump(uint substate)
         {
             if (substate >= (uint)MotionCommand.Reload && substate <= (uint)MotionCommand.Pickup || substate >= (uint)MotionCommand.TripleThrustLow && substate <= (uint)MotionCommand.MagicPowerUp07Purple ||
                 substate >= (uint)MotionCommand.MagicPowerUp01 && substate <= (uint)MotionCommand.MagicPowerUp10 || substate >= (uint)MotionCommand.Crouch && substate <= (uint)MotionCommand.Sleeping ||

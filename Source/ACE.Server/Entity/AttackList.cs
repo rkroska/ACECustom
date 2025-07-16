@@ -33,8 +33,8 @@ namespace ACE.Server.Entity
 
         public void Add(WorldObject damager, uint amount)
         {
-            if (Damagers.ContainsKey(damager))
-                Damagers[damager] += amount;
+            if (Damagers.TryGetValue(damager, out uint value))
+                Damagers[damager] = value + amount;
             else
                 Damagers.Add(damager, amount);
         }

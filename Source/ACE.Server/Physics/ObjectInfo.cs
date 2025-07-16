@@ -33,9 +33,9 @@ namespace ACE.Server.Physics.Animation
         public bool StepDown;
         public uint TargetID;
 
-        public float GetWalkableZ()
+        public static float GetWalkableZ()
         {
-            return Object.get_walkable_z();
+            return PhysicsObj.get_walkable_z();
         }
 
         public void Init(PhysicsObj obj, ObjectInfoState state)
@@ -63,7 +63,7 @@ namespace ACE.Server.Physics.Animation
                 TargetID = obj.ProjectileTarget.ID;
         }
 
-        public bool IsValidWalkable(Vector3 normal)
+        public static bool IsValidWalkable(Vector3 normal)
         {
             return PhysicsObj.is_valid_walkable(normal);
         }

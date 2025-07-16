@@ -91,7 +91,7 @@ namespace ACE.Server.Physics.BSP
             return true;
         }
 
-        public bool box_intersects_cell_bsp_inner(BSPNode node, List<Vector3> corners)
+        private static bool box_intersects_cell_bsp_inner(BSPNode node, List<Vector3> corners)
         {
             foreach (var corner in corners)
                 if (node.SplittingPlane.GetSide(corner) != Side.Behind)
@@ -277,6 +277,9 @@ namespace ACE.Server.Physics.BSP
 
         public bool Equals(BSPNode node)
         {
+            if (node == null)
+                return false;
+
             if (Sphere != null && !Sphere.Equals(node.Sphere) || !SplittingPlane.is_equal(node.SplittingPlane) || Type != node.Type || Typename != null && !Typename.Equals(node.Typename) || NumPolys != node.NumPolys)
                 return false;
 
@@ -322,6 +325,13 @@ namespace ACE.Server.Physics.BSP
                 hash = (hash * 397) ^ NegNode.GetHashCode();
 
             return hash;
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is BSPNode node)
+                return Equals(node);
+            return false;
         }
     }
 }

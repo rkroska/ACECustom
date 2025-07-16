@@ -49,34 +49,40 @@ namespace ACE.Server.Managers
         {
             if (player == null) return null;
 
+            // If no Monarch, no Allegiance
+            if (player.MonarchId == null)
+                return null;
+
             var monarch = GetMonarch(player);
 
             if (monarch == null) return null;
 
             // is this allegiance already loaded / cached?
-            if (Players.ContainsKey(monarch.Guid))
-                return Players[monarch.Guid].Allegiance;
+            if (Players.TryGetValue(monarch.Guid, out AllegianceNode monarchNode))
+                return monarchNode.Allegiance;
 
             // try to load biota
             var allegianceID = DatabaseManager.Shard.BaseDatabase.GetAllegianceID(monarch.Guid.Full);
             var biota = allegianceID != null ? DatabaseManager.Shard.BaseDatabase.GetBiota(allegianceID.Value) : null;
 
-            Allegiance allegiance;
+            Allegiance allegiance = null;
 
             if (biota != null)
             {
                 var entityBiota = ACE.Database.Adapter.BiotaConverter.ConvertToEntityBiota(biota);
 
                 allegiance = new Allegiance(entityBiota);
+
+                if (allegiance.TotalMembers == 1)
+                    return null;
             }
             else
-                allegiance = new Allegiance(monarch.Guid);
-
-            if (allegiance.TotalMembers == 1)
-                return null;
-
-            if (biota == null)
             {
+                // Ignore 1-man Allegiances
+                var members = AllegianceManager.FindAllPlayers(monarch.Guid);
+                if (members.Count <= 1)
+                    return null;
+
                 allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
                 allegiance.MonarchId = monarch.Guid.Full;
                 allegiance.Init(monarch.Guid);
@@ -84,11 +90,15 @@ namespace ACE.Server.Managers
                 allegiance.SaveBiotaToDatabase();
             }
 
-            AddPlayers(allegiance);
+            if (allegiance != null)
+            {
 
-            //if (!Allegiances.ContainsKey(allegiance.Guid))
+                AddPlayers(allegiance);
+
+                //if (!Allegiances.ContainsKey(allegiance.Guid))
                 //Allegiances.Add(allegiance.Guid, allegiance);
-            Allegiances[allegiance.Guid] = allegiance;
+                Allegiances[allegiance.Guid] = allegiance;
+            }
 
             return allegiance;
         }
@@ -158,10 +168,7 @@ namespace ACE.Server.Managers
                 var player = member.Key;
                 var allegianceNode = member.Value;
 
-                if (!Players.ContainsKey(player))
-                    Players.Add(player, allegianceNode);
-                else
-                    Players[player] = allegianceNode;
+                Players[player] = allegianceNode;
             }
         }
 
@@ -455,8 +462,6 @@ namespace ACE.Server.Managers
 
             if (allegiance == null) return;
 
-            allegiance.Members.TryGetValue(player.Guid, out var allegianceNode);
-
             var players = new List<IPlayer>() { player };
 
             if (player.PatronId != null)
@@ -470,26 +475,29 @@ namespace ACE.Server.Managers
             player.PatronId = null;
             player.UpdateProperty(PropertyInstanceId.Monarch, null, true);
 
-            // vassals now become monarchs...
-            foreach (var vassalNode in allegianceNode.Vassals.Values)
+            if (allegiance.Members.TryGetValue(player.Guid, out var allegianceNode))
             {
-                var vassal = PlayerManager.FindByGuid(vassalNode.PlayerGuid);
-
-                if (vassal == null) continue;
-
-                vassal.PatronId = null;
-                vassal.UpdateProperty(PropertyInstanceId.Monarch, null, true);
-
-                // walk the allegiance tree from this node, update monarch ids
-                vassalNode.Walk((node) =>
+                // vassals now become monarchs...
+                foreach (var vassalNode in allegianceNode.Vassals.Values)
                 {
-                    node.Player.UpdateProperty(PropertyInstanceId.Monarch, vassalNode.PlayerGuid.Full, true);
+                    var vassal = PlayerManager.FindByGuid(vassalNode.PlayerGuid);
 
-                    node.Player.SaveBiotaToDatabase();
+                    if (vassal == null) continue;
 
-                }, false);
+                    vassal.PatronId = null;
+                    vassal.UpdateProperty(PropertyInstanceId.Monarch, null, true);
 
-                players.Add(vassal);
+                    // walk the allegiance tree from this node, update monarch ids
+                    vassalNode.Walk((node) =>
+                    {
+                        node.Player.UpdateProperty(PropertyInstanceId.Monarch, vassalNode.PlayerGuid.Full, true);
+
+                        node.Player.SaveBiotaToDatabase();
+
+                    }, false);
+
+                    players.Add(vassal);
+                }
             }
 
             RemoveCache(allegiance);

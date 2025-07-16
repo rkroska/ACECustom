@@ -112,7 +112,7 @@ namespace ACE.Server.Factories
                     wo.WieldSkillType = (int)wieldSkill;
                     wo.WieldDifficulty = GetCovenantWieldReq(profile.Tier, wieldSkill);
                 }
-                else if (profile.Tier > 6)
+                else if (profile.Tier > 6 && profile.Tier < 10)
                 {
                     wo.WieldRequirements = WieldRequirement.Level;
                     wo.WieldSkillType = (int)Skill.Axe;  // Set by examples from PCAP data
@@ -125,7 +125,7 @@ namespace ACE.Server.Factories
                     };
                 }
             }
-            else if (profile.Tier > 6 && !wo.HasArmorLevel())
+            else if (profile.Tier > 6 && profile.Tier < 10 && !wo.HasArmorLevel())
             {
                 // normally this is handled in the mutation script for armor
                 // for clothing, just calling the generic method here
@@ -161,6 +161,9 @@ namespace ACE.Server.Factories
 
             if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
+
+            if (roll != null && profile.Tier == 10)
+                TryMutateGearRatingT10(wo, profile, roll);
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))   // fixme: data
@@ -863,6 +866,8 @@ namespace ACE.Server.Factories
                 TryMutateGearRating(wo, profile, roll);
             else if (roll != null && profile.Tier == 9)
                 TryMutateGearRatingT9(wo, profile, roll);
+            else if (roll != null && profile.Tier == 10)
+                TryMutateGearRatingT10(wo, profile, roll);
 
             // item value
             //if (wo.HasMutateFilter(MutateFilter.Value))
@@ -1117,48 +1122,180 @@ namespace ACE.Server.Factories
             return true;
         }
 
-            private static void SetWieldLevelReq(WorldObject wo, int level)
+        private static bool TryMutateGearRatingT10(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
+        {
+            if (profile.Tier != 10)
+                return false;
+
+            bool applied = false;
+            bool isArmorType = roll.HasArmorLevel(wo) || roll.IsClothing || roll.IsCloak;
+            bool isJewelry = roll.IsJewelry;
+            bool isShield = wo.IsShield;
+
+            // 🛡️ Shields
+            if (isShield)
             {
-                if (wo.WieldRequirements == WieldRequirement.Invalid)
+                // Always try rolling each type of rating
+                void TryAssignRating(Action<int> assign)
                 {
-                    wo.WieldRequirements = WieldRequirement.Level;
-                    wo.WieldSkillType = (int)Skill.Axe;  // set from examples in pcap data
-                    wo.WieldDifficulty = level;
+                    var val = GearRatingChance.RollT10(wo, profile, roll);
+                    if (val > 0) assign(val);
                 }
-                else if (wo.WieldRequirements == WieldRequirement.Level)
+
+                TryAssignRating(v => wo.GearCritDamageResist = v);
+                TryAssignRating(v => wo.GearDamageResist = v);
+                TryAssignRating(v => wo.GearNetherResistRating = v);
+                TryAssignRating(v => wo.GearCritDamage = v);
+                TryAssignRating(v => wo.GearDamage = v);
+                TryAssignRating(v => wo.GearHealingBoost = v);
+
+                // 🛡️ Special: GearMaxHealth uses flat range instead of RollT10
+                int healthBonus = ThreadSafeRandom.Next(100, 200); // Inclusive: 100–200
+                wo.GearMaxHealth = healthBonus;
+
+                // 10% chance to roll Magic Absorb
+                if (ThreadSafeRandom.Next(0, 100) < 30)
                 {
-                    if (wo.WieldDifficulty < level)
-                        wo.WieldDifficulty = level;
+                    int absorb = ThreadSafeRandom.Next(1, 3); // Rolls 1 or 2
+                    wo.AbsorbMagicDamage = absorb;
+                }
+
+                applied = true;
+            }
+
+            // 🎯 Armor/Underclothes/Cloaks
+            else if (isArmorType)
+            {
+                var netherResist = GearRatingChance.RollT10(wo, profile, roll);
+                if (netherResist > 0)
+                    wo.GearNetherResistRating = netherResist;
+
+                if (ThreadSafeRandom.Next(0, 2) == 0)
+                {
+                    var dmg = GearRatingChance.RollT10(wo, profile, roll);
+                    if (dmg > 0) wo.GearDamage = dmg;
                 }
                 else
                 {
-                    // this can either be empty, or in the case of covenant / olthoi armor,
-                    // it could already contain a level requirement of 180, or possibly 150 in tier 8
+                    var dmgResist = GearRatingChance.RollT10(wo, profile, roll);
+                    if (dmgResist > 0) wo.GearDamageResist = dmgResist;
+                }
 
-                    // we want to set this level requirement to 180, in all cases
+                if (ThreadSafeRandom.Next(0, 2) == 0)
+                {
+                    var crit = GearRatingChance.RollT10(wo, profile, roll);
+                    if (crit > 0) wo.GearCritDamage = crit;
+                }
+                else
+                {
+                    var critResist = GearRatingChance.RollT10(wo, profile, roll);
+                    if (critResist > 0) wo.GearCritDamageResist = critResist;
+                }
 
-                    // magloot logs indicated that even if covenant / olthoi armor was not upgraded to 180 in its mutation script,
-                    // a gear rating could still drop on it, and would "upgrade" the 150 to a 180
+                applied = true;
+            }
 
-                    wo.WieldRequirements2 = WieldRequirement.Level;
-                    wo.WieldSkillType2 = (int)Skill.Axe;  // set from examples in pcap data
-                    wo.WieldDifficulty2 = level;
+            // 💍 Jewelry
+            else if (isJewelry)
+            {
+                var rating = GearRatingChance.RollT10(wo, profile, roll);
+                if (rating > 0)
+                {
+                    if (ThreadSafeRandom.Next(0, 2) == 0)
+                        wo.GearHealingBoost = rating;
+                    else
+                        wo.GearMaxHealth = rating;
+
+                    applied = true;
+                    SetWieldT10(wo, 725, profile.Tier);
                 }
             }
 
-            private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
+            else
             {
-                foreach (var kvp in LootTables.armorTypeMap)
-                {
-                    armorType = kvp.Key;
-                    var table = kvp.Value;
-
-                    if (kvp.Value.Contains((int)wcid))
-                        return true;
-                }
-                armorType = null;
+                log.Error($"TryMutateGearRating({wo.Name}, {profile.TreasureType}, {roll.ItemType}): unknown item type");
                 return false;
             }
+
+            if (applied && roll.ArmorType != TreasureArmorType.Society)
+            {
+                SetWieldT10(wo, 725, profile.Tier);
+            }
+
+            return applied;
+        }
+
+
+
+        private static void SetWieldLevelReq(WorldObject wo, int level)
+        {
+            if (wo.WieldRequirements == WieldRequirement.Invalid)
+            {
+                wo.WieldRequirements = WieldRequirement.Level;
+                wo.WieldSkillType = (int)Skill.Axe;  // set from examples in pcap data
+                wo.WieldDifficulty = level;
+            }
+            else if (wo.WieldRequirements == WieldRequirement.Level)
+            {
+                if (wo.WieldDifficulty < level)
+                    wo.WieldDifficulty = level;
+            }
+            else
+            {
+                // this can either be empty, or in the case of covenant / olthoi armor,
+                // it could already contain a level requirement of 180, or possibly 150 in tier 8
+
+                // we want to set this level requirement to 180, in all cases
+
+                // magloot logs indicated that even if covenant / olthoi armor was not upgraded to 180 in its mutation script,
+                // a gear rating could still drop on it, and would "upgrade" the 150 to a 180
+
+                wo.WieldRequirements2 = WieldRequirement.Level;
+                wo.WieldSkillType2 = (int)Skill.Axe;  // set from examples in pcap data
+                wo.WieldDifficulty2 = level;
+            }
+        }
+
+        private static void SetWieldT10(WorldObject wo, int requiredLevel, int tier)
+        {
+            if (tier < 10)
+                return;
+
+            // Use a placeholder Skill enum the client can display
+            const Skill MeleeD = Skill.MeleeDefense;
+
+            // Assign to primary or secondary wield requirement
+            if (wo.WieldRequirements == WieldRequirement.Invalid)
+            {
+                wo.WieldRequirements = WieldRequirement.RawSkill;
+                wo.WieldSkillType = (int)MeleeD;
+                wo.WieldDifficulty = requiredLevel;
+            }
+            else if (wo.WieldRequirements == WieldRequirement.RawSkill && wo.WieldSkillType == (int)MeleeD)
+            {
+                if (wo.WieldDifficulty < requiredLevel)
+                    wo.WieldDifficulty = requiredLevel;
+            }
+            else
+            {
+                wo.WieldRequirements2 = WieldRequirement.RawSkill;
+                wo.WieldSkillType2 = (int)MeleeD;
+                wo.WieldDifficulty2 = requiredLevel;
+            }
+        }
+
+        private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)
+        {
+            foreach (var kvp in LootTables.armorTypeMap)
+            {
+                armorType = kvp.Key;
+                var table = kvp.Value;
+
+                if (kvp.Value.Contains((int)wcid))
+                    return true;
+            }
+            armorType = null;
+            return false;
         }
     }
-
+}

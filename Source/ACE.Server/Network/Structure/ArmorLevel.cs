@@ -37,7 +37,7 @@ namespace ACE.Server.Network.Structure
             Foot = GetArmorLevel(creature, BodyPart.Foot);
         }
 
-        public uint GetArmorLevel(Creature creature, BodyPart bodyPart)
+        private static uint GetArmorLevel(Creature creature, BodyPart bodyPart)
         {
             // get armor pieces covering this body part
             var layers = GetArmorClothing(creature, bodyPart);
@@ -70,7 +70,7 @@ namespace ACE.Server.Network.Structure
         /// <summary>
         /// Returns the armor + clothing for a body part
         /// </summary>
-        public List<WorldObject> GetArmorClothing(Creature creature, BodyPart bodyPart)
+        private static List<WorldObject> GetArmorClothing(Creature creature, BodyPart bodyPart)
         {
             var bodyLocation = BodyParts.GetFlags(BodyParts.GetCoverageMask(bodyPart));
 

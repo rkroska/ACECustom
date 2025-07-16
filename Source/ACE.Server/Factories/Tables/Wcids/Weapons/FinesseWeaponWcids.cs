@@ -13,11 +13,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Hatchets = new ChanceTable<WeenieClassName>()
         {
             // finesse - axe
-            ( WeenieClassName.axehatchet,         0.40f ),
+            ( WeenieClassName.axehatchet,         0.30f ),
             ( WeenieClassName.axehatchetacid,     0.15f ),
             ( WeenieClassName.axehatchetelectric, 0.15f ),
             ( WeenieClassName.axehatchetfire,     0.15f ),
             ( WeenieClassName.axehatchetfrost,    0.15f ),
+            ( WeenieClassName.ace64454606_corrupthammer, 0.10f),
         };
 
         private static ChanceTable<WeenieClassName> Shouonos = new ChanceTable<WeenieClassName>()
@@ -93,11 +94,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Jittes = new ChanceTable<WeenieClassName>()
         {
             // finesse - mace
-            ( WeenieClassName.jitte,         0.40f ),
+            ( WeenieClassName.jitte,         0.30f ),
             ( WeenieClassName.jitteacid,     0.15f ),
             ( WeenieClassName.jitteelectric, 0.15f ),
             ( WeenieClassName.jittefire,     0.15f ),
             ( WeenieClassName.jittefrost,    0.15f ),
+            ( WeenieClassName.ace64454608_corruptjitte, 0.10f),
         };
 
         private static ChanceTable<WeenieClassName> Tofuns = new ChanceTable<WeenieClassName>()
@@ -193,11 +195,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Rapiers = new ChanceTable<WeenieClassName>()
         {
             // finesse - sword (multi-strike)
-            ( WeenieClassName.swordrapier,              0.40f ),
+            ( WeenieClassName.swordrapier,              0.30f ),
             ( WeenieClassName.ace45104_acidrapier,      0.15f ),
             ( WeenieClassName.ace45105_lightningrapier, 0.15f ),
             ( WeenieClassName.ace45106_flamingrapier,   0.15f ),
             ( WeenieClassName.ace45107_frostrapier,     0.15f ),
+            (WeenieClassName.ace64454607_corruptrapier, 0.10f),
         };
 
         private static ChanceTable<WeenieClassName> Yaojis = new ChanceTable<WeenieClassName>()

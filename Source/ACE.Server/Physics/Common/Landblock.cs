@@ -35,7 +35,7 @@ namespace ACE.Server.Physics.Common
         public List<PhysicsObj> ServerObjects { get; set; }
 
 
-        public static bool UseSceneFiles = true;
+        private static bool UseSceneFiles = true;
 
         public Landblock(CellLandblock landblock, int? Variation)
             : base(landblock, Variation)
@@ -54,7 +54,7 @@ namespace ACE.Server.Physics.Common
             
         }
 
-        public new void Init()
+        public void Init()
         {
             //InView = BoundingType.Outside;
             //Dir = LandDefs.Direction.Unknown;
@@ -283,8 +283,8 @@ namespace ACE.Server.Physics.Common
             //Console.WriteLine("Landblock " + ID.ToString("X8") + " scenery count: " + Scenery.Count);
         }
 
-        public static float RoadWidth = 5.0f;
-        public static float TileLength = 24.0f;
+        private static float RoadWidth = 5.0f;
+        private static float TileLength = 24.0f;
 
         /// <summary>
         /// Returns TRUE if x,y is located on a road cell
@@ -424,12 +424,6 @@ namespace ACE.Server.Physics.Common
             return Terrain[(int)lcoord.X * 255 * 9 + (int)lcoord.Y];
         }
 
-        public void grab_visible_cells()
-        {
-            // legacy method
-            //EnvCell.grab_visible(StabList);
-        }
-
         public void init_buildings()
         {
             if (Info == null || SideCellCount != 8) return;
@@ -515,8 +509,10 @@ namespace ACE.Server.Physics.Common
 
                         var idx = ((int)lcoord.Value.Y & 7) + ((int)lcoord.Value.X & 7) * SideCellCount;
                         var cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId ?? 0 };
-                        if (LandCells.ContainsKey(cacheKey))
-                            LandCells[cacheKey].RestrictionObj = kvp.Value;
+                        if (LandCells.TryGetValue(cacheKey, out ObjCell landcell))
+                        {
+                            landcell.RestrictionObj = kvp.Value;
+                        }
                     }
                 }
             }
@@ -559,12 +555,6 @@ namespace ACE.Server.Physics.Common
         {
             foreach (var cell in LandCells.Values)
                 cell.release_shadow_objs();
-        }
-
-        public void release_visible_cells()
-        {
-            // legacy method
-            //EnvCell.release_visible(StabList);
         }
 
         private bool? isDungeon;

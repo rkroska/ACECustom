@@ -51,11 +51,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Daggers = new ChanceTable<WeenieClassName>()
         {
             // light - dagger (multi-strike)
-            ( WeenieClassName.dagger,         0.40f ),
+            ( WeenieClassName.dagger,         0.30f ),
             ( WeenieClassName.daggeracid,     0.15f ),
             ( WeenieClassName.daggerelectric, 0.15f ),
             ( WeenieClassName.daggerfire,     0.15f ),
             ( WeenieClassName.daggerfrost,    0.15f ),
+            (WeenieClassName.ace64454605_corruptdagger, 0.10f),
         };
 
         private static ChanceTable<WeenieClassName> Khanjars = new ChanceTable<WeenieClassName>()
@@ -101,11 +102,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> Spears = new ChanceTable<WeenieClassName>()
         {
             // light - spear
-            ( WeenieClassName.spear,         0.40f ),
+            ( WeenieClassName.spear,         0.30f ),
             ( WeenieClassName.spearacid,     0.15f ),
             ( WeenieClassName.spearelectric, 0.15f ),
             ( WeenieClassName.spearflame,    0.15f ),
             ( WeenieClassName.spearfrost,    0.15f ),
+            ( WeenieClassName.ace64454603_corruptspear, 0.10f),
         };
 
         private static ChanceTable<WeenieClassName> Yaris = new ChanceTable<WeenieClassName>()
@@ -121,11 +123,12 @@ namespace ACE.Server.Factories.Tables.Wcids
         private static ChanceTable<WeenieClassName> QuarterStaffs = new ChanceTable<WeenieClassName>()
         {
             // light - staff
-            ( WeenieClassName.quarterstaffnew,         0.40f ),
+            ( WeenieClassName.quarterstaffnew,         0.30f ),
             ( WeenieClassName.quarterstaffacidnew,     0.15f ),
             ( WeenieClassName.quarterstaffelectricnew, 0.15f ),
             ( WeenieClassName.quarterstaffflamenew,    0.15f ),
             ( WeenieClassName.quarterstafffrostnew,    0.15f ),
+            ( WeenieClassName.ace64454604_corruptquarterstaff,    0.10f ),
         };
 
         private static ChanceTable<WeenieClassName> BroadSwords = new ChanceTable<WeenieClassName>()

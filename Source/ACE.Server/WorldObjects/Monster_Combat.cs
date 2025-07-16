@@ -469,7 +469,7 @@ namespace ACE.Server.WorldObjects
         }
 
         private CancellationTokenSource hotspotLoopCTS;
-        private Task? hotspotLoopTask;
+        private Task hotspotLoopTask;
 
         public void StartHotspotSpawnLoopWithDelay()
         {
@@ -493,7 +493,7 @@ namespace ACE.Server.WorldObjects
 
 
         private CancellationTokenSource grappleLoopCTS;
-        private Task? grappleLoopTask;
+        private Task grappleLoopTask;
 
         public void StartGrappleLoopWithDelay()
         {

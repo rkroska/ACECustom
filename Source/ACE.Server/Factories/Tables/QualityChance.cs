@@ -1,9 +1,8 @@
-using System.Collections.Generic;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Database.Models.World;
+using log4net;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Factories.Tables
 {
@@ -18,6 +17,7 @@ namespace ACE.Server.Factories.Tables
             0.7f,
             0.8f,
             0.9f,
+            1.0f,
             1.0f,
             1.0f,
             1.0f,
@@ -168,6 +168,22 @@ namespace ACE.Server.Factories.Tables
             1.00f,
         };
 
+        private static readonly List<float> T10_QualityChances = new List<float>()
+        {
+            0.10f,
+            0.15f,
+            0.20f,
+            0.25f,
+            0.30f,
+            0.40f,
+            0.50f,
+            0.60f,
+            0.70f,
+            0.80f,
+            0.90f,
+            1.00f,
+        };
+
         /// <summary>
         /// Returns the quality chance tables for a tier
         /// </summary>
@@ -194,6 +210,8 @@ namespace ACE.Server.Factories.Tables
                     return T8_QualityChances;
                 case 9:
                     return T9_QualityChances;
+                case 10:
+                    return T10_QualityChances;
             }
         }
 
@@ -203,7 +221,8 @@ namespace ACE.Server.Factories.Tables
         /// <param name="treasureDeath">The chances are based on treasureDeath.Tier, and can be increased with treasureDeath.LootQualityMod</param>
         private static bool RollTierChance(TreasureDeath treasureDeath)
         {
-            var tierChance = QualityChancePerTier[treasureDeath.Tier - 1];
+            var tier = Math.Clamp(treasureDeath.Tier, 1, 10);
+            var tierChance = QualityChancePerTier[tier - 1];
 
             // use for initial roll? logic seems backwards here...
             var rng = ThreadSafeRandom.NextInterval(treasureDeath.LootQualityMod);

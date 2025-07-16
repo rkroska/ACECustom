@@ -36,13 +36,13 @@ namespace ACE.Server.Network.Structure
         /// Calculates the effective RL for a piece of armor or clothing
         /// against a particular damage type
         /// </summary>
-        public float GetArmorMod(WorldObject armor, DamageType damageType)
+        private static float GetArmorMod(WorldObject armor, DamageType damageType)
         {
+            if (armor == null)
+                return 1.0f;
+
             var type = armor.EnchantmentManager.GetImpenBaneKey(damageType);
             var baseResistance = armor.GetProperty(type) ?? 1.0f;
-
-            if (armor == null)
-                return (float)baseResistance;
 
             // banes/lures
             var resistanceMod = armor != null ? armor.EnchantmentManager.GetArmorModVsType(damageType) : 0.0f;

@@ -98,8 +98,10 @@ namespace ACE.Server.Managers
             // first, check the cache. If the key exists in the cache, grab it regardless of its modified value
             // then, check the database. if the key exists in the database, grab it and cache it
             // finally, set it to a default of false.
-            if (CachedBooleanSettings.ContainsKey(key))
-                return new Property<bool>(CachedBooleanSettings[key].Item, CachedBooleanSettings[key].Description);
+            if (CachedBooleanSettings.TryGetValue(key, out ConfigurationEntry<bool> cachedBooleanSetting))
+            {
+                return new Property<bool>(cachedBooleanSetting.Item, cachedBooleanSetting.Description);
+            }
 
             var dbValue = DatabaseManager.ShardConfig.GetBool(key);
 
@@ -121,21 +123,21 @@ namespace ACE.Server.Managers
         /// <returns>true if the property was modified, false if no property exists with the given key</returns>
         public static bool ModifyBool(string key, bool newVal)
         {
-            if (!DefaultPropertyManager.DefaultBooleanProperties.ContainsKey(key))
+            if (!DefaultPropertyManager.DefaultBooleanProperties.TryGetValue(key, out Property<bool> defaultBooleanProperty))
                 return false;
 
-            if (CachedBooleanSettings.ContainsKey(key))
-                CachedBooleanSettings[key].Modify(newVal);
+            if (CachedBooleanSettings.TryGetValue(key, out ConfigurationEntry<bool> cachedBooleanSetting))
+                cachedBooleanSetting.Modify(newVal);
             else
-                CachedBooleanSettings[key] = new ConfigurationEntry<bool>(true, newVal, DefaultPropertyManager.DefaultBooleanProperties[key].Description);
+                CachedBooleanSettings[key] = new ConfigurationEntry<bool>(true, newVal, defaultBooleanProperty.Description);
 
             return true;
         }
 
         public static void ModifyBoolDescription(string key, string description)
         {
-            if (CachedBooleanSettings.ContainsKey(key))
-                CachedBooleanSettings[key].ModifyDescription(description);
+            if (CachedBooleanSettings.TryGetValue(key, out ConfigurationEntry<bool> cachedBooleanSetting))
+                cachedBooleanSetting.ModifyDescription(description);
             else
                 log.Warn($"Attempted to modify {key} which did not exist in the BOOL cache.");
         }
@@ -149,8 +151,8 @@ namespace ACE.Server.Managers
         /// <returns>An integer value representing the property</returns>
         public static Property<long> GetLong(string key, long fallback = 0, bool cacheFallback = true)
         {
-            if (CachedLongSettings.ContainsKey(key))
-                return new Property<long>(CachedLongSettings[key].Item, CachedLongSettings[key].Description);
+            if (CachedLongSettings.TryGetValue(key, out ConfigurationEntry<long> cachedLongSetting))
+                return new Property<long>(cachedLongSetting.Item, cachedLongSetting.Description);
 
             var dbValue = DatabaseManager.ShardConfig.GetLong(key);
 
@@ -172,20 +174,20 @@ namespace ACE.Server.Managers
         /// <returns>true if the property was modified, false if no property exists with the given key</returns>
         public static bool ModifyLong(string key, long newVal)
         {
-            if (!DefaultPropertyManager.DefaultLongProperties.ContainsKey(key))
+            if (!DefaultPropertyManager.DefaultLongProperties.TryGetValue(key, out Property<long> defaultLongProperty))
                 return false;
 
-            if (CachedLongSettings.ContainsKey(key))
-                CachedLongSettings[key].Modify(newVal);
+            if (CachedLongSettings.TryGetValue(key, out ConfigurationEntry<long> cachedLongSetting))
+                cachedLongSetting.Modify(newVal);
             else
-                CachedLongSettings[key] = new ConfigurationEntry<long>(true, newVal, DefaultPropertyManager.DefaultLongProperties[key].Description);
+                CachedLongSettings[key] = new ConfigurationEntry<long>(true, newVal, defaultLongProperty.Description);
             return true;
         }
 
         public static void ModifyLongDescription(string key, string description)
         {
-            if (CachedLongSettings.ContainsKey(key))
-                CachedLongSettings[key].ModifyDescription(description);
+            if (CachedLongSettings.TryGetValue(key, out ConfigurationEntry<long> cachedLongSetting))
+                cachedLongSetting.ModifyDescription(description);
             else
                 log.Warn($"Attempted to modify {key} which did not exist in the LONG cache.");
         }
@@ -199,8 +201,8 @@ namespace ACE.Server.Managers
         /// <returns>A float value representing the property</returns>
         public static Property<double> GetDouble(string key, double fallback = 0.0f, bool cacheFallback = true)
         {
-            if (CachedDoubleSettings.ContainsKey(key))
-                return new Property<double>(CachedDoubleSettings[key].Item, CachedDoubleSettings[key].Description);
+            if (CachedDoubleSettings.TryGetValue(key, out ConfigurationEntry<double> cachedDoubleSetting))
+                return new Property<double>(cachedDoubleSetting.Item, cachedDoubleSetting.Description);
 
             var dbValue = DatabaseManager.ShardConfig.GetDouble(key);
 
@@ -221,12 +223,13 @@ namespace ACE.Server.Managers
         /// <param name="newVal">The value to replace the old value with</param>
         public static bool ModifyDouble(string key, double newVal, bool init = false)
         {
-            if (!DefaultPropertyManager.DefaultDoubleProperties.ContainsKey(key))
+            if (!DefaultPropertyManager.DefaultDoubleProperties.TryGetValue(key, out Property<double> defaultDoubleProperty))
                 return false;
-            if (CachedDoubleSettings.ContainsKey(key))
-                CachedDoubleSettings[key].Modify(newVal);
+
+            if (CachedDoubleSettings.TryGetValue(key, out ConfigurationEntry<double> cachedDoubleSetting))
+                cachedDoubleSetting.Modify(newVal);
             else
-                CachedDoubleSettings[key] = new ConfigurationEntry<double>(true, newVal, DefaultPropertyManager.DefaultDoubleProperties[key].Description);
+                CachedDoubleSettings[key] = new ConfigurationEntry<double>(true, newVal, defaultDoubleProperty.Description);
 
             if (!init)
             {
@@ -248,8 +251,8 @@ namespace ACE.Server.Managers
 
         public static void ModifyDoubleDescription(string key, string description)
         {
-            if (CachedDoubleSettings.ContainsKey(key))
-                CachedDoubleSettings[key].ModifyDescription(description);
+            if (CachedDoubleSettings.TryGetValue(key, out ConfigurationEntry<double> cachedDoubleSetting))
+                cachedDoubleSetting.ModifyDescription(description);
             else
                 log.Warn($"Attempted to modify the description of {key} which did not exist in the DOUBLE cache.");
         }
@@ -263,8 +266,8 @@ namespace ACE.Server.Managers
         /// <returns>A string value representing the property</returns>
         public static Property<string> GetString(string key, string fallback = "", bool cacheFallback = true)
         {
-            if (CachedStringSettings.ContainsKey(key))
-                return new Property<string>(CachedStringSettings[key].Item, CachedStringSettings[key].Description);
+            if (CachedStringSettings.TryGetValue(key, out ConfigurationEntry<string> cachedStringSetting))
+                return new Property<string>(cachedStringSetting.Item, cachedStringSetting.Description);
 
             var dbValue = DatabaseManager.ShardConfig.GetString(key);
 
@@ -286,20 +289,20 @@ namespace ACE.Server.Managers
         /// <returns>true if the property was modified, false if no property exists with the given key</returns>
         public static bool ModifyString(string key, string newVal)
         {
-            if (!DefaultPropertyManager.DefaultStringProperties.ContainsKey(key))
+            if (!DefaultPropertyManager.DefaultStringProperties.TryGetValue(key, out Property<string> defaultStringProperty))
                 return false;
 
-            if (CachedStringSettings.ContainsKey(key))
-                CachedStringSettings[key].Modify(newVal);
+            if (CachedStringSettings.TryGetValue(key, out ConfigurationEntry<string> cachedStringSetting))
+                cachedStringSetting.Modify(newVal);
             else
-                CachedStringSettings[key] = new ConfigurationEntry<string>(true, newVal, DefaultPropertyManager.DefaultStringProperties[key].Description);
+                CachedStringSettings[key] = new ConfigurationEntry<string>(true, newVal, defaultStringProperty.Description);
             return true;
         }
 
         public static void ModifyStringDescription(string key, string description)
         {
-            if (CachedStringSettings.ContainsKey(key))
-                CachedStringSettings[key].ModifyDescription(description);
+            if (CachedStringSettings.TryGetValue(key, out ConfigurationEntry<string> cachedStringSetting))
+                cachedStringSetting.ModifyDescription(description);
             else
                 log.Warn($"Attempted to modify {key} which did not exist in the STRING cache.");
         }
@@ -405,7 +408,7 @@ namespace ACE.Server.Managers
         }
     }
 
-    public struct Property<T>
+    public readonly struct Property<T>
     {
         public Property(T item, string description) : this()
         {
@@ -631,7 +634,8 @@ namespace ACE.Server.Managers
                 ("summoning_killtask_multicredit_cap", new Property<long>(2, "if allow_summoning_killtask_multicredit is enabled, the maximum # of killtask credits a player can receive from 1 kill")),
                 ("teleport_visibility_fix", new Property<long>(0, "Fixes some possible issues with invisible players and mobs. 0 = default / disabled, 1 = players only, 2 = creatures, 3 = all world objects")),
                 ("enl_50_base_lum_cost", new Property<long>(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level")),
-                ("enl_150_base_lum_cost", new Property<long>(2000000000, "the base luminance cost for each enlighten after 150, this will be multiplied by the target enlightenment level")),
+                ("enl_150_base_lum_cost", new Property<long>(1000000000, "the base luminance cost for each enlighten after 150, this will be multiplied by the target enlightenment level")),
+                ("enl_300_base_lum_cost", new Property<long>(2000000000, "the base luminance cost for each enlighten after 300, this will be multiplied by the target enlightenment level")),
                 ("dynamic_quest_repeat_hours", new Property<long>(20, "the number of hours before a player can do another dynamic quest")),
                 ("dynamic_quest_max_xp", new Property<long>(5000000000, "the maximum base xp rewarded from a dynamic quest")),
                 ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs"))

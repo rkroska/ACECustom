@@ -96,13 +96,6 @@ namespace ACE.Server.WorldObjects
             Init(new ObjectGuid(MonarchId.Value));
         }
 
-        public Allegiance(ObjectGuid monarch)
-        {
-            //Console.WriteLine($"Allegiance({monarch}): monarch constructor");
-
-            Init(monarch);
-        }
-
         private void InitializePropertyDictionaries()
         {
             if (Biota.PropertiesAllegiance == null)
@@ -133,7 +126,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Build a mapping of patron guids => vassal guids
         /// </summary>
-        public Dictionary<uint, List<IPlayer>> BuildPatronVassals(List<IPlayer> members)
+        private static Dictionary<uint, List<IPlayer>> BuildPatronVassals(List<IPlayer> members)
         {
             var patronVassals = new Dictionary<uint, List<IPlayer>>();
 

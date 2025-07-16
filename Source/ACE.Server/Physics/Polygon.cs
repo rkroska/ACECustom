@@ -422,5 +422,10 @@ namespace ACE.Server.Physics
 
             return hash;
         }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as Polygon);
+        }
     }
 }

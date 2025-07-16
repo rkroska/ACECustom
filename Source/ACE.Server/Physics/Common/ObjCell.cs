@@ -73,7 +73,7 @@ namespace ACE.Server.Physics.Common
             {
                 if (voyeur_id != obj.ID && voyeur_id != 0)
                 {
-                    var voyeur = obj.GetObjectA(voyeur_id);
+                    var voyeur = PhysicsObj.GetObjectA(voyeur_id);
                     if (voyeur == null) continue;
 
                     //var info = new DetectionInfo(obj.ID, DetectionType.EnteredDetection);
@@ -103,6 +103,16 @@ namespace ACE.Server.Physics.Common
                 return false;
 
             return ID.Equals(objCell.ID);
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as ObjCell);
+        }
+
+        public override int GetHashCode()
+        {
+            return ID.GetHashCode();
         }
 
         public virtual TransitionState FindCollisions(Transition transition)
@@ -465,7 +475,7 @@ namespace ACE.Server.Physics.Common
             {
                 if (voyeur_id != obj.ID && voyeur_id != 0)
                 {
-                    var voyeur = obj.GetObjectA(voyeur_id);
+                    var voyeur = PhysicsObj.GetObjectA(voyeur_id);
                     if (voyeur == null) continue;
 
                     //var info = new DetectionInfo(obj.ID, type);

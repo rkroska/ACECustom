@@ -392,7 +392,7 @@ namespace ACE.Server.WorldObjects
             return GetCombatType() == CombatType.Missile ? AccuracyLevel : PowerLevel;
         }
 
-        public Sound GetHitSound(WorldObject source, BodyPart bodyPart)
+        private static Sound GetHitSound(WorldObject source, BodyPart bodyPart)
         {
             /*var creature = source as Creature;
             var armors = creature.GetArmor(bodyPart);
@@ -423,7 +423,7 @@ namespace ACE.Server.WorldObjects
             var percent = (float)amount / Health.MaxValue;
 
             // update health
-            var damageTaken = (uint)-UpdateVitalDelta(Health, (int)-amount);
+            UpdateVitalDelta(Health, (int)-amount);
 
             // update stamina
             //UpdateVitalDelta(Stamina, -1);
@@ -571,13 +571,6 @@ namespace ACE.Server.WorldObjects
                 UpdatePKTimers(attacker, this);
 
             return (int)damageTaken;
-        }
-
-        public string GetArmorType(BodyPart bodyPart)
-        {
-            // Flesh, Leather, Chain, Plate
-            // for hit sounds
-            return null;
         }
 
         /// <summary>
@@ -989,7 +982,7 @@ namespace ACE.Server.WorldObjects
         /// If a player has been involved in a PK battle this recently,
         /// logging off leaves their character in a frozen state for 20 seconds
         /// </summary>
-        public static TimeSpan PKLogoffTimer = TimeSpan.FromMinutes(2);
+        private static TimeSpan PKLogoffTimer = TimeSpan.FromMinutes(2);
 
         public void UpdatePKTimer()
         {

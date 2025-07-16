@@ -702,7 +702,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Builds the network text message for list of items dropped
         /// </summary>
-        public string DropMessage(List<WorldObject> dropItems, int numCoinsDropped)
+        private static string DropMessage(List<WorldObject> dropItems, int numCoinsDropped)
         {
             var msg = "";
             var coinMsg = true;
@@ -746,7 +746,7 @@ namespace ACE.Server.WorldObjects
             return msg;
         }
 
-        public static TimeSpan PermitTime = TimeSpan.FromHours(1);
+        private static TimeSpan PermitTime = TimeSpan.FromHours(1);
 
         public void HandleActionAddPlayerPermission(string playerName)
         {
@@ -931,7 +931,7 @@ namespace ACE.Server.WorldObjects
             EnqueueBroadcast(new GameMessageScript(Guid, PlayScript.ShieldUpBlue));
         }
 
-        public static TimeSpan LifestoneProtectionTime = TimeSpan.FromMinutes(1);
+        private static TimeSpan LifestoneProtectionTime = TimeSpan.FromMinutes(1);
 
         public void LifestoneProtectionTick()
         {

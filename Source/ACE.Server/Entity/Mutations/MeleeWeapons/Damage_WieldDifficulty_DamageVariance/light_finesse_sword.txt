@@ -1,13 +1,13 @@
 Sword (LightWeapons, FinesseWeapons) Mutation #0:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 100%:
 	    Damage = 7
 
 Sword (LightWeapons, FinesseWeapons) Mutation #1 (326 samples):
 
-Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 3%:
         Damage += 1
@@ -38,7 +38,7 @@ Tier chances: 1, 0, 0, 0, 0, 0, 0, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #2 (620 samples):
 
-Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 1
@@ -123,7 +123,7 @@ Tier chances: 0, 1, 0, 0, 0, 0, 0, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #3 (642 samples):
 
-Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0, 0
 
     - Chance: 2%:
         Damage += 12
@@ -205,7 +205,7 @@ Tier chances: 0, 0, 1, 0, 0, 0, 0, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #4 (1,219 samples):
 
-Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 23
@@ -263,7 +263,7 @@ Tier chances: 0, 0, 0, 1, 0, 0, 0, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #5 (1,170 samples):
 
-Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0
 
     - Chance: 20%:
         Damage += 27
@@ -315,7 +315,7 @@ Tier chances: 0, 0, 0, 0, 1, 0, 0, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #6 (2,962 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0, 0
 
     - Chance: 15%:
         Damage += 32
@@ -385,7 +385,7 @@ Tier chances: 0, 0, 0, 0, 0, 1, 0, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #7 (769 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0, 0
 
     - Chance: 10%:
         Damage += 39
@@ -455,7 +455,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 1, 0, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #8 (1,230 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0, 0
 
     - Chance: 1%:
         Damage += 39
@@ -555,7 +555,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 1, 0
 
 Sword (LightWeapons, FinesseWeapons) Mutation #9:
 
-Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
+Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 
     - Chance: 10%:
         DamageVariance = 0.6
@@ -574,7 +574,7 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1
 
 Sword (LightWeapons, FinesseWeapons) Mutation #10 (1,143 samples):
 
-Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
     - Chance: 15%:
         Damage += 64
@@ -671,3 +671,79 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1
         WieldRequirements = RawSkill
         WieldSkillType = WeaponSkill
         WieldDifficulty = 575
+
+        Sword (LightWeapons, FinesseWeapons) Mutation #11 (1,143 samples):
+
+Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+
+    - Chance: 15%:
+        Damage += 102
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 10%:
+        Damage += 103
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 6%:
+        Damage += 104
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 4%:
+        Damage += 105
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 650
+
+    - Chance: 13%:
+        Damage += 114
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 10%:
+        Damage += 115
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 7%:
+        Damage += 116
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 5%:
+        Damage += 117
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 725
+
+    - Chance: 12%:
+        Damage += 126
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 8%:
+        Damage += 127
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 6%:
+        Damage += 128
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800
+
+    - Chance: 4%:
+        Damage += 129
+        WieldRequirements = RawSkill
+        WieldSkillType = WeaponSkill
+        WieldDifficulty = 800

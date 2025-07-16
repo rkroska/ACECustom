@@ -50,7 +50,7 @@ namespace ACE.Server.Network
 
         // Ack should be sent after a 2 second delay, so start enabled with the delay.
         // Sending this too early seems to cause issues with clients disconnecting.
-        private bool sendAck = true;
+        private readonly bool sendAck = true;
         private DateTime nextAck = DateTime.UtcNow.AddMilliseconds(timeBetweenAck);
 
         private uint lastReceivedPacketSequence = 1;
@@ -261,7 +261,7 @@ namespace ACE.Server.Network
                     .Where(sequence => !Retransmit(sequence))
                     .ToList();
 
-                if (uncached.Any())
+                if (uncached.Count != 0)
                 {
                     // Sends a response packet w/ PacketHeader.RejectRetransmit
                     var packetRejectRetransmit = new PacketRejectRetransmit(uncached);
@@ -467,8 +467,7 @@ namespace ACE.Server.Network
                         // The buffer is complete, so we can go ahead and handle
                         packetLog.DebugFormat("[{0}] Buffer {1} is complete", session.LoggingIdentifier, buffer.Sequence);
                         message = buffer.TryGetMessage();
-                        MessageBuffer removed = null;
-                        partialFragments.TryRemove(fragment.Header.Sequence, out removed);
+                        partialFragments.TryRemove(fragment.Header.Sequence, out _);
                     }
                 }
                 else
@@ -591,21 +590,7 @@ namespace ACE.Server.Network
 
                 if (echoDiff >= EchoInterval)
                 {
-                    log.Error($"{session.Player.Name} - disconnected for speedhacking");
-
-                    var actionChain = new ActionChain();
-                    actionChain.AddAction(session.Player, () =>
-                    {
-                        //session.Network.EnqueueSend(new GameMessageBootAccount(session));
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"TimeSync: client speed error", ChatMessageType.Broadcast));
-                        session.LogOffPlayer();
-
-                        echoDiff = 0;
-                        lastDiff = 0;
-                        lastClientTime = 0;
-
-                    });
-                    actionChain.EnqueueChain();
+                    ForceLogOff($"TimeSync: client speed error", $"{session.Player.Name} - disconnected for speedhacking");
                 }
             }
             else if (echoDiff > 0)
@@ -658,7 +643,7 @@ namespace ACE.Server.Network
                 return true;
             }
 
-            if (cachedPackets.Count > 0)
+            if (!cachedPackets.IsEmpty)
             {
                 // This is to catch a race condition between .Count and .Min() and .Max()
                 try
@@ -673,7 +658,40 @@ namespace ACE.Server.Network
             else
                 log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty.");
 
-            return false;
+            // If this session is attached to a player log them off to avoid retransmit floods
+            if (session.Player != null)
+            {
+                ForceLogOff($"NetworkSession error: client and server are out of sync", $"{session.Player.Name} - disconnected to prevent retransmit flood");
+            }
+            else
+            {
+                log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}) - disconnected to prevent retransmit flood.");
+                session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
+            }
+
+
+                return false;
+        }
+
+        private void ForceLogOff(string clientMessage, string errorMessage = "")
+        {
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                log.Error(errorMessage);
+            }
+
+            var actionChain = new ActionChain();
+            actionChain.AddAction(session.Player, () =>
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(clientMessage, ChatMessageType.Broadcast));
+                session.LogOffPlayer();
+
+                echoDiff = 0;
+                lastDiff = 0;
+                lastClientTime = 0;
+
+            });
+            actionChain.EnqueueChain();
         }
 
         private void FlushPackets()

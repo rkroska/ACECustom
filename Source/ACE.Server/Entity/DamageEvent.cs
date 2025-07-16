@@ -135,19 +135,6 @@ namespace ACE.Server.Entity
 
         public bool CriticalDefended;
 
-        public static HashSet<uint> AllowDamageTypeUndef = new HashSet<uint>()
-        {
-            22545,  // Obsidian Spines
-            35191,  // Thunder Chicken
-            38406,  // Blessed Moar
-            38587,  // Ardent Moar
-            38588,  // Blessed Moar
-            38586,  // Verdant Moar
-            40298,  // Ardent Moar
-            40300,  // Blessed Moar
-            40301,  // Verdant Moar
-        };
-
         public static DamageEvent CalculateDamage(Creature attacker, Creature defender, WorldObject damageSource, MotionCommand? attackMotion = null, AttackHook attackHook = null)
         {
             var damageEvent = new DamageEvent();
@@ -356,7 +343,7 @@ namespace ACE.Server.Entity
                 GetBodyPart(AttackHeight);
 
                 // get player armor pieces
-                Armor = attacker.GetArmorLayers(playerDefender, BodyPart);
+                Armor = playerDefender.GetArmorLayers(BodyPart);
 
                 // get armor modifiers
                 ArmorMod = attacker.GetArmorMod(playerDefender, DamageType, Armor, Weapon, ignoreArmorMod);
@@ -430,7 +417,7 @@ namespace ACE.Server.Entity
             return Damage;
         }
 
-        public Quadrant GetQuadrant(Creature defender, Creature attacker, AttackHeight attackHeight, WorldObject damageSource)
+        private static Quadrant GetQuadrant(Creature defender, Creature attacker, AttackHeight attackHeight, WorldObject damageSource)
         {
             var quadrant = attackHeight.ToQuadrant();
 
