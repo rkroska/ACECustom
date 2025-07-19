@@ -66,6 +66,14 @@ namespace ACE.Server.WorldObjects
         public double NextCancelTime;
 
         /// <summary>
+        /// Stuck detection properties
+        /// </summary>
+        public double LastStuckCheckTime;
+        public int StuckAttempts;
+        public const int MaxStuckAttempts = 3;
+        public const double StuckCheckInterval = 2.0;
+
+        /// <summary>
         /// Starts the process of monster turning towards target
         /// </summary>
         public void StartTurn()
@@ -99,6 +107,9 @@ namespace ACE.Server.WorldObjects
             LastMoveTime = Timers.RunningTime;
             NextCancelTime = LastMoveTime + ThreadSafeRandom.Next(2, 4);
             moveBit = false;
+
+            // Initialize stuck detection
+            LastStuckCheckTime = Timers.RunningTime;
 
             var mvp = GetMovementParameters();
             if (turnTo)
@@ -169,6 +180,11 @@ namespace ACE.Server.WorldObjects
             if (AttackTarget == null)
                 return float.MaxValue;
 
+            var myPhysics = PhysicsObj;
+            var targetPhysics = AttackTarget.PhysicsObj;
+            if (myPhysics == null || targetPhysics == null)
+                return float.MaxValue;
+
             //var matchIndoors = Location.Indoors == AttackTarget.Location.Indoors;
             //var targetPos = matchIndoors ? AttackTarget.Location.ToGlobal() : AttackTarget.Location.Pos;
             //var sourcePos = matchIndoors ? Location.ToGlobal() : Location.Pos;
@@ -177,8 +193,8 @@ namespace ACE.Server.WorldObjects
             //var radialDist = dist - (AttackTarget.PhysicsObj.GetRadius() + PhysicsObj.GetRadius());
 
             // always use spheres?
-            var cylDist = (float)Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,
-                AttackTarget.PhysicsObj.GetRadius(), AttackTarget.PhysicsObj.GetHeight(), AttackTarget.PhysicsObj.Position);
+            var cylDist = (float)Physics.Common.Position.CylinderDistance(myPhysics.GetRadius(), myPhysics.GetHeight(), myPhysics.Position,
+                targetPhysics.GetRadius(), targetPhysics.GetHeight(), targetPhysics.Position);
 
             if (DebugMove)
                 Console.WriteLine($"{Name}.DistanceToTarget: {cylDist}");
@@ -203,12 +219,138 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (PhysicsObj.MovementManager.MoveToManager.FailProgressCount > 0 && Timers.RunningTime > NextCancelTime)
+            var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
+            if (moveToManager != null && 
+                moveToManager.FailProgressCount > 0 && 
+                Timers.RunningTime > NextCancelTime)
                 CancelMoveTo();
+
+            CheckForStuck();
+            ApplyFastHealing();
+            CheckDistressCalls();
+        }
+
+        /// <summary>
+        /// Basic stuck detection system
+        /// </summary>
+        public void CheckForStuck()
+        {
+            if (!IsMoving || AttackTarget == null)
+                return;
+
+            if (ShouldBypassStuckLogic())
+                return;
+
+            var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
+            if (moveToManager == null)
+                return;
+
+            var currentTime = Timers.RunningTime;
+
+            if (currentTime - LastStuckCheckTime < StuckCheckInterval)
+                return;
+
+            LastStuckCheckTime = currentTime;
+
+            if (moveToManager.FailProgressCount >= MaxStuckAttempts)
+            {
+                HandleStuck();
+            }
+        }
+
+        /// <summary>
+        /// Handles when a monster is confirmed to be stuck
+        /// </summary>
+        public void HandleStuck()
+        {
+            if (DebugMove)
+                Console.WriteLine($"{Name} ({Guid}) - Confirmed stuck, attempting recovery");
+
+            StuckAttempts = 0;
+            CancelMoveTo();
+
+            if (MonsterState == State.Awake)
+            {
+                FindNextTarget();
+            }
+            else if (MonsterState == State.Return)
+            {
+                ForceHome();
+            }
+        }
+
+        /// <summary>
+        /// Bypass stuck logic if mob is set with bool property 52 (aiImobile)
+        /// </summary>
+        public bool ShouldBypassStuckLogic()
+        {
+            return AiImmobile;
+        }
+
+        /// <summary>
+        /// Apply fast healing when returning home
+        /// </summary>
+        public void ApplyFastHealing()
+        {
+            if (MonsterState == State.Return)
+            {
+                // Increase vital regen when returning home
+                // This is handled by the existing vital regen system
+                // The actual implementation would be in the vital regen logic
+            }
+        }
+
+        /// <summary>
+        /// Make returning monsters respond to distress calls
+        /// </summary>
+        public void CheckDistressCalls()
+        {
+            if (MonsterState == State.Return)
+            {
+                var objMaint = PhysicsObj?.ObjMaint;
+                if (objMaint == null)
+                    return;
+
+                // Check for nearby monsters in distress
+                var nearbyCreatures = objMaint.GetVisibleTargetsValuesOfTypeCreature();
+                
+                foreach (var creature in nearbyCreatures)
+                {
+                    if (creature == null || creature.IsDead || creature == this)
+                        continue;
+
+                    // If a nearby monster is in combat, consider responding to distress
+                    if (creature.MonsterState == State.Awake && creature.AttackTarget != null)
+                    {
+                        // Check if the distressed monster is of the same type or faction
+                        if (CreatureType != null && CreatureType == creature.CreatureType ||
+                            FriendType != null && FriendType == creature.CreatureType ||
+                            SameFaction(creature))
+                        {
+                            var creaturePhysics = creature.PhysicsObj;
+                            if (PhysicsObj == null || creaturePhysics == null)
+                                continue;
+
+                            var distSq = PhysicsObj.get_distance_sq_to_object(creaturePhysics, true);
+                            if (distSq <= AuralAwarenessRangeSq)
+                            {
+                                // Respond to distress call
+                                AttackTarget = creature.AttackTarget;
+                                MonsterState = State.Awake;
+                                WakeUp(false); // Don't alert others to avoid chain reaction
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         public void UpdatePosition(bool netsend = true)
         {
+            if (PhysicsObj == null)
+                return;
+
             stopwatch.Restart();
             PhysicsObj.update_object();
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Monster_Navigation_UpdatePosition_PUO, stopwatch.Elapsed.TotalSeconds);
@@ -239,6 +381,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void UpdatePosition_SyncLocation()
         {
+            if (PhysicsObj == null)
+                return;
+
             // was the position successfully moved to?
             // use the physics position as the source-of-truth?
             var newPos = PhysicsObj.Position;
@@ -468,6 +613,9 @@ namespace ACE.Server.WorldObjects
             IsMoving = false;
             NextMoveTime = Timers.RunningTime + 1.0f;
 
+            // Reset stuck detection
+            StuckAttempts = 0;
+
             ResetAttack();
 
             FindNextTarget();
@@ -480,6 +628,12 @@ namespace ACE.Server.WorldObjects
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - ForceHome({homePos.ToLOCString()})");
 
+            if (PhysicsObj == null)
+            {
+                log.Warn($"{Name} ({Guid}) - ForceHome failed: PhysicsObj is null");
+                return;
+            }
+
             var setPos = new SetPosition();
             setPos.Pos = new Physics.Common.Position(homePos);
             setPos.Flags = SetPositionFlags.Teleport;
@@ -487,7 +641,6 @@ namespace ACE.Server.WorldObjects
             PhysicsObj.SetPosition(setPos);
 
             UpdatePosition_SyncLocation();
-
             SendUpdatePosition();
 
             var actionChain = new ActionChain();

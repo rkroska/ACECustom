@@ -457,6 +457,13 @@ namespace ACE.Server.Physics.Animation
             {
                 if (!PhysicsObj.IsInterpolating() && !PhysicsObj.IsAnimating)
                     FailProgressCount++;
+                
+                // Enhanced stuck detection with better thresholds
+                if (FailProgressCount >= 5)
+                {
+                    CancelMoveTo(WeenieError.ActionCancelled);
+                    return;
+                }
             }
             else
             {
@@ -673,15 +680,30 @@ namespace ACE.Server.Physics.Animation
             {
                 var diffDist = MovingAway ? currDistance - PreviousDistance : PreviousDistance - currDistance;
 
-                if (diffDist / deltaTime < 0.25f)
+                // Improved stuck detection with better thresholds
+                var progressRate = diffDist / deltaTime;
+                var minProgressRate = 0.25f;
+                
+                // Adjust threshold based on movement type and distance
+                if (MovementType == MovementType.MoveToObject)
+                {
+                    // For object movement, be more lenient at longer distances
+                    if (currDistance > 10.0f)
+                        minProgressRate = 0.15f;
+                    else if (currDistance > 5.0f)
+                        minProgressRate = 0.20f;
+                }
+
+                if (progressRate < minProgressRate)
                     return false;
 
                 PreviousDistance = currDistance;
                 PreviousDistanceTime = PhysicsTimer.CurrentTime;
 
                 var dOrigDist = MovingAway ? currDistance - OriginalDistance : OriginalDistance - currDistance;
+                var originalProgressRate = dOrigDist / (PhysicsTimer.CurrentTime - OriginalDistanceTime);
 
-                if (dOrigDist / (PhysicsTimer.CurrentTime - OriginalDistanceTime) < 0.25f)
+                if (originalProgressRate < minProgressRate)
                     return false;
             }
             return true;
