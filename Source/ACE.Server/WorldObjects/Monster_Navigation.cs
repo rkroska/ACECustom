@@ -296,9 +296,13 @@ namespace ACE.Server.WorldObjects
 
             RunRate = GetRunRate();
 
-            MoveSpeed = moveSpeed * RunRate * scale;
+            // Calculate raw speed (with scale logic)
+            MoveSpeed = moveSpeed * RunRate;
 
-            //Console.WriteLine(Name + " - Run: " + runSkill + " - RunRate: " + RunRate + " - Move: " + MoveSpeed + " - Scale: " + scale);
+            // Cap: never faster than 800 run at 1.0 scale
+            var maxMoveSpeed = moveSpeed * (18.0f / 4.0f); // 4.5 is the capped RunRate
+            if (MoveSpeed > maxMoveSpeed)
+                MoveSpeed = maxMoveSpeed;
         }
 
         /// <summary>
