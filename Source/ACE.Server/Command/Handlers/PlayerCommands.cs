@@ -184,6 +184,11 @@ namespace ACE.Server.Command.Handlers
                                         {
                                             // Find the leader (might not be in this landblock)
                                             var leader = PlayerManager.FindByGuid(fellowshipGuid) as Player;
+                                            if (leader == null)
+                                            {
+                                                log.Warn($"Fellowship leader with GUID {fellowshipGuid} not found");
+                                                continue;
+                                            }
                                             fellowshipsInLandblock[fellowshipGuid] = (fellowship, leader, isLeader);
                                         }
                                         else if (isLeader)
