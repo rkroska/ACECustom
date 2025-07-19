@@ -1156,8 +1156,7 @@ namespace ACE.Server.Factories
                 // 10% chance to roll Magic Absorb
                 if (ThreadSafeRandom.Next(0, 100) < 30)
                 {
-                    int absorb = ThreadSafeRandom.Next(1, 3); // Rolls 1 or 2
-                    wo.AbsorbMagicDamage = absorb;
+                    wo.AbsorbMagicDamage = 0.2f;
                 }
 
                 applied = true;

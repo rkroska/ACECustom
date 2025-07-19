@@ -35,6 +35,9 @@ namespace ACE.Server.Factories.Tables
                 case 9:
                     rng = ThreadSafeRandom.Next(0, 2);
                     return aetheriaColors[rng];
+                case 10:
+                    rng = ThreadSafeRandom.Next(0, 2);
+                    return aetheriaColors[rng];
             }
             return WeenieClassName.undef;
         }
