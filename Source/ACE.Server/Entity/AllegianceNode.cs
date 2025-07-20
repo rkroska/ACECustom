@@ -57,10 +57,19 @@ namespace ACE.Server.Entity
             {
                 foreach (var vassal in vassals)
                 {
-                    var node = new AllegianceNode(vassal.Guid, allegiance, Monarch, this);
-                    node.BuildChain(allegiance, players, patronVassals);
+                    try
+                    {
+                        var node = new AllegianceNode(vassal.Guid, allegiance, Monarch, this);
+                        node.BuildChain(allegiance, players, patronVassals);
 
-                    Vassals.Add(vassal.Guid.Full, node);
+                        Vassals.Add(vassal.Guid.Full, node);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Allegiance crashed: {allegiance.Name}, player: {vassal.Name}, monarch: {Monarch.Player.Name}");
+                        return;
+                    }
+                    
                 }
             }
             CalculateRank();
