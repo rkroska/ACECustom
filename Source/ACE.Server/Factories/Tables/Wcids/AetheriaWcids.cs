@@ -33,6 +33,7 @@ namespace ACE.Server.Factories.Tables
                     rng = ThreadSafeRandom.Next(0, 2);
                     return aetheriaColors[rng];
                 case 9:
+                case 10:
                     rng = ThreadSafeRandom.Next(0, 2);
                     return aetheriaColors[rng];
             }
