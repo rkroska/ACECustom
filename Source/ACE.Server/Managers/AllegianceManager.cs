@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum.Properties;
@@ -10,6 +7,9 @@ using ACE.Server.Factories;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
+using log4net;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Managers
 {
@@ -27,6 +27,8 @@ namespace ACE.Server.Managers
         /// A mapping of all Players on the server => their AllegianceNodes
         /// </summary>
         public static readonly Dictionary<ObjectGuid, AllegianceNode> Players = new Dictionary<ObjectGuid, AllegianceNode>();
+
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Returns the monarch for a player
@@ -77,18 +79,27 @@ namespace ACE.Server.Managers
                     return null;
             }
             else
-            {
-                // Ignore 1-man Allegiances
-                var members = AllegianceManager.FindAllPlayers(monarch.Guid);
-                if (members.Count <= 1)
-                    return null;
+                allegiance = new Allegiance(monarch.Guid);
+            
+            // Ignore 1-man Allegiances
+            var members = AllegianceManager.FindAllPlayers(monarch.Guid);
+            if (members.Count <= 1)
+                return null;
 
+            try
+            {
                 allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
                 allegiance.MonarchId = monarch.Guid.Full;
                 allegiance.Init(monarch.Guid);
 
                 allegiance.SaveBiotaToDatabase();
             }
+            catch (Exception ex)
+            {
+                log.Error($"AllegianceManager.GetAllegiance({monarch.Guid.Full}): Error creating new Allegiance", ex);
+            }
+                
+            
 
             if (allegiance != null)
             {

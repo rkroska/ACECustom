@@ -96,6 +96,7 @@ namespace ACE.Server.WorldObjects
 
         public WorldObject Wielder;
 
+        public WorldObject() { }
         public WorldObject(ObjectGuid guid)
         {
             Guid = guid;

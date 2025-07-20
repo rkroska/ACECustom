@@ -95,64 +95,73 @@ namespace ACE.Server.WorldObjects
 
         public void SwearAllegiance(uint targetGuid, bool success, bool confirmed = false)
         {
-            if (!success) return;
-
-            var patron = PlayerManager.GetOnlinePlayer(targetGuid);
-            if (patron == null)
-                return;
-
-            if (!IsPledgable(patron)) return;
-
-            if (!confirmed)
+            try
             {
-                if (!patron.ConfirmationManager.EnqueueSend(new Confirmation_SwearAllegiance(patron.Guid, Guid), Name))
+                if (!success) return;
+
+                var patron = PlayerManager.GetOnlinePlayer(targetGuid);
+                if (patron == null)
+                    return;
+
+                if (!IsPledgable(patron)) return;
+
+                if (!confirmed)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"{patron.Name} is busy.", ChatMessageType.Broadcast));
+                    if (!patron.ConfirmationManager.EnqueueSend(new Confirmation_SwearAllegiance(patron.Guid, Guid), Name))
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"{patron.Name} is busy.", ChatMessageType.Broadcast));
+                    }
+                    return;
                 }
-                return;
+
+                log.Debug($"[ALLEGIANCE] {Name} ({Level}) swearing allegiance to {patron.Name} ({patron.Level})");
+
+                PatronId = targetGuid;
+
+                var monarchGuid = AllegianceManager.GetMonarch(patron).Guid.Full;
+
+                UpdateProperty(PropertyInstanceId.Monarch, monarchGuid, true);
+
+                ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
+
+                // handle special case: monarch swearing into another allegiance
+                if (Allegiance != null && Allegiance.MonarchId == Guid.Full)
+                    HandleMonarchSwear();
+
+                SaveBiotaToDatabase();
+
+                //Console.WriteLine("Patron: " + PlayerManager.GetOfflinePlayerByGuidId(Patron.Value).Name);
+                //Console.WriteLine("Monarch: " + PlayerManager.GetOfflinePlayerByGuidId(Monarch.Value).Name);
+
+                // send message to patron:
+                // %vassal% has sworn Allegiance to you.
+                patron.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has sworn Allegiance to you.", ChatMessageType.Broadcast));
+
+                // send message to vassal:
+                // %patron% has accepted your oath of Allegiance!
+                // Motion_Kneel
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{patron.Name} has accepted your oath of Allegiance!", ChatMessageType.Broadcast));
+
+                EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Kneel));
+
+                // rebuild allegiance tree structure
+                AllegianceManager.OnSwearAllegiance(this);
+
+                AllegianceXPGenerated = 0;
+                AllegianceOfficerRank = null;
+
+                // refresh ui panel
+                Session.Network.EnqueueSend(new GameEventAllegianceUpdate(Session, Allegiance, AllegianceNode), new GameEventAllegianceAllegianceUpdateDone(Session));
+
+                if (GetCharacterOption(CharacterOption.ListenToAllegianceChat) && Allegiance != null)
+                    JoinTurbineChatChannel("Allegiance");
             }
-
-            log.Debug($"[ALLEGIANCE] {Name} ({Level}) swearing allegiance to {patron.Name} ({patron.Level})");
-
-            PatronId = targetGuid;
-
-            var monarchGuid = AllegianceManager.GetMonarch(patron).Guid.Full;
-
-            UpdateProperty(PropertyInstanceId.Monarch, monarchGuid, true);
-
-            ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
-
-            // handle special case: monarch swearing into another allegiance
-            if (Allegiance != null && Allegiance.MonarchId == Guid.Full)
-                HandleMonarchSwear();
-
-            SaveBiotaToDatabase();
-
-            //Console.WriteLine("Patron: " + PlayerManager.GetOfflinePlayerByGuidId(Patron.Value).Name);
-            //Console.WriteLine("Monarch: " + PlayerManager.GetOfflinePlayerByGuidId(Monarch.Value).Name);
-
-            // send message to patron:
-            // %vassal% has sworn Allegiance to you.
-            patron.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has sworn Allegiance to you.", ChatMessageType.Broadcast));
-
-            // send message to vassal:
-            // %patron% has accepted your oath of Allegiance!
-            // Motion_Kneel
-            Session.Network.EnqueueSend(new GameMessageSystemChat($"{patron.Name} has accepted your oath of Allegiance!", ChatMessageType.Broadcast));
-
-            EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Kneel));
-
-            // rebuild allegiance tree structure
-            AllegianceManager.OnSwearAllegiance(this);
-
-            AllegianceXPGenerated = 0;
-            AllegianceOfficerRank = null;
-
-            // refresh ui panel
-            Session.Network.EnqueueSend(new GameEventAllegianceUpdate(Session, Allegiance, AllegianceNode), new GameEventAllegianceAllegianceUpdateDone(Session));
-
-            if (GetCharacterOption(CharacterOption.ListenToAllegianceChat) && Allegiance != null)
-                JoinTurbineChatChannel("Allegiance");
+            catch (Exception ex)
+            {
+                log.Error($"[ALLEGIANCE] {Name} ({Level}) swearing allegiance to {targetGuid}, {ex.Message})");
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"An Error occurred swearing allegiance", ChatMessageType.Broadcast));
+            }
+            
         }
 
         /// <summary>
