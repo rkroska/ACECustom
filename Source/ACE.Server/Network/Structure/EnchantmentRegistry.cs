@@ -6,6 +6,7 @@ using System.Linq;
 using ACE.Common.Extensions;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
+using ACE.Server.Entity;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Managers;
 
@@ -18,15 +19,24 @@ namespace ACE.Server.Network.Structure
 
         public EnchantmentRegistry(Player player)
         {
-            var enchantments = player.Biota.PropertiesEnchantmentRegistry.Clone(player.BiotaDatabaseLock);
+            var allEnchantments = player.Biota.PropertiesEnchantmentRegistry.Clone(player.BiotaDatabaseLock);
 
-            Enchantments = BuildCategories(player, enchantments);
+            // Get top layer enchantments for buffs
+            var topLayerEnchantments = player.Biota.PropertiesEnchantmentRegistry.GetEnchantmentsTopLayer(player.BiotaDatabaseLock, SpellSet.SetSpells);
+            
+            if (topLayerEnchantments == null)
+                topLayerEnchantments = new List<PropertiesEnchantmentRegistry>();
+
+            var vitaeEnchantments = allEnchantments.Where(e => e.SpellCategory == SpellCategory.Vitae).ToList();
+            topLayerEnchantments.AddRange(vitaeEnchantments);
+
+            Enchantments = BuildCategories(player, topLayerEnchantments);
 
             var vitae = Enchantments[EnchantmentMask.Vitae].FirstOrDefault();
 
             if (vitae != null && (vitae.StatModValue.EpsilonEquals(1.0f) || vitae.StatModValue > 1.0f))
             {
-                player.EnchantmentManager.Dispel(enchantments.FirstOrDefault(e => e.SpellId == (int)SpellId.Vitae));
+                player.EnchantmentManager.Dispel(allEnchantments.FirstOrDefault(e => e.SpellId == (int)SpellId.Vitae));
 
                 Enchantments[EnchantmentMask.Vitae].Clear();
             }
