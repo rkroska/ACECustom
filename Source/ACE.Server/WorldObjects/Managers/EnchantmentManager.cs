@@ -277,10 +277,19 @@ namespace ACE.Server.WorldObjects.Managers
                 }
 
                 if (spell.School == MagicSchool.ItemEnchantment)
-                {                    
-                    if (spell.StatModKey == 28) //impen
+                {
+                    // Impen: StatModKey == 28, but exclude Brittlemail/Tattercoat spell IDs
+                    if (spell.StatModKey == 28)
                     {
-                        luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
+                        if (spell.Id == 1487 || spell.Id == 1488 || spell.Id == 1489 || spell.Id == 1490 ||
+                            spell.Id == 1491 || spell.Id == 1492 || spell.Id == 4399 || spell.Id == 2100) // Brittlemail/Tattercoat
+                        {
+                            luminanceAug -= (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
+                        }
+                        else // Impen
+                        {
+                            luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
+                        }
                     }
                     else if (spell.StatModKey == 360 && selfCastEligible) //blood drinker buffed
                     {
