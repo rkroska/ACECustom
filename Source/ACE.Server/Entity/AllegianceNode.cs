@@ -1,9 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using ACE.Entity;
 using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
+using log4net;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Server.Entity
 {
@@ -11,6 +12,7 @@ namespace ACE.Server.Entity
     {
         public readonly ObjectGuid PlayerGuid;
         public IPlayer Player => PlayerManager.FindByGuid(PlayerGuid);
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public readonly Allegiance Allegiance;
 
@@ -25,6 +27,8 @@ namespace ACE.Server.Entity
         public bool HasVassals => TotalVassals > 0;
 
         public int TotalVassals => Vassals != null ? Vassals.Count : 0;
+
+        public int BuildChainCalls = 0;
 
         public int TotalFollowers
         {
@@ -45,10 +49,17 @@ namespace ACE.Server.Entity
             Allegiance = allegiance;
             Monarch = monarch ?? this;
             Patron = patron;
+            BuildChainCalls = 0;
         }
 
         public void BuildChain(Allegiance allegiance, List<IPlayer> players, Dictionary<uint, List<IPlayer>> patronVassals)
         {
+            if (BuildChainCalls > 500)
+            {
+                log.Error($"AllegianceNode.BuildChain called too many times for {Player.Name} ({PlayerGuid.Full}) in allegiance {allegiance.Name}");
+                return;
+            }
+            BuildChainCalls++;
             patronVassals.TryGetValue(PlayerGuid.Full, out var vassals);
 
             Vassals = new Dictionary<uint, AllegianceNode>();

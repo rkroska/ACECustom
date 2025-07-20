@@ -96,6 +96,11 @@ namespace ACE.Server.WorldObjects
             Init(new ObjectGuid(MonarchId.Value));
         }
 
+        public Allegiance(ObjectGuid monarch) =>
+            //Console.WriteLine($"Allegiance({monarch}): monarch constructor");
+
+            Init(monarch);
+
         private void InitializePropertyDictionaries()
         {
             if (Biota.PropertiesAllegiance == null)
@@ -127,7 +132,7 @@ namespace ACE.Server.WorldObjects
             BuildOfficers();
 
             ChatFilters = new Dictionary<ObjectGuid, DateTime>();
-        }
+        }        
 
         /// <summary>
         /// Build a mapping of patron guids => vassal guids
