@@ -995,6 +995,9 @@ namespace ACE.Server.WorldObjects
 
             var itemCaster = this is Creature ? null : this;
 
+            // For self-targeted spells, use the attacker as the target
+            var spellTarget = selfTarget ? attacker : target;
+
             if (spell.NonComponentTargetType == ItemType.None)
                 attacker.TryCastSpell(spell, null, itemCaster, itemCaster, true, true);
             else if (spell.NonComponentTargetType == ItemType.Vestements)
@@ -1002,10 +1005,10 @@ namespace ACE.Server.WorldObjects
                 // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
                 // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
                 // current test case: 33990 Composite Bow casting Tattercoat
-                attacker.TryCastSpell_WithRedirects(spell, target, itemCaster, itemCaster, true, true);
+                attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, true, true);
             }
             else
-                attacker.TryCastSpell(spell, target, itemCaster, itemCaster, true, true);
+                attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, true, true);
         }
 
         private bool? isMasterable;

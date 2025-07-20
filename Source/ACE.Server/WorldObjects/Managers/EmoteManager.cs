@@ -354,6 +354,18 @@ namespace ACE.Server.WorldObjects.Managers
 
                     break;
 
+                case EmoteType.DropFellow:
+                    if (player != null)
+                    {
+                        var fellowship = player.Fellowship;
+
+                        if (fellowship != null)
+                        {
+                            fellowship.QuitFellowship(player, false);
+                        }
+                    }
+                    break;
+
                 case EmoteType.Enlightenment:
 
                     if (player != null)
