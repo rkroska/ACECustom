@@ -129,9 +129,6 @@ namespace ACE.Server.WorldObjects
             AddBiotasToEquippedObjects(wieldedItems);
 
             UpdateCoinValue(false);
-
-            // Rebuild self-cast buff registry using stacking logic
-            RebuildBuffRegistryFromDatabase();
         }
 
         public override void InitPhysicsObj(int? VariationId)
@@ -241,36 +238,7 @@ namespace ACE.Server.WorldObjects
         public bool IsDeleted => Character.IsDeleted;
         public bool IsPendingDeletion => Character.DeleteTime > 0 && !IsDeleted;
 
-        public void RebuildBuffRegistryFromDatabase()
-        {
-            var originalBuffs = new List<PropertiesEnchantmentRegistry>(Biota.PropertiesEnchantmentRegistry);
-            Biota.PropertiesEnchantmentRegistry.Clear();
 
-            // Apply item buffs first
-            foreach (var entry in originalBuffs)
-            {
-                if (entry == null) continue;
-                if (entry.Duration != -1) continue;
-                var spell = new Spell(entry.SpellId);
-                if (spell == null || spell.NotFound)
-                    continue;
-
-                if (EquippedObjects != null && EquippedObjects.TryGetValue(new ObjectGuid(entry.CasterObjectId), out var item) && item != null)
-                    EnchantmentManager.Add(spell, item, null, equip: true);
-            }
-
-            // Then apply self-cast buffs
-            foreach (var entry in originalBuffs)
-            {
-                if (entry == null) continue;
-                if (entry.Duration == -1) continue;
-                var spell = new Spell(entry.SpellId);
-                if (spell == null || spell.NotFound)
-                    continue;
-
-                EnchantmentManager.Add(spell, this, null, equip: false);
-            }
-        }
 
         // ******************************************************************* OLD CODE BELOW ********************************
         // ******************************************************************* OLD CODE BELOW ********************************
