@@ -51,10 +51,6 @@ namespace ACE.Server.Managers
         {
             if (player == null) return null;
 
-            // If no Monarch, no Allegiance
-            if (player.MonarchId == null)
-                return null;
-
             var monarch = GetMonarch(player);
 
             if (monarch == null) return null;

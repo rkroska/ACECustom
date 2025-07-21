@@ -4583,6 +4583,31 @@ namespace ACE.Server.Command.Handlers
             PropertyManager.ResyncVariables();
         }
 
+        [CommandHandler("iterate-allegiances", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Runs through all allegiances and outputs to console")]
+        public static void HandleIterateAllegiances(Session session, params string[] parameters)
+        {
+            var players = PlayerManager.GetAllPlayers();
+            foreach (var p in players)
+            {
+                if (p.PatronId != null)
+                {
+                    //CommandHandlerHelper.WriteOutputInfo(session, $"{p.Name}: getting allegiance, patron: {p.PatronId}");
+                }
+                else
+                {
+                    //CommandHandlerHelper.WriteOutputInfo(session, $"{p.Guid} has null patron");
+                }
+
+
+                var m = AllegianceManager.GetMonarch(p);
+                CommandHandlerHelper.WriteOutputInfo(session, $"{m.Name}, {p.Guid}: Monarch");
+
+                var a = AllegianceManager.GetAllegiance(p);
+
+                
+            }
+        }
+
         [CommandHandler("fix-allegiances", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Fixes the monarch data for allegiances")]
         public static void HandleFixAllegiances(Session session, params string[] parameters)
         {
