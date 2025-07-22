@@ -96,10 +96,11 @@ namespace ACE.Server.WorldObjects
             Init(new ObjectGuid(MonarchId.Value));
         }
 
-        public Allegiance(ObjectGuid monarch) =>
+        public Allegiance(ObjectGuid monarch) : base(GuidManager.NewDynamicGuid())
+        {
             //Console.WriteLine($"Allegiance({monarch}): monarch constructor");
-
             Init(monarch);
+        }
 
         private void InitializePropertyDictionaries()
         {

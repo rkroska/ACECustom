@@ -52,8 +52,37 @@ namespace ACE.Server.Entity
             BuildChainCalls = 0;
         }
 
-        public void BuildChain(Allegiance allegiance, List<IPlayer> players, Dictionary<uint, List<IPlayer>> patronVassals)
+        public void BuildChain(Allegiance allegiance, List<IPlayer> players, Dictionary<uint, List<IPlayer>> patronVassals, HashSet<uint> visited = null)
         {
+            if (visited == null)
+                visited = new HashSet<uint>();
+
+            if (visited.Contains(PlayerGuid.Full))
+            {
+                // Loop detected! Break the chain by removing this player's patron
+                var player = PlayerManager.FindByGuid(PlayerGuid);
+                string loopStartName = "unknown";
+                if (player != null)
+                {
+                    // Try to find the player where the loop started
+                    loopStartName = player.Name;
+                    player.PatronId = null;
+                    player.SaveBiotaToDatabase();
+                }
+                // Find the name of the player who originally started the loop (first in visited)
+                string firstInLoopName = "unknown";
+                if (visited.Count > 0)
+                {
+                    var firstGuid = visited.First();
+                    var firstPlayer = PlayerManager.FindByGuid(new ObjectGuid(firstGuid));
+                    if (firstPlayer != null)
+                        firstInLoopName = firstPlayer.Name;
+                }
+                log.Warn($"[ALERT] Allegiance loop detected and broken between players {loopStartName} and {firstInLoopName} (GUIDs: {PlayerGuid.Full:X8}, {visited.First():X8})");
+                return;
+            }
+            visited.Add(PlayerGuid.Full);
+
             if (BuildChainCalls > 500)
             {
                 log.Error($"AllegianceNode.BuildChain called too many times for {Player.Name} ({PlayerGuid.Full}) in allegiance {allegiance.Name}");
@@ -71,7 +100,7 @@ namespace ACE.Server.Entity
                     try
                     {
                         var node = new AllegianceNode(vassal.Guid, allegiance, Monarch, this);
-                        node.BuildChain(allegiance, players, patronVassals);
+                        node.BuildChain(allegiance, players, patronVassals, visited);
 
                         Vassals.Add(vassal.Guid.Full, node);
                     }
@@ -80,7 +109,6 @@ namespace ACE.Server.Entity
                         Console.WriteLine($"Allegiance crashed: {allegiance.Name}, player: {vassal.Name}, monarch: {Monarch.Player.Name}");
                         return;
                     }
-                    
                 }
             }
             CalculateRank();
