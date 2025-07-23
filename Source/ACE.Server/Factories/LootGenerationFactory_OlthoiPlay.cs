@@ -147,6 +147,12 @@ namespace ACE.Server.Factories
 
             var slag = WorldObjectFactory.CreateNewWorldObject((uint)slagWcid);
 
+            //Multiply totalSlag by 5 to make olthoi equiptment more accessible
+            totalSlag *= 5;
+
+            // Cap totalSlag at 9999
+            if (totalSlag > 9999) totalSlag = 9999;
+            
             slag.SetStackSize(totalSlag);
 
             player.OlthoiLootTimestamp = currentTime;
