@@ -626,6 +626,13 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
             }
         }
+        static readonly uint[] _lowLevelOverlays = {
+        0x6006C34,    // lvl 1
+        0x6006C35,    // lvl 2
+        0x6006C36     // lvl 3
+        };
+
+        static readonly HashSet<uint> _allowedOverlays = new HashSet<uint>(_lowLevelOverlays);
 
         [CommandHandler("clap", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Deposit Enlightened Coins and Weakly Enlightened Coins using items from your pack. It will take the lower of the Red Coalesced Aetheria/Red Chunks/Empyrean Trinket and Blue Coalesced Aetheria/Blue Chunks/Falatacot (including powders) and deposit that amount.", "Usage: /clap all")]
         public static void HandleClap(Session session, params string[] parameters)
@@ -643,8 +650,8 @@ namespace ACE.Server.Command.Handlers
 
             // Inventory counts for Red Coalesced Aetheria + Red Chunks + Red Powder + Empyrean Trinkets
             var redAetheriaItems = session.Player.GetInventoryItemsOfWCID(42636) // Red Coalesced Aetheria WCID
-                .Where(item => item.EquipmentSetId == null && item.IconOverlayId != 100691000 && item.IconOverlayId != 100690999) // Check for Coalesced Aetheria
-                .ToList();
+                .Where(item => item.EquipmentSetId == null && item.IconOverlayId.HasValue && _allowedOverlays.Contains(item.IconOverlayId.Value))    // only levels 1-3
+            .ToList();
             int redAetheriaCount = redAetheriaItems.Count;
             int redChunkCount = session.Player.GetNumInventoryItemsOfWCID(310147); // Red Chunk WCID
             int redPowderCount = session.Player.GetNumInventoryItemsOfWCID(42644); // Red Powder WCID
@@ -653,8 +660,8 @@ namespace ACE.Server.Command.Handlers
 
             // Inventory counts for Blue Coalesced Aetheria + Blue Chunks + Blue Powder + Falatacot Trinkets
             var blueAetheriaItems = session.Player.GetInventoryItemsOfWCID(42635) // Blue Coalesced Aetheria WCID
-                .Where(item => item.EquipmentSetId == null && item.IconOverlayId != 100691000 && item.IconOverlayId != 100690999) // Check for Coalesced Aetheria
-                .ToList();
+                .Where(item => item.EquipmentSetId == null && item.IconOverlayId.HasValue && _allowedOverlays.Contains(item.IconOverlayId.Value))    // only levels 1-3
+            .ToList();
             int blueAetheriaCount = blueAetheriaItems.Count;
             int blueChunkCount = session.Player.GetNumInventoryItemsOfWCID(310149); // Blue Chunk WCID
             int bluePowderCount = session.Player.GetNumInventoryItemsOfWCID(300019); // Blue Powder WCID
