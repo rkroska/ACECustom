@@ -75,35 +75,31 @@ namespace ACE.Server.Managers
                     return null;
             }
             else
+            {
                 allegiance = new Allegiance(monarch.Guid);
-            
-            // Ignore 1-man Allegiances
-            var members = AllegianceManager.FindAllPlayers(monarch.Guid);
-            if (members.Count <= 1)
-                return null;
 
-            try
-            {
-                allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
-                allegiance.MonarchId = monarch.Guid.Full;
-                allegiance.Init(monarch.Guid);
+                if (allegiance.TotalMembers == 1)
+                    return null;
 
-                allegiance.SaveBiotaToDatabase();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"AllegianceManager.GetAllegiance({monarch.Guid.Full}): Error creating new Allegiance", ex);
+                try
+                {
+                    allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
+                    allegiance.MonarchId = monarch.Guid.Full;
+                    allegiance.Init(monarch.Guid);
+
+                    allegiance.SaveBiotaToDatabase();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"AllegianceManager.GetAllegiance({monarch.Guid.Full}): Error creating new Allegiance", ex);
+                }
             }
                 
             
 
             if (allegiance != null)
             {
-
                 AddPlayers(allegiance);
-
-                //if (!Allegiances.ContainsKey(allegiance.Guid))
-                //Allegiances.Add(allegiance.Guid, allegiance);
                 Allegiances[allegiance.Guid] = allegiance;
             }
 
