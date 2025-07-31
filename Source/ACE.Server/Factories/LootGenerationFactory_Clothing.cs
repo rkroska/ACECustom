@@ -1169,7 +1169,7 @@ namespace ACE.Server.Factories
                 if (netherResist > 0)
                     wo.GearNetherResistRating = netherResist;
 
-                if (ThreadSafeRandom.Next(0, 2) == 0)
+                if (ThreadSafeRandom.Next(0, 1) == 0)
                 {
                     var dmg = GearRatingChance.RollT10(wo, profile, roll);
                     if (dmg > 0) wo.GearDamage = dmg;
@@ -1180,7 +1180,7 @@ namespace ACE.Server.Factories
                     if (dmgResist > 0) wo.GearDamageResist = dmgResist;
                 }
 
-                if (ThreadSafeRandom.Next(0, 2) == 0)
+                if (ThreadSafeRandom.Next(0, 1) == 0)
                 {
                     var crit = GearRatingChance.RollT10(wo, profile, roll);
                     if (crit > 0) wo.GearCritDamage = crit;
@@ -1200,7 +1200,7 @@ namespace ACE.Server.Factories
                 var rating = GearRatingChance.RollT10(wo, profile, roll);
                 if (rating > 0)
                 {
-                    if (ThreadSafeRandom.Next(0, 2) == 0)
+                    if (ThreadSafeRandom.Next(0, 1) == 0)
                         wo.GearHealingBoost = rating;
                     else
                         wo.GearMaxHealth = rating;
