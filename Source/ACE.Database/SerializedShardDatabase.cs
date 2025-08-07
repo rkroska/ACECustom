@@ -59,6 +59,16 @@ namespace ACE.Database
             _workerThreadReadOnly.Join();
         }
 
+        public List<string> QueueReport()
+        {
+            return _queue.Select(x => x.AsyncState.ToString()).ToList();
+        }
+
+        public List<string> ReadOnlyQueueReport()
+        {
+            return _readOnlyQueue.Select(x => x.AsyncState.ToString()).ToList();
+        }
+
         private void DoReadOnlyWork()
         {
             while (!_readOnlyQueue.IsAddingCompleted)
