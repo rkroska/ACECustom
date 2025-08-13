@@ -230,7 +230,7 @@ namespace ACE.Server.Command.Handlers
         // Add a cooldown dictionary to track last unstuck usage per session
         private static readonly Dictionary<uint, DateTime> UnstuckCooldowns = new Dictionary<uint, DateTime>();
 
-        [CommandHandler("unstuck", AccessLevel.Player, CommandHandlerFlag.None, 1,
+        [CommandHandler("unstuck", AccessLevel.Developer, CommandHandlerFlag.None, 1,
             "Kicks all online players for the specified account if the IP matches the command issuer.",
             "accountname")]
         public static void HandleUnstuck(Session session, params string[] parameters)
