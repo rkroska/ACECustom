@@ -1,11 +1,11 @@
-using System;
-using System.Collections.Generic;
-
+using ACE.Database;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
 using ACE.Server.Network;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -27,6 +27,30 @@ namespace ACE.Server.Command.Handlers
             {
                 Console.WriteLine($"LB Keys: {LI.Value.Id.Raw}, {LI.Value.VariationId}");
             }
+        }
+
+        [CommandHandler("queuereport", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, 0, "Write out all tasks in the Shard Database Queue")]
+        public static void QueueReport(Session session, params string[] parameters)
+        {
+            var tasks = DatabaseManager.Shard.QueueReport();
+            Console.WriteLine($"QueueReport, Currently {tasks.Count} Shard Database Tasks");
+            foreach (var task in tasks)
+            {
+                Console.WriteLine(task);
+            }
+            Console.WriteLine("End QueueReport");
+        }
+
+        [CommandHandler("readonlyqueuereport", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, 0, "Write out all tasks in the Shard Database Queue")]
+        public static void ReadOnlyQueueReport(Session session, params string[] parameters)
+        {
+            var tasks = DatabaseManager.Shard.ReadOnlyQueueReport();
+            Console.WriteLine($"ReadOnlyQueueReport, Currently {tasks.Count} Shard Database Tasks");
+            foreach (var task in tasks)
+            {
+                Console.WriteLine(task);
+            }
+            Console.WriteLine("End ReadOnlyQueueReport");
         }
 
 
