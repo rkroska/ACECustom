@@ -191,5 +191,6 @@ namespace ACE.Entity.Enum.Properties
         CanGrapple                       = 9015,
         CanAOE                           = 9016,
         EnragedHotspot                   = 9017,
+        SplitArrows                      = 9990,
     }
 }

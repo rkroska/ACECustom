@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
@@ -90,6 +91,12 @@ namespace ACE.Server.WorldObjects
             proj.ProjectileLauncher = weapon;
             proj.ProjectileAmmo = ammo;
 
+            // Check for split arrows capability
+            if (weapon != null && weapon.GetProperty(PropertyBool.SplitArrows) == true)
+            {
+                // Weapon has split arrows capability
+            }
+
             proj.Location = new Position(Location);
             proj.Location.Pos = origin;
             proj.Location.Rotation = orientation;
@@ -122,6 +129,12 @@ namespace ACE.Server.WorldObjects
 
             proj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(proj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
             proj.EnqueueBroadcast(new GameMessageScript(proj.Guid, PlayScript.Launch, 0f));
+
+            // Create split arrows if weapon has split property
+            if (weapon != null && weapon.GetProperty(PropertyBool.SplitArrows) == true)
+            {
+                CreateSplitArrows(weapon, ammo, target, origin, orientation);
+            }
 
             // detonate point-blank projectiles immediately
             /*var radsum = target.PhysicsObj.GetRadius() + proj.PhysicsObj.GetRadius();
@@ -462,6 +475,181 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine($"Z Angle: {aimLevel.GetAimAngle()}");
 
             return aimLevel;
+        }
+
+        /// <summary>
+        /// Creates additional projectiles for split arrow effect
+        /// </summary>
+        private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject primaryTarget, Vector3 origin, Quaternion orientation)
+        {
+            try
+            {
+                var totalArrowCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 3;
+                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? 10f;
+
+                // Calculate how many ADDITIONAL arrows to create
+                // If totalArrowCount = 3, we want 1 primary + 2 additional = 3 total
+                var additionalArrowCount = totalArrowCount - 1;
+
+                // Find nearby targets for split arrows
+                var landblock = CurrentLandblock;
+                if (landblock == null)
+                {
+                    return;
+                }
+
+                // Use optimized target finding
+                var potentialTargets = FindValidSplitTargets(primaryTarget, splitRange, origin, additionalArrowCount);
+
+                // Create additional arrows (up to additionalArrowCount)
+                var arrowsCreated = 0;
+                foreach (var target in potentialTargets)
+                {
+                    if (arrowsCreated >= additionalArrowCount)
+                        break;
+
+                    // Create new projectile
+                    var splitProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
+                    if (splitProj == null)
+                    {
+                        continue;
+                    }
+
+                    // Set up split projectile with necessary properties
+                    splitProj.ProjectileSource = this;
+                    splitProj.ProjectileTarget = target;
+                    splitProj.ProjectileLauncher = weapon;
+                    splitProj.ProjectileAmmo = ammo;
+
+                    // Copy essential projectile properties from the original ammo
+                    if (ammo is Ammunition originalAmmo)
+                    {
+                        var damageValue = originalAmmo.GetProperty(PropertyInt.Damage);
+                        if (damageValue != null)
+                        {
+                            // Apply damage reduction for balance (60% of original damage)
+                            var reducedDamage = (int)(damageValue.Value * 0.6f);
+                            splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
+                        }
+                    }
+
+                    // Position at same origin
+                    splitProj.Location = new Position(Location);
+                    splitProj.Location.Pos = origin;
+                    splitProj.Location.Rotation = orientation;
+
+                    // Calculate velocity to new target
+                    var splitVelocity = GetAimVelocity(target, GetProjectileSpeed());
+                    SetProjectilePhysicsState(splitProj, target, splitVelocity);
+
+                    // Ensure collision detection is enabled
+                    if (splitProj.PhysicsObj != null)
+                    {
+                        splitProj.PhysicsObj.set_active(true);
+                        splitProj.ReportCollisions = true;
+                    }
+
+                    // Add to world
+                    var success = LandblockManager.AddObject(splitProj);
+                    if (success && splitProj.PhysicsObj != null)
+                    {
+                        arrowsCreated++;
+
+                        // Set PK status and play launch sound
+                        var pkStatus = this is Player playerForPk ? playerForPk.PlayerKillerStatus : PlayerKillerStatus.Creature;
+                        splitProj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(splitProj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
+                        splitProj.EnqueueBroadcast(new GameMessageScript(splitProj.Guid, PlayScript.Launch, 0f));
+                    }
+                    else
+                    {
+                        splitProj.Destroy();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't crash the game
+                // In production, this should use proper logging
+            }
+        }
+
+        /// <summary>
+        /// Finds valid targets for split arrows with optimized search
+        /// </summary>
+        private List<WorldObject> FindValidSplitTargets(WorldObject primaryTarget, float splitRange, Vector3 origin, int maxTargets)
+        {
+            var potentialTargets = new List<WorldObject>();
+            var landblock = CurrentLandblock;
+            
+            if (landblock == null)
+                return potentialTargets;
+
+            // Use a more targeted search instead of GetAllWorldObjectsForDiagnostics
+            var nearbyObjects = landblock.GetWorldObjectsForPhysicsHandling();
+            
+            foreach (var obj in nearbyObjects)
+            {
+                if (potentialTargets.Count >= maxTargets)
+                    break;
+
+                if (!(obj is Creature creature) || !creature.IsAlive)
+                    continue;
+
+                if (obj == primaryTarget || obj == this)
+                    continue;
+
+                if (!CanDamage(creature))
+                    continue;
+
+                // Calculate distance from PRIMARY TARGET to this potential target
+                var distanceFromPrimaryTarget = Vector3.Distance(primaryTarget.Location.Pos, obj.Location.Pos);
+                if (distanceFromPrimaryTarget <= splitRange)
+                {
+                    // Basic angle validation: Check if target is roughly in front of the player
+                    if (IsTargetInValidAngle(primaryTarget, obj, origin))
+                    {
+                        potentialTargets.Add(obj);
+                    }
+                }
+            }
+
+            return potentialTargets;
+        }
+        
+        /// <summary>
+        /// Validates if a target is within a reasonable firing angle for split arrows
+        /// </summary>
+        private bool IsTargetInValidAngle(WorldObject primaryTarget, WorldObject potentialTarget, Vector3 origin)
+        {
+            try
+            {
+                // Calculate direction from primary target to potential target
+                var directionToTarget = Vector3.Normalize(potentialTarget.Location.Pos - primaryTarget.Location.Pos);
+                
+                // Calculate direction from player to primary target (player's forward direction)
+                var playerForward = Vector3.Normalize(primaryTarget.Location.Pos - origin);
+                
+                // Calculate angle between these directions (dot product)
+                var dotProduct = Vector3.Dot(playerForward, directionToTarget);
+                
+                // Convert to angle (dot product = cos(angle))
+                var angle = (float)(Math.Acos(Math.Clamp(dotProduct, -1.0f, 1.0f)) * (180.0f / (float)Math.PI));
+                
+                // Allow targets within 90 degrees of the player's forward direction
+                // This prevents shooting arrows behind the player
+                var maxAngle = 90.0f;
+                
+                if (angle > maxAngle)
+                {
+                    return false;
+                }
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false; // Fail safe - don't create split arrow if validation fails
+            }
         }
     }
 }
