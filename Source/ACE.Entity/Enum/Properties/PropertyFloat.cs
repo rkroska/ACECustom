@@ -237,6 +237,6 @@ namespace ACE.Entity.Enum.Properties
         EnrageDamageMultiplier         = 9011,
         EnrageDamageReduction          = 9012,
         EnrageThreshold                = 9013,
-        SplitArrowRange                 = 9990,
+        SplitArrowRange                 = 9014,
     }
 }

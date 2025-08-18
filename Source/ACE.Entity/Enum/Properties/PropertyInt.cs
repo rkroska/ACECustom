@@ -698,7 +698,7 @@ namespace ACE.Entity.Enum.Properties
         EnrageFogColor                          = 9025,
         EnrageSound                             = 9026,
         EnrageVisualEffect                      = 9027,
-        SplitArrowCount                         = 9990,
+        SplitArrowCount                         = 9028,
 
     }
 
