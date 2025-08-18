@@ -73,6 +73,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject LaunchProjectile(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation, Vector3 velocity)
         {
+            Console.WriteLine($"[SPLIT DEBUG] LaunchProjectile called - Weapon: {weapon?.Guid}, Target: {target?.Guid}");
             var player = this as Player;
 
             if (!velocity.IsValid())
@@ -127,9 +128,24 @@ namespace ACE.Server.WorldObjects
             proj.EnqueueBroadcast(new GameMessageScript(proj.Guid, PlayScript.Launch, 0f));
 
             // Create split arrows if weapon has split property
-            if (weapon != null && weapon.GetProperty(PropertyBool.SplitArrows) == true)
+            Console.WriteLine($"[SPLIT DEBUG] Checking for split arrows - Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}");
+            if (weapon != null)
             {
-                CreateSplitArrows(weapon, ammo, target, origin, orientation);
+                var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
+                Console.WriteLine($"[SPLIT DEBUG] Weapon SplitArrows property: {hasSplitArrows}");
+                if (hasSplitArrows == true)
+                {
+                    Console.WriteLine($"[SPLIT DEBUG] Calling CreateSplitArrows");
+                    CreateSplitArrows(weapon, ammo, target, origin, orientation);
+                }
+                else
+                {
+                    Console.WriteLine($"[SPLIT DEBUG] Weapon does not have SplitArrows property or it's false");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[SPLIT DEBUG] Weapon is null");
             }
 
             // detonate point-blank projectiles immediately
@@ -482,7 +498,7 @@ namespace ACE.Server.WorldObjects
             {
                 Console.WriteLine($"[SPLIT DEBUG] CreateSplitArrows called for weapon {weapon.Guid}");
                 var totalArrowCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 3;
-                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? 10f;
+                var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? 10f);
                 Console.WriteLine($"[SPLIT DEBUG] Total arrows: {totalArrowCount}, Range: {splitRange}");
 
                 // Calculate how many ADDITIONAL arrows to create
@@ -527,7 +543,7 @@ namespace ACE.Server.WorldObjects
                         if (damageValue != null)
                         {
                             // Apply damage reduction for balance (60% of original damage)
-                            var reducedDamage = (int)(damageValue.Value * 0.6);
+                            var reducedDamage = (int)(damageValue.Value * 0.6f);
                             splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
                         }
                     }
@@ -637,7 +653,7 @@ namespace ACE.Server.WorldObjects
                 var dotProduct = Vector3.Dot(playerForward, directionToTarget);
                 
                 // Convert to angle (dot product = cos(angle))
-                var angle = (float)(Math.Acos(Math.Clamp(dotProduct, -1.0f, 1.0f)) * (180.0f / (float)Math.PI));
+                var angle = (float)(Math.Acos(Math.Clamp((float)dotProduct, -1.0f, 1.0f)) * (180.0f / (float)Math.PI));
                 
                 // Allow targets within 90 degrees of the player's forward direction
                 // This prevents shooting arrows behind the player
