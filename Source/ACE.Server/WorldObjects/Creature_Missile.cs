@@ -91,11 +91,7 @@ namespace ACE.Server.WorldObjects
             proj.ProjectileLauncher = weapon;
             proj.ProjectileAmmo = ammo;
 
-            // Check for split arrows capability
-            if (weapon != null && weapon.GetProperty(PropertyBool.SplitArrows) == true)
-            {
-                // Weapon has split arrows capability
-            }
+            // Check for split arrows capability (will be handled after main projectile launch)
 
             proj.Location = new Position(Location);
             proj.Location.Pos = origin;
@@ -484,8 +480,10 @@ namespace ACE.Server.WorldObjects
         {
             try
             {
+                Console.WriteLine($"[SPLIT DEBUG] CreateSplitArrows called for weapon {weapon.Guid}");
                 var totalArrowCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 3;
                 var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? 10f;
+                Console.WriteLine($"[SPLIT DEBUG] Total arrows: {totalArrowCount}, Range: {splitRange}");
 
                 // Calculate how many ADDITIONAL arrows to create
                 // If totalArrowCount = 3, we want 1 primary + 2 additional = 3 total
@@ -498,9 +496,10 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                // Use optimized target finding
+                                // Use optimized target finding
                 var potentialTargets = FindValidSplitTargets(primaryTarget, splitRange, origin, additionalArrowCount);
-
+                Console.WriteLine($"[SPLIT DEBUG] Found {potentialTargets.Count} potential targets");
+                
                 // Create additional arrows (up to additionalArrowCount)
                 var arrowsCreated = 0;
                 foreach (var target in potentialTargets)
@@ -578,14 +577,19 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private List<WorldObject> FindValidSplitTargets(WorldObject primaryTarget, float splitRange, Vector3 origin, int maxTargets)
         {
+            Console.WriteLine($"[SPLIT DEBUG] FindValidSplitTargets called - Range: {splitRange}, MaxTargets: {maxTargets}");
             var potentialTargets = new List<WorldObject>();
             var landblock = CurrentLandblock;
             
             if (landblock == null)
+            {
+                Console.WriteLine($"[SPLIT DEBUG] No landblock found");
                 return potentialTargets;
+            }
 
             // Use a more targeted search instead of GetAllWorldObjectsForDiagnostics
             var nearbyObjects = landblock.GetWorldObjectsForPhysicsHandling();
+            Console.WriteLine($"[SPLIT DEBUG] Total nearby objects: {nearbyObjects.Count}");
             
             foreach (var obj in nearbyObjects)
             {
