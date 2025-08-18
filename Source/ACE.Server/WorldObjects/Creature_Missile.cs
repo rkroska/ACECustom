@@ -528,7 +528,7 @@ namespace ACE.Server.WorldObjects
                         if (damageValue != null)
                         {
                             // Apply damage reduction for balance (60% of original damage)
-                            var reducedDamage = (int)(damageValue.Value * 0.6f);
+                            var reducedDamage = (int)(damageValue.Value * 0.6);
                             splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
                         }
                     }
