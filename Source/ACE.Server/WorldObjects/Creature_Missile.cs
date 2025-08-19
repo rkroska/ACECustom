@@ -73,7 +73,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject LaunchProjectile(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation, Vector3 velocity)
         {
-            Console.WriteLine($"[SPLIT DEBUG] LaunchProjectile called - Weapon: {weapon?.Guid}, Target: {target?.Guid}");
+            Console.WriteLine($"[SPLIT DEBUG] ====== LaunchProjectile called ======");
+            Console.WriteLine($"[SPLIT DEBUG] Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}, Target: {target?.Guid}");
+            Console.WriteLine($"[SPLIT DEBUG] Origin: {origin}, Velocity: {velocity}");
             var player = this as Player;
 
             if (!velocity.IsValid())
