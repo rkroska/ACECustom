@@ -68,14 +68,36 @@ namespace ACE.Server.WorldObjects
             return animLength + animLength2;
         }
 
+        // Split arrow constants
+        private const float SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
+        private const int DEFAULT_SPLIT_ARROW_COUNT = 3;
+        private const float DEFAULT_SPLIT_ARROW_RANGE = 10f;
+
         /// <summary>
         /// Launches a projectile from player to target
         /// </summary>
         public WorldObject LaunchProjectile(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation, Vector3 velocity)
         {
-            Console.WriteLine($"[SPLIT DEBUG] ====== LaunchProjectile called ======");
-            Console.WriteLine($"[SPLIT DEBUG] Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}, Target: {target?.Guid}");
-            Console.WriteLine($"[SPLIT DEBUG] Origin: {origin}, Velocity: {velocity}");
+            // VERY OBVIOUS TEST OUTPUT - IF YOU SEE THIS, THE CODE IS UPDATED!
+            Console.WriteLine("================================================");
+            Console.WriteLine("🎯 SPLIT ARROWS CODE IS RUNNING! 🎯");
+            Console.WriteLine("================================================");
+            Console.WriteLine($"Weapon: {weapon?.Name ?? "NULL"} (ID: {weapon?.WeenieClassId ?? 0})");
+            Console.WriteLine($"Ammo: {ammo?.Name ?? "NULL"} (ID: {ammo?.WeenieClassId ?? 0})");
+            Console.WriteLine($"Target: {target?.Name ?? "NULL"} (ID: {target?.WeenieClassId ?? 0})");
+            Console.WriteLine("================================================");
+            
+            // Log to both console and file for debugging
+            var debugMessage = $"[SPLIT DEBUG] ====== LaunchProjectile called ======\n[SPLIT DEBUG] Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}, Target: {target?.Guid}\n[SPLIT DEBUG] Origin: {origin}, Velocity: {velocity}";
+            Console.WriteLine(debugMessage);
+            
+            // Also log to file
+            try
+            {
+                System.IO.File.AppendAllText("split_arrows_debug.log", $"{DateTime.Now}: {debugMessage}\n");
+            }
+            catch { /* Ignore file write errors */ }
+            
             var player = this as Player;
 
             if (!velocity.IsValid())
@@ -130,24 +152,37 @@ namespace ACE.Server.WorldObjects
             proj.EnqueueBroadcast(new GameMessageScript(proj.Guid, PlayScript.Launch, 0f));
 
             // Create split arrows if weapon has split property
-            Console.WriteLine($"[SPLIT DEBUG] Checking for split arrows - Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}");
+            var splitDebugMessage = $"[SPLIT DEBUG] Checking for split arrows - Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}";
+            Console.WriteLine(splitDebugMessage);
+            try { System.IO.File.AppendAllText("split_arrows_debug.log", $"{DateTime.Now}: {splitDebugMessage}\n"); } catch { }
+            
             if (weapon != null)
             {
                 var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
-                Console.WriteLine($"[SPLIT DEBUG] Weapon SplitArrows property: {hasSplitArrows}");
+                var propertyDebugMessage = $"[SPLIT DEBUG] Weapon SplitArrows property: {hasSplitArrows}";
+                Console.WriteLine(propertyDebugMessage);
+                try { System.IO.File.AppendAllText("split_arrows_debug.log", $"{DateTime.Now}: {propertyDebugMessage}\n"); } catch { }
+                
                 if (hasSplitArrows == true)
                 {
-                    Console.WriteLine($"[SPLIT DEBUG] Calling CreateSplitArrows");
+                    var callDebugMessage = "[SPLIT DEBUG] Calling CreateSplitArrows";
+                    Console.WriteLine(callDebugMessage);
+                    try { System.IO.File.AppendAllText("split_arrows_debug.log", $"{DateTime.Now}: {callDebugMessage}\n"); } catch { }
+                    
                     CreateSplitArrows(weapon, ammo, target, origin, orientation);
                 }
                 else
                 {
-                    Console.WriteLine($"[SPLIT DEBUG] Weapon does not have SplitArrows property or it's false");
+                    var noPropertyMessage = "[SPLIT DEBUG] Weapon does not have SplitArrows property or it's false";
+                    Console.WriteLine(noPropertyMessage);
+                    try { System.IO.File.AppendAllText("split_arrows_debug.log", $"{DateTime.Now}: {noPropertyMessage}\n"); } catch { }
                 }
             }
             else
             {
-                Console.WriteLine($"[SPLIT DEBUG] Weapon is null");
+                var nullWeaponMessage = "[SPLIT DEBUG] Weapon is null";
+                Console.WriteLine(nullWeaponMessage);
+                try { System.IO.File.AppendAllText("split_arrows_debug.log", $"{DateTime.Now}: {nullWeaponMessage}\n"); } catch { }
             }
 
             // detonate point-blank projectiles immediately
@@ -494,106 +529,120 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Creates additional projectiles for split arrow effect
         /// </summary>
-        private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject primaryTarget, Vector3 origin, Quaternion orientation)
+        /// <param name="weapon">The weapon that has split arrows capability</param>
+        /// <param name="ammo">The ammunition to use for split arrows</param>
+        /// <param name="target">The primary target</param>
+        /// <param name="origin">Origin position for split arrows</param>
+        /// <param name="orientation">Orientation for split arrows</param>
+        private void CreateSplitArrows(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation)
         {
             try
             {
-                Console.WriteLine($"[SPLIT DEBUG] CreateSplitArrows called for weapon {weapon.Guid}");
-                var totalArrowCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 3;
-                var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? 10f);
-                Console.WriteLine($"[SPLIT DEBUG] Total arrows: {totalArrowCount}, Range: {splitRange}");
-
-                // Calculate how many ADDITIONAL arrows to create
-                // If totalArrowCount = 3, we want 1 primary + 2 additional = 3 total
-                var additionalArrowCount = totalArrowCount - 1;
-
-                // Find nearby targets for split arrows
-                var landblock = CurrentLandblock;
-                if (landblock == null)
+                // Validate inputs
+                if (weapon == null || ammo == null || target == null)
                 {
+                    Console.WriteLine("[SPLIT DEBUG] CreateSplitArrows called with null parameters");
                     return;
                 }
 
-                                // Use optimized target finding
-                var potentialTargets = FindValidSplitTargets(primaryTarget, splitRange, origin, additionalArrowCount);
-                Console.WriteLine($"[SPLIT DEBUG] Found {potentialTargets.Count} potential targets");
+                Console.WriteLine($"[SPLIT DEBUG] CreateSplitArrows called for weapon {weapon.Guid}");
                 
-                // Create additional arrows (up to additionalArrowCount)
+                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
+                var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
+                
+                Console.WriteLine($"[SPLIT DEBUG] Total arrows: {splitCount}, Range: {splitRange}");
+                
+                var additionalArrowCount = splitCount - 1; // We already have the main arrow
+                
+                var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount);
+                
+                Console.WriteLine($"[SPLIT DEBUG] Found {validTargets.Count} valid targets for split arrows");
+                
+                if (validTargets.Count == 0)
+                {
+                    Console.WriteLine($"[SPLIT DEBUG] No valid targets found, skipping split arrows");
+                    return;
+                }
+                
                 var arrowsCreated = 0;
-                foreach (var target in potentialTargets)
+                
+                foreach (var splitTarget in validTargets)
                 {
                     if (arrowsCreated >= additionalArrowCount)
                         break;
-
+                        
+                    Console.WriteLine($"[SPLIT DEBUG] Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
+                    
                     // Create new projectile
                     var splitProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
+                    
                     if (splitProj == null)
                     {
+                        Console.WriteLine($"[SPLIT DEBUG] Failed to create split projectile for ammo {ammo.WeenieClassId}");
                         continue;
                     }
-
-                    // Set up split projectile with necessary properties
+                    
+                    // Set necessary properties
                     splitProj.ProjectileSource = this;
-                    splitProj.ProjectileTarget = target;
+                    splitProj.ProjectileTarget = splitTarget;
                     splitProj.ProjectileLauncher = weapon;
                     splitProj.ProjectileAmmo = ammo;
-
-                    // Copy essential projectile properties from the original ammo
-                    if (ammo is Ammunition originalAmmo)
+                    
+                    // Reduce damage for split arrows (60% of original)
+                    var damageValue = splitProj.GetProperty(PropertyInt.Damage);
+                    if (damageValue.HasValue)
                     {
-                        var damageValue = originalAmmo.GetProperty(PropertyInt.Damage);
-                        if (damageValue != null)
-                        {
-                            // Apply damage reduction for balance (60% of original damage)
-                            var reducedDamage = (int)(damageValue.Value * 0.6f);
-                            splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
-                        }
+                        var reducedDamage = (int)(damageValue.Value * SPLIT_ARROW_DAMAGE_MULTIPLIER);
+                        splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
+                        Console.WriteLine($"[SPLIT DEBUG] Set split arrow damage to {reducedDamage} (original: {damageValue.Value})");
                     }
-
+                    
                     // Position at same origin
                     splitProj.Location = new Position(Location);
                     splitProj.Location.Pos = origin;
                     splitProj.Location.Rotation = orientation;
-
-                    // Calculate velocity to new target
-                    var splitVelocity = GetAimVelocity(target, GetProjectileSpeed());
-                    SetProjectilePhysicsState(splitProj, target, splitVelocity);
-
-                    // Ensure collision detection is enabled
-                    if (splitProj.PhysicsObj != null)
-                    {
-                        splitProj.PhysicsObj.set_active(true);
-                        splitProj.ReportCollisions = true;
-                    }
-
+                    
+                    // Calculate velocity to new target - use EXACT same physics as main arrow
+                    var splitVelocity = GetAimVelocity(splitTarget, GetProjectileSpeed());
+                    
+                    Console.WriteLine($"[SPLIT DEBUG] Split arrow velocity: {splitVelocity}");
+                    
+                    // Set physics state
+                    SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
+                    
                     // Add to world
                     var success = LandblockManager.AddObject(splitProj);
                     if (success && splitProj.PhysicsObj != null)
                     {
+                        splitProj.PhysicsObj.set_active(true);
+                        splitProj.ReportCollisions = true;
+                        Console.WriteLine($"[SPLIT DEBUG] Successfully added split arrow {arrowsCreated + 1} to world");
                         arrowsCreated++;
-
-                        // Set PK status and play launch sound
-                        var pkStatus = this is Player playerForPk ? playerForPk.PlayerKillerStatus : PlayerKillerStatus.Creature;
-                        splitProj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(splitProj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
-                        splitProj.EnqueueBroadcast(new GameMessageScript(splitProj.Guid, PlayScript.Launch, 0f));
                     }
                     else
                     {
-                        splitProj.Destroy();
+                        Console.WriteLine($"[SPLIT DEBUG] Failed to add split arrow {arrowsCreated + 1} to world");
                     }
                 }
+                
+                Console.WriteLine($"[SPLIT DEBUG] Created {arrowsCreated} split arrows successfully");
             }
             catch (Exception ex)
             {
-                // Log error but don't crash the game
-                // In production, this should use proper logging
+                Console.WriteLine($"[SPLIT ERROR] Exception in CreateSplitArrows: {ex.Message}");
+                Console.WriteLine($"[SPLIT ERROR] Stack trace: {ex.StackTrace}");
             }
         }
 
         /// <summary>
         /// Finds valid targets for split arrows with optimized search
         /// </summary>
-        private List<WorldObject> FindValidSplitTargets(WorldObject primaryTarget, float splitRange, Vector3 origin, int maxTargets)
+        /// <param name="origin">Origin position for the split arrows</param>
+        /// <param name="primaryTarget">The primary target that was hit</param>
+        /// <param name="splitRange">Maximum range to search for additional targets</param>
+        /// <param name="maxTargets">Maximum number of additional targets to find</param>
+        /// <returns>List of valid targets for split arrows</returns>
+        private List<WorldObject> FindValidSplitTargets(Vector3 origin, WorldObject primaryTarget, float splitRange, int maxTargets)
         {
             Console.WriteLine($"[SPLIT DEBUG] FindValidSplitTargets called - Range: {splitRange}, MaxTargets: {maxTargets}");
             var potentialTargets = new List<WorldObject>();
@@ -641,6 +690,10 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Validates if a target is within a reasonable firing angle for split arrows
         /// </summary>
+        /// <param name="primaryTarget">The primary target that was hit</param>
+        /// <param name="potentialTarget">The potential target to validate</param>
+        /// <param name="origin">Origin position for the split arrows</param>
+        /// <returns>True if the target is within a valid firing angle</returns>
         private bool IsTargetInValidAngle(WorldObject primaryTarget, WorldObject potentialTarget, Vector3 origin)
         {
             try
@@ -659,9 +712,9 @@ namespace ACE.Server.WorldObjects
                 
                 // Allow targets within 90 degrees of the player's forward direction
                 // This prevents shooting arrows behind the player
-                var maxAngle = 90.0f;
+                const float MAX_ANGLE = 90.0f;
                 
-                if (angle > maxAngle)
+                if (angle > MAX_ANGLE)
                 {
                     return false;
                 }
@@ -670,6 +723,7 @@ namespace ACE.Server.WorldObjects
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[SPLIT ERROR] Exception in IsTargetInValidAngle: {ex.Message}");
                 return false; // Fail safe - don't create split arrow if validation fails
             }
         }
