@@ -94,6 +94,12 @@ namespace ACE.Server.Network
             set => lastMyQuestsCommandTime = value;
         }
 
+        public DateTime LastBankCommandTime { get; set; }
+
+        public DateTime LastClapCommandTime { get; set; }
+
+        public DateTime LastQBCommandTime { get; set; }
+
         public Session(ConnectionListener connectionListener, IPEndPoint endPoint, ushort clientId, ushort serverId)
         {
             EndPoint = endPoint;
