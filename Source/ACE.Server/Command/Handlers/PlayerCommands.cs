@@ -1,27 +1,26 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Database;
+using ACE.Database.Models.Auth;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Factories.Tables;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
-using System.Linq;
-using ACE.Entity.Enum.Properties;
-using ACE.Database.Models.Auth;
-using System.Xml.Linq;
 using Lifestoned.DataModel.DerethForever;
+using log4net;
 using MySqlX.XDevAPI.Common;
 using Org.BouncyCastle.Utilities.Net;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Xml.Linq;
 using static System.Net.Mime.MediaTypeNames;
 //using ACE.Server.Factories;
 //using Org.BouncyCastle.Ocsp;
@@ -683,6 +682,13 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            // Early exit if no materials available - this prevents unnecessary processing
+            if (!HasAnyAetheriaMaterials(session.Player)) {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+                return;
+            }
+
+
             // Consume items and bank coins
             // Red Aetheria + Empyrean Trinkets
             int redItemsToConsume = redComboCount;
@@ -766,6 +772,25 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redComboCount} Enlightened Coins and {blueComboCount * 3} Weakly Enlightened Coins! Total cost (Coalesced Aetheria and Chunks only): {totalClapCost} pyreals.", ChatMessageType.Broadcast));
         }
 
+        public static bool HasAnyAetheriaMaterials(Player player) {
+            // Calculate actual crafting potential
+            int totalRedAetheria = player.GetNumInventoryItemsOfWCID(42636) +  // Red Coalesced
+                                   player.GetNumInventoryItemsOfWCID(310147) +  // Red Chunk
+                                   player.GetNumInventoryItemsOfWCID(42644);    // Red Powder
+
+            int totalBlueAetheria = player.GetNumInventoryItemsOfWCID(42635) + // Blue Coalesced
+                                    player.GetNumInventoryItemsOfWCID(310149) + // Blue Chunk
+                                    player.GetNumInventoryItemsOfWCID(300019);  // Blue Powder
+
+            int empyreanTrinkets = player.GetNumInventoryItemsOfWCID(34276);
+            int falatacotTrinkets = player.GetNumInventoryItemsOfWCID(34277);
+
+            // Check if you can actually craft anything
+            bool canCraftRed = totalRedAetheria > 0 && empyreanTrinkets > 0;
+            bool canCraftBlue = totalBlueAetheria > 0 && falatacotTrinkets > 0;
+
+            return canCraftRed || canCraftBlue;
+        }
 
         [CommandHandler("enl", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Enlightenment Alias", "")]
         public static void HandleEnlShort(Session session, params string[] parameters)
