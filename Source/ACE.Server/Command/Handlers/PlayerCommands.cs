@@ -653,7 +653,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            int ClapCostPerUnit = 250000;
+            const long ClapCostPerUnit = 250000L;
 
             // OPTIMIZATION: Early exit if no materials available - prevents unnecessary processing
             if (!HasAnyAetheriaMaterials(session.Player)) {
@@ -720,9 +720,20 @@ namespace ACE.Server.Command.Handlers
             */
 
             // NEW OPTIMIZED CODE: Simplified calculations
-            var redComboCount = Math.Min(totalRedAetheriaCount, empyreanTrinketCount);
-            var blueComboCount = Math.Min(totalBlueAetheriaCount, falatacotTrinketCount);
-            var totalClapCost = (redComboCount + blueComboCount) * ClapCostPerUnit;
+            int redComboCount = Math.Min(totalRedAetheriaCount, empyreanTrinketCount);
+            int blueComboCount = Math.Min(totalBlueAetheriaCount, falatacotTrinketCount);
+
+            // If nothing is craftable, bail before any removals or cost checks
+            if (redComboCount == 0 && blueComboCount == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+                return;
+            }
+
+            // MMD cost applies only to Coalesced + Chunks (no cost for powder)
+            long redNonPowderUsed  = Math.Min((long)redComboCount, (long)redAetheriaCount + redChunkCount);
+            long blueNonPowderUsed = Math.Min((long)blueComboCount, (long)blueAetheriaCount + blueChunkCount);
+            long totalClapCost = (redNonPowderUsed + blueNonPowderUsed) * ClapCostPerUnit;
 
             if (session.Player.BankedPyreals < totalClapCost)
             {
