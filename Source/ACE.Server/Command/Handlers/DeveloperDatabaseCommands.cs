@@ -29,20 +29,7 @@ namespace ACE.Server.Command.Handlers
             });
         }
 
-        [CommandHandler("databasequeue-cancel", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Cancel any running database performance tests.")]
-        public static void HandleDatabaseCancelTests(Session session, params string[] parameters)
-        {
-            var serializedDb = DatabaseManager.Shard as SerializedShardDatabase;
-            if (serializedDb != null)
-            {
-                // Note: CancelTests method doesn't exist, so we'll just inform the user
-                CommandHandlerHelper.WriteOutputInfo(session, "Test cancellation requested. Note: CancelTests method not available in current SerializedShardDatabase implementation.");
-            }
-            else
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, "Error: SerializedShardDatabase not available.");
-            }
-        }
+
 
         [CommandHandler("save-offline-characters", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Manually trigger offline character saves using the same logic as the automatic system.")]
         public static void HandleSaveOfflineCharacters(Session session, params string[] parameters)
