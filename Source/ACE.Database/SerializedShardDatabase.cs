@@ -61,12 +61,12 @@ namespace ACE.Database
 
         public List<string> QueueReport()
         {
-            return _queue.Select(x => x.AsyncState.ToString() ?? "Unknown Task").ToList();
+            return _queue.Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
         }
 
         public List<string> ReadOnlyQueueReport()
         {
-            return _readOnlyQueue.Select(x => x.AsyncState.ToString() ?? "Unknown Task").ToList();
+            return _readOnlyQueue.Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
         }
 
         private void DoReadOnlyWork()
@@ -177,10 +177,10 @@ namespace ACE.Database
         {
             var initialCallTime = DateTime.UtcNow;
 
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 callback?.Invoke(DateTime.UtcNow - initialCallTime);
-            }));
+            }, "GetCurrentQueueWaitTime"));
         }
 
 
@@ -289,11 +289,11 @@ namespace ACE.Database
 
         public void IsCharacterNameAvailable(string name, Action<bool> callback)
         {
-            _readOnlyQueue.Add(new Task(() =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.IsCharacterNameAvailable(name);
                 callback?.Invoke(result);
-            }));
+            }, "IsCharacterNameAvailable: " + name));
         }
 
         public void GetCharacters(uint accountId, bool includeDeleted, Action<List<Character>> callback)
@@ -344,11 +344,11 @@ namespace ACE.Database
 
         public void RenameCharacter(Character character, string newName, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _queue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.RenameCharacter(character, newName, rwLock);
                 callback?.Invoke(result);
-            }));
+            }, "RenameCharacter: " + character.Id));
         }
 
         public void SetCharacterAccessLevelByName(string name, AccessLevel accessLevel, Action<uint> callback)
