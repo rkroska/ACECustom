@@ -31,7 +31,7 @@ namespace ACE.Server.Managers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static readonly Dictionary<uint, Player> players = new Dictionary<uint, Player>();
+        private static readonly Dictionary<uint, Player> onlinePlayers = new Dictionary<uint, Player>();
         private static readonly Dictionary<uint, OfflinePlayer> offlinePlayers = new Dictionary<uint, OfflinePlayer>();
         private static readonly ReaderWriterLockSlim playersLock = new ReaderWriterLockSlim();
 
@@ -257,7 +257,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                return players.Count;
+                return onlinePlayers.Count;
             }
             finally
             {
@@ -281,7 +281,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                if (players.TryGetValue(guid, out var value))
+                if (onlinePlayers.TryGetValue(guid, out var value))
                     return value;
             }
             finally
@@ -302,7 +302,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var onlinePlayer = players.Values.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || p.Name.Equals(admin, StringComparison.OrdinalIgnoreCase));
+                var onlinePlayer = onlinePlayers.Values.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || p.Name.Equals(admin, StringComparison.OrdinalIgnoreCase));
 
                 if (onlinePlayer != null)
                     return onlinePlayer;
@@ -322,7 +322,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in players.Values)
+                foreach (var player in onlinePlayers.Values)
                     results.Add(player);
             }
             finally
@@ -353,7 +353,7 @@ namespace ACE.Server.Managers
                 player.Allegiance = offlinePlayer.Allegiance;
                 player.AllegianceNode = offlinePlayer.AllegianceNode;
 
-                if (!players.TryAdd(player.Guid.Full, player))
+                if (!onlinePlayers.TryAdd(player.Guid.Full, player))
                     return false;
             }
             finally
@@ -377,7 +377,7 @@ namespace ACE.Server.Managers
             playersLock.EnterWriteLock();
             try
             {
-                if (!players.Remove(player.Guid.Full, out _))
+                if (!onlinePlayers.Remove(player.Guid.Full, out _))
                     return false; // This should never happen
 
                 var offlinePlayer = new OfflinePlayer(player.Biota);
@@ -446,7 +446,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var onlinePlayer = players.Values.FirstOrDefault(p => p.Name.TrimStart('+').Equals(name.TrimStart('+'), StringComparison.OrdinalIgnoreCase));
+                var onlinePlayer = onlinePlayers.Values.FirstOrDefault(p => p.Name.TrimStart('+').Equals(name.TrimStart('+'), StringComparison.OrdinalIgnoreCase));
 
                 if (onlinePlayer != null)
                 {
@@ -501,7 +501,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                if (players.TryGetValue(guid, out var onlinePlayer))
+                if (onlinePlayers.TryGetValue(guid, out var onlinePlayer))
                 {
                     isOnline = true;
                     return onlinePlayer;
@@ -532,7 +532,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var onlinePlayersResult = players.Values.Where(p => p.MonarchId == monarch.Full);
+                var onlinePlayersResult = onlinePlayers.Values.Where(p => p.MonarchId == monarch.Full);
                 var offlinePlayersResult = offlinePlayers.Values.Where(p => p.MonarchId == monarch.Full);
 
                 results.AddRange(onlinePlayersResult);
@@ -557,7 +557,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in players.Values)
+                foreach (var player in onlinePlayers.Values)
                 {
                     if (player.Character.HasAsFriend(guid.Full, player.CharacterDatabaseLock))
                         results.Add(player);
@@ -845,7 +845,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                onlinePlayersTotal = players.Count(a => a.Value.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase));
+                onlinePlayersTotal = onlinePlayers.Count(a => a.Value.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase));
                 offlinePlayersTotal = offlinePlayers.Count(a => a.Value.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase));
             }
             finally
