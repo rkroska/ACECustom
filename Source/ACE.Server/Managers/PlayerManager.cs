@@ -24,13 +24,16 @@ using Biota = ACE.Entity.Models.Biota;
 
 namespace ACE.Server.Managers
 {
+    /// <summary>
+    /// PlayerManager handles all players in the world
+    /// </summary>
     public static class PlayerManager
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static readonly ReaderWriterLockSlim playersLock = new ReaderWriterLockSlim();
-        private static readonly Dictionary<uint, Player> onlinePlayers = new Dictionary<uint, Player>();
+        private static readonly Dictionary<uint, Player> players = new Dictionary<uint, Player>();
         private static readonly Dictionary<uint, OfflinePlayer> offlinePlayers = new Dictionary<uint, OfflinePlayer>();
+        private static readonly ReaderWriterLockSlim playersLock = new ReaderWriterLockSlim();
 
         /// <summary>
         /// OfflinePlayers will be saved to the database every 1 hour
@@ -38,6 +41,8 @@ namespace ACE.Server.Managers
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
         private static DateTime lastDatabaseSave = DateTime.MinValue;
+
+        private static readonly LinkedList<Player> playersPendingLogoff = new LinkedList<Player>();
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -54,8 +59,6 @@ namespace ACE.Server.Managers
                     offlinePlayers[offlinePlayer.Guid.Full] = offlinePlayer;
             });
         }
-
-        private static readonly LinkedList<Player> playersPendingLogoff = new LinkedList<Player>();
 
         public static void AddPlayerToLogoffQueue(Player player)
         {
@@ -91,7 +94,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected. The biotas are saved in parallel.
         /// </summary>
-        public static void SaveOfflinePlayersWithChanges()
+        public static void SaveOfflinePlayersWithChanges(int maxPlayers = -1)
         {
             lastDatabaseSave = DateTime.UtcNow;
 
@@ -100,13 +103,20 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in offlinePlayers.Values)
+                var playersToSave = offlinePlayers.Values
+                    .Where(p => p.ChangesDetected)
+                    .ToList();
+
+                // Apply maxPlayers limit if specified
+                if (maxPlayers > 0 && playersToSave.Count > maxPlayers)
                 {
-                    if (player.ChangesDetected)
-                    {
-                        player.SaveBiotaToDatabase(false);
-                        biotas.Add((player.Biota, player.BiotaDatabaseLock));
-                    }
+                    playersToSave = playersToSave.Take(maxPlayers).ToList();
+                }
+
+                foreach (var player in playersToSave)
+                {
+                    player.SaveBiotaToDatabase(false);
+                    biotas.Add((player.Biota, player.BiotaDatabaseLock));
                 }
             }
             finally
@@ -114,7 +124,19 @@ namespace ACE.Server.Managers
                 playersLock.ExitReadLock();
             }
 
-            DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
+            if (biotas.Count > 0)
+            {
+                DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
+            }
+        }
+
+        /// <summary>
+        /// Async version that runs saves on background threads to avoid blocking the main thread
+        /// </summary>
+        public static async Task SaveOfflinePlayersWithChangesAsync(int maxPlayers = -1)
+        {
+            // Run the save operation on a background thread to avoid blocking the main thread
+            await Task.Run(() => SaveOfflinePlayersWithChanges(maxPlayers));
         }
         
 
@@ -235,7 +257,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                return onlinePlayers.Count;
+                return players.Count;
             }
             finally
             {
@@ -259,7 +281,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                if (onlinePlayers.TryGetValue(guid, out var value))
+                if (players.TryGetValue(guid, out var value))
                     return value;
             }
             finally
@@ -280,7 +302,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var onlinePlayer = onlinePlayers.Values.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || p.Name.Equals(admin, StringComparison.OrdinalIgnoreCase));
+                var onlinePlayer = players.Values.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || p.Name.Equals(admin, StringComparison.OrdinalIgnoreCase));
 
                 if (onlinePlayer != null)
                     return onlinePlayer;
@@ -300,7 +322,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in onlinePlayers.Values)
+                foreach (var player in players.Values)
                     results.Add(player);
             }
             finally
@@ -331,7 +353,7 @@ namespace ACE.Server.Managers
                 player.Allegiance = offlinePlayer.Allegiance;
                 player.AllegianceNode = offlinePlayer.AllegianceNode;
 
-                if (!onlinePlayers.TryAdd(player.Guid.Full, player))
+                if (!players.TryAdd(player.Guid.Full, player))
                     return false;
             }
             finally
@@ -355,7 +377,7 @@ namespace ACE.Server.Managers
             playersLock.EnterWriteLock();
             try
             {
-                if (!onlinePlayers.Remove(player.Guid.Full, out _))
+                if (!players.Remove(player.Guid.Full, out _))
                     return false; // This should never happen
 
                 var offlinePlayer = new OfflinePlayer(player.Biota);
@@ -424,7 +446,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var onlinePlayer = onlinePlayers.Values.FirstOrDefault(p => p.Name.TrimStart('+').Equals(name.TrimStart('+'), StringComparison.OrdinalIgnoreCase));
+                var onlinePlayer = players.Values.FirstOrDefault(p => p.Name.TrimStart('+').Equals(name.TrimStart('+'), StringComparison.OrdinalIgnoreCase));
 
                 if (onlinePlayer != null)
                 {
@@ -479,7 +501,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                if (onlinePlayers.TryGetValue(guid, out var onlinePlayer))
+                if (players.TryGetValue(guid, out var onlinePlayer))
                 {
                     isOnline = true;
                     return onlinePlayer;
@@ -510,7 +532,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var onlinePlayersResult = onlinePlayers.Values.Where(p => p.MonarchId == monarch.Full);
+                var onlinePlayersResult = players.Values.Where(p => p.MonarchId == monarch.Full);
                 var offlinePlayersResult = offlinePlayers.Values.Where(p => p.MonarchId == monarch.Full);
 
                 results.AddRange(onlinePlayersResult);
@@ -535,7 +557,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in onlinePlayers.Values)
+                foreach (var player in players.Values)
                 {
                     if (player.Character.HasAsFriend(guid.Full, player.CharacterDatabaseLock))
                         results.Add(player);
@@ -823,7 +845,7 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                onlinePlayersTotal = onlinePlayers.Count(a => a.Value.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase));
+                onlinePlayersTotal = players.Count(a => a.Value.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase));
                 offlinePlayersTotal = offlinePlayers.Count(a => a.Value.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase));
             }
             finally
