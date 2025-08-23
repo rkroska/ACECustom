@@ -287,6 +287,18 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var currentTime = DateTime.UtcNow;
+
+                var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
+                if (lastCommandTimeSeconds < commandSecondsLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                session.LastBankCommandTime = currentTime;
+
                 //deposit
                 if (parameters.Count() == 1) //only means all
                 {
@@ -358,6 +370,18 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "withdraw" || parameters[0] == "w")
             {
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var currentTime = DateTime.UtcNow;
+
+                var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
+                if (lastCommandTimeSeconds < commandSecondsLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                session.LastBankCommandTime = currentTime;
+
                 //withdraw
                 switch (iType)
                 {
@@ -653,7 +677,19 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            var commandSecondsLimit = PropertyManager.GetLong("clap_command_limit").Item;
+            var currentTime = DateTime.UtcNow;
+
+            var lastCommandTimeSeconds = (currentTime - session.LastClapCommandTime).TotalSeconds;
+            if (lastCommandTimeSeconds < commandSecondsLimit)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            session.LastClapCommandTime = currentTime;
             const long ClapCostPerUnit = 250000L;
+
 
             // OPTIMIZATION: Early exit if no materials available - prevents unnecessary processing
             if (!HasAnyAetheriaMaterials(session.Player)) {
@@ -887,11 +923,11 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("dynamicabandon", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Abandons the most recent dynamic quest", "")]
-        public static void AbandonDynamicQuest(Session session, params string[] parameters)
-        {
-            QuestManager.AbandonDynamicQuests(session.Player);
-        }
+        //[CommandHandler("dynamicabandon", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Abandons the most recent dynamic quest", "")]
+        //public static void AbandonDynamicQuest(Session session, params string[] parameters)
+        //{
+        //    QuestManager.AbandonDynamicQuests(session.Player);
+        //}
 
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleMultiplier(Session session, params string[] paramters)
@@ -1132,6 +1168,18 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
+                var commandSecondsLimit = PropertyManager.GetLong("qb_command_limit").Item;
+                var currentTime = DateTime.UtcNow;
+
+                var lastCommandTimeSeconds = (currentTime - session.LastQBCommandTime).TotalSeconds;
+                if (lastCommandTimeSeconds < commandSecondsLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                session.LastQBCommandTime = currentTime;
+
                 using (var context = new AuthDbContext())
                 {
                     var res = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted >= 1).ToList();

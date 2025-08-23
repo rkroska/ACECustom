@@ -638,7 +638,10 @@ namespace ACE.Server.Managers
                 ("enl_300_base_lum_cost", new Property<long>(2000000000, "the base luminance cost for each enlighten after 300, this will be multiplied by the target enlightenment level")),
                 ("dynamic_quest_repeat_hours", new Property<long>(20, "the number of hours before a player can do another dynamic quest")),
                 ("dynamic_quest_max_xp", new Property<long>(5000000000, "the maximum base xp rewarded from a dynamic quest")),
-                ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs"))
+                ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs")),
+                ("bank_command_limit", new Property<long>(5, "The number of seconds a player must wait between making a bank deposit or withdrawl")),
+                ("clap_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the clap command")),
+                ("qb_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the qb list command"))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
