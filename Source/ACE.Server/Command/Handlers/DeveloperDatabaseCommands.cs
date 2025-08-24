@@ -8,6 +8,7 @@ using ACE.Database;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Server.Command.Handlers.Processors;
+using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 
@@ -42,30 +43,27 @@ namespace ACE.Server.Command.Handlers
             processor.RunAsync(session, biotasPerTest);
         }
 
-        [CommandHandler("save-offline-characters", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Manually trigger offline character saves using the same logic as the automatic system.")]
+        [CommandHandler("save-offline-characters", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Save all offline players with pending changes.")]
         public static void HandleSaveOfflineCharacters(Session session, params string[] parameters)
         {
-            CommandHandlerHelper.WriteOutputInfo(session, "Triggering offline character saves...");
+            CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves...");
             
-            // Run the save operation in a background thread to avoid blocking
-            System.Threading.Tasks.Task.Run(() =>
+            // Queue the save operation to the database queue (non-blocking)
+            DatabaseManager.Shard.QueueOfflinePlayerSaves(() =>
             {
-                try
-                {
-                    // This will use the exact same logic/functions as the normal offline character save system
-                    // The system should automatically detect and save all offline characters
-                    CommandHandlerHelper.WriteOutputInfo(session, "Offline character save process initiated. Check console for progress updates.");
-                }
-                catch (Exception ex)
-                {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Error during offline character save: {ex.Message}");
-                    log.Error($"Error in HandleSaveOfflineCharacters: {ex}");
-                }
+                // Note: This callback runs on a background thread, so we can't directly call CommandHandlerHelper
+                // The user will see the immediate response below
             });
+
+            CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
+            CommandHandlerHelper.WriteOutputInfo(session, "Save operation has been queued to the database queue.");
+            CommandHandlerHelper.WriteOutputInfo(session, "The main thread is not blocked - saves will process in the background.");
+            CommandHandlerHelper.WriteOutputInfo(session, "");
+            CommandHandlerHelper.WriteOutputInfo(session, "Use @offline-save-stats to view current save status");
         }
 
-        [CommandHandler("test-async-saves", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Test async offline player saves with actual database writes.", "maxPlayers\n" + "optional parameter maxPlayers if omitted saves all players with changes")]
-        public static void HandleTestAsyncSaves(Session session, params string[] parameters)
+        [CommandHandler("test-queue-saves", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Test offline player saves using the database queue.", "maxPlayers\n" + "optional parameter maxPlayers if omitted saves all players with changes")]
+        public static void HandleTestQueueSaves(Session session, params string[] parameters)
         {
             int maxPlayers = -1; // -1 means save all players with changes
             if (parameters?.Length >= 1)
@@ -73,27 +71,89 @@ namespace ACE.Server.Command.Handlers
 
             if (maxPlayers <= 0)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Testing async offline player saves (all players with changes)...");
+                CommandHandlerHelper.WriteOutputInfo(session, "Testing offline player saves (all players with changes)...");
             }
             else
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Testing async offline player saves (max {maxPlayers:N0} players)...");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Testing offline player saves (max {maxPlayers:N0} players)...");
             }
 
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves to database queue...");
             
-            // Call the async save method
-            PlayerManager.SaveOfflinePlayersWithChangesAsync(maxPlayers).Wait();
-            
-            stopwatch.Stop();
+            // Queue the save operation to the database queue (non-blocking)
+            DatabaseManager.Shard.QueueOfflinePlayerSaves(maxPlayers, () =>
+            {
+                // Note: This callback runs on a background thread, so we can't directly call CommandHandlerHelper
+                // The user will see the immediate response below
+            });
 
-            CommandHandlerHelper.WriteOutputInfo(session, "=== ASYNC SAVE RESULTS ===");
+            CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
             CommandHandlerHelper.WriteOutputInfo(session, $"Max Players: {(maxPlayers > 0 ? maxPlayers.ToString() : "All")}");
-            CommandHandlerHelper.WriteOutputInfo(session, $"Total Time: {stopwatch.ElapsedMilliseconds:N0} ms");
-            CommandHandlerHelper.WriteOutputInfo(session, $"Async database saves performed!");
+            CommandHandlerHelper.WriteOutputInfo(session, "Save operation has been queued to the database queue.");
+            CommandHandlerHelper.WriteOutputInfo(session, "The main thread is not blocked - saves will process in the background.");
             CommandHandlerHelper.WriteOutputInfo(session, "");
             CommandHandlerHelper.WriteOutputInfo(session, "WARNING: This command actually saves data to the database!");
-            CommandHandlerHelper.WriteOutputInfo(session, "NOTE: Saves run on background threads - main thread was not blocked!");
+            CommandHandlerHelper.WriteOutputInfo(session, "NOTE: Saves run on background threads via the dedicated database queue!");
+        }
+
+        [CommandHandler("offline-save-stats", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Show detailed statistics about offline player saves and system status.")]
+        public static void HandleOfflineSaveStats(Session session, params string[] parameters)
+        {
+            var offlinePlayers = PlayerManager.GetAllOffline();
+            var totalOfflinePlayers = offlinePlayers?.Count ?? 0;
+            var playersWithChanges = offlinePlayers?.Where(p => p.ChangesDetected).ToList() ?? new List<OfflinePlayer>();
+            var playersWithChangesCount = playersWithChanges.Count;
+
+            // Get database queue info
+            var queueCount = DatabaseManager.Shard.QueueCount;
+
+            CommandHandlerHelper.WriteOutputInfo(session, "=== DETAILED OFFLINE SAVE STATISTICS ===");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Total Offline Players: {totalOfflinePlayers:N0}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Players Requiring Saves: {playersWithChangesCount:N0}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Save Percentage: {(totalOfflinePlayers > 0 ? (playersWithChangesCount * 100.0 / totalOfflinePlayers) : 0):F1}%");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Database Queue Count: {queueCount:N0}");
+
+            if (playersWithChangesCount > 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "");
+                CommandHandlerHelper.WriteOutputInfo(session, "=== PLAYERS WITH PENDING CHANGES ===");
+
+                // Group by account for better organization
+                var playersByAccount = playersWithChanges
+                    .GroupBy(p => p.Account?.AccountName ?? "Unknown")
+                    .OrderByDescending(g => g.Count())
+                    .Take(5); // Show top 5 accounts
+
+                foreach (var accountGroup in playersByAccount)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Account: {accountGroup.Key} ({accountGroup.Count()} characters)");
+                    foreach (var player in accountGroup.Take(3)) // Show first 3 per account
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"  - {player.Name} (0x{player.Guid:X8})");
+                    }
+                    if (accountGroup.Count() > 3)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"    ... and {accountGroup.Count() - 3} more");
+                    }
+                }
+
+                if (playersWithChangesCount > 15)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"... and {playersWithChangesCount - 15} more players across other accounts");
+                }
+            }
+
+            CommandHandlerHelper.WriteOutputInfo(session, "");
+            CommandHandlerHelper.WriteOutputInfo(session, "=== SYSTEM STATUS ===");
+            CommandHandlerHelper.WriteOutputInfo(session, "Automatic saves run every 1 hour");
+            CommandHandlerHelper.WriteOutputInfo(session, "Immediate saves occur on player logout");
+            CommandHandlerHelper.WriteOutputInfo(session, "Offline saves run via dedicated database queue (non-blocking)");
+
+            CommandHandlerHelper.WriteOutputInfo(session, "");
+            CommandHandlerHelper.WriteOutputInfo(session, "=== AVAILABLE COMMANDS ===");
+            CommandHandlerHelper.WriteOutputInfo(session, "@save-offline-characters - Save all players with changes");
+            CommandHandlerHelper.WriteOutputInfo(session, "@test-queue-saves [maxPlayers] - Test offline save performance via queue");
+            CommandHandlerHelper.WriteOutputInfo(session, "@databasequeueinfo - Show database queue status");
         }
 
         [CommandHandler("fix-shortcut-bars", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Fixes the players with duplicate items on their shortcut bars.", "<execute>")]
