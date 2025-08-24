@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using ACE.Database;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
+using ACE.Server.Command.Handlers.Processors;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 
@@ -29,7 +30,17 @@ namespace ACE.Server.Command.Handlers
             });
         }
 
+        [CommandHandler("databaseperftest", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Test server/database performance.", "biotasPerTest\n" + "optional parameter biotasPerTest if omitted 1000")]
+        public static void HandleDatabasePerfTest(Session session, params string[] parameters)
+        {
+            int biotasPerTest = DatabasePerfTest.DefaultBiotasTestCount;
 
+            if (parameters?.Length > 0)
+                int.TryParse(parameters[0], out biotasPerTest);
+
+            var processor = new DatabasePerfTest();
+            processor.RunAsync(session, biotasPerTest);
+        }
 
         [CommandHandler("save-offline-characters", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Manually trigger offline character saves using the same logic as the automatic system.")]
         public static void HandleSaveOfflineCharacters(Session session, params string[] parameters)
