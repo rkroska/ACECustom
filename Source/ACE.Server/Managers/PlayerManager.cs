@@ -24,16 +24,13 @@ using Biota = ACE.Entity.Models.Biota;
 
 namespace ACE.Server.Managers
 {
-    /// <summary>
-    /// PlayerManager handles all players in the world
-    /// </summary>
     public static class PlayerManager
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static readonly ReaderWriterLockSlim playersLock = new ReaderWriterLockSlim();
         private static readonly Dictionary<uint, Player> onlinePlayers = new Dictionary<uint, Player>();
         private static readonly Dictionary<uint, OfflinePlayer> offlinePlayers = new Dictionary<uint, OfflinePlayer>();
-        private static readonly ReaderWriterLockSlim playersLock = new ReaderWriterLockSlim();
 
         /// <summary>
         /// OfflinePlayers will be saved to the database every 1 hour
@@ -41,8 +38,6 @@ namespace ACE.Server.Managers
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
         private static DateTime lastDatabaseSave = DateTime.MinValue;
-
-        private static readonly LinkedList<Player> playersPendingLogoff = new LinkedList<Player>();
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -59,6 +54,8 @@ namespace ACE.Server.Managers
                     offlinePlayers[offlinePlayer.Guid.Full] = offlinePlayer;
             });
         }
+
+        private static readonly LinkedList<Player> playersPendingLogoff = new LinkedList<Player>();
 
         public static void AddPlayerToLogoffQueue(Player player)
         {
@@ -94,7 +91,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected. The biotas are saved in parallel.
         /// </summary>
-        public static void SaveOfflinePlayersWithChanges(int maxPlayers = -1)
+        public static void SaveOfflinePlayersWithChanges()
         {
             lastDatabaseSave = DateTime.UtcNow;
 
@@ -103,20 +100,13 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                var playersToSave = offlinePlayers.Values
-                    .Where(p => p.ChangesDetected)
-                    .ToList();
-
-                // Apply maxPlayers limit if specified
-                if (maxPlayers > 0 && playersToSave.Count > maxPlayers)
+                foreach (var player in offlinePlayers.Values)
                 {
-                    playersToSave = playersToSave.Take(maxPlayers).ToList();
-                }
-
-                foreach (var player in playersToSave)
-                {
-                    player.SaveBiotaToDatabase(false);
-                    biotas.Add((player.Biota, player.BiotaDatabaseLock));
+                    if (player.ChangesDetected)
+                    {
+                        player.SaveBiotaToDatabase(false);
+                        biotas.Add((player.Biota, player.BiotaDatabaseLock));
+                    }
                 }
             }
             finally
@@ -124,19 +114,7 @@ namespace ACE.Server.Managers
                 playersLock.ExitReadLock();
             }
 
-            if (biotas.Count > 0)
-            {
-                DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
-            }
-        }
-
-        /// <summary>
-        /// Async version that runs saves on background threads to avoid blocking the main thread
-        /// </summary>
-        public static async Task SaveOfflinePlayersWithChangesAsync(int maxPlayers = -1)
-        {
-            // Run the save operation on a background thread to avoid blocking the main thread
-            await Task.Run(() => SaveOfflinePlayersWithChanges(maxPlayers));
+            DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
         }
         
 
