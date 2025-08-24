@@ -48,12 +48,13 @@ namespace ACE.Server.Command.Handlers
         {
             CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves...");
             
-            // Queue the save operation to the database queue (non-blocking)
-            DatabaseManager.Shard.QueueOfflinePlayerSaves(() =>
-            {
-                // Note: This callback runs on a background thread, so we can't directly call CommandHandlerHelper
-                // The user will see the immediate response below
-            });
+                                    // Queue the save operation to the database queue (non-blocking)
+                        DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
+                        {
+                            // Background thread; avoid direct session output.
+                            // Consider logging if you want completion visibility:
+                            // log.Info($"Offline save task completed. Success={success}");
+                        });
 
             CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
             CommandHandlerHelper.WriteOutputInfo(session, "Save operation has been queued to the database queue.");
@@ -81,10 +82,11 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves to database queue...");
             
             // Queue the save operation to the database queue (non-blocking)
-            DatabaseManager.Shard.QueueOfflinePlayerSaves(maxPlayers, () =>
+            DatabaseManager.Shard.QueueOfflinePlayerSaves(maxPlayers, success =>
             {
-                // Note: This callback runs on a background thread, so we can't directly call CommandHandlerHelper
-                // The user will see the immediate response below
+                // Background thread; avoid direct session output.
+                // Consider logging if you want completion visibility:
+                // log.Info($"Offline save task (max={maxPlayers}) completed. Success={success}");
             });
 
             CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
@@ -119,12 +121,13 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, "=== PLAYERS WITH PENDING CHANGES ===");
 
                 // Group by account for better organization
-                var playersByAccount = playersWithChanges
+                var topAccounts = playersWithChanges
                     .GroupBy(p => p.Account?.AccountName ?? "Unknown")
                     .OrderByDescending(g => g.Count())
-                    .Take(5); // Show top 5 accounts
+                    .Take(5)
+                    .ToList(); // materialize once
 
-                foreach (var accountGroup in playersByAccount)
+                foreach (var accountGroup in topAccounts)
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, $"Account: {accountGroup.Key} ({accountGroup.Count()} characters)");
                     foreach (var player in accountGroup.Take(3)) // Show first 3 per account
@@ -137,10 +140,10 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
 
-                if (playersWithChangesCount > 15)
-                {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"... and {playersWithChangesCount - 15} more players across other accounts");
-                }
+                var displayed = topAccounts.Sum(g => Math.Min(3, g.Count()));
+                var remaining = playersWithChangesCount - displayed;
+                if (remaining > 0)
+                    CommandHandlerHelper.WriteOutputInfo(session, $"... and {remaining} more players across other accounts");
             }
 
             CommandHandlerHelper.WriteOutputInfo(session, "");
