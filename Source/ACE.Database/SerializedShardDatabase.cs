@@ -384,7 +384,7 @@ namespace ACE.Database
                             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                         if (saveMethod != null)
                         {
-                            saveMethod.Invoke(null, new object[] { -1 }); // -1 = save all players
+                            saveMethod.Invoke(null, new object[] { }); // No parameters needed
                         }
                     }
                     callback?.Invoke();
@@ -414,7 +414,7 @@ namespace ACE.Database
                             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                         if (saveMethod != null)
                         {
-                            saveMethod.Invoke(null, new object[] { maxPlayers });
+                            saveMethod.Invoke(null, new object[] { }); // maxPlayers parameter not supported by current method
                         }
                     }
                     callback?.Invoke();
