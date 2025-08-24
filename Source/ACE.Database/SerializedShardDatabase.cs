@@ -366,5 +366,99 @@ namespace ACE.Database
                 callback?.Invoke(result);
             }, "AddCharacterInParallel: " + character.Id));
         }
+
+        /// <summary>
+        /// Queues offline player saves to be processed in the background
+        /// </summary>
+        public void QueueOfflinePlayerSaves(Action<bool> callback = null)
+        {
+            _queue.Add(new Task((x) =>
+            {
+                var success = false;
+                try
+                {
+                    // Import the PlayerManager to avoid circular dependencies
+                    var playerManagerType = Type.GetType("ACE.Server.Managers.PlayerManager, ACE.Server");
+                    if (playerManagerType == null)
+                    {
+                        log.Warn("[DATABASE] PlayerManager type not found; offline save skipped.");
+                    }
+                    else
+                    {
+                        var saveMethod = playerManagerType.GetMethod(
+                            "SaveOfflinePlayersWithChanges",
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                            null, Type.EmptyTypes, null);
+                        if (saveMethod == null)
+                        {
+                            log.Warn("[DATABASE] SaveOfflinePlayersWithChanges method not found on PlayerManager; offline save skipped.");
+                        }
+                        else
+                        {
+                            saveMethod.Invoke(null, Array.Empty<object>()); // No parameters needed
+                            success = true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[DATABASE] Offline player save task failed with exception: {ex}");
+                }
+                finally
+                {
+                    callback?.Invoke(success);
+                }
+            }, "QueueOfflinePlayerSaves"));
+        }
+
+        /// <summary>
+        /// Queues offline player saves with a maximum player limit
+        /// </summary>
+        public void QueueOfflinePlayerSaves(int maxPlayers, Action<bool> callback = null)
+        {
+            _queue.Add(new Task((x) =>
+            {
+                var success = false;
+                try
+                {
+                    // Import the PlayerManager to avoid circular dependencies
+                    var playerManagerType = Type.GetType("ACE.Server.Managers.PlayerManager, ACE.Server");
+                    if (playerManagerType == null)
+                    {
+                        log.Warn("[DATABASE] PlayerManager type not found; offline save skipped.");
+                    }
+                    else
+                    {
+                        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static;
+                        var saveInt = playerManagerType.GetMethod("SaveOfflinePlayersWithChanges", flags, null, new[] { typeof(int) }, null);
+                        var saveNoArgs = playerManagerType.GetMethod("SaveOfflinePlayersWithChanges", flags, null, Type.EmptyTypes, null);
+
+                        if (saveInt != null)
+                        {
+                            saveInt.Invoke(null, new object[] { maxPlayers });
+                            success = true;
+                        }
+                        else if (saveNoArgs != null)
+                        {
+                            log.Info("[DATABASE] SaveOfflinePlayersWithChanges(int) not found; invoking parameterless method and ignoring maxPlayers.");
+                            saveNoArgs.Invoke(null, Array.Empty<object>());
+                            success = true;
+                        }
+                        else
+                        {
+                            log.Warn("[DATABASE] SaveOfflinePlayersWithChanges method not found on PlayerManager; offline save skipped.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[DATABASE] Offline player save task failed with exception: {ex}");
+                }
+                finally
+                {
+                    callback?.Invoke(success);
+                }
+            }, "QueueOfflinePlayerSaves: " + maxPlayers));
+        }
     }
 }
