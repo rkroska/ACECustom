@@ -20,7 +20,7 @@ namespace ACE.Database.Tests
 
             // Assert
             Assert.AreEqual(2, queue.Count);
-            var items = queue.Items.ToList();
+            var items = queue.DequeueBatch(queue.Count).ToList();
             Assert.AreEqual(2, items[0].Id);
             Assert.AreEqual("Second", items[0].Data);
             Assert.AreEqual(1, items[1].Id);
@@ -40,7 +40,7 @@ namespace ACE.Database.Tests
 
             // Assert
             Assert.AreEqual(2, queue.Count);
-            var items = queue.Items.ToList();
+            var items = queue.DequeueBatch(queue.Count).ToList();
             Assert.AreEqual("banana", items[0]);
             Assert.AreEqual("apple", items[1]);
         }
@@ -59,7 +59,7 @@ namespace ACE.Database.Tests
             // Assert
             Assert.IsTrue(removed);
             Assert.AreEqual(1, queue.Count);
-            var remainingItem = queue.Items.First();
+            var remainingItem = queue.Dequeue();
             Assert.AreEqual(1, remainingItem.Id);
             Assert.AreEqual("First", remainingItem.Data);
         }

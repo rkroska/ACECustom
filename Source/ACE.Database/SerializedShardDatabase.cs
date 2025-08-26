@@ -65,7 +65,8 @@ namespace ACE.Database
 
         public List<string> QueueReport()
         {
-            return _uniqueQueue.Items.Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
+            return new List<string>{ "TODO" };
+            //return _uniqueQueue..Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
         }
 
         public List<string> ReadOnlyQueueReport()
