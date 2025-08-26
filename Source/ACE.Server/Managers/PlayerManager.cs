@@ -89,32 +89,81 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected. The biotas are saved in parallel.
+        /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected.
         /// </summary>
         public static void SaveOfflinePlayersWithChanges()
         {
             lastDatabaseSave = DateTime.UtcNow;
 
-            var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
-
+            // Check if there are actually players with changes to save
+            var playersWithChanges = 0;
+            
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in offlinePlayers.Values)
-                {
-                    if (player.ChangesDetected)
-                    {
-                        player.SaveBiotaToDatabase(false);
-                        biotas.Add((player.Biota, player.BiotaDatabaseLock));
-                    }
-                }
+                playersWithChanges = offlinePlayers.Values.Count(p => p.ChangesDetected);
             }
             finally
             {
                 playersLock.ExitReadLock();
             }
 
-            DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
+            // Only queue the save if there are actually changes to save
+            if (playersWithChanges > 0)
+            {
+                log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
+                DatabaseManager.Shard.QueueOfflinePlayerSaves();
+            }
+            else
+            {
+                log.Info("[PLAYERMANAGER] No offline players with changes to save");
+            }
+        }
+
+        /// <summary>
+        /// Internal method to actually perform the offline player saves.
+        /// This is called by the queue system.
+        /// </summary>
+        internal static void PerformOfflinePlayerSaves()
+        {
+            log.Info("[PLAYERMANAGER] Performing offline save operation");
+            
+            var playersToSave = new List<OfflinePlayer>();
+            
+            playersLock.EnterReadLock();
+            try
+            {
+                playersToSave = offlinePlayers.Values.Where(p => p.ChangesDetected).ToList();
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+
+            if (playersToSave.Count > 0)
+            {
+                log.Info($"[PLAYERMANAGER] Saving {playersToSave.Count} offline players with changes");
+                
+                // Save each player with changes
+                foreach (var player in playersToSave)
+                {
+                    try
+                    {
+                        player.SaveBiotaToDatabase(false);
+                        log.Info($"[PLAYERMANAGER] Successfully saved offline player: {player.Name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[PLAYERMANAGER] Failed to save offline player {player.Name}: {ex}");
+                    }
+                }
+                
+                log.Info($"[PLAYERMANAGER] Completed offline save operation for {playersToSave.Count} players");
+            }
+            else
+            {
+                log.Info("[PLAYERMANAGER] No offline players with changes to save");
+            }
         }
         
 

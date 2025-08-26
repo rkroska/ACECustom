@@ -65,8 +65,7 @@ namespace ACE.Database
 
         public List<string> QueueReport()
         {
-            return new List<string>{ "TODO" };
-            //return _uniqueQueue..Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
+            return _uniqueQueue.ToArray().Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
         }
 
         public List<string> ReadOnlyQueueReport()
@@ -99,12 +98,12 @@ namespace ACE.Database
                 }
                 catch (ObjectDisposedException)
                 {
-                    // the _queue has been disposed, we're good
+                    // the _readOnlyQueue has been disposed, we're good
                     break;
                 }
                 catch (InvalidOperationException)
                 {
-                    // _queue is empty and CompleteForAdding has been called -- we're done here
+                    // _readOnlyQueue is empty and CompleteForAdding has been called -- we're done here
                     break;
                 }
                 catch (NullReferenceException)
@@ -154,12 +153,12 @@ namespace ACE.Database
                 }
                 catch (ObjectDisposedException)
                 {
-                    // the _queue has been disposed, we're good
+                    // the _uniqueQueue has been disposed, we're good
                     break;
                 }
                 catch (InvalidOperationException)
                 {
-                    // _queue is empty and CompleteForAdding has been called -- we're done here
+                    // _uniqueQueue is empty and CompleteForAdding has been called -- we're done here
                     if(!_workerThreadRunning)
                     {
                         log.Info("[DATABASE] DoSaves: No more tasks to process, exiting.");
@@ -184,11 +183,12 @@ namespace ACE.Database
         public void GetCurrentQueueWaitTime(Action<TimeSpan> callback)
         {
             var initialCallTime = DateTime.UtcNow;
+            var taskId = Guid.NewGuid().ToString();
 
             _uniqueQueue.Enqueue(new Task((x) =>
             {
                 callback?.Invoke(DateTime.UtcNow - initialCallTime);
-            }, "GetCurrentQueueWaitTime"));
+            }, taskId));
         }
 
 
@@ -263,6 +263,7 @@ namespace ACE.Database
         public void RemoveBiotasInParallel(IEnumerable<uint> ids, Action<bool> callback, Action<TimeSpan, TimeSpan> performanceResults)
         {
             var initialCallTime = DateTime.UtcNow;
+            var taskId = Guid.NewGuid().ToString();
 
             _uniqueQueue.Enqueue(new Task((x) =>
             {
@@ -271,7 +272,7 @@ namespace ACE.Database
                 var taskCompletedTime = DateTime.UtcNow;
                 callback?.Invoke(result);
                 performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
-            }, "RemoveBiotasInParallel: " +ids.Count()));
+            }, taskId));
         }
 
 
@@ -375,7 +376,8 @@ namespace ACE.Database
         /// </summary>
         public void QueueOfflinePlayerSaves(Action<bool> callback = null)
         {
-            _queue.Add(new Task((x) =>
+            var taskId = Guid.NewGuid().ToString();
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var success = false;
                 try
@@ -388,18 +390,21 @@ namespace ACE.Database
                     }
                     else
                     {
+                        // Call the existing SaveOfflinePlayersWithChanges method directly
                         var saveMethod = playerManagerType.GetMethod(
-                            "SaveOfflinePlayersWithChanges",
-                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-                            null, Type.EmptyTypes, null);
+                            "PerformOfflinePlayerSaves",
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                        
                         if (saveMethod == null)
                         {
-                            log.Warn("[DATABASE] SaveOfflinePlayersWithChanges method not found on PlayerManager; offline save skipped.");
+                            log.Warn("[DATABASE] PerformOfflinePlayerSaves method not found on PlayerManager; offline save skipped.");
                         }
                         else
                         {
-                            saveMethod.Invoke(null, Array.Empty<object>()); // No parameters needed
+                            log.Info("[DATABASE] Calling PlayerManager.PerformOfflinePlayerSaves() via reflection");
+                            saveMethod.Invoke(null, null);
                             success = true;
+                            log.Info("[DATABASE] Successfully called PerformOfflinePlayerSaves");
                         }
                     }
                 }
@@ -411,57 +416,9 @@ namespace ACE.Database
                 {
                     callback?.Invoke(success);
                 }
-            }, "QueueOfflinePlayerSaves"));
+            }, taskId));
         }
 
-        /// <summary>
-        /// Queues offline player saves with a maximum player limit
-        /// </summary>
-        public void QueueOfflinePlayerSaves(int maxPlayers, Action<bool> callback = null)
-        {
-            _queue.Add(new Task((x) =>
-            {
-                var success = false;
-                try
-                {
-                    // Import the PlayerManager to avoid circular dependencies
-                    var playerManagerType = Type.GetType("ACE.Server.Managers.PlayerManager, ACE.Server");
-                    if (playerManagerType == null)
-                    {
-                        log.Warn("[DATABASE] PlayerManager type not found; offline save skipped.");
-                    }
-                    else
-                    {
-                        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static;
-                        var saveInt = playerManagerType.GetMethod("SaveOfflinePlayersWithChanges", flags, null, new[] { typeof(int) }, null);
-                        var saveNoArgs = playerManagerType.GetMethod("SaveOfflinePlayersWithChanges", flags, null, Type.EmptyTypes, null);
 
-                        if (saveInt != null)
-                        {
-                            saveInt.Invoke(null, new object[] { maxPlayers });
-                            success = true;
-                        }
-                        else if (saveNoArgs != null)
-                        {
-                            log.Info("[DATABASE] SaveOfflinePlayersWithChanges(int) not found; invoking parameterless method and ignoring maxPlayers.");
-                            saveNoArgs.Invoke(null, Array.Empty<object>());
-                            success = true;
-                        }
-                        else
-                        {
-                            log.Warn("[DATABASE] SaveOfflinePlayersWithChanges method not found on PlayerManager; offline save skipped.");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[DATABASE] Offline player save task failed with exception: {ex}");
-                }
-                finally
-                {
-                    callback?.Invoke(success);
-                }
-            }, "QueueOfflinePlayerSaves: " + maxPlayers));
-        }
     }
 }

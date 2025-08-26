@@ -63,34 +63,22 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, "Use @offline-save-stats to view current save status");
         }
 
-        [CommandHandler("test-queue-saves", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Test offline player saves using the database queue.", "maxPlayers\n" + "optional parameter maxPlayers if omitted saves all players with changes")]
+        [CommandHandler("test-queue-saves", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Test offline player saves using the database queue.")]
         public static void HandleTestQueueSaves(Session session, params string[] parameters)
         {
-            int maxPlayers = -1; // -1 means save all players with changes
-            if (parameters?.Length >= 1)
-                int.TryParse(parameters[0], out maxPlayers);
-
-            if (maxPlayers <= 0)
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, "Testing offline player saves (all players with changes)...");
-            }
-            else
-            {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Testing offline player saves (max {maxPlayers:N0} players)...");
-            }
+            CommandHandlerHelper.WriteOutputInfo(session, "Testing offline player saves (all players with changes)...");
 
             CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves to database queue...");
             
             // Queue the save operation to the database queue (non-blocking)
-            DatabaseManager.Shard.QueueOfflinePlayerSaves(maxPlayers, success =>
+            DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
             {
                 // Background thread; avoid direct session output.
                 // Consider logging if you want completion visibility:
-                // log.Info($"Offline save task (max={maxPlayers}) completed. Success={success}");
+                // log.Info($"Offline save task completed. Success={success}");
             });
 
             CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
-            CommandHandlerHelper.WriteOutputInfo(session, $"Max Players: {(maxPlayers > 0 ? maxPlayers.ToString() : "All")}");
             CommandHandlerHelper.WriteOutputInfo(session, "Save operation has been queued to the database queue.");
             CommandHandlerHelper.WriteOutputInfo(session, "The main thread is not blocked - saves will process in the background.");
             CommandHandlerHelper.WriteOutputInfo(session, "");
@@ -155,7 +143,7 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, "");
             CommandHandlerHelper.WriteOutputInfo(session, "=== AVAILABLE COMMANDS ===");
             CommandHandlerHelper.WriteOutputInfo(session, "@save-offline-characters - Save all players with changes");
-            CommandHandlerHelper.WriteOutputInfo(session, "@test-queue-saves [maxPlayers] - Test offline save performance via queue");
+            CommandHandlerHelper.WriteOutputInfo(session, "@test-queue-saves - Test offline save performance via queue");
             CommandHandlerHelper.WriteOutputInfo(session, "@databasequeueinfo - Show database queue status");
         }
 
