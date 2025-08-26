@@ -138,7 +138,7 @@ namespace ACE.Database
                         t.Wait();
                         
 
-                        if (stopwatch.Elapsed.Seconds >= 5)
+                        if (stopwatch.ElapsedMilliseconds >= 5000)
                         {
                             log.Error(
                                 $"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_uniqueQueue.Count}");
