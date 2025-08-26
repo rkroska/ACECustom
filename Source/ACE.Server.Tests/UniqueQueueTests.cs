@@ -1,7 +1,7 @@
 using System;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
+using ACE.Database;
 namespace ACE.Database.Tests
 {
     [TestClass]
