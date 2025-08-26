@@ -389,7 +389,7 @@ namespace ACE.Database
 
         public bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
         {
-            return Parallel.ForEach(biotas, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, (biota, state) =>
+            return Parallel.ForEach(biotas, (biota, state) =>
             {
                 if (!SaveBiota(biota.biota, biota.rwLock))
                 {

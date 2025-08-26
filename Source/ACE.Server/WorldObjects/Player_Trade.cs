@@ -266,7 +266,7 @@ namespace ACE.Server.WorldObjects
                 IsBusy = false;
                 target.IsBusy = false;
 
-                DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, null, "FinalizeTrade");
+                DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, null, this.Guid.ToString() + " : " + target.Guid.ToString());
 
                 HandleActionResetTrade(Guid);
                 target.HandleActionResetTrade(target.Guid);
