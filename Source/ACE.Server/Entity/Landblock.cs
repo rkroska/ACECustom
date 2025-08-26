@@ -1285,7 +1285,11 @@ namespace ACE.Server.Entity
 
             if (biotas.Count > 0)
             {
-                DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveDB : " + this.Id.Raw);
+                DatabaseManager.Shard.SaveBiotasInParallel(
+                    biotas,
+                    result => { },
+                    $"SaveDB:Landblock:{this.Id.Raw}{(this.VariationId.HasValue ? $":v{this.VariationId.Value}" : string.Empty)}"
+                );
             }
         }
 
