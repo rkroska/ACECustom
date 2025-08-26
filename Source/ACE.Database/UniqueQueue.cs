@@ -124,6 +124,7 @@ namespace ACE.Database
 
         public bool Contains(object uniqueId)
         {
+            if (uniqueId == null) return false;
             _lock.EnterReadLock();
             try
             {
