@@ -113,7 +113,11 @@ namespace ACE.Server.Managers
             if (playersWithChanges > 0)
             {
                 log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
-                DatabaseManager.Shard.QueueOfflinePlayerSaves();
+                DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
+                {
+                    if (!success)
+                        log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
+                });
             }
             else
             {
@@ -143,7 +147,7 @@ namespace ACE.Server.Managers
 
             if (playersToSave.Count > 0)
             {
-                log.Info($"[PLAYERMANAGER] Saving {playersToSave.Count} offline players with changes");
+                log.Info($"[PLAYERMANAGER] Enqueuing saves for {playersToSave.Count} offline players with changes");
                 
                 // Save each player with changes
                 foreach (var player in playersToSave)
@@ -152,11 +156,11 @@ namespace ACE.Server.Managers
                     {
                         // enqueue actual DB save; false would skip persistence entirely
                         player.SaveBiotaToDatabase(true);
-                        log.Info($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
+                        log.Debug($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"[PLAYERMANAGER] Failed to save offline player {player.Name}: {ex}");
+                        log.Error($"[PLAYERMANAGER] Failed to enqueue save for offline player {player.Name} ({player.Guid.Full}): {ex}");
                     }
                 }
                 
