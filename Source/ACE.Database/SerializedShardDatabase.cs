@@ -183,8 +183,8 @@ namespace ACE.Database
         public void GetCurrentQueueWaitTime(Action<TimeSpan> callback)
         {
             var initialCallTime = DateTime.UtcNow;
-            // Use a stable key to avoid queue churn from frequent calls
-            var taskId = "GetCurrentQueueWaitTime";
+            // Use unique key per request to prevent callback dropping
+            var taskId = $"GetCurrentQueueWaitTime:{initialCallTime.Ticks}";
 
             _uniqueQueue.Enqueue(new Task((x) =>
             {
@@ -397,7 +397,12 @@ namespace ACE.Database
                         // Call the existing SaveOfflinePlayersWithChanges method directly
                         var saveMethod = playerManagerType.GetMethod(
                             "PerformOfflinePlayerSaves",
-                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                            System.Reflection.BindingFlags.Public 
+                              | System.Reflection.BindingFlags.Static 
+                              | System.Reflection.BindingFlags.NonPublic,
+                            null,
+                            Type.EmptyTypes,
+                            null);
                         
                         if (saveMethod == null)
                         {

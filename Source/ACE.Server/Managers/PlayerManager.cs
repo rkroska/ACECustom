@@ -117,7 +117,7 @@ namespace ACE.Server.Managers
             }
             else
             {
-                log.Info("[PLAYERMANAGER] No offline players with changes to save");
+                log.Debug("[PLAYERMANAGER] No offline players with changes to save");
             }
         }
 
@@ -164,7 +164,7 @@ namespace ACE.Server.Managers
             }
             else
             {
-                log.Info("[PLAYERMANAGER] No offline players with changes to save");
+                log.Debug("[PLAYERMANAGER] No offline players with changes to save");
             }
         }
         
