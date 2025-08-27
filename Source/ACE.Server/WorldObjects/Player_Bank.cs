@@ -685,6 +685,10 @@ namespace ACE.Server.WorldObjects
             {
                 long remainingAmount = Amount;
                 WorldObject templateCoin = WorldObjectFactory.CreateNewWorldObject(300003); // Assume 300004 is the ID for Enlightened Coins
+                if (templateCoin == null)
+                {
+                    return;
+                }
                 int maxStackSize = (int)templateCoin.MaxStackSize;
 
                 while (remainingAmount >= maxStackSize)
