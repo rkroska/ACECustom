@@ -89,7 +89,8 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected.
+        /// Queues a background task to save any offline players that have ChangesDetected.
+        /// Actual persistence is performed by PerformOfflinePlayerSaves() on the DB worker.
         /// </summary>
         public static void SaveOfflinePlayersWithChanges()
         {
@@ -149,8 +150,9 @@ namespace ACE.Server.Managers
                 {
                     try
                     {
-                        player.SaveBiotaToDatabase(false);
-                        log.Info($"[PLAYERMANAGER] Successfully saved offline player: {player.Name}");
+                        // enqueue actual DB save; false would skip persistence entirely
+                        player.SaveBiotaToDatabase(true);
+                        log.Info($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
                     }
                     catch (Exception ex)
                     {
@@ -158,7 +160,7 @@ namespace ACE.Server.Managers
                     }
                 }
                 
-                log.Info($"[PLAYERMANAGER] Completed offline save operation for {playersToSave.Count} players");
+                log.Info($"[PLAYERMANAGER] Enqueued saves for {playersToSave.Count} offline players");
             }
             else
             {

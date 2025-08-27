@@ -183,7 +183,8 @@ namespace ACE.Database
         public void GetCurrentQueueWaitTime(Action<TimeSpan> callback)
         {
             var initialCallTime = DateTime.UtcNow;
-            var taskId = Guid.NewGuid().ToString();
+            // Use a stable key to avoid queue churn from frequent calls
+            var taskId = "GetCurrentQueueWaitTime";
 
             _uniqueQueue.Enqueue(new Task((x) =>
             {
@@ -263,7 +264,8 @@ namespace ACE.Database
         public void RemoveBiotasInParallel(IEnumerable<uint> ids, Action<bool> callback, Action<TimeSpan, TimeSpan> performanceResults)
         {
             var initialCallTime = DateTime.UtcNow;
-            var taskId = Guid.NewGuid().ToString();
+            // Create a deterministic key so repeated calls for the same set coalesce
+            var idKey = "RemoveBiotasInParallel:" + string.Join(",", ids.OrderBy(i => i));
 
             _uniqueQueue.Enqueue(new Task((x) =>
             {
@@ -272,7 +274,7 @@ namespace ACE.Database
                 var taskCompletedTime = DateTime.UtcNow;
                 callback?.Invoke(result);
                 performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
-            }, taskId));
+            }, idKey));
         }
 
 
@@ -376,10 +378,12 @@ namespace ACE.Database
         /// </summary>
         public void QueueOfflinePlayerSaves(Action<bool> callback = null)
         {
-            var taskId = Guid.NewGuid().ToString();
+            // Use a stable key so multiple enqueues collapse to the most recent
+            var taskId = "OfflinePlayerSaves";
             _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var success = false;
+                var startTime = DateTime.UtcNow;
                 try
                 {
                     // Import the PlayerManager to avoid circular dependencies
@@ -414,6 +418,11 @@ namespace ACE.Database
                 }
                 finally
                 {
+                    var elapsed = DateTime.UtcNow - startTime;
+                    if (elapsed.TotalMilliseconds >= 5000)
+                    {
+                        log.Warn($"[DATABASE] OfflinePlayerSaves task took {elapsed.TotalMilliseconds:N0}ms to complete");
+                    }
                     callback?.Invoke(success);
                 }
             }, taskId));
