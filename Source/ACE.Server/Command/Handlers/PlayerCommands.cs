@@ -429,11 +429,12 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (amount >= session.Player.GetFreeInventorySlots())
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many keys.", ChatMessageType.System));
-                            break;
-                        }
+                        // We have 25-use, 10-use, and single-use keys, so don't check back space beforehand
+                        //if (amount >= session.Player.GetFreeInventorySlots())
+                        //{
+                        //    session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many keys.", ChatMessageType.System));
+                        //    break;
+                        //}
                         session.Player.WithdrawLegendaryKeys(amount);
                         break;
                     case 6:
@@ -447,7 +448,7 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (2 >= session.Player.GetFreeInventorySlots())
+                        if (amount >= session.Player.GetFreeInventorySlots())
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many enlightened coins.", ChatMessageType.System));
                             break;
@@ -465,11 +466,12 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (amount >= session.Player.GetFreeInventorySlots())
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many Mythical keys.", ChatMessageType.System));
-                            break;
-                        }
+                        // We have 25-use, 10-use, and single-use keys, so don't check back space beforehand
+                        //if (amount >= session.Player.GetFreeInventorySlots())
+                        //{
+                        //    session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many Mythical keys.", ChatMessageType.System));
+                        //    break;
+                        //}
                         session.Player.WithdrawMythicalKeys(amount);
                         break;
                     case 8:
@@ -483,7 +485,7 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (2 >= session.Player.GetFreeInventorySlots())
+                        if (amount >= session.Player.GetFreeInventorySlots())
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many weakly enlightened coins.", ChatMessageType.System));
                             break;
