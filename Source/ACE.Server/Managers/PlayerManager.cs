@@ -94,7 +94,6 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void SaveOfflinePlayersWithChanges()
         {
-            lastDatabaseSave = DateTime.UtcNow;
 
             // Check if there are actually players with changes to save
             var playersWithChanges = 0;
@@ -115,6 +114,8 @@ namespace ACE.Server.Managers
                 log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
                 DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
                 {
+                    if (success)
+                        lastDatabaseSave = DateTime.UtcNow; // enqueue accepted; advance window
                     if (!success)
                         log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
                 });
@@ -154,8 +155,21 @@ namespace ACE.Server.Managers
                 {
                     try
                     {
-                        // enqueue actual DB save; false would skip persistence entirely
-                        player.SaveBiotaToDatabase(true);
+                        // enqueue actual DB save with completion callback to ensure retry on failure
+                        player.SaveBiotaToDatabase(true, result =>
+                        {
+                            if (!result)
+                            {
+                                // Re-flag for retry on failure
+                                playersLock.EnterWriteLock();
+                                try { player.ChangesDetected = true; } finally { playersLock.ExitWriteLock(); }
+                                log.Error($"[PLAYERMANAGER] Offline save failed for {player.Name} ({player.Guid.Full}); will retry next cycle");
+                            }
+                            else
+                            {
+                                log.Debug($"[PLAYERMANAGER] Saved offline player: {player.Name}");
+                            }
+                        });
                         log.Debug($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
                     }
                     catch (Exception ex)
