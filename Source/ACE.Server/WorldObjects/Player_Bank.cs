@@ -563,44 +563,20 @@ namespace ACE.Server.WorldObjects
             long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount >= 25)
+                while (remainingAmount >= 25)
                 {
-                    for (int x = 25; x < Amount; x += 25)
-                    {
-                        if (CreateLegendaryKey(500010, 25))  //25 Durable legendary key
-                        {
-                            remainingAmount -= 25;
-                        }
-                        else
-                        {
-                            return;
-                        }
-                    }
+                    if (!CreateLegendaryKey(500010, 25)) return; // 25-use
+                    remainingAmount -= 25;
                 }
-                else if (Amount >= 10)
+                while (remainingAmount >= 10)
                 {
-                    for (int x = 10; x < Amount; x+=10)
-                    {
-                        if (CreateLegendaryKey(51954, 10))  //Durable legendary key
-                        {
-                            remainingAmount -= 10;
-                        }
-                        else
-                        {
-                            return;
-                        }
-                    }
+                    if (!CreateLegendaryKey(51954, 10)) return; // 10-use
+                    remainingAmount -= 10;
                 }
-                for (int i = 0; i < remainingAmount; i++)
+                while (remainingAmount > 0)
                 {
-                    if (CreateLegendaryKey(48746, 1))  //Regular legendary key
-                    {
-                        remainingAmount -= 1;
-                    }
-                    else
-                    {
-                        return;
-                    }
+                    if (!CreateLegendaryKey(48746, 1)) return; // single-use
+                    remainingAmount -= 1;
                 }
             }
         }
@@ -624,44 +600,20 @@ namespace ACE.Server.WorldObjects
             long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount >= 25)
+                while (remainingAmount >= 25)
                 {
-                    for (int x = 25; x < Amount; x += 25)
-                    {
-                        if (CreateMythicalKey(90000110, 25))  //25 Durable Mythical key
-                        {
-                            remainingAmount -= 25;
-                        }
-                        else
-                        {
-                            return;
-                        }
-                    }
+                    if (!CreateMythicalKey(90000110, 25)) return; // 25-use
+                    remainingAmount -= 25;
                 }
-                else if (Amount >= 10)
+                while (remainingAmount >= 10)
                 {
-                    for (int x = 10; x < Amount; x += 10)
-                    {
-                        if (CreateMythicalKey(90000109, 10))  //Durable Mythical key
-                        {
-                            remainingAmount -= 10;
-                        }
-                        else
-                        {
-                            return;
-                        }
-                    }
+                    if (!CreateMythicalKey(90000109, 10)) return; // 10-use
+                    remainingAmount -= 10;
                 }
-                for (int i = 0; i < remainingAmount; i++)
+                while (remainingAmount > 0)
                 {
-                    if (CreateMythicalKey(90000104, 1))  //Regular Mythical Key
-                    {
-                        remainingAmount -= 1;
-                    }
-                    else
-                    {
-                        return;
-                    }
+                    if (!CreateMythicalKey(90000104, 1)) return; // single-use
+                    remainingAmount -= 1;
                 }
             }
         }
