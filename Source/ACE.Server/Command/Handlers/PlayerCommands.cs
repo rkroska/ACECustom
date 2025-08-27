@@ -448,7 +448,7 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (amount >= session.Player.GetFreeInventorySlots())
+                        if (2 >= session.Player.GetFreeInventorySlots())
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many enlightened coins.", ChatMessageType.System));
                             break;
@@ -485,7 +485,7 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (amount >= session.Player.GetFreeInventorySlots())
+                        if (2 >= session.Player.GetFreeInventorySlots())
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many weakly enlightened coins.", ChatMessageType.System));
                             break;
