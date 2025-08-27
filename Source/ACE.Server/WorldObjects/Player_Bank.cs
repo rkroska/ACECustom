@@ -490,6 +490,10 @@ namespace ACE.Server.WorldObjects
                 if (mmdCount > 0)
                 {
                     var woMMDs = WorldObjectFactory.CreateNewWorldObject(20630);
+                    if (woMMDs == null)
+                    {
+                        return;
+                    }
                     int mmdStackSize = (int)woMMDs.MaxStackSize;
                     while (mmdCount >= mmdStackSize)
                     {
@@ -507,8 +511,8 @@ namespace ACE.Server.WorldObjects
                     {
                         if (CreateMMDs(mmdCount))
                         {
-                            mmdCount -= mmdStackSize;
-                            Amount -= (mmdStackSize * 250000);
+                            mmdCount = 0;
+                            Amount -= (mmdCount * 250000);
                         }
                         else
                         {
