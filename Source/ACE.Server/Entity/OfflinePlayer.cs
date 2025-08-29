@@ -56,11 +56,25 @@ namespace ACE.Server.Entity
         /// </summary>
         public void SaveBiotaToDatabase(bool enqueueSave = true)
         {
+            SaveBiotaToDatabase(enqueueSave, null);
+        }
+
+        /// <summary>
+        /// This will set the LastRequestedDatabaseSave to UtcNow and ChangesDetected to false.<para />
+        /// If enqueueSave is set to true, DatabaseManager.Shard.SaveBiota() will be called for the biota.<para />
+        /// Set enqueueSave to false if you want to perform all the normal routines for a save but not the actual save. This is useful if you're going to collect biotas in bulk for bulk saving.
+        /// </summary>
+        /// <param name="enqueueSave">Whether to enqueue the save operation</param>
+        /// <param name="onCompleted">Optional callback to invoke when the save operation completes</param>
+        public void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
+        {
             LastRequestedDatabaseSave = DateTime.UtcNow;
             ChangesDetected = false;
 
             if (enqueueSave)
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
+                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, onCompleted);
+            else
+                onCompleted?.Invoke(true);
         }
 
 
