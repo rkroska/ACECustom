@@ -603,6 +603,9 @@ namespace ACE.Server.WorldObjects
             {
                 corpse.IsMonster = true;
 
+                // Copy TimeToRot from Monster to Corpse
+                corpse.TimeToRot = TimeToRot;
+
                 if (killer == null || !killer.IsOlthoiPlayer)
                     GenerateTreasure(killer, corpse);
                 else
