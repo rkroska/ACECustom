@@ -996,6 +996,9 @@ namespace ACE.Server.WorldObjects.Managers
                             if (WorldObject.CurrentMotionState.MotionState.ForwardCommand == startingMotion.MotionState.ForwardCommand
                                     && startingMotion.Stance == MotionStance.NonCombat)     // enforce non-combat here?
                             {
+                                if (WorldObject.MotionTableId == 0)
+                                    break;
+
                                 if (debugMotion)
                                     Console.WriteLine($"{WorldObject.Name} running motion {(MotionStance)emoteSet.Style}, {(MotionCommand)emote.Motion}");
 
@@ -1031,6 +1034,9 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     else
                     {
+                        if (WorldObject.MotionTableId == 0)
+                            break;
+
                         // vendor / other motions
                         var startingMotion = new Motion(MotionStance.NonCombat, MotionCommand.Ready);
                         var motionTable = DatManager.PortalDat.ReadFromDat<DatLoader.FileTypes.MotionTable>(WorldObject.MotionTableId);
