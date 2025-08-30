@@ -511,8 +511,8 @@ namespace ACE.Server.WorldObjects
                     {
                         if (CreateMMDs(mmdCount))
                         {
-                            mmdCount = 0;
                             Amount -= (mmdCount * 250000);
+                            mmdCount = 0;
                         }
                         else
                         {
