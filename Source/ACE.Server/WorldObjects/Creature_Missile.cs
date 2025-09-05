@@ -69,9 +69,9 @@ namespace ACE.Server.WorldObjects
         }
 
         // Split arrow constants
-        private const float SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
         private const int DEFAULT_SPLIT_ARROW_COUNT = 3;
         private const float DEFAULT_SPLIT_ARROW_RANGE = 10f;
+        private const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
 
         /// <summary>
         /// Launches a projectile from player to target
@@ -588,13 +588,14 @@ namespace ACE.Server.WorldObjects
                     splitProj.ProjectileLauncher = weapon;
                     splitProj.ProjectileAmmo = ammo;
                     
-                    // Reduce damage for split arrows (60% of original)
+                    // Reduce damage for split arrows using weapon's damage multiplier property
                     var damageValue = splitProj.GetProperty(PropertyInt.Damage);
                     if (damageValue.HasValue)
                     {
-                        var reducedDamage = (int)(damageValue.Value * SPLIT_ARROW_DAMAGE_MULTIPLIER);
+                        var damageMultiplier = (float)(weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER);
+                        var reducedDamage = (int)(damageValue.Value * damageMultiplier);
                         splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
-                        Console.WriteLine($"[SPLIT DEBUG] Set split arrow damage to {reducedDamage} (original: {damageValue.Value})");
+                        Console.WriteLine($"[SPLIT DEBUG] Set split arrow damage to {reducedDamage} (original: {damageValue.Value}, multiplier: {damageMultiplier})");
                     }
                     
                     // Position at same origin

@@ -1093,6 +1093,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.ElementalDamageMod); else SetProperty(PropertyFloat.ElementalDamageMod, value.Value); }
         }
 
+        public double? SplitArrowDamageMultiplier
+        {
+            get => GetProperty(PropertyFloat.SplitArrowDamageMultiplier);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SplitArrowDamageMultiplier); else SetProperty(PropertyFloat.SplitArrowDamageMultiplier, value.Value); }
+        }
+
         public WieldRequirement WieldRequirements
         {
             get => (WieldRequirement)(GetProperty(PropertyInt.WieldRequirements) ?? 0);
