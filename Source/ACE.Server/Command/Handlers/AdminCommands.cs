@@ -1162,7 +1162,7 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var player = PlayerManager.FindByName(playerName);
+                    var player = PlayerManager.FindFirstPlayerByName(playerName);
 
                     if (player == null)
                     {

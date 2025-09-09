@@ -758,7 +758,7 @@ namespace ACE.Server.WorldObjects
 
         private IPlayer FindTargetByName(string name)
         {
-            return PlayerManager.FindFirstPlayer(p => p.Name == name && !p.IsDeleted && !p.IsPendingDeletion);
+            return PlayerManager.FindFirstPlayerByName(name);
         }
 
         public bool TransferPyreals(long Amount, string CharacterDestination)
@@ -975,7 +975,7 @@ namespace ACE.Server.WorldObjects
                         onlinePlayer.BankedEnlightenedCoins += Amount;
                     }
                     //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedEnlightenedCoins, onlinePlayer.BankedEnlightenedCoins ?? 0));
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightend Coins from {this.Name}", ChatMessageType.System));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightened Coins from {this.Name}", ChatMessageType.System));
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
@@ -1024,7 +1024,7 @@ namespace ACE.Server.WorldObjects
                         onlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
                     }
                     //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedWeaklyEnlightenedCoins, onlinePlayer.BankedWeaklyEnlightenedCoins ?? 0));
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightend Coins from {this.Name}", ChatMessageType.System));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightened Coins from {this.Name}", ChatMessageType.System));
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
