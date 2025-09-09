@@ -239,23 +239,45 @@ namespace ACE.Server.WorldObjects
             }
             lock (balanceLock)
             {
-                // Single comprehensive scan: Get ALL items from main pack + side containers
+                // Single comprehensive scan: Get ALL items from main pack + side containers using iterative DFS
                 var allItems = new List<WorldObject>();
+                var processedContainers = new HashSet<ObjectGuid>(); // Prevent cycles
+                var containerStack = new Stack<Container>();
                 
                 // Add main inventory
                 allItems.AddRange(this.Inventory.Values);
                 
-                // Add items from ALL side containers in one pass
+                // Initialize stack with top-level side containers
                 var sideContainers = this.Inventory.Values.OfType<Container>();
                 foreach (var container in sideContainers)
                 {
-                    allItems.AddRange(container.Inventory.Values);
-                    
-                    // Handle nested containers (side packs within side packs)
-                    var nestedContainers = container.Inventory.Values.OfType<Container>();
-                    foreach (var nested in nestedContainers)
+                    if (container != null && !processedContainers.Contains(container.Guid))
                     {
-                        allItems.AddRange(nested.Inventory.Values);
+                        containerStack.Push(container);
+                        processedContainers.Add(container.Guid);
+                    }
+                }
+                
+                // Iterative DFS: traverse arbitrarily nested containers
+                while (containerStack.Count > 0)
+                {
+                    var currentContainer = containerStack.Pop();
+                    
+                    // Add items from current container
+                    if (currentContainer.Inventory?.Values != null)
+                    {
+                        allItems.AddRange(currentContainer.Inventory.Values);
+                        
+                        // Find nested containers and add to stack
+                        var nestedContainers = currentContainer.Inventory.Values.OfType<Container>();
+                        foreach (var nested in nestedContainers)
+                        {
+                            if (nested != null && !processedContainers.Contains(nested.Guid))
+                            {
+                                containerStack.Push(nested);
+                                processedContainers.Add(nested.Guid);
+                            }
+                        }
                     }
                 }
                 
@@ -734,9 +756,14 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        private IPlayer FindTargetByName(string name)
+        {
+            return PlayerManager.FindFirstPlayer(p => p.Name == name && !p.IsDeleted && !p.IsPendingDeletion);
+        }
+
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -778,7 +805,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -819,7 +846,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferMythicalKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -869,7 +896,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -917,7 +944,7 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -966,7 +993,7 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferWeaklyEnlightenedCoins(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
