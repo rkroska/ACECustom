@@ -1162,7 +1162,7 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var player = PlayerManager.FindByName(playerName);
+                    var player = PlayerManager.FindFirstPlayerByName(playerName);
 
                     if (player == null)
                     {
@@ -1195,7 +1195,7 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var player = PlayerManager.GetAllPlayers().Where(p => p.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+                    var player = PlayerManager.FindFirstPlayer(p => p.Account?.AccountName?.Equals(accountName, StringComparison.OrdinalIgnoreCase) == true);
 
                     if (player == null)
                     {
