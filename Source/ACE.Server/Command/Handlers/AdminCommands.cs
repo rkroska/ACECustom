@@ -1195,7 +1195,8 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var player = PlayerManager.GetAllPlayers().Where(p => p.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+                    var player = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Account?.AccountName?.Equals(accountName, StringComparison.OrdinalIgnoreCase) == true) ??
+                                 PlayerManager.GetAllOffline().FirstOrDefault(p => p.Account?.AccountName?.Equals(accountName, StringComparison.OrdinalIgnoreCase) == true);
 
                     if (player == null)
                     {

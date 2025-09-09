@@ -1742,7 +1742,10 @@ namespace ACE.Server.WorldObjects
 
         public static List<IPlayer> GetAccountPlayers(uint accountID)
         {
-            return PlayerManager.GetAllPlayers().Where(i => i.Account != null && i.Account.AccountId == accountID).ToList();
+            var onlinePlayers = PlayerManager.GetAllOnline().Where(i => i.Account?.AccountId == accountID).ToList();
+            var offlinePlayers = PlayerManager.GetAllOffline().Where(i => i.Account?.AccountId == accountID).ToList();
+            onlinePlayers.AddRange(offlinePlayers);
+            return onlinePlayers;
         }
 
         public IPlayer GetAccountHouseOwner()

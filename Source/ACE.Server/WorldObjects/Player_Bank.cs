@@ -239,54 +239,78 @@ namespace ACE.Server.WorldObjects
             }
             lock (balanceLock)
             {
-                //int i = 0;
-                var PyrealList = this.GetInventoryItemsOfWCID(8330);
-                foreach (var Pyreal in PyrealList)
+                // Single comprehensive scan: Get ALL items from main pack + side containers
+                var allItems = new List<WorldObject>();
+                
+                // Add main inventory
+                allItems.AddRange(this.Inventory.Values);
+                
+                // Add items from ALL side containers in one pass
+                var sideContainers = this.Inventory.Values.OfType<Container>();
+                foreach (var container in sideContainers)
                 {
-                    int val = Pyreal.Value ?? 0;
+                    allItems.AddRange(container.Inventory.Values);
+                    
+                    // Handle nested containers (side packs within side packs)
+                    var nestedContainers = container.Inventory.Values.OfType<Container>();
+                    foreach (var nested in nestedContainers)
+                    {
+                        allItems.AddRange(nested.Inventory.Values);
+                    }
+                }
+                
+                // Filter in memory - no more scans!
+                var pyreals = allItems.Where(i => i.WeenieClassId == 8330);
+                var gold = allItems.Where(i => i.WeenieClassId == 8327);
+                var silver = allItems.Where(i => i.WeenieClassId == 8331);
+                var copper = allItems.Where(i => i.WeenieClassId == 8326);
+                
+                // Process pyreals
+                foreach (var pyreal in pyreals)
+                {
+                    int val = pyreal.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Pyreal))
+                        if (this.TryConsumeFromInventoryWithNetworking(pyreal))
                         {
                             BankedPyreals += val;
                         }
                     }
                 }
 
-                var GoldList = this.GetInventoryItemsOfWCID(8327);
-                foreach (var Gold in GoldList)
+                // Process gold
+                foreach (var goldItem in gold)
                 {
-                    int val = Gold.Value ?? 0;
+                    int val = goldItem.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Gold))
+                        if (this.TryConsumeFromInventoryWithNetworking(goldItem))
                         {
                             BankedPyreals += val;
                         }
                     }
                 }
 
-
-                var SilverList = this.GetInventoryItemsOfWCID(8331);
-                foreach (var Silver in SilverList)
+                // Process silver
+                foreach (var silverItem in silver)
                 {
-                    int val = Silver.Value ?? 0;
+                    int val = silverItem.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Silver))
+                        if (this.TryConsumeFromInventoryWithNetworking(silverItem))
                         {
                             BankedPyreals += val;
                         }
                     }
                 }
 
-                var CopperList = this.GetInventoryItemsOfWCID(8326);
-                foreach (var Copper in CopperList)
+                // Process copper
+                foreach (var copperItem in copper)
                 {
-                    int val = Copper.Value ?? 0;
+                    int val = copperItem.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Copper))
+                        if (this.TryConsumeFromInventoryWithNetworking(copperItem))
                         {
                             BankedPyreals += val;
                         }
@@ -712,7 +736,8 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
+                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -754,7 +779,8 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion ).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
+                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -795,7 +821,8 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferMythicalKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
+                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -845,7 +872,8 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
+                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -893,7 +921,8 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
+                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -942,7 +971,8 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferWeaklyEnlightenedCoins(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
+                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
