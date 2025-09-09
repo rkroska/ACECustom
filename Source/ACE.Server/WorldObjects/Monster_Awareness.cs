@@ -24,6 +24,13 @@ namespace ACE.Server.WorldObjects
         public bool IsAwake = false;
 
         /// <summary>
+        /// Cache for visible targets to reduce expensive lookups
+        /// </summary>
+        private List<Creature> _cachedVisibleTargets = new List<Creature>();
+        private double _lastTargetCacheTime = 0.0;
+        private const double TARGET_CACHE_DURATION = 0.5; // Cache for 0.5 seconds
+
+        /// <summary>
         /// Transitions a monster from idle to awake state
         /// </summary>
         public void WakeUp(bool alertNearby = true)
@@ -234,9 +241,19 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Returns a list of attackable targets currently visible to this monster
+        /// Uses caching to reduce expensive lookups
         /// </summary>
         public List<Creature> GetAttackTargets()
         {
+            var currentTime = Timers.RunningTime;
+            
+            // Check if cache is still valid
+            if (currentTime - _lastTargetCacheTime < TARGET_CACHE_DURATION)
+            {
+                return _cachedVisibleTargets;
+            }
+            
+            // Cache expired, refresh it
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             foreach (var creature in listOfCreatures)
@@ -272,6 +289,10 @@ namespace ACE.Server.WorldObjects
 
                 visibleTargets.Add(creature);
             }
+
+            // Update cache
+            _cachedVisibleTargets = visibleTargets;
+            _lastTargetCacheTime = currentTime;
 
             return visibleTargets;
         }

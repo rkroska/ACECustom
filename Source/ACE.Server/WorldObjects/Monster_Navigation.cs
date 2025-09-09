@@ -23,6 +23,40 @@ namespace ACE.Server.WorldObjects
         public static readonly float MaxChaseRangeSq = MaxChaseRange * MaxChaseRange;
 
         /// <summary>
+        /// Cache for physics calculations to reduce expensive operations
+        /// </summary>
+        private float _cachedDistanceToTarget = -1.0f;
+        private double _lastDistanceCacheTime = 0.0;
+        private const double DISTANCE_CACHE_DURATION = 0.25; // Cache for 0.25 seconds
+
+        /// <summary>
+        /// Cached distance calculation to reduce expensive physics operations
+        /// </summary>
+        public float GetCachedDistanceToTarget()
+        {
+            var currentTime = Timers.RunningTime;
+            
+            // Check if cache is still valid
+            if (currentTime - _lastDistanceCacheTime < DISTANCE_CACHE_DURATION && _cachedDistanceToTarget >= 0)
+            {
+                return _cachedDistanceToTarget;
+            }
+            
+            // Cache expired or invalid, calculate new distance
+            if (AttackTarget != null)
+            {
+                _cachedDistanceToTarget = (float)PhysicsObj.get_distance_to_object(AttackTarget.PhysicsObj, true);
+            }
+            else
+            {
+                _cachedDistanceToTarget = float.MaxValue;
+            }
+            
+            _lastDistanceCacheTime = currentTime;
+            return _cachedDistanceToTarget;
+        }
+
+        /// <summary>
         /// Determines if a monster is within melee range of target
         /// </summary>
         //public static readonly float MaxMeleeRange = 1.5f;
