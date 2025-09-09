@@ -736,8 +736,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
-                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -779,8 +778,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
-                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -821,8 +819,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferMythicalKeys(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
-                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -872,8 +869,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
-                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -921,8 +917,7 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
-                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;
@@ -971,8 +966,7 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferWeaklyEnlightenedCoins(long Amount, string CharacterDestination)
         {
-            var tarplayer = PlayerManager.GetAllOnline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion) ??
-                            PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
+            var tarplayer = PlayerManager.FindFirstPlayer(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion);
             if (tarplayer == null)
             {
                 return false;

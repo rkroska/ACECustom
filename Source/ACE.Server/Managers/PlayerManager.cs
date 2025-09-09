@@ -268,6 +268,54 @@ namespace ACE.Server.Managers
             return allPlayers;
         }
 
+        /// <summary>
+        /// Returns all players (online and offline) that match the given predicate, searching online players first for performance.
+        /// </summary>
+        public static List<IPlayer> FindAllPlayers(Func<IPlayer, bool> predicate)
+        {
+            var results = new List<IPlayer>();
+            
+            playersLock.EnterReadLock();
+            try
+            {
+                // Search online players first (smaller collection, faster)
+                var onlineMatches = onlinePlayers.Values.Where(predicate);
+                results.AddRange(onlineMatches);
+                
+                // Then search offline players
+                var offlineMatches = offlinePlayers.Values.Where(predicate);
+                results.AddRange(offlineMatches);
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+            
+            return results;
+        }
+
+        /// <summary>
+        /// Returns the first player (online or offline) that matches the given predicate, searching online players first for performance.
+        /// </summary>
+        public static IPlayer FindFirstPlayer(Func<IPlayer, bool> predicate)
+        {
+            playersLock.EnterReadLock();
+            try
+            {
+                // Search online players first (smaller collection, faster)
+                var onlineMatch = onlinePlayers.Values.FirstOrDefault(predicate);
+                if (onlineMatch != null)
+                    return onlineMatch;
+                
+                // Only search offline players if not found online
+                return offlinePlayers.Values.FirstOrDefault(predicate);
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+        }
+
         public static int GetOfflineCount()
         {
             playersLock.EnterReadLock();
