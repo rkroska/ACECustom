@@ -40,7 +40,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void InvalidateTargetCaches()
         {
-            _cachedVisibleTargets.Clear();
+            _cachedVisibleTargets = new List<Creature>();
             _lastTargetCacheTime = 0.0;
             InvalidateDistanceCache();
         }
@@ -100,10 +100,8 @@ namespace ACE.Server.WorldObjects
             IsMoving = false;
             MonsterState = State.Idle;
 
-            // Clear target cache when sleeping
-            _cachedVisibleTargets.Clear();
-            _lastTargetCacheTime = 0.0;
-            InvalidateDistanceCache(); // Also clear distance cache
+            // Clear both target and distance caches consistently
+            InvalidateTargetCaches();
 
             PhysicsObj.CachedVelocity = Vector3.Zero;
 
@@ -293,9 +291,10 @@ namespace ACE.Server.WorldObjects
         public List<Creature> GetAttackTargets()
         {
             var currentTime = Timers.RunningTime;
+            var last = Volatile.Read(ref _lastTargetCacheTime);
             
             // Check if cache is still valid
-            if (_lastTargetCacheTime > 0.0 && (currentTime - _lastTargetCacheTime) < TARGET_CACHE_DURATION)
+            if (last > 0.0 && (currentTime - last) < TARGET_CACHE_DURATION)
             {
                 Interlocked.Increment(ref _cacheHits);
                 return new List<Creature>(_cachedVisibleTargets);
