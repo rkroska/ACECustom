@@ -272,17 +272,17 @@ namespace ACE.Server.WorldObjects
             // Check if cache is still valid
             if (_lastTargetCacheTime > 0.0 && (currentTime - _lastTargetCacheTime) < TARGET_CACHE_DURATION)
             {
-                return _cachedVisibleTargets;
+                return new List<Creature>(_cachedVisibleTargets);
             }
             
             // Cache expired, refresh it
             var visibleTargets = GetAttackTargetsUncached();
             
-            // Update cache
-            _cachedVisibleTargets = visibleTargets;
+            // Update cache with defensive copy
+            _cachedVisibleTargets = new List<Creature>(visibleTargets);
             _lastTargetCacheTime = currentTime;
 
-            return visibleTargets;
+            return new List<Creature>(visibleTargets);
         }
 
         /// <summary>
@@ -296,8 +296,16 @@ namespace ACE.Server.WorldObjects
             
             foreach (var creature in listOfCreatures)
             {
+                // exclude dead creatures
+                if (creature.IsDead)
+                    continue;
+                    
                 // ensure attackable
                 if (!creature.Attackable)
+                    continue;
+                    
+                // hidden players shouldn't be valid visible targets
+                if (creature is Player p && (p.Hidden ?? false))
                     continue;
                     
                 // Don't skip players based on TargetingTactic - that's for monster behavior, not target validity
