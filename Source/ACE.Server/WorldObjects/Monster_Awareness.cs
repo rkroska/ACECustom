@@ -35,6 +35,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void InvalidateTargetCaches()
         {
+            _cachedVisibleTargets.Clear();
             _lastTargetCacheTime = 0.0;
             InvalidateDistanceCache();
         }
@@ -281,11 +282,12 @@ namespace ACE.Server.WorldObjects
             // Cache expired, refresh it
             var visibleTargets = GetAttackTargetsUncached();
             
-            // Update cache with defensive copy
-            _cachedVisibleTargets = new List<Creature>(visibleTargets);
+            // Update cache reusing the list to reduce allocations
+            _cachedVisibleTargets.Clear();
+            _cachedVisibleTargets.AddRange(visibleTargets);
             _lastTargetCacheTime = currentTime;
 
-            return visibleTargets;
+            return new List<Creature>(_cachedVisibleTargets);
         }
 
         /// <summary>

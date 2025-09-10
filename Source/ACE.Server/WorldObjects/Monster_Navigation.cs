@@ -164,7 +164,7 @@ namespace ACE.Server.WorldObjects
             // Initialize stuck detection
             LastStuckCheckTime = Timers.RunningTime;
 
-            var mvp = GetMovementParameters();
+            var mvp = GetMovementParameters(targetDist);
             if (turnTo)
                 PhysicsObj.TurnToObject(AttackTarget.PhysicsObj, mvp);
             else
@@ -540,7 +540,11 @@ namespace ACE.Server.WorldObjects
             if (target?.Location == null) return false;
 
             var angle = GetAngle(target);
-            var dist = Math.Max(0, GetCachedDistanceToTarget());
+            var dist = target == AttackTarget
+                ? Math.Max(0, GetCachedDistanceToTarget())
+                : (PhysicsObj != null && target?.PhysicsObj != null
+                    ? (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true)
+                    : float.MaxValue);
 
             // rotation accuracy?
             var threshold = 5.0f;
@@ -556,14 +560,15 @@ namespace ACE.Server.WorldObjects
             return angle < threshold;
         }
 
-        public MovementParameters GetMovementParameters()
+        public MovementParameters GetMovementParameters(float? targetDistance = null)
         {
             var mvp = new MovementParameters();
 
             // set non-default params for monster movement
             mvp.Flags &= ~MovementParamFlags.CanWalk;
 
-            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && GetCachedDistanceToTarget() <= GetSpellMaxRange()) || AiImmobile;
+            var distance = targetDistance ?? GetCachedDistanceToTarget();
+            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && distance <= GetSpellMaxRange()) || AiImmobile;
 
             if (!turnTo)
                 mvp.Flags |= MovementParamFlags.FailWalk | MovementParamFlags.UseFinalHeading | MovementParamFlags.Sticky | MovementParamFlags.MoveAway;
