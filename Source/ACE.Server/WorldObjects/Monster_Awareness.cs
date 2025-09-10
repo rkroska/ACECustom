@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 using ACE.Common;
 using ACE.Common.Extensions;
@@ -306,7 +307,7 @@ namespace ACE.Server.WorldObjects
             
             // Update cache with a copy; return the fresh list to avoid double enumeration
             _cachedVisibleTargets = new List<Creature>(visibleTargets);
-            _lastTargetCacheTime = currentTime;
+            Volatile.Write(ref _lastTargetCacheTime, currentTime);
 
             return visibleTargets;
         }
@@ -347,6 +348,8 @@ namespace ACE.Server.WorldObjects
                 /*if (Location.SquaredDistanceTo(creature.Location) > chaseDistSq)
                     continue;*/
 
+                if (creature.PhysicsObj == null)
+                    continue;
                 if (PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true) > chaseDistSq)
                     continue;
 
