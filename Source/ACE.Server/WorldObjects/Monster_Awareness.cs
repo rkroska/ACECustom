@@ -63,6 +63,11 @@ namespace ACE.Server.WorldObjects
             IsMoving = false;
             MonsterState = State.Idle;
 
+            // Clear target cache when sleeping
+            _cachedVisibleTargets.Clear();
+            _lastTargetCacheTime = 0.0;
+            InvalidateDistanceCache(); // Also clear distance cache
+
             PhysicsObj.CachedVelocity = Vector3.Zero;
 
             ClearRetaliateTargets();
@@ -182,6 +187,8 @@ namespace ACE.Server.WorldObjects
                         // although it is not truly random, it is weighted by distance
                         var targetDistances = BuildTargetDistance(visibleTargets);
                         AttackTarget = SelectWeightedDistance(targetDistances);
+                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
+                        InvalidateDistanceCache(); // Also invalidate distance cache
                         break;
 
                     case TargetingTactic.Focused:
@@ -192,14 +199,22 @@ namespace ACE.Server.WorldObjects
 
                         var lastDamager = DamageHistory.LastDamager?.TryGetAttacker() as Creature;
                         if (lastDamager != null)
+                        {
                             AttackTarget = lastDamager;
+                            _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
+                            InvalidateDistanceCache(); // Also invalidate distance cache
+                        }
                         break;
 
                     case TargetingTactic.TopDamager:
 
                         var topDamager = DamageHistory.TopDamager?.TryGetAttacker() as Creature;
                         if (topDamager != null)
+                        {
                             AttackTarget = topDamager;
+                            _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
+                            InvalidateDistanceCache(); // Also invalidate distance cache
+                        }
                         break;
 
                     // these below don't seem to be used in PY16 yet...
@@ -211,18 +226,24 @@ namespace ACE.Server.WorldObjects
                         // so the same player isn't always selected
                         var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
                         AttackTarget = lowestLevel;
+                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
+                        InvalidateDistanceCache(); // Also invalidate distance cache
                         break;
 
                     case TargetingTactic.Strongest:
 
                         var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
                         AttackTarget = highestLevel;
+                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
+                        InvalidateDistanceCache(); // Also invalidate distance cache
                         break;
 
                     case TargetingTactic.Nearest:
 
                         var nearest = BuildTargetDistance(visibleTargets);
                         AttackTarget = nearest[0].Target;
+                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
+                        InvalidateDistanceCache(); // Also invalidate distance cache
                         break;
                 }
 
@@ -248,7 +269,7 @@ namespace ACE.Server.WorldObjects
             var currentTime = Timers.RunningTime;
             
             // Check if cache is still valid
-            if (currentTime - _lastTargetCacheTime < TARGET_CACHE_DURATION)
+            if (_lastTargetCacheTime > 0.0 && (currentTime - _lastTargetCacheTime) < TARGET_CACHE_DURATION)
             {
                 return _cachedVisibleTargets;
             }
@@ -259,7 +280,8 @@ namespace ACE.Server.WorldObjects
             foreach (var creature in listOfCreatures)
             {
                 // ensure attackable
-                if (!creature.Attackable && creature.TargetingTactic == TargetingTactic.None || creature.Teleporting) continue;
+                if (!creature.Attackable || creature.TargetingTactic == TargetingTactic.None || creature.Teleporting)
+                    continue;
 
                 // ensure within 'detection radius' ?
                 var chaseDistSq = creature == AttackTarget ? MaxChaseRangeSq : VisualAwarenessRangeSq;

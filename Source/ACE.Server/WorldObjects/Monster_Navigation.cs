@@ -30,6 +30,15 @@ namespace ACE.Server.WorldObjects
         private const double DISTANCE_CACHE_DURATION = 0.25; // Cache for 0.25 seconds
 
         /// <summary>
+        /// Invalidate distance cache when target changes
+        /// </summary>
+        public void InvalidateDistanceCache()
+        {
+            _cachedDistanceToTarget = -1.0f;
+            _lastDistanceCacheTime = 0.0;
+        }
+
+        /// <summary>
         /// Cached distance calculation to reduce expensive physics operations
         /// </summary>
         public float GetCachedDistanceToTarget()
@@ -128,7 +137,7 @@ namespace ACE.Server.WorldObjects
             IsTurning = true;
 
             // send network actions
-            var targetDist = GetDistanceToTarget();
+            var targetDist = GetCachedDistanceToTarget();
             var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && targetDist <= GetSpellMaxRange()) || AiImmobile;
             if (turnTo)
                 TurnTo(AttackTarget);
@@ -169,7 +178,7 @@ namespace ACE.Server.WorldObjects
 
             if (AiImmobile && CurrentAttack == CombatType.Melee)
             {
-                var targetDist = GetDistanceToTarget();
+                var targetDist = GetCachedDistanceToTarget();
                 if (targetDist > MaxRange)
                     ResetAttack();
             }
@@ -195,7 +204,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsMeleeRange()
         {
-            return GetDistanceToTarget() <= MaxMeleeRange;
+            return GetCachedDistanceToTarget() <= MaxMeleeRange;
         }
 
         /// <summary>
@@ -203,7 +212,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsAttackRange()
         {
-            return GetDistanceToTarget() <= MaxRange;
+            return GetCachedDistanceToTarget() <= MaxRange;
         }
 
         /// <summary>
@@ -246,7 +255,7 @@ namespace ACE.Server.WorldObjects
             //if (!IsRanged)
                 UpdatePosition();
 
-            if (MonsterState == State.Awake && GetDistanceToTarget() >= MaxChaseRange)
+            if (MonsterState == State.Awake && GetCachedDistanceToTarget() >= MaxChaseRange)
             {
                 CancelMoveTo();
                 FindNextTarget();
@@ -521,7 +530,7 @@ namespace ACE.Server.WorldObjects
             if (target?.Location == null) return false;
 
             var angle = GetAngle(target);
-            var dist = Math.Max(0, GetDistanceToTarget());
+            var dist = Math.Max(0, GetCachedDistanceToTarget());
 
             // rotation accuracy?
             var threshold = 5.0f;
@@ -544,7 +553,7 @@ namespace ACE.Server.WorldObjects
             // set non-default params for monster movement
             mvp.Flags &= ~MovementParamFlags.CanWalk;
 
-            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && GetDistanceToTarget() <= GetSpellMaxRange()) || AiImmobile;
+            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && GetCachedDistanceToTarget() <= GetSpellMaxRange()) || AiImmobile;
 
             if (!turnTo)
                 mvp.Flags |= MovementParamFlags.FailWalk | MovementParamFlags.UseFinalHeading | MovementParamFlags.Sticky | MovementParamFlags.MoveAway;
