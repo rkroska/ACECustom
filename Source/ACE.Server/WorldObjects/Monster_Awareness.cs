@@ -28,7 +28,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private List<Creature> _cachedVisibleTargets = new List<Creature>();
         private double _lastTargetCacheTime = 0.0;
-        private const double TARGET_CACHE_DURATION = 0.5; // Cache for 0.5 seconds
+        private const double TARGET_CACHE_DURATION = 0.6; // Cache for 0.6 seconds
 
         /// <summary>
         /// Transitions a monster from idle to awake state
@@ -152,7 +152,8 @@ namespace ACE.Server.WorldObjects
                 SelectTargetingTactic();
                 SetNextTargetTime();
 
-                var visibleTargets = GetAttackTargets();
+                // Don't use cached targets for critical target finding decisions
+                var visibleTargets = GetAttackTargetsUncached();
                 if (visibleTargets.Count == 0)
                 {
                     if (MonsterState != State.Return)
@@ -275,12 +276,35 @@ namespace ACE.Server.WorldObjects
             }
             
             // Cache expired, refresh it
+            var visibleTargets = GetAttackTargetsUncached();
+            
+            // Update cache
+            _cachedVisibleTargets = visibleTargets;
+            _lastTargetCacheTime = currentTime;
+
+            return visibleTargets;
+        }
+
+        /// <summary>
+        /// Returns a list of attackable targets currently visible to this monster
+        /// Always performs fresh calculation (no caching)
+        /// </summary>
+        public List<Creature> GetAttackTargetsUncached()
+        {
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+            
             foreach (var creature in listOfCreatures)
             {
                 // ensure attackable
-                if (!creature.Attackable || creature.TargetingTactic == TargetingTactic.None || creature.Teleporting)
+                if (!creature.Attackable)
+                    continue;
+                    
+                // Don't skip players based on TargetingTactic - that's for monster behavior, not target validity
+                if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
+                    continue;
+                    
+                if (creature.Teleporting)
                     continue;
 
                 // ensure within 'detection radius' ?
@@ -311,11 +335,6 @@ namespace ACE.Server.WorldObjects
 
                 visibleTargets.Add(creature);
             }
-
-            // Update cache
-            _cachedVisibleTargets = visibleTargets;
-            _lastTargetCacheTime = currentTime;
-
             return visibleTargets;
         }
 
@@ -562,7 +581,11 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 // ensure attackable
-                if (creature.IsDead || !creature.Attackable && creature.TargetingTactic == TargetingTactic.None || creature.Teleporting)
+                if (creature.IsDead || creature.Teleporting)
+                    continue;
+                
+                // Don't skip players based on TargetingTactic - that's for monster behavior, not target validity
+                if (!creature.Attackable && creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
                     continue;
 
                 // ensure another faction

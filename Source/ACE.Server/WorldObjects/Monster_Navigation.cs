@@ -27,7 +27,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private float _cachedDistanceToTarget = -1.0f;
         private double _lastDistanceCacheTime = 0.0;
-        private const double DISTANCE_CACHE_DURATION = 0.25; // Cache for 0.25 seconds
+        private const double DISTANCE_CACHE_DURATION = 0.4; // Cache for 0.4 seconds
 
         /// <summary>
         /// Invalidate distance cache when target changes
@@ -52,13 +52,23 @@ namespace ACE.Server.WorldObjects
             }
             
             // Cache expired or invalid, calculate new distance
-            if (AttackTarget != null)
+            var myPhysics = PhysicsObj;
+            var target = AttackTarget;
+            if (target == null)
             {
-                _cachedDistanceToTarget = (float)PhysicsObj.get_distance_to_object(AttackTarget.PhysicsObj, true);
+                _cachedDistanceToTarget = float.MaxValue;
             }
             else
             {
-                _cachedDistanceToTarget = float.MaxValue;
+                var targetPhysics = target.PhysicsObj;
+                if (myPhysics == null || targetPhysics == null)
+                {
+                    _cachedDistanceToTarget = float.MaxValue;
+                }
+                else
+                {
+                    _cachedDistanceToTarget = (float)myPhysics.get_distance_to_object(targetPhysics, true);
+                }
             }
             
             _lastDistanceCacheTime = currentTime;
@@ -255,7 +265,7 @@ namespace ACE.Server.WorldObjects
             //if (!IsRanged)
                 UpdatePosition();
 
-            if (MonsterState == State.Awake && GetCachedDistanceToTarget() >= MaxChaseRange)
+            if (MonsterState == State.Awake && GetDistanceToTarget() >= MaxChaseRange)
             {
                 CancelMoveTo();
                 FindNextTarget();
