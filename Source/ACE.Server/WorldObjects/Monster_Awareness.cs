@@ -593,12 +593,13 @@ namespace ACE.Server.WorldObjects
                 if (creature is Player || creature is CombatPet)
                     continue;
 
-                // ensure attackable
+                // ensure valid/attackable
                 if (creature.IsDead || creature.Teleporting)
                     continue;
-                
+                if (!creature.Attackable)
+                    continue;
                 // Don't skip players based on TargetingTactic - that's for monster behavior, not target validity
-                if (!creature.Attackable && creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
+                if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
                     continue;
 
                 // ensure another faction
