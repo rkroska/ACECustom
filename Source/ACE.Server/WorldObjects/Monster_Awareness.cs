@@ -30,6 +30,10 @@ namespace ACE.Server.WorldObjects
         private double _lastTargetCacheTime = 0.0;
         private const double TARGET_CACHE_DURATION = 0.5; // Cache for 0.5 seconds
 
+        // Cache performance counters
+        private static long _cacheHits = 0;
+        private static long _cacheMisses = 0;
+
         /// <summary>
         /// Invalidates both target and distance caches
         /// </summary>
@@ -38,6 +42,28 @@ namespace ACE.Server.WorldObjects
             _cachedVisibleTargets.Clear();
             _lastTargetCacheTime = 0.0;
             InvalidateDistanceCache();
+        }
+
+        /// <summary>
+        /// Sets the attack target and invalidates all caches in one operation.
+        /// Ensures consistency across all code paths.
+        /// </summary>
+        private void SetAttackTargetAndInvalidate(Creature target)
+        {
+            AttackTarget = target;
+            InvalidateTargetCaches();
+        }
+
+        /// <summary>
+        /// Gets cache performance statistics for monitoring
+        /// </summary>
+        public static (long hits, long misses, double hitRate) GetCacheStats()
+        {
+            var hits = Interlocked.Read(ref _cacheHits);
+            var misses = Interlocked.Read(ref _cacheMisses);
+            var total = hits + misses;
+            var hitRate = total > 0 ? (double)hits / total : 0.0;
+            return (hits, misses, hitRate);
         }
 
         /// <summary>
@@ -197,8 +223,7 @@ namespace ACE.Server.WorldObjects
                         // this is a very common tactic with monsters,
                         // although it is not truly random, it is weighted by distance
                         var targetDistances = BuildTargetDistance(visibleTargets);
-                        AttackTarget = SelectWeightedDistance(targetDistances);
-                        InvalidateTargetCaches();
+                        SetAttackTargetAndInvalidate(SelectWeightedDistance(targetDistances));
                         break;
 
                     case TargetingTactic.Focused:
@@ -210,8 +235,7 @@ namespace ACE.Server.WorldObjects
                         var lastDamager = DamageHistory.LastDamager?.TryGetAttacker() as Creature;
                         if (lastDamager != null)
                         {
-                            AttackTarget = lastDamager;
-                            InvalidateTargetCaches();
+                            SetAttackTargetAndInvalidate(lastDamager);
                         }
                         break;
 
@@ -220,8 +244,7 @@ namespace ACE.Server.WorldObjects
                         var topDamager = DamageHistory.TopDamager?.TryGetAttacker() as Creature;
                         if (topDamager != null)
                         {
-                            AttackTarget = topDamager;
-                            InvalidateTargetCaches();
+                            SetAttackTargetAndInvalidate(topDamager);
                         }
                         break;
 
@@ -233,22 +256,19 @@ namespace ACE.Server.WorldObjects
                         // in case a bunch of levels of same level are in a group,
                         // so the same player isn't always selected
                         var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
-                        AttackTarget = lowestLevel;
-                        InvalidateTargetCaches();
+                        SetAttackTargetAndInvalidate(lowestLevel);
                         break;
 
                     case TargetingTactic.Strongest:
 
                         var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
-                        AttackTarget = highestLevel;
-                        InvalidateTargetCaches();
+                        SetAttackTargetAndInvalidate(highestLevel);
                         break;
 
                     case TargetingTactic.Nearest:
 
                         var nearest = BuildTargetDistance(visibleTargets);
-                        AttackTarget = nearest[0].Target;
-                        InvalidateTargetCaches();
+                        SetAttackTargetAndInvalidate(nearest[0].Target);
                         break;
                 }
 
@@ -276,18 +296,19 @@ namespace ACE.Server.WorldObjects
             // Check if cache is still valid
             if (_lastTargetCacheTime > 0.0 && (currentTime - _lastTargetCacheTime) < TARGET_CACHE_DURATION)
             {
+                Interlocked.Increment(ref _cacheHits);
                 return new List<Creature>(_cachedVisibleTargets);
             }
             
             // Cache expired, refresh it
+            Interlocked.Increment(ref _cacheMisses);
             var visibleTargets = GetAttackTargetsUncached();
             
-            // Update cache reusing the list to reduce allocations
-            _cachedVisibleTargets.Clear();
-            _cachedVisibleTargets.AddRange(visibleTargets);
+            // Update cache with a copy; return the fresh list to avoid double enumeration
+            _cachedVisibleTargets = new List<Creature>(visibleTargets);
             _lastTargetCacheTime = currentTime;
 
-            return new List<Creature>(_cachedVisibleTargets);
+            return visibleTargets;
         }
 
         /// <summary>
