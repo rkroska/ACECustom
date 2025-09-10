@@ -27,7 +27,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private float _cachedDistanceToTarget = -1.0f;
         private double _lastDistanceCacheTime = 0.0;
-        private const double DISTANCE_CACHE_DURATION = 0.4; // Cache for 0.4 seconds
+        private const double DISTANCE_CACHE_DURATION = 0.25; // Cache for 0.25 seconds
 
         /// <summary>
         /// Invalidate distance cache when target changes

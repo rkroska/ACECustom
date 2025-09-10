@@ -28,7 +28,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private List<Creature> _cachedVisibleTargets = new List<Creature>();
         private double _lastTargetCacheTime = 0.0;
-        private const double TARGET_CACHE_DURATION = 0.6; // Cache for 0.6 seconds
+        private const double TARGET_CACHE_DURATION = 0.5; // Cache for 0.5 seconds
+
+        /// <summary>
+        /// Invalidates both target and distance caches
+        /// </summary>
+        private void InvalidateTargetCaches()
+        {
+            _lastTargetCacheTime = 0.0;
+            InvalidateDistanceCache();
+        }
 
         /// <summary>
         /// Transitions a monster from idle to awake state
@@ -188,8 +197,7 @@ namespace ACE.Server.WorldObjects
                         // although it is not truly random, it is weighted by distance
                         var targetDistances = BuildTargetDistance(visibleTargets);
                         AttackTarget = SelectWeightedDistance(targetDistances);
-                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
-                        InvalidateDistanceCache(); // Also invalidate distance cache
+                        InvalidateTargetCaches();
                         break;
 
                     case TargetingTactic.Focused:
@@ -202,8 +210,7 @@ namespace ACE.Server.WorldObjects
                         if (lastDamager != null)
                         {
                             AttackTarget = lastDamager;
-                            _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
-                            InvalidateDistanceCache(); // Also invalidate distance cache
+                            InvalidateTargetCaches();
                         }
                         break;
 
@@ -213,8 +220,7 @@ namespace ACE.Server.WorldObjects
                         if (topDamager != null)
                         {
                             AttackTarget = topDamager;
-                            _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
-                            InvalidateDistanceCache(); // Also invalidate distance cache
+                            InvalidateTargetCaches();
                         }
                         break;
 
@@ -227,24 +233,21 @@ namespace ACE.Server.WorldObjects
                         // so the same player isn't always selected
                         var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
                         AttackTarget = lowestLevel;
-                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
-                        InvalidateDistanceCache(); // Also invalidate distance cache
+                        InvalidateTargetCaches();
                         break;
 
                     case TargetingTactic.Strongest:
 
                         var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
                         AttackTarget = highestLevel;
-                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
-                        InvalidateDistanceCache(); // Also invalidate distance cache
+                        InvalidateTargetCaches();
                         break;
 
                     case TargetingTactic.Nearest:
 
                         var nearest = BuildTargetDistance(visibleTargets);
                         AttackTarget = nearest[0].Target;
-                        _lastTargetCacheTime = 0.0; // Invalidate cache when target changes
-                        InvalidateDistanceCache(); // Also invalidate distance cache
+                        InvalidateTargetCaches();
                         break;
                 }
 
@@ -282,7 +285,7 @@ namespace ACE.Server.WorldObjects
             _cachedVisibleTargets = new List<Creature>(visibleTargets);
             _lastTargetCacheTime = currentTime;
 
-            return new List<Creature>(visibleTargets);
+            return visibleTargets;
         }
 
         /// <summary>
@@ -308,7 +311,7 @@ namespace ACE.Server.WorldObjects
                 if (creature is Player p && (p.Hidden ?? false))
                     continue;
                     
-                // Don't skip players based on TargetingTactic - that's for monster behavior, not target validity
+                // Only apply TargetingTactic-based skip to non-players (players are excluded above)
                 if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
                     continue;
                     
