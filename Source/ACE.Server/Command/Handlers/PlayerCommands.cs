@@ -178,13 +178,27 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Bugs ain't got banks.", ChatMessageType.Broadcast));
                 return;
             }
-            if (parameters.Length == 0 || parameters[0] == "help" || parameters[0] == "h")
+            // Show balance if no parameters (just /b)
+            if (parameters.Length == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
+                return;
+            }
+
+            if (parameters[0] == "help" || parameters[0] == "h")
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Available Commands:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"DEPOSIT COMMANDS:", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit (or /b d) - Deposit all pyreals, peas, luminance, and keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit (or /b d) - Deposit all pyreals, peas, luminance, keys, coins, and notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit all (or /b d a) - Deposit all pyreals, peas, luminance, keys, coins, and notes", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit pyreals (or /b d p) - Deposit all pyreals", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit peas (or /b d ps) - Deposit all pyreal peas", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit luminance (or /b d l) - Deposit all luminance", ChatMessageType.System));
@@ -207,7 +221,14 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"OTHER COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance (or /b b) - Show bank balance", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b - Show bank balance (shortcut)", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer <type> <amount> <character> (or /b t <type> <amount> <character>) - Transfer to another character", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"TRANSFER COMMANDS:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer pyreals <amount> <character> (or /b t p <amount> <character>) - Transfer pyreals", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer luminance <amount> <character> (or /b t l <amount> <character>) - Transfer luminance", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer legendarykeys <amount> <character> (or /b t k <amount> <character>) - Transfer legendary keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer mythicalkeys <amount> <character> (or /b t mk <amount> <character>) - Transfer mythical keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer enlightenedcoins <amount> <character> (or /b t e <amount> <character>) - Transfer enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer weaklyenlightenedcoins <amount> <character> (or /b t we <amount> <character>) - Transfer weakly enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"EXAMPLES:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w p 1000000 - Withdraw 1M pyreals (gets 4 trade notes of 250k)", ChatMessageType.System));
@@ -349,10 +370,26 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositLuminance();
                     session.Player.DepositLegendaryKeys();
                     session.Player.DepositPeas();
-                    //session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositWeaklyEnlightenedCoins();
                     session.Player.DepositMythicalKeys();
+                    session.Player.DepositTradeNotes();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, and Mythical Keys!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, Mythical Keys, Enlightened Coins, Weakly Enlightened Coins, and Trade Notes!", ChatMessageType.System));
+                }
+                if (parameters.Count() == 2 && parameters[1] == "a") //explicit all
+                {
+                    //deposit all
+                    session.Player.DepositPyreals();
+                    session.Player.DepositLuminance();
+                    session.Player.DepositLegendaryKeys();
+                    session.Player.DepositPeas();
+                    session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositWeaklyEnlightenedCoins();
+                    session.Player.DepositMythicalKeys();
+                    session.Player.DepositTradeNotes();
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, Mythical Keys, Enlightened Coins, Weakly Enlightened Coins, and Trade Notes!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
