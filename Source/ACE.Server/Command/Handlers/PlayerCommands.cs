@@ -324,15 +324,19 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Count() == 3 || parameters.Count() == 4)
             {
-                if (!long.TryParse(parameters[2], out amount))
+                // Skip amount parsing for trade notes (iType = 3) since parameters[2] is the denomination
+                if (iType != 3)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
-                    return;
-                }
-                if (amount <= 0)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                    return;
+                    if (!long.TryParse(parameters[2], out amount))
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
+                        return;
+                    }
+                    if (amount <= 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                        return;
+                    }
                 }
             }
 
@@ -366,8 +370,8 @@ namespace ACE.Server.Command.Handlers
                 if (parameters.Count() == 1) //only means all
                 {
                     //deposit all
-                    session.Player.DepositPyreals();
-                    session.Player.DepositLuminance();
+                    session.Player.DepositPyreals(true);
+                    session.Player.DepositLuminance(true);
                     session.Player.DepositLegendaryKeys();
                     session.Player.DepositPeas();
                     session.Player.DepositEnlightenedCoins();
@@ -380,8 +384,8 @@ namespace ACE.Server.Command.Handlers
                 if (parameters.Count() == 2 && parameters[1] == "a") //explicit all
                 {
                     //deposit all
-                    session.Player.DepositPyreals();
-                    session.Player.DepositLuminance();
+                    session.Player.DepositPyreals(true);
+                    session.Player.DepositLuminance(true);
                     session.Player.DepositLegendaryKeys();
                     session.Player.DepositPeas();
                     session.Player.DepositEnlightenedCoins();
