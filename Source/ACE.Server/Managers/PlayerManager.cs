@@ -119,7 +119,7 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
                 {
                     if (success)
-                        log.Info($"[PLAYERMANAGER] Offline save completed successfully for {playersWithChanges} players");
+                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
                     else
                         log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
                 });
