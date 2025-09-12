@@ -37,6 +37,10 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
+        /// <summary>
+        /// Timestamp of the last offline save check. Updated every hour regardless of whether saves were needed.
+        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
+        /// </summary>
         private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
         /// <summary>
@@ -68,9 +72,20 @@ namespace ACE.Server.Managers
             // Database Save - only check once per hour
             if (lastOfflineSaveCheck + databaseSaveInterval <= DateTime.UtcNow)
             {
+                var now = DateTime.UtcNow;
                 log.Debug("[PLAYERMANAGER] Performing hourly offline save check");
-                SaveOfflinePlayersWithChanges();
-                lastOfflineSaveCheck = DateTime.UtcNow; // Always update timestamp
+                try
+                {
+                    SaveOfflinePlayersWithChanges();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PLAYERMANAGER] Hourly offline save check threw: {ex}");
+                }
+                finally
+                {
+                    lastOfflineSaveCheck = now; // Always update timestamp
+                }
             }
 
             var currentUnixTime = Time.GetUnixTime();
