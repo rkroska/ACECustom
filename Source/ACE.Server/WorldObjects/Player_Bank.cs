@@ -884,16 +884,23 @@ namespace ACE.Server.WorldObjects
                 // Concise summary message
                 if (totalWithdrawn > 0)
                 {
-                    string summary = $"Withdrew {totalWithdrawn:N0} pyreals";
+                    string summary = "";
                     
-                    if (tradeNotesCreated > 0)
+                    if (tradeNotesCreated > 0 && pyrealsCreated > 0)
                     {
-                        summary += $" - {tradeNotesCreated:N0} trade note(s) worth {tradeNotesCreated * 250000:N0} pyreals";
+                        summary = $"Withdrew {tradeNotesCreated:N0} trade note(s) worth {tradeNotesCreated * 250000:N0} pyreals and {pyrealsCreated:N0} pyreals";
                     }
-                    
-                    if (pyrealsCreated > 0)
+                    else if (tradeNotesCreated > 0)
                     {
-                        summary += $" and {pyrealsCreated:N0} pyreals";
+                        summary = $"Withdrew {tradeNotesCreated:N0} trade note(s) worth {tradeNotesCreated * 250000:N0} pyreals";
+                    }
+                    else if (pyrealsCreated > 0)
+                    {
+                        summary = $"Withdrew {pyrealsCreated:N0} pyreals";
+                    }
+                    else
+                    {
+                        summary = $"Withdrew {totalWithdrawn:N0} pyreals";
                     }
                     
                     log.Info($"[BANK_DEBUG] Player: {Name} | Withdrawal summary: {summary}");
@@ -1283,7 +1290,7 @@ namespace ACE.Server.WorldObjects
                 if (this.TryCreateInInventoryWithNetworking(tradeNote))
                 {
                     BankedPyreals -= totalCost;
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {count} {noteName} trade note(s) worth {totalCost:N0} pyreals", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {count} {denomination.ToUpper()} notes worth {totalCost:N0} pyreals", ChatMessageType.System));
                 }
                 else
                 {
