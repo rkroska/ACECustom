@@ -37,7 +37,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
-        private static DateTime lastDatabaseSave = DateTime.MinValue;
+        private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -65,9 +65,13 @@ namespace ACE.Server.Managers
 
         public static void Tick()
         {
-            // Database Save
-            if (lastDatabaseSave + databaseSaveInterval <= DateTime.UtcNow)
+            // Database Save - only check once per hour
+            if (lastOfflineSaveCheck + databaseSaveInterval <= DateTime.UtcNow)
+            {
+                log.Debug("[PLAYERMANAGER] Performing hourly offline save check");
                 SaveOfflinePlayersWithChanges();
+                lastOfflineSaveCheck = DateTime.UtcNow; // Always update timestamp
+            }
 
             var currentUnixTime = Time.GetUnixTime();
 
@@ -115,8 +119,8 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
                 {
                     if (success)
-                        lastDatabaseSave = DateTime.UtcNow; // enqueue accepted; advance window
-                    if (!success)
+                        log.Info($"[PLAYERMANAGER] Offline save completed successfully for {playersWithChanges} players");
+                    else
                         log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
                 });
             }
