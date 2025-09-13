@@ -17,6 +17,12 @@
     <RetainVMGarbageCollection>true</RetainVMGarbageCollection>
   </PropertyGroup>
 
+  <!-- Run banking tests after build -->
+  <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <Exec Command="dotnet test ../ACE.Server.Tests/ACE.Server.Tests.csproj --filter PlayerBankTests --verbosity minimal --no-build" 
+          ContinueOnError="false" />
+  </Target>
+
   <PropertyGroup>
     <Authors>ACEmulator Contributors</Authors>
     <RepositoryType>git</RepositoryType>
