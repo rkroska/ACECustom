@@ -37,7 +37,11 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
-        private static DateTime lastDatabaseSave = DateTime.MinValue;
+        /// <summary>
+        /// Timestamp of the last offline save check. Updated every hour regardless of whether saves were needed.
+        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
+        /// </summary>
+        private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -65,9 +69,24 @@ namespace ACE.Server.Managers
 
         public static void Tick()
         {
-            // Database Save
-            if (lastDatabaseSave + databaseSaveInterval <= DateTime.UtcNow)
-                SaveOfflinePlayersWithChanges();
+            // Database Save - only check once per hour
+            if (lastOfflineSaveCheck + databaseSaveInterval <= DateTime.UtcNow)
+            {
+                var now = DateTime.UtcNow;
+                log.Debug("[PLAYERMANAGER] Performing hourly offline save check");
+                try
+                {
+                    SaveOfflinePlayersWithChanges();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PLAYERMANAGER] Hourly offline save check threw: {ex}");
+                }
+                finally
+                {
+                    lastOfflineSaveCheck = now; // Always update timestamp
+                }
+            }
 
             var currentUnixTime = Time.GetUnixTime();
 
@@ -115,8 +134,8 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
                 {
                     if (success)
-                        lastDatabaseSave = DateTime.UtcNow; // enqueue accepted; advance window
-                    if (!success)
+                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
+                    else
                         log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
                 });
             }
