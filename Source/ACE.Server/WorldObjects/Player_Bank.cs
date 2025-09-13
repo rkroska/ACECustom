@@ -814,106 +814,28 @@ namespace ACE.Server.WorldObjects
                 
                 long oldBalance = BankedPyreals ?? 0;
                 
-                // First, create trade notes for very large amounts to make them manageable
-                long remainingAmount = Amount;
-                long totalWithdrawn = 0;
-                int tradeNotesCreated = 0;
-                int pyrealsCreated = 0;
+                // Create pyreal coins for the requested amount
+                log.Info($"[BANK_DEBUG] Player: {Name} | Creating {Amount:N0} pyreal coins");
                 
-                // Create 250,000 trade notes for amounts >= 250,000
-                if (remainingAmount >= 250000)
+                bool success = CreatePyreals((int)Amount);
+                log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coin creation | Amount: {Amount:N0} | Success: {success}");
+                
+                if (success)
                 {
-                    int tradeNoteCount = (int)(remainingAmount / 250000);
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Creating {tradeNoteCount} trade notes (250k each) | Remaining amount: {remainingAmount:N0}");
+                    BankedPyreals -= Amount;
+                    long newBalance = BankedPyreals ?? 0;
                     
-                    var tradeNote = WorldObjectFactory.CreateNewWorldObject(20630); // tradenote250000
-                    if (tradeNote == null)
-                    {
-                        log.Error($"[BANK_DEBUG] Player: {Name} | Failed to create trade note WorldObject");
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create trade notes. Withdrawal cancelled.", ChatMessageType.System));
-                        return;
-                    }
-                    tradeNote.SetStackSize(tradeNoteCount);
+                    LogBankChange("WithdrawPyreals", "Pyreals", Amount, oldBalance, newBalance, $"Withdrew {Amount:N0} pyreals");
                     
-                    bool success = this.TryCreateInInventoryWithNetworking(tradeNote);
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Trade note creation | Count: {tradeNoteCount} | Success: {success}");
-                    
-                    if (success)
-                    {
-                        long tradeNoteValue = tradeNoteCount * 250000;
-                        remainingAmount -= tradeNoteValue;
-                        BankedPyreals -= tradeNoteValue;
-                        totalWithdrawn += tradeNoteValue;
-                        tradeNotesCreated = tradeNoteCount;
-                        
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Trade notes created successfully | Value: {tradeNoteValue:N0} | New BankedPyreals: {BankedPyreals:N0}");
-                    }
-                    else
-                    {
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Failed to add trade notes to inventory - insufficient pack space");
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to add trade notes to inventory - check pack space. Withdrawal cancelled.", ChatMessageType.System));
-                        return;
-                    }
+                    log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coins created successfully | Amount: {Amount:N0}");
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {Amount:N0} pyreals", ChatMessageType.System));
                 }
-                
-                // For any remaining amount, create pyreal coins
-                if (remainingAmount > 0)
+                else
                 {
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Creating {remainingAmount:N0} pyreal coins for remaining amount");
-                    
-                    bool success = CreatePyreals((int)remainingAmount);
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coin creation | Amount: {remainingAmount:N0} | Success: {success}");
-                    
-                    if (success)
-                    {
-                        totalWithdrawn += remainingAmount;
-                        pyrealsCreated = (int)remainingAmount;
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coins created successfully | Amount: {remainingAmount:N0}");
-                    }
-                    else
-                    {
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Failed to create pyreal coins - insufficient pack space");
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create pyreal coins - check pack space. Withdrawal may be incomplete.", ChatMessageType.System));
-                    }
+                    log.Info($"[BANK_DEBUG] Player: {Name} | Failed to create pyreal coins - insufficient pack space");
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create pyreal coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
                 }
-                
-                long newBalance = BankedPyreals ?? 0;
-                LogBankChange("WithdrawPyreals", "Pyreals", totalWithdrawn, oldBalance, newBalance, 
-                    $"Trade Notes: {tradeNotesCreated} | Pyreals: {pyrealsCreated} | Requested: {Amount:N0}");
-                
-                // Concise summary message
-                if (totalWithdrawn > 0)
-                {
-                    string summary = "";
-                    
-                    if (tradeNotesCreated > 0 && pyrealsCreated > 0)
-                    {
-                        summary = $"Withdrew {tradeNotesCreated:N0} trade note(s) worth {tradeNotesCreated * 250000:N0} pyreals and {pyrealsCreated:N0} pyreals";
-                    }
-                    else if (tradeNotesCreated > 0)
-                    {
-                        summary = $"Withdrew {tradeNotesCreated:N0} trade note(s) worth {tradeNotesCreated * 250000:N0} pyreals";
-                    }
-                    else if (pyrealsCreated > 0)
-                    {
-                        summary = $"Withdrew {pyrealsCreated:N0} pyreals";
-                    }
-                    else
-                    {
-                        summary = $"Withdrew {totalWithdrawn:N0} pyreals";
-                    }
-                    
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Withdrawal summary: {summary}");
-                    Session.Network.EnqueueSend(new GameMessageSystemChat(summary, ChatMessageType.System));
-                }
-                
-                // Flag any discrepancies
-                if (totalWithdrawn != Amount)
-                {
-                    log.Warn($"[BANK_DEBUG] Player: {Name} | Withdrawal discrepancy | Requested: {Amount:N0} | Withdrawn: {totalWithdrawn:N0}");
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning: Requested {Amount:N0} pyreals but only {totalWithdrawn:N0} was withdrawn.", ChatMessageType.System));
-                }
-            }            
+            }
         }
 
         private bool CreateLegendaryKey(uint weenieClassId, byte uses)
