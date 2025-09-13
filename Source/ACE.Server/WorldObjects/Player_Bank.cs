@@ -789,8 +789,7 @@ namespace ACE.Server.WorldObjects
             var itemCreated = this.TryCreateInInventoryWithNetworking(smallCoins);
             if (itemCreated)
             {
-                // Note: BankedPyreals is already decremented in WithdrawPyreals
-                // No need to decrement again here
+                // Note: BankedPyreals is decremented in WithdrawPyreals after successful creation
                 return true;
             }
             return false;
