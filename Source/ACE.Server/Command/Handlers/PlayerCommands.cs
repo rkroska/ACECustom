@@ -971,7 +971,8 @@ namespace ACE.Server.Command.Handlers
             session.Player.BankedPyreals -= totalClapCost;
 
             // OPTIMIZATION: Track if we need to save to database (only save once at the end)
-            bool needsSave = (redComboCount + blueComboCount) > 0;
+            // Save only if redComboCount > 30 or blueComboCount > 90
+            bool needsSave = redComboCount > 30 || blueComboCount > 90;
 
             // OPTIMIZATION: Could batch property update messages here instead of individual updates
             // Current approach: Properties are updated individually as they change
