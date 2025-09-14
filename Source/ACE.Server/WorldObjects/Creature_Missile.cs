@@ -70,8 +70,16 @@ namespace ACE.Server.WorldObjects
 
         // Split arrow constants
         private const int DEFAULT_SPLIT_ARROW_COUNT = 3;
-        private const float DEFAULT_SPLIT_ARROW_RANGE = 10f;
+        private const float DEFAULT_SPLIT_ARROW_RANGE = 8f;
         private const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
+        
+        // Split arrow validation constants
+        private const int SPLIT_ARROW_COUNT_MIN = 1;
+        private const int SPLIT_ARROW_COUNT_MAX = 10;
+        private const float SPLIT_ARROW_RANGE_MIN = 0f;
+        private const float SPLIT_ARROW_RANGE_MAX = 50f;
+        private const float SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN = 0f;
+        private const float SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX = 1f;
 
         /// <summary>
         /// Launches a projectile from player to target
@@ -515,6 +523,10 @@ namespace ACE.Server.WorldObjects
                 var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
                 var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
                 
+                // Apply safety clamps to prevent invalid values
+                splitCount = Math.Clamp(splitCount, SPLIT_ARROW_COUNT_MIN, SPLIT_ARROW_COUNT_MAX);
+                splitRange = Math.Clamp(splitRange, SPLIT_ARROW_RANGE_MIN, SPLIT_ARROW_RANGE_MAX);
+                
                 log.Debug($"Split arrows - Count: {splitCount}, Range: {splitRange}");
                 
                 var additionalArrowCount = splitCount - 1; // We already have the main arrow
@@ -558,6 +570,8 @@ namespace ACE.Server.WorldObjects
                     if (damageValue.HasValue)
                     {
                         var damageMultiplier = (float)(weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER);
+                        // Apply safety clamp to damage multiplier
+                        damageMultiplier = Math.Clamp(damageMultiplier, SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN, SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX);
                         var reducedDamage = (int)(damageValue.Value * damageMultiplier);
                         splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
                         log.Debug($"Set split arrow damage to {reducedDamage} (original: {damageValue.Value}, multiplier: {damageMultiplier})");
@@ -620,7 +634,8 @@ namespace ACE.Server.WorldObjects
             }
 
             // Use a more targeted search instead of GetAllWorldObjectsForDiagnostics
-            var nearbyObjects = landblock.GetWorldObjectsForPhysicsHandling();
+            // Create a snapshot to avoid thread safety issues with ConcurrentDictionary iteration
+            var nearbyObjects = landblock.GetWorldObjectsForPhysicsHandling().ToList();
             log.Debug($"Total nearby objects: {nearbyObjects.Count}");
             
             foreach (var obj in nearbyObjects)
