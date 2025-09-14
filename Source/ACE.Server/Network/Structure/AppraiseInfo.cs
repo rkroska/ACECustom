@@ -674,6 +674,25 @@ namespace ACE.Server.Network.Structure
             if (!(weapon is Caster))
                 WeaponProfile = weaponProfile;
 
+            // Add split arrow properties to appraisal
+            var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
+            if (hasSplitArrows == true)
+            {
+                PropertiesBool[PropertyBool.SplitArrows] = true;
+                
+                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount);
+                if (splitCount.HasValue)
+                    PropertiesInt[PropertyInt.SplitArrowCount] = splitCount.Value;
+                
+                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange);
+                if (splitRange.HasValue)
+                    PropertiesFloat[PropertyFloat.SplitArrowRange] = splitRange.Value;
+                
+                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier);
+                if (damageMultiplier.HasValue)
+                    PropertiesFloat[PropertyFloat.SplitArrowDamageMultiplier] = damageMultiplier.Value;
+            }
+
             // item enchantments can also be on wielder currently
             AddEnchantments(weapon);
         }
