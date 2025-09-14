@@ -27,10 +27,10 @@ namespace ACE.Server.Tests.WorldObjects
         public void SplitArrowProperties_ShouldHaveCorrectValues()
         {
             // Test that property enum values are correct
-            Assert.AreEqual(9018, (int)PropertyBool.SplitArrows);
-            Assert.AreEqual(9028, (int)PropertyInt.SplitArrowCount);
-            Assert.AreEqual(9014, (int)PropertyFloat.SplitArrowRange);
-            Assert.AreEqual(9015, (int)PropertyFloat.SplitArrowDamageMultiplier);
+            Assert.AreEqual(9030, (int)PropertyBool.SplitArrows);
+            Assert.AreEqual(9031, (int)PropertyInt.SplitArrowCount);
+            Assert.AreEqual(9032, (int)PropertyFloat.SplitArrowRange);
+            Assert.AreEqual(9033, (int)PropertyFloat.SplitArrowDamageMultiplier);
         }
 
         [TestMethod]
@@ -462,7 +462,7 @@ namespace ACE.Server.Tests.WorldObjects
 
             // Test vector validation
             Assert.IsTrue(float.IsNaN(invalidVector.X), "Invalid vector should contain NaN");
-            Assert.IsTrue(float.IsFinite(validVector.X), "Valid vector should be finite");
+            Assert.IsTrue(!float.IsNaN(validVector.X) && !float.IsInfinity(validVector.X), "Valid vector should be finite");
         }
 
         [TestMethod]

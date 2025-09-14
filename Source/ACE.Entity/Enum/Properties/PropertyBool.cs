@@ -192,6 +192,6 @@ namespace ACE.Entity.Enum.Properties
         CanAOE                           = 9016,
         EnragedHotspot                   = 9017,
         [AssessmentProperty]
-        SplitArrows                      = 9018,
+        SplitArrows                      = 9030,
     }
 }

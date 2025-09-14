@@ -596,6 +596,12 @@ namespace ACE.Server.WorldObjects
                     {
                         splitProj.PhysicsObj.set_active(true);
                         splitProj.ReportCollisions = true;
+                        
+                        // Send launch broadcasts like the main projectile
+                        var pkStatus = (this as Player)?.PlayerKillerStatus ?? PlayerKillerStatus.Creature;
+                        splitProj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(splitProj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
+                        splitProj.EnqueueBroadcast(new GameMessageScript(splitProj.Guid, PlayScript.Launch, 0f));
+                        
                         log.Debug($"Successfully added split arrow {arrowsCreated + 1} to world");
                         arrowsCreated++;
                     }
