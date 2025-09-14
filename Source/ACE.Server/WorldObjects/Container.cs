@@ -140,7 +140,14 @@ namespace ACE.Server.WorldObjects
             var worldObjects = new List<WorldObject>();
 
             foreach (var biota in biotas)
+            {
+                if (biota == null)
+                {
+                    log.Error($"Null biota detected in inventory loading for container {Name} (0x{Guid:X8}). Skipping null biota.");
+                    continue;
+                }
                 worldObjects.Add(WorldObjectFactory.CreateWorldObject(biota));
+            }
 
             SortWorldObjectsIntoInventory(worldObjects);
 

@@ -159,7 +159,6 @@ namespace ACE.Server.Command.Handlers
 
         //custom commands
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
-        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
             if (session.Player == null)
@@ -351,7 +350,7 @@ namespace ACE.Server.Command.Handlers
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
                 if (lastCommandTimeSeconds < commandSecondsLimit)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Deposit] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
 
@@ -450,7 +449,7 @@ namespace ACE.Server.Command.Handlers
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
                 if (lastCommandTimeSeconds < commandSecondsLimit)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Withdraw] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
 
@@ -598,6 +597,19 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Too many parameters, ensure you use \"quotes\" around player names with spaces.", ChatMessageType.System));
                     return;
                 }
+                
+                // Rate limiting for transfer commands
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var currentTime = DateTime.UtcNow;
+
+                var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
+                if (lastCommandTimeSeconds < commandSecondsLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Transfer] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                session.LastBankCommandTime = currentTime;
                 //transfer
                 switch (iType)
                 {
@@ -638,11 +650,6 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferLuminance(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
-                            if
-                               (session.Player.IsPlussed)
-                            {
-                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Luminance to {transferTargetName}");
-                            }
                         }
                         else
                         {
@@ -683,11 +690,6 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferEnlightenedCoins(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
-                            if
-                               (session.Player.IsPlussed)
-                            {
-                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Enlightened coins to {transferTargetName}");
-                            }
                         }
                         break;
                     case 7:
@@ -724,12 +726,6 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferWeaklyEnlightenedCoins(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Weakly Enlightened coins to {transferTargetName}", ChatMessageType.System));
-
-                            if
-                                (session.Player.IsPlussed)
-                            {
-                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Weakly Enlightened coins to {transferTargetName}");
-                            }
                         }
                         break;
                 }
@@ -745,6 +741,14 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
             }
         }
+
+        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
+        public static void HandleBankShort(Session session, params string[] parameters)
+        {
+
+            HandleBank(session, parameters);
+        }
+
         static readonly uint[] _lowLevelOverlays = {
         0x6006C34,    // lvl 1
         0x6006C35,    // lvl 2
@@ -779,7 +783,7 @@ namespace ACE.Server.Command.Handlers
             var lastCommandTimeSeconds = (currentTime - session.LastClapCommandTime).TotalSeconds;
             if (lastCommandTimeSeconds < commandSecondsLimit)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, $"[Clap] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                 return;
             }
 
@@ -1271,7 +1275,7 @@ namespace ACE.Server.Command.Handlers
                 var lastCommandTimeSeconds = (currentTime - session.LastQBCommandTime).TotalSeconds;
                 if (lastCommandTimeSeconds < commandSecondsLimit)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[QB] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
 
@@ -1422,7 +1426,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (currentTime - session.LastMyQuestsCommandTime < MyQuests)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {MyQuests.TotalSeconds} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[MyQuests] This command may only be run once every {MyQuests.TotalSeconds} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
             }
