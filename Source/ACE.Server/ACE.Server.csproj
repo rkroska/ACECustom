@@ -17,20 +17,6 @@
     <RetainVMGarbageCollection>true</RetainVMGarbageCollection>
   </PropertyGroup>
 
-  <!-- Run banking tests after build -->
-  <PropertyGroup>
-    <RunBankingTestsOnBuild Condition="'$(RunBankingTestsOnBuild)' == ''">false</RunBankingTestsOnBuild>
-  </PropertyGroup>
-  
-  <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' AND '$(RunBankingTestsOnBuild)' == 'true'">
-    <!-- Build the test project first -->
-    <Exec Command="dotnet build ../ACE.Server.Tests/ACE.Server.Tests.csproj --verbosity minimal" 
-          ContinueOnError="false" />
-    
-    <!-- Run banking tests with explicit VSTest filter -->
-    <Exec Command="dotnet test ../ACE.Server.Tests/ACE.Server.Tests.csproj --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal --no-build" 
-          ContinueOnError="false" />
-  </Target>
 
   <PropertyGroup>
     <Authors>ACEmulator Contributors</Authors>

@@ -47,11 +47,7 @@
 
   <!-- Run banking tests after build -->
   <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
-    <!-- Set property to prevent server project from running tests -->
-    <PropertyGroup>
-      <RunBankingTestsOnBuild>false</RunBankingTestsOnBuild>
-    </PropertyGroup>
-    <Exec Command="dotnet test --filter PlayerBankTests --verbosity minimal --no-build" 
+    <Exec Command="dotnet test -c $(Configuration) --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal" 
           ContinueOnError="false" />
   </Target>
 
