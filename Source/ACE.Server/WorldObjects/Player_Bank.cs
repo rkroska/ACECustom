@@ -36,8 +36,7 @@ namespace ACE.Server.WorldObjects
         private void LogBankChange(string operation, string currencyType, long amount, long oldBalance, long newBalance, string details = "")
         {
             string message = $"[BANK_DEBUG] Player: {Name} | Operation: {operation} | Currency: {currencyType} | Amount: {amount:N0} | Old: {oldBalance:N0} | New: {newBalance:N0} | Details: {details}";
-            log.Info(message);
-            Console.WriteLine(message);
+            log.Debug(message);
         }
 
         /// <summary>
@@ -46,8 +45,7 @@ namespace ACE.Server.WorldObjects
         private void LogItemConsumption(string operation, WorldObject item, bool success, string details = "")
         {
             string message = $"[BANK_DEBUG] Player: {Name} | Operation: {operation} | Item: {item.Name} (WCID: {item.WeenieClassId}) | Value: {item.Value ?? 0} | Success: {success} | Details: {details}";
-            log.Info(message);
-            Console.WriteLine(message);
+            log.Debug(message);
         }
 
         /// <summary>
@@ -56,8 +54,7 @@ namespace ACE.Server.WorldObjects
         private void LogTransfer(string operation, string currencyType, long amount, string targetPlayer, bool success, string details = "")
         {
             string message = $"[BANK_DEBUG] Player: {Name} | Operation: {operation} | Currency: {currencyType} | Amount: {amount:N0} | Target: {targetPlayer} | Success: {success} | Details: {details}";
-            log.Info(message);
-            Console.WriteLine(message);
+            log.Debug(message);
         }
 
         /// <summary>
@@ -66,17 +63,15 @@ namespace ACE.Server.WorldObjects
         private void LogInventoryScan(string operation, int itemsFound, int containersScanned, long processingTimeMs, string details = "")
         {
             string message = $"[BANK_DEBUG] Player: {Name} | Operation: {operation} | Items Found: {itemsFound} | Containers Scanned: {containersScanned} | Processing Time: {processingTimeMs}ms | Details: {details}";
-            log.Info(message);
-            Console.WriteLine(message);
+            log.Debug(message);
         }
 
         /// <summary>
-        /// Helper method to log and print to console
+        /// Helper method to log debug messages
         /// </summary>
         private void LogAndPrint(string message)
         {
-            log.Info(message);
-            Console.WriteLine(message);
+            log.Debug(message);
         }
 
         #endregion
@@ -95,7 +90,7 @@ namespace ACE.Server.WorldObjects
 
             foreach (var item in pyrealsList)
             {
-                long itemValue = (long)item.StackSize;
+                var itemValue = (long)(item.StackSize ?? 0);
                 cash += itemValue;
                 log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal item: {item.Name} (WCID: {item.WeenieClassId}) | StackSize: {item.StackSize} | Value: {itemValue}");
             }
@@ -103,7 +98,8 @@ namespace ACE.Server.WorldObjects
             if (cash > 0)
             {
                 long oldBalance = BankedPyreals ?? 0;
-                DepositPyreals(cash, suppressChat);
+                // inner handles work; suppress its chat
+                DepositPyreals(cash, true);
                 long newBalance = BankedPyreals ?? 0;
                 
                 LogBankChange("DepositPyreals", "Pyreals", cash, oldBalance, newBalance, $"Found {pyrealsList.Count} items");
@@ -149,7 +145,8 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Info($"[BANK_DEBUG] Player: {Name} | Processing pyreal item: {item.Name} (WCID: {item.WeenieClassId}) | StackSize: {item.StackSize} | Remaining Amount: {Amount:N0}");
                     
-                    if (item.StackSize == 25000 && Amount >= 25000) //full stacks
+                    var stackSize = (long)(item.StackSize ?? 0);
+                    if (stackSize == 25000 && Amount >= 25000) // full stacks
                     {
                         Amount -= 25000;
                         bool success = this.TryConsumeFromInventoryWithNetworking(item);
@@ -162,20 +159,21 @@ namespace ACE.Server.WorldObjects
                             log.Info($"[BANK_DEBUG] Player: {Name} | Successfully deposited 25000 pyreals | New BankedPyreals: {BankedPyreals:N0}");
                         }
                     }
-                    else if (Amount >= item.StackSize)
+                    else if (stackSize > 0 && Amount > 0)
                     {
-                        bool success = this.TryConsumeFromInventoryWithNetworking(item, (int)Amount);
-                        LogItemConsumption("DepositPyreals_PartialStack", item, success, $"Amount: {Amount:N0}");
+                        var toConsume = (int)Math.Min(Amount, stackSize);
+                        bool success = this.TryConsumeFromInventoryWithNetworking(item, toConsume);
+                        LogItemConsumption("DepositPyreals_PartialStack", item, success, $"Amount: {toConsume:N0}");
                         
                         if (success)
                         {
-                            long consumedAmount = item.StackSize ?? 0;
-                            Amount -= consumedAmount;
-                            BankedPyreals += consumedAmount;
-                            totalDeposited += consumedAmount;
-                            log.Info($"[BANK_DEBUG] Player: {Name} | Successfully deposited {consumedAmount:N0} pyreals | New BankedPyreals: {BankedPyreals:N0}");
+                            Amount -= toConsume;
+                            BankedPyreals += toConsume;
+                            totalDeposited += toConsume;
+                            log.Info($"[BANK_DEBUG] Player: {Name} | Successfully deposited {toConsume:N0} pyreals | New BankedPyreals: {BankedPyreals:N0}");
                         }
                     }
+                    if (Amount <= 0) break;
                 }
                 
                 long newBalance = BankedPyreals ?? 0;
@@ -650,11 +648,8 @@ namespace ACE.Server.WorldObjects
             long availableLuminance = this.AvailableLuminance ?? 0;
             if (availableLuminance > 0)
             {
-                DepositLuminance(availableLuminance, suppressChat);
-                if (!suppressChat)
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {availableLuminance:N0} luminance", ChatMessageType.System));
-                }
+                // Let inner handle messaging
+                DepositLuminance(availableLuminance, true);
             }
             else if (!suppressChat)
             {
@@ -669,6 +664,12 @@ namespace ACE.Server.WorldObjects
         public void DepositLuminance(long Amount, bool suppressChat = false)
         {
             if (BankedLuminance == null) { BankedLuminance = 0;}
+            if (Amount <= 0)
+            {
+                if (!suppressChat)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("Amount must be greater than 0.", ChatMessageType.System));
+                return;
+            }
             long actualAmount = 0;
             if (Amount <= this.AvailableLuminance)
             {
@@ -871,8 +872,8 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!CreateLegendaryKey(500010, 25)) 
                     {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 25-use legendary keys - check pack space. Withdrawal cancelled.", ChatMessageType.System));
-                        return;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 25-use legendary keys - check pack space. Withdrawal may be incomplete.", ChatMessageType.System));
+                        break;
                     }
                     remainingAmount -= 25;
                     totalWithdrawn += 25;
@@ -882,8 +883,8 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!CreateLegendaryKey(51954, 10)) 
                     {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 10-use legendary keys - check pack space. Withdrawal cancelled.", ChatMessageType.System));
-                        return;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 10-use legendary keys - check pack space. Withdrawal may be incomplete.", ChatMessageType.System));
+                        break;
                     }
                     remainingAmount -= 10;
                     totalWithdrawn += 10;
@@ -966,8 +967,8 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!CreateMythicalKey(90000110, 25)) 
                     {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 25-use mythical keys - check pack space. Withdrawal cancelled.", ChatMessageType.System));
-                        return;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 25-use mythical keys - check pack space. Withdrawal may be incomplete.", ChatMessageType.System));
+                        break;
                     }
                     remainingAmount -= 25;
                     totalWithdrawn += 25;
@@ -977,8 +978,8 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!CreateMythicalKey(90000109, 10)) 
                     {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 10-use mythical keys - check pack space. Withdrawal cancelled.", ChatMessageType.System));
-                        return;
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create 10-use mythical keys - check pack space. Withdrawal may be incomplete.", ChatMessageType.System));
+                        break;
                     }
                     remainingAmount -= 10;
                     totalWithdrawn += 10;
@@ -1133,7 +1134,7 @@ namespace ACE.Server.WorldObjects
                 string noteName = "";
 
                 // Map denomination to weenie ID and value
-                switch (denomination.ToLower())
+                switch (denomination.Trim().ToLower())
                 {
                     case "i":
                         weenieId = 2621; // tradenote100
@@ -1199,23 +1200,34 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                // Create the trade note(s)
-                var tradeNote = WorldObjectFactory.CreateNewWorldObject(weenieId);
-                if (tradeNote == null)
+                var remaining = count;
+                var created = 0;
+                const int DefaultMaxStack = 100; // adjust if your data uses a different limit
+                while (remaining > 0)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create trade notes. Withdrawal cancelled.", ChatMessageType.System));
-                    return;
+                    var batch = Math.Min(remaining, DefaultMaxStack);
+                    var note = WorldObjectFactory.CreateNewWorldObject(weenieId);
+                    if (note == null)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create trade notes. Withdrawal may be incomplete.", ChatMessageType.System));
+                        break;
+                    }
+                    note.SetStackSize(batch);
+                    if (!this.TryCreateInInventoryWithNetworking(note))
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to add trade notes to inventory - check pack space. Withdrawal may be incomplete.", ChatMessageType.System));
+                        break;
+                    }
+                    remaining -= batch;
+                    created += batch;
                 }
-
-                tradeNote.SetStackSize(count);
-                if (this.TryCreateInInventoryWithNetworking(tradeNote))
+                if (created > 0)
                 {
-                    BankedPyreals -= totalCost;
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {count} {denomination.ToUpper()} notes worth {totalCost:N0} pyreals", ChatMessageType.System));
-                }
-                else
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to add trade notes to inventory - check pack space. Withdrawal cancelled.", ChatMessageType.System));
+                    var debited = created * noteValue;
+                    BankedPyreals -= debited;
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {created} {denomination.ToUpper()} note(s) worth {debited:N0} pyreals", ChatMessageType.System));
+                    if (created != count)
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning: Requested {count} notes but only {created} were created.", ChatMessageType.System));
                 }
             }
         }
@@ -1229,6 +1241,13 @@ namespace ACE.Server.WorldObjects
         {
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting TransferPyreals operation | Amount: {Amount:N0} | Target: {CharacterDestination} | Current BankedPyreals: {BankedPyreals:N0}");
             
+            // Validate amount
+            if (Amount <= 0)
+            {
+                LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, false, "Non-positive amount");
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Amount must be greater than 0.", ChatMessageType.System));
+                return false;
+            }
             // Check if player has enough pyreals to transfer
             if (BankedPyreals < Amount)
             {
@@ -1328,6 +1347,12 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
         {
+            // Validate amount
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Transfer amount must be greater than zero.", ChatMessageType.System));
+                return false;
+            }
             // Check if player has enough legendary keys to transfer
             if (BankedLegendaryKeys < Amount)
             {
@@ -1377,6 +1402,12 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferMythicalKeys(long Amount, string CharacterDestination)
         {
+            // Validate amount
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Transfer amount must be greater than zero.", ChatMessageType.System));
+                return false;
+            }
             // Check if player has enough mythical keys to transfer
             if (BankedMythicalKeys < Amount)
             {
@@ -1435,6 +1466,12 @@ namespace ACE.Server.WorldObjects
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
+            // Validate amount
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Transfer amount must be greater than zero.", ChatMessageType.System));
+                return false;
+            }
             // Check if player has enough luminance to transfer
             if (BankedLuminance < Amount)
             {
@@ -1491,6 +1528,12 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
+            // Validate amount
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Transfer amount must be greater than zero.", ChatMessageType.System));
+                return false;
+            }
             // Check if player has enough enlightened coins to transfer
             if (BankedEnlightenedCoins < Amount)
             {
@@ -1548,6 +1591,12 @@ namespace ACE.Server.WorldObjects
         }
         public bool TransferWeaklyEnlightenedCoins(long Amount, string CharacterDestination)
         {
+            // Validate amount
+            if (Amount <= 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Transfer amount must be greater than zero.", ChatMessageType.System));
+                return false;
+            }
             // Check if player has enough weakly enlightened coins to transfer
             if (BankedWeaklyEnlightenedCoins < Amount)
             {
