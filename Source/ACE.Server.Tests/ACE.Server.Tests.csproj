@@ -46,7 +46,7 @@
     </ItemGroup>
 
   <!-- Run banking tests after build -->
-  <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+  <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true'">
     <Exec Command="dotnet test -c $(Configuration) --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal" 
           ContinueOnError="false" />
   </Target>
