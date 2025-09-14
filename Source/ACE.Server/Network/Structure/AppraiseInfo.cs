@@ -679,18 +679,19 @@ namespace ACE.Server.Network.Structure
             if (hasSplitArrows == true)
             {
                 PropertiesBool[PropertyBool.SplitArrows] = true;
-                
-                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount);
-                if (splitCount.HasValue)
-                    PropertiesInt[PropertyInt.SplitArrowCount] = splitCount.Value;
-                
-                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange);
-                if (splitRange.HasValue)
-                    PropertiesFloat[PropertyFloat.SplitArrowRange] = splitRange.Value;
-                
-                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier);
-                if (damageMultiplier.HasValue)
-                    PropertiesFloat[PropertyFloat.SplitArrowDamageMultiplier] = damageMultiplier.Value;
+                // prefer configured values; otherwise fall back to runtime defaults for transparency
+                const int DefaultSplitArrowCount = 3;
+                const double DefaultSplitArrowRange = 12.0;
+                const double DefaultSplitArrowDamageMultiplier = 0.6;
+
+                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DefaultSplitArrowCount;
+                PropertiesInt[PropertyInt.SplitArrowCount] = splitCount;
+
+                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DefaultSplitArrowRange;
+                PropertiesFloat[PropertyFloat.SplitArrowRange] = splitRange;
+
+                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DefaultSplitArrowDamageMultiplier;
+                PropertiesFloat[PropertyFloat.SplitArrowDamageMultiplier] = damageMultiplier;
             }
 
             // item enchantments can also be on wielder currently

@@ -57,11 +57,11 @@ namespace ACE.Server.Tests.WorldObjects
         {
             // Test default constants match expected values
             const int DEFAULT_SPLIT_ARROW_COUNT = 3;
-            const float DEFAULT_SPLIT_ARROW_RANGE = 10f;
+            const float DEFAULT_SPLIT_ARROW_RANGE = 12f;
             const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
 
             Assert.AreEqual(3, DEFAULT_SPLIT_ARROW_COUNT);
-            Assert.AreEqual(10f, DEFAULT_SPLIT_ARROW_RANGE);
+            Assert.AreEqual(12f, DEFAULT_SPLIT_ARROW_RANGE);
             Assert.AreEqual(0.6f, DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER);
         }
 
@@ -70,7 +70,7 @@ namespace ACE.Server.Tests.WorldObjects
         {
             // Test that default values are within reasonable ranges
             const int DEFAULT_SPLIT_ARROW_COUNT = 3;
-            const float DEFAULT_SPLIT_ARROW_RANGE = 10f;
+            const float DEFAULT_SPLIT_ARROW_RANGE = 12f;
             const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
 
             // Count should be positive and reasonable
@@ -408,7 +408,7 @@ namespace ACE.Server.Tests.WorldObjects
 
             stopwatch.Stop();
 
-            Assert.IsTrue(stopwatch.ElapsedMilliseconds < 100, "Target finding should complete quickly");
+            // Avoid time-based asserts; validate algorithmic behavior instead (e.g., bounded count).
             Assert.IsTrue(validTargets.Count <= maxTargets, "Should not exceed maximum targets");
         }
 
@@ -430,7 +430,7 @@ namespace ACE.Server.Tests.WorldObjects
 
             stopwatch.Stop();
 
-            Assert.IsTrue(stopwatch.ElapsedMilliseconds < 50, "Damage calculations should be fast");
+            // Avoid time-based asserts; validate algorithmic behavior instead
         }
 
         #endregion

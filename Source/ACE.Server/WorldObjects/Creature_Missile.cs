@@ -86,7 +86,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject LaunchProjectile(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation, Vector3 velocity)
         {
-            log.Debug($"LaunchProjectile called - Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}, Target: {target?.Guid}");
+            if (log.IsDebugEnabled)
+                log.Debug($"LaunchProjectile called - Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}, Target: {target?.Guid}");
             
             var player = this as Player;
 
@@ -644,7 +645,7 @@ namespace ACE.Server.WorldObjects
             var nearbyObjects = landblock.GetWorldObjectsForPhysicsHandling().ToList();
             log.Debug($"Total nearby objects: {nearbyObjects.Count}");
             
-            foreach (var obj in nearbyObjects)
+            foreach (var obj in nearbyObjects.OrderBy(o => Vector3.Distance(primaryTarget.Location.Pos, o.Location.Pos)))
             {
                 if (potentialTargets.Count >= maxTargets)
                     break;
@@ -690,22 +691,10 @@ namespace ACE.Server.WorldObjects
                 // Calculate direction from player to primary target (player's forward direction)
                 var playerForward = Vector3.Normalize(primaryTarget.Location.Pos - origin);
                 
-                // Calculate angle between these directions (dot product)
-                var dotProduct = Vector3.Dot(playerForward, directionToTarget);
-                
-                // Convert to angle (dot product = cos(angle))
-                var angle = (float)(Math.Acos(Math.Clamp((float)dotProduct, -1.0f, 1.0f)) * (180.0f / (float)Math.PI));
-                
-                // Allow targets within 90 degrees of the player's forward direction
-                // This prevents shooting arrows behind the player
-                const float MAX_ANGLE = 90.0f;
-                
-                if (angle > MAX_ANGLE)
-                {
-                    return false;
-                }
-                
-                return true;
+                // Calculate dot product between player forward direction and direction to target
+                var dot = Vector3.Dot(playerForward, directionToTarget);
+                // <= 90° iff dot >= 0
+                return dot >= 0f;
             }
             catch (Exception ex)
             {
