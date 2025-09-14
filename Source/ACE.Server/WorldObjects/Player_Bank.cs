@@ -101,11 +101,13 @@ namespace ACE.Server.WorldObjects
                 // inner handles work; suppress its chat
                 DepositPyreals(cash, true);
                 long newBalance = BankedPyreals ?? 0;
+                var actualDeposited = Math.Max(0, newBalance - oldBalance);
                 
-                LogBankChange("DepositPyreals", "Pyreals", cash, oldBalance, newBalance, $"Found {pyrealsList.Count} items");
+                LogBankChange("DepositPyreals", "Pyreals", actualDeposited, oldBalance, newBalance, $"Found {pyrealsList.Count} items");
                 if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {cash:N0} pyreals", ChatMessageType.System));
+                    var msg = actualDeposited > 0 ? $"Deposited {actualDeposited:N0} pyreals" : "No pyreals found to deposit";
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.System));
                 }
             }
             else
