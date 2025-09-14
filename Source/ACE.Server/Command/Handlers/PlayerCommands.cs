@@ -139,16 +139,6 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
-        public static void HandleBankShort(Session session, params string[] parameters)
-        {
-            if (parameters.Count() == 0)
-            {
-                parameters = new string[] { "b" };
-            }
-
-            HandleBank(session, parameters);
-        }
 
         [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Handles Augmentation Reporting", "")]
         public static void HandleAugmentReport(Session session, params string[] parameters)
@@ -169,6 +159,7 @@ namespace ACE.Server.Command.Handlers
 
         //custom commands
         [CommandHandler("bank", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
+        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
         public static void HandleBank(Session session, params string[] parameters)
         {
             if (session.Player == null)
