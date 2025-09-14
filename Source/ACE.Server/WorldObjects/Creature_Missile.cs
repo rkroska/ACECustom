@@ -519,7 +519,8 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                log.Debug($"CreateSplitArrows called for weapon {weapon.Guid}");
+                if (log.IsDebugEnabled)
+                    log.Debug($"CreateSplitArrows called for weapon {weapon.Guid}");
                 
                 var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
                 var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
@@ -528,20 +529,25 @@ namespace ACE.Server.WorldObjects
                 splitCount = Math.Clamp(splitCount, SPLIT_ARROW_COUNT_MIN, SPLIT_ARROW_COUNT_MAX);
                 splitRange = Math.Clamp(splitRange, SPLIT_ARROW_RANGE_MIN, SPLIT_ARROW_RANGE_MAX);
                 
-                log.Debug($"Split arrows - Count: {splitCount}, Range: {splitRange}");
+                if (log.IsDebugEnabled)
+                    log.Debug($"Split arrows - Count: {splitCount}, Range: {splitRange}");
                 
                 var additionalArrowCount = splitCount - 1; // We already have the main arrow
                 
                 var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount);
                 
-                log.Debug($"Found {validTargets.Count} valid targets for split arrows");
+                if (log.IsDebugEnabled)
+                    log.Debug($"Found {validTargets.Count} valid targets for split arrows");
                 
                 if (validTargets.Count == 0)
                 {
-                    log.Debug("No valid targets found, skipping split arrows");
+                    if (log.IsDebugEnabled)
+                        log.Debug("No valid targets found, skipping split arrows");
                     return;
                 }
                 
+                // Cache projectile speed before the loop to avoid repeated calls
+                var cachedSpeed = GetProjectileSpeed();
                 var arrowsCreated = 0;
                 
                 foreach (var splitTarget in validTargets)
@@ -549,7 +555,8 @@ namespace ACE.Server.WorldObjects
                     if (arrowsCreated >= additionalArrowCount)
                         break;
                         
-                    log.Debug($"Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
+                    if (log.IsDebugEnabled)
+                        log.Debug($"Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
                     
                     // Create new projectile
                     var splitProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
@@ -574,8 +581,19 @@ namespace ACE.Server.WorldObjects
                         // Apply safety clamp to damage multiplier
                         damageMultiplier = Math.Clamp(damageMultiplier, SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN, SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX);
                         var reducedDamage = (int)(damageValue.Value * damageMultiplier);
+                        
+                        // Skip/destroy projectiles with zero or non-positive reduced damage
+                        if (reducedDamage <= 0)
+                        {
+                            if (log.IsDebugEnabled)
+                                log.Debug($"Skipping split arrow with zero/negative damage: {reducedDamage}");
+                            splitProj.Destroy();
+                            continue;
+                        }
+                        
                         splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
-                        log.Debug($"Set split arrow damage to {reducedDamage} (original: {damageValue.Value}, multiplier: {damageMultiplier})");
+                        if (log.IsDebugEnabled)
+                            log.Debug($"Set split arrow damage to {reducedDamage} (original: {damageValue.Value}, multiplier: {damageMultiplier})");
                     }
                     
                     // Position at same origin
@@ -583,17 +601,37 @@ namespace ACE.Server.WorldObjects
                     splitProj.Location.Pos = origin;
                     splitProj.Location.Rotation = orientation;
                     
-                    // Calculate velocity to new target - use EXACT same physics as main arrow
-                    var splitVelocity = GetAimVelocity(splitTarget, GetProjectileSpeed());
+                    // Calculate velocity to new target - use cached speed
+                    var splitVelocity = GetAimVelocity(splitTarget, cachedSpeed);
                     
-                    log.Debug($"Split arrow velocity: {splitVelocity}");
+                    if (log.IsDebugEnabled)
+                        log.Debug($"Split arrow velocity: {splitVelocity}");
                     
                     // Set physics state
                     SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
                     
                     // Add to world
                     var success = LandblockManager.AddObject(splitProj);
-                    if (success && splitProj.PhysicsObj != null)
+                    if (!success)
+                    {
+                        // AddObject failed - destroy the projectile to prevent leak
+                        log.Error($"Failed to add split arrow {arrowsCreated + 1} to world");
+                        splitProj.Destroy();
+                        continue;
+                    }
+                    
+                    // Check if projectile is visible after adding to world
+                    if (!IsProjectileVisible(splitProj))
+                    {
+                        // Projectile not visible - destroy it and skip broadcasts/increment
+                        if (log.IsDebugEnabled)
+                            log.Debug($"Split arrow {arrowsCreated + 1} not visible, destroying");
+                        splitProj.Destroy();
+                        continue;
+                    }
+                    
+                    // Projectile successfully added and visible - activate and broadcast
+                    if (splitProj.PhysicsObj != null)
                     {
                         splitProj.PhysicsObj.set_active(true);
                         splitProj.ReportCollisions = true;
@@ -603,16 +641,20 @@ namespace ACE.Server.WorldObjects
                         splitProj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(splitProj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
                         splitProj.EnqueueBroadcast(new GameMessageScript(splitProj.Guid, PlayScript.Launch, 0f));
                         
-                        log.Debug($"Successfully added split arrow {arrowsCreated + 1} to world");
+                        if (log.IsDebugEnabled)
+                            log.Debug($"Successfully added split arrow {arrowsCreated + 1} to world");
                         arrowsCreated++;
                     }
                     else
                     {
-                        log.Error($"Failed to add split arrow {arrowsCreated + 1} to world");
+                        // PhysicsObj is null - destroy the projectile
+                        log.Error($"Split arrow {arrowsCreated + 1} has null PhysicsObj after AddObject");
+                        splitProj.Destroy();
                     }
                 }
                 
-                log.Debug($"Created {arrowsCreated} split arrows successfully");
+                if (log.IsDebugEnabled)
+                    log.Debug($"Created {arrowsCreated} split arrows successfully");
             }
             catch (Exception ex)
             {
