@@ -1584,6 +1584,7 @@ namespace ACE.Server.WorldObjects
                         offlinePlayer.BankedPyreals += Amount;
                         log.Info($"[BANK_DEBUG] Player: {Name} | Added {Amount:N0} to target player's BankedPyreals | New balance: {offlinePlayer.BankedPyreals:N0}");
                     }
+                    offlinePlayer.SaveBiotaToDatabase();
                 }
                 else
                 {
@@ -1667,6 +1668,7 @@ namespace ACE.Server.WorldObjects
                     {
                         offlinePlayer.BankedLegendaryKeys += Amount;
                     }
+                    offlinePlayer.SaveBiotaToDatabase();
                 }
                 else
                 {
@@ -1722,6 +1724,7 @@ namespace ACE.Server.WorldObjects
                     {
                         offlinePlayer.BankedMythicalKeys += Amount;
                     }
+                    offlinePlayer.SaveBiotaToDatabase();
                 }
                 else
                 {
@@ -1786,6 +1789,7 @@ namespace ACE.Server.WorldObjects
 
                     this.BankedLuminance -= Amount;
                     offlinePlayer.BankedLuminance += Amount;
+                    offlinePlayer.SaveBiotaToDatabase();
                 }
                 else
                 {
@@ -1796,15 +1800,7 @@ namespace ACE.Server.WorldObjects
                         onlinePlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.MaximumLuminance, onlinePlayer.MaximumLuminance ?? 0));
                     }
 
-                    // Check if target player can receive the luminance
-                    long currentAvailable = onlinePlayer.AvailableLuminance ?? 0;
-                    long maxCanHold = (onlinePlayer.MaximumLuminance ?? 1500000) - currentAvailable;
-                    
-                    if (maxCanHold < Amount)
-                    {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"{CharacterDestination} cannot receive {Amount:N0} luminance. They can only hold {maxCanHold:N0} more luminance.", ChatMessageType.System));
-                        return false;
-                    }
+                    // No capacity check needed for banked luminance
 
                     this.BankedLuminance -= Amount;
                     onlinePlayer.BankedLuminance += Amount;
@@ -1860,6 +1856,7 @@ namespace ACE.Server.WorldObjects
                     {
                         offlinePlayer.BankedEnlightenedCoins += Amount;
                     }
+                    offlinePlayer.SaveBiotaToDatabase();
                 }
                 else
                 {
@@ -1923,6 +1920,7 @@ namespace ACE.Server.WorldObjects
                     {
                         offlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
                     }
+                    offlinePlayer.SaveBiotaToDatabase();
                 }
                 else
                 {
