@@ -884,16 +884,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         /// <param name="Amount">Total amount of pyreals to create</param>
         /// <returns>Number of pyreals successfully created</returns>
-        private int CreatePyreals(int Amount)
+        private long CreatePyreals(long Amount)
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            int remaining = Amount;
-            int successfullyCreated = 0;
+            long remaining = Amount;
+            long successfullyCreated = 0;
             var createdItems = new List<WorldObject>();
             
             while (remaining > 0)
             {
-                int stackSize = Math.Min(remaining, PYREAL_MAX_STACK);
+                int stackSize = (int)Math.Min(remaining, (long)PYREAL_MAX_STACK);
                 
             WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
             if (smallCoins == null)
@@ -950,50 +950,52 @@ namespace ACE.Server.WorldObjects
 
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting WithdrawPyreals operation | Amount: {Amount:N0} | Current BankedPyreals: {BankedPyreals:N0}");
             
-            lock (balanceLock)
+            // Check if player has enough pyreals (outside lock for early exit)
+            if (BankedPyreals < Amount)
             {
-                // Check if player has enough pyreals
-                if (BankedPyreals < Amount)
+                log.Info($"[BANK_DEBUG] Player: {Name} | Insufficient funds | Requested: {Amount:N0} | Available: {BankedPyreals:N0}");
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough pyreals banked. Need {Amount:N0} pyreals but only have {BankedPyreals:N0}.", ChatMessageType.System));
+                return;
+            }
+            
+            // Create pyreal coins for the requested amount (outside lock)
+            log.Info($"[BANK_DEBUG] Player: {Name} | Creating {Amount:N0} pyreal coins");
+            long successfullyCreated = CreatePyreals(Amount);
+            log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coin creation | Requested: {Amount:N0} | Successfully Created: {successfullyCreated:N0}");
+            
+            // Update balance atomically (only lock for balance mutation)
+            if (successfullyCreated > 0)
+            {
+                long oldBalance;
+                long newBalance;
+                
+                lock (balanceLock)
                 {
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Insufficient funds | Requested: {Amount:N0} | Available: {BankedPyreals:N0}");
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough pyreals banked. Need {Amount:N0} pyreals but only have {BankedPyreals:N0}.", ChatMessageType.System));
-                    return;
-                }
-                
-                long oldBalance = BankedPyreals ?? 0;
-                
-                // Create pyreal coins for the requested amount
-                log.Info($"[BANK_DEBUG] Player: {Name} | Creating {Amount:N0} pyreal coins");
-                
-                int successfullyCreated = CreatePyreals((int)Amount);
-                log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coin creation | Requested: {Amount:N0} | Successfully Created: {successfullyCreated:N0}");
-                
-                if (successfullyCreated > 0)
-                {
+                    oldBalance = BankedPyreals ?? 0;
                     BankedPyreals -= successfullyCreated;
-                    long newBalance = BankedPyreals ?? 0;
-                    
+                    newBalance = BankedPyreals ?? 0;
                     LogBankChange("WithdrawPyreals", "Pyreals", successfullyCreated, oldBalance, newBalance, $"Withdrew {successfullyCreated:N0} pyreals");
-                    
-                    if (successfullyCreated == Amount)
-                    {
-                        // Full withdrawal successful
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coins created successfully | Amount: {successfullyCreated:N0}");
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} pyreals", ChatMessageType.System));
+                }
+                
+                // Send notifications outside of lock
+                if (successfullyCreated == Amount)
+                {
+                    // Full withdrawal successful
+                    log.Info($"[BANK_DEBUG] Player: {Name} | Pyreal coins created successfully | Amount: {successfullyCreated:N0}");
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} pyreals", ChatMessageType.System));
                 }
                 else
                 {
-                        // Partial withdrawal due to pack space
-                        long remaining = Amount - successfullyCreated;
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Partial withdrawal | Created: {successfullyCreated:N0} | Remaining: {remaining:N0} (insufficient pack space)");
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} pyreals (partial - insufficient pack space for remaining {remaining:N0} pyreals)", ChatMessageType.System));
-                    }
+                    // Partial withdrawal due to pack space
+                    long remaining = Amount - successfullyCreated;
+                    log.Info($"[BANK_DEBUG] Player: {Name} | Partial withdrawal | Created: {successfullyCreated:N0} | Remaining: {remaining:N0} (insufficient pack space)");
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} pyreals (partial - insufficient pack space for remaining {remaining:N0} pyreals)", ChatMessageType.System));
                 }
-                else
-                {
-                    log.Info($"[BANK_DEBUG] Player: {Name} | Failed to create any pyreal coins - insufficient pack space");
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create pyreal coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
-                }
+            }
+            else
+            {
+                log.Info($"[BANK_DEBUG] Player: {Name} | Failed to create any pyreal coins - insufficient pack space");
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create pyreal coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
             }
         }
 
@@ -1205,15 +1207,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         /// <param name="Amount">Total amount of enlightened coins to create</param>
         /// <returns>Number of enlightened coins successfully created</returns>
-        private int CreateEnlightenedCoins(int Amount)
+        private long CreateEnlightenedCoins(long Amount)
         {
-            int remaining = Amount;
-            int successfullyCreated = 0;
+            long remaining = Amount;
+            long successfullyCreated = 0;
             var createdItems = new List<WorldObject>();
 
             while (remaining > 0)
             {
-                int stackSize = Math.Min(remaining, ENLIGHTENED_COIN_MAX_STACK);
+                int stackSize = (int)Math.Min(remaining, (long)ENLIGHTENED_COIN_MAX_STACK);
 
             WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300004);
             if (wo == null)
@@ -1263,34 +1265,37 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            lock (balanceLock)
+            // Check if player has enough enlightened coins (outside lock for early exit)
+            if (BankedEnlightenedCoins < Amount)
             {
-                // Check if player has enough enlightened coins
-                if (BankedEnlightenedCoins < Amount)
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough enlightened coins banked. Need {Amount:N0} coins but only have {BankedEnlightenedCoins:N0}.", ChatMessageType.System));
-                    return;
-                }
-                
-                int successfullyCreated = CreateEnlightenedCoins((int)Amount);
-                
-                if (successfullyCreated > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough enlightened coins banked. Need {Amount:N0} coins but only have {BankedEnlightenedCoins:N0}.", ChatMessageType.System));
+                return;
+            }
+            
+            // Create enlightened coins (outside lock)
+            long successfullyCreated = CreateEnlightenedCoins(Amount);
+            
+            // Update balance atomically (only lock for balance mutation)
+            if (successfullyCreated > 0)
+            {
+                lock (balanceLock)
                 {
                     BankedEnlightenedCoins -= successfullyCreated;
-                    
-                    if (successfullyCreated == Amount)
-                    {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} enlightened coins", ChatMessageType.System));
-                    }
-                    else
-                    {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} enlightened coins (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} enlightened coins)", ChatMessageType.System));
-                    }
+                }
+                
+                // Send notifications outside of lock
+                if (successfullyCreated == Amount)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} enlightened coins", ChatMessageType.System));
                 }
                 else
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create enlightened coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} enlightened coins (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} enlightened coins)", ChatMessageType.System));
                 }
+            }
+            else
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create enlightened coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
             }
         }
 
@@ -1300,15 +1305,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         /// <param name="Amount">Total amount of weakly enlightened coins to create</param>
         /// <returns>Number of weakly enlightened coins successfully created</returns>
-        private int CreateWeaklyEnlightenedCoins(int Amount)
+        private long CreateWeaklyEnlightenedCoins(long Amount)
         {
-            int remaining = Amount;
-            int successfullyCreated = 0;
+            long remaining = Amount;
+            long successfullyCreated = 0;
             var createdItems = new List<WorldObject>();
 
             while (remaining > 0)
             {
-                int stackSize = Math.Min(remaining, WEAKLY_ENLIGHTENED_COIN_MAX_STACK);
+                int stackSize = (int)Math.Min(remaining, (long)WEAKLY_ENLIGHTENED_COIN_MAX_STACK);
 
             WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300003);
             if (wo == null)
@@ -1358,34 +1363,37 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            lock (balanceLock)
+            // Check if player has enough weakly enlightened coins (outside lock for early exit)
+            if (BankedWeaklyEnlightenedCoins < Amount)
             {
-                // Check if player has enough weakly enlightened coins
-                if (BankedWeaklyEnlightenedCoins < Amount)
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough weakly enlightened coins banked. Need {Amount:N0} coins but only have {BankedWeaklyEnlightenedCoins:N0}.", ChatMessageType.System));
-                    return;
-                }
-                
-                int successfullyCreated = CreateWeaklyEnlightenedCoins((int)Amount);
-                
-                if (successfullyCreated > 0)
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have enough weakly enlightened coins banked. Need {Amount:N0} coins but only have {BankedWeaklyEnlightenedCoins:N0}.", ChatMessageType.System));
+                return;
+            }
+            
+            // Create weakly enlightened coins (outside lock)
+            long successfullyCreated = CreateWeaklyEnlightenedCoins(Amount);
+            
+            // Update balance atomically (only lock for balance mutation)
+            if (successfullyCreated > 0)
+            {
+                lock (balanceLock)
                 {
                     BankedWeaklyEnlightenedCoins -= successfullyCreated;
-                    
-                    if (successfullyCreated == Amount)
-                    {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} weakly enlightened coins", ChatMessageType.System));
-                    }
-                    else
-                    {
-                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} weakly enlightened coins (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} weakly enlightened coins)", ChatMessageType.System));
-                    }
+                }
+                
+                // Send notifications outside of lock
+                if (successfullyCreated == Amount)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} weakly enlightened coins", ChatMessageType.System));
                 }
                 else
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create weakly enlightened coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {successfullyCreated:N0} weakly enlightened coins (partial - insufficient pack space for remaining {Amount - successfullyCreated:N0} weakly enlightened coins)", ChatMessageType.System));
                 }
+            }
+            else
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Failed to create weakly enlightened coins - check pack space. Withdrawal cancelled.", ChatMessageType.System));
             }
         }
 
@@ -1588,24 +1596,35 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var onlinePlayer = tarplayer as Player;
+                    var onlinePlayer = (Player)tarplayer;
                     log.Info($"[BANK_DEBUG] Player: {Name} | Transferring to online player | Target: {onlinePlayer.Name} | Target old balance: {onlinePlayer.BankedPyreals:N0}");
                     
-                    if (onlinePlayer.BankedPyreals == null)
+                    // Deadlock-safe double-lock using consistent ordering
+                    object lockA = this.balanceLock;
+                    object lockB = onlinePlayer.balanceLock;
+                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                    var firstLock = sourceFirst ? lockA : lockB;
+                    var secondLock = sourceFirst ? lockB : lockA;
+                    
+                    lock (firstLock)
                     {
-                        onlinePlayer.BankedPyreals = Amount;
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Initialized target player's BankedPyreals to {Amount:N0}");
-                    }
-                    else
-                    {
-                        onlinePlayer.BankedPyreals += Amount;
-                        log.Info($"[BANK_DEBUG] Player: {Name} | Added {Amount:N0} to target player's BankedPyreals | New balance: {onlinePlayer.BankedPyreals:N0}");
+                        lock (secondLock)
+                        {
+                            // Capture current balances
+                            long srcOldBalance = this.BankedPyreals ?? 0;
+                            long dstOldBalance = onlinePlayer.BankedPyreals ?? 0;
+                            
+                            // Perform atomic transfer
+                            this.BankedPyreals = srcOldBalance - Amount;
+                            onlinePlayer.BankedPyreals = dstOldBalance + Amount;
+                            
+                            log.Info($"[BANK_DEBUG] Player: {Name} | Atomic transfer completed | Source: {srcOldBalance:N0} -> {this.BankedPyreals:N0} | Target: {dstOldBalance:N0} -> {onlinePlayer.BankedPyreals:N0}");
+                        }
                     }
                     
+                    // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
                 }
-                
-                this.BankedPyreals -= Amount;
                 long newBalance = BankedPyreals ?? 0;
                 long targetNewBalance = 0;
                 
@@ -1672,19 +1691,28 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var onlinePlayer = tarplayer as Player;
-                    if (onlinePlayer.BankedLegendaryKeys == null)
+                    var onlinePlayer = (Player)tarplayer;
+                    
+                    // Deadlock-safe double-lock using consistent ordering
+                    object lockA = this.balanceLock;
+                    object lockB = onlinePlayer.balanceLock;
+                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                    var firstLock = sourceFirst ? lockA : lockB;
+                    var secondLock = sourceFirst ? lockB : lockA;
+                    
+                    lock (firstLock)
                     {
-                        onlinePlayer.BankedLegendaryKeys = Amount;
+                        lock (secondLock)
+                        {
+                            // Perform atomic transfer
+                            this.BankedLegendaryKeys -= Amount;
+                            onlinePlayer.BankedLegendaryKeys = (onlinePlayer.BankedLegendaryKeys ?? 0) + Amount;
+                        }
                     }
-                    else
-                    {
-                        onlinePlayer.BankedLegendaryKeys += Amount;
-                    }
-                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedLegendaryKeys, onlinePlayer.BankedLegendaryKeys ?? 0));
+                    
+                    // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
                 }
-                this.BankedLegendaryKeys -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
                 return true;
             }
@@ -1728,23 +1756,32 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var onlinePlayer = tarplayer as Player;
-                    if (onlinePlayer.BankedMythicalKeys == null)
+                    var onlinePlayer = (Player)tarplayer;
+                    
+                    // Deadlock-safe double-lock using consistent ordering
+                    object lockA = this.balanceLock;
+                    object lockB = onlinePlayer.balanceLock;
+                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                    var firstLock = sourceFirst ? lockA : lockB;
+                    var secondLock = sourceFirst ? lockB : lockA;
+                    
+                    lock (firstLock)
                     {
-                        onlinePlayer.BankedMythicalKeys = Amount;
+                        lock (secondLock)
+                        {
+                            // Perform atomic transfer
+                            this.BankedMythicalKeys -= Amount;
+                            onlinePlayer.BankedMythicalKeys = (onlinePlayer.BankedMythicalKeys ?? 0) + Amount;
+                        }
                     }
-                    else
-                    {
-                        onlinePlayer.BankedMythicalKeys += Amount;
-                    }
-                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedMythicalKeys, onlinePlayer.BankedMythicalKeys ?? 0));
+                    
+                    // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Mythical Keys from {this.Name}", ChatMessageType.System));
                     if (Amount > 1)
                     {
                         onlinePlayer.SavePlayerToDatabase();
                     }
                 }
-                this.BankedMythicalKeys -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedMythicalKeys, this.BankedMythicalKeys ?? 0));
                 if (Amount > 1)
                 {
@@ -1793,7 +1830,7 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var onlinePlayer = tarplayer as Player;
+                    var onlinePlayer = (Player)tarplayer;
                     if (!onlinePlayer.MaximumLuminance.HasValue)
                     {
                         onlinePlayer.MaximumLuminance = 1500000;
@@ -1802,8 +1839,24 @@ namespace ACE.Server.WorldObjects
 
                     // No capacity check needed for banked luminance
 
-                    this.BankedLuminance -= Amount;
-                    onlinePlayer.BankedLuminance += Amount;
+                    // Deadlock-safe double-lock using consistent ordering
+                    object lockA = this.balanceLock;
+                    object lockB = onlinePlayer.balanceLock;
+                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                    var firstLock = sourceFirst ? lockA : lockB;
+                    var secondLock = sourceFirst ? lockB : lockA;
+                    
+                    lock (firstLock)
+                    {
+                        lock (secondLock)
+                        {
+                            // Perform atomic transfer
+                            this.BankedLuminance -= Amount;
+                            onlinePlayer.BankedLuminance = (onlinePlayer.BankedLuminance ?? 0) + Amount;
+                        }
+                    }
+                    
+                    // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} luminance from {this.Name}", ChatMessageType.System));
                     
                     if (Amount > 100000)
@@ -1860,24 +1913,32 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var onlinePlayer = tarplayer as Player;
-                    if (onlinePlayer.BankedEnlightenedCoins == null)
+                    var onlinePlayer = (Player)tarplayer;
+                    
+                    // Deadlock-safe double-lock using consistent ordering
+                    object lockA = this.balanceLock;
+                    object lockB = onlinePlayer.balanceLock;
+                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                    var firstLock = sourceFirst ? lockA : lockB;
+                    var secondLock = sourceFirst ? lockB : lockA;
+                    
+                    lock (firstLock)
                     {
-                        onlinePlayer.BankedEnlightenedCoins = Amount;
+                        lock (secondLock)
+                        {
+                            // Perform atomic transfer
+                            this.BankedEnlightenedCoins -= Amount;
+                            onlinePlayer.BankedEnlightenedCoins = (onlinePlayer.BankedEnlightenedCoins ?? 0) + Amount;
+                        }
                     }
-                    else
-                    {
-                        onlinePlayer.BankedEnlightenedCoins += Amount;
-                    }
-                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedEnlightenedCoins, onlinePlayer.BankedEnlightenedCoins ?? 0));
+                    
+                    // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightened Coins from {this.Name}", ChatMessageType.System));
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
                     }
-
                 }
-                this.BankedEnlightenedCoins -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedEnlightenedCoins, this.BankedEnlightenedCoins ?? 0));
                 if (Amount > 10)
                 {
@@ -1924,24 +1985,32 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var onlinePlayer = tarplayer as Player;
-                    if (onlinePlayer.BankedWeaklyEnlightenedCoins == null)
+                    var onlinePlayer = (Player)tarplayer;
+                    
+                    // Deadlock-safe double-lock using consistent ordering
+                    object lockA = this.balanceLock;
+                    object lockB = onlinePlayer.balanceLock;
+                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                    var firstLock = sourceFirst ? lockA : lockB;
+                    var secondLock = sourceFirst ? lockB : lockA;
+                    
+                    lock (firstLock)
                     {
-                        onlinePlayer.BankedWeaklyEnlightenedCoins = Amount;
+                        lock (secondLock)
+                        {
+                            // Perform atomic transfer
+                            this.BankedWeaklyEnlightenedCoins -= Amount;
+                            onlinePlayer.BankedWeaklyEnlightenedCoins = (onlinePlayer.BankedWeaklyEnlightenedCoins ?? 0) + Amount;
+                        }
                     }
-                    else
-                    {
-                        onlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
-                    }
-                    //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedWeaklyEnlightenedCoins, onlinePlayer.BankedWeaklyEnlightenedCoins ?? 0));
+                    
+                    // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightened Coins from {this.Name}", ChatMessageType.System));
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
                     }
-
                 }
-                this.BankedWeaklyEnlightenedCoins -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedWeaklyEnlightenedCoins, this.BankedWeaklyEnlightenedCoins ?? 0));
                 if (Amount > 10)
                 {
