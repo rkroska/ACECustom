@@ -110,6 +110,9 @@ namespace ACE.Server.WorldObjects
                 long newBalance = BankedPyreals ?? 0;
                 var actualDeposited = Math.Max(0, newBalance - oldBalance);
                 
+                // Update client-side coin value tracking after depositing pyreals
+                UpdateCoinValue();
+                
                 LogBankChange("DepositPyreals", "Pyreals", actualDeposited, oldBalance, newBalance, $"Found {pyrealsList.Count} items");
                 if (!suppressChat)
                 {
@@ -195,6 +198,9 @@ namespace ACE.Server.WorldObjects
                 
                 // Send batched network updates for removed items
                 BatchRemoveItems(itemsToRemove);
+                
+                // Update client-side coin value tracking after removing pyreals
+                UpdateCoinValue();
                 
                 long newBalance = BankedPyreals ?? 0;
                 LogBankChange("DepositPyreals_Specific", "Pyreals", totalDeposited, oldBalance, newBalance, $"Processed {pyrealsList.Count} items");
@@ -602,6 +608,9 @@ namespace ACE.Server.WorldObjects
                     log.Debug($"[BANK_DEBUG] Player: {Name} | Sent batched network update for {itemsToRemove.Count} pea items");
                 }
                 
+                // Update client-side coin value tracking after removing pyreal peas
+                UpdateCoinValue();
+                
                 stopwatch.Stop();
                 long newBalance = BankedPyreals ?? 0;
                 
@@ -796,6 +805,9 @@ namespace ACE.Server.WorldObjects
                     BatchRemoveItems(itemsToRemove);
                 }
                 
+                // Update client-side coin value tracking after removing trade notes
+                UpdateCoinValue();
+                
                 if (totalDeposited > 0)
                 {
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} pyreals worth of trade notes", ChatMessageType.System));
@@ -894,8 +906,8 @@ namespace ACE.Server.WorldObjects
             {
                 int stackSize = (int)Math.Min(remaining, (long)PYREAL_MAX_STACK);
                 
-            WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
-            if (smallCoins == null)
+                WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
+                if (smallCoins == null)
                     break; // Can't create more items
                     
                 smallCoins.SetStackSize(stackSize);
@@ -975,6 +987,9 @@ namespace ACE.Server.WorldObjects
                     newBalance = BankedPyreals ?? 0;
                     LogBankChange("WithdrawPyreals", "Pyreals", successfullyCreated, oldBalance, newBalance, $"Withdrew {successfullyCreated:N0} pyreals");
                 }
+                
+                // Update client-side coin value tracking after adding pyreals
+                UpdateCoinValue();
                 
                 // Send notifications outside of lock
                 if (successfullyCreated == Amount)
@@ -1216,8 +1231,8 @@ namespace ACE.Server.WorldObjects
             {
                 int stackSize = (int)Math.Min(remaining, (long)ENLIGHTENED_COIN_MAX_STACK);
 
-            WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300004);
-            if (wo == null)
+                WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300004);
+                if (wo == null)
                     break; // Can't create more items
 
                 wo.SetStackSize(stackSize);
@@ -1314,8 +1329,8 @@ namespace ACE.Server.WorldObjects
             {
                 int stackSize = (int)Math.Min(remaining, (long)WEAKLY_ENLIGHTENED_COIN_MAX_STACK);
 
-            WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300003);
-            if (wo == null)
+                WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300003);
+                if (wo == null)
                     break; // Can't create more items
 
                 wo.SetStackSize(stackSize);
@@ -1500,8 +1515,8 @@ namespace ACE.Server.WorldObjects
                 int maxStack = denomination.Trim().ToLower() == "mmd" ? MMD_TRADE_NOTE_MAX_STACK : TRADE_NOTE_MAX_STACK;
                 // Validate against actual item data
                 var probe = WorldObjectFactory.CreateNewWorldObject(weenieId);
-                if (probe is Stackable stackable && stackable.StackMax.HasValue)
-                    maxStack = Math.Max(1, Math.Min(maxStack, stackable.StackMax.Value));
+                if (probe is Stackable stackable && stackable.MaxStackSize.HasValue)
+                    maxStack = Math.Max(1, Math.Min(maxStack, stackable.MaxStackSize.Value));
                 probe?.Destroy();
                 while (remaining > 0)
                 {
@@ -1526,6 +1541,10 @@ namespace ACE.Server.WorldObjects
                     var debited = created * noteValue;
                     BankedPyreals -= debited;
                     LogBankChange("WithdrawTradeNotes", "Pyreals", debited, (BankedPyreals ?? 0) + debited, BankedPyreals ?? 0, $"{created} × {denomination.ToUpper()}");
+                    
+                    // Update client-side coin value tracking after adding trade notes
+                    UpdateCoinValue();
+                    
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Withdrew {created} {denomination.ToUpper()} note(s) worth {debited:N0} pyreals", ChatMessageType.System));
                     if (created != count)
                         Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning: Requested {count} notes but only {created} were created.", ChatMessageType.System));
