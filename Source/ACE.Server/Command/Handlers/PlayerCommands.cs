@@ -139,16 +139,6 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
-        public static void HandleBankShort(Session session, params string[] parameters)
-        {
-            if (parameters.Count() == 0)
-            {
-                parameters = new string[] { "b" };
-            }
-
-            HandleBank(session, parameters);
-        }
 
         [CommandHandler("aug", AccessLevel.Player, CommandHandlerFlag.None, "Handles Augmentation Reporting", "")]
         public static void HandleAugmentReport(Session session, params string[] parameters)
@@ -178,15 +168,78 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Bugs ain't got banks.", ChatMessageType.Broadcast));
                 return;
             }
+            // Show balance if no parameters (just /b)
             if (parameters.Length == 0)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] To use The Bank you must issue one of the commands listed below.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Deposit to deposit all pyreals, Pyreal/Gold/Silver/Copper peas, luminance, and keys or specify enlightened coins or pyreals or luminance or notes and an amount.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Withdraw Pyreals 100 to withdraw 100 pyreals. Groups of 250000 will be exchanged for MMDs. /bank w p 100 will accomplish the same task.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Transfer to send Pyreals, Luminance, Legendary Keys and enlightened coins  to a character.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank Balance to see balance. All bank commands and keywords can be shortened to their first letter. For example, /bank d will deposit all except enlightened coins and weakly enlightened coins, /bank b will show balance, etc.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
+                return;
+            }
 
+            if (parameters[0] == "help" || parameters[0] == "h")
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Available Commands:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DEPOSIT COMMANDS:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit (or /b d) - Deposit all pyreals, peas, luminance, keys, coins, and notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit all (or /b d a) - Deposit all pyreals, peas, luminance, keys, coins, and notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit pyreals (or /b d p) - Deposit all pyreals", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit peas (or /b d ps) - Deposit all pyreal peas", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit luminance (or /b d l) - Deposit all luminance", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit legendarykeys (or /b d k) - Deposit all legendary keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit mythicalkeys (or /b d mk) - Deposit all mythical keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit enlightenedcoins (or /b d e) - Deposit all enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit weaklyenlightenedcoins (or /b d we) - Deposit all weakly enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank deposit notes (or /b d n) - Deposit all trade notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"WITHDRAWAL COMMANDS:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw pyreals <amount> (or /b w p <amount>) - Withdraw pyreals as coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw notes <denomination> (or /b w n <denomination>) - Withdraw specific trade notes", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  Denominations: i(100), v(500), x(1k), l(5k), c(10k), d(50k), m(100k), md(150k), mm(200k), mmd(250k)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw luminance <amount> (or /b w l <amount>) - Withdraw luminance", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw legendarykeys <amount> (or /b w k <amount>) - Withdraw legendary keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw mythicalkeys <amount> (or /b w mk <amount>) - Withdraw mythical keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw enlightenedcoins <amount> (or /b w e <amount>) - Withdraw enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank withdraw weaklyenlightenedcoins <amount> (or /b w we <amount>) - Withdraw weakly enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"OTHER COMMANDS:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank balance (or /b b) - Show bank balance", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b - Show bank balance (shortcut)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"TRANSFER COMMANDS:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer pyreals <amount> <character> (or /b t p <amount> <character>) - Transfer pyreals", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer luminance <amount> <character> (or /b t l <amount> <character>) - Transfer luminance", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer legendarykeys <amount> <character> (or /b t k <amount> <character>) - Transfer legendary keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer mythicalkeys <amount> <character> (or /b t mk <amount> <character>) - Transfer mythical keys", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer enlightenedcoins <amount> <character> (or /b t e <amount> <character>) - Transfer enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer weaklyenlightenedcoins <amount> <character> (or /b t we <amount> <character>) - Transfer weakly enlightened coins", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"EXAMPLES:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b w p 1000000 - Withdraw 1M pyreals (gets 4 trade notes of 250k)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n mmd - Withdraw 250k trade note", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n c 5 - Withdraw 5 trade notes of 10k each", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1000000 \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
+
+                return;
+            }
+
+            // Check for balance request (either /b alone or /b b)
+            if (parameters[0] == "b" && parameters.Length == 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
                 return;
             }
 
@@ -261,15 +314,19 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters.Count() == 3 || parameters.Count() == 4)
             {
-                if (!long.TryParse(parameters[2], out amount))
+                // Skip amount parsing for trade notes (iType = 3) since parameters[2] is the denomination
+                if (iType != 3)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
-                    return;
-                }
-                if (amount <= 0)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                    return;
+                    if (!long.TryParse(parameters[2], out amount))
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
+                        return;
+                    }
+                    if (amount <= 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
+                        return;
+                    }
                 }
             }
 
@@ -293,7 +350,7 @@ namespace ACE.Server.Command.Handlers
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
                 if (lastCommandTimeSeconds < commandSecondsLimit)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Deposit] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
 
@@ -303,14 +360,30 @@ namespace ACE.Server.Command.Handlers
                 if (parameters.Count() == 1) //only means all
                 {
                     //deposit all
-                    session.Player.DepositPyreals();
-                    session.Player.DepositLuminance();
+                    session.Player.DepositPyreals(true);
+                    session.Player.DepositLuminance(true);
                     session.Player.DepositLegendaryKeys();
                     session.Player.DepositPeas();
-                    //session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositWeaklyEnlightenedCoins();
                     session.Player.DepositMythicalKeys();
+                    session.Player.DepositTradeNotes();
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, and Mythical Keys!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, Mythical Keys, Enlightened Coins, Weakly Enlightened Coins, and Trade Notes!", ChatMessageType.System));
+                }
+                if (parameters.Count() == 2 && parameters[1] == "a") //explicit all
+                {
+                    //deposit all
+                    session.Player.DepositPyreals(true);
+                    session.Player.DepositLuminance(true);
+                    session.Player.DepositLegendaryKeys();
+                    session.Player.DepositPeas();
+                    session.Player.DepositEnlightenedCoins();
+                    session.Player.DepositWeaklyEnlightenedCoins();
+                    session.Player.DepositMythicalKeys();
+                    session.Player.DepositTradeNotes();
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, Mythical Keys, Enlightened Coins, Weakly Enlightened Coins, and Trade Notes!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
@@ -376,7 +449,7 @@ namespace ACE.Server.Command.Handlers
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
                 if (lastCommandTimeSeconds < commandSecondsLimit)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Withdraw] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
 
@@ -418,6 +491,26 @@ namespace ACE.Server.Command.Handlers
                         }
                         session.Player.WithdrawLuminance(amount);
                         break;
+                    case 3:
+                        //withdraw trade notes
+                        if (parameters.Length < 3)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Usage: /bank withdraw notes <denomination> [count] or /b w n <denomination> [count]", ChatMessageType.System));
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Denominations: i(100), v(500), x(1k), l(5k), c(10k), d(50k), m(100k), md(150k), mm(200k), mmd(250k)", ChatMessageType.System));
+                            break;
+                        }
+                        
+                        string denomination = parameters[2];
+                        int noteCount = 1;
+                        
+                        // Check if there's a count parameter
+                        if (parameters.Length >= 4 && int.TryParse(parameters[3], out int parsedCount))
+                        {
+                            noteCount = parsedCount;
+                        }
+                        
+                        session.Player.WithdrawTradeNotes(denomination, noteCount);
+                        break;
                     case 4:
                         if (session.Player.BankedLegendaryKeys != null && amount > session.Player.BankedLegendaryKeys)
                         {
@@ -448,7 +541,7 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (2 >= session.Player.GetFreeInventorySlots())
+                        if (session.Player.GetFreeInventorySlots() <= 0)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many enlightened coins.", ChatMessageType.System));
                             break;
@@ -485,7 +578,7 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
                             break;
                         }
-                        if (2 >= session.Player.GetFreeInventorySlots())
+                        if (session.Player.GetFreeInventorySlots() <= 0)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many weakly enlightened coins.", ChatMessageType.System));
                             break;
@@ -504,12 +597,25 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Too many parameters, ensure you use \"quotes\" around player names with spaces.", ChatMessageType.System));
                     return;
                 }
+                
+                // Rate limiting for transfer commands
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var currentTime = DateTime.UtcNow;
+
+                var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
+                if (lastCommandTimeSeconds < commandSecondsLimit)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[Transfer] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    return;
+                }
+
+                session.LastBankCommandTime = currentTime;
                 //transfer
                 switch (iType)
                 {
                     case 1:
                         //transfer pyreals
-                        if (session.Player.BankedPyreals != null && amount >= session.Player.BankedPyreals)
+                        if (session.Player.BankedPyreals != null && amount > session.Player.BankedPyreals)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this transfer", ChatMessageType.System));
                             break;
@@ -531,7 +637,7 @@ namespace ACE.Server.Command.Handlers
                         break;
                     case 2:
                         //transfer lum
-                        if (session.Player.BankedLuminance != null && amount >= session.Player.BankedLuminance)
+                        if (session.Player.BankedLuminance != null && amount > session.Player.BankedLuminance)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this transfer", ChatMessageType.System));
                             break;
@@ -544,11 +650,6 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferLuminance(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
-                            if
-                               (session.Player.IsPlussed)
-                            {
-                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Luminance to {transferTargetName}");
-                            }
                         }
                         else
                         {
@@ -556,7 +657,7 @@ namespace ACE.Server.Command.Handlers
                         }
                         break;
                     case 4:
-                        if (session.Player.BankedLegendaryKeys != null && amount >= session.Player.BankedLegendaryKeys)
+                        if (session.Player.BankedLegendaryKeys != null && amount > session.Player.BankedLegendaryKeys)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough keys banked to make this transfer", ChatMessageType.System));
                             break;
@@ -576,7 +677,7 @@ namespace ACE.Server.Command.Handlers
                         }
                         break;
                     case 6:
-                        if (session.Player.BankedEnlightenedCoins != null && amount >= session.Player.BankedEnlightenedCoins)
+                        if (session.Player.BankedEnlightenedCoins != null && amount > session.Player.BankedEnlightenedCoins)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough enlightened coins banked to make this transfer", ChatMessageType.System));
                             break;
@@ -589,15 +690,10 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferEnlightenedCoins(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
-                            if
-                               (session.Player.IsPlussed)
-                            {
-                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Enlightened coins to {transferTargetName}");
-                            }
                         }
                         break;
                     case 7:
-                        if (session.Player.BankedMythicalKeys != null && amount >= session.Player.BankedMythicalKeys)
+                        if (session.Player.BankedMythicalKeys != null && amount > session.Player.BankedMythicalKeys)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough Mythical keys banked to make this transfer", ChatMessageType.System));
                             break;
@@ -617,7 +713,7 @@ namespace ACE.Server.Command.Handlers
                         }
                         break;
                     case 8:
-                        if (session.Player.BankedWeaklyEnlightenedCoins != null && amount >= session.Player.BankedWeaklyEnlightenedCoins)
+                        if (session.Player.BankedWeaklyEnlightenedCoins != null && amount > session.Player.BankedWeaklyEnlightenedCoins)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough weakly enlightened coins banked to make this transfer", ChatMessageType.System));
                             break;
@@ -630,12 +726,6 @@ namespace ACE.Server.Command.Handlers
                         if (session.Player.TransferWeaklyEnlightenedCoins(amount, transferTargetName))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Weakly Enlightened coins to {transferTargetName}", ChatMessageType.System));
-
-                            if
-                                (session.Player.IsPlussed)
-                            {
-                                PlayerManager.BroadcastToAuditChannel(session.Player, $"Transferred {amount:N0} Weakly Enlightened coins to {transferTargetName}");
-                            }
                         }
                         break;
                 }
@@ -651,6 +741,14 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
             }
         }
+
+        [CommandHandler("b", AccessLevel.Player, CommandHandlerFlag.None, "Handles Banking Operations", "")]
+        public static void HandleBankShort(Session session, params string[] parameters)
+        {
+
+            HandleBank(session, parameters);
+        }
+
         static readonly uint[] _lowLevelOverlays = {
         0x6006C34,    // lvl 1
         0x6006C35,    // lvl 2
@@ -685,7 +783,7 @@ namespace ACE.Server.Command.Handlers
             var lastCommandTimeSeconds = (currentTime - session.LastClapCommandTime).TotalSeconds;
             if (lastCommandTimeSeconds < commandSecondsLimit)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, $"[Clap] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                 return;
             }
 
@@ -868,7 +966,8 @@ namespace ACE.Server.Command.Handlers
             session.Player.BankedPyreals -= totalClapCost;
 
             // OPTIMIZATION: Track if we need to save to database (only save once at the end)
-            bool needsSave = (redComboCount + blueComboCount) > 0;
+            // Save only if redComboCount > 30 or blueComboCount > 90
+            bool needsSave = redComboCount > 30 || blueComboCount > 90;
 
             // OPTIMIZATION: Could batch property update messages here instead of individual updates
             // Current approach: Properties are updated individually as they change
@@ -1176,7 +1275,7 @@ namespace ACE.Server.Command.Handlers
                 var lastCommandTimeSeconds = (currentTime - session.LastQBCommandTime).TotalSeconds;
                 if (lastCommandTimeSeconds < commandSecondsLimit)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[QB] This command may only be run once every {commandSecondsLimit} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
 
@@ -1327,7 +1426,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (currentTime - session.LastMyQuestsCommandTime < MyQuests)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"This command may only be run once every {MyQuests.TotalSeconds} seconds.", ChatMessageType.Broadcast);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"[MyQuests] This command may only be run once every {MyQuests.TotalSeconds} seconds.", ChatMessageType.Broadcast);
                     return;
                 }
             }

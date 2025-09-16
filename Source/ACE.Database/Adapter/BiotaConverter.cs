@@ -14,6 +14,11 @@ namespace ACE.Database.Adapter
     {
         public static ACE.Entity.Models.Biota ConvertToEntityBiota(ACE.Database.Models.Shard.Biota biota, bool instantiateEmptyCollections = false)
         {
+            if (biota == null)
+            {
+                throw new ArgumentNullException(nameof(biota), "Cannot convert null biota to entity biota");
+            }
+
             var result = new ACE.Entity.Models.Biota();
 
             result.Id = biota.Id;
