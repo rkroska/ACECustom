@@ -680,7 +680,10 @@ namespace ACE.Server.WorldObjects
         {
             log.Debug($"FindValidSplitTargets called - Range: {splitRange}, MaxTargets: {maxTargets}");
             var potentialTargets = new List<WorldObject>();
-            var landblock = CurrentLandblock;
+            
+            // Search in the primary target's landblock AND all adjacent landblocks
+            // This ensures split arrows work for cross-landblock attacks and find maximum targets
+            var landblock = primaryTarget.CurrentLandblock;
             
             if (landblock == null)
             {
@@ -688,12 +691,24 @@ namespace ACE.Server.WorldObjects
                 return potentialTargets;
             }
 
-            // Use a more targeted search instead of GetAllWorldObjectsForDiagnostics
-            // Create a snapshot to avoid thread safety issues with ConcurrentDictionary iteration
-            var nearbyObjects = landblock.GetWorldObjectsForPhysicsHandling().ToList();
-            log.Debug($"Total nearby objects: {nearbyObjects.Count}");
+            // Collect objects from target's landblock and all adjacent landblocks
+            var allNearbyObjects = new List<WorldObject>();
             
-            foreach (var obj in nearbyObjects.OrderBy(o => Vector3.Distance(primaryTarget.Location.Pos, o.Location.Pos)))
+            // Add objects from the primary target's landblock
+            allNearbyObjects.AddRange(landblock.GetWorldObjectsForPhysicsHandling());
+            
+            // Add objects from all adjacent landblocks
+            foreach (var adjacentLandblock in landblock.Adjacents)
+            {
+                if (adjacentLandblock != null)
+                {
+                    allNearbyObjects.AddRange(adjacentLandblock.GetWorldObjectsForPhysicsHandling());
+                }
+            }
+            
+            log.Debug($"Total nearby objects (including adjacents): {allNearbyObjects.Count}");
+            
+            foreach (var obj in allNearbyObjects.OrderBy(o => Vector3.Distance(primaryTarget.Location.Pos, o.Location.Pos)))
             {
                 if (potentialTargets.Count >= maxTargets)
                     break;
