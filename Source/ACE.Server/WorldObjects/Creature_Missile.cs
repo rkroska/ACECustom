@@ -150,7 +150,7 @@ namespace ACE.Server.WorldObjects
                 
                 if (hasSplitArrows == true)
                 {
-                    log.Debug("Calling CreateSplitArrows");
+                    log.Info($"[SPLIT ARROWS] Weapon has split arrows capability, creating split arrows for target: {target.Name}");
                     CreateSplitArrows(weapon, ammo, target, origin, orientation);
                 }
             }
@@ -536,13 +536,11 @@ namespace ACE.Server.WorldObjects
                 
                 var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount);
                 
-                if (log.IsDebugEnabled)
-                    log.Debug($"Found {validTargets.Count} valid targets for split arrows");
+                log.Info($"[SPLIT ARROWS] Found {validTargets.Count} valid targets for split arrows");
                 
                 if (validTargets.Count == 0)
                 {
-                    if (log.IsDebugEnabled)
-                        log.Debug("No valid targets found, skipping split arrows");
+                    log.Info("[SPLIT ARROWS] No valid targets found, skipping split arrows");
                     return;
                 }
                 
@@ -555,8 +553,7 @@ namespace ACE.Server.WorldObjects
                     if (arrowsCreated >= additionalArrowCount)
                         break;
                         
-                    if (log.IsDebugEnabled)
-                        log.Debug($"Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
+                    log.Info($"[SPLIT ARROWS] Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
                     
                     // Create new projectile
                     var splitProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
@@ -596,15 +593,13 @@ namespace ACE.Server.WorldObjects
                             log.Debug($"Set split arrow damage to {reducedDamage} (original: {damageValue.Value}, multiplier: {damageMultiplier})");
                     }
                     
-                    // Position will be set after velocity calculation using the proper origin
-                    
                     // Calculate velocity to new target using the SAME method as main arrows
                     // Each split arrow needs its own aim level and spawn origin based on its target distance
                     var splitAimVelocity = GetAimVelocity(splitTarget, cachedSpeed);
                     var splitAimLevel = GetAimLevel(splitAimVelocity);
                     var splitLocalOrigin = GetProjectileSpawnOrigin(ammo.WeenieClassId, splitAimLevel);
                     var splitVelocity = CalculateProjectileVelocity(splitLocalOrigin, splitTarget, cachedSpeed, out Vector3 splitOrigin, out Quaternion splitRotation);
-                    
+
                     // Position the split arrow at the calculated origin with proper rotation
                     splitProj.Location = new Position(Location);
                     splitProj.Location.Pos = splitOrigin;
@@ -647,8 +642,7 @@ namespace ACE.Server.WorldObjects
                         splitProj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(splitProj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
                         splitProj.EnqueueBroadcast(new GameMessageScript(splitProj.Guid, PlayScript.Launch, 0f));
                         
-                        if (log.IsDebugEnabled)
-                            log.Debug($"Successfully added split arrow {arrowsCreated + 1} to world");
+                        log.Info($"[SPLIT ARROWS] Successfully added split arrow {arrowsCreated + 1} to world");
                         arrowsCreated++;
                     }
                     else
@@ -659,8 +653,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
                 
-                if (log.IsDebugEnabled)
-                    log.Debug($"Created {arrowsCreated} split arrows successfully");
+                log.Info($"[SPLIT ARROWS] Created {arrowsCreated} split arrows successfully out of {validTargets.Count} valid targets");
             }
             catch (Exception ex)
             {
@@ -678,7 +671,8 @@ namespace ACE.Server.WorldObjects
         /// <returns>List of valid targets for split arrows</returns>
         private List<WorldObject> FindValidSplitTargets(Vector3 origin, WorldObject primaryTarget, float splitRange, int maxTargets)
         {
-            log.Debug($"FindValidSplitTargets called - Range: {splitRange}, MaxTargets: {maxTargets}");
+            log.Info($"[SPLIT ARROWS] FindValidSplitTargets called - Range: {splitRange}, MaxTargets: {maxTargets}");
+            log.Info($"[SPLIT ARROWS] Primary target: {primaryTarget.Name} (ID: {primaryTarget.WeenieClassId}) at {primaryTarget.Location.Pos}");
             var potentialTargets = new List<WorldObject>();
             
             // Search in the primary target's landblock AND all adjacent landblocks
@@ -687,28 +681,51 @@ namespace ACE.Server.WorldObjects
             
             if (landblock == null)
             {
-                log.Warn("No landblock found for split arrow target search");
+                log.Warn("[SPLIT ARROWS] No landblock found for split arrow target search");
                 return potentialTargets;
             }
+
+            log.Info($"[SPLIT ARROWS] Searching in landblock: {landblock.Id.Landblock:X4}");
 
             // Collect objects from target's landblock and all adjacent landblocks
             var allNearbyObjects = new List<WorldObject>();
             
             // Add objects from the primary target's landblock
-            allNearbyObjects.AddRange(landblock.GetWorldObjectsForPhysicsHandling());
+            var targetLandblockObjects = landblock.GetWorldObjectsForPhysicsHandling().ToList();
+            allNearbyObjects.AddRange(targetLandblockObjects);
+            log.Info($"[SPLIT ARROWS] Objects in target landblock: {targetLandblockObjects.Count}");
             
             // Add objects from all adjacent landblocks
+            var adjacentObjectCount = 0;
             foreach (var adjacentLandblock in landblock.Adjacents)
             {
                 if (adjacentLandblock != null)
                 {
-                    allNearbyObjects.AddRange(adjacentLandblock.GetWorldObjectsForPhysicsHandling());
+                    var adjacentObjects = adjacentLandblock.GetWorldObjectsForPhysicsHandling().ToList();
+                    allNearbyObjects.AddRange(adjacentObjects);
+                    adjacentObjectCount += adjacentObjects.Count;
+                    log.Info($"[SPLIT ARROWS] Objects in adjacent landblock {adjacentLandblock.Id.Landblock:X4}: {adjacentObjects.Count}");
                 }
             }
             
-            log.Debug($"Total nearby objects (including adjacents): {allNearbyObjects.Count}");
+            log.Info($"[SPLIT ARROWS] Total nearby objects (including adjacents): {allNearbyObjects.Count} (target: {targetLandblockObjects.Count}, adjacent: {adjacentObjectCount})");
             
-            foreach (var obj in allNearbyObjects.OrderBy(o => Vector3.Distance(primaryTarget.Location.Pos, o.Location.Pos)))
+            // Use global coordinates for accurate cross-landblock distance calculations
+            // Check if primary target is in a different landblock than the player
+            var crossLandblock = primaryTarget.Location.Landblock != Location.Landblock;
+            var primaryTargetPos = crossLandblock ? 
+                primaryTarget.Location.ToGlobal(false) : primaryTarget.Location.Pos;
+            
+            var creaturesFound = 0;
+            var creaturesInRange = 0;
+            var creaturesValidAngle = 0;
+            
+            foreach (var obj in allNearbyObjects.OrderBy(o => 
+            {
+                var objPos = crossLandblock ? 
+                    o.Location.ToGlobal(false) : o.Location.Pos;
+                return Vector3.Distance(primaryTargetPos, objPos);
+            }))
             {
                 if (potentialTargets.Count >= maxTargets)
                     break;
@@ -716,23 +733,51 @@ namespace ACE.Server.WorldObjects
                 if (!(obj is Creature creature) || !creature.IsAlive)
                     continue;
 
+                creaturesFound++;
+                log.Info($"[SPLIT ARROWS] Checking creature: {creature.Name} (ID: {creature.WeenieClassId}) at {creature.Location.Pos}");
+
                 if (obj == primaryTarget || obj == this)
+                {
+                    log.Info($"[SPLIT ARROWS] Skipping {creature.Name} - is primary target or self");
                     continue;
+                }
 
                 if (!CanDamage(creature))
+                {
+                    log.Info($"[SPLIT ARROWS] Skipping {creature.Name} - cannot damage");
                     continue;
+                }
 
-                // Calculate distance from PRIMARY TARGET to this potential target
-                var distanceFromPrimaryTarget = Vector3.Distance(primaryTarget.Location.Pos, obj.Location.Pos);
+                // Calculate distance from PRIMARY TARGET to this potential target using global coordinates
+                var objPos = crossLandblock ? 
+                    obj.Location.ToGlobal(false) : obj.Location.Pos;
+                var distanceFromPrimaryTarget = Vector3.Distance(primaryTargetPos, objPos);
+                log.Info($"[SPLIT ARROWS] {creature.Name} distance from primary target: {distanceFromPrimaryTarget:F2} (range: {splitRange})");
+                
                 if (distanceFromPrimaryTarget <= splitRange)
                 {
+                    creaturesInRange++;
+                    log.Info($"[SPLIT ARROWS] {creature.Name} is in range");
+                    
                     // Basic angle validation: Check if target is roughly in front of the player
                     if (IsTargetInValidAngle(primaryTarget, obj, origin))
                     {
+                        creaturesValidAngle++;
                         potentialTargets.Add(obj);
+                        log.Info($"[SPLIT ARROWS] {creature.Name} added as valid split target");
+                    }
+                    else
+                    {
+                        log.Info($"[SPLIT ARROWS] {creature.Name} failed angle validation");
                     }
                 }
+                else
+                {
+                    log.Info($"[SPLIT ARROWS] {creature.Name} is out of range");
+                }
             }
+            
+            log.Info($"[SPLIT ARROWS] Target search results - Creatures found: {creaturesFound}, In range: {creaturesInRange}, Valid angle: {creaturesValidAngle}, Final targets: {potentialTargets.Count}");
 
             return potentialTargets;
         }
@@ -748,16 +793,46 @@ namespace ACE.Server.WorldObjects
         {
             try
             {
-                // Calculate direction from primary target to potential target
-                var directionToTarget = Vector3.Normalize(potentialTarget.Location.Pos - primaryTarget.Location.Pos);
+                // Use global coordinates for cross-landblock angle validation
+                var crossLandblock = primaryTarget.Location.Landblock != Location.Landblock;
                 
-                // Calculate direction from player to primary target (player's forward direction)
-                var playerForward = Vector3.Normalize(primaryTarget.Location.Pos - origin);
+                var primaryTargetPos = crossLandblock ? 
+                    primaryTarget.Location.ToGlobal(false) : primaryTarget.Location.Pos;
+                var potentialTargetPos = crossLandblock ? 
+                    potentialTarget.Location.ToGlobal(false) : potentialTarget.Location.Pos;
                 
-                // Calculate dot product between player forward direction and direction to target
-                var dot = Vector3.Dot(playerForward, directionToTarget);
-                // <= 90° iff dot >= 0
-                return dot >= 0f;
+                // Get player's global position for angle calculations
+                var playerPos = crossLandblock ? 
+                    Location.ToGlobal(false) : Location.Pos;
+                
+                // Calculate direction from player to primary target
+                var playerToPrimary = Vector3.Normalize(primaryTargetPos - playerPos);
+                
+                // Calculate direction from player to potential target
+                var playerToPotential = Vector3.Normalize(potentialTargetPos - playerPos);
+                
+                // Calculate dot product between these directions
+                var dot = Vector3.Dot(playerToPrimary, playerToPotential);
+                
+                // Calculate angle in degrees for debugging
+                var angleDegrees = Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180.0 / Math.PI;
+                
+                // Debug logging
+                log.Info($"[SPLIT ARROWS] Angle validation for {potentialTarget.Name}:");
+                log.Info($"[SPLIT ARROWS]   Cross-landblock: {crossLandblock}");
+                log.Info($"[SPLIT ARROWS]   Player pos: {playerPos}");
+                log.Info($"[SPLIT ARROWS]   Primary target pos: {primaryTargetPos}");
+                log.Info($"[SPLIT ARROWS]   Potential target pos: {potentialTargetPos}");
+                log.Info($"[SPLIT ARROWS]   Player->Primary direction: {playerToPrimary}");
+                log.Info($"[SPLIT ARROWS]   Player->Potential direction: {playerToPotential}");
+                log.Info($"[SPLIT ARROWS]   Dot product: {dot:F4}");
+                log.Info($"[SPLIT ARROWS]   Angle: {angleDegrees:F2}°");
+                log.Info($"[SPLIT ARROWS]   Threshold: -0.5 (120°)");
+                log.Info($"[SPLIT ARROWS]   Result: {(dot >= -0.5f ? "PASS" : "FAIL")}");
+                
+                // Allow targets within 120° of the primary target (cos(120°) = -0.5)
+                // This gives a wide cone around the primary target for split arrows
+                return dot >= -0.5f;
             }
             catch (Exception ex)
             {
