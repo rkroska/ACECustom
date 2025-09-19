@@ -699,7 +699,7 @@ namespace ACE.Entity.Enum.Properties
         EnrageSound                             = 9026,
         EnrageVisualEffect                      = 9027,
         [AssessmentProperty]
-        SplitArrowCount                         = 9028,
+        SplitArrowCount                         = 9031,
 
     }
 
