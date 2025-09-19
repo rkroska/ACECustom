@@ -3303,6 +3303,9 @@ namespace ACE.Server.WorldObjects
                 target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} gives you {stackMsg}{itemName}.", ChatMessageType.Broadcast));
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
+                
+                // Log the transfer
+                TransferLogger.LogDirectGive(this, target, itemToGive, (int)(itemToGive.StackSize ?? 1));
             });
 
             actionChain.EnqueueChain();

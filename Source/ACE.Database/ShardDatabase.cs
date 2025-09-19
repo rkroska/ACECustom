@@ -913,5 +913,36 @@ namespace ACE.Database
                 rwLock.ExitReadLock();
             }
         }
+
+        public void SaveTransferLog(TransferLog transferLog)
+        {
+            using (var context = new ShardDbContext())
+            {
+                context.TransferLogs.Add(transferLog);
+                context.SaveChanges();
+            }
+        }
+
+        public List<TransferLog> GetTransferHistory(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
+
+        public List<TransferLog> GetSuspiciousTransfers(DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .Where(t => t.IsSuspicious && t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
     }
 }
