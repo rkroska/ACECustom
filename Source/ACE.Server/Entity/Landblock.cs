@@ -236,11 +236,11 @@ namespace ACE.Server.Entity
                 this.SetFogColor(EnvironChangeType.BlackFog2);
             }
 
-            if (ThaelarynIslandLandblocks.Contains(this.Id.Landblock))
+            /*if (ThaelarynIslandLandblocks.Contains(this.Id.Landblock))
             {
                 this.SendEnvironChange(EnvironChangeType.BlackFog2);
                 this.SetFogColor(EnvironChangeType.BlackFog2);
-            }
+            }*/
         }
 
         public static readonly HashSet<ushort> connectionExemptLandblocks = new()
@@ -268,13 +268,13 @@ namespace ACE.Server.Entity
             0xC1F8, 0xC2F8, 0xC3F8, 0xC4F8
         };
 
-        public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
+        /*public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
         {
             0xF66C, 0xF76C, 0xF86C, 0xF66B, 0xF76B, 0xF86B, 0xF76A, 0xF86A, 0xF96A, 0xF669, 0xF769, 0xF869, 0xF969, 0xF668, 0xF768, 0xF868, 0xF968,
             0xF467, 0xF567, 0xF667, 0xF767, 0xF867, 0xF967, 0xF666, 0xF766, 0xF866, 0xF966, 0xF565, 0xF665, 0xF765, 0xF865, 0xF965, 0xF564, 0xF664,
             0xF764, 0xF864, 0xF964, 0xF563, 0xF663, 0xF763, 0xF863, 0xF963, 0xF462, 0xF562, 0xF662, 0xF762, 0xF862, 0xF962, 0xF361, 0xF461, 0xF561,
             0xF661, 0xF761
-        };
+        };*/
 
         /// <summary>
         /// Monster Locations, Generators<para />
