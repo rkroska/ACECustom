@@ -61,14 +61,18 @@ namespace ACE.Server.WorldObjects
                     if (item.StackSize == 25000 && Amount >= 25000) //full stacks
                     {
                         Amount -= 25000;
-                        this.TryConsumeFromInventoryWithNetworking(item);
-                        BankedPyreals += 25000;
+                        if (this.TryConsumeFromInventoryWithNetworking(item))
+                        {
+                            BankedPyreals += 25000;
+                        }
                     }
                     else if (Amount >= item.StackSize)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(item, (int)Amount);
-                        Amount -= item.StackSize ?? 0;                        
-                        BankedPyreals += item.StackSize;
+                        if (this.TryConsumeFromInventoryWithNetworking(item, (int)Amount))
+                        {
+                            Amount -= item.StackSize ?? 0;
+                            BankedPyreals += item.StackSize;
+                        }
                     }
                 }
             }          
@@ -108,7 +112,6 @@ namespace ACE.Server.WorldObjects
                         break;
                     }
                 }
-
 
                 var durKeysList = this.GetInventoryItemsOfWCID(51954); //Durable legendary keys
                 foreach (var dur in durKeysList)
@@ -243,8 +246,10 @@ namespace ACE.Server.WorldObjects
                     int val = Pyreal.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(Pyreal);
-                        BankedPyreals += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(Pyreal))
+                        {
+                            BankedPyreals += val;
+                        }
                     }
                 }
 
@@ -254,8 +259,10 @@ namespace ACE.Server.WorldObjects
                     int val = Gold.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(Gold);
-                        BankedPyreals += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(Gold))
+                        {
+                            BankedPyreals += val;
+                        }
                     }
                 }
 
@@ -266,8 +273,10 @@ namespace ACE.Server.WorldObjects
                     int val = Silver.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(Silver);
-                        BankedPyreals += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(Silver))
+                        {
+                            BankedPyreals += val;
+                        }
                     }
                 }
 
@@ -277,41 +286,16 @@ namespace ACE.Server.WorldObjects
                     int val = Copper.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(Copper);
-                        BankedPyreals += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(Copper))
+                        {
+                            BankedPyreals += val;
+                        }
                     }
                 }
-
             }
         }
 
         public void DepositEnlightenedCoins()
-        {
-
-            var EnlList = this.GetInventoryItemsOfWCID(300004);
-            long coin = 0;
-
-            foreach (var item in EnlList)
-                coin += (long)item.StackSize;
-
-            DepositEnlightenedCoins(coin);
-            this.SavePlayerToDatabase();
-        }
-
-        public void DepositWeaklyEnlightenedCoins()
-        {
-            var EnlList = this.GetInventoryItemsOfWCID(300003);
-            long coin = 0;
-
-            foreach (var item in EnlList)
-            {
-                coin += (long)item.StackSize;
-            }
-            DepositWeaklyEnlightenedCoins(coin);
-            this.SavePlayerToDatabase();
-        }
-
-        public void DepositEnlightenedCoins(long amount)
         {
             if (BankedEnlightenedCoins == null)
             {
@@ -326,35 +310,41 @@ namespace ACE.Server.WorldObjects
                     int val = coin.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(coin);
-                        BankedEnlightenedCoins += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(coin))
+                        {
+                            BankedEnlightenedCoins += val;
+                        }
                     }
                 }
             }
+
+            this.SavePlayerToDatabase();
         }
 
-        public void DepositWeaklyEnlightenedCoins(long amount)
+        public void DepositWeaklyEnlightenedCoins()
         {
             if (BankedWeaklyEnlightenedCoins == null)
             {
                 BankedWeaklyEnlightenedCoins = 0;
             }
             lock (balanceLock)
-
             {
                 //int i = 0;
                 var WeakEnlList = this.GetInventoryItemsOfWCID(300003);
                 foreach (var coin in WeakEnlList)
-
                 {
                     int val = coin.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(coin);
-                        BankedWeaklyEnlightenedCoins += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(coin))
+                        {
+                            BankedWeaklyEnlightenedCoins += val;
+                        }
                     }
                 }
             }
+
+            this.SavePlayerToDatabase();
         }
 
 
@@ -411,8 +401,10 @@ namespace ACE.Server.WorldObjects
                     int val = note.Value ?? 0;
                     if (val > 0)
                     {
-                        this.TryConsumeFromInventoryWithNetworking(note);
-                        BankedPyreals += val;
+                        if (this.TryConsumeFromInventoryWithNetworking(note))
+                        {
+                            BankedPyreals += val;
+                        }
                     }                    
                 }
             }
@@ -451,57 +443,119 @@ namespace ACE.Server.WorldObjects
             //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
         }
 
+        private bool CreatePyreals(int Amount)
+        {
+            WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
+            if (smallCoins == null)
+                return false;
+            smallCoins.SetStackSize(Amount);
+            var itemCreated = this.TryCreateInInventoryWithNetworking(smallCoins);
+            if (itemCreated)
+            {
+                BankedPyreals -= Amount;
+                return true;
+            }
+            return false;
+        }
+
+        private bool CreateMMDs(int Amount)
+        {
+            var woMMDs = WorldObjectFactory.CreateNewWorldObject(20630);
+            if (woMMDs == null)
+                return false;
+            woMMDs.SetStackSize(Amount);
+            var itemCreated = this.TryCreateInInventoryWithNetworking(woMMDs);
+            if (itemCreated)
+            {
+                BankedPyreals -= (Amount * 250000);
+                return true;
+            }
+
+            return false;
+        }
+
         public void WithdrawPyreals(long Amount)
         {
             lock (balanceLock)
             {
                 int mmdCount = 0;
-                while (Amount >= 250000)
+                long pyrealAmount = Amount;
+                while (pyrealAmount >= 250000)
                 {
                     mmdCount++;
                     //this.TryCreateInInventoryWithNetworking(WorldObjectFactory.CreateNewWorldObject(20630));
-                    Amount -= 250000;
-                    BankedPyreals -= 250000;
+                    pyrealAmount -= 250000;
+                }
+
+                if (mmdCount > 0)
+                {
+                    var woMMDs = WorldObjectFactory.CreateNewWorldObject(20630);
+                    if (woMMDs == null)
+                    {
+                        return;
+                    }
+                    int mmdStackSize = (int)woMMDs.MaxStackSize;
+                    while (mmdCount >= mmdStackSize)
+                    {
+                        if (CreateMMDs(mmdStackSize))
+                        {
+                            mmdCount -= mmdStackSize;
+                            Amount -= (mmdStackSize * 250000);
+                        }
+                        else
+                        {
+                            return;
+                        }
+                    }
+                    if (mmdCount > 0)
+                    {
+                        if (CreateMMDs(mmdCount))
+                        {
+                            Amount -= (mmdCount * 250000);
+                            mmdCount = 0;
+                        }
+                        else
+                        {
+                            return;
+                        }
+                    }
                 }
 
                 if (Amount > 25000)
                 {
                     while (Amount > 25000)
                     {
-                        WorldObject coins = WorldObjectFactory.CreateNewWorldObject(273);
-                        coins.SetStackSize((int)25000);
-                        this.TryCreateInInventoryWithNetworking(coins);
-                        BankedPyreals -= 25000;
-                        Amount -= 25000;
+                        if (CreatePyreals(25000))
+                        {
+                            Amount -= 25000;
+                        }
+                        else
+                        {
+                            return;
+                        }
                     }
 
                 }
                 if (Amount > 0)
                 {
-                    WorldObject smallCoins = WorldObjectFactory.CreateNewWorldObject(273);
-                    smallCoins.SetStackSize((int)Amount);
-                    this.TryCreateInInventoryWithNetworking(smallCoins);
-                    BankedPyreals -= Amount;
+                    CreatePyreals((int)Amount);
                     Amount = 0;
                 }
-                if (mmdCount > 0)
-                {
-                    var woMMDs = WorldObjectFactory.CreateNewWorldObject(20630);
-                    while (mmdCount >= woMMDs.MaxStackSize)
-                    {
-                        var woMMDStack = WorldObjectFactory.CreateNewWorldObject(20630);
-                        woMMDStack.SetStackSize(woMMDStack.MaxStackSize);
-                        this.TryCreateInInventoryWithNetworking(woMMDStack);
-                        mmdCount -= (int)woMMDStack.MaxStackSize;
-                    }
-                    if (mmdCount > 0)
-                    {
-                        var woMMDStack = WorldObjectFactory.CreateNewWorldObject(20630);
-                        woMMDStack.SetStackSize(mmdCount);
-                        this.TryCreateInInventoryWithNetworking(woMMDStack);
-                    }
-                }
             }            
+        }
+
+        private bool CreateLegendaryKey(uint weenieClassId, byte uses)
+        {
+            WorldObject key = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+            if (key == null)
+                return false;
+            var itemCreated = this.TryCreateInInventoryWithNetworking(key);
+            if (itemCreated)
+            {
+                BankedLegendaryKeys -= uses;
+                return true;
+            }
+            return false;
         }
 
         public void WithdrawLegendaryKeys(long Amount)
@@ -509,33 +563,36 @@ namespace ACE.Server.WorldObjects
             long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount >= 25)
+                while (remainingAmount >= 25)
                 {
-                    for (int x = 25; x < Amount; x += 25)
-                    {
-                        remainingAmount -= 25;
-                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(500010); //25 Durable legendary key
-                        this.TryCreateInInventoryWithNetworking(key);
-                        BankedLegendaryKeys -= 25;
-                    }
+                    if (!CreateLegendaryKey(500010, 25)) return; // 25-use
+                    remainingAmount -= 25;
                 }
-                else if (Amount >= 10)
+                while (remainingAmount >= 10)
                 {
-                    for (int x = 10; x < Amount; x+=10)
-                    {
-                        remainingAmount -= 10;
-                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(51954); //Durable legendary key
-                        this.TryCreateInInventoryWithNetworking(key);
-                        BankedLegendaryKeys -= 10;
-                    }
+                    if (!CreateLegendaryKey(51954, 10)) return; // 10-use
+                    remainingAmount -= 10;
                 }
-                for (int i = 0; i < remainingAmount; i++)
+                while (remainingAmount > 0)
                 {
-                    WorldObject key = WorldObjectFactory.CreateNewWorldObject(48746); //Regular legendary key
-                    this.TryCreateInInventoryWithNetworking(key);
-                    BankedLegendaryKeys -= 1;
+                    if (!CreateLegendaryKey(48746, 1)) return; // single-use
+                    remainingAmount -= 1;
                 }
             }
+        }
+
+        private bool CreateMythicalKey(uint weenieClassId, byte uses)
+        {
+            WorldObject key = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+            if (key == null)
+                return false;
+            var itemCreated = this.TryCreateInInventoryWithNetworking(key);
+            if (itemCreated)
+            {
+                BankedMythicalKeys -= uses;
+                return true;
+            }
+            return false;
         }
 
         public void WithdrawMythicalKeys(long Amount)
@@ -543,33 +600,37 @@ namespace ACE.Server.WorldObjects
             long remainingAmount = Amount;
             lock (balanceLock)
             {
-                if (Amount >= 25)
+                while (remainingAmount >= 25)
                 {
-                    for (int x = 25; x < Amount; x += 25)
-                    {
-                        remainingAmount -= 25;
-                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(90000110); //25 Durable legendary key
-                        this.TryCreateInInventoryWithNetworking(key);
-                        BankedMythicalKeys -= 25;
-                    }
+                    if (!CreateMythicalKey(90000110, 25)) return; // 25-use
+                    remainingAmount -= 25;
                 }
-                else if (Amount >= 10)
+                while (remainingAmount >= 10)
                 {
-                    for (int x = 10; x < Amount; x += 10)
-                    {
-                        remainingAmount -= 10;
-                        WorldObject key = WorldObjectFactory.CreateNewWorldObject(90000109); //Durable legendary key
-                        this.TryCreateInInventoryWithNetworking(key);
-                        BankedMythicalKeys -= 10;
-                    }
+                    if (!CreateMythicalKey(90000109, 10)) return; // 10-use
+                    remainingAmount -= 10;
                 }
-                for (int i = 0; i < remainingAmount; i++)
+                while (remainingAmount > 0)
                 {
-                    WorldObject key = WorldObjectFactory.CreateNewWorldObject(90000104); //Regular legendary key
-                    this.TryCreateInInventoryWithNetworking(key);
-                    BankedMythicalKeys -= 1;
+                    if (!CreateMythicalKey(90000104, 1)) return; // single-use
+                    remainingAmount -= 1;
                 }
             }
+        }
+
+        private bool CreateEnlightenedCoins(int Amount)
+        {
+            WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300004);
+            if (wo == null)
+                return false;
+            wo.SetStackSize(Amount);
+            var itemCreated = this.TryCreateInInventoryWithNetworking(wo);
+            if (itemCreated)
+            {
+                BankedEnlightenedCoins -= Amount;
+                return true;
+            }
+            return false;
         }
 
         public void WithdrawEnlightenedCoins(long Amount)
@@ -578,25 +639,44 @@ namespace ACE.Server.WorldObjects
             {
                 long remainingAmount = Amount;
                 WorldObject templateCoin = WorldObjectFactory.CreateNewWorldObject(300004); // Assume 300004 is the ID for Enlightened Coins
+                if (templateCoin == null)
+                {
+                    return;
+                }
                 int maxStackSize = (int)templateCoin.MaxStackSize;
 
                 while (remainingAmount >= maxStackSize)
                 {
-                    WorldObject coinStack = WorldObjectFactory.CreateNewWorldObject(300004);
-                    coinStack.SetStackSize(maxStackSize);
-                    this.TryCreateInInventoryWithNetworking(coinStack);
-                    BankedEnlightenedCoins -= maxStackSize;
-                    remainingAmount -= maxStackSize;
+                    if (CreateEnlightenedCoins(maxStackSize))
+                    {
+                        remainingAmount -= maxStackSize;
+                    }
+                    else
+                    {
+                        return;
+                    }
                 }
 
                 if (remainingAmount > 0)
                 {
-                    WorldObject remainingCoinStack = WorldObjectFactory.CreateNewWorldObject(300004);
-                    remainingCoinStack.SetStackSize((int)remainingAmount);
-                    this.TryCreateInInventoryWithNetworking(remainingCoinStack);
-                    BankedEnlightenedCoins -= remainingAmount;
+                    CreateEnlightenedCoins((int)remainingAmount);
                 }
             }
+        }
+
+        private bool CreateWeaklyEnlightenedCoins(int Amount)
+        {
+            WorldObject wo = WorldObjectFactory.CreateNewWorldObject(300003);
+            if (wo == null)
+                return false;
+            wo.SetStackSize(Amount);
+            var itemCreated = this.TryCreateInInventoryWithNetworking(wo);
+            if (itemCreated)
+            {
+                BankedWeaklyEnlightenedCoins -= Amount;
+                return true;
+            }
+            return false;
         }
 
         public void WithdrawWeaklyEnlightenedCoins(long Amount)
@@ -605,23 +685,27 @@ namespace ACE.Server.WorldObjects
             {
                 long remainingAmount = Amount;
                 WorldObject templateCoin = WorldObjectFactory.CreateNewWorldObject(300003); // Assume 300004 is the ID for Enlightened Coins
+                if (templateCoin == null)
+                {
+                    return;
+                }
                 int maxStackSize = (int)templateCoin.MaxStackSize;
 
                 while (remainingAmount >= maxStackSize)
                 {
-                    WorldObject coinStack = WorldObjectFactory.CreateNewWorldObject(300003);
-                    coinStack.SetStackSize(maxStackSize);
-                    this.TryCreateInInventoryWithNetworking(coinStack);
-                    BankedWeaklyEnlightenedCoins -= maxStackSize;
-                    remainingAmount -= maxStackSize;
+                    if (CreateWeaklyEnlightenedCoins(maxStackSize))
+                    {
+                        remainingAmount -= maxStackSize;
+                    }
+                    else
+                    {
+                        return;
+                    }
                 }
 
                 if (remainingAmount > 0)
                 {
-                    WorldObject remainingCoinStack = WorldObjectFactory.CreateNewWorldObject(300003);
-                    remainingCoinStack.SetStackSize((int)remainingAmount);
-                    this.TryCreateInInventoryWithNetworking(remainingCoinStack);
-                    BankedWeaklyEnlightenedCoins -= remainingAmount;
+                    CreateWeaklyEnlightenedCoins((int)remainingAmount);
                 }
             }
         }
