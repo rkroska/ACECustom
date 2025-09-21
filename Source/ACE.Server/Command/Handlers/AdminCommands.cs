@@ -86,6 +86,18 @@ namespace ACE.Server.Command.Handlers
                 case "suspicious":
                     HandleSuspiciousTransfers(session, subParams);
                     break;
+                case "summaries":
+                    HandleTransferSummaries(session, subParams);
+                    break;
+                case "risk":
+                    HandleTransferRisk(session, subParams);
+                    break;
+                case "alerts":
+                    HandleTransferAlerts(session, subParams);
+                    break;
+                case "monitor":
+                    HandleTransferMonitor(session, subParams);
+                    break;
                 case "config":
                     HandleTransferConfig(session, subParams);
                     break;
@@ -94,6 +106,9 @@ namespace ACE.Server.Command.Handlers
                     break;
                 case "status":
                     HandleTransferStatus(session, subParams);
+                    break;
+                case "cleanup":
+                    HandleTransferCleanup(session, subParams);
                     break;
                 case "help":
                     HandleTransferHelp(session, subParams);
@@ -383,6 +398,14 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit status - Show current configuration and blacklist", ChatMessageType.System));
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("NEW FEATURES:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit summaries <player> [days] - Show transfer summaries for a player", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit risk <player> - Show risk profile for a player", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit alerts [hours] - Show recent transfer alerts", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit monitor - Show real-time monitoring stats", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit cleanup [days] - Clean up old transfer data", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("CONFIGURATION COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config threshold <number> - Set transfer threshold (default: 3)", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config timewindow <hours> - Set time window (default: 24)", ChatMessageType.System));
@@ -396,6 +419,105 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist remove account <name> - Remove account from blacklist", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist list player - Show blacklisted players", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist list account - Show blacklisted accounts", ChatMessageType.System));
+        }
+
+        private static void HandleTransferSummaries(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit summaries <player> [days]", ChatMessageType.System));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var days = parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays) ? parsedDays : 30;
+
+            var cutoffDate = DateTime.UtcNow.AddDays(-days);
+            var summaries = DatabaseManager.Shard.BaseDatabase.GetTransferSummaries(playerName, cutoffDate);
+
+            if (summaries.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No transfer summaries found for {playerName} in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Summaries for {playerName} (Last {days} days):", ChatMessageType.System));
+            foreach (var summary in summaries.Take(15))
+            {
+                var riskFlag = summary.RiskLevel != "Low" ? $" [{summary.RiskLevel}]" : "";
+                var message = $"{summary.TransferType} | {summary.FromPlayerName} -> {summary.ToPlayerName} | {summary.TotalTransfers} transfers | {summary.TotalValue:N0} total value{riskFlag}";
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferRisk(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit risk <player>", ChatMessageType.System));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var riskProfile = DatabaseManager.Shard.BaseDatabase.GetPlayerRiskProfile(playerName);
+
+            if (riskProfile == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No risk profile found for {playerName}.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Risk Profile for {playerName}:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Risk Score: {riskProfile.RiskScore}/100 ({riskProfile.RiskLevel})", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfers Sent: {riskProfile.TotalTransfersSent} (Value: {riskProfile.TotalValueSent:N0})", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfers Received: {riskProfile.TotalTransfersReceived} (Value: {riskProfile.TotalValueReceived:N0})", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Transfers: {riskProfile.SuspiciousTransfers}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Unique Partners: {riskProfile.UniqueTransferPartners}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Last Transfer: {riskProfile.LastTransferDate:yyyy-MM-dd HH:mm}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Monitored: {(riskProfile.IsMonitored ? "Yes" : "No")}", ChatMessageType.System));
+        }
+
+        private static void HandleTransferAlerts(Session session, string[] parameters)
+        {
+            var hours = parameters.Length > 0 && int.TryParse(parameters[0], out var parsedHours) ? parsedHours : 24;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Monitoring Stats (Last {hours} hours):", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Total Transfers Today: {TransferMonitor.TotalTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Today: {TransferMonitor.SuspiciousTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Total Value Today: {TransferMonitor.TotalValueToday:N0} pyreals", ChatMessageType.System));
+        }
+
+        private static void HandleTransferMonitor(Session session, string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Real-Time Transfer Monitoring:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Daily Totals:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Transfers: {TransferMonitor.TotalTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Suspicious: {TransferMonitor.SuspiciousTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Total Value: {TransferMonitor.TotalValueToday:N0} pyreals", ChatMessageType.System));
+        }
+
+        private static void HandleTransferCleanup(Session session, string[] parameters)
+        {
+            var days = parameters.Length > 0 && int.TryParse(parameters[0], out var parsedDays) ? parsedDays : 30;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Cleaning up transfer data older than {days} days...", ChatMessageType.System));
+            
+            try
+            {
+                DatabaseManager.Shard.BaseDatabase.CleanupOldTransferLogs(days);
+                DatabaseManager.Shard.BaseDatabase.CleanupOldSummaries(days * 12); // Keep summaries longer
+                session.Network.EnqueueSend(new GameMessageSystemChat("Cleanup completed successfully.", ChatMessageType.System));
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Cleanup failed: {ex.Message}", ChatMessageType.System));
+            }
         }
 
         // adminvision { on | off | toggle | check}
@@ -5328,5 +5450,6 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a quest name.", ChatMessageType.Broadcast));
             }
         }
+
     }
 }

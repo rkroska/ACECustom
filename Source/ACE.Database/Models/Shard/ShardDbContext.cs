@@ -58,6 +58,9 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<ConfigPropertiesString> ConfigPropertiesString { get; set; }
         public virtual DbSet<HousePermission> HousePermission { get; set; }
         public virtual DbSet<TransferLog> TransferLogs { get; set; }
+        public virtual DbSet<TransferSummary> TransferSummaries { get; set; }
+        public virtual DbSet<PlayerRiskProfile> PlayerRiskProfiles { get; set; }
+        public virtual DbSet<TransferAuditTrail> TransferAuditTrails { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -76,6 +79,12 @@ namespace ACE.Database.Models.Shard
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // Configure transfer logging tables
+            modelBuilder.Entity<TransferLog>().ToTable("transfer_logs");
+            modelBuilder.Entity<TransferSummary>().ToTable("transfer_summaries");
+            modelBuilder.Entity<PlayerRiskProfile>().ToTable("player_risk_profiles");
+            modelBuilder.Entity<TransferAuditTrail>().ToTable("transfer_audit_trails");
+
             modelBuilder.HasCharSet("utf8")
                 .UseCollation("utf8_general_ci");
 

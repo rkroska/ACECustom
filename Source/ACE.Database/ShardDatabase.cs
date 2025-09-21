@@ -944,5 +944,141 @@ namespace ACE.Database
                     .ToList();
             }
         }
+
+        // Transfer Summary methods
+        public List<TransferSummary> GetTransferSummaries(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferSummaries
+                    .Where(s => (s.FromPlayerName == playerName || s.ToPlayerName == playerName) && s.LastTransfer >= cutoffDate)
+                    .OrderByDescending(s => s.LastTransfer)
+                    .ToList();
+            }
+        }
+
+        public List<TransferSummary> GetHighRiskSummaries(DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferSummaries
+                    .Where(s => s.IsSuspicious && s.LastTransfer >= cutoffDate)
+                    .OrderByDescending(s => s.RiskScore)
+                    .ToList();
+            }
+        }
+
+        // Player Risk Profile methods
+        public PlayerRiskProfile GetPlayerRiskProfile(string playerName)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.PlayerRiskProfiles
+                    .FirstOrDefault(p => p.PlayerName == playerName);
+            }
+        }
+
+        public List<PlayerRiskProfile> GetHighRiskPlayers(int minRiskScore = 50)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.PlayerRiskProfiles
+                    .Where(p => p.RiskScore >= minRiskScore)
+                    .OrderByDescending(p => p.RiskScore)
+                    .ToList();
+            }
+        }
+
+        public void SavePlayerRiskProfile(PlayerRiskProfile profile)
+        {
+            using (var context = new ShardDbContext())
+            {
+                var existing = context.PlayerRiskProfiles.FirstOrDefault(p => p.PlayerName == profile.PlayerName);
+                if (existing != null)
+                {
+                    existing.RiskScore = profile.RiskScore;
+                    existing.RiskLevel = profile.RiskLevel;
+                    existing.TotalTransfersSent = profile.TotalTransfersSent;
+                    existing.TotalTransfersReceived = profile.TotalTransfersReceived;
+                    existing.TotalValueSent = profile.TotalValueSent;
+                    existing.TotalValueReceived = profile.TotalValueReceived;
+                    existing.SuspiciousTransfers = profile.SuspiciousTransfers;
+                    existing.LastTransferDate = profile.LastTransferDate;
+                    existing.LastUpdated = profile.LastUpdated;
+                    existing.RiskFactors = profile.RiskFactors;
+                    existing.Notes = profile.Notes;
+                    existing.IsMonitored = profile.IsMonitored;
+                }
+                else
+                {
+                    context.PlayerRiskProfiles.Add(profile);
+                }
+                context.SaveChanges();
+            }
+        }
+
+        // Transfer Audit Trail methods
+        public void LogAuditTrail(string adminName, string action, string targetPlayer, string details, int? transferLogId = null, int? transferSummaryId = null)
+        {
+            using (var context = new ShardDbContext())
+            {
+                var auditTrail = new TransferAuditTrail
+                {
+                    AdminName = adminName,
+                    Action = action,
+                    TargetPlayer = targetPlayer,
+                    Timestamp = DateTime.UtcNow,
+                    Details = details,
+                    TransferLogId = transferLogId,
+                    TransferSummaryId = transferSummaryId
+                };
+                context.TransferAuditTrails.Add(auditTrail);
+                context.SaveChanges();
+            }
+        }
+
+        public List<TransferAuditTrail> GetAuditTrail(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferAuditTrails
+                    .Where(a => a.TargetPlayer == playerName && a.Timestamp >= cutoffDate)
+                    .OrderByDescending(a => a.Timestamp)
+                    .ToList();
+            }
+        }
+
+        // Cleanup methods
+        public void CleanupOldTransferLogs(int daysToKeep)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
+            using (var context = new ShardDbContext())
+            {
+                var oldLogs = context.TransferLogs.Where(t => t.Timestamp < cutoffDate);
+                var count = oldLogs.Count();
+                if (count > 0)
+                {
+                    context.TransferLogs.RemoveRange(oldLogs);
+                    context.SaveChanges();
+                    log.Info($"Cleaned up {count} old transfer logs older than {daysToKeep} days");
+                }
+            }
+        }
+
+        public void CleanupOldSummaries(int daysToKeep)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
+            using (var context = new ShardDbContext())
+            {
+                var oldSummaries = context.TransferSummaries.Where(s => s.LastTransfer < cutoffDate);
+                var count = oldSummaries.Count();
+                if (count > 0)
+                {
+                    context.TransferSummaries.RemoveRange(oldSummaries);
+                    context.SaveChanges();
+                    log.Info($"Cleaned up {count} old transfer summaries older than {daysToKeep} days");
+                }
+            }
+        }
     }
 }
