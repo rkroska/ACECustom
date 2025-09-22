@@ -7,7 +7,7 @@ namespace ACE.Server.WorldObjects
 {
     partial class Creature
     {
-        protected const double monsterTickInterval = 0.2;
+        protected const double monsterTickInterval = 0.3;
 
         public double NextMonsterTickTime;
 
