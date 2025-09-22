@@ -146,18 +146,23 @@ namespace ACE.Server.WorldObjects
             if (weapon != null)
             {
                 var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
-                log.Debug($"Checking for split arrows - Weapon: {weapon.Guid}, SplitArrows: {hasSplitArrows}");
+                if (log.IsDebugEnabled)
+                    log.Debug($"Checking for split arrows - Weapon: {weapon.Guid}, SplitArrows: {hasSplitArrows}");
                 
                 if (hasSplitArrows == true)
                 {
                     if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] Weapon has split arrows capability, creating split arrows for target: {target.Name}");
+                    {
+                        var targetName = target?.Name ?? "<null>";
+                        log.Debug($"[SPLIT ARROWS] Weapon has split arrows capability, creating split arrows for target: {targetName}");
+                    }
                     CreateSplitArrows(weapon, ammo, target, origin, orientation);
                 }
             }
             else
             {
-                log.Debug("Weapon is null, skipping split arrows");
+                if (log.IsDebugEnabled)
+                    log.Debug("Weapon is null, skipping split arrows");
             }
 
             // detonate point-blank projectiles immediately
@@ -612,15 +617,36 @@ namespace ACE.Server.WorldObjects
                     if (log.IsDebugEnabled)
                         log.Debug($"Split arrow velocity: {splitVelocity}");
                     
+                    // Validate velocity and position before adding to world
+                    if (!splitVelocity.IsValid())
+                    {
+                        log.Error($"Invalid velocity for split arrow {arrowsCreated + 1}: {splitVelocity}");
+                        splitProj.Destroy();
+                        continue;
+                    }
+                    
+                    if (!splitOrigin.IsValid())
+                    {
+                        log.Error($"Invalid position for split arrow {arrowsCreated + 1}: {splitOrigin}");
+                        splitProj.Destroy();
+                        continue;
+                    }
+                    
                     // Set physics state
                     SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
+                    
+                    // Debug physics object state before AddObject
+                    if (log.IsDebugEnabled)
+                    {
+                        log.Debug($"[SPLIT ARROWS] Physics object state - HasPhysicsObj: {splitProj.PhysicsObj != null}, Active: {splitProj.PhysicsObj?.is_active()}, Velocity: {splitProj.PhysicsObj?.Velocity}");
+                    }
                     
                     // Add to world
                     var success = LandblockManager.AddObject(splitProj);
                     if (!success)
                     {
                         // AddObject failed - destroy the projectile to prevent leak
-                        log.Error($"Failed to add split arrow {arrowsCreated + 1} to world");
+                        log.Error($"Failed to add split arrow {arrowsCreated + 1} to world - SplitOrigin: {splitOrigin}, Velocity: {splitVelocity}, Target: {splitTarget?.Name}, TargetLocation: {splitTarget?.Location?.ToLOCString()}");
                         splitProj.Destroy();
                         continue;
                     }
@@ -734,15 +760,40 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 if (!(obj is Creature creature) || !creature.IsAlive)
+                {
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[SPLIT ARROWS] Skipping {obj?.Name} - not a living creature");
                     continue;
+                }
 
                 creaturesFound++;
 
                 if (obj == primaryTarget || obj == this)
+                {
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - is primary target or self");
                     continue;
+                }
 
+                // Check basic damage capability first
                 if (!CanDamage(creature))
+                {
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - cannot damage (Attackable: {creature.Attackable}, Teleporting: {creature.Teleporting}, IsCombatPet: {creature is CombatPet})");
                     continue;
+                }
+                
+                // Check PK status for players (respects PK rules)
+                if (this is Player player)
+                {
+                    var pkError = player.CheckPKStatusVsTarget(creature, null);
+                    if (pkError != null)
+                    {
+                        if (log.IsDebugEnabled)
+                            log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - PK status violation: {pkError[0]}");
+                        continue;
+                    }
+                }
 
                 // Calculate distance from PRIMARY TARGET to this potential target using global coordinates
                 var objPos = obj.Location.ToGlobal(false);
@@ -752,12 +803,28 @@ namespace ACE.Server.WorldObjects
                 {
                     creaturesInRange++;
                     
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[SPLIT ARROWS] {creature.Name} is within range ({distanceFromPrimaryTarget:F2} <= {splitRange})");
+                    
                     // Basic angle validation: Check if target is roughly in front of the player
-                    if (IsTargetInValidAngle(primaryTarget, obj, origin))
+                    if (IsTargetInValidAngle(primaryTarget, obj))
                     {
                         creaturesValidAngle++;
                         potentialTargets.Add(obj);
+                        
+                        if (log.IsDebugEnabled)
+                            log.Debug($"[SPLIT ARROWS] Added {creature.Name} as valid split target (distance: {distanceFromPrimaryTarget:F2})");
                     }
+                    else
+                    {
+                        if (log.IsDebugEnabled)
+                            log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - invalid angle");
+                    }
+                }
+                else
+                {
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - too far ({distanceFromPrimaryTarget:F2} > {splitRange})");
                 }
             }
             
@@ -772,9 +839,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         /// <param name="primaryTarget">The primary target that was hit</param>
         /// <param name="potentialTarget">The potential target to validate</param>
-        /// <param name="origin">Origin position for the split arrows</param>
         /// <returns>True if the target is within a valid firing angle</returns>
-        private bool IsTargetInValidAngle(WorldObject primaryTarget, WorldObject potentialTarget, Vector3 origin)
+        private bool IsTargetInValidAngle(WorldObject primaryTarget, WorldObject potentialTarget)
         {
             try
             {
@@ -798,12 +864,13 @@ namespace ACE.Server.WorldObjects
                 // Debug logging (can be removed for production)
                 if (log.IsDebugEnabled)
                 {
-                    log.Debug($"[SPLIT ARROWS] Angle validation for {potentialTarget.Name}: angle={angleDegrees:F2}°, result={(dot >= -0.5f ? "PASS" : "FAIL")}");
+                    log.Debug($"[SPLIT ARROWS] Angle validation for {potentialTarget.Name}: angle={angleDegrees:F2}°, dot={dot:F3}, result={(dot >= 0f ? "PASS" : "FAIL")}");
                 }
                 
-                // Allow targets within 120° of the primary target (cos(120°) = -0.5)
-                // This gives a wide cone around the primary target for split arrows
-                return dot >= -0.5f;
+                // Allow targets within 90° of the primary target (cos(90°) = 0)
+                // This ensures split arrows only target creatures in front of the player
+                // and prevents physics issues with targets behind the player
+                return dot >= 0f;
             }
             catch (Exception ex)
             {
