@@ -560,6 +560,7 @@ namespace ACE.Server.WorldObjects
                 {
                     if (arrowsCreated >= additionalArrowCount)
                         break;
+                    
                         
                     if (log.IsDebugEnabled)
                         log.Debug($"[SPLIT ARROWS] Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
@@ -608,6 +609,14 @@ namespace ACE.Server.WorldObjects
                     var splitAimLevel = GetAimLevel(splitAimVelocity);
                     var splitLocalOrigin = GetProjectileSpawnOrigin(ammo.WeenieClassId, splitAimLevel);
                     var splitVelocity = CalculateProjectileVelocity(splitLocalOrigin, splitTarget, cachedSpeed, out Vector3 splitOrigin, out Quaternion splitRotation);
+
+                    // Add small random offset to prevent arrow collision during simultaneous spawning
+                    var spawnOffset = new Vector3(
+                        (float)(Random.Shared.NextDouble() - 0.5) * 0.3f, // ±0.15 units
+                        (float)(Random.Shared.NextDouble() - 0.5) * 0.3f, // ±0.15 units  
+                        0.0f  // Keep Z the same
+                    );
+                    splitOrigin += spawnOffset;
 
                     // Position the split arrow at the calculated origin with proper rotation
                     splitProj.Location = new Position(Location);
