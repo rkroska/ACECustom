@@ -711,25 +711,24 @@ namespace ACE.Server.WorldObjects
                 }
             }
             
+            // Deduplicate objects by Guid to avoid duplicate candidates across adjacent lists
+            allNearbyObjects = allNearbyObjects
+                .GroupBy(o => o.Guid)
+                .Select(g => g.First())
+                .ToList();
+            
             if (log.IsDebugEnabled)
                 log.Debug($"[SPLIT ARROWS] Total nearby objects: {allNearbyObjects.Count} (target: {targetLandblockObjects.Count}, adjacent: {adjacentObjectCount})");
             
-            // Use global coordinates for accurate cross-landblock distance calculations
-            // Check if primary target is in a different landblock than the player
-            var crossLandblock = primaryTarget.Location.Landblock != Location.Landblock;
-            var primaryTargetPos = crossLandblock ? 
-                primaryTarget.Location.ToGlobal(false) : primaryTarget.Location.Pos;
+            // Always compute in global space to avoid cross-landblock frame issues
+            var primaryTargetPos = primaryTarget.Location.ToGlobal(false);
             
             var creaturesFound = 0;
             var creaturesInRange = 0;
             var creaturesValidAngle = 0;
             
-            foreach (var obj in allNearbyObjects.OrderBy(o => 
-            {
-                var objPos = crossLandblock ? 
-                    o.Location.ToGlobal(false) : o.Location.Pos;
-                return Vector3.Distance(primaryTargetPos, objPos);
-            }))
+            foreach (var obj in allNearbyObjects
+                     .OrderBy(o => Vector3.Distance(primaryTargetPos, o.Location.ToGlobal(false))))
             {
                 if (potentialTargets.Count >= maxTargets)
                     break;
@@ -746,8 +745,7 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 // Calculate distance from PRIMARY TARGET to this potential target using global coordinates
-                var objPos = crossLandblock ? 
-                    obj.Location.ToGlobal(false) : obj.Location.Pos;
+                var objPos = obj.Location.ToGlobal(false);
                 var distanceFromPrimaryTarget = Vector3.Distance(primaryTargetPos, objPos);
                 
                 if (distanceFromPrimaryTarget <= splitRange)
@@ -780,17 +778,10 @@ namespace ACE.Server.WorldObjects
         {
             try
             {
-                // Use global coordinates for cross-landblock angle validation
-                var crossLandblock = primaryTarget.Location.Landblock != Location.Landblock;
-                
-                var primaryTargetPos = crossLandblock ? 
-                    primaryTarget.Location.ToGlobal(false) : primaryTarget.Location.Pos;
-                var potentialTargetPos = crossLandblock ? 
-                    potentialTarget.Location.ToGlobal(false) : potentialTarget.Location.Pos;
-                
-                // Get player's global position for angle calculations
-                var playerPos = crossLandblock ? 
-                    Location.ToGlobal(false) : Location.Pos;
+                // Always use global coordinates for consistent angle validation
+                var primaryTargetPos = primaryTarget.Location.ToGlobal(false);
+                var potentialTargetPos = potentialTarget.Location.ToGlobal(false);
+                var playerPos = Location.ToGlobal(false);
                 
                 // Calculate direction from player to primary target
                 var playerToPrimary = Vector3.Normalize(primaryTargetPos - playerPos);
