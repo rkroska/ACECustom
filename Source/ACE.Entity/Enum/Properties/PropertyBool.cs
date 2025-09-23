@@ -193,5 +193,7 @@ namespace ACE.Entity.Enum.Properties
         EnragedHotspot                   = 9017,
         [AssessmentProperty]
         SplitArrows                      = 9030,
+        IsSplitArrow                     = 9031,
+        IsSplitArrowKill                 = 9032,
     }
 }

@@ -574,11 +574,15 @@ namespace ACE.Server.WorldObjects
                         continue;
                     }
                     
-                    // Set necessary properties
-                    splitProj.ProjectileSource = this;
-                    splitProj.ProjectileTarget = splitTarget;
-                    splitProj.ProjectileLauncher = weapon;
-                    splitProj.ProjectileAmmo = ammo;
+                // Set normal projectile properties
+                splitProj.ProjectileSource = this;
+                splitProj.ProjectileTarget = splitTarget;
+                splitProj.ProjectileLauncher = weapon;
+                splitProj.ProjectileAmmo = ammo;
+                
+                // Mark as split arrow for special handling
+                // This enables death message modification to prevent VirindiTank kill attribution issues
+                splitProj.SetProperty(PropertyBool.IsSplitArrow, true);
                     
                     // Reduce damage for split arrows using weapon's damage multiplier property
                     var damageValue = splitProj.GetProperty(PropertyInt.Damage);
