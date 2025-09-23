@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using log4net;
+using ACE.Common;
+using System.Threading;
 
 namespace ACE.Database.Models.Auth
 {
@@ -176,9 +178,21 @@ namespace ACE.Database.Models.Auth
 
     public class LeaderboardCache
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static readonly LeaderboardCache instance = new LeaderboardCache();
         private const int cacheTimeout = 15; // minutes
+
+        // Semaphores for thread-safe async operations
+        private static readonly SemaphoreSlim _qbCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _levelCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _enlCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _titleCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _augsCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _deathsCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _bankCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _lumCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _attrCacheSemaphore = new SemaphoreSlim(1, 1);
 
         static LeaderboardCache()
         {
@@ -219,224 +233,350 @@ namespace ACE.Database.Models.Auth
         public void UpdateQBCache(List<Leaderboard> list)
         {
             QBCache = list;
-            QBLastUpdate = DateTime.Now;
+            QBLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateLevelCache(List<Leaderboard> list)
         {
             LevelCache = list;
-            LevelLastUpdate = DateTime.Now;
+            LevelLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateEnlCache(List<Leaderboard> list)
         {
             EnlCache = list;
-            EnlLastUpdate = DateTime.Now;
+            EnlLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateTitleCache(List<Leaderboard> list)
         {
             TitleCache = list;
-            TitleLastUpdate = DateTime.Now;
+            TitleLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateAugsCache(List<Leaderboard> list)
         {
             AugsCache = list;
-            AugsLastUpdate = DateTime.Now;
+            AugsLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateDeathsCache(List<Leaderboard> list)
         {
             DeathsCache = list;
-            DeathsLastUpdate = DateTime.Now;
+            DeathsLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateBankCache(List<Leaderboard> list)
         {
             BankCache = list;
-            BanksLastUpdate = DateTime.Now;
+            BanksLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateLumCache(List<Leaderboard> list)
         {
             LumCache = list;
-            LumLastUpdate = DateTime.Now;
+            LumLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }
 
         public void UpdateAttrCache(List<Leaderboard> list)
         {
             AttrCache = list;
-            AttrLastUpdate = DateTime.Now;
+            AttrLastUpdate = DateTime.Now.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
         }   
-
-        public List<Leaderboard> GetTopQB(AuthDbContext context)
-        {
-            if (QBCache.Count == 0 || QBLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateQBCache(Leaderboard.GetTopQBLeaderboard(context));
-            }
-            return QBCache;
-        }
 
         public async Task<List<Leaderboard>> GetTopQBAsync(AuthDbContext context)
         {
-            if (QBCache.Count == 0 || QBLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (QBCache.Count == 0 || QBLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopQBLeaderboardAsync(context);
-                UpdateQBCache(result);
+                log.Debug($"QB Cache miss - Count: {QBCache.Count}, LastUpdate: {QBLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _qbCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (QBCache.Count == 0 || QBLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("QB Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopQBLeaderboardAsync(context);
+                        UpdateQBCache(result);
+                        log.Debug($"QB Cache refresh completed - {result.Count} records cached, next update: {QBLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("QB Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _qbCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"QB Cache hit - using {QBCache.Count} cached records, last updated: {QBLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return QBCache;
-        }
-
-        public List<Leaderboard> GetTopLevel(AuthDbContext context)
-        {
-            if (LevelCache.Count == 0 || LevelLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateLevelCache(Leaderboard.GetTopLevelLeaderboard(context));
-            }
-            return LevelCache;
         }
 
         public async Task<List<Leaderboard>> GetTopLevelAsync(AuthDbContext context)
         {
-            if (LevelCache.Count == 0 || LevelLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (LevelCache.Count == 0 || LevelLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopLevelLeaderboardAsync(context);
-                UpdateLevelCache(result);
+                log.Debug($"Level Cache miss - Count: {LevelCache.Count}, LastUpdate: {LevelLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _levelCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (LevelCache.Count == 0 || LevelLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Level Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopLevelLeaderboardAsync(context);
+                        UpdateLevelCache(result);
+                        log.Debug($"Level Cache refresh completed - {result.Count} records cached, next update: {LevelLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Level Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _levelCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Level Cache hit - using {LevelCache.Count} cached records, last updated: {LevelLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return LevelCache;
         }
 
-        public List<Leaderboard> GetTopEnl(AuthDbContext context)
-        {
-            if (EnlCache.Count == 0 || EnlLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateEnlCache(Leaderboard.GetTopEnlightenmentLeaderboard(context));
-            }
-            return EnlCache;
-        }
-
         public async Task<List<Leaderboard>> GetTopEnlAsync(AuthDbContext context)
         {
-            if (EnlCache.Count == 0 || EnlLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (EnlCache.Count == 0 || EnlLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopEnlightenmentLeaderboardAsync(context);
-                UpdateEnlCache(result);
+                log.Debug($"Enlightenment Cache miss - Count: {EnlCache.Count}, LastUpdate: {EnlLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _enlCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (EnlCache.Count == 0 || EnlLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Enlightenment Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopEnlightenmentLeaderboardAsync(context);
+                        UpdateEnlCache(result);
+                        log.Debug($"Enlightenment Cache refresh completed - {result.Count} records cached, next update: {EnlLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Enlightenment Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _enlCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Enlightenment Cache hit - using {EnlCache.Count} cached records, last updated: {EnlLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return EnlCache;
-        }
-
-        public List<Leaderboard> GetTopTitle(AuthDbContext context)
-        {
-            if (TitleCache.Count == 0 || TitleLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateTitleCache(Leaderboard.GetTopTitleLeaderboard(context));
-            }
-            return TitleCache;
         }
 
         public async Task<List<Leaderboard>> GetTopTitleAsync(AuthDbContext context)
         {
-            if (TitleCache.Count == 0 || TitleLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (TitleCache.Count == 0 || TitleLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopTitleLeaderboardAsync(context);
-                UpdateTitleCache(result);
+                log.Debug($"Title Cache miss - Count: {TitleCache.Count}, LastUpdate: {TitleLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _titleCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (TitleCache.Count == 0 || TitleLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Title Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopTitleLeaderboardAsync(context);
+                        UpdateTitleCache(result);
+                        log.Debug($"Title Cache refresh completed - {result.Count} records cached, next update: {TitleLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Title Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _titleCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Title Cache hit - using {TitleCache.Count} cached records, last updated: {TitleLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return TitleCache;
         }
 
-        public List<Leaderboard> GetTopAugs(AuthDbContext context)
-        {
-            if (AugsCache.Count == 0 || AugsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateAugsCache(Leaderboard.GetTopAugLeaderboard(context));
-            }
-            return AugsCache;
-        }
-
         public async Task<List<Leaderboard>> GetTopAugsAsync(AuthDbContext context)
         {
-            if (AugsCache.Count == 0 || AugsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (AugsCache.Count == 0 || AugsLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopAugLeaderboardAsync(context);
-                UpdateAugsCache(result);
+                log.Debug($"Augmentations Cache miss - Count: {AugsCache.Count}, LastUpdate: {AugsLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _augsCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (AugsCache.Count == 0 || AugsLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Augmentations Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopAugLeaderboardAsync(context);
+                        UpdateAugsCache(result);
+                        log.Debug($"Augmentations Cache refresh completed - {result.Count} records cached, next update: {AugsLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Augmentations Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _augsCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Augmentations Cache hit - using {AugsCache.Count} cached records, last updated: {AugsLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return AugsCache;
-        }
-
-        public List<Leaderboard> GetTopDeaths(AuthDbContext context)
-        {
-            if (DeathsCache.Count == 0 || DeathsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateDeathsCache(Leaderboard.GetTopDeathsLeaderboard(context));
-            }
-            return DeathsCache;
         }
 
         public async Task<List<Leaderboard>> GetTopDeathsAsync(AuthDbContext context)
         {
-            if (DeathsCache.Count == 0 || DeathsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (DeathsCache.Count == 0 || DeathsLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopDeathsLeaderboardAsync(context);
-                UpdateDeathsCache(result);
+                log.Debug($"Deaths Cache miss - Count: {DeathsCache.Count}, LastUpdate: {DeathsLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _deathsCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (DeathsCache.Count == 0 || DeathsLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Deaths Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopDeathsLeaderboardAsync(context);
+                        UpdateDeathsCache(result);
+                        log.Debug($"Deaths Cache refresh completed - {result.Count} records cached, next update: {DeathsLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Deaths Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _deathsCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Deaths Cache hit - using {DeathsCache.Count} cached records, last updated: {DeathsLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return DeathsCache;
         }
 
-        public List<Leaderboard> GetTopBank(AuthDbContext context)
-        {
-            if (BankCache.Count == 0 || BanksLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateBankCache(Leaderboard.GetTopBankLeaderboard(context));
-            }
-            return BankCache;
-        }
-
         public async Task<List<Leaderboard>> GetTopBankAsync(AuthDbContext context)
         {
-            if (BankCache.Count == 0 || BanksLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (BankCache.Count == 0 || BanksLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopBankLeaderboardAsync(context);
-                UpdateBankCache(result);
+                log.Debug($"Bank Cache miss - Count: {BankCache.Count}, LastUpdate: {BanksLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _bankCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (BankCache.Count == 0 || BanksLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Bank Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopBankLeaderboardAsync(context);
+                        UpdateBankCache(result);
+                        log.Debug($"Bank Cache refresh completed - {result.Count} records cached, next update: {BanksLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Bank Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _bankCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Bank Cache hit - using {BankCache.Count} cached records, last updated: {BanksLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return BankCache;
-        }
-
-        public List<Leaderboard> GetTopLum(AuthDbContext context)
-        {
-            if (LumCache.Count == 0 || LumLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateLumCache(Leaderboard.GetTopLumLeaderboard(context));
-            }
-            return LumCache;
         }
 
         public async Task<List<Leaderboard>> GetTopLumAsync(AuthDbContext context)
         {
-            if (LumCache.Count == 0 || LumLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (LumCache.Count == 0 || LumLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopLumLeaderboardAsync(context);
-                UpdateLumCache(result);
+                log.Debug($"Luminance Cache miss - Count: {LumCache.Count}, LastUpdate: {LumLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _lumCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (LumCache.Count == 0 || LumLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Luminance Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopLumLeaderboardAsync(context);
+                        UpdateLumCache(result);
+                        log.Debug($"Luminance Cache refresh completed - {result.Count} records cached, next update: {LumLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Luminance Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _lumCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Luminance Cache hit - using {LumCache.Count} cached records, last updated: {LumLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return LumCache;
         }
 
-        public List<Leaderboard> GetTopAttr(AuthDbContext context)
-        {
-            if (AttrCache.Count == 0 || AttrLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
-            {
-                UpdateAttrCache(Leaderboard.GetTopAttrLeaderboard(context));   
-            }
-            return AttrCache;
-        }
-
         public async Task<List<Leaderboard>> GetTopAttrAsync(AuthDbContext context)
         {
-            if (AttrCache.Count == 0 || AttrLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            if (AttrCache.Count == 0 || AttrLastUpdate < DateTime.Now)
             {
-                var result = await Leaderboard.GetTopAttrLeaderboardAsync(context);
-                UpdateAttrCache(result);
+                log.Debug($"Attributes Cache miss - Count: {AttrCache.Count}, LastUpdate: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss}, Now: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                await _attrCacheSemaphore.WaitAsync();
+                try
+                {
+                    // Double-check inside the lock
+                    if (AttrCache.Count == 0 || AttrLastUpdate < DateTime.Now)
+                    {
+                        log.Debug("Attributes Cache refresh starting - calling database");
+                        var result = await Leaderboard.GetTopAttrLeaderboardAsync(context);
+                        UpdateAttrCache(result);
+                        log.Debug($"Attributes Cache refresh completed - {result.Count} records cached, next update: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        log.Debug("Attributes Cache was refreshed by another thread - using cached data");
+                    }
+                }
+                finally
+                {
+                    _attrCacheSemaphore.Release();
+                }
+            }
+            else
+            {
+                log.Debug($"Attributes Cache hit - using {AttrCache.Count} cached records, last updated: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss}");
             }
             return AttrCache;
         }
