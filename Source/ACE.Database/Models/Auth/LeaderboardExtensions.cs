@@ -14,9 +14,19 @@ namespace ACE.Database.Models.Auth
             return context.Leaderboard.FromSql($"CALL TopQuestBonus").ToList();
         }
 
+        public static async Task<List<Leaderboard>> GetTopQBLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopQuestBonus").ToListAsync();
+        }
+
         public static List<Leaderboard> GetTopLevelLeaderboard(AuthDbContext context)
         {
             return context.Leaderboard.FromSql($"CALL TopLevel").ToList();
+        }
+
+        public static async Task<List<Leaderboard>> GetTopLevelLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopLevel").ToListAsync();
         }
 
         public static List<Leaderboard> GetTopEnlightenmentLeaderboard(AuthDbContext context)
@@ -24,9 +34,19 @@ namespace ACE.Database.Models.Auth
             return context.Leaderboard.FromSql($"CALL TopEnlightenment").ToList();
         }
 
+        public static async Task<List<Leaderboard>> GetTopEnlightenmentLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopEnlightenment").ToListAsync();
+        }
+
         public static List<Leaderboard> GetTopTitleLeaderboard(AuthDbContext context)
         {
             return context.Leaderboard.FromSql($"CALL TopTitles").ToList();
+        }
+
+        public static async Task<List<Leaderboard>> GetTopTitleLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopTitles").ToListAsync();
         }
 
         public static List<Leaderboard> GetTopAugLeaderboard(AuthDbContext context)
@@ -34,9 +54,19 @@ namespace ACE.Database.Models.Auth
             return context.Leaderboard.FromSql($"CALL TopAugments").ToList();
         }
 
+        public static async Task<List<Leaderboard>> GetTopAugLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopAugments").ToListAsync();
+        }
+
         public static List<Leaderboard> GetTopDeathsLeaderboard(AuthDbContext context)
         {
             return context.Leaderboard.FromSql($"CALL TopDeaths").ToList();
+        }
+
+        public static async Task<List<Leaderboard>> GetTopDeathsLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopDeaths").ToListAsync();
         }
 
         public static List<Leaderboard> GetTopBankLeaderboard(AuthDbContext context)
@@ -44,14 +74,29 @@ namespace ACE.Database.Models.Auth
             return context.Leaderboard.FromSql($"CALL TopBank").ToList();
         }
 
+        public static async Task<List<Leaderboard>> GetTopBankLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopBank").ToListAsync();
+        }
+
         public static List<Leaderboard> GetTopLumLeaderboard(AuthDbContext context)
         {
             return context.Leaderboard.FromSql($"CALL TopLum").ToList();
         }
 
+        public static async Task<List<Leaderboard>> GetTopLumLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopLum").ToListAsync();
+        }
+
         public static List<Leaderboard> GetTopAttrLeaderboard(AuthDbContext context)
         {
             return context.Leaderboard.FromSql($"CALL TopAttributes").ToList();
+        }
+
+        public static async Task<List<Leaderboard>> GetTopAttrLeaderboardAsync(AuthDbContext context)
+        {
+            return await context.Leaderboard.FromSql($"CALL TopAttributes").ToListAsync();
         }
     }
 
@@ -160,11 +205,31 @@ namespace ACE.Database.Models.Auth
             return QBCache;
         }
 
+        public async Task<List<Leaderboard>> GetTopQBAsync(AuthDbContext context)
+        {
+            if (QBCache.Count == 0 || QBLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopQBLeaderboardAsync(context);
+                UpdateQBCache(result);
+            }
+            return QBCache;
+        }
+
         public List<Leaderboard> GetTopLevel(AuthDbContext context)
         {
             if (LevelCache.Count == 0 || LevelLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
             {
                 UpdateLevelCache(Leaderboard.GetTopLevelLeaderboard(context));
+            }
+            return LevelCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopLevelAsync(AuthDbContext context)
+        {
+            if (LevelCache.Count == 0 || LevelLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopLevelLeaderboardAsync(context);
+                UpdateLevelCache(result);
             }
             return LevelCache;
         }
@@ -178,11 +243,31 @@ namespace ACE.Database.Models.Auth
             return EnlCache;
         }
 
+        public async Task<List<Leaderboard>> GetTopEnlAsync(AuthDbContext context)
+        {
+            if (EnlCache.Count == 0 || EnlLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopEnlightenmentLeaderboardAsync(context);
+                UpdateEnlCache(result);
+            }
+            return EnlCache;
+        }
+
         public List<Leaderboard> GetTopTitle(AuthDbContext context)
         {
             if (TitleCache.Count == 0 || TitleLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
             {
                 UpdateTitleCache(Leaderboard.GetTopTitleLeaderboard(context));
+            }
+            return TitleCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopTitleAsync(AuthDbContext context)
+        {
+            if (TitleCache.Count == 0 || TitleLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopTitleLeaderboardAsync(context);
+                UpdateTitleCache(result);
             }
             return TitleCache;
         }
@@ -196,11 +281,31 @@ namespace ACE.Database.Models.Auth
             return AugsCache;
         }
 
+        public async Task<List<Leaderboard>> GetTopAugsAsync(AuthDbContext context)
+        {
+            if (AugsCache.Count == 0 || AugsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopAugLeaderboardAsync(context);
+                UpdateAugsCache(result);
+            }
+            return AugsCache;
+        }
+
         public List<Leaderboard> GetTopDeaths(AuthDbContext context)
         {
             if (DeathsCache.Count == 0 || DeathsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
             {
                 UpdateDeathsCache(Leaderboard.GetTopDeathsLeaderboard(context));
+            }
+            return DeathsCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopDeathsAsync(AuthDbContext context)
+        {
+            if (DeathsCache.Count == 0 || DeathsLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopDeathsLeaderboardAsync(context);
+                UpdateDeathsCache(result);
             }
             return DeathsCache;
         }
@@ -214,6 +319,16 @@ namespace ACE.Database.Models.Auth
             return BankCache;
         }
 
+        public async Task<List<Leaderboard>> GetTopBankAsync(AuthDbContext context)
+        {
+            if (BankCache.Count == 0 || BanksLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopBankLeaderboardAsync(context);
+                UpdateBankCache(result);
+            }
+            return BankCache;
+        }
+
         public List<Leaderboard> GetTopLum(AuthDbContext context)
         {
             if (LumCache.Count == 0 || LumLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
@@ -223,11 +338,31 @@ namespace ACE.Database.Models.Auth
             return LumCache;
         }
 
+        public async Task<List<Leaderboard>> GetTopLumAsync(AuthDbContext context)
+        {
+            if (LumCache.Count == 0 || LumLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopLumLeaderboardAsync(context);
+                UpdateLumCache(result);
+            }
+            return LumCache;
+        }
+
         public List<Leaderboard> GetTopAttr(AuthDbContext context)
         {
             if (AttrCache.Count == 0 || AttrLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
             {
                 UpdateAttrCache(Leaderboard.GetTopAttrLeaderboard(context));   
+            }
+            return AttrCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopAttrAsync(AuthDbContext context)
+        {
+            if (AttrCache.Count == 0 || AttrLastUpdate.AddMinutes(cacheTimeout) < DateTime.Now)
+            {
+                var result = await Leaderboard.GetTopAttrLeaderboardAsync(context);
+                UpdateAttrCache(result);
             }
             return AttrCache;
         }

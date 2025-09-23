@@ -1208,7 +1208,7 @@ namespace ACE.Server.Command.Handlers
         }
 
         [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments")]
-        public static void DisplayTop(Session session, params string[] parameters)
+        public static async void DisplayTop(Session session, params string[] parameters)
         {
             List<Leaderboard> list = new List<Leaderboard>();
             LeaderboardCache cache = LeaderboardCache.Instance;
@@ -1221,7 +1221,7 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters[0]?.ToLower() == "qb")
                 {
-                    list = cache.GetTopQB(context);
+                    list = await cache.GetTopQBAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Quest Bonus:", ChatMessageType.Broadcast));
@@ -1230,7 +1230,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "level")
                 {
-                    list = cache.GetTopLevel(context);
+                    list = await cache.GetTopLevelAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Level:", ChatMessageType.Broadcast));
@@ -1239,7 +1239,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "enl")
                 {
-                    list = cache.GetTopEnl(context);
+                    list = await cache.GetTopEnlAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
@@ -1248,7 +1248,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "title")
                 {
-                    list = cache.GetTopTitle(context);
+                    list = await cache.GetTopTitleAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
@@ -1257,7 +1257,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters.Length > 0 && parameters[0]?.ToLower() == "augs")
                 {
-                    list = cache.GetTopAugs(context);
+                    list = await cache.GetTopAugsAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Advanced Augmentations:", ChatMessageType.Broadcast));
@@ -1266,7 +1266,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "deaths")
                 {
-                    list = cache.GetTopDeaths(context);
+                    list = await cache.GetTopDeathsAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Deaths:", ChatMessageType.Broadcast));
@@ -1275,7 +1275,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "bank")
                 {
-                    list = cache.GetTopBank(context);
+                    list = await cache.GetTopBankAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Bank Value:", ChatMessageType.Broadcast));
@@ -1284,7 +1284,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "lum")
                 {
-                    list = cache.GetTopLum(context);
+                    list = await cache.GetTopLumAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Luminance:", ChatMessageType.Broadcast));
@@ -1293,7 +1293,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (parameters[0]?.ToLower() == "attr")
                 {
-                    list = cache.GetTopAttr(context);
+                    list = await cache.GetTopAttrAsync(context);
                     if (list.Count > 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
