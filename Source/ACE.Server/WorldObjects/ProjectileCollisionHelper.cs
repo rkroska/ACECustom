@@ -55,15 +55,22 @@ namespace ACE.Server.WorldObjects
 
                 if (sourcePlayer != null)
                 {
-                    // Track split arrows for death message modification
-                    var isSplitArrowForTracking = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
-                    if (isSplitArrowForTracking && targetCreature != null)
+                    // Track the last projectile that hit this creature for death message modification
+                    try
                     {
-                        // Store split arrow info directly on the creature since projectile gets destroyed
-                        targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, true);
+                        var projectileIsSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                        
+                        // Always track the last projectile hit, regardless of whether it's split or main
+                        targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, projectileIsSplitArrow);
                         targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
                         targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
-                        Console.WriteLine($"[SPLIT ARROW DEBUG] Set IsSplitArrowKill=true on creature {targetCreature.Name}, projectile {worldObject.Guid.Full:X8}, shooter {sourcePlayer.Guid.Full:X8}");
+                        
+                        if (log.IsDebugEnabled)
+                            log.Debug($"Set projectile tracking on creature {targetCreature.Name}, projectile {worldObject.Guid.Full:X8}, shooter {sourcePlayer.Guid.Full:X8}, isSplitArrow: {projectileIsSplitArrow}");
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error setting projectile tracking: {ex.Message}", ex);
                     }
                     
                     // player damage monster or player

@@ -89,7 +89,7 @@ namespace ACE.Server.WorldObjects
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
                 if (lastDamager is Player playerKiller)
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg));
+                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
             }
             return deathMessage;
         }

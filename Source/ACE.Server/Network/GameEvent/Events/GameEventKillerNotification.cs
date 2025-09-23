@@ -1,49 +1,60 @@
+using System;
 using System.Linq;
+using ACE.Entity;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameEvent.Events
 {
     public class GameEventKillerNotification : GameEventMessage
     {
-        public GameEventKillerNotification(Session session, string deathMessage)
+        public GameEventKillerNotification(Session session, string deathMessage, ObjectGuid? killedCreatureId = null)
             : base(GameEventType.KillerNotification, GameMessageGroup.UIQueue, session)
         {
             // Check if this death message should be modified for split arrows
-            var modifiedMessage = ModifyDeathMessageForSplitArrows(session.Player, deathMessage);
+            var modifiedMessage = ModifyDeathMessageForSplitArrows(session.Player, deathMessage, killedCreatureId);
             
             // sent to player when they kill something
             Writer.WriteString16L(modifiedMessage);
         }
         
-        private string ModifyDeathMessageForSplitArrows(Player player, string originalMessage)
+        private string ModifyDeathMessageForSplitArrows(Player player, string originalMessage, ObjectGuid? killedCreatureId)
         {
-            // Check if the player's last projectile was a split arrow
-            if (player?.CurrentLandblock != null)
+            // If we have the specific creature ID, check if it was killed by a split arrow
+            if (killedCreatureId.HasValue)
             {
-                // Look for any creatures in the landblock that were recently killed by split arrows
-                var creatures = player.CurrentLandblock.GetAllWorldObjectsForDiagnostics()
-                    .OfType<Creature>()
-                    .Where(c => !c.IsAlive && c.GetProperty(PropertyBool.IsSplitArrowKill) == true)
-                    .ToList();
+                // Debug: Checking creature ID for split arrow kill
                 
-                if (creatures.Any())
+                var killedCreature = player?.CurrentLandblock?.GetObject(killedCreatureId.Value) as Creature;
+                if (killedCreature != null)
                 {
-                    // This was a split arrow kill, modify the message
-                    System.Console.WriteLine($"[SPLIT ARROW DEBUG] Modifying death message: '{originalMessage}' -> split arrow version");
-                    var modifiedMessage = ModifyDeathMessageForSplitArrow(originalMessage);
-                    System.Console.WriteLine($"[SPLIT ARROW DEBUG] Modified message: '{modifiedMessage}'");
-                    return modifiedMessage;
+                    var wasKilledBySplitArrow = killedCreature.GetProperty(PropertyBool.IsSplitArrowKill) == true;
+                    if (wasKilledBySplitArrow)
+                    {
+                        // This creature was killed by a split arrow, modify the message
+                        var modifiedMessage = ModifyDeathMessageForSplitArrow(originalMessage);
+                        
+                        // Clear the tracking properties to prevent affecting other death messages
+                        killedCreature.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                        killedCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                        killedCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+                        
+                        return modifiedMessage;
+                    }
                 }
             }
             
             return originalMessage;
         }
         
+        
         private string ModifyDeathMessageForSplitArrow(string originalMessage)
         {
+            if (string.IsNullOrWhiteSpace(originalMessage)) return originalMessage;
+            
             // Handle all possible death message patterns by injecting "split arrow" terminology
-            return originalMessage
+            var modifiedMessage = originalMessage
                 // Replace "your attack" patterns
                 .Replace("your attack", "your split arrow")
                 .Replace("your assault", "your split arrow assault")
@@ -84,10 +95,16 @@ namespace ACE.Server.Network.GameEvent.Events
                 .Replace("catches your attack", "catches your split arrow attack")
                 .Replace("seared corpse smolders", "seared corpse smolders from your split arrow")
                 .Replace("brings to a fiery end", "brings to a fiery end with your split arrow")
-                .Replace("ancestors feel it", "ancestors feel your split arrow's impact")
-                
-                // Generic fallback for any death message that doesn't match above patterns
-                .Replace("!", " by your split arrow!");
+                .Replace("ancestors feel it", "ancestors feel your split arrow's impact");
+            
+            // Only apply generic fallback if no specific pattern was matched
+            if (modifiedMessage == originalMessage)
+            {
+                var trimmed = originalMessage.TrimEnd('!', '.', ' ');
+                modifiedMessage = $"{trimmed} by your split arrow!";
+            }
+            
+            return modifiedMessage;
         }
     }
 }

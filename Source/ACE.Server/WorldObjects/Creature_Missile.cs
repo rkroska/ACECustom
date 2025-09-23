@@ -524,16 +524,38 @@ namespace ACE.Server.WorldObjects
                     log.Warn("CreateSplitArrows called with null parameters");
                     return;
                 }
+                
+                // Additional safety checks
+                if (!origin.IsValid())
+                {
+                    log.Warn($"CreateSplitArrows called with invalid origin: {origin}");
+                    return;
+                }
+                
+                if (target is not Creature targetCreature)
+                {
+                    log.Warn($"CreateSplitArrows called with non-creature target: {target?.Name}");
+                    return;
+                }
+                
+                if (!targetCreature.IsAlive)
+                {
+                    log.Warn($"CreateSplitArrows called with dead target: {targetCreature.Name}");
+                    return;
+                }
 
                 if (log.IsDebugEnabled)
                     log.Debug($"CreateSplitArrows called for weapon {weapon.Guid}");
                 
+                // Cache weapon properties to avoid repeated property lookups
                 var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
                 var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
+                var damageMultiplier = (float)(weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER);
                 
                 // Apply safety clamps to prevent invalid values
                 splitCount = Math.Clamp(splitCount, SPLIT_ARROW_COUNT_MIN, SPLIT_ARROW_COUNT_MAX);
                 splitRange = Math.Clamp(splitRange, SPLIT_ARROW_RANGE_MIN, SPLIT_ARROW_RANGE_MAX);
+                damageMultiplier = Math.Clamp(damageMultiplier, SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN, SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX);
                 
                 if (log.IsDebugEnabled)
                     log.Debug($"Split arrows - Count: {splitCount}, Range: {splitRange}");
@@ -554,6 +576,11 @@ namespace ACE.Server.WorldObjects
                 
                 // Cache projectile speed before the loop to avoid repeated calls
                 var cachedSpeed = GetProjectileSpeed();
+                if (cachedSpeed <= 0)
+                {
+                    log.Warn($"Invalid projectile speed: {cachedSpeed}, skipping split arrows");
+                    return;
+                }
                 var arrowsCreated = 0;
                 
                 foreach (var splitTarget in validTargets)
@@ -565,12 +592,20 @@ namespace ACE.Server.WorldObjects
                     if (log.IsDebugEnabled)
                         log.Debug($"[SPLIT ARROWS] Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
                     
-                    // Create new projectile
-                    var splitProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
-                    
-                    if (splitProj == null)
+                    // Create new projectile with error handling
+                    WorldObject splitProj;
+                    try
                     {
-                        log.Error($"Failed to create split projectile for ammo {ammo.WeenieClassId}");
+                        splitProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
+                        if (splitProj == null)
+                        {
+                            log.Error($"Failed to create split projectile for ammo {ammo.WeenieClassId}");
+                            continue;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Exception creating split projectile for ammo {ammo.WeenieClassId}: {ex.Message}", ex);
                         continue;
                     }
                     
@@ -584,13 +619,10 @@ namespace ACE.Server.WorldObjects
                 // This enables death message modification to prevent VirindiTank kill attribution issues
                 splitProj.SetProperty(PropertyBool.IsSplitArrow, true);
                     
-                    // Reduce damage for split arrows using weapon's damage multiplier property
+                    // Reduce damage for split arrows using cached damage multiplier
                     var damageValue = splitProj.GetProperty(PropertyInt.Damage);
                     if (damageValue.HasValue)
                     {
-                        var damageMultiplier = (float)(weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER);
-                        // Apply safety clamp to damage multiplier
-                        damageMultiplier = Math.Clamp(damageMultiplier, SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN, SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX);
                         var reducedDamage = (int)(damageValue.Value * damageMultiplier);
                         
                         // Skip/destroy projectiles with zero or non-positive reduced damage
