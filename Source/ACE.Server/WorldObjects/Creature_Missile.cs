@@ -677,7 +677,14 @@ namespace ACE.Server.WorldObjects
                         continue;
                     }
                     
-                    // Set physics state
+                    // Set physics state (ensure target has physics)
+                    if (splitTarget?.PhysicsObj == null)
+                    {
+                        if (log.IsDebugEnabled)
+                            log.Debug($"Split target {splitTarget?.Name ?? "<null>"} has null PhysicsObj; skipping");
+                        splitProj.Destroy();
+                        continue;
+                    }
                     SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
                     
                     // Debug physics object state before AddObject
