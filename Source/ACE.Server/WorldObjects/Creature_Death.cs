@@ -87,43 +87,18 @@ namespace ACE.Server.WorldObjects
                     var lastSplitArrow = CurrentLandblock?.GetObject(new ObjectGuid(lastSplitArrowGuid.Value)) as WorldObject;
                     if (lastSplitArrow != null && lastSplitArrow.GetProperty(PropertyBool.IsSplitArrowKill) == true)
                     {
-                        // This was killed by a split arrow, send modified death message
+                        // Verify the projectile's shooter matches the lastDamager for security
+                        var projectileShooter = lastSplitArrow.ProjectileSource;
+                        if (projectileShooter != null && projectileShooter.Guid == lastDamager.Guid)
+                        {
+                            // This was killed by a split arrow, send modified death message
                         
                         // Send death message with split arrow terminology that VirindiTank won't recognize
                         var splitArrowDeathMessage = Strings.GetDeathMessage(damageType, criticalHit);
                         if (splitArrowDeathMessage != null)
                         {
                             // Inject split arrow terminology into the message template
-                            var splitTemplate = splitArrowDeathMessage.Killer
-                                .Replace("your attack", "your split arrow")
-                                .Replace("your assault", "your split arrow assault")
-                                .Replace("You obliterate", "Your split arrow obliterates")
-                                .Replace("You smite", "Your split arrow smites")
-                                .Replace("You slay", "Your split arrow slays")
-                                .Replace("You kill", "Your split arrow kills")
-                                .Replace("You destroy", "Your split arrow destroys")
-                                .Replace("You bring", "Your split arrow brings")
-                                .Replace("You reduce", "Your split arrow reduces")
-                                .Replace("You run", "Your split arrow runs")
-                                .Replace("You beat", "Your split arrow beats")
-                                .Replace("You split", "Your split arrow splits")
-                                .Replace("You cleave", "Your split arrow cleaves")
-                                .Replace("You flatten", "Your split arrow flattens")
-                                .Replace("You knock", "Your split arrow knocks")
-                                .Replace("You stop", "Your split arrow stops")
-                                .Replace("You send", "Your split arrow sends")
-                                .Replace("You suffer", "Your split arrow suffers")
-                                .Replace("You liquify", "Your split arrow liquifies")
-                                .Replace("You blast", "Your split arrow blasts")
-                                .Replace("You dessicate", "Your split arrow dessicates")
-                                .Replace("You tear", "Your split arrow tears")
-                                .Replace("You crush", "Your split arrow crushes")
-                                .Replace("You smash", "Your split arrow smashes")
-                                .Replace("You bash", "Your split arrow bashes")
-                                .Replace("You gore", "Your split arrow gores")
-                                .Replace("You impale", "Your split arrow impales")
-                                .Replace("You stab", "Your split arrow stabs")
-                                .Replace("You nick", "Your split arrow nicks");
+                            var splitTemplate = ModifyDeathMessageForSplitArrow(splitArrowDeathMessage.Killer);
                             
                             // Format the message with the actual creature name
                             var splitMsg = string.Format(splitTemplate, Name);
@@ -134,9 +109,10 @@ namespace ACE.Server.WorldObjects
                             }
                         }
                         
-                        // Clear the property to prevent multiple death message calls
-                        SetProperty(PropertyInstanceId.LastSplitArrowProjectile, 0);
-                        return null; // Don't send the normal combat death message
+                            // Clear the property to prevent multiple death message calls
+                            RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                            return null; // Don't send the normal combat death message
+                        }
                     }
                 }
                 
@@ -156,6 +132,46 @@ namespace ACE.Server.WorldObjects
                     playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg));
             }
             return deathMessage;
+        }
+
+        /// <summary>
+        /// Modifies death message template to use split arrow terminology
+        /// </summary>
+        private static string ModifyDeathMessageForSplitArrow(string originalMessage)
+        {
+            const string ATTACK_REPLACEMENT = "your split arrow";
+            const string ASSAULT_REPLACEMENT = "your split arrow assault";
+            
+            return originalMessage
+                .Replace("your attack", ATTACK_REPLACEMENT)
+                .Replace("your assault", ASSAULT_REPLACEMENT)
+                .Replace("You obliterate", "Your split arrow obliterates")
+                .Replace("You smite", "Your split arrow smites")
+                .Replace("You slay", "Your split arrow slays")
+                .Replace("You kill", "Your split arrow kills")
+                .Replace("You destroy", "Your split arrow destroys")
+                .Replace("You bring", "Your split arrow brings")
+                .Replace("You reduce", "Your split arrow reduces")
+                .Replace("You run", "Your split arrow runs")
+                .Replace("You beat", "Your split arrow beats")
+                .Replace("You split", "Your split arrow splits")
+                .Replace("You cleave", "Your split arrow cleaves")
+                .Replace("You flatten", "Your split arrow flattens")
+                .Replace("You knock", "Your split arrow knocks")
+                .Replace("You stop", "Your split arrow stops")
+                .Replace("You send", "Your split arrow sends")
+                .Replace("You suffer", "Your split arrow suffers")
+                .Replace("You liquify", "Your split arrow liquifies")
+                .Replace("You blast", "Your split arrow blasts")
+                .Replace("You dessicate", "Your split arrow dessicates")
+                .Replace("You tear", "Your split arrow tears")
+                .Replace("You crush", "Your split arrow crushes")
+                .Replace("You smash", "Your split arrow smashes")
+                .Replace("You bash", "Your split arrow bashes")
+                .Replace("You gore", "Your split arrow gores")
+                .Replace("You impale", "Your split arrow impales")
+                .Replace("You stab", "Your split arrow stabs")
+                .Replace("You nick", "Your split arrow nicks");
         }
 
         /// <summary>

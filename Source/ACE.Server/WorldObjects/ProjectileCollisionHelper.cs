@@ -57,7 +57,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // Track split arrows for death message modification
                     var isSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
-                    if (isSplitArrow)
+                    if (isSplitArrow && targetCreature != null)
                     {
                         worldObject.SetProperty(PropertyBool.IsSplitArrowKill, true);
                         targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
