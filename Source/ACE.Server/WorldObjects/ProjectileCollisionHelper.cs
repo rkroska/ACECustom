@@ -56,11 +56,14 @@ namespace ACE.Server.WorldObjects
                 if (sourcePlayer != null)
                 {
                     // Track split arrows for death message modification
-                    var isSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
-                    if (isSplitArrow && targetCreature != null)
+                    var isSplitArrowForTracking = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                    if (isSplitArrowForTracking && targetCreature != null)
                     {
-                        worldObject.SetProperty(PropertyBool.IsSplitArrowKill, true);
+                        // Store split arrow info directly on the creature since projectile gets destroyed
+                        targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, true);
                         targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
+                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
+                        Console.WriteLine($"[SPLIT ARROW DEBUG] Set IsSplitArrowKill=true on creature {targetCreature.Name}, projectile {worldObject.Guid.Full:X8}, shooter {sourcePlayer.Guid.Full:X8}");
                     }
                     
                     // player damage monster or player
@@ -133,9 +136,16 @@ namespace ACE.Server.WorldObjects
                     }
 
                     if (threadSafe && sourceCreature != null)
-                        // This can result in spell projectiles being added to either sourceCreature or targetCreature landblock.
-                        // worldObject is hitting targetCreature, so they should almost always be in the same landblock
-                        worldObject.TryProcEquippedItems(sourceCreature, targetCreature, false, worldObject.ProjectileLauncher);
+                    {
+                        // Skip procs for split arrows to prevent cast-on-strike effects
+                        var isSplitArrowProjectile = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                        if (!isSplitArrowProjectile)
+                        {
+                            // This can result in spell projectiles being added to either sourceCreature or targetCreature landblock.
+                            // worldObject is hitting targetCreature, so they should almost always be in the same landblock
+                            worldObject.TryProcEquippedItems(sourceCreature, targetCreature, false, worldObject.ProjectileLauncher);
+                        }
+                    }
                     else
                     {
                         // sourceCreature and creatureTarget are now in different landblock groups.
@@ -180,3 +190,4 @@ namespace ACE.Server.WorldObjects
         }
     }
 }
+
