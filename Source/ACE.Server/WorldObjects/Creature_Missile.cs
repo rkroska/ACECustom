@@ -544,9 +544,6 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                if (log.IsDebugEnabled)
-                    log.Debug($"CreateSplitArrows called for weapon {weapon.Guid}");
-                
                 // Cache weapon properties to avoid repeated property lookups
                 var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
                 var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
@@ -564,15 +561,8 @@ namespace ACE.Server.WorldObjects
                 
                 var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount);
                 
-                if (log.IsDebugEnabled)
-                    log.Debug($"[SPLIT ARROWS] Found {validTargets.Count} valid targets for split arrows");
-                
                 if (validTargets.Count == 0)
-                {
-                    if (log.IsDebugEnabled)
-                        log.Debug("[SPLIT ARROWS] No valid targets found, skipping split arrows");
                     return;
-                }
                 
                 // Cache projectile speed before the loop to avoid repeated calls
                 var cachedSpeed = GetProjectileSpeed();
@@ -587,10 +577,6 @@ namespace ACE.Server.WorldObjects
                 {
                     if (arrowsCreated >= additionalArrowCount)
                         break;
-                    
-                        
-                    if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] Creating split arrow {arrowsCreated + 1} for target: {splitTarget.Name} (ID: {splitTarget.WeenieClassId})");
                     
                     // Create new projectile with error handling
                     WorldObject splitProj;
@@ -628,15 +614,11 @@ namespace ACE.Server.WorldObjects
                         // Skip/destroy projectiles with zero or non-positive reduced damage
                         if (reducedDamage <= 0)
                         {
-                            if (log.IsDebugEnabled)
-                                log.Debug($"Skipping split arrow with zero/negative damage: {reducedDamage}");
                             splitProj.Destroy();
                             continue;
                         }
                         
                         splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
-                        if (log.IsDebugEnabled)
-                            log.Debug($"Set split arrow damage to {reducedDamage} (original: {damageValue.Value}, multiplier: {damageMultiplier})");
                     }
                     
                     // Calculate velocity to new target using the SAME method as main arrows
@@ -659,9 +641,6 @@ namespace ACE.Server.WorldObjects
                     splitProj.Location.Pos = splitOrigin;
                     splitProj.Location.Rotation = splitRotation;
                     
-                    if (log.IsDebugEnabled)
-                        log.Debug($"Split arrow velocity: {splitVelocity}");
-                    
                     // Validate velocity and position before adding to world
                     if (!splitVelocity.IsValid())
                     {
@@ -680,18 +659,10 @@ namespace ACE.Server.WorldObjects
                     // Set physics state (ensure target has physics)
                     if (splitTarget?.PhysicsObj == null)
                     {
-                        if (log.IsDebugEnabled)
-                            log.Debug($"Split target {splitTarget?.Name ?? "<null>"} has null PhysicsObj; skipping");
                         splitProj.Destroy();
                         continue;
                     }
                     SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
-                    
-                    // Debug physics object state before AddObject
-                    if (log.IsDebugEnabled)
-                    {
-                        log.Debug($"[SPLIT ARROWS] Physics object state - HasPhysicsObj: {splitProj.PhysicsObj != null}, Active: {splitProj.PhysicsObj?.is_active()}, Velocity: {splitProj.PhysicsObj?.Velocity}");
-                    }
                     
                     // Add to world
                     var success = LandblockManager.AddObject(splitProj);
@@ -707,8 +678,6 @@ namespace ACE.Server.WorldObjects
                     if (!IsProjectileVisible(splitProj))
                     {
                         // Projectile not visible - destroy it and skip broadcasts/increment
-                        if (log.IsDebugEnabled)
-                            log.Debug($"Split arrow {arrowsCreated + 1} not visible, destroying");
                         splitProj.Destroy();
                         continue;
                     }
@@ -724,8 +693,6 @@ namespace ACE.Server.WorldObjects
                         splitProj.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(splitProj, PropertyInt.PlayerKillerStatus, (int)pkStatus));
                         splitProj.EnqueueBroadcast(new GameMessageScript(splitProj.Guid, PlayScript.Launch, 0f));
                         
-                        if (log.IsDebugEnabled)
-                            log.Debug($"[SPLIT ARROWS] Successfully added split arrow {arrowsCreated + 1} to world");
                         arrowsCreated++;
                     }
                     else
@@ -736,8 +703,8 @@ namespace ACE.Server.WorldObjects
                     }
                 }
                 
-                if (log.IsDebugEnabled)
-                    log.Debug($"[SPLIT ARROWS] Created {arrowsCreated} split arrows successfully out of {validTargets.Count} valid targets");
+                if (log.IsDebugEnabled && arrowsCreated > 0)
+                    log.Debug($"[SPLIT ARROWS] Created {arrowsCreated} split arrows successfully");
             }
             catch (Exception ex)
             {
@@ -755,9 +722,6 @@ namespace ACE.Server.WorldObjects
         /// <returns>List of valid targets for split arrows</returns>
         private List<WorldObject> FindValidSplitTargets(Vector3 origin, WorldObject primaryTarget, float splitRange, int maxTargets)
         {
-            if (log.IsDebugEnabled)
-                log.Debug($"[SPLIT ARROWS] FindValidSplitTargets called - Range: {splitRange}, MaxTargets: {maxTargets}");
-            
             var potentialTargets = new List<WorldObject>();
             
             // Search in the primary target's landblock AND all adjacent landblocks
@@ -812,39 +776,23 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 if (!(obj is Creature creature) || !creature.IsAlive)
-                {
-                    if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] Skipping {obj?.Name} - not a living creature");
                     continue;
-                }
 
                 creaturesFound++;
 
                 if (obj == primaryTarget || obj == this)
-                {
-                    if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - is primary target or self");
                     continue;
-                }
 
                 // Check basic damage capability first
                 if (!CanDamage(creature))
-                {
-                    if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - cannot damage (Attackable: {creature.Attackable}, Teleporting: {creature.Teleporting}, IsCombatPet: {creature is CombatPet})");
                     continue;
-                }
                 
                 // Check PK status for players (respects PK rules)
                 if (this is Player player)
                 {
                     var pkError = player.CheckPKStatusVsTarget(creature, null);
                     if (pkError != null)
-                    {
-                        if (log.IsDebugEnabled)
-                            log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - PK status violation: {pkError[0]}");
                         continue;
-                    }
                 }
 
                 // Calculate distance from PRIMARY TARGET to this potential target using global coordinates
@@ -855,28 +803,12 @@ namespace ACE.Server.WorldObjects
                 {
                     creaturesInRange++;
                     
-                    if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] {creature.Name} is within range ({distanceFromPrimaryTarget:F2} <= {splitRange})");
-                    
                     // Basic angle validation: Check if target is roughly in front of the player
                     if (IsTargetInValidAngle(primaryTarget, obj))
                     {
                         creaturesValidAngle++;
                         potentialTargets.Add(obj);
-                        
-                        if (log.IsDebugEnabled)
-                            log.Debug($"[SPLIT ARROWS] Added {creature.Name} as valid split target (distance: {distanceFromPrimaryTarget:F2})");
                     }
-                    else
-                    {
-                        if (log.IsDebugEnabled)
-                            log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - invalid angle");
-                    }
-                }
-                else
-                {
-                    if (log.IsDebugEnabled)
-                        log.Debug($"[SPLIT ARROWS] Skipping {creature.Name} - too far ({distanceFromPrimaryTarget:F2} > {splitRange})");
                 }
             }
             
