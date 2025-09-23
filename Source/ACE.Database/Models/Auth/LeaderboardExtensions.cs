@@ -13,11 +13,6 @@ namespace ACE.Database.Models.Auth
     public partial class Leaderboard
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-        public static List<Leaderboard> GetTopQBLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopQuestBonus").ToList();
-        }
-
         public static async Task<List<Leaderboard>> GetTopQBLeaderboardAsync(AuthDbContext context)
         {
             try
@@ -29,11 +24,6 @@ namespace ACE.Database.Models.Auth
                 log.Error($"Failed to get TopQuestBonus leaderboard: {ex.Message}");
                 return new List<Leaderboard>();
             }
-        }
-
-        public static List<Leaderboard> GetTopLevelLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopLevel").ToList();
         }
 
         public static async Task<List<Leaderboard>> GetTopLevelLeaderboardAsync(AuthDbContext context)
@@ -49,11 +39,6 @@ namespace ACE.Database.Models.Auth
             }
         }
 
-        public static List<Leaderboard> GetTopEnlightenmentLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopEnlightenment").ToList();
-        }
-
         public static async Task<List<Leaderboard>> GetTopEnlightenmentLeaderboardAsync(AuthDbContext context)
         {
             try
@@ -65,11 +50,6 @@ namespace ACE.Database.Models.Auth
                 log.Error($"Failed to get TopEnlightenment leaderboard: {ex.Message}");
                 return new List<Leaderboard>();
             }
-        }
-
-        public static List<Leaderboard> GetTopTitleLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopTitles").ToList();
         }
 
         public static async Task<List<Leaderboard>> GetTopTitleLeaderboardAsync(AuthDbContext context)
@@ -85,11 +65,6 @@ namespace ACE.Database.Models.Auth
             }
         }
 
-        public static List<Leaderboard> GetTopAugLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopAugments").ToList();
-        }
-
         public static async Task<List<Leaderboard>> GetTopAugLeaderboardAsync(AuthDbContext context)
         {
             try
@@ -101,11 +76,6 @@ namespace ACE.Database.Models.Auth
                 log.Error($"Failed to get TopAugments leaderboard: {ex.Message}");
                 return new List<Leaderboard>();
             }
-        }
-
-        public static List<Leaderboard> GetTopDeathsLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopDeaths").ToList();
         }
 
         public static async Task<List<Leaderboard>> GetTopDeathsLeaderboardAsync(AuthDbContext context)
@@ -121,11 +91,6 @@ namespace ACE.Database.Models.Auth
             }
         }
 
-        public static List<Leaderboard> GetTopBankLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopBank").ToList();
-        }
-
         public static async Task<List<Leaderboard>> GetTopBankLeaderboardAsync(AuthDbContext context)
         {
             try
@@ -139,11 +104,6 @@ namespace ACE.Database.Models.Auth
             }
         }
 
-        public static List<Leaderboard> GetTopLumLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopLum").ToList();
-        }
-
         public static async Task<List<Leaderboard>> GetTopLumLeaderboardAsync(AuthDbContext context)
         {
             try
@@ -155,11 +115,6 @@ namespace ACE.Database.Models.Auth
                 log.Error($"Failed to get TopLum leaderboard: {ex.Message}");
                 return new List<Leaderboard>();
             }
-        }
-
-        public static List<Leaderboard> GetTopAttrLeaderboard(AuthDbContext context)
-        {
-            return context.Leaderboard.FromSql($"CALL TopAttributes").ToList();
         }
 
         public static async Task<List<Leaderboard>> GetTopAttrLeaderboardAsync(AuthDbContext context)
