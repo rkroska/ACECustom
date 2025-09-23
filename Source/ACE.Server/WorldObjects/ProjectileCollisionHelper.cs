@@ -186,7 +186,12 @@ namespace ACE.Server.WorldObjects
 
             if (worldObject.ProjectileSource is Player player)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your missile attack hit the environment.", ChatMessageType.Broadcast));
+                // Don't show environment hit messages for split arrows to reduce spam
+                var isSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                if (!isSplitArrow)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your missile attack hit the environment.", ChatMessageType.Broadcast));
+                }
             }
             else if (worldObject.ProjectileSource is Creature creature)
             {
