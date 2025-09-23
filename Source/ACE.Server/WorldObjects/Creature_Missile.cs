@@ -81,8 +81,7 @@ namespace ACE.Server.WorldObjects
         private const float SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN = 0f;
         private const float SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX = 1f;
         
-        // Minimum distance for projectile creation (prevents PhysicsObj: NULL issues with close targets)
-        private const float MIN_PROJECTILE_DISTANCE = 3.0f;
+        private const float SPLIT_ARROW_RANGE_MULTIPLIER = 0.8f;
 
         /// <summary>
         /// Launches a projectile from player to target
@@ -99,30 +98,6 @@ namespace ACE.Server.WorldObjects
                     player.SendWeenieError(WeenieError.YourAttackMisfired);
 
                 return null;
-            }
-
-            // Check if target is too close for projectile creation
-            var distance = Vector3.Distance(origin, target.Location.Pos);
-            if (distance < MIN_PROJECTILE_DISTANCE)
-            {
-                // Target too close for projectile - handling as instant hit
-                
-                // Handle as instant hit instead of creating projectile
-                HandleInstantHit(target, weapon, ammo);
-                
-                // Still create split arrows for far targets even if main target is too close
-                if (weapon != null)
-                {
-                    var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
-                    
-                    if (hasSplitArrows == true)
-                    {
-                        // Always create split arrows - they target OTHER enemies, not the main target
-                        CreateSplitArrows(weapon, ammo, target, origin, orientation);
-                    }
-                }
-                
-                return null; // No main projectile created
             }
 
             var proj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
@@ -586,22 +561,12 @@ namespace ACE.Server.WorldObjects
                 }
                 var arrowsCreated = 0;
                 
-                foreach (var splitTarget in validTargets)
-                {
-                    if (arrowsCreated >= additionalArrowCount)
-                        break;
-                    
-                    // Check if target is too close for projectile creation
-                    var distance = Vector3.Distance(origin, splitTarget.Location.Pos);
-                    if (distance < MIN_PROJECTILE_DISTANCE)
-                    {
-                        // Handle close target as instant hit instead of creating projectile
-                        HandleInstantHit(splitTarget, weapon, ammo);
-                        arrowsCreated++;
-                        continue;
-                    }
-                    
-                    // Create new projectile with error handling
+        foreach (var splitTarget in validTargets)
+        {
+            if (arrowsCreated >= additionalArrowCount)
+                break;
+            
+            // Create new projectile with error handling
                     WorldObject splitProj;
                     try
                     {
@@ -694,7 +659,7 @@ namespace ACE.Server.WorldObjects
                     if (!success)
                     {
                         // AddObject failed - destroy the projectile to prevent leak
-                        log.Error($"[SPLIT ARROW FAILURE] Failed to add split arrow to world - Target: {splitTarget?.Name}, Distance: {Vector3.Distance(this.Location.Pos, splitTarget.Location.Pos):F2} units");
+                        log.Debug($"[SPLIT ARROW] Skipped close target - Target: {splitTarget?.Name}, Distance: {Vector3.Distance(this.Location.Pos, splitTarget.Location.Pos):F2} units");
                         splitProj.Destroy();
                         continue;
                     }
@@ -882,40 +847,5 @@ namespace ACE.Server.WorldObjects
             }
         }
         
-        /// <summary>
-        /// Handles instant hits for targets that are too close for projectile creation
-        /// </summary>
-        private void HandleInstantHit(WorldObject target, WorldObject weapon, WorldObject ammo)
-        {
-            try
-            {
-                // Removed verbose instant hit logging
-                
-                // Create a temporary projectile object for damage calculation
-                var tempProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
-                tempProj.ProjectileSource = this;
-                tempProj.ProjectileTarget = target;
-                tempProj.ProjectileLauncher = weapon;
-                tempProj.ProjectileAmmo = ammo;
-                
-                // Apply damage directly to target
-                if (this is Player player && target is Creature targetCreature)
-                {
-                    var damageEvent = player.DamageTarget(targetCreature, tempProj);
-                    if (damageEvent != null)
-                    {
-                        // Send damage message to player
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You hit {target.Name}!", ChatMessageType.Broadcast));
-                    }
-                }
-                
-                // Clean up temporary projectile
-                tempProj.Destroy();
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Exception in HandleInstantHit: {ex.Message}", ex);
-            }
-        }
     }
 }
