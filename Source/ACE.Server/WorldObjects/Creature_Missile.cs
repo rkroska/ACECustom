@@ -551,12 +551,6 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
                 
-                if (!targetCreature.IsAlive)
-                {
-                    log.Warn($"CreateSplitArrows called with dead target: {targetCreature.Name}");
-                    return;
-                }
-
                 // Ensure target is fully initialized before creating split arrows
                 if (targetCreature.PhysicsObj == null)
                 {

@@ -65,8 +65,7 @@ namespace ACE.Server.WorldObjects
                         targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
                         targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
                         
-                        if (log.IsDebugEnabled)
-                            log.Debug($"Set projectile tracking on creature {targetCreature.Name}, projectile {worldObject.Guid.Full:X8}, shooter {sourcePlayer.Guid.Full:X8}, isSplitArrow: {projectileIsSplitArrow}");
+                        // Removed verbose projectile tracking logging
                     }
                     catch (Exception ex)
                     {
