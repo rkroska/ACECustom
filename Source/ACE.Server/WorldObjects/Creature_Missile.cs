@@ -80,14 +80,16 @@ namespace ACE.Server.WorldObjects
         private const float SPLIT_ARROW_RANGE_MAX = 50f;
         private const float SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN = 0f;
         private const float SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX = 1f;
+        
+        // Minimum distance for projectile creation (prevents PhysicsObj: NULL issues with close targets)
+        private const float MIN_PROJECTILE_DISTANCE = 3.0f;
 
         /// <summary>
         /// Launches a projectile from player to target
         /// </summary>
         public WorldObject LaunchProjectile(WorldObject weapon, WorldObject ammo, WorldObject target, Vector3 origin, Quaternion orientation, Vector3 velocity)
         {
-            if (log.IsDebugEnabled)
-                log.Debug($"LaunchProjectile called - Weapon: {weapon?.Guid}, Ammo: {ammo?.Guid}, Target: {target?.Guid}");
+            // Removed excessive debug logging
             
             var player = this as Player;
 
@@ -97,6 +99,30 @@ namespace ACE.Server.WorldObjects
                     player.SendWeenieError(WeenieError.YourAttackMisfired);
 
                 return null;
+            }
+
+            // Check if target is too close for projectile creation
+            var distance = Vector3.Distance(origin, target.Location.Pos);
+            if (distance < MIN_PROJECTILE_DISTANCE)
+            {
+                // Target too close for projectile - handling as instant hit
+                
+                // Handle as instant hit instead of creating projectile
+                HandleInstantHit(target, weapon, ammo);
+                
+                // Still create split arrows for far targets even if main target is too close
+                if (weapon != null)
+                {
+                    var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
+                    
+                    if (hasSplitArrows == true)
+                    {
+                        // Always create split arrows - they target OTHER enemies, not the main target
+                        CreateSplitArrows(weapon, ammo, target, origin, orientation);
+                    }
+                }
+                
+                return null; // No main projectile created
             }
 
             var proj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
@@ -146,23 +172,10 @@ namespace ACE.Server.WorldObjects
             if (weapon != null)
             {
                 var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
-                if (log.IsDebugEnabled)
-                    log.Debug($"Checking for split arrows - Weapon: {weapon.Guid}, SplitArrows: {hasSplitArrows}");
-                
                 if (hasSplitArrows == true)
                 {
-                    if (log.IsDebugEnabled)
-                    {
-                        var targetName = target?.Name ?? "<null>";
-                        log.Debug($"[SPLIT ARROWS] Weapon has split arrows capability, creating split arrows for target: {targetName}");
-                    }
                     CreateSplitArrows(weapon, ammo, target, origin, orientation);
                 }
-            }
-            else
-            {
-                if (log.IsDebugEnabled)
-                    log.Debug("Weapon is null, skipping split arrows");
             }
 
             // detonate point-blank projectiles immediately
@@ -544,6 +557,13 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
+                // Ensure target is fully initialized before creating split arrows
+                if (targetCreature.PhysicsObj == null)
+                {
+                    log.Warn($"CreateSplitArrows called with uninitialized target: {targetCreature.Name} (PhysicsObj is null)");
+                    return;
+                }
+
                 // Cache weapon properties to avoid repeated property lookups
                 var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
                 var splitRange = (float)(weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DEFAULT_SPLIT_ARROW_RANGE);
@@ -554,8 +574,7 @@ namespace ACE.Server.WorldObjects
                 splitRange = Math.Clamp(splitRange, SPLIT_ARROW_RANGE_MIN, SPLIT_ARROW_RANGE_MAX);
                 damageMultiplier = Math.Clamp(damageMultiplier, SPLIT_ARROW_DAMAGE_MULTIPLIER_MIN, SPLIT_ARROW_DAMAGE_MULTIPLIER_MAX);
                 
-                if (log.IsDebugEnabled)
-                    log.Debug($"Split arrows - Count: {splitCount}, Range: {splitRange}");
+                // Removed verbose debug logging
                 
                 var additionalArrowCount = splitCount - 1; // We already have the main arrow
                 
@@ -577,6 +596,16 @@ namespace ACE.Server.WorldObjects
                 {
                     if (arrowsCreated >= additionalArrowCount)
                         break;
+                    
+                    // Check if target is too close for projectile creation
+                    var distance = Vector3.Distance(origin, splitTarget.Location.Pos);
+                    if (distance < MIN_PROJECTILE_DISTANCE)
+                    {
+                        // Handle close target as instant hit instead of creating projectile
+                        HandleInstantHit(splitTarget, weapon, ammo);
+                        arrowsCreated++;
+                        continue;
+                    }
                     
                     // Create new projectile with error handling
                     WorldObject splitProj;
@@ -664,12 +693,14 @@ namespace ACE.Server.WorldObjects
                     }
                     SetProjectilePhysicsState(splitProj, splitTarget, splitVelocity);
                     
+                    // Removed excessive debug logging
+                    
                     // Add to world
                     var success = LandblockManager.AddObject(splitProj);
                     if (!success)
                     {
                         // AddObject failed - destroy the projectile to prevent leak
-                        log.Error($"Failed to add split arrow {arrowsCreated + 1} to world - SplitOrigin: {splitOrigin}, Velocity: {splitVelocity}, Target: {splitTarget?.Name}, TargetLocation: {splitTarget?.Location?.ToLOCString()}");
+                        log.Error($"[SPLIT ARROW FAILURE] Failed to add split arrow to world - Target: {splitTarget?.Name}, Distance: {Vector3.Distance(this.Location.Pos, splitTarget.Location.Pos):F2} units");
                         splitProj.Destroy();
                         continue;
                     }
@@ -678,6 +709,7 @@ namespace ACE.Server.WorldObjects
                     if (!IsProjectileVisible(splitProj))
                     {
                         // Projectile not visible - destroy it and skip broadcasts/increment
+                        log.Error($"[SPLIT ARROW VISIBILITY FAILURE] Split arrow not visible after AddObject - Target: {splitTarget?.Name}");
                         splitProj.Destroy();
                         continue;
                     }
@@ -698,13 +730,12 @@ namespace ACE.Server.WorldObjects
                     else
                     {
                         // PhysicsObj is null - destroy the projectile
-                        log.Error($"Split arrow {arrowsCreated + 1} has null PhysicsObj after AddObject");
+                        log.Error($"Split arrow has null PhysicsObj after AddObject - Target: {splitTarget?.Name}");
                         splitProj.Destroy();
                     }
                 }
                 
-                if (log.IsDebugEnabled && arrowsCreated > 0)
-                    log.Debug($"[SPLIT ARROWS] Created {arrowsCreated} split arrows successfully");
+                // Removed verbose success logging
             }
             catch (Exception ex)
             {
@@ -759,8 +790,7 @@ namespace ACE.Server.WorldObjects
                 .Select(g => g.First())
                 .ToList();
             
-            if (log.IsDebugEnabled)
-                log.Debug($"[SPLIT ARROWS] Total nearby objects: {allNearbyObjects.Count} (target: {targetLandblockObjects.Count}, adjacent: {adjacentObjectCount})");
+            // Removed verbose object count logging
             
             // Always compute in global space to avoid cross-landblock frame issues
             var primaryTargetPos = primaryTarget.Location.ToGlobal(false);
@@ -812,8 +842,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
             
-            if (log.IsDebugEnabled)
-                log.Debug($"[SPLIT ARROWS] Target search results - Creatures found: {creaturesFound}, In range: {creaturesInRange}, Valid angle: {creaturesValidAngle}, Final targets: {potentialTargets.Count}");
+            // Removed verbose target search results logging
 
             return potentialTargets;
         }
@@ -845,21 +874,53 @@ namespace ACE.Server.WorldObjects
                 // Calculate angle in degrees for debugging
                 var angleDegrees = Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180.0 / Math.PI;
                 
-                // Debug logging (can be removed for production)
-                if (log.IsDebugEnabled)
-                {
-                    log.Debug($"[SPLIT ARROWS] Angle validation for {potentialTarget.Name}: angle={angleDegrees:F2}°, dot={dot:F3}, result={(dot >= 0f ? "PASS" : "FAIL")}");
-                }
+                // Removed verbose angle validation logging
                 
-                // Allow targets within 90° of the primary target (cos(90°) = 0)
+                // Allow targets within 60° of the primary target (cos(60°) = 0.5)
                 // This ensures split arrows only target creatures in front of the player
                 // and prevents physics issues with targets behind the player
-                return dot >= 0f;
+                return dot >= 0.5f;
             }
             catch (Exception ex)
             {
                 log.Error($"Exception in IsTargetInValidAngle: {ex.Message}", ex);
                 return false; // Fail safe - don't create split arrow if validation fails
+            }
+        }
+        
+        /// <summary>
+        /// Handles instant hits for targets that are too close for projectile creation
+        /// </summary>
+        private void HandleInstantHit(WorldObject target, WorldObject weapon, WorldObject ammo)
+        {
+            try
+            {
+                // Removed verbose instant hit logging
+                
+                // Create a temporary projectile object for damage calculation
+                var tempProj = WorldObjectFactory.CreateNewWorldObject(ammo.WeenieClassId);
+                tempProj.ProjectileSource = this;
+                tempProj.ProjectileTarget = target;
+                tempProj.ProjectileLauncher = weapon;
+                tempProj.ProjectileAmmo = ammo;
+                
+                // Apply damage directly to target
+                if (this is Player player && target is Creature targetCreature)
+                {
+                    var damageEvent = player.DamageTarget(targetCreature, tempProj);
+                    if (damageEvent != null)
+                    {
+                        // Send damage message to player
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You hit {target.Name}!", ChatMessageType.Broadcast));
+                    }
+                }
+                
+                // Clean up temporary projectile
+                tempProj.Destroy();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Exception in HandleInstantHit: {ex.Message}", ex);
             }
         }
     }

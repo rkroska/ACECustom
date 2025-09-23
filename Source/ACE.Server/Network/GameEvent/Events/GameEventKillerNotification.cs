@@ -95,7 +95,8 @@ namespace ACE.Server.Network.GameEvent.Events
                 .Replace("catches your attack", "catches your split arrow attack")
                 .Replace("seared corpse smolders", "seared corpse smolders from your split arrow")
                 .Replace("brings to a fiery end", "brings to a fiery end with your split arrow")
-                .Replace("ancestors feel it", "ancestors feel your split arrow's impact");
+                .Replace("ancestors feel it", "ancestors feel your split arrow's impact")
+                .Replace("last strength dissolves before you", "last strength dissolves before your split arrow");
             
             // Only apply generic fallback if no specific pattern was matched
             if (modifiedMessage == originalMessage)
