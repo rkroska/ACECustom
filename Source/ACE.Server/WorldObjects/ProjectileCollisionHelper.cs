@@ -1,10 +1,14 @@
 using System;
-
+using log4net;
+using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
+using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.WorldObjects.Managers;
 
 namespace ACE.Server.WorldObjects
 {
@@ -14,13 +18,26 @@ namespace ACE.Server.WorldObjects
     /// </summary>
     public static class ProjectileCollisionHelper
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public static void OnCollideObject(WorldObject worldObject, WorldObject target)
         {
             if (!worldObject.PhysicsObj.is_active()) return;
 
             //Console.WriteLine($"Projectile.OnCollideObject - {WorldObject.Name} ({WorldObject.Guid}) -> {target.Name} ({target.Guid})");
 
-            if (worldObject.ProjectileTarget == null || worldObject.ProjectileTarget != target)
+            // Check if this is a split arrow
+            var isSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+            
+            if (isSplitArrow)
+            {
+                // Split arrows can hit their intended split target
+                if (worldObject.ProjectileTarget != target)
+                {
+                    OnCollideEnvironment(worldObject);
+                    return;
+                }
+            }
+            else if (worldObject.ProjectileTarget == null || worldObject.ProjectileTarget != target)
             {
                 //Console.WriteLine("Unintended projectile target! (should be " + ProjectileTarget.Guid.Full.ToString("X8") + " - " + ProjectileTarget.Name + ")");
                 OnCollideEnvironment(worldObject);
@@ -31,13 +48,30 @@ namespace ACE.Server.WorldObjects
             var sourceCreature = worldObject.ProjectileSource as Creature;
             var sourcePlayer = worldObject.ProjectileSource as Player;
             var targetCreature = target as Creature;
-
-            DamageEvent damageEvent = null;
-
+            
             if (targetCreature != null && targetCreature.IsAlive)
             {
+                DamageEvent damageEvent = null;
+
                 if (sourcePlayer != null)
                 {
+                    // Track the last projectile that hit this creature for death message modification
+                    try
+                    {
+                        var projectileIsSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                        
+                        // Always track the last projectile hit, regardless of whether it's split or main
+                        targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, projectileIsSplitArrow);
+                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
+                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
+                        
+                        // Removed verbose projectile tracking logging
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error setting projectile tracking: {ex.Message}", ex);
+                    }
+                    
                     // player damage monster or player
                     damageEvent = sourcePlayer.DamageTarget(targetCreature, worldObject);
 
@@ -103,14 +137,21 @@ namespace ACE.Server.WorldObjects
                     if (LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded)
                     {
                         // Ok... if we got here, we're likely in the parallel landblock physics processing.
-                        if (worldObject.CurrentLandblock == null || sourceCreature.CurrentLandblock == null || targetCreature.CurrentLandblock == null || worldObject.CurrentLandblock.CurrentLandblockGroup != sourceCreature.CurrentLandblock.CurrentLandblockGroup || sourceCreature.CurrentLandblock.CurrentLandblockGroup != targetCreature.CurrentLandblock.CurrentLandblockGroup)
+                        if (worldObject.CurrentLandblock == null || sourceCreature?.CurrentLandblock == null || targetCreature.CurrentLandblock == null || worldObject.CurrentLandblock.CurrentLandblockGroup != sourceCreature?.CurrentLandblock.CurrentLandblockGroup || sourceCreature?.CurrentLandblock.CurrentLandblockGroup != targetCreature.CurrentLandblock.CurrentLandblockGroup)
                             threadSafe = false;
                     }
 
-                    if (threadSafe)
-                        // This can result in spell projectiles being added to either sourceCreature or targetCreature landblock.
-                        // worldObject is hitting targetCreature, so they should almost always be in the same landblock
-                        worldObject.TryProcEquippedItems(sourceCreature, targetCreature, false, worldObject.ProjectileLauncher);
+                    if (threadSafe && sourceCreature != null)
+                    {
+                        // Skip procs for split arrows to prevent cast-on-strike effects
+                        var isSplitArrowProjectile = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                        if (!isSplitArrowProjectile)
+                        {
+                            // This can result in spell projectiles being added to either sourceCreature or targetCreature landblock.
+                            // worldObject is hitting targetCreature, so they should almost always be in the same landblock
+                            worldObject.TryProcEquippedItems(sourceCreature, targetCreature, false, worldObject.ProjectileLauncher);
+                        }
+                    }
                     else
                     {
                         // sourceCreature and creatureTarget are now in different landblock groups.
@@ -144,7 +185,12 @@ namespace ACE.Server.WorldObjects
 
             if (worldObject.ProjectileSource is Player player)
             {
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your missile attack hit the environment.", ChatMessageType.Broadcast));
+                // Don't show environment hit messages for split arrows to reduce spam
+                var isSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                if (!isSplitArrow)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your missile attack hit the environment.", ChatMessageType.Broadcast));
+                }
             }
             else if (worldObject.ProjectileSource is Creature creature)
             {
@@ -155,3 +201,4 @@ namespace ACE.Server.WorldObjects
         }
     }
 }
+

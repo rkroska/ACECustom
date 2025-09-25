@@ -1093,6 +1093,30 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.ElementalDamageMod); else SetProperty(PropertyFloat.ElementalDamageMod, value.Value); }
         }
 
+        public bool SplitArrows
+        {
+            get => GetProperty(PropertyBool.SplitArrows) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.SplitArrows); else SetProperty(PropertyBool.SplitArrows, value); }
+        }
+
+        public int? SplitArrowCount
+        {
+            get => GetProperty(PropertyInt.SplitArrowCount);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.SplitArrowCount); else SetProperty(PropertyInt.SplitArrowCount, value.Value); }
+        }
+
+        public double? SplitArrowRange
+        {
+            get => GetProperty(PropertyFloat.SplitArrowRange);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SplitArrowRange); else SetProperty(PropertyFloat.SplitArrowRange, value.Value); }
+        }
+
+        public double? SplitArrowDamageMultiplier
+        {
+            get => GetProperty(PropertyFloat.SplitArrowDamageMultiplier);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SplitArrowDamageMultiplier); else SetProperty(PropertyFloat.SplitArrowDamageMultiplier, value.Value); }
+        }
+
         public WieldRequirement WieldRequirements
         {
             get => (WieldRequirement)(GetProperty(PropertyInt.WieldRequirements) ?? 0);

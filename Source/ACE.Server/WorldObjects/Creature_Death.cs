@@ -77,6 +77,7 @@ namespace ACE.Server.WorldObjects
             if (lastDamagerInfo == null || lastDamagerInfo.Guid == Guid || lastDamager is Hotspot)
                 return Strings.General[1];
 
+
             var deathMessage = Strings.GetDeathMessage(damageType, criticalHit);
 
             // if killed by a player, send them a message
@@ -88,10 +89,11 @@ namespace ACE.Server.WorldObjects
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
                 if (lastDamager is Player playerKiller)
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg));
+                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
             }
             return deathMessage;
         }
+
 
         /// <summary>
         /// Kills a player/creature and performs the full death sequence
