@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using Microsoft.EntityFrameworkCore;
 
 using log4net;
 
@@ -14,6 +15,7 @@ using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Models.Auth;
+using ShardModels = ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -68,7 +70,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length < 1)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit <subcommand> [parameters] (or /ba)", ChatMessageType.Help));
-                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, help", ChatMessageType.Help));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, help", ChatMessageType.Help));
                 return;
             }
 
@@ -109,6 +111,15 @@ namespace ACE.Server.Command.Handlers
                     break;
                 case "cleanup":
                     HandleTransferCleanup(session, subParams);
+                    break;
+                case "items":
+                    HandleTransferItems(session, subParams);
+                    break;
+                case "ip":
+                    HandleTransferIPCheck(session, subParams);
+                    break;
+                case "migrate":
+                    HandleTransferMigration(session, subParams);
                     break;
                 case "help":
                     HandleTransferHelp(session, subParams);
@@ -412,6 +423,16 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config patternthreshold <number> - Set pattern threshold (default: 3)", ChatMessageType.System));
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("ITEM TRACKING COMMANDS:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items add <itemname> - Add item to tracking list", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items remove <itemname> - Remove item from tracking list", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items list - Show tracked items list", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items trackall <on|off> - Track all items or only listed items", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items enabled <on|off> - Enable/disable item tracking", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit ip <player> [days] - Show IP address patterns for transfers", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit migrate - Create/update all transfer monitoring tables", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("BLACKLIST COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist add player <name> - Add player to blacklist", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist add account <name> - Add account to blacklist", ChatMessageType.System));
@@ -444,8 +465,8 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Summaries for {playerName} (Last {days} days):", ChatMessageType.System));
             foreach (var summary in summaries.Take(15))
             {
-                var riskFlag = summary.RiskLevel != "Low" ? $" [{summary.RiskLevel}]" : "";
-                var message = $"{summary.TransferType} | {summary.FromPlayerName} -> {summary.ToPlayerName} | {summary.TotalTransfers} transfers | {summary.TotalValue:N0} total value{riskFlag}";
+                var riskFlag = summary.IsSuspicious ? " [SUSPICIOUS]" : "";
+                var message = $"{summary.TransferType} | {summary.FromPlayerName} -> {summary.ToPlayerName} | {summary.TotalTransfers} transfers | {summary.TotalValue:N0} total value | {summary.SuspiciousTransfers} suspicious{riskFlag}";
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
             }
         }
@@ -517,6 +538,386 @@ namespace ACE.Server.Command.Handlers
             catch (Exception ex)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cleanup failed: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferItems(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items <add|remove|list|trackall|enabled> [parameters]", ChatMessageType.System));
+                return;
+            }
+
+            var action = parameters[0].ToLower();
+
+            switch (action)
+            {
+                case "add":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items add <itemname>", ChatMessageType.System));
+                        return;
+                    }
+                    var itemToAdd = string.Join(" ", parameters.Skip(1));
+                    TransferLogger.AddTrackedItem(itemToAdd);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Added '{itemToAdd}' to tracked items list", ChatMessageType.System));
+                    break;
+
+                case "remove":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items remove <itemname>", ChatMessageType.System));
+                        return;
+                    }
+                    var itemToRemove = string.Join(" ", parameters.Skip(1));
+                    TransferLogger.RemoveTrackedItem(itemToRemove);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed '{itemToRemove}' from tracked items list", ChatMessageType.System));
+                    break;
+
+                case "list":
+                    var trackedItems = TransferLogger.GetTrackedItems();
+                    if (trackedItems.Count == 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("No items are currently being tracked", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Tracked items ({trackedItems.Count}): {string.Join(", ", trackedItems)}", ChatMessageType.System));
+                    }
+                    break;
+
+                case "trackall":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items trackall <on|off>", ChatMessageType.System));
+                        return;
+                    }
+                    var trackAllValue = parameters[1].ToLower();
+                    if (trackAllValue == "on" || trackAllValue == "true" || trackAllValue == "1")
+                    {
+                        TransferLogger.SetTrackAllItems(true);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("All items will now be tracked", ChatMessageType.System));
+                    }
+                    else if (trackAllValue == "off" || trackAllValue == "false" || trackAllValue == "0")
+                    {
+                        TransferLogger.SetTrackAllItems(false);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Only listed items will be tracked", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items trackall <on|off>", ChatMessageType.System));
+                    }
+                    break;
+
+                case "enabled":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items enabled <on|off>", ChatMessageType.System));
+                        return;
+                    }
+                    var enabledValue = parameters[1].ToLower();
+                    if (enabledValue == "on" || enabledValue == "true" || enabledValue == "1")
+                    {
+                        TransferLogger.SetItemTrackingEnabled(true);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Item tracking enabled", ChatMessageType.System));
+                    }
+                    else if (enabledValue == "off" || enabledValue == "false" || enabledValue == "0")
+                    {
+                        TransferLogger.SetItemTrackingEnabled(false);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Item tracking disabled", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items enabled <on|off>", ChatMessageType.System));
+                    }
+                    break;
+
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown action: {action}", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Available actions: add, remove, list, trackall, enabled", ChatMessageType.System));
+                    break;
+            }
+        }
+
+        private static void HandleTransferIPCheck(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit ip <player> [days]", ChatMessageType.System));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var days = parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays) ? parsedDays : 7;
+
+            var cutoffDate = DateTime.UtcNow.AddDays(-days);
+            var transfers = DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);
+
+            if (transfers.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No transfers found for {playerName} in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"IP Address Analysis for {playerName} (Last {days} days):", ChatMessageType.System));
+
+            // Group transfers by IP addresses
+            var ipGroups = transfers.Where(t => !string.IsNullOrEmpty(t.FromPlayerIP) || !string.IsNullOrEmpty(t.ToPlayerIP))
+                                   .GroupBy(t => new { FromIP = t.FromPlayerIP, ToIP = t.ToPlayerIP })
+                                   .OrderByDescending(g => g.Count())
+                                   .Take(10);
+
+            foreach (var ipGroup in ipGroups)
+            {
+                var fromIP = ipGroup.Key.FromIP ?? "Unknown";
+                var toIP = ipGroup.Key.ToIP ?? "Unknown";
+                var count = ipGroup.Count();
+                var transfersList = ipGroup.OrderByDescending(t => t.Timestamp).Take(3);
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  {count} transfers: {fromIP} -> {toIP}", ChatMessageType.System));
+                
+                foreach (var transfer in transfersList)
+                {
+                    var suspicious = transfer.IsSuspicious ? " [SUSPICIOUS]" : "";
+                    var message = $"    {transfer.Timestamp:MM-dd HH:mm} | {transfer.TransferType} | {transfer.ItemName} x{transfer.Quantity} | {transfer.Value:N0}{suspicious}";
+                    session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+                }
+            }
+
+            // Show different IP patterns (alt account detection)
+            var differentIPTransfers = transfers.Where(t => 
+                !string.IsNullOrEmpty(t.FromPlayerIP) && 
+                !string.IsNullOrEmpty(t.ToPlayerIP) && 
+                t.FromPlayerIP != t.ToPlayerIP).ToList();
+
+            if (differentIPTransfers.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DIFFERENT IP TRANSFERS (Alt Account Detection):", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{differentIPTransfers.Count} transfers to players on different IPs", ChatMessageType.System));
+                
+                var groupedByTarget = differentIPTransfers.GroupBy(t => t.ToPlayerName)
+                                                         .OrderByDescending(g => g.Count())
+                                                         .Take(5);
+                
+                foreach (var group in groupedByTarget)
+                {
+                    var targetPlayer = group.Key;
+                    var count = group.Count();
+                    var uniqueIPs = group.Select(t => t.ToPlayerIP).Distinct().Count();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"  {count} transfers to {targetPlayer} from {uniqueIPs} different IPs", ChatMessageType.System));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles database migration for all transfer monitoring tables.
+        /// This command is safe to run multiple times and handles both scenarios:
+        /// 1. Tables don't exist - Creates all tables from scratch
+        /// 2. Tables exist - Adds missing columns or leaves existing tables alone
+        /// </summary>
+        private static void HandleTransferMigration(Session session, string[] parameters)
+        {
+            try
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Starting database migration for all transfer monitoring tables...", ChatMessageType.System));
+                
+                using (var context = new ShardModels.ShardDbContext())
+                {
+                    // Create transfer_logs table
+                    CreateTransferLogsTableForMigration(context, session);
+                    
+                    // Create transfer_summaries table
+                    CreateTransferSummariesTableForMigration(context, session);
+                    
+                    // Create player_risk_profiles table
+                    CreatePlayerRiskProfilesTableForMigration(context, session);
+                    
+                    // Create transfer_audit_trails table
+                    CreateTransferAuditTrailsTableForMigration(context, session);
+                    
+                    // Create tracked_items table
+                    CreateTrackedItemsTableForMigration(context, session);
+                    
+                    session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Database migration failed: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTransferLogsTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_logs LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs table exists - adding IP address columns...", ChatMessageType.System));
+                
+                // Add IP address columns to existing table
+                context.Database.ExecuteSqlRaw(@"
+                    ALTER TABLE `transfer_logs` 
+                    ADD COLUMN IF NOT EXISTS `FromPlayerIP` varchar(45) DEFAULT NULL AFTER `AdditionalData`,
+                    ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`;");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with IP address columns", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_logs table with IP address columns...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_logs` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `TransferType` varchar(255) NOT NULL,
+                        `FromPlayerName` varchar(255) NOT NULL,
+                        `FromPlayerAccount` varchar(255) DEFAULT NULL,
+                        `ToPlayerName` varchar(255) NOT NULL,
+                        `ToPlayerAccount` varchar(255) DEFAULT NULL,
+                        `ItemName` varchar(255) NOT NULL,
+                        `Quantity` int(11) NOT NULL,
+                        `Value` bigint(20) NOT NULL,
+                        `Timestamp` datetime(6) NOT NULL,
+                        `IsSuspicious` tinyint(1) NOT NULL DEFAULT '0',
+                        `SuspicionReason` varchar(1024) DEFAULT NULL,
+                        `AdditionalData` varchar(2048) DEFAULT NULL,
+                        `FromPlayerIP` varchar(45) DEFAULT NULL,
+                        `ToPlayerIP` varchar(45) DEFAULT NULL,
+                        PRIMARY KEY (`Id`),
+                        KEY `IX_transfer_logs_FromPlayerName` (`FromPlayerName`),
+                        KEY `IX_transfer_logs_ToPlayerName` (`ToPlayerName`),
+                        KEY `IX_transfer_logs_Timestamp` (`Timestamp`),
+                        KEY `IX_transfer_logs_IsSuspicious` (`IsSuspicious`),
+                        KEY `IX_transfer_logs_FromPlayerAccount` (`FromPlayerAccount`),
+                        KEY `IX_transfer_logs_ToPlayerAccount` (`ToPlayerAccount`),
+                        KEY `IX_transfer_logs_Value` (`Value`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs table created", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTransferSummariesTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_summaries LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_summaries table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_summaries` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `FromPlayerName` varchar(255) NOT NULL,
+                        `FromPlayerAccount` varchar(255) DEFAULT NULL,
+                        `ToPlayerName` varchar(255) NOT NULL,
+                        `ToPlayerAccount` varchar(255) DEFAULT NULL,
+                        `TransferType` varchar(255) NOT NULL,
+                        `TotalTransfers` int(11) NOT NULL DEFAULT '0',
+                        `TotalQuantity` bigint(20) NOT NULL DEFAULT '0',
+                        `TotalValue` bigint(20) NOT NULL DEFAULT '0',
+                        `FirstTransfer` datetime(6) NOT NULL,
+                        `LastTransfer` datetime(6) NOT NULL,
+                        `SuspiciousTransfers` int(11) NOT NULL DEFAULT '0',
+                        `IsSuspicious` tinyint(1) NOT NULL DEFAULT '0',
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `UpdatedDate` datetime(6) NOT NULL,
+                        PRIMARY KEY (`Id`),
+                        KEY `IX_transfer_summaries_FromPlayerName` (`FromPlayerName`),
+                        KEY `IX_transfer_summaries_ToPlayerName` (`ToPlayerName`),
+                        KEY `IX_transfer_summaries_LastTransfer` (`LastTransfer`),
+                        KEY `IX_transfer_summaries_IsSuspicious` (`IsSuspicious`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table created", ChatMessageType.System));
+            }
+        }
+
+        private static void CreatePlayerRiskProfilesTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM player_risk_profiles LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ player_risk_profiles table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating player_risk_profiles table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `player_risk_profiles` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `PlayerName` varchar(255) NOT NULL,
+                        `PlayerAccount` varchar(255) DEFAULT NULL,
+                        `RiskScore` int(11) NOT NULL DEFAULT '0',
+                        `RiskLevel` varchar(50) NOT NULL DEFAULT 'Low',
+                        `TotalTransfers` int(11) NOT NULL DEFAULT '0',
+                        `SuspiciousTransfers` int(11) NOT NULL DEFAULT '0',
+                        `LastTransfer` datetime(6) DEFAULT NULL,
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `UpdatedDate` datetime(6) NOT NULL,
+                        PRIMARY KEY (`Id`),
+                        UNIQUE KEY `IX_player_risk_profiles_PlayerName` (`PlayerName`),
+                        KEY `IX_player_risk_profiles_RiskScore` (`RiskScore`),
+                        KEY `IX_player_risk_profiles_RiskLevel` (`RiskLevel`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ player_risk_profiles table created", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTransferAuditTrailsTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_audit_trails LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_audit_trails table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_audit_trails table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_audit_trails` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `TransferLogId` int(11) NOT NULL,
+                        `Action` varchar(255) NOT NULL,
+                        `Details` text DEFAULT NULL,
+                        `Timestamp` datetime(6) NOT NULL,
+                        `AdminName` varchar(255) DEFAULT NULL,
+                        PRIMARY KEY (`Id`),
+                        KEY `IX_transfer_audit_trails_TransferLogId` (`TransferLogId`),
+                        KEY `IX_transfer_audit_trails_Timestamp` (`Timestamp`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_audit_trails table created", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTrackedItemsTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM tracked_items LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating tracked_items table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `tracked_items` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `ItemName` varchar(255) NOT NULL,
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `UpdatedDate` datetime(6) NOT NULL,
+                        `IsActive` tinyint(1) NOT NULL DEFAULT '1',
+                        PRIMARY KEY (`Id`),
+                        UNIQUE KEY `IX_tracked_items_ItemName` (`ItemName`),
+                        KEY `IX_tracked_items_IsActive` (`IsActive`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table created", ChatMessageType.System));
             }
         }
 
