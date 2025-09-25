@@ -37,7 +37,11 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
-        private static DateTime lastDatabaseSave = DateTime.MinValue;
+        /// <summary>
+        /// Timestamp of the last offline save check. Updated every hour regardless of whether saves were needed.
+        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
+        /// </summary>
+        private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -65,9 +69,24 @@ namespace ACE.Server.Managers
 
         public static void Tick()
         {
-            // Database Save
-            if (lastDatabaseSave + databaseSaveInterval <= DateTime.UtcNow)
-                SaveOfflinePlayersWithChanges();
+            // Database Save - only check once per hour
+            if (lastOfflineSaveCheck + databaseSaveInterval <= DateTime.UtcNow)
+            {
+                var now = DateTime.UtcNow;
+                log.Debug("[PLAYERMANAGER] Performing hourly offline save check");
+                try
+                {
+                    SaveOfflinePlayersWithChanges();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PLAYERMANAGER] Hourly offline save check threw: {ex}");
+                }
+                finally
+                {
+                    lastOfflineSaveCheck = now; // Always update timestamp
+                }
+            }
 
             var currentUnixTime = Time.GetUnixTime();
 
@@ -89,32 +108,101 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected. The biotas are saved in parallel.
+        /// Queues a background task to save any offline players that have ChangesDetected.
+        /// Actual persistence is performed by PerformOfflinePlayerSaves() on the DB worker.
         /// </summary>
         public static void SaveOfflinePlayersWithChanges()
         {
-            lastDatabaseSave = DateTime.UtcNow;
 
-            var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
-
+            // Check if there are actually players with changes to save
+            var playersWithChanges = 0;
+            
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in offlinePlayers.Values)
-                {
-                    if (player.ChangesDetected)
-                    {
-                        player.SaveBiotaToDatabase(false);
-                        biotas.Add((player.Biota, player.BiotaDatabaseLock));
-                    }
-                }
+                playersWithChanges = offlinePlayers.Values.Count(p => p.ChangesDetected);
             }
             finally
             {
                 playersLock.ExitReadLock();
             }
 
-            DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
+            // Only queue the save if there are actually changes to save
+            if (playersWithChanges > 0)
+            {
+                log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
+                DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
+                {
+                    if (success)
+                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
+                    else
+                        log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
+                });
+            }
+            else
+            {
+                log.Debug("[PLAYERMANAGER] No offline players with changes to save");
+            }
+        }
+
+        /// <summary>
+        /// Internal method to actually perform the offline player saves.
+        /// This is called by the queue system.
+        /// </summary>
+        internal static void PerformOfflinePlayerSaves()
+        {
+            log.Info("[PLAYERMANAGER] Performing offline save operation");
+            
+            var playersToSave = new List<OfflinePlayer>();
+            
+            playersLock.EnterReadLock();
+            try
+            {
+                playersToSave = offlinePlayers.Values.Where(p => p.ChangesDetected).ToList();
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+
+            if (playersToSave.Count > 0)
+            {
+                log.Info($"[PLAYERMANAGER] Enqueuing saves for {playersToSave.Count} offline players with changes");
+                
+                // Save each player with changes
+                foreach (var player in playersToSave)
+                {
+                    try
+                    {
+                        // enqueue actual DB save with completion callback to ensure retry on failure
+                        player.SaveBiotaToDatabase(true, result =>
+                        {
+                            if (!result)
+                            {
+                                // Re-flag for retry on failure
+                                playersLock.EnterWriteLock();
+                                try { player.ChangesDetected = true; } finally { playersLock.ExitWriteLock(); }
+                                log.Error($"[PLAYERMANAGER] Offline save failed for {player.Name} ({player.Guid.Full}); will retry next cycle");
+                            }
+                            else
+                            {
+                                log.Debug($"[PLAYERMANAGER] Saved offline player: {player.Name}");
+                            }
+                        });
+                        log.Debug($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[PLAYERMANAGER] Failed to enqueue save for offline player {player.Name} ({player.Guid.Full}): {ex}");
+                    }
+                }
+                
+                log.Info($"[PLAYERMANAGER] Enqueued saves for {playersToSave.Count} offline players");
+            }
+            else
+            {
+                log.Debug("[PLAYERMANAGER] No offline players with changes to save");
+            }
         }
         
 
@@ -197,6 +285,87 @@ namespace ACE.Server.Managers
             allPlayers.AddRange(onlinePlayers);
 
             return allPlayers;
+        }
+
+        /// <summary>
+        /// Returns all players (online and offline) that match the given predicate, searching online players first for performance.
+        /// </summary>
+        public static List<IPlayer> FindAllPlayers(Func<IPlayer, bool> predicate)
+        {
+            var results = new List<IPlayer>();
+            
+            playersLock.EnterReadLock();
+            try
+            {
+                // Search online players first (smaller collection, faster)
+                var onlineMatches = onlinePlayers.Values.Where(predicate);
+                results.AddRange(onlineMatches);
+                
+                // Then search offline players
+                var offlineMatches = offlinePlayers.Values.Where(predicate);
+                results.AddRange(offlineMatches);
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+            
+            return results;
+        }
+
+        /// <summary>
+        /// Returns the first player (online or offline) that matches the given predicate, searching online players first for performance.
+        /// </summary>
+        public static IPlayer FindFirstPlayer(Func<IPlayer, bool> predicate)
+        {
+            playersLock.EnterReadLock();
+            try
+            {
+                // Search online players first (smaller collection, faster)
+                var onlineMatch = onlinePlayers.Values.FirstOrDefault(predicate);
+                if (onlineMatch != null)
+                    return onlineMatch;
+                
+                // Only search offline players if not found online
+                return offlinePlayers.Values.FirstOrDefault(predicate);
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// Returns the first player (online or offline) that matches the given name, searching online players first for performance.
+        /// Handles admin names with + prefix and case-insensitive matching.
+        /// </summary>
+        public static IPlayer FindFirstPlayerByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            
+            playersLock.EnterReadLock();
+            try
+            {
+                var normalizedName = name.Trim();
+                
+                // Search online players first (smaller collection, faster)
+                var onlinePlayer = onlinePlayers.Values.FirstOrDefault(p => 
+                    p.Name.TrimStart('+').Equals(normalizedName.TrimStart('+'), StringComparison.OrdinalIgnoreCase));
+                
+                if (onlinePlayer != null)
+                    return onlinePlayer;
+                
+                // Only search offline players if not found online
+                var offlinePlayer = offlinePlayers.Values.FirstOrDefault(p => 
+                    p.Name.TrimStart('+').Equals(normalizedName.TrimStart('+'), StringComparison.OrdinalIgnoreCase) && 
+                    !p.IsPendingDeletion);
+                
+                return offlinePlayer;
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
         }
 
         public static int GetOfflineCount()
