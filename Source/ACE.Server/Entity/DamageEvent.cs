@@ -19,6 +19,8 @@ namespace ACE.Server.Entity
     public class DamageEvent
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        private const float DefaultSplitArrowDamageMultiplier = 0.6f;
 
         // factors:
         // - lifestone protection
@@ -415,7 +417,8 @@ namespace ACE.Server.Entity
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
             {
-                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 0.6f);
+                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 
+                                             DefaultSplitArrowDamageMultiplier);
                 Damage *= splitMultiplier;
             }
 
