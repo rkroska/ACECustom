@@ -1208,107 +1208,106 @@ namespace ACE.Server.Command.Handlers
         }
 
         [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments")]
-        public static void DisplayTop(Session session, params string[] parameters)
+        public static async void DisplayTop(Session session, params string[] parameters)
         {
-            List<Leaderboard> list = new List<Leaderboard>();
-            LeaderboardCache cache = LeaderboardCache.Instance;
-            if (parameters.Length < 1)
+            try
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Specify a leaderboard to run, such as /top qb or /top deaths", ChatMessageType.Broadcast));
-                return;
+                List<Leaderboard> list = new List<Leaderboard>();
+                LeaderboardCache cache = LeaderboardCache.Instance;
+                if (parameters.Length < 1)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Specify a leaderboard to run, such as /top qb or /top deaths", ChatMessageType.Broadcast));
+                    return;
+                }
+                using (var context = new AuthDbContext())
+                {
+                    var key = parameters[0].ToLowerInvariant();
+                    if (key == "qb")
+                    {
+                        list = await cache.GetTopQBAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Quest Bonus:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "level")
+                    {
+                        list = await cache.GetTopLevelAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Level:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "enl")
+                    {
+                        list = await cache.GetTopEnlAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "title")
+                    {
+                        list = await cache.GetTopTitleAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "augs")
+                    {
+                        list = await cache.GetTopAugsAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Advanced Augmentations:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "deaths")
+                    {
+                        list = await cache.GetTopDeathsAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Deaths:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "bank")
+                    {
+                        list = await cache.GetTopBankAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Bank Value:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "lum")
+                    {
+                        list = await cache.GetTopLumAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Luminance:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "attr")
+                    {
+                        list = await cache.GetTopAttrAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "gymnos")
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
+                    }
+                }
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                }
             }
-            using (var context = new AuthDbContext())
+            catch (Exception ex)
             {
-                if (parameters[0]?.ToLower() == "qb")
-                {
-                    list = cache.GetTopQB(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Quest Bonus:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "level")
-                {
-                    list = cache.GetTopLevel(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Level:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "enl")
-                {
-                    list = cache.GetTopEnl(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Enlightenment:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "title")
-                {
-                    list = cache.GetTopTitle(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Titles:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters.Length > 0 && parameters[0]?.ToLower() == "augs")
-                {
-                    list = cache.GetTopAugs(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Advanced Augmentations:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "deaths")
-                {
-                    list = cache.GetTopDeaths(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Deaths:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "bank")
-                {
-                    list = cache.GetTopBank(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Bank Value:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "lum")
-                {
-                    list = cache.GetTopLum(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Banked Luminance:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "attr")
-                {
-                    list = cache.GetTopAttr(context);
-                    if (list.Count > 0)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
-                    }
-                }
-
-                if (parameters[0]?.ToLower() == "gymnos")
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
-                }
-            }
-
-            for (int i = 0; i < list.Count; i++)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                log.Error($"Error in DisplayTop command: {ex.Message}", ex);
             }
         }
 
