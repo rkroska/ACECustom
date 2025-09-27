@@ -59,9 +59,9 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<HousePermission> HousePermission { get; set; }
         public virtual DbSet<TransferLog> TransferLogs { get; set; }
         public virtual DbSet<TransferSummary> TransferSummaries { get; set; }
-        public virtual DbSet<PlayerRiskProfile> PlayerRiskProfiles { get; set; }
-        public virtual DbSet<TransferAuditTrail> TransferAuditTrails { get; set; }
         public virtual DbSet<TrackedItem> TrackedItems { get; set; }
+        public virtual DbSet<TransferMonitoringConfigDb> TransferMonitoringConfigs { get; set; }
+        public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -83,9 +83,9 @@ namespace ACE.Database.Models.Shard
             // Configure transfer logging tables
             modelBuilder.Entity<TransferLog>().ToTable("transfer_logs");
             modelBuilder.Entity<TransferSummary>().ToTable("transfer_summaries");
-            modelBuilder.Entity<PlayerRiskProfile>().ToTable("player_risk_profiles");
-            modelBuilder.Entity<TransferAuditTrail>().ToTable("transfer_audit_trails");
             modelBuilder.Entity<TrackedItem>().ToTable("tracked_items");
+            modelBuilder.Entity<TransferMonitoringConfigDb>().ToTable("transfer_monitoring_configs");
+            modelBuilder.Entity<BankCommandBlacklist>().ToTable("transfer_blacklist");
 
             modelBuilder.HasCharSet("utf8")
                 .UseCollation("utf8_general_ci");

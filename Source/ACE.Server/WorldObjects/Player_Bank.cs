@@ -750,7 +750,7 @@ namespace ACE.Server.WorldObjects
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
                 
                 // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Pyreals", Amount, Amount, "Bank Transfer");
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Pyreals", Amount, "Bank Transfer");
                 
                 return true;
             }
@@ -795,7 +795,7 @@ namespace ACE.Server.WorldObjects
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
                 
                 // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Legendary Keys", Amount, Amount * 10000, "Bank Transfer");
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Legendary Keys", Amount, "Bank Transfer");
                 
                 return true;
             }
@@ -848,7 +848,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Mythical Keys", Amount, Amount * 20000, "Bank Transfer");
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Mythical Keys", Amount, "Bank Transfer");
 
                 return true;
             }
@@ -901,7 +901,7 @@ namespace ACE.Server.WorldObjects
                 }
                 
                 // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, Amount, "Bank Transfer");
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, "Bank Transfer");
                 
                 return true;
             }          
@@ -954,7 +954,7 @@ namespace ACE.Server.WorldObjects
                 }
                 
                 // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Enlightened Coins", Amount, Amount * 1000, "Bank Transfer");
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Enlightened Coins", Amount, "Bank Transfer");
                 
                 return true;
             }
@@ -1005,7 +1005,7 @@ namespace ACE.Server.WorldObjects
                     this.SavePlayerToDatabase();
                 
                 // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Weakly Enlightened Coins", Amount, Amount * 500, "Bank Transfer");
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Weakly Enlightened Coins", Amount, "Bank Transfer");
             }
                 return true;
         }
