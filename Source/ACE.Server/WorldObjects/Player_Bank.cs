@@ -799,6 +799,10 @@ namespace ACE.Server.WorldObjects
                 }
                 this.BankedPyreals -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Pyreals", Amount, "Bank Transfer");
+                
                 return true;
             }
         }
@@ -840,6 +844,10 @@ namespace ACE.Server.WorldObjects
                 }
                 this.BankedLegendaryKeys -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Legendary Keys", Amount, "Bank Transfer");
+                
                 return true;
             }
         }
@@ -890,6 +898,9 @@ namespace ACE.Server.WorldObjects
                     this.SavePlayerToDatabase();
                 }
 
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Mythical Keys", Amount, "Bank Transfer");
+
                 return true;
             }
         }
@@ -939,6 +950,10 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, "Bank Transfer");
+                
                 return true;
             }          
         }
@@ -988,6 +1003,10 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Enlightened Coins", Amount, "Bank Transfer");
+                
                 return true;
             }
         }
@@ -1035,6 +1054,9 @@ namespace ACE.Server.WorldObjects
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedWeaklyEnlightenedCoins, this.BankedWeaklyEnlightenedCoins ?? 0));
                 if (Amount > 10)
                     this.SavePlayerToDatabase();
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Weakly Enlightened Coins", Amount, "Bank Transfer");
             }
                 return true;
         }

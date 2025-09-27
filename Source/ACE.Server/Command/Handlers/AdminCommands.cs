@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using Microsoft.EntityFrameworkCore;
 
 using log4net;
 
@@ -14,6 +15,7 @@ using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Models.Auth;
+using ShardModels = ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -37,6 +39,8 @@ namespace ACE.Server.Command.Handlers
     public static class AdminCommands
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        private const int MaxTransferLogDisplayCount = 20;
 
         // // commandname parameters
         // [CommandHandler("commandname", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0)]
@@ -44,6 +48,1071 @@ namespace ACE.Server.Command.Handlers
         // {
         //     //TODO: output
         // }
+
+        // bankaudit {subcommand} {parameters}
+        [CommandHandler("bankaudit", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Bank transfer audit commands.", "log|patterns|suspicious|config|blacklist|status|help\n" +
+            "Use 'bankaudit help' for detailed command information.")]
+        public static void HandleBankAudit(Session session, params string[] parameters)
+        {
+            HandleBankAuditInternal(session, parameters);
+        }
+
+        // ba {subcommand} {parameters} - Alias for bankaudit
+        [CommandHandler("ba", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Bank transfer audit commands (alias for bankaudit).", "log|patterns|suspicious|config|blacklist|status|help\n" +
+            "Use 'ba help' for detailed command information.")]
+        public static void HandleBA(Session session, params string[] parameters)
+        {
+            HandleBankAuditInternal(session, parameters);
+        }
+
+        private static void HandleBankAuditInternal(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit <subcommand> [parameters] (or /ba)", ChatMessageType.Help));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, bankban, help", ChatMessageType.Help));
+                return;
+            }
+
+            var subcommand = parameters[0].ToLower();
+            var subParams = parameters.Skip(1).ToArray();
+
+            switch (subcommand)
+            {
+                case "log":
+                    HandleTransferLog(session, subParams);
+                    break;
+                case "patterns":
+                    HandleTransferPatterns(session, subParams);
+                    break;
+                case "suspicious":
+                    HandleSuspiciousTransfers(session, subParams);
+                    break;
+                case "summaries":
+                    HandleTransferSummaries(session, subParams);
+                    break;
+                case "alerts":
+                    HandleTransferAlerts(session, subParams);
+                    break;
+                case "monitor":
+                    HandleTransferMonitor(session, subParams);
+                    break;
+                case "config":
+                    HandleTransferConfig(session, subParams);
+                    break;
+                case "blacklist":
+                    HandleTransferBlacklist(session, subParams);
+                    break;
+                case "status":
+                    HandleTransferStatus(session, subParams);
+                    break;
+                case "cleanup":
+                    HandleTransferCleanup(session, subParams);
+                    break;
+                case "items":
+                    HandleTransferItems(session, subParams);
+                    break;
+                case "ip":
+                    HandleTransferIPCheck(session, subParams);
+                    break;
+                case "migrate":
+                    HandleTransferMigration(session, subParams);
+                    break;
+                case "bankban":
+                    HandleBankBlacklist(session, subParams);
+                    break;
+                case "help":
+                    HandleTransferHelp(session, subParams);
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown subcommand: {subcommand}", ChatMessageType.Help));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Use 'bankaudit help' or 'ba help' for available commands", ChatMessageType.Help));
+                    break;
+            }
+        }
+
+        private static void HandleTransferLog(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit log <player> [days] (or /ba log)", ChatMessageType.Help));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var days = 7;
+            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays))
+            {
+                days = parsedDays;
+            }
+
+            var transfers = TransferLogger.GetTransferHistory(playerName, days);
+            
+            if (transfers.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No transfers found for {playerName} in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer History for {playerName} (Last {days} days):", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+
+            foreach (var transfer in transfers.Take(MaxTransferLogDisplayCount)) // Limit to most recent
+            {
+                var fromAccountAge = transfer.FromAccountCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                var toAccountAge = transfer.ToAccountCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                var fromCharAge = transfer.FromCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                var toCharAge = transfer.ToCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                
+                var message = $"{transfer.Timestamp:MM/dd HH:mm} | {transfer.TransferType} | {transfer.FromPlayerName} -> {transfer.ToPlayerName} | {transfer.ItemName} x{transfer.Quantity} | From: Acc({fromAccountAge}) Char({fromCharAge}) | To: Acc({toAccountAge}) Char({toCharAge})";
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+
+            if (transfers.Count > MaxTransferLogDisplayCount)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"... and {transfers.Count - MaxTransferLogDisplayCount} more transfers", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleSuspiciousTransfers(Session session, string[] parameters)
+        {
+            var days = 7;
+            if (parameters.Length > 0 && int.TryParse(parameters[0], out var parsedDays))
+            {
+                days = parsedDays;
+            }
+
+            var transfers = TransferLogger.GetSuspiciousTransfers(days);
+            
+            if (transfers.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No suspicious transfers found in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Transfers (Last {days} days):", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+
+            foreach (var transfer in transfers.Take(MaxTransferLogDisplayCount)) // Limit to most recent
+            {
+                var message = $"{transfer.Timestamp:MM/dd HH:mm} | {transfer.TransferType} | {transfer.FromPlayerName} ({transfer.FromPlayerAccount}) -> {transfer.ToPlayerName} ({transfer.ToPlayerAccount}) | {transfer.ItemName} x{transfer.Quantity} | From Account: {transfer.FromAccountCreatedDate?.ToString("MM/dd/yyyy") ?? "Unknown"} | To Account: {transfer.ToAccountCreatedDate?.ToString("MM/dd/yyyy") ?? "Unknown"}";
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+
+            if (transfers.Count > 20)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"... and {transfers.Count - 20} more suspicious transfers", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferPatterns(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit patterns <player> [days] (or /ba patterns)", ChatMessageType.Help));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var days = 7;
+            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays))
+            {
+                days = parsedDays;
+            }
+
+            var patterns = TransferLogger.GetTransferPatterns(playerName, days);
+            
+            if (patterns.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No transfer patterns found for {playerName} in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Patterns for {playerName} (Last {days} days):", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+
+            foreach (var pattern in patterns.Take(MaxTransferLogDisplayCount)) // Limit to most recent
+            {
+                var fromAccountAge = pattern.FromAccountCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                var toAccountAge = pattern.ToAccountCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                var fromCharAge = pattern.FromCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                var toCharAge = pattern.ToCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
+                
+                var message = $"{pattern.Timestamp:MM/dd HH:mm} | {pattern.TransferType} | {pattern.FromPlayerName} -> {pattern.ToPlayerName} | {pattern.ItemName} x{pattern.Quantity} | From: Acc({fromAccountAge}) Char({fromCharAge}) | To: Acc({toAccountAge}) Char({toCharAge})";
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+
+            if (patterns.Count > MaxTransferLogDisplayCount)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"... and {patterns.Count - MaxTransferLogDisplayCount} more pattern transfers", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferConfig(Session session, string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit config <setting> <value>", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Settings: threshold, timewindow, patternthreshold, trackall, enabled", ChatMessageType.System));
+                return;
+            }
+
+            var setting = parameters[0].ToLower();
+            var value = parameters[1];
+
+            try
+            {
+                switch (setting)
+                {
+                    case "threshold":
+                        if (int.TryParse(value, out var threshold))
+                        {
+                            TransferLogger.UpdateSuspiciousTransferThreshold(threshold);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated suspicious transfer threshold to {threshold}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid threshold value. Must be a number.", ChatMessageType.System));
+                        }
+                        break;
+
+                    case "timewindow":
+                        if (int.TryParse(value, out var hours))
+                        {
+                            TransferLogger.UpdateTimeWindowHours(hours);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated time window to {hours} hours", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid time window value. Must be a number.", ChatMessageType.System));
+                        }
+                        break;
+
+                    case "patternthreshold":
+                        if (int.TryParse(value, out var patternThreshold))
+                        {
+                            TransferLogger.UpdatePatternDetectionThreshold(patternThreshold);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated pattern detection threshold to {patternThreshold}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid pattern threshold value. Must be a number.", ChatMessageType.System));
+                        }
+                        break;
+
+                    case "trackall":
+                        if (bool.TryParse(value, out var trackAll) || value.ToLower() == "on" || value.ToLower() == "off")
+                        {
+                            var trackAllValue = value.ToLower() == "on" || (value.ToLower() == "true");
+                            TransferLogger.UpdateTrackAllItems(trackAllValue);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated track all items to {(trackAllValue ? "ON" : "OFF")}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid track all value. Use 'on', 'off', 'true', or 'false'.", ChatMessageType.System));
+                        }
+                        break;
+
+                    case "enabled":
+                        if (bool.TryParse(value, out var enabled) || value.ToLower() == "on" || value.ToLower() == "off")
+                        {
+                            var enabledValue = value.ToLower() == "on" || (value.ToLower() == "true");
+                            TransferLogger.UpdateEnableItemTracking(enabledValue);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated item tracking to {(enabledValue ? "ON" : "OFF")}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid enabled value. Use 'on', 'off', 'true', or 'false'.", ChatMessageType.System));
+                        }
+                        break;
+
+                    default:
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown setting: {setting}", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Available settings: threshold, timewindow, patternthreshold, trackall, enabled", ChatMessageType.System));
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Error updating configuration: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferBlacklist(Session session, string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist <add|remove|list> <player|account> [name] (or /ba blacklist)", ChatMessageType.Help));
+                return;
+            }
+
+            var action = parameters[0].ToLower();
+            var type = parameters[1].ToLower();
+
+            switch (action)
+            {
+                case "add":
+                    if (parameters.Length < 3)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist add <player|account> <name> (or /ba blacklist add)", ChatMessageType.Help));
+                        return;
+                    }
+                    var name = parameters[2];
+                    if (type == "player")
+                    {
+                        TransferLogger.AddPlayerToBlacklist(name);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Added player '{name}' to transfer monitoring blacklist", ChatMessageType.System));
+                    }
+                    else if (type == "account")
+                    {
+                        TransferLogger.AddAccountToBlacklist(name);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Added account '{name}' to transfer monitoring blacklist", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'player' or 'account'", ChatMessageType.Help));
+                    }
+                    break;
+
+                case "remove":
+                    if (parameters.Length < 3)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist remove <player|account> <name> (or /ba blacklist remove)", ChatMessageType.Help));
+                        return;
+                    }
+                    name = parameters[2];
+                    if (type == "player")
+                    {
+                        TransferLogger.RemovePlayerFromBlacklist(name);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed player '{name}' from transfer monitoring blacklist", ChatMessageType.System));
+                    }
+                    else if (type == "account")
+                    {
+                        TransferLogger.RemoveAccountFromBlacklist(name);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed account '{name}' from transfer monitoring blacklist", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'player' or 'account'", ChatMessageType.Help));
+                    }
+                    break;
+
+                case "list":
+                    if (type == "player")
+                    {
+                        var players = TransferLogger.GetBlacklistedPlayers();
+                        if (players.Count == 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("No blacklisted players", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Blacklisted players: {string.Join(", ", players)}", ChatMessageType.System));
+                        }
+                    }
+                    else if (type == "account")
+                    {
+                        var accounts = TransferLogger.GetBlacklistedAccounts();
+                        if (accounts.Count == 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("No blacklisted accounts", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Blacklisted accounts: {string.Join(", ", accounts)}", ChatMessageType.System));
+                        }
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'player' or 'account'", ChatMessageType.Help));
+                    }
+                    break;
+
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Action must be 'add', 'remove', or 'list'", ChatMessageType.Help));
+                    break;
+            }
+        }
+
+        private static void HandleTransferStatus(Session session, string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Transfer Monitoring Configuration:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Transfer Threshold: {TransferLogger.SuspiciousTransferThreshold}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Time Window: {TransferLogger.SuspiciousTransferTimeWindowHours} hours", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Pattern Detection Threshold: {TransferLogger.PatternDetectionThreshold}", ChatMessageType.System));
+            
+            var blacklistedPlayers = TransferLogger.GetBlacklistedPlayers();
+            var blacklistedAccounts = TransferLogger.GetBlacklistedAccounts();
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Blacklisted Players: {blacklistedPlayers.Count}", ChatMessageType.System));
+            if (blacklistedPlayers.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  {string.Join(", ", blacklistedPlayers)}", ChatMessageType.System));
+            }
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Blacklisted Accounts: {blacklistedAccounts.Count}", ChatMessageType.System));
+            if (blacklistedAccounts.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  {string.Join(", ", blacklistedAccounts)}", ChatMessageType.System));
+            }
+        }
+
+
+        private static void HandleTransferHelp(Session session, string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Bank Transfer Audit Commands:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("Use /bankaudit or /ba (short alias)", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("AUDIT COMMANDS:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit log <player> [days] - Show transfer history for a player", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit patterns <player> [days] - Show transfer patterns (repeated transfers)", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit suspicious [days] - Show flagged suspicious transfers", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit status - Show current configuration and blacklist", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("NEW FEATURES:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit summaries <player> [days] - Show transfer summaries for a player", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit alerts [hours] - Show recent transfer alerts", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit monitor - Show real-time monitoring stats", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit cleanup [days] - Clean up old transfer data", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("CONFIGURATION COMMANDS:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config threshold <number> - Set transfer threshold (default: 3)", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config timewindow <hours> - Set time window (default: 24)", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config patternthreshold <number> - Set pattern threshold (default: 3)", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("ITEM TRACKING COMMANDS:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items add <itemname> - Add item to tracking list", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items remove <itemname> - Remove item from tracking list", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items list - Show tracked items list", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items trackall <on|off> - Track all items or only listed items", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items enabled <on|off> - Enable/disable item tracking", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit ip <player> [days] - Show IP address patterns for transfers", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit migrate - Create/update all transfer monitoring tables", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("BLACKLIST COMMANDS:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist add player <name> - Add player to blacklist", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist add account <name> - Add account to blacklist", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist remove player <name> - Remove player from blacklist", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist remove account <name> - Remove account from blacklist", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist list player - Show blacklisted players", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist list account - Show blacklisted accounts", ChatMessageType.System));
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("BANK COMMAND BLACKLIST:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban add player <name> <reason> [days] - Ban player from using /bank commands", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban add account <name> <reason> [days] - Ban account from using /bank commands", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban remove player <name> - Remove player from bank command blacklist", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban remove account <name> - Remove account from bank command blacklist", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban list - Show all bank command blacklisted players/accounts", ChatMessageType.System));
+        }
+
+        private static void HandleTransferSummaries(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit summaries <player> [days]", ChatMessageType.System));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var days = parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays) ? parsedDays : 30;
+
+            var cutoffDate = DateTime.UtcNow.AddDays(-days);
+            var summaries = DatabaseManager.Shard.BaseDatabase.GetTransferSummaries(playerName, cutoffDate);
+
+            if (summaries.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No transfer summaries found for {playerName} in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Summaries for {playerName} (Last {days} days):", ChatMessageType.System));
+            foreach (var summary in summaries.Take(15))
+            {
+                var riskFlag = summary.IsSuspicious ? " [SUSPICIOUS]" : "";
+                var message = $"{summary.TransferType} | {summary.FromPlayerName} -> {summary.ToPlayerName} | {summary.TotalTransfers} transfers | {summary.TotalValue:N0} total value | {summary.SuspiciousTransfers} suspicious{riskFlag}";
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+
+        private static void HandleTransferAlerts(Session session, string[] parameters)
+        {
+            var hours = parameters.Length > 0 && int.TryParse(parameters[0], out var parsedHours) ? parsedHours : 24;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Monitoring Stats (Last {hours} hours):", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Total Transfers Today: {TransferMonitor.TotalTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Today: {TransferMonitor.SuspiciousTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Total Value Today: {TransferMonitor.TotalValueToday:N0} pyreals", ChatMessageType.System));
+        }
+
+        private static void HandleTransferMonitor(Session session, string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Real-Time Transfer Monitoring:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Daily Totals:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Transfers: {TransferMonitor.TotalTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Suspicious: {TransferMonitor.SuspiciousTransfersToday}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Total Value: {TransferMonitor.TotalValueToday:N0} pyreals", ChatMessageType.System));
+        }
+
+        private static void HandleTransferCleanup(Session session, string[] parameters)
+        {
+            var days = parameters.Length > 0 && int.TryParse(parameters[0], out var parsedDays) ? parsedDays : 30;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Cleaning up transfer data older than {days} days...", ChatMessageType.System));
+            
+            try
+            {
+                DatabaseManager.Shard.BaseDatabase.CleanupOldTransferLogs(days);
+                DatabaseManager.Shard.BaseDatabase.CleanupOldSummaries(days * 12); // Keep summaries longer
+                session.Network.EnqueueSend(new GameMessageSystemChat("Cleanup completed successfully.", ChatMessageType.System));
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Cleanup failed: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferItems(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items <add|remove|list|trackall|enabled> [parameters]", ChatMessageType.System));
+                return;
+            }
+
+            var action = parameters[0].ToLower();
+
+            switch (action)
+            {
+                case "add":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items add <itemname>", ChatMessageType.System));
+                        return;
+                    }
+                    var itemToAdd = string.Join(" ", parameters.Skip(1));
+                    TransferLogger.AddTrackedItem(itemToAdd);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Added '{itemToAdd}' to tracked items list", ChatMessageType.System));
+                    break;
+
+                case "remove":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items remove <itemname>", ChatMessageType.System));
+                        return;
+                    }
+                    var itemToRemove = string.Join(" ", parameters.Skip(1));
+                    TransferLogger.RemoveTrackedItem(itemToRemove);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed '{itemToRemove}' from tracked items list", ChatMessageType.System));
+                    break;
+
+                case "list":
+                    var trackedItems = TransferLogger.GetTrackedItems();
+                    if (trackedItems.Count == 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("No items are currently being tracked", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Tracked items ({trackedItems.Count}): {string.Join(", ", trackedItems)}", ChatMessageType.System));
+                    }
+                    break;
+
+                case "trackall":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items trackall <on|off>", ChatMessageType.System));
+                        return;
+                    }
+                    var trackAllValue = parameters[1].ToLower();
+                    if (trackAllValue == "on" || trackAllValue == "true" || trackAllValue == "1")
+                    {
+                        TransferLogger.SetTrackAllItems(true);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("All items will now be tracked", ChatMessageType.System));
+                    }
+                    else if (trackAllValue == "off" || trackAllValue == "false" || trackAllValue == "0")
+                    {
+                        TransferLogger.SetTrackAllItems(false);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Only listed items will be tracked", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items trackall <on|off>", ChatMessageType.System));
+                    }
+                    break;
+
+                case "enabled":
+                    if (parameters.Length < 2)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items enabled <on|off>", ChatMessageType.System));
+                        return;
+                    }
+                    var enabledValue = parameters[1].ToLower();
+                    if (enabledValue == "on" || enabledValue == "true" || enabledValue == "1")
+                    {
+                        TransferLogger.SetItemTrackingEnabled(true);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Item tracking enabled", ChatMessageType.System));
+                    }
+                    else if (enabledValue == "off" || enabledValue == "false" || enabledValue == "0")
+                    {
+                        TransferLogger.SetItemTrackingEnabled(false);
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Item tracking disabled", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit items enabled <on|off>", ChatMessageType.System));
+                    }
+                    break;
+
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown action: {action}", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Available actions: add, remove, list, trackall, enabled", ChatMessageType.System));
+                    break;
+            }
+        }
+
+        private static void HandleTransferIPCheck(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit ip <player> [days]", ChatMessageType.System));
+                return;
+            }
+
+            var playerName = parameters[0];
+            var days = parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays) ? parsedDays : 7;
+
+            var cutoffDate = DateTime.UtcNow.AddDays(-days);
+            var transfers = DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);
+
+            if (transfers.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"No transfers found for {playerName} in the last {days} days.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"IP Address Analysis for {playerName} (Last {days} days):", ChatMessageType.System));
+
+            // Group transfers by IP addresses
+            var ipGroups = transfers.Where(t => !string.IsNullOrEmpty(t.FromPlayerIP) || !string.IsNullOrEmpty(t.ToPlayerIP))
+                                   .GroupBy(t => new { FromIP = t.FromPlayerIP, ToIP = t.ToPlayerIP })
+                                   .OrderByDescending(g => g.Count())
+                                   .Take(10);
+
+            foreach (var ipGroup in ipGroups)
+            {
+                var fromIP = ipGroup.Key.FromIP ?? "Unknown";
+                var toIP = ipGroup.Key.ToIP ?? "Unknown";
+                var count = ipGroup.Count();
+                var transfersList = ipGroup.OrderByDescending(t => t.Timestamp).Take(3);
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  {count} transfers: {fromIP} -> {toIP}", ChatMessageType.System));
+                
+                foreach (var transfer in transfersList)
+                {
+                    var message = $"    {transfer.Timestamp:MM-dd HH:mm} | {transfer.TransferType} | {transfer.ItemName} x{transfer.Quantity} | From Account: {transfer.FromAccountCreatedDate?.ToString("MM/dd/yyyy") ?? "Unknown"} | To Account: {transfer.ToAccountCreatedDate?.ToString("MM/dd/yyyy") ?? "Unknown"}";
+                    session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+                }
+            }
+
+            // Show different IP patterns (alt account detection)
+            var differentIPTransfers = transfers.Where(t => 
+                !string.IsNullOrEmpty(t.FromPlayerIP) && 
+                !string.IsNullOrEmpty(t.ToPlayerIP) && 
+                t.FromPlayerIP != t.ToPlayerIP).ToList();
+
+            if (differentIPTransfers.Count > 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"DIFFERENT IP TRANSFERS (Alt Account Detection):", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{differentIPTransfers.Count} transfers to players on different IPs", ChatMessageType.System));
+                
+                var groupedByTarget = differentIPTransfers.GroupBy(t => t.ToPlayerName)
+                                                         .OrderByDescending(g => g.Count())
+                                                         .Take(5);
+                
+                foreach (var group in groupedByTarget)
+                {
+                    var targetPlayer = group.Key;
+                    var count = group.Count();
+                    var uniqueIPs = group.Select(t => t.ToPlayerIP).Distinct().Count();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"  {count} transfers to {targetPlayer} from {uniqueIPs} different IPs", ChatMessageType.System));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles database migration for all transfer monitoring tables.
+        /// This command is safe to run multiple times and handles both scenarios:
+        /// 1. Tables don't exist - Creates all tables from scratch
+        /// 2. Tables exist - Adds missing columns or leaves existing tables alone
+        /// </summary>
+        private static void HandleTransferMigration(Session session, string[] parameters)
+        {
+            try
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Starting database migration for all transfer monitoring tables...", ChatMessageType.System));
+                
+                using (var context = new ShardModels.ShardDbContext())
+                {
+                    // Create transfer_logs table
+                    CreateTransferLogsTableForMigration(context, session);
+                    
+                    // Create transfer_summaries table
+                    CreateTransferSummariesTableForMigration(context, session);
+                    
+                    // Create tracked_items table
+                    CreateTrackedItemsTableForMigration(context, session);
+                    
+                    // Create transfer_monitoring_configs table
+                    CreateTransferMonitoringConfigsTableForMigration(context, session);
+                    
+                    // Create bank_command_blacklist table
+                    CreateBankCommandBlacklistTableForMigration(context, session);
+                    
+                    session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Database migration failed: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTransferLogsTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_logs LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs table exists - adding IP address columns...", ChatMessageType.System));
+                
+                // Add missing columns to existing table
+                context.Database.ExecuteSqlRaw(@"
+                    ALTER TABLE `transfer_logs` 
+                    ADD COLUMN IF NOT EXISTS `FromAccountCreatedDate` datetime(6) DEFAULT NULL AFTER `Timestamp`,
+                    ADD COLUMN IF NOT EXISTS `ToAccountCreatedDate` datetime(6) DEFAULT NULL AFTER `FromAccountCreatedDate`,
+                    ADD COLUMN IF NOT EXISTS `FromCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `ToAccountCreatedDate`,
+                    ADD COLUMN IF NOT EXISTS `ToCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `FromCharacterCreatedDate`,
+                    ADD COLUMN IF NOT EXISTS `FromPlayerIP` varchar(45) DEFAULT NULL AFTER `AdditionalData`,
+                    ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`;");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with IP address columns", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_logs table with IP address columns...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_logs` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `TransferType` varchar(255) NOT NULL,
+                        `FromPlayerName` varchar(255) NOT NULL,
+                        `FromPlayerAccount` varchar(255) DEFAULT NULL,
+                        `ToPlayerName` varchar(255) NOT NULL,
+                        `ToPlayerAccount` varchar(255) DEFAULT NULL,
+                        `ItemName` varchar(255) NOT NULL,
+                        `Quantity` int(11) NOT NULL,
+                        `Timestamp` datetime(6) NOT NULL,
+                        `FromAccountCreatedDate` datetime(6) DEFAULT NULL,
+                        `ToAccountCreatedDate` datetime(6) DEFAULT NULL,
+                        `FromCharacterCreatedDate` datetime(6) DEFAULT NULL,
+                        `ToCharacterCreatedDate` datetime(6) DEFAULT NULL,
+                        `AdditionalData` varchar(2048) DEFAULT NULL,
+                        `FromPlayerIP` varchar(45) DEFAULT NULL,
+                        `ToPlayerIP` varchar(45) DEFAULT NULL,
+                        PRIMARY KEY (`Id`),
+                        KEY `IX_transfer_logs_FromPlayerName` (`FromPlayerName`),
+                        KEY `IX_transfer_logs_ToPlayerName` (`ToPlayerName`),
+                        KEY `IX_transfer_logs_Timestamp` (`Timestamp`),
+                        KEY `IX_transfer_logs_FromPlayerAccount` (`FromPlayerAccount`),
+                        KEY `IX_transfer_logs_ToPlayerAccount` (`ToPlayerAccount`),
+                        KEY `IX_transfer_logs_FromPlayerIP` (`FromPlayerIP`),
+                        KEY `IX_transfer_logs_ToPlayerIP` (`ToPlayerIP`),
+                        KEY `IX_transfer_logs_FromAccountCreatedDate` (`FromAccountCreatedDate`),
+                        KEY `IX_transfer_logs_ToAccountCreatedDate` (`ToAccountCreatedDate`),
+                        KEY `IX_transfer_logs_FromCharacterCreatedDate` (`FromCharacterCreatedDate`),
+                        KEY `IX_transfer_logs_ToCharacterCreatedDate` (`ToCharacterCreatedDate`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs table created", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTransferSummariesTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_summaries LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_summaries table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_summaries` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `FromPlayerName` varchar(255) NOT NULL,
+                        `FromPlayerAccount` varchar(255) DEFAULT NULL,
+                        `ToPlayerName` varchar(255) NOT NULL,
+                        `ToPlayerAccount` varchar(255) DEFAULT NULL,
+                        `TransferType` varchar(255) NOT NULL,
+                        `TotalTransfers` int(11) NOT NULL DEFAULT '0',
+                        `TotalQuantity` bigint(20) NOT NULL DEFAULT '0',
+                        `TotalValue` bigint(20) NOT NULL DEFAULT '0',
+                        `FirstTransfer` datetime(6) NOT NULL,
+                        `LastTransfer` datetime(6) NOT NULL,
+                        `SuspiciousTransfers` int(11) NOT NULL DEFAULT '0',
+                        `IsSuspicious` tinyint(1) NOT NULL DEFAULT '0',
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `UpdatedDate` datetime(6) NOT NULL,
+                        PRIMARY KEY (`Id`),
+                        KEY `IX_transfer_summaries_FromPlayerName` (`FromPlayerName`),
+                        KEY `IX_transfer_summaries_ToPlayerName` (`ToPlayerName`),
+                        KEY `IX_transfer_summaries_LastTransfer` (`LastTransfer`),
+                        KEY `IX_transfer_summaries_IsSuspicious` (`IsSuspicious`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table created", ChatMessageType.System));
+            }
+        }
+
+
+
+        private static void CreateTrackedItemsTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM tracked_items LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating tracked_items table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `tracked_items` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `ItemName` varchar(255) NOT NULL,
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `UpdatedDate` datetime(6) NOT NULL,
+                        `IsActive` tinyint(1) NOT NULL DEFAULT '1',
+                        PRIMARY KEY (`Id`),
+                        UNIQUE KEY `IX_tracked_items_ItemName` (`ItemName`),
+                        KEY `IX_tracked_items_IsActive` (`IsActive`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table created", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateTransferMonitoringConfigsTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_monitoring_configs LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_monitoring_configs table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_monitoring_configs table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_monitoring_configs` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `SuspiciousTransferThreshold` int(11) NOT NULL DEFAULT '100000',
+                        `TimeWindowHours` int(11) NOT NULL DEFAULT '24',
+                        `PatternDetectionThreshold` int(11) NOT NULL DEFAULT '10',
+                        `EnableTransferLogging` tinyint(1) NOT NULL DEFAULT '1',
+                        `EnableSuspiciousDetection` tinyint(1) NOT NULL DEFAULT '1',
+                        `EnableAdminNotifications` tinyint(1) NOT NULL DEFAULT '1',
+                        `EnableTransferSummaries` tinyint(1) NOT NULL DEFAULT '1',
+                        `EnableTransferLogs` tinyint(1) NOT NULL DEFAULT '1',
+                        `EnableItemTracking` tinyint(1) NOT NULL DEFAULT '1',
+                        `TrackAllItems` tinyint(1) NOT NULL DEFAULT '0',
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `UpdatedDate` datetime(6) NOT NULL,
+                        PRIMARY KEY (`Id`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_monitoring_configs table created", ChatMessageType.System));
+                
+                // Insert default configuration
+                context.Database.ExecuteSqlRaw(@"
+                    INSERT INTO `transfer_monitoring_configs` (
+                        `SuspiciousTransferThreshold`, `TimeWindowHours`, `PatternDetectionThreshold`,
+                        `EnableTransferLogging`, `EnableSuspiciousDetection`, `EnableAdminNotifications`,
+                        `EnableTransferSummaries`, `EnableTransferLogs`, `EnableItemTracking`, `TrackAllItems`,
+                        `CreatedDate`, `UpdatedDate`
+                    ) VALUES (
+                        100000, 24, 10, 1, 1, 1, 1, 1, 1, 0, NOW(), NOW()
+                    )");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ Default configuration inserted", ChatMessageType.System));
+            }
+        }
+
+        private static void CreateBankCommandBlacklistTableForMigration(ShardModels.ShardDbContext context, Session session)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_blacklist LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table exists", ChatMessageType.System));
+            }
+            catch
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_blacklist table...", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE `transfer_blacklist` (
+                        `Id` int(11) NOT NULL AUTO_INCREMENT,
+                        `PlayerName` varchar(255) NOT NULL,
+                        `AccountName` varchar(255) DEFAULT NULL,
+                        `Reason` varchar(255) NOT NULL,
+                        `AddedBy` varchar(255) NOT NULL,
+                        `CreatedDate` datetime(6) NOT NULL,
+                        `ExpiryDate` datetime(6) DEFAULT NULL,
+                        `IsActive` tinyint(1) NOT NULL DEFAULT '1',
+                        PRIMARY KEY (`Id`),
+                        KEY `IX_transfer_blacklist_PlayerName` (`PlayerName`),
+                        KEY `IX_transfer_blacklist_AccountName` (`AccountName`),
+                        KEY `IX_transfer_blacklist_IsActive` (`IsActive`),
+                        KEY `IX_transfer_blacklist_ExpiryDate` (`ExpiryDate`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table created", ChatMessageType.System));
+            }
+        }
+
+        private static void ShowBankBlacklistHelp(Session session)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit bankban <add|remove|list> <player|account> <name> [reason] [days]", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("Examples:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban add player PlayerName 'Suspicious activity' 30", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban add account AccountName 'Alt account farming'", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban remove player PlayerName", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban list", ChatMessageType.System));
+        }
+
+        private static void HandleBankBlacklist(Session session, string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                ShowBankBlacklistHelp(session);
+                return;
+            }
+
+            var action = parameters[0].ToLower();
+            var adminName = session.Player?.Name ?? "Unknown";
+
+            switch (action)
+            {
+                case "add":
+                    if (parameters.Length < 4)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit bankban add <player|account> <name> <reason> [days]", ChatMessageType.System));
+                        return;
+                    }
+
+                    var type = parameters[1].ToLower();
+                    var name = parameters[2];
+                    var reason = parameters[3];
+                    var days = 0;
+
+                    if (parameters.Length > 4 && int.TryParse(parameters[4], out var parsedDays))
+                    {
+                        days = parsedDays;
+                    }
+
+                    DateTime? expiryDate = null;
+                    if (days > 0)
+                    {
+                        expiryDate = DateTime.UtcNow.AddDays(days);
+                    }
+
+                    if (type == "player")
+                    {
+                        TransferLogger.AddPlayerToBankBlacklist(name, reason, adminName, expiryDate);
+                        var expiryText = expiryDate.HasValue ? $" (expires {expiryDate:yyyy-MM-dd HH:mm})" : " (permanent)";
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Added player '{name}' to bank command blacklist: {reason}{expiryText}", ChatMessageType.System));
+                    }
+                    else if (type == "account")
+                    {
+                        TransferLogger.AddAccountToBankBlacklist(name, reason, adminName, expiryDate);
+                        var expiryText = expiryDate.HasValue ? $" (expires {expiryDate:yyyy-MM-dd HH:mm})" : " (permanent)";
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Added account '{name}' to bank command blacklist: {reason}{expiryText}", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'player' or 'account'", ChatMessageType.System));
+                    }
+                    break;
+
+                case "remove":
+                    if (parameters.Length < 3)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit bankban remove <player|account> <name>", ChatMessageType.System));
+                        return;
+                    }
+
+                    var removeType = parameters[1].ToLower();
+                    var removeName = parameters[2];
+
+                    if (removeType == "player")
+                    {
+                        TransferLogger.RemovePlayerFromBankBlacklist(removeName);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed player '{removeName}' from bank command blacklist", ChatMessageType.System));
+                    }
+                    else if (removeType == "account")
+                    {
+                        TransferLogger.RemoveAccountFromBankBlacklist(removeName);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed account '{removeName}' from bank command blacklist", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'player' or 'account'", ChatMessageType.System));
+                    }
+                    break;
+
+                case "list":
+                    var blacklistedPlayers = TransferLogger.GetBankBlacklistedPlayers();
+                    
+                    if (blacklistedPlayers.Count == 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("No players are currently blacklisted from bank commands.", ChatMessageType.System));
+                        return;
+                    }
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Bank Command Blacklist ({blacklistedPlayers.Count} entries):", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+
+                    foreach (var entry in blacklistedPlayers)
+                    {
+                        var entryName = entry.PlayerName ?? entry.AccountName;
+                        var entryType = entry.PlayerName != null ? "Player" : "Account";
+                        var expiryText = entry.ExpiryDate.HasValue ? $" (expires {entry.ExpiryDate:yyyy-MM-dd HH:mm})" : " (permanent)";
+                        var message = $"{entryType}: {entryName} - {entry.Reason} (added by {entry.AddedBy} on {entry.CreatedDate:yyyy-MM-dd HH:mm}){expiryText}";
+                        session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+                    }
+                    break;
+
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown action: {action}", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Available actions: add, remove, list", ChatMessageType.System));
+                    break;
+            }
+        }
 
         // adminvision { on | off | toggle | check}
         [CommandHandler("adminvision", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
@@ -4976,5 +6045,6 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a quest name.", ChatMessageType.Broadcast));
             }
         }
+
     }
 }
