@@ -586,6 +586,57 @@ namespace ACE.Server.Managers
             }
         }
 
+        public static void LogGroundPickup(Player player, WorldObject item)
+        {
+            try
+            {
+                log.Info($"LogGroundPickup called: {player.Name} picked up {item.Name} x{item.StackSize ?? 1}");
+                
+                // Only log if item tracking is enabled and this item should be tracked
+                if (!Config.EnableItemTracking)
+                {
+                    log.Info("Skipping ground pickup logging - item tracking disabled");
+                    return;
+                }
+
+                if (!ShouldTrackItem(item.Name))
+                {
+                    log.Info($"Skipping ground pickup logging for untracked item: {item.Name}");
+                    return;
+                }
+
+                // Ensure database is migrated before logging
+                EnsureDatabaseMigrated();
+
+                var transferLog = new TransferLog
+                {
+                    TransferType = "Ground Pickup",
+                    FromPlayerName = "Ground",
+                    FromPlayerAccount = "Ground",
+                    ToPlayerName = player.Name,
+                    ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                    ItemName = item.Name,
+                    Quantity = item.StackSize ?? 1,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = null, // Ground doesn't have account creation date
+                    ToAccountCreatedDate = player.Account?.CreateTime,
+                    FromCharacterCreatedDate = null, // Ground doesn't have character creation date
+                    ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                    FromPlayerIP = null, // Ground doesn't have IP
+                    ToPlayerIP = GetPlayerIP(player)
+                };
+
+                // Process in background to avoid blocking the main thread
+                Task.Run(() => ProcessTransferLogBackground(transferLog));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Ground pickup logging failed: {ex.Message}");
+                log.Error($"Stack trace: {ex.StackTrace}");
+                // Continue without logging - don't break the pickup
+            }
+        }
+
         private static bool ShouldSkipLogging(Player fromPlayer, Player toPlayer)
         {
             lock (_lock)

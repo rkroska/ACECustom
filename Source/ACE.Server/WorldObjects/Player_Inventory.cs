@@ -1141,6 +1141,19 @@ namespace ACE.Server.WorldObjects
                                     log.Debug($"[CORPSE] {Name} (0x{Guid}) picked up {item.Name} (0x{item.Guid}) from {itemRootOwner.Name} (0x{itemRootOwner.Guid})");
                                     item.SaveBiotaToDatabase();
                                 }
+
+                                // Log ground pickup for transfer monitoring
+                                if (itemRootOwner == null) // Item was on the ground (not from a container or corpse)
+                                {
+                                    try
+                                    {
+                                        TransferLogger.LogGroundPickup(this, item);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging ground pickup: {ex.Message}");
+                                    }
+                                }
                             }
 
                             if (PropertyManager.GetBool("house_hook_limit").Item)
