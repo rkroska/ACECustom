@@ -19,6 +19,8 @@ namespace ACE.Server.Entity
     public class DamageEvent
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        private const float DefaultSplitArrowDamageMultiplier = 0.6f;
 
         // factors:
         // - lifestone protection
@@ -254,6 +256,7 @@ namespace ACE.Server.Entity
 
             // damage before mitigation
             DamageBeforeMitigation = BaseDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
+            
 
             //Console.WriteLine($"[DEBUG] Damage Before Mitigation: {DamageBeforeMitigation}");
 
@@ -320,7 +323,6 @@ namespace ACE.Server.Entity
                     // Calculate damage before mitigation
                     DamageBeforeMitigation = BaseDamageMod.MaxDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod * CriticalDamageMod;
 
-                    //Console.WriteLine($"[DEBUG] Damage Before Mitigation (Critical): {DamageBeforeMitigation}");
 
                     CriticalDamageRatingMod = Creature.GetPositiveRatingMod(attacker.GetCritDamageRating());
 
@@ -411,6 +413,14 @@ namespace ACE.Server.Entity
 
             // calculate final output damage
             Damage = DamageBeforeMitigation * ArmorMod * ShieldMod * ResistanceMod * DamageResistanceRatingMod;
+
+            // Apply split arrow damage multiplier if this is a split arrow
+            if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
+            {
+                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 
+                                             DefaultSplitArrowDamageMultiplier);
+                Damage *= splitMultiplier;
+            }
 
             // NEW: Apply enrage damage reduction to the final output damage if the defender is a mob and enraged
             if (defender.IsEnraged && !(defender is Player))
