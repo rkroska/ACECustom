@@ -72,7 +72,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length < 1)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit <subcommand> [parameters] (or /ba)", ChatMessageType.Help));
-                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, bankban, help", ChatMessageType.Help));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, bankban, top, help", ChatMessageType.Help));
                 return;
             }
 
@@ -122,6 +122,9 @@ namespace ACE.Server.Command.Handlers
                     break;
                 case "bankban":
                     HandleBankBlacklist(session, subParams);
+                    break;
+                case "top":
+                    HandleTransferTop(session, subParams);
                     break;
                 case "help":
                     HandleTransferHelp(session, subParams);
@@ -495,6 +498,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items trackall <on|off> - Track all items or only listed items", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items enabled <on|off> - Enable/disable item tracking", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit ip <player> [days] - Show IP address patterns for transfers", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit top [days] - Show most active transfer participants", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit migrate - Create/update all transfer monitoring tables", ChatMessageType.System));
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
@@ -585,6 +589,44 @@ namespace ACE.Server.Command.Handlers
             catch (Exception ex)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Cleanup failed: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleTransferTop(Session session, string[] parameters)
+        {
+            var days = 7;
+            if (parameters.Length > 0 && int.TryParse(parameters[0], out var parsedDays))
+            {
+                days = parsedDays;
+            }
+
+            try
+            {
+                var cutoffDate = DateTime.UtcNow.AddDays(-days);
+                
+                // Get most active players by transfer count
+                var topPlayers = DatabaseManager.Shard.BaseDatabase.GetTopTransferParticipants(cutoffDate, 20);
+                
+                if (topPlayers.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"No transfer activity found in the last {days} days.", ChatMessageType.System));
+                    return;
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Top Transfer Participants (Last {days} days):", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+                
+                int rank = 1;
+                foreach (var player in topPlayers)
+                {
+                    var message = $"{rank,2}. {player.PlayerName,-20} | {player.TotalTransfers,3} transfers | {player.UniquePartners,2} partners | {player.TotalQuantity,6} items";
+                    session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+                    rank++;
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Error retrieving top transfer participants: {ex.Message}", ChatMessageType.System));
             }
         }
 
@@ -968,14 +1010,14 @@ namespace ACE.Server.Command.Handlers
         {
             try
             {
-                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_blacklist LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table exists", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM bank_command_blacklist LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ bank_command_blacklist table exists", ChatMessageType.System));
             }
             catch
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_blacklist table...", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating bank_command_blacklist table...", ChatMessageType.System));
                 context.Database.ExecuteSqlRaw(@"
-                    CREATE TABLE `transfer_blacklist` (
+                    CREATE TABLE `bank_command_blacklist` (
                         `Id` int(11) NOT NULL AUTO_INCREMENT,
                         `PlayerName` varchar(255) NOT NULL,
                         `AccountName` varchar(255) DEFAULT NULL,
@@ -985,13 +1027,13 @@ namespace ACE.Server.Command.Handlers
                         `ExpiryDate` datetime(6) DEFAULT NULL,
                         `IsActive` tinyint(1) NOT NULL DEFAULT '1',
                         PRIMARY KEY (`Id`),
-                        KEY `IX_transfer_blacklist_PlayerName` (`PlayerName`),
-                        KEY `IX_transfer_blacklist_AccountName` (`AccountName`),
-                        KEY `IX_transfer_blacklist_IsActive` (`IsActive`),
-                        KEY `IX_transfer_blacklist_ExpiryDate` (`ExpiryDate`)
+                        KEY `IX_bank_command_blacklist_PlayerName` (`PlayerName`),
+                        KEY `IX_bank_command_blacklist_AccountName` (`AccountName`),
+                        KEY `IX_bank_command_blacklist_IsActive` (`IsActive`),
+                        KEY `IX_bank_command_blacklist_ExpiryDate` (`ExpiryDate`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ bank_command_blacklist table created", ChatMessageType.System));
             }
         }
 

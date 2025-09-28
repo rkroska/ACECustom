@@ -945,6 +945,50 @@ namespace ACE.Database
             }
         }
 
+        public List<TransferParticipantStats> GetTopTransferParticipants(DateTime cutoffDate, int limit = 20)
+        {
+            using (var context = new ShardDbContext())
+            {
+                var fromPlayers = context.TransferLogs
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .GroupBy(t => t.FromPlayerName)
+                    .Select(g => new TransferParticipantStats
+                    {
+                        PlayerName = g.Key,
+                        TotalTransfers = g.Count(),
+                        UniquePartners = g.Select(t => t.ToPlayerName).Distinct().Count(),
+                        TotalQuantity = g.Sum(t => t.Quantity)
+                    });
+
+                var toPlayers = context.TransferLogs
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .GroupBy(t => t.ToPlayerName)
+                    .Select(g => new TransferParticipantStats
+                    {
+                        PlayerName = g.Key,
+                        TotalTransfers = g.Count(),
+                        UniquePartners = g.Select(t => t.FromPlayerName).Distinct().Count(),
+                        TotalQuantity = g.Sum(t => t.Quantity)
+                    });
+
+                // Combine both directions and aggregate
+                var allParticipants = fromPlayers.Concat(toPlayers)
+                    .GroupBy(p => p.PlayerName)
+                    .Select(g => new TransferParticipantStats
+                    {
+                        PlayerName = g.Key,
+                        TotalTransfers = g.Sum(p => p.TotalTransfers),
+                        UniquePartners = g.Max(p => p.UniquePartners), // Take max since we're looking at unique partners
+                        TotalQuantity = g.Sum(p => p.TotalQuantity)
+                    })
+                    .OrderByDescending(p => p.TotalTransfers)
+                    .Take(limit)
+                    .ToList();
+
+                return allParticipants;
+            }
+        }
+
         // Transfer Summary methods
         public List<TransferSummary> GetTransferSummaries(string playerName, DateTime cutoffDate)
         {

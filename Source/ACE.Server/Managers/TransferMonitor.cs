@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using ACE.Database.Models.Shard;
 using ACE.Server.WorldObjects;
 using ACE.Server.Managers;
@@ -24,8 +25,8 @@ namespace ACE.Server.Managers
         {
             try
             {
-                // Update counters
-                transfersLastMinute++;
+                // Update counters (thread-safe)
+                Interlocked.Increment(ref transfersLastMinute);
                 // Note: Suspicious and value tracking removed - focusing on account/character age patterns
 
 
@@ -43,68 +44,72 @@ namespace ACE.Server.Managers
         {
             var now = DateTime.UtcNow;
 
-            // Reset counters based on time windows
+            // Reset counters based on time windows (thread-safe)
             if (now - lastMinuteReset >= TimeSpan.FromMinutes(1))
             {
-                transfersLastMinute = 0;
+                Interlocked.Exchange(ref transfersLastMinute, 0);
                 lastMinuteReset = now;
             }
 
             if (now - lastHourReset >= TimeSpan.FromHours(1))
             {
-                suspiciousLastHour = 0;
+                Interlocked.Exchange(ref suspiciousLastHour, 0);
                 lastHourReset = now;
             }
 
             if (now - lastDayReset >= TimeSpan.FromDays(1))
             {
-                highValueLastDay = 0;
+                Interlocked.Exchange(ref highValueLastDay, 0);
                 lastDayReset = now;
             }
 
-            // Check for alert conditions
-            if (transfersLastMinute > 10)
+            // Check for alert conditions (thread-safe reads)
+            var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
+            var currentSuspicious = Interlocked.Add(ref suspiciousLastHour, 0);
+            var currentHighValue = Interlocked.Add(ref highValueLastDay, 0);
+
+            if (currentTransfers > 10)
             {
-                log.Warn($"High transfer rate detected: {transfersLastMinute} transfers in the last minute");
+                log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
             }
 
-            if (suspiciousLastHour > 5)
+            if (currentSuspicious > 5)
             {
-                log.Warn($"High suspicious activity detected: {suspiciousLastHour} suspicious transfers in the last hour");
+                log.Warn($"High suspicious activity detected: {currentSuspicious} suspicious transfers in the last hour");
             }
 
-            if (highValueLastDay > 3)
+            if (currentHighValue > 3)
             {
-                log.Warn($"High value activity detected: {highValueLastDay} high-value transfers in the last day");
+                log.Warn($"High value activity detected: {currentHighValue} high-value transfers in the last day");
             }
         }
 
-        // Public properties for admin commands
-        public static int TotalTransfersToday => transfersLastMinute;
-        public static int SuspiciousTransfersToday => suspiciousLastHour;
-        public static int TotalValueToday => highValueLastDay;
+        // Public properties for admin commands (thread-safe reads)
+        public static int TotalTransfersToday => Interlocked.Add(ref transfersLastMinute, 0);
+        public static int SuspiciousTransfersToday => Interlocked.Add(ref suspiciousLastHour, 0);
+        public static int TotalValueToday => Interlocked.Add(ref highValueLastDay, 0);
 
-        // Public methods for admin commands
+        // Public methods for admin commands (thread-safe reads)
         public static int GetTransferRate()
         {
-            return transfersLastMinute;
+            return Interlocked.Add(ref transfersLastMinute, 0);
         }
 
         public static int GetSuspiciousRate()
         {
-            return suspiciousLastHour;
+            return Interlocked.Add(ref suspiciousLastHour, 0);
         }
 
         public static int GetHighValueRate()
         {
-            return highValueLastDay;
+            return Interlocked.Add(ref highValueLastDay, 0);
         }
 
         public static void ResetCounters()
         {
-            transfersLastMinute = 0;
-            suspiciousLastHour = 0;
-            highValueLastDay = 0;
+            Interlocked.Exchange(ref transfersLastMinute, 0);
+            Interlocked.Exchange(ref suspiciousLastHour, 0);
+            Interlocked.Exchange(ref highValueLastDay, 0);
             lastMinuteReset = DateTime.UtcNow;
             lastHourReset = DateTime.UtcNow;
             lastDayReset = DateTime.UtcNow;
