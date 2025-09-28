@@ -593,22 +593,6 @@ namespace ACE.Server.WorldObjects
                 // This enables death message modification to prevent VirindiTank kill attribution issues
                 splitProj.SetProperty(PropertyBool.IsSplitArrow, true);
                     
-                    // Reduce damage for split arrows using cached damage multiplier
-                    var damageValue = splitProj.GetProperty(PropertyInt.Damage);
-                    if (damageValue.HasValue)
-                    {
-                        var reducedDamage = (int)(damageValue.Value * damageMultiplier);
-                        
-                        // Skip/destroy projectiles with zero or non-positive reduced damage
-                        if (reducedDamage <= 0)
-                        {
-                            splitProj.Destroy();
-                            continue;
-                        }
-                        
-                        splitProj.SetProperty(PropertyInt.Damage, reducedDamage);
-                    }
-                    
                     // Calculate velocity to new target using the SAME method as main arrows
                     // Each split arrow needs its own aim level and spawn origin based on its target distance
                     var splitAimVelocity = GetAimVelocity(splitTarget, cachedSpeed);
