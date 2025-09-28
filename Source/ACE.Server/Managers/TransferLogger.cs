@@ -24,6 +24,19 @@ namespace ACE.Server.Managers
         private const string TransferTypeBankTransfer = "Bank Transfer";
         private const string TransferTypeDirectGive = "Direct Give";
         private const string TransferTypeTrade = "Trade";
+        private const string TransferTypeGroundPickup = "Ground Pickup";
+        
+        // Value calculation constants
+        private const int DefaultItemValue = 100;
+        private const int ChunkValue = 1000;
+        private const int IngotValue = 500;
+        
+        // Display limits
+        private const int MaxTransferLogDisplayCount = 20;
+        private const int MaxTransferPatternDisplayCount = 20;
+        
+        // Retry and delay constants
+        private const int DatabaseRetryDelayMs = 100;
 
         private static void SendAdminMessage(string message)
         {
@@ -610,7 +623,7 @@ namespace ACE.Server.Managers
 
                 var transferLog = new TransferLog
                 {
-                    TransferType = "Ground Pickup",
+                    TransferType = TransferTypeGroundPickup,
                     FromPlayerName = "Ground",
                     FromPlayerAccount = "Ground",
                     ToPlayerName = player.Name,
@@ -649,154 +662,10 @@ namespace ACE.Server.Managers
         }
 
 
-        // Async version of SendAdminMessage
-        private static async Task SendAdminMessageAsync(string message)
-        {
-            try
-            {
-                var adminPlayers = PlayerManager.GetAllPlayers().Where(p => p is Player player && player.Account?.AccessLevel >= (uint)AccessLevel.Advocate);
-                foreach (var admin in adminPlayers)
-                {
-                    if (admin is Player adminPlayer)
-                    {
-                        adminPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
-                    }
-                }
-                await Task.CompletedTask.ConfigureAwait(false); // Placeholder for async operation
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Error sending admin message: {ex.Message}");
-            }
-        }
-
-        // Async version of UpdateTransferSummary
-        private static async Task UpdateTransferSummaryAsync(TransferLog transferLog)
-        {
-            try
-            {
-                using var context = new ShardDbContext();
-                var summary = await context.TransferSummaries
-                    .FirstOrDefaultAsync(s => s.FromPlayerName == transferLog.FromPlayerName && 
-                                        s.ToPlayerName == transferLog.ToPlayerName && 
-                                        s.TransferType == transferLog.TransferType).ConfigureAwait(false);
-
-                if (summary == null)
-                {
-                    summary = new TransferSummary
-                    {
-                        FromPlayerName = transferLog.FromPlayerName,
-                        FromPlayerAccount = transferLog.FromPlayerAccount,
-                        ToPlayerName = transferLog.ToPlayerName,
-                        ToPlayerAccount = transferLog.ToPlayerAccount,
-                        TransferType = transferLog.TransferType,
-                        TotalTransfers = 0,
-                        TotalQuantity = 0,
-                        TotalValue = 0,
-                        SuspiciousTransfers = 0,
-                        CreatedDate = DateTime.UtcNow
-                    };
-                    context.TransferSummaries.Add(summary);
-                }
-
-                // Update totals
-                summary.TotalTransfers++;
-                summary.TotalQuantity += transferLog.Quantity;
-                summary.LastTransfer = transferLog.Timestamp;
-
-                if (summary.FirstTransfer == DateTime.MinValue)
-                    summary.FirstTransfer = transferLog.Timestamp;
-
-                summary.UpdatedDate = DateTime.UtcNow;
-                await context.SaveChangesAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Error updating transfer summary: {ex.Message}");
-            }
-        }
 
 
 
-        private static async Task CreateTrackedItemsTableAsync(ShardDbContext context)
-        {
-            try
-            {
-                await context.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE IF NOT EXISTS `tracked_items` (
-                        `Id` int NOT NULL AUTO_INCREMENT,
-                        `ItemName` varchar(255) NOT NULL,
-                        `CreatedDate` datetime(6) NOT NULL,
-                        PRIMARY KEY (`Id`),
-                        UNIQUE KEY `IX_tracked_items_ItemName` (`ItemName`)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci").ConfigureAwait(false);
-                
-                log.Info("tracked_items table created successfully");
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Error creating tracked_items table: {ex.Message}");
-            }
-        }
 
-        private static async Task CreateTransferMonitoringConfigsTableAsync(ShardDbContext context)
-        {
-            try
-            {
-                await context.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE IF NOT EXISTS `transfer_monitoring_configs` (
-                        `Id` int NOT NULL AUTO_INCREMENT,
-                        `SuspiciousTransferThreshold` int NOT NULL DEFAULT '100000',
-                        `TimeWindowHours` int NOT NULL DEFAULT '24',
-                        `PatternDetectionThreshold` int NOT NULL DEFAULT '10',
-                        `EnableTransferLogging` tinyint(1) NOT NULL DEFAULT '1',
-                        `EnableSuspiciousDetection` tinyint(1) NOT NULL DEFAULT '1',
-                        `EnableAdminNotifications` tinyint(1) NOT NULL DEFAULT '1',
-                        `EnableTransferSummaries` tinyint(1) NOT NULL DEFAULT '1',
-                        `EnableTransferLogs` tinyint(1) NOT NULL DEFAULT '1',
-                        `EnableItemTracking` tinyint(1) NOT NULL DEFAULT '1',
-                        `TrackAllItems` tinyint(1) NOT NULL DEFAULT '0',
-                        `CreatedDate` datetime(6) NOT NULL,
-                        `UpdatedDate` datetime(6) NOT NULL,
-                        PRIMARY KEY (`Id`)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci").ConfigureAwait(false);
-                
-                log.Info("transfer_monitoring_configs table created successfully");
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Error creating transfer_monitoring_configs table: {ex.Message}");
-            }
-        }
-
-        private static async Task CreateBankCommandBlacklistTableAsync(ShardDbContext context)
-        {
-            try
-            {
-                await context.Database.ExecuteSqlRawAsync(@"
-                    CREATE TABLE IF NOT EXISTS `transfer_blacklist` (
-                        `Id` int NOT NULL AUTO_INCREMENT,
-                        `PlayerName` varchar(255) DEFAULT NULL,
-                        `AccountName` varchar(255) DEFAULT NULL,
-                        `Reason` varchar(255) NOT NULL,
-                        `AddedBy` varchar(255) NOT NULL,
-                        `CreatedDate` datetime(6) NOT NULL,
-                        `ExpiryDate` datetime(6) DEFAULT NULL,
-                        `IsActive` tinyint(1) NOT NULL DEFAULT '1',
-                        PRIMARY KEY (`Id`),
-                        KEY `IX_transfer_blacklist_PlayerName` (`PlayerName`),
-                        KEY `IX_transfer_blacklist_AccountName` (`AccountName`),
-                        KEY `IX_transfer_blacklist_IsActive` (`IsActive`),
-                        KEY `IX_transfer_blacklist_ExpiryDate` (`ExpiryDate`)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci").ConfigureAwait(false);
-                
-                log.Info("transfer_blacklist table created successfully");
-            }
-            catch (Exception ex)
-            {
-                    log.Error($"Error creating transfer_blacklist table: {ex.Message}");
-            }
-        }
 
         private static void UpdateTransferSummary(TransferLog transferLog)
         {
@@ -855,11 +724,11 @@ namespace ACE.Server.Managers
             if (item.Name.Contains("Pyreal"))
                 return quantity;
             if (item.Name.Contains("Chunk"))
-                return quantity * 1000;
+                return quantity * ChunkValue;
             if (item.Name.Contains("Ingot"))
-                return quantity * 500;
+                return quantity * IngotValue;
             
-            return quantity * 100; // Default value
+            return quantity * DefaultItemValue;
         }
 
         private static bool ShouldTrackItem(string itemName)
@@ -884,64 +753,6 @@ namespace ACE.Server.Managers
             return ShouldTrackItem(transferLog.ItemName);
         }
 
-        // Async processing methods to prevent server lag
-        private static async Task ProcessTransferLogAsync(TransferLog transferLog)
-        {
-            try
-            {
-                // Save to database (async wrapper to prevent blocking)
-                await Task.Run(() => DatabaseManager.Shard.BaseDatabase.SaveTransferLog(transferLog)).ConfigureAwait(false);
-
-                // Update monitoring system (async wrapper to prevent blocking)
-                await Task.Run(() => TransferMonitor.RecordTransfer(transferLog)).ConfigureAwait(false);
-
-                // Update transfer summary (async wrapper to prevent blocking)
-                await Task.Run(() => UpdateTransferSummary(transferLog)).ConfigureAwait(false);
-
-                // Send admin notification (async)
-                var adminMessage = $"📦 {transferLog.FromPlayerName} -> {transferLog.ToPlayerName}: {transferLog.ItemName} x{transferLog.Quantity}";
-                await SendAdminMessageAsync(adminMessage).ConfigureAwait(false);
-            }
-            catch (DbUpdateException ex)
-            {
-                log.Error($"Database error during async transfer processing: {ex.Message}");
-                if (ex.InnerException != null)
-                {
-                    log.Error($"Inner exception: {ex.InnerException.Message}");
-                    log.Error($"Stack trace: {ex.InnerException.StackTrace}");
-                }
-                
-                // Force database migration on database errors
-                log.Info("Attempting database migration due to database error...");
-                lock (_lock)
-                {
-                    _databaseMigrated = false; // Reset flag to force migration
-                }
-                EnsureDatabaseMigrated();
-                
-                // Retry the database operation once after migration
-                try
-                {
-                    // Small delay to ensure database changes are committed
-                    await Task.Delay(100).ConfigureAwait(false);
-                    
-                    await Task.Run(() => DatabaseManager.Shard.BaseDatabase.SaveTransferLog(transferLog)).ConfigureAwait(false);
-                    log.Info("Transfer log saved successfully after migration");
-                }
-                catch (Exception retryEx)
-                {
-                    log.Error($"Retry failed after migration: {retryEx.Message}");
-                    if (retryEx.InnerException != null)
-                    {
-                        log.Error($"Retry inner exception: {retryEx.InnerException.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Unexpected error during async transfer processing: {ex.Message}");
-            }
-        }
 
         // Background processing methods to prevent server lag
         private static void ProcessTransferLogBackground(TransferLog transferLog)
@@ -972,64 +783,6 @@ namespace ACE.Server.Managers
             }
         }
 
-        // Async version of trade log processing
-        private static async Task ProcessTradeLogAsync(TransferLog transferLog, TransferLog reverseTransferLog, Player player1, Player player2, long player1Value, long player2Value)
-        {
-            try
-            {
-                // Ensure database is migrated before processing
-                EnsureDatabaseMigrated();
-
-                // Save both transfers to database (async wrapper to prevent blocking)
-                await Task.Run(() => DatabaseManager.Shard.BaseDatabase.SaveTransferLog(transferLog)).ConfigureAwait(false);
-                await Task.Run(() => DatabaseManager.Shard.BaseDatabase.SaveTransferLog(reverseTransferLog)).ConfigureAwait(false);
-
-                // Update monitoring system for both transfers (async wrapper to prevent blocking)
-                await Task.Run(() => TransferMonitor.RecordTransfer(transferLog)).ConfigureAwait(false);
-                await Task.Run(() => TransferMonitor.RecordTransfer(reverseTransferLog)).ConfigureAwait(false);
-
-                // Update transfer summaries for both transfers (async wrapper to prevent blocking)
-                await Task.Run(() => UpdateTransferSummary(transferLog)).ConfigureAwait(false);
-                await Task.Run(() => UpdateTransferSummary(reverseTransferLog)).ConfigureAwait(false);
-
-                // Send admin notification (async)
-                var adminMessage = $"🔄 TRADE: {player1.Name} <-> {player2.Name}: {transferLog.ItemName} x{transferLog.Quantity}";
-                await SendAdminMessageAsync(adminMessage).ConfigureAwait(false);
-            }
-            catch (DbUpdateException ex)
-            {
-                log.Error($"Database error during async trade processing: {ex.Message}");
-                if (ex.InnerException != null)
-                {
-                    log.Error($"Inner exception: {ex.InnerException.Message}");
-                    log.Error($"Stack trace: {ex.InnerException.StackTrace}");
-                }
-                
-                // Force database migration on database errors
-                log.Info("Attempting database migration due to database error...");
-                lock (_lock)
-                {
-                    _databaseMigrated = false; // Reset flag to force migration
-                }
-                EnsureDatabaseMigrated();
-                
-                // Retry the database operation once after migration
-                try
-                {
-                    await Task.Run(() => DatabaseManager.Shard.BaseDatabase.SaveTransferLog(transferLog)).ConfigureAwait(false);
-                    await Task.Run(() => DatabaseManager.Shard.BaseDatabase.SaveTransferLog(reverseTransferLog)).ConfigureAwait(false);
-                    log.Info("Trade logs saved successfully after migration");
-                }
-                catch (Exception retryEx)
-                {
-                    log.Error($"Retry failed after migration: {retryEx.Message}");
-                }
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Unexpected error during async trade processing: {ex.Message}");
-            }
-        }
 
         private static void ProcessTradeLogBackground(TransferLog transferLog, TransferLog reverseTransferLog, Player player1, Player player2, long player1Value, long player2Value)
         {

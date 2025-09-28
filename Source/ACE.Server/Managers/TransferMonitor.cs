@@ -20,6 +20,9 @@ namespace ACE.Server.Managers
         private static DateTime lastMinuteReset = DateTime.UtcNow;
         private static DateTime lastHourReset = DateTime.UtcNow;
         private static DateTime lastDayReset = DateTime.UtcNow;
+        
+        // Lock to guard DateTime field access and reset logic
+        private static readonly object resetLock = new object();
 
         public static void RecordTransfer(TransferLog transferLog)
         {
@@ -44,44 +47,38 @@ namespace ACE.Server.Managers
         {
             var now = DateTime.UtcNow;
 
-            // Reset counters based on time windows (thread-safe)
-            if (now - lastMinuteReset >= TimeSpan.FromMinutes(1))
+            // Reset counters based on time windows (atomic check-and-reset)
+            lock (resetLock)
             {
-                Interlocked.Exchange(ref transfersLastMinute, 0);
-                lastMinuteReset = now;
-            }
+                if (now - lastMinuteReset >= TimeSpan.FromMinutes(1))
+                {
+                    Interlocked.Exchange(ref transfersLastMinute, 0);
+                    lastMinuteReset = now;
+                }
 
-            if (now - lastHourReset >= TimeSpan.FromHours(1))
-            {
-                Interlocked.Exchange(ref suspiciousLastHour, 0);
-                lastHourReset = now;
-            }
+                if (now - lastHourReset >= TimeSpan.FromHours(1))
+                {
+                    Interlocked.Exchange(ref suspiciousLastHour, 0);
+                    lastHourReset = now;
+                }
 
-            if (now - lastDayReset >= TimeSpan.FromDays(1))
-            {
-                Interlocked.Exchange(ref highValueLastDay, 0);
-                lastDayReset = now;
+                if (now - lastDayReset >= TimeSpan.FromDays(1))
+                {
+                    Interlocked.Exchange(ref highValueLastDay, 0);
+                    lastDayReset = now;
+                }
             }
 
             // Check for alert conditions (thread-safe reads)
             var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
-            var currentSuspicious = Interlocked.Add(ref suspiciousLastHour, 0);
-            var currentHighValue = Interlocked.Add(ref highValueLastDay, 0);
 
             if (currentTransfers > 10)
             {
                 log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
             }
 
-            if (currentSuspicious > 5)
-            {
-                log.Warn($"High suspicious activity detected: {currentSuspicious} suspicious transfers in the last hour");
-            }
-
-            if (currentHighValue > 3)
-            {
-                log.Warn($"High value activity detected: {currentHighValue} high-value transfers in the last day");
-            }
+            // Note: Suspicious and high-value alerting disabled pending reimplementation
+            // The counters are never incremented, so these alerts would be misleading
         }
 
         // Public properties for admin commands (thread-safe reads)
@@ -107,12 +104,15 @@ namespace ACE.Server.Managers
 
         public static void ResetCounters()
         {
-            Interlocked.Exchange(ref transfersLastMinute, 0);
-            Interlocked.Exchange(ref suspiciousLastHour, 0);
-            Interlocked.Exchange(ref highValueLastDay, 0);
-            lastMinuteReset = DateTime.UtcNow;
-            lastHourReset = DateTime.UtcNow;
-            lastDayReset = DateTime.UtcNow;
+            lock (resetLock)
+            {
+                Interlocked.Exchange(ref transfersLastMinute, 0);
+                Interlocked.Exchange(ref suspiciousLastHour, 0);
+                Interlocked.Exchange(ref highValueLastDay, 0);
+                lastMinuteReset = DateTime.UtcNow;
+                lastHourReset = DateTime.UtcNow;
+                lastDayReset = DateTime.UtcNow;
+            }
         }
     }
 }

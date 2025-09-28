@@ -41,6 +41,7 @@ namespace ACE.Server.Command.Handlers
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         
         private const int MaxTransferLogDisplayCount = 20;
+        private const int DefaultTransferPatternDays = 7;
 
         // // commandname parameters
         // [CommandHandler("commandname", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0)]
@@ -204,9 +205,9 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
             }
 
-            if (transfers.Count > 20)
+            if (transfers.Count > MaxTransferLogDisplayCount)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"... and {transfers.Count - 20} more suspicious transfers", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"... and {transfers.Count - MaxTransferLogDisplayCount} more suspicious transfers", ChatMessageType.System));
             }
         }
 
@@ -219,7 +220,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             var playerName = parameters[0];
-            var days = 7;
+            var days = DefaultTransferPatternDays;
             if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays))
             {
                 days = parsedDays;
