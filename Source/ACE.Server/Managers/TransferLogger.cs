@@ -469,6 +469,12 @@ namespace ACE.Server.Managers
             {
                 log.Info($"LogDirectGive called: {fromPlayer.Name} -> {toPlayer.Name}, {item.Name} x{quantity}");
                 
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping direct give logging - transfer logging disabled");
+                    return;
+                }
+                
                 if (ShouldSkipLogging(fromPlayer, toPlayer))
                 {
                     log.Info("Skipping logging due to blacklist");
@@ -520,6 +526,12 @@ namespace ACE.Server.Managers
             try
             {
                 log.Info($"LogTrade called: {player1.Name} <-> {player2.Name}, {player1Escrow.Count} items each");
+                
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping trade logging - transfer logging disabled");
+                    return;
+                }
                 
                 if (ShouldSkipLogging(player1, player2))
                 {
@@ -604,6 +616,12 @@ namespace ACE.Server.Managers
             try
             {
                 log.Info($"LogGroundPickup called: {player.Name} picked up {item.Name} x{item.StackSize ?? 1}");
+                
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping ground pickup logging - transfer logging disabled");
+                    return;
+                }
                 
                 // Only log if item tracking is enabled and this item should be tracked
                 if (!Config.EnableItemTracking)

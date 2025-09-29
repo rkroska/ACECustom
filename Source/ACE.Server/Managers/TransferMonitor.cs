@@ -36,6 +36,14 @@ namespace ACE.Server.Managers
                 
                 // Update counters (thread-safe)
                 Interlocked.Increment(ref transfersLastMinute);
+                
+                // Evaluate alerts including this event
+                var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
+                if (currentTransfers > HighTransferRateThreshold)
+                {
+                    log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
+                }
+                
                 // Note: Suspicious and value tracking removed - focusing on account/character age patterns
             }
             catch (Exception ex)
@@ -71,14 +79,7 @@ namespace ACE.Server.Managers
                 }
             }
 
-            // Check for alert conditions (thread-safe reads)
-            var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
-
-            if (currentTransfers > HighTransferRateThreshold)
-            {
-                log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
-            }
-
+            // Alert evaluation handled in RecordTransfer() after increment
             // Note: Suspicious and high-value alerting disabled pending reimplementation
             // The counters are never incremented, so these alerts would be misleading
         }
