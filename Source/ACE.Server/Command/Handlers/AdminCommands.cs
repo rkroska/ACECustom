@@ -363,7 +363,7 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist add <player|account> <name> (or /ba blacklist add)", ChatMessageType.Help));
                         return;
                     }
-                    var name = parameters[2];
+                    var name = string.Join(" ", parameters.Skip(2));
                     if (type == "player")
                     {
                         TransferLogger.AddPlayerToBlacklist(name);
@@ -386,7 +386,7 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist remove <player|account> <name> (or /ba blacklist remove)", ChatMessageType.Help));
                         return;
                     }
-                    name = parameters[2];
+                    name = string.Join(" ", parameters.Skip(2));
                     if (type == "player")
                     {
                         TransferLogger.RemovePlayerFromBlacklist(name);
@@ -558,9 +558,9 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Total Transfers Today: {TransferMonitor.TotalTransfersToday}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Today: {TransferMonitor.SuspiciousTransfersToday}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Total Value Today: {TransferMonitor.TotalValueToday:N0} pyreals", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfers Last Minute: {TransferMonitor.TransfersLastMinute}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Last Hour: {TransferMonitor.SuspiciousLastHour}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Last Day: {TransferMonitor.HighValueLastDay:N0} pyreals", ChatMessageType.System));
         }
 
         private static void HandleTransferMonitor(Session session, string[] parameters)
@@ -569,10 +569,10 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Current Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Current Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Current High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Daily Totals:", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"  Transfers: {TransferMonitor.TotalTransfersToday}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"  Suspicious: {TransferMonitor.SuspiciousTransfersToday}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"  Total Value: {TransferMonitor.TotalValueToday:N0} pyreals", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Current Rate Counters:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Transfers Last Minute: {TransferMonitor.TransfersLastMinute}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  Suspicious Last Hour: {TransferMonitor.SuspiciousLastHour}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  High Value Last Day: {TransferMonitor.HighValueLastDay:N0} pyreals", ChatMessageType.System));
         }
 
         private static void HandleTransferCleanup(Session session, string[] parameters)

@@ -82,9 +82,9 @@ namespace ACE.Server.Managers
         }
 
         // Public properties for admin commands (thread-safe reads)
-        public static int TotalTransfersToday => Interlocked.Add(ref transfersLastMinute, 0);
-        public static int SuspiciousTransfersToday => Interlocked.Add(ref suspiciousLastHour, 0);
-        public static int TotalValueToday => Interlocked.Add(ref highValueLastDay, 0);
+        public static int TransfersLastMinute => Interlocked.Add(ref transfersLastMinute, 0);
+        public static int SuspiciousLastHour => Interlocked.Add(ref suspiciousLastHour, 0);
+        public static int HighValueLastDay => Interlocked.Add(ref highValueLastDay, 0);
 
         // Public methods for admin commands (thread-safe reads)
         public static int GetTransferRate()
