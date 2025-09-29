@@ -218,6 +218,7 @@ namespace ACE.Server.Managers
                             `CreatedDate` datetime(6) NOT NULL,
                             `UpdatedDate` datetime(6) NOT NULL,
                             PRIMARY KEY (`Id`),
+                            UNIQUE KEY `idx_transfer_summary_unique` (`FromPlayerName`,`ToPlayerName`,`TransferType`),
                             KEY `IX_transfer_summaries_FromPlayerName` (`FromPlayerName`),
                             KEY `IX_transfer_summaries_ToPlayerName` (`ToPlayerName`),
                             KEY `IX_transfer_summaries_LastTransfer` (`LastTransfer`),
@@ -225,6 +226,19 @@ namespace ACE.Server.Managers
                         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                     
                     log.Info("transfer_summaries table created successfully");
+                    
+                    // Add unique index for existing tables
+                    try
+                    {
+                        context.Database.ExecuteSqlRaw(@"
+                            CREATE UNIQUE INDEX IF NOT EXISTS `idx_transfer_summary_unique`
+                            ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
+                        log.Info("Unique index added to transfer_summaries table");
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Info($"Unique index may already exist: {ex.Message}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -407,7 +421,7 @@ namespace ACE.Server.Managers
                 // Get the destination player if they're online
                 var toPlayer = PlayerManager.GetAllPlayers().FirstOrDefault(p => p.Name == toPlayerName) as Player;
                 
-                if (ShouldSkipLogging(fromPlayer, toPlayer))
+                if (ShouldSkipLogging(fromPlayer, toPlayer, toPlayerName))
                 {
                     log.Info("Skipping logging due to blacklist");
                     return;
@@ -668,12 +682,13 @@ namespace ACE.Server.Managers
             }
         }
 
-        private static bool ShouldSkipLogging(Player fromPlayer, Player toPlayer)
+        private static bool ShouldSkipLogging(Player fromPlayer, Player toPlayer, string toPlayerName = null)
         {
             lock (_lock)
             {
+                var toName = toPlayer?.Name ?? toPlayerName ?? "";
                 return _blacklistedPlayers.Contains(fromPlayer.Name) ||
-                       _blacklistedPlayers.Contains(toPlayer?.Name ?? "") ||
+                       _blacklistedPlayers.Contains(toName) ||
                        _blacklistedAccounts.Contains(fromPlayer.Account?.AccountName ?? "") ||
                        _blacklistedAccounts.Contains(toPlayer?.Account?.AccountName ?? "");
             }
