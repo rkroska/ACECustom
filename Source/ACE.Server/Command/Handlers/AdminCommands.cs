@@ -42,6 +42,7 @@ namespace ACE.Server.Command.Handlers
         
         private const int MaxTransferLogDisplayCount = 20;
         private const int DefaultTransferPatternDays = 7;
+        private const int SeparatorLineLength = 80;
 
         // // commandname parameters
         // [CommandHandler("commandname", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0)]
@@ -161,7 +162,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer History for {playerName} (Last {days} days):", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(SeparatorLineLength, '='), ChatMessageType.System));
 
             foreach (var transfer in transfers.Take(MaxTransferLogDisplayCount)) // Limit to most recent
             {
@@ -197,7 +198,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Transfers (Last {days} days):", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(SeparatorLineLength, '='), ChatMessageType.System));
 
             foreach (var transfer in transfers.Take(MaxTransferLogDisplayCount)) // Limit to most recent
             {
@@ -235,7 +236,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Patterns for {playerName} (Last {days} days):", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(SeparatorLineLength, '='), ChatMessageType.System));
 
             foreach (var pattern in patterns.Take(MaxTransferLogDisplayCount)) // Limit to most recent
             {
@@ -615,7 +616,7 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Top Transfer Participants (Last {days} days):", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(SeparatorLineLength, '='), ChatMessageType.System));
                 
                 int rank = 1;
                 foreach (var player in topPlayers)
@@ -1011,14 +1012,14 @@ namespace ACE.Server.Command.Handlers
         {
             try
             {
-                context.Database.ExecuteSqlRaw("SELECT 1 FROM bank_command_blacklist LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ bank_command_blacklist table exists", ChatMessageType.System));
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_blacklist LIMIT 1");
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table exists", ChatMessageType.System));
             }
             catch
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Creating bank_command_blacklist table...", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Creating transfer_blacklist table...", ChatMessageType.System));
                 context.Database.ExecuteSqlRaw(@"
-                    CREATE TABLE `bank_command_blacklist` (
+                    CREATE TABLE `transfer_blacklist` (
                         `Id` int(11) NOT NULL AUTO_INCREMENT,
                         `PlayerName` varchar(255) NOT NULL,
                         `AccountName` varchar(255) DEFAULT NULL,
@@ -1028,13 +1029,13 @@ namespace ACE.Server.Command.Handlers
                         `ExpiryDate` datetime(6) DEFAULT NULL,
                         `IsActive` tinyint(1) NOT NULL DEFAULT '1',
                         PRIMARY KEY (`Id`),
-                        KEY `IX_bank_command_blacklist_PlayerName` (`PlayerName`),
-                        KEY `IX_bank_command_blacklist_AccountName` (`AccountName`),
-                        KEY `IX_bank_command_blacklist_IsActive` (`IsActive`),
-                        KEY `IX_bank_command_blacklist_ExpiryDate` (`ExpiryDate`)
+                        KEY `IX_transfer_blacklist_PlayerName` (`PlayerName`),
+                        KEY `IX_transfer_blacklist_AccountName` (`AccountName`),
+                        KEY `IX_transfer_blacklist_IsActive` (`IsActive`),
+                        KEY `IX_transfer_blacklist_ExpiryDate` (`ExpiryDate`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ bank_command_blacklist table created", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table created", ChatMessageType.System));
             }
         }
 
@@ -1110,7 +1111,7 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     var removeType = parameters[1].ToLower();
-                    var removeName = parameters[2];
+                    var removeName = string.Join(" ", parameters.Skip(2));
 
                     if (removeType == "player")
                     {
@@ -1138,7 +1139,7 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Bank Command Blacklist ({blacklistedPlayers.Count} entries):", ChatMessageType.System));
-                    session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(80, '='), ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(SeparatorLineLength, '='), ChatMessageType.System));
 
                     foreach (var entry in blacklistedPlayers)
                     {

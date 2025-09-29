@@ -23,18 +23,20 @@ namespace ACE.Server.Managers
         
         // Lock to guard DateTime field access and reset logic
         private static readonly object resetLock = new object();
+        
+        // Alert thresholds
+        private const int HighTransferRateThreshold = 10;
 
         public static void RecordTransfer(TransferLog transferLog)
         {
             try
             {
+                // Align windows first to avoid dropping the first event of a fresh window
+                CheckForAlerts();
+                
                 // Update counters (thread-safe)
                 Interlocked.Increment(ref transfersLastMinute);
                 // Note: Suspicious and value tracking removed - focusing on account/character age patterns
-
-
-                // Check for alerts
-                CheckForAlerts();
             }
             catch (Exception ex)
             {
@@ -72,7 +74,7 @@ namespace ACE.Server.Managers
             // Check for alert conditions (thread-safe reads)
             var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
 
-            if (currentTransfers > 10)
+            if (currentTransfers > HighTransferRateThreshold)
             {
                 log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
             }

@@ -21,10 +21,10 @@ namespace ACE.Server.Managers
         private static readonly HashSet<string> _blacklistedAccounts = new HashSet<string>();
         
         // Transfer type constants
-        private const string TransferTypeBankTransfer = "Bank Transfer";
-        private const string TransferTypeDirectGive = "Direct Give";
-        private const string TransferTypeTrade = "Trade";
-        private const string TransferTypeGroundPickup = "Ground Pickup";
+        public const string TransferTypeBankTransfer = "Bank Transfer";
+        public const string TransferTypeDirectGive = "Direct Give";
+        public const string TransferTypeTrade = "Trade";
+        public const string TransferTypeGroundPickup = "Ground Pickup";
         
         // Value calculation constants
         private const int DefaultItemValue = 100;
@@ -1349,7 +1349,6 @@ namespace ACE.Server.Managers
                 return new List<BankCommandBlacklist>();
             }
         }
-
 
 
     }

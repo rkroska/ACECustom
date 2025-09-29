@@ -1013,6 +1013,16 @@ namespace ACE.Database
             }
         }
 
+        public List<TransferLog> GetTransferPatterns(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
 
 
         // Cleanup methods
@@ -1045,17 +1055,6 @@ namespace ACE.Database
                     context.SaveChanges();
                     log.Info($"Cleaned up {count} old transfer summaries older than {daysToKeep} days");
                 }
-            }
-        }
-
-        public List<TransferLog> GetTransferPatterns(string playerName, DateTime cutoffDate)
-        {
-            using (var context = new ShardDbContext())
-            {
-                return context.TransferLogs
-                    .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
-                    .OrderByDescending(t => t.Timestamp)
-                    .ToList();
             }
         }
     }
