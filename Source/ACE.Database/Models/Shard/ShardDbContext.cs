@@ -82,7 +82,12 @@ namespace ACE.Database.Models.Shard
         {
             // Configure transfer logging tables
             modelBuilder.Entity<TransferLog>().ToTable("transfer_logs");
-            modelBuilder.Entity<TransferSummary>().ToTable("transfer_summaries");
+            modelBuilder.Entity<TransferSummary>(entity =>
+            {
+                entity.ToTable("transfer_summaries");
+                entity.HasIndex(e => new { e.FromPlayerName, e.ToPlayerName, e.TransferType }, "idx_transfer_summary_unique")
+                    .IsUnique();
+            });
             modelBuilder.Entity<TrackedItem>().ToTable("tracked_items");
             modelBuilder.Entity<TransferMonitoringConfigDb>().ToTable("transfer_monitoring_configs");
             modelBuilder.Entity<BankCommandBlacklist>().ToTable("transfer_blacklist");

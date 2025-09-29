@@ -693,39 +693,33 @@ namespace ACE.Server.Managers
                 EnsureDatabaseMigrated();
                 
                 using var context = new ShardDbContext();
-                var summary = context.TransferSummaries
-                    .FirstOrDefault(s => s.FromPlayerName == transferLog.FromPlayerName && 
-                                        s.ToPlayerName == transferLog.ToPlayerName && 
-                                        s.TransferType == transferLog.TransferType);
-
-                if (summary == null)
-                {
-                    summary = new TransferSummary
-                    {
-                        FromPlayerName = transferLog.FromPlayerName,
-                        FromPlayerAccount = transferLog.FromPlayerAccount,
-                        ToPlayerName = transferLog.ToPlayerName,
-                        ToPlayerAccount = transferLog.ToPlayerAccount,
-                        TransferType = transferLog.TransferType,
-                        TotalTransfers = 0,
-                        TotalQuantity = 0,
-                        TotalValue = 0,
-                        SuspiciousTransfers = 0,
-                        CreatedDate = DateTime.UtcNow
-                    };
-                    context.TransferSummaries.Add(summary);
-                }
-
-                // Update totals
-                summary.TotalTransfers++;
-                summary.TotalQuantity += transferLog.Quantity;
-                summary.LastTransfer = transferLog.Timestamp;
-
-                if (summary.FirstTransfer == DateTime.MinValue)
-                    summary.FirstTransfer = transferLog.Timestamp;
-
-                summary.UpdatedDate = DateTime.UtcNow;
-                context.SaveChanges();
+                
+                // Use atomic SQL to avoid race conditions in concurrent updates
+                var sql = @"
+                    INSERT INTO transfer_summaries (
+                        FromPlayerName, FromPlayerAccount, ToPlayerName, ToPlayerAccount, 
+                        TransferType, TotalTransfers, TotalQuantity, TotalValue, 
+                        SuspiciousTransfers, IsSuspicious, FirstTransfer, LastTransfer, CreatedDate, UpdatedDate
+                    ) VALUES (
+                        {0}, {1}, {2}, {3},
+                        {4}, 1, {5}, 0,
+                        0, 0, {6}, {6}, {6}, {6}
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        TotalTransfers = TotalTransfers + 1,
+                        TotalQuantity = TotalQuantity + {5},
+                        LastTransfer = {6},
+                        UpdatedDate = {6},
+                        FirstTransfer = CASE WHEN FirstTransfer = '1970-01-01 00:00:00' THEN {6} ELSE FirstTransfer END";
+                
+                context.Database.ExecuteSqlRaw(sql,
+                    transferLog.FromPlayerName,
+                    transferLog.FromPlayerAccount ?? (object)DBNull.Value,
+                    transferLog.ToPlayerName,
+                    transferLog.ToPlayerAccount ?? (object)DBNull.Value,
+                    transferLog.TransferType,
+                    transferLog.Quantity,
+                    transferLog.Timestamp);
             }
             catch (Exception ex)
             {
@@ -790,9 +784,11 @@ namespace ACE.Server.Managers
                 UpdateTransferSummary(transferLog);
 
                 // Send admin notification (background thread)
-                var adminMessage = $"📦 {transferLog.FromPlayerName} -> {transferLog.ToPlayerName}: {transferLog.ItemName} x{transferLog.Quantity}";
-                
-                SendAdminMessage(adminMessage);
+                if (Config.EnableAdminNotifications)
+                {
+                    var adminMessage = $"TRANSFER: {transferLog.FromPlayerName} -> {transferLog.ToPlayerName}: {transferLog.ItemName} x{transferLog.Quantity}";
+                    SendAdminMessage(adminMessage);
+                }
             }
             catch (Exception ex)
             {
@@ -822,9 +818,11 @@ namespace ACE.Server.Managers
                 UpdateTransferSummary(reverseTransferLog);
 
                 // Send admin notification (background thread)
-                var adminMessage = $"🤝 TRADE: {player1.Name} <-> {player2.Name}: {transferLog.Quantity} items each (Values: {player1Value:N0} <-> {player2Value:N0})";
-                
-                SendAdminMessage(adminMessage);
+                if (Config.EnableAdminNotifications)
+                {
+                    var adminMessage = $"TRADE: {player1.Name} <-> {player2.Name}: {transferLog.Quantity} items each (Values: {player1Value:N0} <-> {player2Value:N0})";
+                    SendAdminMessage(adminMessage);
+                }
             }
             catch (Exception ex)
             {
