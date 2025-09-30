@@ -1,4 +1,7 @@
 using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -1575,6 +1578,44 @@ namespace ACE.Database.Models.Shard
             });
 
             OnModelCreatingPartial(modelBuilder);
+        }
+
+        public override int SaveChanges()
+        {
+            SetTimestamps();
+            return base.SaveChanges();
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SetTimestamps();
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+
+        private void SetTimestamps()
+        {
+            var entries = ChangeTracker.Entries()
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified);
+
+            foreach (var entry in entries)
+            {
+                var now = DateTime.UtcNow;
+
+                if (entry.State == EntityState.Added)
+                {
+                    // Set CreatedDate for new entities
+                    if (entry.Entity.GetType().GetProperty("CreatedDate") != null)
+                    {
+                        entry.Property("CreatedDate").CurrentValue = now;
+                    }
+                }
+
+                // Set UpdatedDate for both new and modified entities
+                if (entry.Entity.GetType().GetProperty("UpdatedDate") != null)
+                {
+                    entry.Property("UpdatedDate").CurrentValue = now;
+                }
+            }
         }
 
         partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
