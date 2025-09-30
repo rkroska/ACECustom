@@ -33,3 +33,4 @@ namespace ACE.Database.Models.Shard
         public DateTime UpdatedDate { get; set; }
     }
 }
+

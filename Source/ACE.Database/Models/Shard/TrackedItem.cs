@@ -21,3 +21,4 @@ namespace ACE.Database.Models.Shard
         public bool IsActive { get; set; } = true;
     }
 }
+

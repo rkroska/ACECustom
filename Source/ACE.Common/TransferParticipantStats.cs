@@ -8,3 +8,4 @@ namespace ACE.Common
         public long TotalQuantity { get; set; }
     }
 }
+
