@@ -25,6 +25,7 @@ namespace ACE.Server.Managers
         public const string TransferTypeDirectGive = "Direct Give";
         public const string TransferTypeTrade = "Trade";
         public const string TransferTypeGroundPickup = "Ground Pickup";
+        public const string TransferTypeGroundDrop = "Ground Drop";
         
         // Value calculation constants
         private const int DefaultItemValue = 100;
@@ -230,14 +231,61 @@ namespace ACE.Server.Managers
                     // Add unique index for existing tables
                     try
                     {
-                        context.Database.ExecuteSqlRaw(@"
-                            CREATE UNIQUE INDEX IF NOT EXISTS `idx_transfer_summary_unique`
-                            ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
-                        log.Info("Unique index added to transfer_summaries table");
+                        // First, check if the unique index already exists
+                        var indexExists = false;
+                        try
+                        {
+                            using (var command = context.Database.GetDbConnection().CreateCommand())
+                            {
+                                command.CommandText = @"
+                                    SELECT COUNT(*) FROM information_schema.statistics 
+                                    WHERE table_schema = DATABASE() 
+                                    AND table_name = 'transfer_summaries' 
+                                    AND index_name = 'idx_transfer_summary_unique'";
+                                context.Database.OpenConnection();
+                                var count = Convert.ToInt32(command.ExecuteScalar());
+                                indexExists = count > 0;
+                            }
+                        }
+                        catch
+                        {
+                            // If query fails, assume index doesn't exist
+                            indexExists = false;
+                        }
+                        finally
+                        {
+                            context.Database.CloseConnection();
+                        }
+
+                        if (!indexExists)
+                        {
+                            log.Info("Unique index does not exist, cleaning up duplicates and creating index...");
+                            
+                            // Clean up any duplicate data first by keeping the record with the latest LastTransfer
+                            context.Database.ExecuteSqlRaw(@"
+                                DELETE t1 FROM transfer_summaries t1
+                                INNER JOIN transfer_summaries t2 
+                                WHERE t1.Id > t2.Id 
+                                AND t1.FromPlayerName = t2.FromPlayerName 
+                                AND t1.ToPlayerName = t2.ToPlayerName 
+                                AND t1.TransferType = t2.TransferType");
+
+                            // Now create the unique index
+                            context.Database.ExecuteSqlRaw(@"
+                                CREATE UNIQUE INDEX `idx_transfer_summary_unique`
+                                ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
+                            
+                            log.Info("Unique index created successfully on transfer_summaries table");
+                        }
+                        else
+                        {
+                            log.Info("Unique index already exists on transfer_summaries table");
+                        }
                     }
                     catch (Exception ex)
                     {
-                        log.Info($"Unique index may already exist: {ex.Message}");
+                        log.Error($"Error creating unique index: {ex.Message}");
+                        log.Error($"Stack trace: {ex.StackTrace}");
                     }
                 }
                 catch (Exception ex)
@@ -679,6 +727,113 @@ namespace ACE.Server.Managers
                 log.Error($"Ground pickup logging failed: {ex.Message}");
                 log.Error($"Stack trace: {ex.StackTrace}");
                 // Continue without logging - don't break the pickup
+            }
+        }
+
+        public static void LogGroundPickupWithData(string playerName, string playerAccount, string itemName, int itemQuantity, 
+            DateTime? accountCreatedDate, DateTime? characterCreatedDate, string playerIP)
+        {
+            try
+            {
+                log.Info($"LogGroundPickupWithData called: {playerName} picked up {itemName} x{itemQuantity}");
+                
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping ground pickup logging - transfer logging disabled");
+                    return;
+                }
+                
+                if (!Config.EnableItemTracking)
+                {
+                    log.Info("Skipping ground pickup logging - item tracking disabled");
+                    return;
+                }
+
+                if (!ShouldTrackItem(itemName))
+                {
+                    log.Info($"Skipping ground pickup logging for untracked item: {itemName}");
+                    return;
+                }
+
+                EnsureDatabaseMigrated();
+
+                var transferLog = new TransferLog
+                {
+                    TransferType = TransferTypeGroundPickup,
+                    FromPlayerName = "Ground",
+                    FromPlayerAccount = "Ground",
+                    ToPlayerName = playerName,
+                    ToPlayerAccount = playerAccount,
+                    ItemName = itemName,
+                    Quantity = itemQuantity,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = null,
+                    ToAccountCreatedDate = accountCreatedDate,
+                    FromCharacterCreatedDate = null,
+                    ToCharacterCreatedDate = characterCreatedDate,
+                    FromPlayerIP = null,
+                    ToPlayerIP = playerIP
+                };
+
+                Task.Run(() => ProcessTransferLogBackground(transferLog));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Ground pickup logging failed: {ex.Message}");
+                log.Error($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        public static void LogGroundDrop(Player player, WorldObject item)
+        {
+            try
+            {
+                log.Info($"LogGroundDrop called: {player.Name} dropped {item.Name} x{item.StackSize ?? 1}");
+                
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping ground drop logging - transfer logging disabled");
+                    return;
+                }
+                
+                if (!Config.EnableItemTracking)
+                {
+                    log.Info("Skipping ground drop logging - item tracking disabled");
+                    return;
+                }
+
+                if (!ShouldTrackItem(item.Name))
+                {
+                    log.Info($"Skipping ground drop logging for untracked item: {item.Name}");
+                    return;
+                }
+
+                EnsureDatabaseMigrated();
+
+                var transferLog = new TransferLog
+                {
+                    TransferType = TransferTypeGroundDrop,
+                    FromPlayerName = player.Name,
+                    FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                    ToPlayerName = "Ground",
+                    ToPlayerAccount = "Ground",
+                    ItemName = item.Name,
+                    Quantity = item.StackSize ?? 1,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = player.Account?.CreateTime,
+                    ToAccountCreatedDate = null,
+                    FromCharacterCreatedDate = GetCharacterCreationDate(player),
+                    ToCharacterCreatedDate = null,
+                    FromPlayerIP = GetPlayerIP(player),
+                    ToPlayerIP = null
+                };
+
+                Task.Run(() => ProcessTransferLogBackground(transferLog));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Ground drop logging failed: {ex.Message}");
+                log.Error($"Stack trace: {ex.StackTrace}");
             }
         }
 

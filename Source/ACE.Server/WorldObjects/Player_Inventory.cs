@@ -783,6 +783,7 @@ namespace ACE.Server.WorldObjects
         private bool HandleActionPutItemInContainer_Verify(uint itemGuid, uint containerGuid, int placement,
             out Container itemRootOwner, out WorldObject item, out Container containerRootOwner, out Container container, out bool itemWasEquipped)
         {
+            
             itemRootOwner = null;
             item = null;
             container = null;
@@ -798,13 +799,16 @@ namespace ACE.Server.WorldObjects
 
             if (IsBusy)
             {
+                
                 if (PickupState != PickupState.Return || NextPickup != null)
                 {
                     Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YoureTooBusy));
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid));
                 }
                 else
+                {
                     NextPickup = () => { HandleActionPutItemInContainer(itemGuid, containerGuid, placement); };
+                }
 
                 return false;
             }
@@ -962,12 +966,14 @@ namespace ACE.Server.WorldObjects
         public void HandleActionPutItemInContainer(uint itemGuid, uint containerGuid, int placement = 0)
         {
             //Console.WriteLine($"{Name}.HandleActionPutItemInContainer({itemGuid:X8}, {containerGuid:X8}, {placement})");
+            
 
             if (!HandleActionPutItemInContainer_Verify(itemGuid, containerGuid, placement,
                 out Container itemRootOwner, out WorldObject item, out Container containerRootOwner, out Container container, out bool itemWasEquipped))
             {
                 return;
             }
+            
 
             if ((itemRootOwner == this && containerRootOwner != this) || (itemRootOwner != this && containerRootOwner == this)) // Movement is between the player and the world
             {
@@ -1106,8 +1112,22 @@ namespace ACE.Server.WorldObjects
                             }
                         }
 
+                        // Ground pickup logging for stackable items is handled in HandleActionStackableMerge
+                        // Only log non-stackable ground pickups here
+                        bool isGroundPickup = itemRootOwner == null && containerRootOwner == this;
+                        bool isStackableItem = item.StackSize > 1;
+                        
+                        if (isGroundPickup && !isStackableItem)
+                        {
+                            // Log non-stackable ground pickups (stackable ones are handled in HandleActionStackableMerge)
+                            TransferLogger.LogGroundPickup(this, item);
+                        }
+
                         if (DoHandleActionPutItemInContainer(item, itemRootOwner, itemWasEquipped, container, containerRootOwner, placement))
                         {
+                            // Log ground pickup after successful processing using captured data
+                            // Ground pickup logging is now handled in HandleActionStackableMerge for stackable items
+                            
                             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
 
                             if (item.WeenieType == WeenieType.Coin || item.WeenieType == WeenieType.Container)
@@ -1140,19 +1160,6 @@ namespace ACE.Server.WorldObjects
                                 {
                                     log.Debug($"[CORPSE] {Name} (0x{Guid}) picked up {item.Name} (0x{item.Guid}) from {itemRootOwner.Name} (0x{itemRootOwner.Guid})");
                                     item.SaveBiotaToDatabase();
-                                }
-
-                                // Log ground pickup for transfer monitoring
-                                if (itemRootOwner == null) // Item was on the ground (not from a container or corpse)
-                                {
-                                    try
-                                    {
-                                        TransferLogger.LogGroundPickup(this, item);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        log.Error($"Error logging ground pickup: {ex.Message}");
-                                    }
                                 }
                             }
 
@@ -1480,6 +1487,16 @@ namespace ACE.Server.WorldObjects
             }
             item.Ethereal = ethereal;
 
+            // Log ground drop for transfer monitoring
+            try
+            {
+                TransferLogger.LogGroundDrop(this, item);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error logging ground drop: {ex.Message}");
+            }
+
             return true;
         }
 
@@ -1494,6 +1511,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionGetAndWieldItem(uint itemGuid, EquipMask wieldedLocation)
         {
             //Console.WriteLine($"{Name}.HandleActionGetAndWieldItem({itemGuid:X8}, {wieldedLocation})");
+            
 
             // todo fix this, it seems IsAnimating is always true for a player
             // todo we need to know when a player is busy to avoid additional actions during that time
@@ -1504,6 +1522,7 @@ namespace ACE.Server.WorldObjects
             }*/
 
             var item = FindObject(new ObjectGuid(itemGuid), SearchLocations.LocationsICanMove, out var fromContainer, out var rootOwner, out var wasEquipped);
+            
 
             if (item == null)
             {
@@ -2797,7 +2816,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionStackableMerge(uint mergeFromGuid, uint mergeToGuid, int amount)
         {
             //Console.WriteLine($"HandleActionStackableMerge({mergeFromGuid:X8}, {mergeToGuid:X8}, {amount})");
-
+            
             if (amount <= 0)
             {
                 log.WarnFormat("Player 0x{0}:{1} tried to merge item with invalid amount ({3}) 0x{2:X8}.", Guid.Full, Name, mergeFromGuid, amount);
@@ -2807,6 +2826,28 @@ namespace ACE.Server.WorldObjects
             }
 
             var sourceStack = FindObject(mergeFromGuid, SearchLocations.LocationsICanMove, out _, out var sourceStackRootOwner, out _);
+            
+            // Check if this is a ground pickup (source stack is on ground, target is in inventory)
+            if (sourceStack != null && sourceStackRootOwner == null)
+            {
+                // Log the ground pickup for stackable items that merge with existing stacks
+                try
+                {
+                    var playerName = Name;
+                    var playerAccount = Account?.AccountName ?? "Unknown";
+                    var accountCreatedDate = Account?.CreateTime;
+                    var characterCreatedDate = CreationTimestamp != null ? (DateTime?)DateTimeOffset.FromUnixTimeSeconds(CreationTimestamp.Value).DateTime : null;
+                    var playerIP = Session?.EndPoint?.ToString();
+                    
+                    TransferLogger.LogGroundPickupWithData(playerName, playerAccount, sourceStack.Name, amount, 
+                        accountCreatedDate, characterCreatedDate, playerIP);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
+                }
+            }
+            
             var targetStack = FindObject(mergeToGuid, SearchLocations.LocationsICanMove, out _, out var targetStackRootOwner, out _);
 
             if (sourceStack == null)

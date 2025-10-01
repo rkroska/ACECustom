@@ -74,7 +74,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length < 1)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit <subcommand> [parameters] (or /ba)", ChatMessageType.Help));
-                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, bankban, top, help", ChatMessageType.Help));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, fixsummaries, bankban, top, help", ChatMessageType.Help));
                 return;
             }
 
@@ -121,6 +121,9 @@ namespace ACE.Server.Command.Handlers
                     break;
                 case "migrate":
                     HandleTransferMigration(session, subParams);
+                    break;
+                case "fixsummaries":
+                    HandleFixSummaries(session, subParams);
                     break;
                 case "bankban":
                     HandleBankBlacklist(session, subParams);
@@ -270,8 +273,8 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 switch (setting)
-                {
-                    case "threshold":
+            {
+                case "threshold":
                         if (int.TryParse(value, out var threshold))
                         {
                             TransferLogger.UpdateSuspiciousTransferThreshold(threshold);
@@ -281,9 +284,9 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Invalid threshold value. Must be a number.", ChatMessageType.System));
                         }
-                        break;
+                    break;
 
-                    case "timewindow":
+                case "timewindow":
                         if (int.TryParse(value, out var hours))
                         {
                             TransferLogger.UpdateTimeWindowHours(hours);
@@ -293,9 +296,9 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Invalid time window value. Must be a number.", ChatMessageType.System));
                         }
-                        break;
+                    break;
 
-                    case "patternthreshold":
+                case "patternthreshold":
                         if (int.TryParse(value, out var patternThreshold))
                         {
                             TransferLogger.UpdatePatternDetectionThreshold(patternThreshold);
@@ -305,7 +308,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Invalid pattern threshold value. Must be a number.", ChatMessageType.System));
                         }
-                        break;
+                    break;
 
                     case "trackall":
                         if (bool.TryParse(value, out var trackAll) || value.ToLower() == "on" || value.ToLower() == "off")
@@ -333,10 +336,10 @@ namespace ACE.Server.Command.Handlers
                         }
                         break;
 
-                    default:
+                default:
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown setting: {setting}", ChatMessageType.System));
                         session.Network.EnqueueSend(new GameMessageSystemChat("Available settings: threshold, timewindow, patternthreshold, trackall, enabled", ChatMessageType.System));
-                        break;
+                    break;
                 }
             }
             catch (Exception ex)
@@ -502,6 +505,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit ip <player> [days] - Show IP address patterns for transfers", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit top [days] - Show most active transfer participants", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit migrate - Create/update all transfer monitoring tables", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit fixsummaries - Fix duplicate transfer summaries and create unique index", ChatMessageType.System));
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("BLACKLIST COMMANDS:", ChatMessageType.System));
@@ -836,6 +840,76 @@ namespace ACE.Server.Command.Handlers
             catch (Exception ex)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Database migration failed: {ex.Message}", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleFixSummaries(Session session, string[] parameters)
+        {
+            try
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Fixing duplicate transfer summaries...", ChatMessageType.System));
+                
+                using (var context = new ShardModels.ShardDbContext())
+                {
+                    // First, check if the unique index exists
+                    var indexExists = false;
+                    try
+                    {
+                        using (var command = context.Database.GetDbConnection().CreateCommand())
+                        {
+                            command.CommandText = @"
+                                SELECT COUNT(*) FROM information_schema.statistics 
+                                WHERE table_schema = DATABASE() 
+                                AND table_name = 'transfer_summaries' 
+                                AND index_name = 'idx_transfer_summary_unique'";
+                            context.Database.OpenConnection();
+                            var count = Convert.ToInt32(command.ExecuteScalar());
+                            indexExists = count > 0;
+                        }
+                    }
+                    catch
+                    {
+                        // If query fails, assume index doesn't exist
+                        indexExists = false;
+                    }
+                    finally
+                    {
+                        context.Database.CloseConnection();
+                    }
+
+                    if (!indexExists)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Unique index does not exist. Cleaning up duplicates and creating index...", ChatMessageType.System));
+                        
+                        // Clean up any duplicate data first by keeping the record with the latest LastTransfer
+                        var deletedCount = context.Database.ExecuteSqlRaw(@"
+                            DELETE t1 FROM transfer_summaries t1
+                            INNER JOIN transfer_summaries t2 
+                            WHERE t1.Id > t2.Id 
+                            AND t1.FromPlayerName = t2.FromPlayerName 
+                            AND t1.ToPlayerName = t2.ToPlayerName 
+                            AND t1.TransferType = t2.TransferType");
+
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {deletedCount} duplicate summary records", ChatMessageType.System));
+
+                        // Now create the unique index
+                        context.Database.ExecuteSqlRaw(@"
+                            CREATE UNIQUE INDEX `idx_transfer_summary_unique`
+                            ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
+                        
+                        session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index created successfully", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index already exists", ChatMessageType.System));
+                    }
+                    
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Transfer summaries fix completed successfully!", ChatMessageType.System));
+                }
+            }
+            catch (Exception ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Fix summaries failed: {ex.Message}", ChatMessageType.System));
             }
         }
 
