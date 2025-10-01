@@ -32,7 +32,7 @@ namespace ACE.Database.Models.Shard
         [StringLength(255)]
         public string ItemName { get; set; }
 
-        public int Quantity { get; set; }
+        public long Quantity { get; set; }
 
         public DateTime Timestamp { get; set; }
 

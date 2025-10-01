@@ -1115,7 +1115,7 @@ namespace ACE.Server.WorldObjects
                         // Ground pickup logging for stackable items is handled in HandleActionStackableMerge
                         // Only log non-stackable ground pickups here
                         bool isGroundPickup = itemRootOwner == null && containerRootOwner == this;
-                        bool isStackableItem = item.StackSize > 1;
+                        bool isStackableItem = item is Stackable;
                         
                         if (isGroundPickup && !isStackableItem)
                         {
@@ -2826,29 +2826,20 @@ namespace ACE.Server.WorldObjects
             }
 
             var sourceStack = FindObject(mergeFromGuid, SearchLocations.LocationsICanMove, out _, out var sourceStackRootOwner, out _);
+            var targetStack = FindObject(mergeToGuid, SearchLocations.LocationsICanMove, out _, out var targetStackRootOwner, out _);
             
             // Check if this is a ground pickup (source stack is on ground, target is in inventory)
-            if (sourceStack != null && sourceStackRootOwner == null)
+            if (sourceStack != null && sourceStackRootOwner == null && targetStackRootOwner == this)
             {
-                // Log the ground pickup for stackable items that merge with existing stacks
                 try
                 {
-                    var playerName = Name;
-                    var playerAccount = Account?.AccountName ?? "Unknown";
-                    var accountCreatedDate = Account?.CreateTime;
-                    var characterCreatedDate = CreationTimestamp != null ? (DateTime?)DateTimeOffset.FromUnixTimeSeconds(CreationTimestamp.Value).DateTime : null;
-                    var playerIP = Session?.EndPoint?.ToString();
-                    
-                    TransferLogger.LogGroundPickupWithData(playerName, playerAccount, sourceStack.Name, amount, 
-                        accountCreatedDate, characterCreatedDate, playerIP);
+                    TransferLogger.LogGroundPickup(this, sourceStack);
                 }
                 catch (Exception ex)
                 {
                     log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
                 }
             }
-            
-            var targetStack = FindObject(mergeToGuid, SearchLocations.LocationsICanMove, out _, out var targetStackRootOwner, out _);
 
             if (sourceStack == null)
             {

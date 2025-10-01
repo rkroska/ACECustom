@@ -928,9 +928,10 @@ namespace ACE.Server.Command.Handlers
                     ADD COLUMN IF NOT EXISTS `FromCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `ToAccountCreatedDate`,
                     ADD COLUMN IF NOT EXISTS `ToCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `FromCharacterCreatedDate`,
                     ADD COLUMN IF NOT EXISTS `FromPlayerIP` varchar(45) DEFAULT NULL AFTER `AdditionalData`,
-                    ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`;");
+                    ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`,
+                    MODIFY COLUMN `Quantity` bigint(20) NOT NULL;");
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with IP address columns", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with IP address columns and Quantity bigint migration", ChatMessageType.System));
             }
             catch
             {
@@ -944,7 +945,7 @@ namespace ACE.Server.Command.Handlers
                         `ToPlayerName` varchar(255) NOT NULL,
                         `ToPlayerAccount` varchar(255) DEFAULT NULL,
                         `ItemName` varchar(255) NOT NULL,
-                        `Quantity` int(11) NOT NULL,
+                        `Quantity` bigint(20) NOT NULL,
                         `Timestamp` datetime(6) NOT NULL,
                         `FromAccountCreatedDate` datetime(6) DEFAULT NULL,
                         `ToAccountCreatedDate` datetime(6) DEFAULT NULL,

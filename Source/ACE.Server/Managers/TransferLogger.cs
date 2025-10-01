@@ -140,9 +140,10 @@ namespace ACE.Server.Managers
                         ADD COLUMN IF NOT EXISTS `FromCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `ToAccountCreatedDate`,
                         ADD COLUMN IF NOT EXISTS `ToCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `FromCharacterCreatedDate`,
                         ADD COLUMN IF NOT EXISTS `FromPlayerIP` varchar(45) DEFAULT NULL AFTER `AdditionalData`,
-                        ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`;");
+                        ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`,
+                        MODIFY COLUMN `Quantity` bigint(20) NOT NULL;");
                     
-                    log.Info("Missing columns added to transfer_logs");
+                    log.Info("Missing columns added to transfer_logs and Quantity migrated to bigint");
                 }
                 catch (Exception ex)
                 {
@@ -163,7 +164,7 @@ namespace ACE.Server.Managers
                             `ToPlayerName` varchar(255) NOT NULL,
                             `ToPlayerAccount` varchar(255) DEFAULT NULL,
                             `ItemName` varchar(255) NOT NULL,
-                            `Quantity` int(11) NOT NULL,
+                            `Quantity` bigint(20) NOT NULL,
                             `Timestamp` datetime(6) NOT NULL,
                             `FromAccountCreatedDate` datetime(6) DEFAULT NULL,
                             `ToAccountCreatedDate` datetime(6) DEFAULT NULL,
@@ -493,7 +494,7 @@ namespace ACE.Server.Managers
                     ToPlayerName = toPlayerName,
                     ToPlayerAccount = toPlayer?.Account?.AccountName ?? "Unknown",
                     ItemName = itemName,
-                    Quantity = (int)quantity,
+                    Quantity = quantity,
                     Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
                     ToAccountCreatedDate = toPlayer?.Account?.CreateTime,
