@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace ACE.Database.Models.Shard
 {
@@ -10,6 +11,11 @@ namespace ACE.Database.Models.Shard
         [Key]
         public int Id { get; set; }
 
+        [Index(nameof(FromPlayerName))]
+        [Index(nameof(ToPlayerName))]
+        [Index(nameof(FromPlayerAccount))]
+        [Index(nameof(ToPlayerAccount))]
+        [Index(nameof(TransferType))]
         [Required]
         [StringLength(255)]
         public string TransferType { get; set; }
@@ -34,6 +40,7 @@ namespace ACE.Database.Models.Shard
 
         public long Quantity { get; set; }
 
+        [Index(nameof(Timestamp))]
         public DateTime Timestamp { get; set; }
 
         public DateTime? FromAccountCreatedDate { get; set; }

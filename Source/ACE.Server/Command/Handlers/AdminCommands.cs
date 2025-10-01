@@ -491,9 +491,9 @@ namespace ACE.Server.Command.Handlers
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("CONFIGURATION COMMANDS:", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config threshold <number> - Set transfer threshold (default: 3)", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config threshold <number> - Set transfer threshold (current: {TransferLogger.SuspiciousTransferThreshold})", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config timewindow <hours> - Set time window (default: 24)", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config patternthreshold <number> - Set pattern threshold (default: 3)", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config patternthreshold <number> - Set pattern threshold (current: {TransferLogger.PatternDetectionThreshold})", ChatMessageType.System));
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("ITEM TRACKING COMMANDS:", ChatMessageType.System));
@@ -951,7 +951,7 @@ namespace ACE.Server.Command.Handlers
                         `ToAccountCreatedDate` datetime(6) DEFAULT NULL,
                         `FromCharacterCreatedDate` datetime(6) DEFAULT NULL,
                         `ToCharacterCreatedDate` datetime(6) DEFAULT NULL,
-                        `AdditionalData` varchar(2048) DEFAULT NULL,
+                        `AdditionalData` varchar(1000) DEFAULT NULL,
                         `FromPlayerIP` varchar(45) DEFAULT NULL,
                         `ToPlayerIP` varchar(45) DEFAULT NULL,
                         PRIMARY KEY (`Id`),
