@@ -918,20 +918,56 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_logs LIMIT 1");
-                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs table exists - adding IP address columns...", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs table exists - checking for missing columns...", ChatMessageType.System));
                 
-                // Add missing columns to existing table
-                context.Database.ExecuteSqlRaw(@"
-                    ALTER TABLE `transfer_logs` 
-                    ADD COLUMN IF NOT EXISTS `FromAccountCreatedDate` datetime(6) DEFAULT NULL AFTER `Timestamp`,
-                    ADD COLUMN IF NOT EXISTS `ToAccountCreatedDate` datetime(6) DEFAULT NULL AFTER `FromAccountCreatedDate`,
-                    ADD COLUMN IF NOT EXISTS `FromCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `ToAccountCreatedDate`,
-                    ADD COLUMN IF NOT EXISTS `ToCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `FromCharacterCreatedDate`,
-                    ADD COLUMN IF NOT EXISTS `FromPlayerIP` varchar(45) DEFAULT NULL AFTER `AdditionalData`,
-                    ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`,
-                    MODIFY COLUMN `Quantity` bigint(20) NOT NULL;");
+                // Check and add missing columns individually (MySQL-safe approach)
+                var connection = context.Database.GetDbConnection();
+                connection.Open();
+                using var command = connection.CreateCommand();
                 
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with IP address columns and Quantity bigint migration", ChatMessageType.System));
+                // Check if columns exist and add them individually
+                var columnsToAdd = new[]
+                {
+                    ("FromAccountCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("ToAccountCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("FromCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("ToCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("FromPlayerIP", "varchar(45) DEFAULT NULL"),
+                    ("ToPlayerIP", "varchar(45) DEFAULT NULL")
+                };
+                
+                foreach (var (columnName, columnType) in columnsToAdd)
+                {
+                    command.CommandText = $@"
+                        SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'transfer_logs' 
+                        AND COLUMN_NAME = '{columnName}'";
+                    
+                    var exists = Convert.ToInt32(command.ExecuteScalar()) > 0;
+                    if (!exists)
+                    {
+                        command.CommandText = $"ALTER TABLE `transfer_logs` ADD COLUMN `{columnName}` {columnType}";
+                        command.ExecuteNonQuery();
+                    }
+                }
+                
+                // Check and modify Quantity column to bigint
+                command.CommandText = @"
+                    SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'transfer_logs' 
+                    AND COLUMN_NAME = 'Quantity'";
+                
+                var quantityType = command.ExecuteScalar()?.ToString();
+                if (quantityType != "bigint")
+                {
+                    command.CommandText = "ALTER TABLE `transfer_logs` MODIFY COLUMN `Quantity` bigint(20) NOT NULL";
+                    command.ExecuteNonQuery();
+                }
+                
+                connection.Close();
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns and Quantity bigint migration", ChatMessageType.System));
             }
             catch
             {
@@ -1118,8 +1154,8 @@ namespace ACE.Server.Command.Handlers
         {
             session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit bankban <add|remove|list> <player|account> <name> [reason] [days]", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("Examples:", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban add player PlayerName 'Suspicious activity' 30", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban add account AccountName 'Alt account farming'", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban add player Sir Harry Suspicious activity 30", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban add account AccountName Alt account farming", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban remove player PlayerName", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("  /bankaudit bankban list", ChatMessageType.System));
         }
@@ -1145,13 +1181,36 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     var type = parameters[1].ToLower();
-                    var name = parameters[2];
-                    var reason = parameters[3];
+                    
+                    // Handle multi-word names and reasons
+                    var remainingParams = parameters.Skip(2).ToArray();
+                    var name = "";
+                    var reason = "";
                     var days = 0;
-
-                    if (parameters.Length > 4 && int.TryParse(parameters[4], out var parsedDays))
+                    
+                    // Find the last parameter that could be a number (days)
+                    var lastParam = remainingParams[remainingParams.Length - 1];
+                    if (int.TryParse(lastParam, out var parsedDays))
                     {
                         days = parsedDays;
+                        remainingParams = remainingParams.Take(remainingParams.Length - 1).ToArray();
+                    }
+                    
+                    // If we have at least 2 parameters after removing days, use first for name, rest for reason
+                    if (remainingParams.Length >= 2)
+                    {
+                        name = remainingParams[0];
+                        reason = string.Join(" ", remainingParams.Skip(1));
+                    }
+                    else if (remainingParams.Length == 1)
+                    {
+                        name = remainingParams[0];
+                        reason = "No reason provided";
+                    }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Error: Missing name parameter", ChatMessageType.System));
+                        return;
                     }
 
                     DateTime? expiryDate = null;
