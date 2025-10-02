@@ -141,6 +141,55 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        private static string ParsePlayerName(string[] parameters, out int days)
+        {
+            days = 7;
+            
+            // Check if last parameter is a number (days)
+            if (parameters.Length > 1 && int.TryParse(parameters[parameters.Length - 1], out var parsedDays))
+            {
+                days = parsedDays;
+                // Join all parameters except the last one for the player name
+                return string.Join(" ", parameters.Take(parameters.Length - 1));
+            }
+            else
+            {
+                // Join all parameters for the player name
+                return string.Join(" ", parameters);
+            }
+        }
+
+        private static string ConsumeName(List<string> tokens)
+        {
+            if (tokens.Count == 0)
+                return string.Empty;
+
+            var first = tokens[0];
+            if (!string.IsNullOrEmpty(first) && (first[0] == '"' || first[0] == '\''))
+            {
+                var quote = first[0];
+                var pieces = new List<string>();
+
+                while (tokens.Count > 0)
+                {
+                    var part = tokens[0];
+                    tokens.RemoveAt(0);
+                    pieces.Add(part);
+
+                    if (!string.IsNullOrEmpty(part) && part[^1] == quote)
+                    {
+                        var joined = string.Join(" ", pieces);
+                        return joined.Trim(quote).Trim();
+                    }
+                }
+
+                return string.Join(" ", pieces).Trim('"', '\'').Trim();
+            }
+
+            tokens.RemoveAt(0);
+            return first;
+        }
+
         private static void HandleTransferLog(Session session, string[] parameters)
         {
             if (parameters.Length < 1)
@@ -149,12 +198,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = parameters[0];
-            var days = 7;
-            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays))
-            {
-                days = parsedDays;
-            }
+            var playerName = ParsePlayerName(parameters, out var days);
 
             var transfers = TransferLogger.GetTransferHistory(playerName, days);
             
@@ -223,12 +267,8 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = parameters[0];
-            var days = DefaultTransferPatternDays;
-            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays))
-            {
-                days = parsedDays;
-            }
+            var playerName = ParsePlayerName(parameters, out var days);
+            if (days == 7) days = DefaultTransferPatternDays; // Use default for patterns if not specified
 
             var patterns = TransferLogger.GetTransferPatterns(playerName, days);
             
@@ -533,8 +573,8 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = parameters[0];
-            var days = parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays) ? parsedDays : 30;
+            var playerName = ParsePlayerName(parameters, out var days);
+            if (days == 7) days = 30; // Use default 30 days for summaries if not specified
 
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
             var summaries = DatabaseManager.Shard.BaseDatabase.GetTransferSummaries(playerName, cutoffDate);
@@ -743,8 +783,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = parameters[0];
-            var days = parameters.Length > 1 && int.TryParse(parameters[1], out var parsedDays) ? parsedDays : 7;
+            var playerName = ParsePlayerName(parameters, out var days);
 
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
             var transfers = DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);
@@ -1037,6 +1076,7 @@ namespace ACE.Server.Command.Handlers
                         `CreatedDate` datetime(6) NOT NULL,
                         `UpdatedDate` datetime(6) NOT NULL,
                         PRIMARY KEY (`Id`),
+                        UNIQUE KEY `idx_transfer_summary_unique` (`FromPlayerName`,`ToPlayerName`,`TransferType`),
                         KEY `IX_transfer_summaries_FromPlayerName` (`FromPlayerName`),
                         KEY `IX_transfer_summaries_ToPlayerName` (`ToPlayerName`),
                         KEY `IX_transfer_summaries_LastTransfer` (`LastTransfer`),
@@ -1197,16 +1237,23 @@ namespace ACE.Server.Command.Handlers
                         remainingParams = remainingParams.Take(remainingParams.Length - 1).ToArray();
                     }
                     
-                    // If we have at least 2 parameters after removing days, use first for name, rest for reason
-                    if (remainingParams.Length >= 2)
+                    // Parse name and reason with support for quoted names
+                    if (remainingParams.Length >= 1)
                     {
-                        name = remainingParams[0];
-                        reason = string.Join(" ", remainingParams.Skip(1));
-                    }
-                    else if (remainingParams.Length == 1)
-                    {
-                        name = remainingParams[0];
-                        reason = "No reason provided";
+                        var tokens = new List<string>(remainingParams);
+                        name = ConsumeName(tokens);
+
+                        if (string.IsNullOrWhiteSpace(name))
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Error: Missing name parameter", ChatMessageType.System));
+                            return;
+                        }
+
+                        reason = string.Join(" ", tokens).Trim();
+                        if (string.IsNullOrWhiteSpace(reason))
+                        {
+                            reason = "No reason provided";
+                        }
                     }
                     else
                     {

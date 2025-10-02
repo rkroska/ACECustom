@@ -61,8 +61,10 @@ namespace ACE.Server.Managers
 
         // Configuration
         public static TransferMonitoringConfig Config { get; private set; } = TransferMonitoringConfig.Default;
-        private static bool _databaseMigrated = false;
-        private static bool _trackedItemsInitialized = false;
+        private static volatile bool _databaseMigrated = false;
+        private static volatile bool _trackedItemsInitialized = false;
+        private static readonly object _migrationLock = new object();
+        private static readonly object _initLock = new object();
 
         /// <summary>
         /// Initialize transfer monitoring system from database on server startup
@@ -71,26 +73,25 @@ namespace ACE.Server.Managers
         {
             if (_trackedItemsInitialized) return;
             
-            try
+            lock (_initLock)
             {
-                log.Info("Initializing transfer monitoring system from database...");
+                if (_trackedItemsInitialized) return;
                 
-                // Ensure all database tables exist with correct schema
-                EnsureDatabaseMigrated();
-                
-                // Load configuration from database
-                LoadConfigurationFromDatabase();
-                
-                // Load tracked items from database
-                GetTrackedItems(); // This loads from DB and updates Config.TrackedItems
-                
-                _trackedItemsInitialized = true;
-                log.Info($"Loaded {Config.TrackedItems?.Count ?? 0} tracked items and configuration from database");
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Error initializing transfer monitoring system: {ex.Message}");
-                // Continue with defaults if database is not available yet
+                try
+                {
+                    log.Info("Initializing transfer monitoring system from database...");
+                    
+                    EnsureDatabaseMigrated();
+                    LoadConfigurationFromDatabase();
+                    GetTrackedItems();
+                    
+                    _trackedItemsInitialized = true;
+                    log.Info($"Loaded {Config.TrackedItems?.Count ?? 0} tracked items and configuration from database");
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error initializing transfer monitoring system: {ex.Message}");
+                }
             }
         }
 
@@ -98,27 +99,30 @@ namespace ACE.Server.Managers
         {
             if (_databaseMigrated) return;
 
-            try
+            lock (_migrationLock)
             {
-                using (var context = new ShardDbContext())
+                if (_databaseMigrated) return;
+                
+                try
                 {
-                    log.Info("Running database migration for all transfer monitoring tables...");
-                    
-                    // Create all transfer monitoring tables
-                    CreateTransferLogsTable(context);
-                    CreateTransferSummariesTable(context);
-                    CreateTrackedItemsTable(context);
-                    CreateTransferMonitoringConfigsTable(context);
-                    CreateBankCommandBlacklistTable(context);
-                    
-                    log.Info("Database migration completed successfully");
-                    _databaseMigrated = true;
+                    using (var context = new ShardDbContext())
+                    {
+                        log.Info("Running database migration for all transfer monitoring tables...");
+                        
+                        CreateTransferLogsTable(context);
+                        CreateTransferSummariesTable(context);
+                        CreateTrackedItemsTable(context);
+                        CreateTransferMonitoringConfigsTable(context);
+                        CreateBankCommandBlacklistTable(context);
+                        
+                        log.Info("Database migration completed successfully");
+                        _databaseMigrated = true;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Database migration failed: {ex.Message}");
-                // Don't set _databaseMigrated = true so we can retry later
+                catch (Exception ex)
+                {
+                    log.Error($"Database migration failed: {ex.Message}");
+                }
             }
         }
 
@@ -485,7 +489,7 @@ namespace ACE.Server.Managers
             if (creationTimestamp.HasValue)
             {
                 // Convert Unix timestamp to DateTime
-                return DateTimeOffset.FromUnixTimeSeconds(creationTimestamp.Value).DateTime;
+                return DateTimeOffset.FromUnixTimeSeconds(creationTimestamp.Value).UtcDateTime;
             }
             
             return null;
@@ -509,8 +513,20 @@ namespace ACE.Server.Managers
                 // Ensure database is migrated before logging
                 EnsureDatabaseMigrated();
 
-                // Only log if item tracking is enabled and this item should be tracked
-                if (!Config.EnableItemTracking || (!Config.TrackAllItems && !ShouldTrackItem(itemName)))
+                // Check master switch first
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping logging - transfer logging disabled");
+                    return;
+                }
+
+                // For bank transfers, always log built-in currencies (Pyreals, Keys, Coins)
+                // For other items, respect item tracking settings
+                var isBuiltInCurrency = itemName.Contains("Pyreal") || itemName.Contains("Key") || itemName.Contains("Coin");
+                var requiresExplicitTracking = !isBuiltInCurrency && 
+                                              (!Config.EnableItemTracking || 
+                                               (!Config.TrackAllItems && !ShouldTrackItem(itemName)));
+                if (requiresExplicitTracking)
                 {
                     log.Info($"Skipping logging for untracked item: {itemName}");
                     return;
