@@ -43,13 +43,14 @@ namespace ACE.Server.Managers
         {
             try
             {
-                var adminPlayers = PlayerManager.GetAllPlayers()
-                    .Where(p => p.Account != null && (uint)p.Account.AccessLevel >= (uint)AccessLevel.Advocate)
-                    .OfType<Player>()
-                    .ToList();
+                var adminPlayers = PlayerManager.GetAllOnline()
+                    .Where(p => p.Account != null && (uint)p.Account.AccessLevel >= (uint)AccessLevel.Advocate);
 
                 foreach (var admin in adminPlayers)
                 {
+                    if (admin.Session?.Network == null)
+                        continue;
+
                     admin.Session.Network.EnqueueSend(new GameMessageSystemChat($"[TRANSFER LOG] {message}", ChatMessageType.System));
                 }
             }
@@ -229,7 +230,8 @@ namespace ACE.Server.Managers
             try
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_summaries LIMIT 1");
-                log.Info("transfer_summaries table exists");
+                log.Info("transfer_summaries table exists - ensuring unique index");
+                EnsureTransferSummaryUniqueIndex(context);
             }
             catch
             {
@@ -262,66 +264,7 @@ namespace ACE.Server.Managers
                         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                     
                     log.Info("transfer_summaries table created successfully");
-                    
-                    // Add unique index for existing tables
-                    try
-                    {
-                        // First, check if the unique index already exists
-                        var indexExists = false;
-                        try
-                        {
-                            using (var command = context.Database.GetDbConnection().CreateCommand())
-                            {
-                                command.CommandText = @"
-                                    SELECT COUNT(*) FROM information_schema.statistics 
-                                    WHERE table_schema = DATABASE() 
-                                    AND table_name = 'transfer_summaries' 
-                                    AND index_name = 'idx_transfer_summary_unique'";
-                                context.Database.OpenConnection();
-                                var count = Convert.ToInt32(command.ExecuteScalar());
-                                indexExists = count > 0;
-                            }
-                        }
-                        catch
-                        {
-                            // If query fails, assume index doesn't exist
-                            indexExists = false;
-                        }
-                        finally
-                        {
-                            context.Database.CloseConnection();
-                        }
-
-                        if (!indexExists)
-                        {
-                            log.Info("Unique index does not exist, cleaning up duplicates and creating index...");
-                            
-                            // Clean up any duplicate data first by keeping the record with the latest LastTransfer
-                            context.Database.ExecuteSqlRaw(@"
-                                DELETE t1 FROM transfer_summaries t1
-                                INNER JOIN transfer_summaries t2 
-                                WHERE t1.Id > t2.Id 
-                                AND t1.FromPlayerName = t2.FromPlayerName 
-                                AND t1.ToPlayerName = t2.ToPlayerName 
-                                AND t1.TransferType = t2.TransferType");
-
-                            // Now create the unique index
-                            context.Database.ExecuteSqlRaw(@"
-                                CREATE UNIQUE INDEX `idx_transfer_summary_unique`
-                                ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
-                            
-                            log.Info("Unique index created successfully on transfer_summaries table");
-                        }
-                        else
-                        {
-                            log.Info("Unique index already exists on transfer_summaries table");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Error creating unique index: {ex.Message}");
-                        log.Error($"Stack trace: {ex.StackTrace}");
-                    }
+                    EnsureTransferSummaryUniqueIndex(context);
                 }
                 catch (Exception ex)
                 {
@@ -330,7 +273,56 @@ namespace ACE.Server.Managers
             }
         }
 
+        private static void EnsureTransferSummaryUniqueIndex(ShardDbContext context)
+        {
+            try
+            {
+                var connection = context.Database.GetDbConnection();
+                var openedHere = false;
+                if (connection.State != System.Data.ConnectionState.Open)
+                {
+                    connection.Open();
+                    openedHere = true;
+                }
 
+                using var command = connection.CreateCommand();
+                command.CommandText = @"
+                    SELECT COUNT(*) FROM information_schema.statistics 
+                    WHERE table_schema = DATABASE() 
+                    AND table_name = 'transfer_summaries' 
+                    AND index_name = 'idx_transfer_summary_unique'";
+                var indexExists = Convert.ToInt32(command.ExecuteScalar()) > 0;
+
+                if (!indexExists)
+                {
+                    log.Info("Unique index missing, cleaning duplicates and creating index...");
+                    context.Database.ExecuteSqlRaw(@"
+                        DELETE t1 FROM transfer_summaries t1
+                        INNER JOIN transfer_summaries t2 
+                        WHERE t1.Id > t2.Id 
+                        AND t1.FromPlayerName = t2.FromPlayerName 
+                        AND t1.ToPlayerName = t2.ToPlayerName 
+                        AND t1.TransferType = t2.TransferType");
+
+                    context.Database.ExecuteSqlRaw(@"
+                        CREATE UNIQUE INDEX `idx_transfer_summary_unique`
+                        ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
+                }
+                else
+                {
+                    log.Info("Unique index already exists on transfer_summaries table");
+                }
+
+                if (openedHere)
+                {
+                    connection.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error ensuring unique index on transfer_summaries: {ex.Message}");
+            }
+        }
 
         private static void CreateTrackedItemsTable(ShardDbContext context)
         {
@@ -520,11 +512,10 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                // For bank transfers, always log built-in currencies (Pyreals, Keys, Coins)
-                // For other items, respect item tracking settings
-                var isBuiltInCurrency = itemName.Contains("Pyreal") || itemName.Contains("Key") || itemName.Contains("Coin");
-                var requiresExplicitTracking = !isBuiltInCurrency && 
-                                              (!Config.EnableItemTracking || 
+                // For bank transfers, always log regardless of item tracking settings
+                // For other transfer types, respect item tracking settings
+                var requiresExplicitTracking = !string.Equals(transferType, TransferTypeBankTransfer, StringComparison.OrdinalIgnoreCase) &&
+                                              (!Config.EnableItemTracking ||
                                                (!Config.TrackAllItems && !ShouldTrackItem(itemName)));
                 if (requiresExplicitTracking)
                 {

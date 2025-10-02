@@ -53,8 +53,8 @@ namespace ACE.Server.Command.Handlers
 
         // bankaudit {subcommand} {parameters}
         [CommandHandler("bankaudit", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
-            "Bank transfer audit commands.", "log|patterns|suspicious|config|blacklist|status|help\n" +
-            "Use 'bankaudit help' for detailed command information.")]
+            "Bank transfer audit commands.",
+            "log|patterns|suspicious|summaries|alerts|monitor|config|items|blacklist|status|cleanup|ip|migrate|fixsummaries|bankban|top|help\nUse 'bankaudit help' for detailed command information.")]
         public static void HandleBankAudit(Session session, params string[] parameters)
         {
             HandleBankAuditInternal(session, parameters);
@@ -62,8 +62,8 @@ namespace ACE.Server.Command.Handlers
 
         // ba {subcommand} {parameters} - Alias for bankaudit
         [CommandHandler("ba", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
-            "Bank transfer audit commands (alias for bankaudit).", "log|patterns|suspicious|config|blacklist|status|help\n" +
-            "Use 'ba help' for detailed command information.")]
+            "Bank transfer audit commands (alias for bankaudit).",
+            "log|patterns|suspicious|summaries|alerts|monitor|config|items|blacklist|status|cleanup|ip|migrate|fixsummaries|bankban|top|help\nUse 'ba help' for detailed command information.")]
         public static void HandleBA(Session session, params string[] parameters)
         {
             HandleBankAuditInternal(session, parameters);
@@ -74,7 +74,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length < 1)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit <subcommand> [parameters] (or /ba)", ChatMessageType.Help));
-                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, config, blacklist, status, ip, migrate, fixsummaries, bankban, top, help", ChatMessageType.Help));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Subcommands: log, patterns, suspicious, summaries, alerts, monitor, config, items, blacklist, status, cleanup, ip, migrate, fixsummaries, bankban, top, help", ChatMessageType.Help));
                 return;
             }
 
@@ -1237,19 +1237,30 @@ namespace ACE.Server.Command.Handlers
                         remainingParams = remainingParams.Take(remainingParams.Length - 1).ToArray();
                     }
                     
-                    // Parse name and reason with support for quoted names
-                    if (remainingParams.Length >= 1)
+                    // Parse name and reason, allowing unquoted multi-word names if the reason is quoted
+                    if (remainingParams.Length >= 2)
                     {
                         var tokens = new List<string>(remainingParams);
-                        name = ConsumeName(tokens);
-
+                        var quotedReasonIndex = tokens.FindIndex(t => !string.IsNullOrEmpty(t) && (t[0] == '"' || t[0] == '\''));
+                        List<string> reasonTokens;
+                        if (quotedReasonIndex > 0)
+                        {
+                            // Everything before the quoted reason is the name
+                            name = string.Join(" ", tokens.Take(quotedReasonIndex));
+                            reasonTokens = tokens.Skip(quotedReasonIndex).ToList();
+                        }
+                        else
+                        {
+                            // Fallback to ConsumeName for quoted single-token names or single-word unquoted names
+                            name = ConsumeName(tokens);
+                            reasonTokens = tokens;
+                        }
                         if (string.IsNullOrWhiteSpace(name))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Error: Missing name parameter", ChatMessageType.System));
                             return;
                         }
-
-                        reason = string.Join(" ", tokens).Trim();
+                        reason = string.Join(" ", reasonTokens).Trim();
                         if (string.IsNullOrWhiteSpace(reason))
                         {
                             reason = "No reason provided";
