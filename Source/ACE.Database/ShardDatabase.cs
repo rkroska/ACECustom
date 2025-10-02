@@ -949,37 +949,25 @@ namespace ACE.Database
         {
             using (var context = new ShardDbContext())
             {
-                var fromPlayers = context.TransferLogs
+                // Project both directions into unified (Player, Partner, Quantity) relation
+                var fromSide = context.TransferLogs
                     .Where(t => t.Timestamp >= cutoffDate)
-                    .GroupBy(t => t.FromPlayerName)
+                    .Select(t => new { Player = t.FromPlayerName, Partner = t.ToPlayerName, Quantity = (long)t.Quantity });
+
+                var toSide = context.TransferLogs
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .Select(t => new { Player = t.ToPlayerName, Partner = t.FromPlayerName, Quantity = (long)t.Quantity });
+
+                var pairs = fromSide.Concat(toSide);
+
+                var allParticipants = pairs
+                    .GroupBy(p => p.Player)
                     .Select(g => new TransferParticipantStats
                     {
                         PlayerName = g.Key,
                         TotalTransfers = g.Count(),
-                        UniquePartners = g.Select(t => t.ToPlayerName).Distinct().Count(),
-                        TotalQuantity = g.Sum(t => t.Quantity)
-                    });
-
-                var toPlayers = context.TransferLogs
-                    .Where(t => t.Timestamp >= cutoffDate)
-                    .GroupBy(t => t.ToPlayerName)
-                    .Select(g => new TransferParticipantStats
-                    {
-                        PlayerName = g.Key,
-                        TotalTransfers = g.Count(),
-                        UniquePartners = g.Select(t => t.FromPlayerName).Distinct().Count(),
-                        TotalQuantity = g.Sum(t => t.Quantity)
-                    });
-
-                // Combine both directions and aggregate
-                var allParticipants = fromPlayers.Concat(toPlayers)
-                    .GroupBy(p => p.PlayerName)
-                    .Select(g => new TransferParticipantStats
-                    {
-                        PlayerName = g.Key,
-                        TotalTransfers = g.Sum(p => p.TotalTransfers),
-                        UniquePartners = g.Max(p => p.UniquePartners), // Take max since we're looking at unique partners
-                        TotalQuantity = g.Sum(p => p.TotalQuantity)
+                        UniquePartners = g.Select(x => x.Partner).Distinct().Count(),
+                        TotalQuantity = g.Sum(x => x.Quantity)
                     })
                     .OrderByDescending(p => p.TotalTransfers)
                     .Take(limit)

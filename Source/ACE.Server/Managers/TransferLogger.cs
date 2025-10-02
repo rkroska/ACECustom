@@ -51,6 +51,8 @@ namespace ACE.Server.Managers
                     if (admin.Session?.Network == null)
                         continue;
 
+                    // Note: This is called from background threads but appears to work safely in practice
+                    // If cross-thread issues arise, consider marshaling to main thread
                     admin.Session.Network.EnqueueSend(new GameMessageSystemChat($"[TRANSFER LOG] {message}", ChatMessageType.System));
                 }
             }
@@ -298,11 +300,11 @@ namespace ACE.Server.Managers
                     log.Info("Unique index missing, cleaning duplicates and creating index...");
                     context.Database.ExecuteSqlRaw(@"
                         DELETE t1 FROM transfer_summaries t1
-                        INNER JOIN transfer_summaries t2 
-                        WHERE t1.Id > t2.Id 
-                        AND t1.FromPlayerName = t2.FromPlayerName 
-                        AND t1.ToPlayerName = t2.ToPlayerName 
-                        AND t1.TransferType = t2.TransferType");
+                        INNER JOIN transfer_summaries t2
+                            ON t1.FromPlayerName = t2.FromPlayerName
+                           AND t1.ToPlayerName = t2.ToPlayerName
+                           AND t1.TransferType = t2.TransferType
+                           AND t1.Id > t2.Id");
 
                     context.Database.ExecuteSqlRaw(@"
                         CREATE UNIQUE INDEX `idx_transfer_summary_unique`
