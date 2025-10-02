@@ -1241,16 +1241,16 @@ namespace ACE.Server.Managers
             return DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);
         }
 
-        public static List<TransferLog> GetSuspiciousTransfers(int days)
+        public static List<TransferLog> GetRecentTransfers(int days)
         {
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
-            return DatabaseManager.Shard.BaseDatabase.GetSuspiciousTransfers(cutoffDate);
+            return DatabaseManager.Shard.BaseDatabase.GetRecentTransfers(cutoffDate);
         }
 
         public static List<TransferLog> GetTransferPatterns(string playerName, int days)
         {
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
-            return DatabaseManager.Shard.BaseDatabase.GetTransferPatterns(playerName, cutoffDate);
+            return DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);
         }
 
         // Configuration management methods

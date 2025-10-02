@@ -236,7 +236,7 @@ namespace ACE.Server.Command.Handlers
                 days = parsedDays;
             }
 
-            var transfers = TransferLogger.GetSuspiciousTransfers(days);
+            var transfers = TransferLogger.GetRecentTransfers(days);
             
             if (transfers.Count == 0)
             {

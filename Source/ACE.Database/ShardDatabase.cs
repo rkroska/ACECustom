@@ -928,17 +928,19 @@ namespace ACE.Database
             using (var context = new ShardDbContext())
             {
                 return context.TransferLogs
+                    .AsNoTracking()
                     .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
                     .OrderByDescending(t => t.Timestamp)
                     .ToList();
             }
         }
 
-        public List<TransferLog> GetSuspiciousTransfers(DateTime cutoffDate)
+        public List<TransferLog> GetRecentTransfers(DateTime cutoffDate)
         {
             using (var context = new ShardDbContext())
             {
                 return context.TransferLogs
+                    .AsNoTracking()
                     .Where(t => t.Timestamp >= cutoffDate)
                     .OrderByDescending(t => t.Timestamp)
                     .ToList();
@@ -951,10 +953,12 @@ namespace ACE.Database
             {
                 // Project both directions into unified (Player, Partner, Quantity) relation
                 var fromSide = context.TransferLogs
+                    .AsNoTracking()
                     .Where(t => t.Timestamp >= cutoffDate)
                     .Select(t => new { Player = t.FromPlayerName, Partner = t.ToPlayerName, Quantity = (long)t.Quantity });
 
                 var toSide = context.TransferLogs
+                    .AsNoTracking()
                     .Where(t => t.Timestamp >= cutoffDate)
                     .Select(t => new { Player = t.ToPlayerName, Partner = t.FromPlayerName, Quantity = (long)t.Quantity });
 
@@ -983,6 +987,7 @@ namespace ACE.Database
             using (var context = new ShardDbContext())
             {
                 return context.TransferSummaries
+                    .AsNoTracking()
                     .Where(s => (s.FromPlayerName == playerName || s.ToPlayerName == playerName) && s.LastTransfer >= cutoffDate)
                     .OrderByDescending(s => s.LastTransfer)
                     .ToList();
@@ -994,6 +999,7 @@ namespace ACE.Database
             using (var context = new ShardDbContext())
             {
                 return context.TransferSummaries
+                    .AsNoTracking()
                     .Where(s => s.IsSuspicious && s.LastTransfer >= cutoffDate)
                     .OrderByDescending(s => s.SuspiciousTransfers)
                     .ThenByDescending(s => s.TotalValue)
@@ -1001,16 +1007,6 @@ namespace ACE.Database
             }
         }
 
-        public List<TransferLog> GetTransferPatterns(string playerName, DateTime cutoffDate)
-        {
-            using (var context = new ShardDbContext())
-            {
-                return context.TransferLogs
-                    .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
-                    .OrderByDescending(t => t.Timestamp)
-                    .ToList();
-            }
-        }
 
 
         // Cleanup methods
@@ -1019,12 +1015,10 @@ namespace ACE.Database
             var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
             using (var context = new ShardDbContext())
             {
-                var oldLogs = context.TransferLogs.Where(t => t.Timestamp < cutoffDate);
-                var count = oldLogs.Count();
+                var count = context.TransferLogs.Count(t => t.Timestamp < cutoffDate);
                 if (count > 0)
                 {
-                    context.TransferLogs.RemoveRange(oldLogs);
-                    context.SaveChanges();
+                    context.Database.ExecuteSqlRaw($"DELETE FROM transfer_logs WHERE Timestamp < {{0}}", cutoffDate);
                     log.Info($"Cleaned up {count} old transfer logs older than {daysToKeep} days");
                 }
             }
@@ -1035,12 +1029,10 @@ namespace ACE.Database
             var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
             using (var context = new ShardDbContext())
             {
-                var oldSummaries = context.TransferSummaries.Where(s => s.LastTransfer < cutoffDate);
-                var count = oldSummaries.Count();
+                var count = context.TransferSummaries.Count(s => s.LastTransfer < cutoffDate);
                 if (count > 0)
                 {
-                    context.TransferSummaries.RemoveRange(oldSummaries);
-                    context.SaveChanges();
+                    context.Database.ExecuteSqlRaw($"DELETE FROM transfer_summaries WHERE LastTransfer < {{0}}", cutoffDate);
                     log.Info($"Cleaned up {count} old transfer summaries older than {daysToKeep} days");
                 }
             }
