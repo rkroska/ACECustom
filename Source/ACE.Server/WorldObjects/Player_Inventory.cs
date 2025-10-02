@@ -1112,21 +1112,83 @@ namespace ACE.Server.WorldObjects
                             }
                         }
 
-                        // Ground pickup logging for stackable items is handled in HandleActionStackableMerge
-                        // Only log non-stackable ground pickups here
+                        // Capture item data before it might be destroyed during stackable merges
                         bool isGroundPickup = itemRootOwner == null && containerRootOwner == this;
                         bool isStackableItem = item is Stackable;
-                        
-                        if (isGroundPickup && !isStackableItem)
+                        string capturedItemName = item?.Name;
+                        long capturedItemQuantity = item?.StackSize ?? 1;
+                        uint capturedItemWeenieClassId = item?.WeenieClassId ?? 0;
+
+                        // For stackable items, check if there's an existing stack that might merge
+                        WorldObject existingStack = null;
+                        int originalStackSize = 0;
+                        if (isStackableItem && isGroundPickup)
                         {
-                            // Log non-stackable ground pickups (stackable ones are handled in HandleActionStackableMerge)
-                            TransferLogger.LogGroundPickup(this, item);
+                            existingStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                            originalStackSize = existingStack?.StackSize ?? 0;
                         }
 
                         if (DoHandleActionPutItemInContainer(item, itemRootOwner, itemWasEquipped, container, containerRootOwner, placement))
                         {
-                            // Log ground pickup after successful processing using captured data
-                            // Ground pickup logging is now handled in HandleActionStackableMerge for stackable items
+                            // Log ground pickup after successful processing
+                            if (isGroundPickup)
+                            {
+                                if (isStackableItem && existingStack != null)
+                                {
+                                    // Check if this was a merge (existing stack size increased)
+                                    int newStackSize = existingStack.StackSize ?? 0;
+                                    if (newStackSize > originalStackSize)
+                                    {
+                                        // This was a merge, logging is handled in HandleActionStackableMerge
+                                        // Do nothing here to avoid double logging
+                                    }
+                                    else
+                                    {
+                                        // No merge occurred, this stackable item became a new stack
+                                        try
+                                        {
+                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
+                                                .FirstOrDefault(x => x != existingStack);
+                                            if (newStack != null)
+                                            {
+                                                TransferLogger.LogGroundPickup(this, newStack);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging stackable ground pickup (new stack): {ex.Message}");
+                                        }
+                                    }
+                                }
+                                else if (isStackableItem && existingStack == null)
+                                {
+                                    // No existing stack, this is definitely a new stackable item
+                                    try
+                                    {
+                                        var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                                        if (newStack != null)
+                                        {
+                                            TransferLogger.LogGroundPickup(this, newStack);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging stackable ground pickup (no existing stack): {ex.Message}");
+                                    }
+                                }
+                                else if (!isStackableItem)
+                                {
+                                    // Non-stackable ground pickup
+                                    try
+                                    {
+                                        TransferLogger.LogGroundPickup(this, item);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging non-stackable ground pickup: {ex.Message}");
+                                    }
+                                }
+                            }
                             
                             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
 

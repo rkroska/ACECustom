@@ -84,7 +84,18 @@ namespace ACE.Database.Models.Shard
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Configure transfer logging tables
-            modelBuilder.Entity<TransferLog>().ToTable("transfer_logs");
+            modelBuilder.Entity<TransferLog>(entity =>
+            {
+                entity.ToTable("transfer_logs");
+                
+                // Add indexes for common query patterns
+                entity.HasIndex(e => e.FromPlayerName, "IX_transfer_logs_FromPlayerName");
+                entity.HasIndex(e => e.ToPlayerName, "IX_transfer_logs_ToPlayerName");
+                entity.HasIndex(e => e.FromPlayerAccount, "IX_transfer_logs_FromPlayerAccount");
+                entity.HasIndex(e => e.ToPlayerAccount, "IX_transfer_logs_ToPlayerAccount");
+                entity.HasIndex(e => e.TransferType, "IX_transfer_logs_TransferType");
+                entity.HasIndex(e => e.Timestamp, "IX_transfer_logs_Timestamp");
+            });
             modelBuilder.Entity<TransferSummary>(entity =>
             {
                 entity.ToTable("transfer_summaries");

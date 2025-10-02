@@ -130,25 +130,55 @@ namespace ACE.Server.Managers
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_logs LIMIT 1");
                 log.Info("transfer_logs table exists - checking for IP address columns...");
                 
-                // Try to add missing columns to existing table (will fail silently if they already exist)
-                try
+                // Check and add missing columns individually (MySQL-safe approach)
+                var connection = context.Database.GetDbConnection();
+                connection.Open();
+                using var command = connection.CreateCommand();
+                
+                // Check if columns exist and add them individually
+                var columnsToAdd = new[]
                 {
-                    context.Database.ExecuteSqlRaw(@"
-                        ALTER TABLE `transfer_logs` 
-                        ADD COLUMN IF NOT EXISTS `FromAccountCreatedDate` datetime(6) DEFAULT NULL AFTER `Timestamp`,
-                        ADD COLUMN IF NOT EXISTS `ToAccountCreatedDate` datetime(6) DEFAULT NULL AFTER `FromAccountCreatedDate`,
-                        ADD COLUMN IF NOT EXISTS `FromCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `ToAccountCreatedDate`,
-                        ADD COLUMN IF NOT EXISTS `ToCharacterCreatedDate` datetime(6) DEFAULT NULL AFTER `FromCharacterCreatedDate`,
-                        ADD COLUMN IF NOT EXISTS `FromPlayerIP` varchar(45) DEFAULT NULL AFTER `AdditionalData`,
-                        ADD COLUMN IF NOT EXISTS `ToPlayerIP` varchar(45) DEFAULT NULL AFTER `FromPlayerIP`,
-                        MODIFY COLUMN `Quantity` bigint(20) NOT NULL;");
+                    ("FromAccountCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("ToAccountCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("FromCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("ToCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("AdditionalData", "varchar(1000) DEFAULT NULL"),
+                    ("FromPlayerIP", "varchar(45) DEFAULT NULL"),
+                    ("ToPlayerIP", "varchar(45) DEFAULT NULL")
+                };
+                
+                foreach (var (columnName, columnType) in columnsToAdd)
+                {
+                    command.CommandText = $@"
+                        SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'transfer_logs' 
+                        AND COLUMN_NAME = '{columnName}'";
                     
-                    log.Info("Missing columns added to transfer_logs and Quantity migrated to bigint");
+                    var exists = Convert.ToInt32(command.ExecuteScalar()) > 0;
+                    if (!exists)
+                    {
+                        command.CommandText = $"ALTER TABLE `transfer_logs` ADD COLUMN `{columnName}` {columnType}";
+                        command.ExecuteNonQuery();
+                    }
                 }
-                catch (Exception ex)
+                
+                // Check and modify Quantity column to bigint
+                command.CommandText = @"
+                    SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'transfer_logs' 
+                    AND COLUMN_NAME = 'Quantity'";
+                
+                var quantityType = command.ExecuteScalar()?.ToString();
+                if (quantityType != "bigint")
                 {
-                    log.Info($"Missing columns may already exist: {ex.Message}");
+                    command.CommandText = "ALTER TABLE `transfer_logs` MODIFY COLUMN `Quantity` bigint(20) NOT NULL";
+                    command.ExecuteNonQuery();
                 }
+                
+                connection.Close();
+                log.Info("Missing columns added to transfer_logs and Quantity migrated to bigint");
             }
             catch
             {

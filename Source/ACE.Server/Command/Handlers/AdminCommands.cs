@@ -932,6 +932,7 @@ namespace ACE.Server.Command.Handlers
                     ("ToAccountCreatedDate", "datetime(6) DEFAULT NULL"),
                     ("FromCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
                     ("ToCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
+                    ("AdditionalData", "varchar(1000) DEFAULT NULL"),
                     ("FromPlayerIP", "varchar(45) DEFAULT NULL"),
                     ("ToPlayerIP", "varchar(45) DEFAULT NULL")
                 };
