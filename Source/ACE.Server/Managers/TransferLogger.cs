@@ -663,47 +663,57 @@ namespace ACE.Server.Managers
             var player1Value = player1Escrow.Sum(item => CalculateItemValue(item, item.StackSize ?? 1));
             var player2Value = player2Escrow.Sum(item => CalculateItemValue(item, item.StackSize ?? 1));
 
-            var transferLog = new TransferLog
+            // Log each item from player1 to player2
+            foreach (var item in player1Escrow)
             {
-                TransferType = TransferTypeTrade,
-                FromPlayerName = player1.Name,
-                FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                ToPlayerName = player2.Name,
-                ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                ItemName = $"Trade ({player1Escrow.Count} items)",
-                Quantity = player1Escrow.Count,
-                Timestamp = DateTime.UtcNow,
-                FromAccountCreatedDate = player1.Account?.CreateTime,
-                ToAccountCreatedDate = player2.Account?.CreateTime,
-                FromCharacterCreatedDate = GetCharacterCreationDate(player1),
-                ToCharacterCreatedDate = GetCharacterCreationDate(player2),
-                AdditionalData = $"Player1 Value: {player1Value}, Player2 Value: {player2Value}",
-                FromPlayerIP = GetPlayerIP(player1),
-                ToPlayerIP = GetPlayerIP(player2)
-            };
+                var transferLog = new TransferLog
+                {
+                    TransferType = TransferTypeTrade,
+                    FromPlayerName = player1.Name,
+                    FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                    ToPlayerName = player2.Name,
+                    ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                    ItemName = item.Name,
+                    Quantity = item.StackSize ?? 1,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = player1.Account?.CreateTime,
+                    ToAccountCreatedDate = player2.Account?.CreateTime,
+                    FromCharacterCreatedDate = GetCharacterCreationDate(player1),
+                    ToCharacterCreatedDate = GetCharacterCreationDate(player2),
+                    AdditionalData = $"Trade Value: {CalculateItemValue(item, item.StackSize ?? 1)}",
+                    FromPlayerIP = GetPlayerIP(player1),
+                    ToPlayerIP = GetPlayerIP(player2)
+                };
 
-            // Log reverse transfer for player2
-            var reverseTransferLog = new TransferLog
+                // Process in background thread to prevent blocking the game thread
+                Task.Run(() => ProcessTransferLogBackground(transferLog));
+            }
+
+            // Log each item from player2 to player1
+            foreach (var item in player2Escrow)
             {
-                TransferType = TransferTypeTrade,
-                FromPlayerName = player2.Name,
-                FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                ToPlayerName = player1.Name,
-                ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                ItemName = $"Trade ({player2Escrow.Count} items)",
-                Quantity = player2Escrow.Count,
-                Timestamp = DateTime.UtcNow,
-                FromAccountCreatedDate = player2.Account?.CreateTime,
-                ToAccountCreatedDate = player1.Account?.CreateTime,
-                FromCharacterCreatedDate = GetCharacterCreationDate(player2),
-                ToCharacterCreatedDate = GetCharacterCreationDate(player1),
-                AdditionalData = $"Player1 Value: {player1Value}, Player2 Value: {player2Value}",
-                FromPlayerIP = GetPlayerIP(player2),
-                ToPlayerIP = GetPlayerIP(player1)
-            };
-            
-            // Process in background thread to prevent blocking the game thread
-            Task.Run(() => ProcessTradeLogBackground(transferLog, reverseTransferLog, player1, player2, player1Value, player2Value));
+                var reverseTransferLog = new TransferLog
+                {
+                    TransferType = TransferTypeTrade,
+                    FromPlayerName = player2.Name,
+                    FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                    ToPlayerName = player1.Name,
+                    ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                    ItemName = item.Name,
+                    Quantity = item.StackSize ?? 1,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = player2.Account?.CreateTime,
+                    ToAccountCreatedDate = player1.Account?.CreateTime,
+                    FromCharacterCreatedDate = GetCharacterCreationDate(player2),
+                    ToCharacterCreatedDate = GetCharacterCreationDate(player1),
+                    AdditionalData = $"Trade Value: {CalculateItemValue(item, item.StackSize ?? 1)}",
+                    FromPlayerIP = GetPlayerIP(player2),
+                    ToPlayerIP = GetPlayerIP(player1)
+                };
+
+                // Process in background thread to prevent blocking the game thread
+                Task.Run(() => ProcessTransferLogBackground(reverseTransferLog));
+            }
             }
             catch (Exception ex)
             {
@@ -1008,38 +1018,6 @@ namespace ACE.Server.Managers
         }
 
 
-        private static void ProcessTradeLogBackground(TransferLog transferLog, TransferLog reverseTransferLog, Player player1, Player player2, long player1Value, long player2Value)
-        {
-            try
-            {
-                // Ensure database is migrated before processing
-                EnsureDatabaseMigrated();
-
-                // Save both transfers to database (background thread)
-                DatabaseManager.Shard.BaseDatabase.SaveTransferLog(transferLog);
-                DatabaseManager.Shard.BaseDatabase.SaveTransferLog(reverseTransferLog);
-
-                // Update monitoring system for both transfers (background thread)
-                TransferMonitor.RecordTransfer(transferLog);
-                TransferMonitor.RecordTransfer(reverseTransferLog);
-
-                // Update transfer summaries for both transfers (background thread)
-                UpdateTransferSummary(transferLog);
-                UpdateTransferSummary(reverseTransferLog);
-
-                // Send admin notification (background thread)
-                if (Config.EnableAdminNotifications)
-                {
-                    var adminMessage = $"TRADE: {player1.Name} <-> {player2.Name}: {transferLog.Quantity} items each (Values: {player1Value:N0} <-> {player2Value:N0})";
-                    SendAdminMessage(adminMessage);
-                }
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Background trade processing failed: {ex.Message}");
-                log.Error($"Stack trace: {ex.StackTrace}");
-            }
-        }
 
         // Configuration methods
         public static void SetSuspiciousTransferThreshold(int threshold)

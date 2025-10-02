@@ -1496,6 +1496,16 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
 
                     item.EmoteManager.OnDrop(this);
+
+                    // Log ground drop for transfer monitoring (after successful drop and client notification)
+                    try
+                    {
+                        TransferLogger.LogGroundDrop(this, item);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error logging ground drop: {ex.Message}");
+                    }
                 }
                 else
                 {
@@ -1548,16 +1558,6 @@ namespace ACE.Server.WorldObjects
                 item.SendUpdatePosition(true);
             }
             item.Ethereal = ethereal;
-
-            // Log ground drop for transfer monitoring
-            try
-            {
-                TransferLogger.LogGroundDrop(this, item);
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Error logging ground drop: {ex.Message}");
-            }
 
             return true;
         }
