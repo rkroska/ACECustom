@@ -2611,6 +2611,16 @@ namespace ACE.Server.WorldObjects
                 if (TryDropItem(newStack))
                 {
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
+                    
+                    // Log the stack split to ground
+                    try
+                    {
+                        TransferLogger.LogGroundDrop(this, newStack);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error logging stack split to ground: {ex.Message}");
+                    }
                 }
                 else
                 {
