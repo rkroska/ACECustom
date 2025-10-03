@@ -560,7 +560,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("CONFIGURATION COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config threshold <number> - Set transfer threshold (current: {TransferLogger.SuspiciousTransferThreshold})", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config timewindow <hours> - Set time window (default: 24)", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config timewindow <hours> - Set time window (current: {TransferLogger.SuspiciousTransferTimeWindowHours})", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config patternthreshold <number> - Set pattern threshold (current: {TransferLogger.PatternDetectionThreshold})", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config transferlogging <on|off> - Enable/disable all transfer logging", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config adminnotifications <on|off> - Enable/disable admin notifications", ChatMessageType.System));

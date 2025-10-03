@@ -946,11 +946,11 @@ namespace ACE.Server.Managers
         private static long CalculateItemValue(WorldObject item, int quantity)
         {
             // Simplified value calculation - could be enhanced with actual item value logic
-            if (item.Name.Contains("Pyreal"))
+            if (item.Name.Contains("Pyreal", StringComparison.OrdinalIgnoreCase))
                 return quantity;
-            if (item.Name.Contains("Chunk"))
+            if (item.Name.Contains("Chunk", StringComparison.OrdinalIgnoreCase))
                 return quantity * ChunkValue;
-            if (item.Name.Contains("Ingot"))
+            if (item.Name.Contains("Ingot", StringComparison.OrdinalIgnoreCase))
                 return quantity * IngotValue;
             
             return quantity * DefaultItemValue;
