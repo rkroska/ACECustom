@@ -951,11 +951,11 @@ namespace ACE.Server.Command.Handlers
                         // Clean up any duplicate data first by keeping the record with the latest LastTransfer
                         var deletedCount = context.Database.ExecuteSqlRaw(@"
                             DELETE t1 FROM transfer_summaries t1
-                            INNER JOIN transfer_summaries t2 
-                            WHERE t1.Id > t2.Id 
-                            AND t1.FromPlayerName = t2.FromPlayerName 
-                            AND t1.ToPlayerName = t2.ToPlayerName 
-                            AND t1.TransferType = t2.TransferType");
+                            INNER JOIN transfer_summaries t2
+                                ON t1.FromPlayerName = t2.FromPlayerName
+                               AND t1.ToPlayerName   = t2.ToPlayerName
+                               AND t1.TransferType   = t2.TransferType
+                               AND t1.Id             > t2.Id");
 
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {deletedCount} duplicate summary records", ChatMessageType.System));
 
@@ -1265,30 +1265,52 @@ namespace ACE.Server.Command.Handlers
                         remainingParams = remainingParams.Take(remainingParams.Length - 1).ToArray();
                     }
                     
-                    // Parse name and reason, allowing unquoted multi-word names if the reason is quoted
                     if (remainingParams.Length >= 2)
                     {
                         var tokens = new List<string>(remainingParams);
                         var quotedReasonIndex = tokens.FindIndex(t => !string.IsNullOrEmpty(t) && (t[0] == '"' || t[0] == '\''));
-                        List<string> reasonTokens;
+
+                        int nameTokenCount = -1;
                         if (quotedReasonIndex > 0)
                         {
-                            // Everything before the quoted reason is the name
-                            name = string.Join(" ", tokens.Take(quotedReasonIndex));
-                            reasonTokens = tokens.Skip(quotedReasonIndex).ToList();
+                            nameTokenCount = quotedReasonIndex;
                         }
                         else
                         {
-                            // Fallback to ConsumeName for quoted single-token names or single-word unquoted names
+                            for (var i = tokens.Count; i >= 1; i--)
+                            {
+                                var candidate = string.Join(" ", tokens.Take(i));
+                                var exists = type == "player"
+                                    ? PlayerManager.FindByName(candidate) != null
+                                      || DatabaseManager.Shard.BaseDatabase.GetCharacterStubByName(candidate) != null
+                                    : DatabaseManager.Authentication.GetAccountByName(candidate) != null;
+                                if (exists)
+                                {
+                                    nameTokenCount = i;
+                                    break;
+                                }
+                            }
+                        }
+
+                        List<string> reasonTokens;
+                        if (nameTokenCount > 0)
+                        {
+                            name = string.Join(" ", tokens.Take(nameTokenCount));
+                            reasonTokens = tokens.Skip(nameTokenCount).ToList();
+                        }
+                        else
+                        {
                             name = ConsumeName(tokens);
                             reasonTokens = tokens;
                         }
+
                         if (string.IsNullOrWhiteSpace(name))
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Error: Missing name parameter", ChatMessageType.System));
                             return;
                         }
-                        reason = string.Join(" ", reasonTokens).Trim();
+
+                        reason = string.Join(" ", reasonTokens).Trim().Trim('"', '\'');
                         if (string.IsNullOrWhiteSpace(reason))
                         {
                             reason = "No reason provided";

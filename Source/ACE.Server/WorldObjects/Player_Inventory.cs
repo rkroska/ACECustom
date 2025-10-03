@@ -2890,18 +2890,6 @@ namespace ACE.Server.WorldObjects
             var sourceStack = FindObject(mergeFromGuid, SearchLocations.LocationsICanMove, out _, out var sourceStackRootOwner, out _);
             var targetStack = FindObject(mergeToGuid, SearchLocations.LocationsICanMove, out _, out var targetStackRootOwner, out _);
             
-            // Check if this is a ground pickup (source stack is on ground, target is in inventory)
-            if (sourceStack != null && sourceStackRootOwner == null && targetStackRootOwner == this)
-            {
-                try
-                {
-                    TransferLogger.LogGroundPickup(this, sourceStack);
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
-                }
-            }
 
             if (sourceStack == null)
             {
@@ -3083,6 +3071,19 @@ namespace ACE.Server.WorldObjects
 
                         if (DoHandleActionStackableMerge(sourceStack, targetStack, amount))
                         {
+                            // Check if this was a ground pickup (source stack was on ground, target is in inventory)
+                            if (sourceStackRootOwner == null && targetStackRootOwner == this)
+                            {
+                                try
+                                {
+                                    TransferLogger.LogGroundPickup(this, sourceStack);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
+                                }
+                            }
+
                             // If the client used the R key to merge a partial stack from the landscape, it also tries to add the "ghosted" item of the picked up stack to the inventory as well.
                             if (sourceStackRootOwner != this && sourceStack.StackSize > 0)
                                 Session.Network.EnqueueSend(new GameMessageCreateObject(sourceStack));
@@ -3107,7 +3108,21 @@ namespace ACE.Server.WorldObjects
             }
             else // This is a self-contained movement
             {
-                DoHandleActionStackableMerge(sourceStack, targetStack, amount);
+                if (DoHandleActionStackableMerge(sourceStack, targetStack, amount))
+                {
+                    // Check if this was a ground pickup (source stack was on ground, target is in inventory)
+                    if (sourceStackRootOwner == null && targetStackRootOwner == this)
+                    {
+                        try
+                        {
+                            TransferLogger.LogGroundPickup(this, sourceStack);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
+                        }
+                    }
+                }
             }
         }
 
@@ -3410,9 +3425,16 @@ namespace ACE.Server.WorldObjects
                 target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} gives you {stackMsg}{itemName}.", ChatMessageType.Broadcast));
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
-                
-                // Log the transfer
-                TransferLogger.LogDirectGive(this, target, itemToGive, (int)(itemToGive.StackSize ?? 1));
+
+                // Log the direct give for transfer monitoring
+                try
+                {
+                    TransferLogger.LogDirectGive(this, target, itemToGive, (int)(itemToGive.StackSize ?? 1));
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging direct give: {ex.Message}");
+                }
             });
 
             actionChain.EnqueueChain();
