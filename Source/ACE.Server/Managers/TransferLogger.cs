@@ -719,6 +719,11 @@ namespace ACE.Server.Managers
 
         public static void LogGroundPickup(Player player, WorldObject item)
         {
+            LogGroundPickup(player, item, item.StackSize ?? 1);
+        }
+
+        public static void LogGroundPickup(Player player, WorldObject item, int quantity)
+        {
             try
             {
                 if (!Config.EnableTransferLogging)
@@ -751,7 +756,7 @@ namespace ACE.Server.Managers
                     ToPlayerName = player.Name,
                     ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
                     ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
+                    Quantity = quantity,
                     Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = null, // Ground doesn't have account creation date
                     ToAccountCreatedDate = player.Account?.CreateTime,

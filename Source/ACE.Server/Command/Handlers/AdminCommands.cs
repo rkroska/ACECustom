@@ -141,14 +141,16 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        private static string ParsePlayerName(string[] parameters, out int days)
+        private static string ParsePlayerName(string[] parameters, out int days, out bool daysSpecified)
         {
             days = 7;
+            daysSpecified = false;
             
             // Check if last parameter is a number (days)
             if (parameters.Length > 1 && int.TryParse(parameters[parameters.Length - 1], out var parsedDays))
             {
                 days = parsedDays;
+                daysSpecified = true;
                 // Join all parameters except the last one for the player name
                 return string.Join(" ", parameters.Take(parameters.Length - 1));
             }
@@ -198,7 +200,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = ParsePlayerName(parameters, out var days);
+            var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
 
             var transfers = TransferLogger.GetTransferHistory(playerName, days);
             
@@ -267,8 +269,8 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = ParsePlayerName(parameters, out var days);
-            if (days == 7) days = DefaultTransferPatternDays; // Use default for patterns if not specified
+            var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
+            if (days == 7 && !daysSpecified) days = DefaultTransferPatternDays; // Use default for patterns if not specified
 
             var patterns = TransferLogger.GetTransferPatterns(playerName, days);
             
@@ -551,7 +553,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("NEW FEATURES:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit summaries <player> [days] - Show transfer summaries for a player", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit alerts [hours] - Show recent transfer alerts", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit alerts - Show recent transfer alerts", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit monitor - Show real-time monitoring stats", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit cleanup [days] - Clean up old transfer data", ChatMessageType.System));
             
@@ -601,8 +603,8 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = ParsePlayerName(parameters, out var days);
-            if (days == 7) days = 30; // Use default 30 days for summaries if not specified
+            var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
+            if (days == 7 && !daysSpecified) days = 30; // Use default 30 days for summaries if not specified
 
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
             var summaries = DatabaseManager.Shard.BaseDatabase.GetTransferSummaries(playerName, cutoffDate);
@@ -625,9 +627,7 @@ namespace ACE.Server.Command.Handlers
 
         private static void HandleTransferAlerts(Session session, string[] parameters)
         {
-            var hours = parameters.Length > 0 && int.TryParse(parameters[0], out var parsedHours) ? parsedHours : 24;
-
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Monitoring Stats (Last {hours} hours):", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("Transfer Monitoring Stats (fixed windows: 1m/1h/1d):", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Transfer Rate: {TransferMonitor.GetTransferRate():F1} transfers/minute", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Rate: {TransferMonitor.GetSuspiciousRate():F1} suspicious/hour", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
@@ -811,7 +811,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var playerName = ParsePlayerName(parameters, out var days);
+            var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
 
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
             var transfers = DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);

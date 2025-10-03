@@ -1140,7 +1140,20 @@ namespace ACE.Server.WorldObjects
                                     if (newStackSize > originalStackSize)
                                     {
                                         // This was a merge, logging is handled in HandleActionStackableMerge
-                                        // Do nothing here to avoid double logging
+                                        // But also check for any overflow-created new stack
+                                        try
+                                        {
+                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
+                                                .FirstOrDefault(x => x != existingStack);
+                                            if (newStack != null)
+                                            {
+                                                TransferLogger.LogGroundPickup(this, newStack);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging overflow-created new stack pickup: {ex.Message}");
+                                        }
                                     }
                                     else
                                     {
@@ -3076,7 +3089,8 @@ namespace ACE.Server.WorldObjects
                             {
                                 try
                                 {
-                                    TransferLogger.LogGroundPickup(this, sourceStack);
+                                    // Capture the merge amount before the stack might be destroyed
+                                    TransferLogger.LogGroundPickup(this, sourceStack, amount);
                                 }
                                 catch (Exception ex)
                                 {
