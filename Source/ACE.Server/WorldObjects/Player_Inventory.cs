@@ -2878,7 +2878,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionStackableMerge(uint mergeFromGuid, uint mergeToGuid, int amount)
         {
             //Console.WriteLine($"HandleActionStackableMerge({mergeFromGuid:X8}, {mergeToGuid:X8}, {amount})");
-            
+
             if (amount <= 0)
             {
                 log.WarnFormat("Player 0x{0}:{1} tried to merge item with invalid amount ({3}) 0x{2:X8}.", Guid.Full, Name, mergeFromGuid, amount);

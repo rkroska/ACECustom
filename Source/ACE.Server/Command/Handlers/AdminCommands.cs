@@ -303,7 +303,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length < 2)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit config <setting> <value>", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("Settings: threshold, timewindow, patternthreshold, trackall, enabled", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Settings: threshold, timewindow, patternthreshold, trackall, enabled, transferlogging, adminnotifications", ChatMessageType.System));
                 return;
             }
 
@@ -376,9 +376,35 @@ namespace ACE.Server.Command.Handlers
                         }
                         break;
 
+                    case "transferlogging":
+                        if (bool.TryParse(value, out var transferLogging) || value.ToLower() == "on" || value.ToLower() == "off")
+                        {
+                            var transferLoggingValue = value.ToLower() == "on" || (value.ToLower() == "true");
+                            TransferLogger.UpdateEnableTransferLogging(transferLoggingValue);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated transfer logging to {(transferLoggingValue ? "ON" : "OFF")}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid transfer logging value. Use 'on', 'off', 'true', or 'false'.", ChatMessageType.System));
+                        }
+                        break;
+
+                    case "adminnotifications":
+                        if (bool.TryParse(value, out var adminNotifications) || value.ToLower() == "on" || value.ToLower() == "off")
+                        {
+                            var adminNotificationsValue = value.ToLower() == "on" || (value.ToLower() == "true");
+                            TransferLogger.UpdateEnableAdminNotifications(adminNotificationsValue);
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Updated admin notifications to {(adminNotificationsValue ? "ON" : "OFF")}", ChatMessageType.System));
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Invalid admin notifications value. Use 'on', 'off', 'true', or 'false'.", ChatMessageType.System));
+                        }
+                        break;
+
                 default:
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown setting: {setting}", ChatMessageType.System));
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Available settings: threshold, timewindow, patternthreshold, trackall, enabled", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Available settings: threshold, timewindow, patternthreshold, trackall, enabled, transferlogging, adminnotifications", ChatMessageType.System));
                     break;
                 }
             }
@@ -534,14 +560,16 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config threshold <number> - Set transfer threshold (current: {TransferLogger.SuspiciousTransferThreshold})", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config timewindow <hours> - Set time window (default: 24)", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config patternthreshold <number> - Set pattern threshold (current: {TransferLogger.PatternDetectionThreshold})", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config transferlogging <on|off> - Enable/disable all transfer logging", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config adminnotifications <on|off> - Enable/disable admin notifications", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config trackall <on|off> - Track all items or only listed items", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config enabled <on|off> - Enable/disable item tracking", ChatMessageType.System));
             
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("ITEM TRACKING COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items add <itemname> - Add item to tracking list", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items remove <itemname> - Remove item from tracking list", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items list - Show tracked items list", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items trackall <on|off> - Track all items or only listed items", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items enabled <on|off> - Enable/disable item tracking", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit ip <player> [days] - Show IP address patterns for transfers", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit top [days] - Show most active transfer participants", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit migrate - Create/update all transfer monitoring tables", ChatMessageType.System));

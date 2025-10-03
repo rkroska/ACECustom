@@ -493,8 +493,6 @@ namespace ACE.Server.Managers
         {
             try
             {
-                log.Info($"LogBankTransfer called: {fromPlayer.Name} -> {toPlayerName}, {itemName} x{quantity}");
-                
                 // Get the destination player if they're online
                 var toPlayer = PlayerManager.GetAllPlayers().FirstOrDefault(p => p.Name == toPlayerName) as Player;
                 
@@ -569,8 +567,6 @@ namespace ACE.Server.Managers
         {
             try
             {
-                log.Info($"LogDirectGive called: {fromPlayer.Name} -> {toPlayer.Name}, {item.Name} x{quantity}");
-                
                 if (!Config.EnableTransferLogging)
                 {
                     log.Info("Skipping direct give logging - transfer logging disabled");
@@ -627,8 +623,6 @@ namespace ACE.Server.Managers
         {
             try
             {
-                log.Info($"LogTrade called: {player1.Name} <-> {player2.Name}, {player1Escrow.Count} items each");
-                
                 if (!Config.EnableTransferLogging)
                 {
                     log.Info("Skipping trade logging - transfer logging disabled");
@@ -666,16 +660,16 @@ namespace ACE.Server.Managers
             // Log each item from player1 to player2
             foreach (var item in player1Escrow)
             {
-                var transferLog = new TransferLog
-                {
+            var transferLog = new TransferLog
+            {
                     TransferType = TransferTypeTrade,
-                    FromPlayerName = player1.Name,
-                    FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = player2.Name,
-                    ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                FromPlayerName = player1.Name,
+                FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                ToPlayerName = player2.Name,
+                ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
                     ItemName = item.Name,
                     Quantity = item.StackSize ?? 1,
-                    Timestamp = DateTime.UtcNow,
+                Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = player1.Account?.CreateTime,
                     ToAccountCreatedDate = player2.Account?.CreateTime,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player1),
@@ -692,16 +686,16 @@ namespace ACE.Server.Managers
             // Log each item from player2 to player1
             foreach (var item in player2Escrow)
             {
-                var reverseTransferLog = new TransferLog
-                {
+            var reverseTransferLog = new TransferLog
+            {
                     TransferType = TransferTypeTrade,
-                    FromPlayerName = player2.Name,
-                    FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = player1.Name,
-                    ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                FromPlayerName = player2.Name,
+                FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                ToPlayerName = player1.Name,
+                ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
                     ItemName = item.Name,
                     Quantity = item.StackSize ?? 1,
-                    Timestamp = DateTime.UtcNow,
+                Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = player2.Account?.CreateTime,
                     ToAccountCreatedDate = player1.Account?.CreateTime,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player2),
@@ -727,8 +721,6 @@ namespace ACE.Server.Managers
         {
             try
             {
-                log.Info($"LogGroundPickup called: {player.Name} picked up {item.Name} x{item.StackSize ?? 1}");
-                
                 if (!Config.EnableTransferLogging)
                 {
                     log.Info("Skipping ground pickup logging - transfer logging disabled");
@@ -785,8 +777,6 @@ namespace ACE.Server.Managers
         {
             try
             {
-                log.Info($"LogGroundPickupWithData called: {playerName} picked up {itemName} x{itemQuantity}");
-                
                 if (!Config.EnableTransferLogging)
                 {
                     log.Info("Skipping ground pickup logging - transfer logging disabled");
@@ -838,8 +828,6 @@ namespace ACE.Server.Managers
         {
             try
             {
-                log.Info($"LogGroundDrop called: {player.Name} dropped {item.Name} x{item.StackSize ?? 1}");
-                
                 if (!Config.EnableTransferLogging)
                 {
                     log.Info("Skipping ground drop logging - transfer logging disabled");
@@ -1341,6 +1329,18 @@ namespace ACE.Server.Managers
         public static void UpdateTrackAllItems(bool trackAll)
         {
             Config.TrackAllItems = trackAll;
+            SaveConfigurationToDatabase();
+        }
+
+        public static void UpdateEnableTransferLogging(bool enabled)
+        {
+            Config.EnableTransferLogging = enabled;
+            SaveConfigurationToDatabase();
+        }
+
+        public static void UpdateEnableAdminNotifications(bool enabled)
+        {
+            Config.EnableAdminNotifications = enabled;
             SaveConfigurationToDatabase();
         }
 
