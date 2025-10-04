@@ -3132,14 +3132,15 @@ namespace ACE.Server.WorldObjects
             }
             else // This is a self-contained movement
             {
-                if (DoHandleActionStackableMerge(sourceStack, targetStack, amount))
+                var mergeAmount = amount;
+                if (DoHandleActionStackableMerge(sourceStack, targetStack, mergeAmount))
                 {
                     // Check if this was a ground pickup (source stack was on ground, target is in inventory)
                     if (sourceStackRootOwner == null && targetStackRootOwner == this)
                     {
                         try
                         {
-                            TransferLogger.LogGroundPickup(this, sourceStack);
+                            TransferLogger.LogGroundPickup(this, sourceStack, mergeAmount);
                         }
                         catch (Exception ex)
                         {

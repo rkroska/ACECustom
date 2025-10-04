@@ -220,7 +220,7 @@ namespace ACE.Server.Command.Handlers
                 var fromCharAge = transfer.FromCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 var toCharAge = transfer.ToCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 
-                var message = $"{transfer.Timestamp:MM/dd HH:mm} | {transfer.TransferType} | {transfer.FromPlayerName} ({transfer.FromPlayerAccount}) -> {transfer.ToPlayerName} ({transfer.ToPlayerAccount}) | {transfer.ItemName} x{transfer.Quantity} | From: Acc({transfer.FromPlayerAccount}) Char({fromCharAge}) | To: Acc({transfer.ToPlayerAccount}) Char({toCharAge})";
+                var message = $"{transfer.Timestamp:MM/dd HH:mm} | {transfer.TransferType} | {transfer.FromPlayerName} ({transfer.FromPlayerAccount}) -> {transfer.ToPlayerName} ({transfer.ToPlayerAccount}) | {transfer.ItemName} x{transfer.Quantity} | From: Acc({fromAccountAge}) Char({fromCharAge}) | To: Acc({toAccountAge}) Char({toCharAge})";
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
             }
 
@@ -290,7 +290,7 @@ namespace ACE.Server.Command.Handlers
                 var fromCharAge = pattern.FromCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 var toCharAge = pattern.ToCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 
-                var message = $"{pattern.Timestamp:MM/dd HH:mm} | {pattern.TransferType} | {pattern.FromPlayerName} ({pattern.FromPlayerAccount}) -> {pattern.ToPlayerName} ({pattern.ToPlayerAccount}) | {pattern.ItemName} x{pattern.Quantity} | From: Acc({pattern.FromPlayerAccount}) Char({fromCharAge}) | To: Acc({pattern.ToPlayerAccount}) Char({toCharAge})";
+                var message = $"{pattern.Timestamp:MM/dd HH:mm} | {pattern.TransferType} | {pattern.FromPlayerName} ({pattern.FromPlayerAccount}) -> {pattern.ToPlayerName} ({pattern.ToPlayerAccount}) | {pattern.ItemName} x{pattern.Quantity} | From: Acc({fromAccountAge}) Char({fromCharAge}) | To: Acc({toAccountAge}) Char({toCharAge})";
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
             }
 
