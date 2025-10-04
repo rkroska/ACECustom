@@ -146,19 +146,24 @@ namespace ACE.Server.Command.Handlers
             days = 7;
             daysSpecified = false;
             
+            string playerName;
+            
             // Check if last parameter is a number (days)
             if (parameters.Length > 1 && int.TryParse(parameters[parameters.Length - 1], out var parsedDays))
             {
                 days = parsedDays;
                 daysSpecified = true;
                 // Join all parameters except the last one for the player name
-                return string.Join(" ", parameters.Take(parameters.Length - 1));
+                playerName = string.Join(" ", parameters.Take(parameters.Length - 1));
             }
             else
             {
                 // Join all parameters for the player name
-                return string.Join(" ", parameters);
+                playerName = string.Join(" ", parameters);
             }
+            
+            // Trim whitespace and surrounding quotes
+            return playerName.Trim().Trim('"', '\'');
         }
 
         private static string ConsumeName(List<string> tokens)
