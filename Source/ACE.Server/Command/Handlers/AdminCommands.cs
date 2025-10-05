@@ -207,6 +207,8 @@ namespace ACE.Server.Command.Handlers
 
             var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
 
+            // Clamp days to prevent ArgumentOutOfRangeException
+            days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var transfers = TransferLogger.GetTransferHistory(playerName, days);
             
             if (transfers.Count == 0)
@@ -277,6 +279,8 @@ namespace ACE.Server.Command.Handlers
             var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
             if (days == 7 && !daysSpecified) days = DefaultTransferPatternDays; // Use default for patterns if not specified
 
+            // Clamp days to prevent ArgumentOutOfRangeException
+            days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var patterns = TransferLogger.GetTransferPatterns(playerName, days);
             
             if (patterns.Count == 0)
@@ -611,6 +615,8 @@ namespace ACE.Server.Command.Handlers
             var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
             if (days == 7 && !daysSpecified) days = 30; // Use default 30 days for summaries if not specified
 
+            // Clamp days to prevent ArgumentOutOfRangeException
+            days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
             var summaries = DatabaseManager.Shard.BaseDatabase.GetTransferSummaries(playerName, cutoffDate);
 
@@ -681,6 +687,8 @@ namespace ACE.Server.Command.Handlers
 
             try
             {
+                // Clamp days to prevent ArgumentOutOfRangeException
+                days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
                 var cutoffDate = DateTime.UtcNow.AddDays(-days);
                 
                 // Get most active players by transfer count
@@ -818,6 +826,8 @@ namespace ACE.Server.Command.Handlers
 
             var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
 
+            // Clamp days to prevent ArgumentOutOfRangeException
+            days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
             var transfers = DatabaseManager.Shard.BaseDatabase.GetTransferHistory(playerName, cutoffDate);
 
