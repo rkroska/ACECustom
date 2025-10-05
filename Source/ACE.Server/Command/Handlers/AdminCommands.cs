@@ -1039,8 +1039,35 @@ namespace ACE.Server.Command.Handlers
                     command.ExecuteNonQuery();
                 }
                 
+                // Check and create missing indexes
+                var indexesToAdd = new[]
+                {
+                    ("IX_transfer_logs_FromPlayerIP", "FromPlayerIP"),
+                    ("IX_transfer_logs_ToPlayerIP", "ToPlayerIP"),
+                    ("IX_transfer_logs_FromAccountCreatedDate", "FromAccountCreatedDate"),
+                    ("IX_transfer_logs_ToAccountCreatedDate", "ToAccountCreatedDate"),
+                    ("IX_transfer_logs_FromCharacterCreatedDate", "FromCharacterCreatedDate"),
+                    ("IX_transfer_logs_ToCharacterCreatedDate", "ToCharacterCreatedDate")
+                };
+                
+                foreach (var (indexName, columnName) in indexesToAdd)
+                {
+                    command.CommandText = $@"
+                        SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'transfer_logs' 
+                        AND INDEX_NAME = '{indexName}'";
+                    
+                    var indexExists = Convert.ToInt32(command.ExecuteScalar()) > 0;
+                    if (!indexExists)
+                    {
+                        command.CommandText = $"ALTER TABLE `transfer_logs` ADD KEY `{indexName}` (`{columnName}`)";
+                        command.ExecuteNonQuery();
+                    }
+                }
+                
                 connection.Close();
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns and Quantity bigint migration", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns, Quantity bigint migration, and indexes", ChatMessageType.System));
             }
             catch
             {
