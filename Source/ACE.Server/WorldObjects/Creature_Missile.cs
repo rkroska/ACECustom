@@ -74,7 +74,7 @@ namespace ACE.Server.WorldObjects
         private const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
         
         // Split arrow validation constants
-        private const int SPLIT_ARROW_COUNT_MIN = 1;
+        private const int SPLIT_ARROW_COUNT_MIN = 0;
         private const int SPLIT_ARROW_COUNT_MAX = 10;
         private const float SPLIT_ARROW_RANGE_MIN = 0f;
         private const float SPLIT_ARROW_RANGE_MAX = 50f;
@@ -149,7 +149,11 @@ namespace ACE.Server.WorldObjects
                 var hasSplitArrows = weapon.GetProperty(PropertyBool.SplitArrows);
                 if (hasSplitArrows == true)
                 {
-                    CreateSplitArrows(weapon, ammo, target, origin, orientation);
+                    var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DEFAULT_SPLIT_ARROW_COUNT;
+                    if (splitCount > 0)
+                    {
+                        CreateSplitArrows(weapon, ammo, target, origin, orientation);
+                    }
                 }
             }
 
@@ -545,7 +549,7 @@ namespace ACE.Server.WorldObjects
                 
                 // Removed verbose debug logging
                 
-                var additionalArrowCount = splitCount - 1; // We already have the main arrow
+                var additionalArrowCount = splitCount; // SplitArrowCount now directly represents number of split arrows to create
                 
                 var validTargets = FindValidSplitTargets(origin, target, splitRange, additionalArrowCount);
                 
