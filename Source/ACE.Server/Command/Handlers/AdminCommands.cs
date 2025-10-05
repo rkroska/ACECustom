@@ -245,6 +245,8 @@ namespace ACE.Server.Command.Handlers
                 days = parsedDays;
             }
 
+            // Clamp days to prevent ArgumentOutOfRangeException
+            days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var transfers = TransferLogger.GetRecentTransfers(days);
             
             if (transfers.Count == 0)
