@@ -178,6 +178,14 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Bugs ain't got banks.", ChatMessageType.Broadcast));
                 return;
             }
+
+            // Check if player or account is blacklisted from bank commands
+            if (TransferLogger.IsPlayerBankBlacklisted(session.Player.Name) || 
+                (session.Player.Account != null && TransferLogger.IsAccountBankBlacklisted(session.Player.Account.AccountName)))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You are not permitted to use bank commands at this time.", ChatMessageType.Broadcast));
+                return;
+            }
             if (parameters.Length == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));

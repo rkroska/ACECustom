@@ -10,6 +10,7 @@ namespace ACE.Server.Network.GameAction.Actions
             var containerGuid = message.Payload.ReadUInt32();
             var placement = message.Payload.ReadInt32();
 
+
             session.Player.HandleActionPutItemInContainer(itemGuid, containerGuid, placement);
         }
     }
