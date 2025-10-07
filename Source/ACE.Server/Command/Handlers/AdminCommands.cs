@@ -665,6 +665,9 @@ namespace ACE.Server.Command.Handlers
         {
             var days = parameters.Length > 0 && int.TryParse(parameters[0], out var parsedDays) ? parsedDays : 30;
 
+            // Clamp days to prevent DateTime overflow/underflow in downstream cleanup calls
+            days = Math.Max(1, Math.Min(days, 36500)); // ~100 years safety window
+
             session.Network.EnqueueSend(new GameMessageSystemChat($"Cleaning up transfer data older than {days} days...", ChatMessageType.System));
             
             try
