@@ -207,6 +207,13 @@ namespace ACE.Server.Command.Handlers
 
             var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
 
+            // Validate player name is not empty
+            if (string.IsNullOrWhiteSpace(playerName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit log <player> [days] (or /ba log)", ChatMessageType.Help));
+                return;
+            }
+
             // Clamp days to prevent ArgumentOutOfRangeException
             days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var transfers = TransferLogger.GetTransferHistory(playerName, days);
@@ -615,6 +622,14 @@ namespace ACE.Server.Command.Handlers
             }
 
             var playerName = ParsePlayerName(parameters, out var days, out var daysSpecified);
+
+            // Validate player name is not empty
+            if (string.IsNullOrWhiteSpace(playerName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Please specify a player name. Usage: /bankaudit summaries <player> [days]", ChatMessageType.System));
+                return;
+            }
+
             if (days == 7 && !daysSpecified) days = 30; // Use default 30 days for summaries if not specified
 
             // Clamp days to prevent ArgumentOutOfRangeException
@@ -1353,8 +1368,17 @@ namespace ACE.Server.Command.Handlers
                         }
                         else
                         {
+                            // If no player/account found in DB, use all tokens as name
+                            // This handles new/offline players not yet in cache
                             name = ConsumeName(tokens);
                             reasonTokens = tokens;
+                            
+                            // If ConsumeName only got the first word and there are more tokens, join them all
+                            if (tokens.Count > 0 && !name.Contains(" "))
+                            {
+                                name = string.Join(" ", new[] { name }.Concat(tokens));
+                                reasonTokens = new List<string>();
+                            }
                         }
 
                         if (string.IsNullOrWhiteSpace(name))
@@ -1407,7 +1431,7 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     var removeType = parameters[1].ToLower();
-                    var removeName = string.Join(" ", parameters.Skip(2));
+                    var removeName = string.Join(" ", parameters.Skip(2)).Trim().Trim('"', '\'');
 
                     if (removeType == "player")
                     {
