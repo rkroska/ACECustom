@@ -1543,6 +1543,13 @@ namespace ACE.Server.Command.Handlers
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{wo.Guid}:{wo.Name}");
         }
 
+        // Alias for delete
+        [CommandHandler("del", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Alias for delete - Deletes the selected object.", "Players may not be deleted this way.")]
+        public static void HandleDeleteSelectedAlias(Session session, params string[] parameters)
+        {
+            HandleDeleteSelected(session, parameters);
+        }
+
         // draw
         [CommandHandler("draw", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0)]
         public static void HandleDraw(Session session, params string[] parameters)
@@ -2565,7 +2572,7 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var player = PlayerManager.FindByName(playerName);
+                    var player = PlayerManager.FindFirstPlayerByName(playerName);
 
                     if (player == null)
                     {
@@ -2598,7 +2605,7 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var player = PlayerManager.GetAllPlayers().Where(p => p.Account.AccountName.Equals(accountName, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+                    var player = PlayerManager.FindFirstPlayer(p => p.Account?.AccountName?.Equals(accountName, StringComparison.OrdinalIgnoreCase) == true);
 
                     if (player == null)
                     {
@@ -3602,6 +3609,7 @@ namespace ACE.Server.Command.Handlers
                 }
             });
         }
+
 
         /// <summary>
         /// Creates an object or objects in the world

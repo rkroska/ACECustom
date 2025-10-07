@@ -239,54 +239,100 @@ namespace ACE.Server.WorldObjects
             }
             lock (balanceLock)
             {
-                //int i = 0;
-                var PyrealList = this.GetInventoryItemsOfWCID(8330);
-                foreach (var Pyreal in PyrealList)
+                // Single comprehensive scan: Get ALL items from main pack + side containers using iterative DFS
+                var allItems = new List<WorldObject>();
+                var processedContainers = new HashSet<ObjectGuid>(); // Prevent cycles
+                var containerStack = new Stack<Container>();
+                
+                // Add main inventory
+                allItems.AddRange(this.Inventory.Values);
+                
+                // Initialize stack with top-level side containers
+                var sideContainers = this.Inventory.Values.OfType<Container>();
+                foreach (var container in sideContainers)
                 {
-                    int val = Pyreal.Value ?? 0;
+                    if (container != null && !processedContainers.Contains(container.Guid))
+                    {
+                        containerStack.Push(container);
+                        processedContainers.Add(container.Guid);
+                    }
+                }
+                
+                // Iterative DFS: traverse arbitrarily nested containers
+                while (containerStack.Count > 0)
+                {
+                    var currentContainer = containerStack.Pop();
+                    
+                    // Add items from current container
+                    if (currentContainer.Inventory?.Values != null)
+                    {
+                        allItems.AddRange(currentContainer.Inventory.Values);
+                        
+                        // Find nested containers and add to stack
+                        var nestedContainers = currentContainer.Inventory.Values.OfType<Container>();
+                        foreach (var nested in nestedContainers)
+                        {
+                            if (nested != null && !processedContainers.Contains(nested.Guid))
+                            {
+                                containerStack.Push(nested);
+                                processedContainers.Add(nested.Guid);
+                            }
+                        }
+                    }
+                }
+                
+                // Filter in memory - no more scans!
+                var pyreals = allItems.Where(i => i.WeenieClassId == 8330);
+                var gold = allItems.Where(i => i.WeenieClassId == 8327);
+                var silver = allItems.Where(i => i.WeenieClassId == 8331);
+                var copper = allItems.Where(i => i.WeenieClassId == 8326);
+                
+                // Process pyreals
+                foreach (var pyreal in pyreals)
+                {
+                    int val = pyreal.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Pyreal))
+                        if (this.TryConsumeFromInventoryWithNetworking(pyreal))
                         {
                             BankedPyreals += val;
                         }
                     }
                 }
 
-                var GoldList = this.GetInventoryItemsOfWCID(8327);
-                foreach (var Gold in GoldList)
+                // Process gold
+                foreach (var goldItem in gold)
                 {
-                    int val = Gold.Value ?? 0;
+                    int val = goldItem.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Gold))
+                        if (this.TryConsumeFromInventoryWithNetworking(goldItem))
                         {
                             BankedPyreals += val;
                         }
                     }
                 }
 
-
-                var SilverList = this.GetInventoryItemsOfWCID(8331);
-                foreach (var Silver in SilverList)
+                // Process silver
+                foreach (var silverItem in silver)
                 {
-                    int val = Silver.Value ?? 0;
+                    int val = silverItem.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Silver))
+                        if (this.TryConsumeFromInventoryWithNetworking(silverItem))
                         {
                             BankedPyreals += val;
                         }
                     }
                 }
 
-                var CopperList = this.GetInventoryItemsOfWCID(8326);
-                foreach (var Copper in CopperList)
+                // Process copper
+                foreach (var copperItem in copper)
                 {
-                    int val = Copper.Value ?? 0;
+                    int val = copperItem.Value ?? 0;
                     if (val > 0)
                     {
-                        if (this.TryConsumeFromInventoryWithNetworking(Copper))
+                        if (this.TryConsumeFromInventoryWithNetworking(copperItem))
                         {
                             BankedPyreals += val;
                         }
@@ -710,6 +756,11 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        private IPlayer FindTargetByName(string name)
+        {
+            return PlayerManager.FindByName(name);
+        }
+
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
             // Check if sender has sufficient funds
@@ -719,7 +770,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -772,7 +823,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion ).FirstOrDefault();
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -824,7 +875,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -884,7 +935,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -943,7 +994,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -974,7 +1025,7 @@ namespace ACE.Server.WorldObjects
                         onlinePlayer.BankedEnlightenedCoins += Amount;
                     }
                     //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedEnlightenedCoins, onlinePlayer.BankedEnlightenedCoins ?? 0));
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightend Coins from {this.Name}", ChatMessageType.System));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightened Coins from {this.Name}", ChatMessageType.System));
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
@@ -1003,7 +1054,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            var tarplayer = PlayerManager.GetAllPlayers().Where(p => p.Name == CharacterDestination && !p.IsDeleted && !p.IsPendingDeletion).FirstOrDefault();
+            var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
                 return false;
@@ -1034,7 +1085,7 @@ namespace ACE.Server.WorldObjects
                         onlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
                     }
                     //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.BankedWeaklyEnlightenedCoins, onlinePlayer.BankedWeaklyEnlightenedCoins ?? 0));
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightend Coins from {this.Name}", ChatMessageType.System));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightened Coins from {this.Name}", ChatMessageType.System));
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
