@@ -446,7 +446,7 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist add <player|account> <name> (or /ba blacklist add)", ChatMessageType.Help));
                         return;
                     }
-                    var name = string.Join(" ", parameters.Skip(2));
+                    var name = string.Join(" ", parameters.Skip(2)).Trim().Trim('"', '\'');
                     if (type == "player")
                     {
                         TransferLogger.AddPlayerToBlacklist(name);
@@ -469,7 +469,7 @@ namespace ACE.Server.Command.Handlers
                         session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /bankaudit blacklist remove <player|account> <name> (or /ba blacklist remove)", ChatMessageType.Help));
                         return;
                     }
-                    name = string.Join(" ", parameters.Skip(2));
+                    name = string.Join(" ", parameters.Skip(2)).Trim().Trim('"', '\'');
                     if (type == "player")
                     {
                         TransferLogger.RemovePlayerFromBlacklist(name);
@@ -646,7 +646,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Rate: {TransferMonitor.GetHighValueRate():F1} high-value/day", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Transfers Last Minute: {TransferMonitor.TransfersLastMinute}", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Last Hour: {TransferMonitor.SuspiciousLastHour}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Last Day: {TransferMonitor.HighValueLastDay:N0} pyreals", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"High Value Last Day: {TransferMonitor.HighValueLastDay} events", ChatMessageType.System));
         }
 
         private static void HandleTransferMonitor(Session session, string[] parameters)
@@ -658,7 +658,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Current Rate Counters:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"  Transfers Last Minute: {TransferMonitor.TransfersLastMinute}", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"  Suspicious Last Hour: {TransferMonitor.SuspiciousLastHour}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"  High Value Last Day: {TransferMonitor.HighValueLastDay:N0} pyreals", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"  High Value Last Day: {TransferMonitor.HighValueLastDay} events", ChatMessageType.System));
         }
 
         private static void HandleTransferCleanup(Session session, string[] parameters)
@@ -918,8 +918,8 @@ namespace ACE.Server.Command.Handlers
                     // Create transfer_monitoring_configs table
                     CreateTransferMonitoringConfigsTableForMigration(context, session);
                     
-                    // Create bank_command_blacklist table
-                    CreateBankCommandBlacklistTableForMigration(context, session);
+                    // Create transfer_blacklist table
+                    CreateTransferBlacklistTableForMigration(context, session);
                     
                     session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
                 }
@@ -1009,8 +1009,10 @@ namespace ACE.Server.Command.Handlers
                 
                 // Check and add missing columns individually (MySQL-safe approach)
                 var connection = context.Database.GetDbConnection();
-                connection.Open();
-                using var command = connection.CreateCommand();
+                try
+                {
+                    context.Database.OpenConnection();
+                    using var command = connection.CreateCommand();
                 
                 // Check if columns exist and add them individually
                 var columnsToAdd = new[]
@@ -1081,8 +1083,12 @@ namespace ACE.Server.Command.Handlers
                     }
                 }
                 
-                connection.Close();
-                session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns, Quantity bigint migration, and indexes", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns, Quantity bigint migration, and indexes", ChatMessageType.System));
+                }
+                finally
+                {
+                    context.Database.CloseConnection();
+                }
             }
             catch
             {
@@ -1235,7 +1241,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        private static void CreateBankCommandBlacklistTableForMigration(ShardModels.ShardDbContext context, Session session)
+        private static void CreateTransferBlacklistTableForMigration(ShardModels.ShardDbContext context, Session session)
         {
             try
             {
