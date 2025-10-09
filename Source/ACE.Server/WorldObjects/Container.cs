@@ -307,7 +307,7 @@ namespace ACE.Server.WorldObjects
 
                 foreach (var item in Inventory.Values)
                 {
-                    if (item.WeenieType == WeenieType.Container && item is Container container)
+                    if (item is Container container)
                         _cachedSideContainers.Add(container);
                 }
 
@@ -643,7 +643,7 @@ namespace ACE.Server.WorldObjects
             Inventory.Add(worldObject.Guid, worldObject);
 
             // Invalidate side containers cache if we added a container
-            if (worldObject.WeenieType == WeenieType.Container)
+            if (worldObject is Container)
                 InvalidateSideContainersCache();
 
             EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
@@ -752,7 +752,7 @@ namespace ACE.Server.WorldObjects
                 Value -= (item.Value ?? 0);
 
                 // Invalidate side containers cache if we removed a container
-                if (item.WeenieType == WeenieType.Container)
+                if (item is Container)
                     InvalidateSideContainersCache();
 
                 if (forceSave)
