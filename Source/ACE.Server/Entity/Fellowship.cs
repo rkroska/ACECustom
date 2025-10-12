@@ -605,15 +605,9 @@ namespace ACE.Server.Entity
                 // Iterate fellowship members directly without .ToList() allocation
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
-                    {
-                        player.GrantLuminance((long)amount, fellowXpType, shareType);
-                        continue;
-                    }
-                    
                     var playerTotal = (long)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
 
+                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
                     member.GrantLuminance(playerTotal, fellowXpType, shareType);
                 }
             }
