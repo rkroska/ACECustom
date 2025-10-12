@@ -257,6 +257,9 @@ namespace ACE.Server
             log.Info("Starting DatabaseManager...");
             DatabaseManager.Start();
 
+            log.Info("Initializing Transfer Monitoring...");
+            TransferLogger.InitializeTransferMonitoring();
+
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 
