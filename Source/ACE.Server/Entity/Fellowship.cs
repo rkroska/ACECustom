@@ -776,7 +776,7 @@ namespace ACE.Server.Entity
             }
 
             // Both players are outdoor in different landblocks - need distance check
-            // This handles cases like players at adjacent landblock boundaries
+            // This handles cases like players at adjacent landblock boundaries.
             
             // Track distance calculation rate (debug logging)
             System.Threading.Interlocked.Increment(ref _distanceCalcCount);
