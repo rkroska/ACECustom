@@ -913,5 +913,129 @@ namespace ACE.Database
                 rwLock.ExitReadLock();
             }
         }
+
+        public void SaveTransferLog(TransferLog transferLog)
+        {
+            using (var context = new ShardDbContext())
+            {
+                context.TransferLogs.Add(transferLog);
+                context.SaveChanges();
+            }
+        }
+
+        public List<TransferLog> GetTransferHistory(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
+
+        public List<TransferLog> GetRecentTransfers(DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
+
+        public List<TransferParticipantStats> GetTopTransferParticipants(DateTime cutoffDate, int limit = 20)
+        {
+            using (var context = new ShardDbContext())
+            {
+                // Project both directions into unified (Player, Partner, Quantity) relation
+                var fromSide = context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .Select(t => new { Player = t.FromPlayerName, Partner = t.ToPlayerName, Quantity = (long)t.Quantity });
+
+                var toSide = context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .Select(t => new { Player = t.ToPlayerName, Partner = t.FromPlayerName, Quantity = (long)t.Quantity });
+
+                var pairs = fromSide.Concat(toSide);
+
+                var allParticipants = pairs
+                    .GroupBy(p => p.Player)
+                    .Select(g => new TransferParticipantStats
+                    {
+                        PlayerName = g.Key,
+                        TotalTransfers = g.Count(),
+                        UniquePartners = g.Select(x => x.Partner).Distinct().Count(),
+                        TotalQuantity = g.Sum(x => x.Quantity)
+                    })
+                    .OrderByDescending(p => p.TotalTransfers)
+                    .Take(limit)
+                    .ToList();
+
+                return allParticipants;
+            }
+        }
+
+        // Transfer Summary methods
+        public List<TransferSummary> GetTransferSummaries(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferSummaries
+                    .AsNoTracking()
+                    .Where(s => (s.FromPlayerName == playerName || s.ToPlayerName == playerName) && s.LastTransfer >= cutoffDate)
+                    .OrderByDescending(s => s.LastTransfer)
+                    .ToList();
+            }
+        }
+
+        public List<TransferSummary> GetHighRiskSummaries(DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferSummaries
+                    .AsNoTracking()
+                    .Where(s => s.IsSuspicious && s.LastTransfer >= cutoffDate)
+                    .OrderByDescending(s => s.SuspiciousTransfers)
+                    .ThenByDescending(s => s.TotalValue)
+                    .ToList();
+            }
+        }
+
+
+
+        // Cleanup methods
+        public void CleanupOldTransferLogs(int daysToKeep)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
+            using (var context = new ShardDbContext())
+            {
+                var count = context.TransferLogs.Count(t => t.Timestamp < cutoffDate);
+                if (count > 0)
+                {
+                    context.Database.ExecuteSqlRaw($"DELETE FROM transfer_logs WHERE Timestamp < {{0}}", cutoffDate);
+                    log.Info($"Cleaned up {count} old transfer logs older than {daysToKeep} days");
+                }
+            }
+        }
+
+        public void CleanupOldSummaries(int daysToKeep)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
+            using (var context = new ShardDbContext())
+            {
+                var count = context.TransferSummaries.Count(s => s.LastTransfer < cutoffDate);
+                if (count > 0)
+                {
+                    context.Database.ExecuteSqlRaw($"DELETE FROM transfer_summaries WHERE LastTransfer < {{0}}", cutoffDate);
+                    log.Info($"Cleaned up {count} old transfer summaries older than {daysToKeep} days");
+                }
+            }
+        }
     }
 }

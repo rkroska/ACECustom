@@ -2,6 +2,7 @@ using System;
 
 using ACE.Entity;
 using ACE.Entity.Models;
+using ACE.Server.Managers;
 
 namespace ACE.Server.WorldObjects
 {

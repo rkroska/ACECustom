@@ -783,6 +783,7 @@ namespace ACE.Server.WorldObjects
         private bool HandleActionPutItemInContainer_Verify(uint itemGuid, uint containerGuid, int placement,
             out Container itemRootOwner, out WorldObject item, out Container containerRootOwner, out Container container, out bool itemWasEquipped)
         {
+            
             itemRootOwner = null;
             item = null;
             container = null;
@@ -798,13 +799,16 @@ namespace ACE.Server.WorldObjects
 
             if (IsBusy)
             {
+                
                 if (PickupState != PickupState.Return || NextPickup != null)
                 {
                     Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YoureTooBusy));
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid));
                 }
                 else
+                {
                     NextPickup = () => { HandleActionPutItemInContainer(itemGuid, containerGuid, placement); };
+                }
 
                 return false;
             }
@@ -962,12 +966,14 @@ namespace ACE.Server.WorldObjects
         public void HandleActionPutItemInContainer(uint itemGuid, uint containerGuid, int placement = 0)
         {
             //Console.WriteLine($"{Name}.HandleActionPutItemInContainer({itemGuid:X8}, {containerGuid:X8}, {placement})");
+            
 
             if (!HandleActionPutItemInContainer_Verify(itemGuid, containerGuid, placement,
                 out Container itemRootOwner, out WorldObject item, out Container containerRootOwner, out Container container, out bool itemWasEquipped))
             {
                 return;
             }
+            
 
             if ((itemRootOwner == this && containerRootOwner != this) || (itemRootOwner != this && containerRootOwner == this)) // Movement is between the player and the world
             {
@@ -1106,8 +1112,97 @@ namespace ACE.Server.WorldObjects
                             }
                         }
 
+                        // Capture item data before it might be destroyed during stackable merges
+                        bool isGroundPickup = itemRootOwner == null && containerRootOwner == this;
+                        bool isStackableItem = item is Stackable;
+                        string capturedItemName = item?.Name;
+                        long capturedItemQuantity = item?.StackSize ?? 1;
+                        uint capturedItemWeenieClassId = item?.WeenieClassId ?? 0;
+
+                        // For stackable items, check if there's an existing stack that might merge
+                        WorldObject existingStack = null;
+                        int originalStackSize = 0;
+                        if (isStackableItem && isGroundPickup)
+                        {
+                            existingStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                            originalStackSize = existingStack?.StackSize ?? 0;
+                        }
+
                         if (DoHandleActionPutItemInContainer(item, itemRootOwner, itemWasEquipped, container, containerRootOwner, placement))
                         {
+                            // Log ground pickup after successful processing
+                            if (isGroundPickup)
+                            {
+                                if (isStackableItem && existingStack != null)
+                                {
+                                    // Check if this was a merge (existing stack size increased)
+                                    int newStackSize = existingStack.StackSize ?? 0;
+                                    if (newStackSize > originalStackSize)
+                                    {
+                                        // This was a merge, logging is handled in HandleActionStackableMerge
+                                        // But also check for any overflow-created new stack
+                                        try
+                                        {
+                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
+                                                .FirstOrDefault(x => x != existingStack);
+                                            if (newStack != null)
+                                            {
+                                                TransferLogger.LogGroundPickup(this, newStack);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging overflow-created new stack pickup: {ex.Message}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // No merge occurred, this stackable item became a new stack
+                                        try
+                                        {
+                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
+                                                .FirstOrDefault(x => x != existingStack);
+                                            if (newStack != null)
+                                            {
+                                                TransferLogger.LogGroundPickup(this, newStack);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging stackable ground pickup (new stack): {ex.Message}");
+                                        }
+                                    }
+                                }
+                                else if (isStackableItem && existingStack == null)
+                                {
+                                    // No existing stack, this is definitely a new stackable item
+                                    try
+                                    {
+                                        var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                                        if (newStack != null)
+                                        {
+                                            TransferLogger.LogGroundPickup(this, newStack);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging stackable ground pickup (no existing stack): {ex.Message}");
+                                    }
+                                }
+                                else if (!isStackableItem)
+                                {
+                                    // Non-stackable ground pickup
+                                    try
+                                    {
+                                        TransferLogger.LogGroundPickup(this, item);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging non-stackable ground pickup: {ex.Message}");
+                                    }
+                                }
+                            }
+                            
                             Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
 
                             if (item.WeenieType == WeenieType.Coin || item.WeenieType == WeenieType.Container)
@@ -1414,6 +1509,16 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
 
                     item.EmoteManager.OnDrop(this);
+
+                    // Log ground drop for transfer monitoring (after successful drop and client notification)
+                    try
+                    {
+                        TransferLogger.LogGroundDrop(this, item);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error logging ground drop: {ex.Message}");
+                    }
                 }
                 else
                 {
@@ -1481,6 +1586,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionGetAndWieldItem(uint itemGuid, EquipMask wieldedLocation)
         {
             //Console.WriteLine($"{Name}.HandleActionGetAndWieldItem({itemGuid:X8}, {wieldedLocation})");
+            
 
             // todo fix this, it seems IsAnimating is always true for a player
             // todo we need to know when a player is busy to avoid additional actions during that time
@@ -1491,6 +1597,7 @@ namespace ACE.Server.WorldObjects
             }*/
 
             var item = FindObject(new ObjectGuid(itemGuid), SearchLocations.LocationsICanMove, out var fromContainer, out var rootOwner, out var wasEquipped);
+            
 
             if (item == null)
             {
@@ -2504,6 +2611,16 @@ namespace ACE.Server.WorldObjects
                 if (TryDropItem(newStack))
                 {
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
+                    
+                    // Log the stack split to ground
+                    try
+                    {
+                        TransferLogger.LogGroundDrop(this, newStack);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error logging stack split to ground: {ex.Message}");
+                    }
                 }
                 else
                 {
@@ -2795,6 +2912,7 @@ namespace ACE.Server.WorldObjects
 
             var sourceStack = FindObject(mergeFromGuid, SearchLocations.LocationsICanMove, out _, out var sourceStackRootOwner, out _);
             var targetStack = FindObject(mergeToGuid, SearchLocations.LocationsICanMove, out _, out var targetStackRootOwner, out _);
+            
 
             if (sourceStack == null)
             {
@@ -2976,6 +3094,20 @@ namespace ACE.Server.WorldObjects
 
                         if (DoHandleActionStackableMerge(sourceStack, targetStack, amount))
                         {
+                            // Check if this was a ground pickup (source stack was on ground, target is in inventory)
+                            if (sourceStackRootOwner == null && targetStackRootOwner == this)
+                            {
+                                try
+                                {
+                                    // Capture the merge amount before the stack might be destroyed
+                                    TransferLogger.LogGroundPickup(this, sourceStack, amount);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
+                                }
+                            }
+
                             // If the client used the R key to merge a partial stack from the landscape, it also tries to add the "ghosted" item of the picked up stack to the inventory as well.
                             if (sourceStackRootOwner != this && sourceStack.StackSize > 0)
                                 Session.Network.EnqueueSend(new GameMessageCreateObject(sourceStack));
@@ -3000,7 +3132,22 @@ namespace ACE.Server.WorldObjects
             }
             else // This is a self-contained movement
             {
-                DoHandleActionStackableMerge(sourceStack, targetStack, amount);
+                var mergeAmount = amount;
+                if (DoHandleActionStackableMerge(sourceStack, targetStack, mergeAmount))
+                {
+                    // Check if this was a ground pickup (source stack was on ground, target is in inventory)
+                    if (sourceStackRootOwner == null && targetStackRootOwner == this)
+                    {
+                        try
+                        {
+                            TransferLogger.LogGroundPickup(this, sourceStack, mergeAmount);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
+                        }
+                    }
+                }
             }
         }
 
@@ -3303,6 +3450,16 @@ namespace ACE.Server.WorldObjects
                 target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} gives you {stackMsg}{itemName}.", ChatMessageType.Broadcast));
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
+
+                // Log the direct give for transfer monitoring
+                try
+                {
+                    TransferLogger.LogDirectGive(this, target, itemToGive, (int)(itemToGive.StackSize ?? 1));
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging direct give: {ex.Message}");
+                }
             });
 
             actionChain.EnqueueChain();

@@ -758,11 +758,18 @@ namespace ACE.Server.WorldObjects
 
         private IPlayer FindTargetByName(string name)
         {
-            return PlayerManager.FindFirstPlayerByName(name);
+            return PlayerManager.FindByName(name);
         }
 
         public bool TransferPyreals(long Amount, string CharacterDestination)
         {
+            // Check if sender has sufficient funds
+            if ((this.BankedPyreals ?? 0) < Amount)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Insufficient Pyreals. You have {this.BankedPyreals ?? 0:N0}, need {Amount:N0}", ChatMessageType.System));
+                return false;
+            }
+
             var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
@@ -799,12 +806,23 @@ namespace ACE.Server.WorldObjects
                 }
                 this.BankedPyreals -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedPyreals, this.BankedPyreals ?? 0));
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Pyreals", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }
         }
 
         public bool TransferLegendaryKeys(long Amount, string CharacterDestination)
         {
+            // Check if sender has sufficient funds
+            if ((this.BankedLegendaryKeys ?? 0) < Amount)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Insufficient Legendary Keys. You have {this.BankedLegendaryKeys ?? 0:N0}, need {Amount:N0}", ChatMessageType.System));
+                return false;
+            }
+
             var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
@@ -840,12 +858,23 @@ namespace ACE.Server.WorldObjects
                 }
                 this.BankedLegendaryKeys -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Legendary Keys", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }
         }
 
         public bool TransferMythicalKeys(long Amount, string CharacterDestination)
         {
+            // Check if sender has sufficient funds
+            if ((this.BankedMythicalKeys ?? 0) < Amount)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Insufficient Mythical Keys. You have {this.BankedMythicalKeys ?? 0:N0}, need {Amount:N0}", ChatMessageType.System));
+                return false;
+            }
+
             var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
@@ -890,12 +919,22 @@ namespace ACE.Server.WorldObjects
                     this.SavePlayerToDatabase();
                 }
 
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Mythical Keys", Amount, TransferLogger.TransferTypeBankTransfer);
+
                 return true;
             }
         }
 
         public bool TransferLuminance(long Amount, string CharacterDestination)
         {
+            // Check if sender has sufficient funds
+            if ((this.BankedLuminance ?? 0) < Amount)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Insufficient Luminance. You have {this.BankedLuminance ?? 0:N0}, need {Amount:N0}", ChatMessageType.System));
+                return false;
+            }
+
             var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
@@ -939,11 +978,22 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }          
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
+            // Check if sender has sufficient funds
+            if ((this.BankedEnlightenedCoins ?? 0) < Amount)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Insufficient Enlightened Coins. You have {this.BankedEnlightenedCoins ?? 0:N0}, need {Amount:N0}", ChatMessageType.System));
+                return false;
+            }
+
             var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
@@ -988,11 +1038,22 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Enlightened Coins", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }
         }
         public bool TransferWeaklyEnlightenedCoins(long Amount, string CharacterDestination)
         {
+            // Check if sender has sufficient funds
+            if ((this.BankedWeaklyEnlightenedCoins ?? 0) < Amount)
+            {
+                Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Insufficient Weakly Enlightened Coins. You have {this.BankedWeaklyEnlightenedCoins ?? 0:N0}, need {Amount:N0}", ChatMessageType.System));
+                return false;
+            }
+
             var tarplayer = FindTargetByName(CharacterDestination);
             if (tarplayer == null)
             {
@@ -1034,9 +1095,15 @@ namespace ACE.Server.WorldObjects
                 this.BankedWeaklyEnlightenedCoins -= Amount;
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedWeaklyEnlightenedCoins, this.BankedWeaklyEnlightenedCoins ?? 0));
                 if (Amount > 10)
+                {
                     this.SavePlayerToDatabase();
-            }
+                }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Weakly Enlightened Coins", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
+            }
         }
         public long? BankedLuminance
         {
