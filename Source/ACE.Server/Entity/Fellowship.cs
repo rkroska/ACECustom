@@ -25,13 +25,6 @@ namespace ACE.Server.Entity
         /// </summary>
         private static readonly int MaxFellows = 29;
 
-        // Debug tracking for distance calculations
-        private static long _distanceCalcCount = 0;
-        private static long _sameLandblockSkips = 0;
-        private static long _indoorOutdoorMismatches = 0;
-        private static long _differentLandblockIndoor = 0;
-        private static DateTime _lastLogTime = DateTime.UtcNow;
-
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
 
@@ -599,10 +592,9 @@ namespace ACE.Server.Entity
             else
             {
                 // pre-filter: evenly divide between luminance-eligible fellows
-                //var shareableMembers = GetFellowshipMembers().Values.Where(f => f.MaximumLuminance != null).ToList();
-                var shareableMembers = GetFellowshipMembers().Values.ToList();
+                var fellowshipMembers = GetFellowshipMembers();
 
-                if (shareableMembers.Count == 0)
+                if (fellowshipMembers.Count == 0)
                 {
                     player.GrantLuminance((long)amount, xpType, shareType);
                     return;
@@ -610,10 +602,8 @@ namespace ACE.Server.Entity
 
                 var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
 
-                // further filter to fellows in radar range
-                //var inRange = shareableMembers.Intersect(WithinRange(player, true)).ToList();
-
-                foreach (var member in shareableMembers)
+                // Iterate fellowship members directly without .ToList() allocation
+                foreach (var member in fellowshipMembers.Values)
                 {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
                     if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
@@ -700,6 +690,13 @@ namespace ACE.Server.Entity
 
         public static readonly int MaxDistance = 600;
 
+        // Debug tracking for distance calculations
+        private static long _distanceCalcCount = 0;
+        private static long _sameLandblockSkips = 0;
+        private static long _indoorOutdoorMismatches = 0;
+        private static long _differentLandblockIndoor = 0;
+        private static DateTime _lastLogTime = DateTime.UtcNow;
+
         /// <summary>
         /// Logs distance calculation statistics every 10 seconds
         /// </summary>
@@ -779,7 +776,7 @@ namespace ACE.Server.Entity
             }
 
             // Both players are outdoor in different landblocks - need distance check
-            // This handles cases like players at adjacent landblock boundaries
+            // This handles cases like players at adjacent landblock boundaries.
             
             // Track distance calculation rate (debug logging)
             System.Threading.Interlocked.Increment(ref _distanceCalcCount);

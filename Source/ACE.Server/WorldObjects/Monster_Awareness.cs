@@ -40,7 +40,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void InvalidateTargetCaches()
         {
-            _cachedVisibleTargets = new List<Creature>();
+            _cachedVisibleTargets.Clear();
             _lastTargetCacheTime = 0.0;
             InvalidateDistanceCache();
         }
@@ -304,8 +304,9 @@ namespace ACE.Server.WorldObjects
             Interlocked.Increment(ref _cacheMisses);
             var visibleTargets = GetAttackTargetsUncached();
             
-            // Update cache with a copy; return the fresh list to avoid double enumeration
-            _cachedVisibleTargets = new List<Creature>(visibleTargets);
+            // Update cache efficiently by clearing and adding items
+            _cachedVisibleTargets.Clear();
+            _cachedVisibleTargets.AddRange(visibleTargets);
             Volatile.Write(ref _lastTargetCacheTime, currentTime);
 
             return visibleTargets;

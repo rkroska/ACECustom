@@ -30,9 +30,15 @@ namespace ACE.Server.Entity
         public readonly Dictionary<ObjectGuid, DamageHistoryInfo> TotalDamage = new Dictionary<ObjectGuid, DamageHistoryInfo>();
 
         /// <summary>
-        /// Returns the list of players or creatures who inflicted damage
+        /// Returns the list of players or creatures who inflicted damage.
+        /// Use GetDamagers() instead if you need a concrete list to avoid allocation on every property access.
         /// </summary>
-        public List<DamageHistoryInfo> Damagers => TotalDamage.Values.ToList();
+        public IEnumerable<DamageHistoryInfo> Damagers => TotalDamage.Values;
+
+        /// <summary>
+        /// Returns a list of all damagers. Allocates a new list - use sparingly.
+        /// </summary>
+        public List<DamageHistoryInfo> GetDamagers() => TotalDamage.Values.ToList();
 
         /// <summary>
         /// Returns the DamageHistoryInfo for the last damager
@@ -144,10 +150,9 @@ namespace ACE.Server.Entity
             if (healAmount == 0 || missingHealth == 0) return;
             var scalar = 1.0f - (float)healAmount / missingHealth;
 
-            var attackers = TotalDamage.Keys.ToList();
-
-            foreach (var attacker in attackers)
-                TotalDamage[attacker].TotalDamage *= scalar;
+            // Avoid allocation - iterate dictionary values directly
+            foreach (var damageInfo in TotalDamage.Values)
+                damageInfo.TotalDamage *= scalar;
         }
 
         /// <summary>
@@ -216,14 +221,19 @@ namespace ACE.Server.Entity
             foreach (var entry in Log)
                 guids.Add(entry.Attacker);
 
-            var keys = TotalDamage.Keys.ToList();
-            foreach (var key in keys)
+            // Avoid .ToList() allocation - build remove list instead
+            var keysToRemove = new List<ObjectGuid>();
+            foreach (var kvp in TotalDamage)
             {
-                if (guids.Contains(key))
-                    TotalDamage[key].TotalDamage = 0;
+                if (guids.Contains(kvp.Key))
+                    kvp.Value.TotalDamage = 0;
                 else
-                    TotalDamage.Remove(key);
+                    keysToRemove.Add(kvp.Key);
             }
+
+            // Remove keys that are no longer needed
+            foreach (var key in keysToRemove)
+                TotalDamage.Remove(key);
 
             // TotalDamage is now reset
 
