@@ -1083,8 +1083,9 @@ namespace ACE.Server.Entity
         {
             if (string.IsNullOrWhiteSpace(message)) return;
 
-            foreach (var wo in worldObjects.Values.Where(w => w.HearLocalSignals).ToList())
+            foreach (var wo in worldObjects.Values)
             {
+                if (!wo.HearLocalSignals) continue;
                 if (emitter == wo) continue;
 
                 if (emitter.IsWithinUseRadiusOf(wo, wo.HearLocalSignalsRadius))
@@ -1315,15 +1316,15 @@ namespace ACE.Server.Entity
         /// </summary>
         public void EnqueueBroadcast(ICollection<Player> excludeList, bool adjacents, Position pos = null, float? maxRangeSq = null, params GameMessage[] msgs)
         {
-            var players = worldObjects.Values.OfType<Player>();
+            IEnumerable<Player> playersToSend = this.players;
 
             // for landblock death broadcasts:
             // exclude players that have already been broadcast to within range of the death
             if (excludeList != null)
-                players = players.Except(excludeList);
+                playersToSend = playersToSend.Except(excludeList);
 
             // broadcast messages to player in this landblock
-            foreach (var player in players)
+            foreach (var player in playersToSend)
             {
                 if (pos != null && maxRangeSq != null)
                 {
@@ -1337,8 +1338,11 @@ namespace ACE.Server.Entity
             // if applicable, iterate into adjacent landblocks
             if (adjacents)
             {
-                foreach (var adjacent in this.Adjacents.Where(adj => adj != null))
+                foreach (var adjacent in this.Adjacents)
+                {
+                    if (adjacent == null) continue;
                     adjacent.EnqueueBroadcast(excludeList, false, pos, maxRangeSq, msgs);
+                }
             }
         }
 
