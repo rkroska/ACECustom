@@ -691,8 +691,21 @@ namespace ACE.Server.WorldObjects
             // allow server operators to configure this behavior due to errors in createlist post 16py data
             var dropFlags = PropertyManager.GetBool("creatures_drop_createlist_wield").Item ? DestinationType.WieldTreasure : DestinationType.Treasure;
 
-            var wieldedTreasure = Inventory.Values.Concat(EquippedObjects.Values).Where(i => (i.DestinationType & dropFlags) != 0);
-            foreach (var item in wieldedTreasure.ToList())
+            // Build list of items to move (optimized from Concat + Where + ToList)
+            var itemsToMove = new List<WorldObject>();
+            foreach (var item in Inventory.Values)
+            {
+                if ((item.DestinationType & dropFlags) != 0)
+                    itemsToMove.Add(item);
+            }
+            foreach (var item in EquippedObjects.Values)
+            {
+                if ((item.DestinationType & dropFlags) != 0)
+                    itemsToMove.Add(item);
+            }
+
+            // Now safe to modify collections during this iteration
+            foreach (var item in itemsToMove)
             {
                 if (item.Bonded == BondedStatus.Destroy)
                     continue;

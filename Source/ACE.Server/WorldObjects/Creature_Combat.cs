@@ -1320,7 +1320,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public int GetDefenseImbues(ImbuedEffectType imbuedEffectType)
         {
-            return EquippedObjects.Values.Count(i => i.ImbuedEffect.HasFlag(imbuedEffectType));
+            int count = 0;
+            foreach (var item in EquippedObjects.Values)
+            {
+                if (item.ImbuedEffect.HasFlag(imbuedEffectType))
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>
