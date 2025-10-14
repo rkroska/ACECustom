@@ -223,8 +223,11 @@ namespace ACE.Server.WorldObjects
 
             if (includeSidePacks)
             {
-                foreach (var sidePack in Inventory.Values.OfType<Container>())
-                    freeSlots += (sidePack.ItemCapacity ?? 0) - sidePack.CountPackItems();
+                foreach (var item in Inventory.Values)
+                {
+                    if (item is Container sidePack)
+                        freeSlots += (sidePack.ItemCapacity ?? 0) - sidePack.CountPackItems();
+                }
             }
 
             return freeSlots;
