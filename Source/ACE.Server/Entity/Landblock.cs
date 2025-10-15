@@ -1316,16 +1316,14 @@ namespace ACE.Server.Entity
         /// </summary>
         public void EnqueueBroadcast(ICollection<Player> excludeList, bool adjacents, Position pos = null, float? maxRangeSq = null, params GameMessage[] msgs)
         {
-            IEnumerable<Player> playersToSend = this.players;
-
-            // for landblock death broadcasts:
-            // exclude players that have already been broadcast to within range of the death
-            if (excludeList != null)
-                playersToSend = playersToSend.Except(excludeList);
-
             // broadcast messages to player in this landblock
-            foreach (var player in playersToSend)
+            foreach (var player in this.players)
             {
+                // for landblock death broadcasts:
+                // exclude players that have already been broadcast to within range of the death
+                if (excludeList != null && excludeList.Contains(player))
+                    continue;
+
                 if (pos != null && maxRangeSq != null)
                 {
                     var distSq = player.Location.SquaredDistanceTo(pos);
