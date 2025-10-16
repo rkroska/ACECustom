@@ -526,7 +526,12 @@ namespace ACE.Server.WorldObjects
                     var playersInRange = GetPlayersInRange(250.0f);
                     if (playersInRange.Count > 1)
                     {
-                        var validTargets = playersInRange.Where(p => p != lastHotspotTarget).ToList();
+                        var validTargets = new List<Player>();
+                        foreach (var p in playersInRange)
+                        {
+                            if (p != lastHotspotTarget)
+                                validTargets.Add(p);
+                        }
                         if (validTargets.Count > 0)
                         {
                             var targetPlayer = validTargets[random.Next(validTargets.Count)];

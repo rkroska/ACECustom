@@ -161,13 +161,17 @@ namespace ACE.Server.Entity
 
             var fellowshipMembers = GetFellowshipMembers();
 
-            foreach (var member in fellowshipMembers.Values.Where(i => i.Guid != player.Guid))
+            foreach (var member in fellowshipMembers.Values)
+            {
+                if (member.Guid == player.Guid) continue;
                 member.Session.Network.EnqueueSend(new GameEventFellowshipUpdateFellow(member.Session, player, ShareXP));
+            }
 
             if (ShareLoot)
             {
-                foreach (var member in fellowshipMembers.Values.Where(i => i.Guid != player.Guid))
+                foreach (var member in fellowshipMembers.Values)
                 {
+                    if (member.Guid == player.Guid) continue;
                     member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} has given you permission to loot his or her kills.", ChatMessageType.Broadcast));
                     member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} may now loot your kills.", ChatMessageType.Broadcast));
 
