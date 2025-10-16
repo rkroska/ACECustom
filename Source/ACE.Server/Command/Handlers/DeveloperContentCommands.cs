@@ -3146,6 +3146,17 @@ namespace ACE.Server.Command.Handlers.Processors
             HandleClearCache(session, recipeParams);
         }
 
+        // Alias for clear-clothing-cache
+        [CommandHandler("ccc", AccessLevel.Developer, CommandHandlerFlag.None, "Alias for clear-clothing-cache - Clears the clothing cache")]
+        public static void HandleClearClothingCacheAlias(Session session, params string[] parameters)
+        {
+            CommandManager.GetCommandHandler(session, "clear-clothing-cache", parameters, out var command);
+            if (command != null)
+                command.Invoke(session, parameters);
+            else
+                CommandHandlerHelper.WriteOutputInfo(session, "clear-clothing-cache command not found");
+        }
+
         [Flags]
         public enum CacheType
         {
