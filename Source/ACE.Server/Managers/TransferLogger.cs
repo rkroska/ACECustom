@@ -26,6 +26,8 @@ namespace ACE.Server.Managers
         public const string TransferTypeTrade = "Trade";
         public const string TransferTypeGroundPickup = "Ground Pickup";
         public const string TransferTypeGroundDrop = "Ground Drop";
+        public const string TransferTypeChestDeposit = "Chest Deposit";
+        public const string TransferTypeChestWithdrawal = "Chest Withdrawal";
         
         // Value calculation constants
         private const int DefaultItemValue = 100;
@@ -523,18 +525,46 @@ namespace ACE.Server.Managers
                     return;
                 }
 
+                // Get destination account name - check online player first, then database for offline players
+                string toPlayerAccountName = toPlayer?.Account?.AccountName;
+                DateTime? toAccountCreatedDate = toPlayer?.Account?.CreateTime;
+                if (string.IsNullOrEmpty(toPlayerAccountName))
+                {
+                    try
+                    {
+                        using (var context = new ShardDbContext())
+                        {
+                            var character = context.Character.FirstOrDefault(c => c.Name == toPlayerName);
+                            if (character != null)
+                            {
+                                var account = DatabaseManager.Authentication.GetAccountById(character.AccountId);
+                                if (account != null)
+                                {
+                                    toPlayerAccountName = account.AccountName;
+                                    toAccountCreatedDate = account.CreateTime;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error looking up offline player account for {toPlayerName}: {ex.Message}");
+                    }
+                }
+                toPlayerAccountName ??= "Unknown"; // Fallback if all lookups fail
+
                 var transferLog = new TransferLog
                 {
                     TransferType = transferType,
                     FromPlayerName = fromPlayer.Name,
                     FromPlayerAccount = fromPlayer.Account?.AccountName ?? "Unknown",
                     ToPlayerName = toPlayerName,
-                    ToPlayerAccount = toPlayer?.Account?.AccountName ?? "Unknown",
+                    ToPlayerAccount = toPlayerAccountName,
                     ItemName = itemName,
                     Quantity = quantity,
                     Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
-                    ToAccountCreatedDate = toPlayer?.Account?.CreateTime,
+                    ToAccountCreatedDate = toAccountCreatedDate,
                     FromCharacterCreatedDate = GetCharacterCreationDate(fromPlayer),
                     ToCharacterCreatedDate = GetCharacterCreationDate(toPlayer),
                     AdditionalData = null,
@@ -762,6 +792,7 @@ namespace ACE.Server.Managers
                     ToAccountCreatedDate = player.Account?.CreateTime,
                     FromCharacterCreatedDate = null, // Ground doesn't have character creation date
                     ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
                     FromPlayerIP = null, // Ground doesn't have IP
                     ToPlayerIP = GetPlayerIP(player)
                 };
@@ -867,6 +898,7 @@ namespace ACE.Server.Managers
                     ToAccountCreatedDate = null,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player),
                     ToCharacterCreatedDate = null,
+                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
                     FromPlayerIP = GetPlayerIP(player),
                     ToPlayerIP = null
                 };
@@ -876,6 +908,115 @@ namespace ACE.Server.Managers
             catch (Exception ex)
             {
                 log.Error($"Ground drop logging failed: {ex.Message}");
+                log.Error($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        public static void LogChestDeposit(Player player, WorldObject item, Container chest)
+        {
+            try
+            {
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping chest deposit logging - transfer logging disabled");
+                    return;
+                }
+                
+                if (!Config.EnableItemTracking)
+                {
+                    log.Info("Skipping chest deposit logging - item tracking disabled");
+                    return;
+                }
+
+                if (!ShouldTrackItem(item.Name))
+                {
+                    log.Info($"Skipping chest deposit logging for untracked item: {item.Name}");
+                    return;
+                }
+
+                EnsureDatabaseMigrated();
+
+                var transferLog = new TransferLog
+                {
+                    TransferType = TransferTypeChestDeposit,
+                    FromPlayerName = player.Name,
+                    FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                    ToPlayerName = $"Chest:{chest.Name}",
+                    ToPlayerAccount = $"Chest:{chest.Guid.Full:X8}",
+                    ItemName = item.Name,
+                    Quantity = item.StackSize ?? 1,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = player.Account?.CreateTime,
+                    ToAccountCreatedDate = null,
+                    FromCharacterCreatedDate = GetCharacterCreationDate(player),
+                    ToCharacterCreatedDate = null,
+                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location?.ToLOCString()}",
+                    FromPlayerIP = GetPlayerIP(player),
+                    ToPlayerIP = null
+                };
+
+                Task.Run(() => ProcessTransferLogBackground(transferLog));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Chest deposit logging failed: {ex.Message}");
+                log.Error($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        public static void LogChestWithdrawal(Player player, WorldObject item, Container chest)
+        {
+            LogChestWithdrawal(player, item, chest, item.StackSize ?? 1);
+        }
+
+        public static void LogChestWithdrawal(Player player, WorldObject item, Container chest, int quantity)
+        {
+            try
+            {
+                if (!Config.EnableTransferLogging)
+                {
+                    log.Info("Skipping chest withdrawal logging - transfer logging disabled");
+                    return;
+                }
+                
+                if (!Config.EnableItemTracking)
+                {
+                    log.Info("Skipping chest withdrawal logging - item tracking disabled");
+                    return;
+                }
+
+                if (!ShouldTrackItem(item.Name))
+                {
+                    log.Info($"Skipping chest withdrawal logging for untracked item: {item.Name}");
+                    return;
+                }
+
+                EnsureDatabaseMigrated();
+
+                var transferLog = new TransferLog
+                {
+                    TransferType = TransferTypeChestWithdrawal,
+                    FromPlayerName = $"Chest:{chest.Name}",
+                    FromPlayerAccount = $"Chest:{chest.Guid.Full:X8}",
+                    ToPlayerName = player.Name,
+                    ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                    ItemName = item.Name,
+                    Quantity = quantity,
+                    Timestamp = DateTime.UtcNow,
+                    FromAccountCreatedDate = null,
+                    ToAccountCreatedDate = player.Account?.CreateTime,
+                    FromCharacterCreatedDate = null,
+                    ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location?.ToLOCString()}",
+                    FromPlayerIP = null,
+                    ToPlayerIP = GetPlayerIP(player)
+                };
+
+                Task.Run(() => ProcessTransferLogBackground(transferLog));
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Chest withdrawal logging failed: {ex.Message}");
                 log.Error($"Stack trace: {ex.StackTrace}");
             }
         }
@@ -999,7 +1140,19 @@ namespace ACE.Server.Managers
                 // Send admin notification (background thread)
                 if (Config.EnableAdminNotifications)
                 {
-                    var adminMessage = $"TRANSFER: {transferLog.FromPlayerName} -> {transferLog.ToPlayerName}: {transferLog.ItemName} x{transferLog.Quantity}";
+                    var transferType = transferLog.TransferType.ToUpper().Replace(" ", "_");
+                    var adminMessage = $"{transferType}: {transferLog.FromPlayerName} -> {transferLog.ToPlayerName}: {transferLog.ItemName} x{transferLog.Quantity}";
+                    
+                    // Add location data for chest, ground drop, and ground pickup transfers
+                    if (!string.IsNullOrEmpty(transferLog.AdditionalData) && 
+                        (transferLog.TransferType == TransferTypeChestDeposit || 
+                         transferLog.TransferType == TransferTypeChestWithdrawal ||
+                         transferLog.TransferType == TransferTypeGroundDrop ||
+                         transferLog.TransferType == TransferTypeGroundPickup))
+                    {
+                        adminMessage += $" | {transferLog.AdditionalData}";
+                    }
+                    
                     SendAdminMessage(adminMessage);
                 }
             }
