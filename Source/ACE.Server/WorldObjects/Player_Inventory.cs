@@ -1217,10 +1217,12 @@ namespace ACE.Server.WorldObjects
                                     int newStackSize = existingStack.StackSize ?? 0;
                                     if (newStackSize > originalStackSize)
                                     {
-                                        // This was a merge, log using the merged stack
+                                        // This was a merge, log only the amount withdrawn (not the whole stack)
                                         try
                                         {
-                                            TransferLogger.LogChestWithdrawal(this, existingStack, capturedChest);
+                                            var withdrawnAmount = newStackSize - originalStackSize;
+                                            if (withdrawnAmount > 0)
+                                                TransferLogger.LogChestWithdrawal(this, existingStack, capturedChest, withdrawnAmount);
                                         }
                                         catch (Exception ex)
                                         {
