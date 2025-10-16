@@ -52,7 +52,7 @@ namespace ACE.Server.Command.Handlers
         // }
 
         // bankaudit {subcommand} {parameters}
-        [CommandHandler("bankaudit", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("bankaudit", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Bank transfer audit commands.",
             "log|patterns|suspicious|summaries|alerts|monitor|config|items|blacklist|status|cleanup|ip|migrate|fixsummaries|bankban|top|help\nUse 'bankaudit help' for detailed command information.")]
         public static void HandleBankAudit(Session session, params string[] parameters)
@@ -61,7 +61,7 @@ namespace ACE.Server.Command.Handlers
         }
 
         // ba {subcommand} {parameters} - Alias for bankaudit
-        [CommandHandler("ba", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("ba", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Bank transfer audit commands (alias for bankaudit).",
             "log|patterns|suspicious|summaries|alerts|monitor|config|items|blacklist|status|cleanup|ip|migrate|fixsummaries|bankban|top|help\nUse 'ba help' for detailed command information.")]
         public static void HandleBA(Session session, params string[] parameters)
@@ -876,7 +876,7 @@ namespace ACE.Server.Command.Handlers
                 
                 foreach (var transfer in transfersList)
                 {
-                    var message = $"    {transfer.Timestamp:MM-dd HH:mm} | {transfer.TransferType} | {transfer.ItemName} x{transfer.Quantity} | From Account: {transfer.FromPlayerAccount ?? "Unknown"} | To Account: {transfer.ToPlayerAccount ?? "Unknown"}";
+                    var message = $"    {transfer.Timestamp:MM-dd HH:mm} | {transfer.TransferType} | {transfer.ItemName} x{transfer.Quantity} | From: {transfer.FromPlayerName} ({transfer.FromPlayerAccount ?? "Unknown"}) | To: {transfer.ToPlayerName} ({transfer.ToPlayerAccount ?? "Unknown"})";
                     session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
                 }
             }

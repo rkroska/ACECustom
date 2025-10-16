@@ -1114,15 +1114,20 @@ namespace ACE.Server.WorldObjects
 
                         // Capture item data before it might be destroyed during stackable merges
                         bool isGroundPickup = itemRootOwner == null && containerRootOwner == this;
+                        bool isContainerWithdrawal = itemRootOwner is Container && 
+                                                     itemRootOwner.WeenieType != WeenieType.Corpse &&
+                                                     !(itemRootOwner is Player) && 
+                                                     containerRootOwner == this;
                         bool isStackableItem = item is Stackable;
                         string capturedItemName = item?.Name;
                         long capturedItemQuantity = item?.StackSize ?? 1;
                         uint capturedItemWeenieClassId = item?.WeenieClassId ?? 0;
+                        Container capturedChest = isContainerWithdrawal ? (itemRootOwner as Container) : null;
 
                         // For stackable items, check if there's an existing stack that might merge
                         WorldObject existingStack = null;
                         int originalStackSize = 0;
-                        if (isStackableItem && isGroundPickup)
+                        if (isStackableItem && (isGroundPickup || isContainerWithdrawal))
                         {
                             existingStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
                             originalStackSize = existingStack?.StackSize ?? 0;
@@ -1199,6 +1204,88 @@ namespace ACE.Server.WorldObjects
                                     catch (Exception ex)
                                     {
                                         log.Error($"Error logging non-stackable ground pickup: {ex.Message}");
+                                    }
+                                }
+                            }
+                            
+                            // Log chest/container withdrawal after successful processing
+                            if (isContainerWithdrawal && capturedChest != null)
+                            {
+                                if (isStackableItem && existingStack != null)
+                                {
+                                    // Check if this was a merge (existing stack size increased)
+                                    int newStackSize = existingStack.StackSize ?? 0;
+                                    if (newStackSize > originalStackSize)
+                                    {
+                                        // This was a merge, log using the merged stack
+                                        try
+                                        {
+                                            TransferLogger.LogChestWithdrawal(this, existingStack, capturedChest);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging chest withdrawal (merged stack): {ex.Message}");
+                                        }
+                                        
+                                        // Also check for any overflow-created new stack
+                                        try
+                                        {
+                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
+                                                .FirstOrDefault(x => x != existingStack);
+                                            if (newStack != null)
+                                            {
+                                                TransferLogger.LogChestWithdrawal(this, newStack, capturedChest);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging chest withdrawal (overflow stack): {ex.Message}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // No merge occurred, this stackable item became a new stack
+                                        try
+                                        {
+                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
+                                                .FirstOrDefault(x => x != existingStack);
+                                            if (newStack != null)
+                                            {
+                                                TransferLogger.LogChestWithdrawal(this, newStack, capturedChest);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"Error logging chest withdrawal (new stack): {ex.Message}");
+                                        }
+                                    }
+                                }
+                                else if (isStackableItem && existingStack == null)
+                                {
+                                    // No existing stack, this is definitely a new stackable item
+                                    try
+                                    {
+                                        var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                                        if (newStack != null)
+                                        {
+                                            TransferLogger.LogChestWithdrawal(this, newStack, capturedChest);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging chest withdrawal (no existing stack): {ex.Message}");
+                                    }
+                                }
+                                else if (!isStackableItem)
+                                {
+                                    // Non-stackable chest withdrawal
+                                    try
+                                    {
+                                        TransferLogger.LogChestWithdrawal(this, item, capturedChest);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"Error logging chest withdrawal (non-stackable): {ex.Message}");
                                     }
                                 }
                             }
@@ -1429,6 +1516,25 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(
                 new GameMessagePublicUpdateInstanceID(item, PropertyInstanceId.Container, container.Guid),
                 new GameEventItemServerSaysContainId(Session, item, container));
+
+            // Log chest/container deposits (player putting item into world container)
+            // Check if depositing into a world container (chest, storage, etc.) - not into player inventory or corpse
+            bool isContainerDeposit = itemRootOwner == this && 
+                                     containerRootOwner != this && 
+                                     container is Container &&
+                                     container.WeenieType != WeenieType.Corpse &&
+                                     !(container is Player);
+            if (isContainerDeposit)
+            {
+                try
+                {
+                    TransferLogger.LogChestDeposit(this, item, container);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging chest/container deposit: {ex.Message}");
+                }
+            }
 
             return true;
         }
@@ -2508,6 +2614,55 @@ namespace ACE.Server.WorldObjects
             else
                 Session.Network.EnqueueSend(new GameMessageSetStackSize(stack));
 
+            // Log chest deposit for splits from player to chest
+            bool isChestDeposit = stackRootOwner == this && 
+                                  containerRootOwner != this && 
+                                  container is Container &&
+                                  container.WeenieType != WeenieType.Corpse &&
+                                  !(container is Player);
+            if (isChestDeposit)
+            {
+                try
+                {
+                    TransferLogger.LogChestDeposit(this, newStack, container);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging chest deposit (split): {ex.Message}");
+                }
+            }
+
+            // Log chest withdrawal for splits from chest to player
+            bool isChestWithdrawal = stackRootOwner is Container && 
+                                     stackRootOwner.WeenieType != WeenieType.Corpse &&
+                                     !(stackRootOwner is Player) && 
+                                     containerRootOwner == this;
+            if (isChestWithdrawal)
+            {
+                try
+                {
+                    TransferLogger.LogChestWithdrawal(this, newStack, stackRootOwner as Container);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging chest withdrawal (split): {ex.Message}");
+                }
+            }
+
+            // Log ground pickup for splits from ground to player
+            bool isGroundPickup = stackRootOwner == null && containerRootOwner == this;
+            if (isGroundPickup)
+            {
+                try
+                {
+                    TransferLogger.LogGroundPickup(this, newStack, amount);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error logging ground pickup (split): {ex.Message}");
+                }
+            }
+
             return true;
         }
 
@@ -3108,6 +3263,24 @@ namespace ACE.Server.WorldObjects
                                 }
                             }
 
+                            // Check if this was a chest withdrawal (source from chest, target in inventory)
+                            bool isChestWithdrawal = sourceStackRootOwner is Container && 
+                                                     sourceStackRootOwner.WeenieType != WeenieType.Corpse &&
+                                                     !(sourceStackRootOwner is Player) && 
+                                                     targetStackRootOwner == this;
+                            if (isChestWithdrawal)
+                            {
+                                try
+                                {
+                                    // Log with the actual merge amount, not the whole stack
+                                    TransferLogger.LogChestWithdrawal(this, sourceStack, sourceStackRootOwner as Container, amount);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Error($"Error logging chest withdrawal in StackableMerge: {ex.Message}");
+                                }
+                            }
+
                             // If the client used the R key to merge a partial stack from the landscape, it also tries to add the "ghosted" item of the picked up stack to the inventory as well.
                             if (sourceStackRootOwner != this && sourceStack.StackSize > 0)
                                 Session.Network.EnqueueSend(new GameMessageCreateObject(sourceStack));
@@ -3145,6 +3318,23 @@ namespace ACE.Server.WorldObjects
                         catch (Exception ex)
                         {
                             log.Error($"Error logging ground pickup in StackableMerge: {ex.Message}");
+                        }
+                    }
+
+                    // Check if this was a chest withdrawal (source from chest, target in inventory)
+                    bool isChestWithdrawal = sourceStackRootOwner is Container && 
+                                             sourceStackRootOwner.WeenieType != WeenieType.Corpse &&
+                                             !(sourceStackRootOwner is Player) && 
+                                             targetStackRootOwner == this;
+                    if (isChestWithdrawal)
+                    {
+                        try
+                        {
+                            TransferLogger.LogChestWithdrawal(this, sourceStack, sourceStackRootOwner as Container, mergeAmount);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Error logging chest withdrawal in StackableMerge: {ex.Message}");
                         }
                     }
                 }
