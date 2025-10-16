@@ -206,7 +206,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private int CountPackItems()
         {
-            return Inventory.Values.Count(wo => !wo.UseBackpackSlot);
+            int count = 0;
+            foreach (var wo in Inventory.Values)
+            {
+                if (!wo.UseBackpackSlot)
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>
@@ -214,7 +220,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private int CountContainers()
         {
-            return Inventory.Values.Count(wo => wo.UseBackpackSlot);
+            int count = 0;
+            foreach (var wo in Inventory.Values)
+            {
+                if (wo.UseBackpackSlot)
+                    count++;
+            }
+            return count;
         }
 
         public int GetFreeInventorySlots(bool includeSidePacks = true)
@@ -223,8 +235,11 @@ namespace ACE.Server.WorldObjects
 
             if (includeSidePacks)
             {
-                foreach (var sidePack in Inventory.Values.OfType<Container>())
-                    freeSlots += (sidePack.ItemCapacity ?? 0) - sidePack.CountPackItems();
+                foreach (var item in Inventory.Values)
+                {
+                    if (item is Container sidePack)
+                        freeSlots += (sidePack.ItemCapacity ?? 0) - sidePack.CountPackItems();
+                }
             }
 
             return freeSlots;
@@ -690,7 +705,15 @@ namespace ACE.Server.WorldObjects
                 return false; // Do not clear storage, ever.
 
             var success = true;
-            var itemGuids = Inventory.Where(i => i.Value.GeneratorId == null).Select(i => i.Key).ToList();
+            // Build list of unmanaged item GUIDs (optimized from Where + Select + ToList)
+            var itemGuids = new List<ObjectGuid>();
+            foreach (var kvp in Inventory)
+            {
+                if (kvp.Value.GeneratorId == null)
+                    itemGuids.Add(kvp.Key);
+            }
+
+            // Now safe to modify inventory during this iteration
             foreach (var itemGuid in itemGuids)
             {
                 if (!TryRemoveFromInventory(itemGuid, out var item, forceSave))
@@ -895,8 +918,11 @@ namespace ACE.Server.WorldObjects
             player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, this));
 
             // send sub-containers
-            foreach (var container in Inventory.Values.Where(i => i is Container))
-                player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, (Container)container));
+            foreach (var item in Inventory.Values)
+            {
+                if (item is Container container)
+                    player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, container));
+            }
 
             player.Session.Network.EnqueueSend(itemsToSend.ToArray());
         }
