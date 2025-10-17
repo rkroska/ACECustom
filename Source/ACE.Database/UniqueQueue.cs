@@ -246,8 +246,8 @@ namespace ACE.Database
             _lock.EnterWriteLock();
             try
             {
-                var result = new List<TItem>();
                 var count = Math.Min(maxCount, _items.Count);
+                var result = new List<TItem>(count);
 
                 for (int i = 0; i < count; i++)
                 {
