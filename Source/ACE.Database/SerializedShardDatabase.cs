@@ -75,12 +75,12 @@ namespace ACE.Database
 
         public List<string> QueueReport()
         {
-            return _uniqueQueue.ToArray().Select(t => GetUniqueTaskKey(t)).ToList();
+            return _uniqueQueue.ToArray().Select(t => t.AsyncState as string ?? $"Task#{t.Id}").ToList();
         }
 
         public List<string> ReadOnlyQueueReport()
         {
-            return _readOnlyQueue.Select(t => GetUniqueTaskKey(t)).ToList();
+            return _readOnlyQueue.Select(t => t.AsyncState as string ?? $"Task#{t.Id}").ToList();
         }
 
         private void DoReadOnlyWork()
@@ -150,7 +150,7 @@ namespace ACE.Database
                         if (stopwatch.ElapsedMilliseconds >= 5000)
                         {
                             log.Error(
-                                $"Task: {GetUniqueTaskKey(t)} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_uniqueQueue.Count}");
+                                $"Task: {t.AsyncState as string ?? $"Task#{t.Id}"} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_uniqueQueue.Count}");
                         }
                     }
                     catch (Exception ex)
