@@ -31,16 +31,18 @@ namespace ACE.Database
             {
                 var key = _keySelector(item);
 
-                // If item with this key already exists, remove it first
-                if (_lookup.TryGetValue(key, out var existingNode))
+                if (_lookup.TryGetValue(key, out LinkedListNode<TItem> existingNode))
                 {
+                    // An item with this key exists, so update the value and move the existing node to the end
+                    existingNode.Value = item;
                     _items.Remove(existingNode);
-                    _lookup.Remove(key);
+                    _items.AddLast(existingNode);
+                } else
+                {
+                    // An item with this key doesn't exist, so add it.
+                    var newNode = _items.AddLast(item);
+                    _lookup[key] = newNode;
                 }
-
-                // Add the new item to the end
-                var newNode = _items.AddLast(item);
-                _lookup[key] = newNode;
 
                 return true;
             }
