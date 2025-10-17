@@ -150,6 +150,8 @@ namespace ACE.Server.WorldObjects
                 var worldObject = WorldObjectFactory.CreateWorldObject(biota);
                 if (worldObject != null)
                     worldObjects.Add(worldObject);
+                else
+                    log.Warn($"Failed to create WorldObject from biota {biota.Id} (WeenieClassId: {biota.WeenieClassId}, WeenieType: {biota.WeenieType}) in container {Guid}");
             }
 
             SortWorldObjectsIntoInventory(worldObjects);
