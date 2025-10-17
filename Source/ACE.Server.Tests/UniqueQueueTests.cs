@@ -11,7 +11,7 @@ namespace ACE.Database.Tests
         public void Enqueue_WithCustomObjects_ShouldMaintainUniquenessByKey()
         {
             // Arrange
-            var queue = new UniqueQueue<QueueItem>(item => item.Id);
+            using var queue = new UniqueQueue<QueueItem, int>(item => item.Id);
 
             // Act
             queue.Enqueue(new QueueItem { Id = 1, Data = "First" });
@@ -31,7 +31,7 @@ namespace ACE.Database.Tests
         public void Enqueue_WithStrings_ShouldMaintainUniquenessByValue()
         {
             // Arrange
-            var queue = new UniqueQueue<string>(item => item);
+            using var queue = new UniqueQueue<string, string>(item => item);
 
             // Act
             queue.Enqueue("apple");
@@ -49,7 +49,7 @@ namespace ACE.Database.Tests
         public void Remove_WithValidId_ShouldRemoveItem()
         {
             // Arrange
-            var queue = new UniqueQueue<QueueItem>(item => item.Id);
+            using var queue = new UniqueQueue<QueueItem, int>(item => item.Id);
             queue.Enqueue(new QueueItem { Id = 1, Data = "First" });
             queue.Enqueue(new QueueItem { Id = 2, Data = "Second" });
 
@@ -68,7 +68,7 @@ namespace ACE.Database.Tests
         public void Dequeue_ShouldReturnItemsInCorrectOrder()
         {
             // Arrange
-            var queue = new UniqueQueue<QueueItem>(item => item.Id);
+            using var queue = new UniqueQueue<QueueItem, int>(item => item.Id);
             queue.Enqueue(new QueueItem { Id = 1, Data = "First" });
             queue.Enqueue(new QueueItem { Id = 2, Data = "Second" });
             queue.Enqueue(new QueueItem { Id = 1, Data = "Updated First" });
