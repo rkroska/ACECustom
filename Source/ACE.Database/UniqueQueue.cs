@@ -12,7 +12,7 @@ namespace ACE.Database
     using System.Linq;
     using System.Threading;
 
-    public class UniqueQueue<TItem, TKey>
+    public class UniqueQueue<TItem, TKey> : IDisposable
     {
         private readonly LinkedList<TItem> _items = new LinkedList<TItem>();
         private readonly Dictionary<TKey, LinkedListNode<TItem>> _lookup = new Dictionary<TKey, LinkedListNode<TItem>>();
@@ -272,6 +272,7 @@ namespace ACE.Database
         public void Dispose()
         {
             _lock?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }
