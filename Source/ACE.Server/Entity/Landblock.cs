@@ -697,6 +697,10 @@ namespace ACE.Server.Entity
             // Iterate backwards to avoid issues when players disconnect during tick
             for (int i = players.Count - 1; i >= 0; i--)
             {
+                // Add bounds check to prevent IndexOutOfRangeException
+                if (i >= players.Count)
+                    break;
+                    
                 var player = players[i];
                 player.Player_Tick(currentUnixTime);
             }
