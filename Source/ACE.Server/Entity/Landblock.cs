@@ -625,7 +625,9 @@ namespace ACE.Server.Entity
                 // Decay world objects
                 if (lastHeartBeat != DateTime.MinValue)
                 {
-                    foreach (var wo in worldObjects.Values)
+                    // Make a copy since objects might get removed during decay
+                    var worldObjectsCopy = worldObjects.Values.ToList();
+                    foreach (var wo in worldObjectsCopy)
                     {
                         if (wo.IsDecayable())
                             wo.Decay(thisHeartBeat - lastHeartBeat);
@@ -692,8 +694,16 @@ namespace ACE.Server.Entity
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             stopwatch.Restart();
-            foreach (var player in players)
+            // Iterate backwards to avoid issues when players disconnect during tick
+            for (int i = players.Count - 1; i >= 0; i--)
+            {
+                // Add bounds check to prevent IndexOutOfRangeException
+                if (i >= players.Count)
+                    break;
+                    
+                var player = players[i];
                 player.Player_Tick(currentUnixTime);
+            }
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_Player_Tick, stopwatch.Elapsed.TotalSeconds);
 
             stopwatch.Restart();
