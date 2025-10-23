@@ -12,36 +12,43 @@ namespace ACE.Database
     using System.Linq;
     using System.Threading;
 
-    public class UniqueQueue<T>
+    public class UniqueQueue<TItem, TKey> : IDisposable where TKey : notnull
     {
-        private readonly LinkedList<T> _items = new LinkedList<T>();
-        private readonly Dictionary<object, LinkedListNode<T>> _lookup = new Dictionary<object, LinkedListNode<T>>();
-        private readonly Func<T, object> _keySelector;
+        private readonly LinkedList<TItem> _items = new LinkedList<TItem>();
+        private readonly Dictionary<TKey, LinkedListNode<TItem>> _lookup = new Dictionary<TKey, LinkedListNode<TItem>>();
+        private readonly Func<TItem, TKey> _keySelector;
         private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
 
-        public UniqueQueue(Func<T, object> keySelector)
+        public UniqueQueue(Func<TItem, TKey> keySelector)
         {
             _keySelector = keySelector ?? throw new ArgumentNullException(nameof(keySelector));
         }
 
-        public bool Enqueue(T item)
+        private void EnqueueLocked(TItem item)
+        {
+            var key = _keySelector(item);
+
+            if (_lookup.TryGetValue(key, out LinkedListNode<TItem> existingNode))
+            {
+                // An item with this key exists, so update the value and move the existing node to the end
+                existingNode.Value = item;
+                _items.Remove(existingNode);
+                _items.AddLast(existingNode);
+            }
+            else
+            {
+                // An item with this key doesn't exist, so add it.
+                var newNode = _items.AddLast(item);
+                _lookup[key] = newNode;
+            }
+        }
+
+        public bool Enqueue(TItem item)
         {
             _lock.EnterWriteLock();
             try
             {
-                var key = _keySelector(item);
-
-                // If item with this key already exists, remove it first
-                if (_lookup.TryGetValue(key, out var existingNode))
-                {
-                    _items.Remove(existingNode);
-                    _lookup.Remove(key);
-                }
-
-                // Add the new item to the end
-                var newNode = _items.AddLast(item);
-                _lookup[key] = newNode;
-
+                EnqueueLocked(item);
                 return true;
             }
             finally
@@ -50,14 +57,14 @@ namespace ACE.Database
             }
         }
 
-        public bool TryDequeue(out T item)
+        public bool TryDequeue(out TItem item)
         {
             _lock.EnterWriteLock();
             try
             {
                 if (_items.Count == 0)
                 {
-                    item = default(T);
+                    item = default(TItem);
                     return false;
                 }
 
@@ -76,15 +83,15 @@ namespace ACE.Database
             }
         }
 
-        public T Dequeue()
+        public TItem Dequeue()
         {
-            if (TryDequeue(out T item))
+            if (TryDequeue(out TItem item))
                 return item;
 
             throw new InvalidOperationException("Queue is empty");
         }
 
-        public bool Remove(object uniqueId)
+        public bool Remove(TKey uniqueId)
         {
             _lock.EnterWriteLock();
             try
@@ -103,7 +110,7 @@ namespace ACE.Database
             }
         }
 
-        public bool TryPeek(out T item)
+        public bool TryPeek(out TItem item)
         {
             _lock.EnterReadLock();
             try
@@ -113,7 +120,7 @@ namespace ACE.Database
                     item = _items.First.Value;
                     return true;
                 }
-                item = default(T);
+                item = default(TItem);
                 return false;
             }
             finally
@@ -122,9 +129,9 @@ namespace ACE.Database
             }
         }
 
-        public bool Contains(object uniqueId)
+        public bool Contains(TKey uniqueId)
         {
-            if (uniqueId == null) return false;
+            if (uniqueId is null) return false;
             _lock.EnterReadLock();
             try
             {
@@ -136,8 +143,14 @@ namespace ACE.Database
             }
         }
 
-        public bool TryGetItem(object uniqueId, out T item)
+        public bool TryGetItem(TKey uniqueId, out TItem item)
         {
+            if (uniqueId is null)
+            {
+                item = default;
+                return false;
+            }
+
             _lock.EnterReadLock();
             try
             {
@@ -146,7 +159,7 @@ namespace ACE.Database
                     item = node.Value;
                     return true;
                 }
-                item = default(T);
+                item = default(TItem);
                 return false;
             }
             finally
@@ -186,7 +199,7 @@ namespace ACE.Database
         }
 
         // Thread-safe enumeration - returns a snapshot
-        public T[] ToArray()
+        public TItem[] ToArray()
         {
             _lock.EnterReadLock();
             try
@@ -200,7 +213,7 @@ namespace ACE.Database
         }
 
         // Get all unique IDs currently in queue
-        public object[] GetAllIds()
+        public TKey[] GetAllIds()
         {
             _lock.EnterReadLock();
             try
@@ -214,25 +227,14 @@ namespace ACE.Database
         }
 
         // Batch operations for better performance when adding multiple items
-        public void EnqueueBatch(IEnumerable<T> items)
+        public void EnqueueBatch(IEnumerable<TItem> items)
         {
             _lock.EnterWriteLock();
             try
             {
-                foreach (var item in items)
+                foreach (TItem item in items)
                 {
-                    var key = _keySelector(item);
-
-                    // If item with this key already exists, remove it first
-                    if (_lookup.TryGetValue(key, out var existingNode))
-                    {
-                        _items.Remove(existingNode);
-                        _lookup.Remove(key);
-                    }
-
-                    // Add the new item to the end
-                    var newNode = _items.AddLast(item);
-                    _lookup[key] = newNode;
+                    EnqueueLocked(item);
                 }
             }
             finally
@@ -241,13 +243,13 @@ namespace ACE.Database
             }
         }
 
-        public List<T> DequeueBatch(int maxCount)
+        public List<TItem> DequeueBatch(int maxCount)
         {
             _lock.EnterWriteLock();
             try
             {
-                var result = new List<T>();
                 var count = Math.Min(maxCount, _items.Count);
+                var result = new List<TItem>(count);
 
                 for (int i = 0; i < count; i++)
                 {
@@ -272,6 +274,7 @@ namespace ACE.Database
         public void Dispose()
         {
             _lock?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }
