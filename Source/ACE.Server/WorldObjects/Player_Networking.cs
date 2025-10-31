@@ -23,6 +23,9 @@ namespace ACE.Server.WorldObjects
             PlayerManager.SwitchPlayerFromOfflineToOnline(this);
             Teleporting = true;
 
+            // Log character login to char_tracker table
+            CharacterTracker.LogCharacterLogin(this);
+
             // Save the the LoginTimestamp
             var lastLoginTimestamp = Time.GetUnixTime();
 
