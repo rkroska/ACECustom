@@ -35,25 +35,33 @@ namespace ACE.Server.Managers
 					using (var context = new ShardDbContext())
 					{
 						log.Info("Running database migration for char_tracker table...");
-						CreateCharTrackerTable(context);
-						log.Info("char_tracker table migration completed successfully");
-						_databaseMigrated = true;
+						if (CreateCharTrackerTable(context))
+						{
+							log.Info("char_tracker table migration completed successfully");
+							_databaseMigrated = true;
+						}
+						else
+						{
+							log.Error("char_tracker table migration failed - table creation was unsuccessful");
+						}
 					}
 				}
 				catch (Exception ex)
 				{
 					log.Error($"Database migration failed for char_tracker: {ex.Message}");
+					log.Error($"Stack trace: {ex.StackTrace}");
 				}
 			}
 		}
 
-		private static void CreateCharTrackerTable(ShardDbContext context)
+		private static bool CreateCharTrackerTable(ShardDbContext context)
 		{
 			try
 			{
 				// Check if table exists by trying to select from it
 				context.Database.ExecuteSqlRaw("SELECT 1 FROM char_tracker LIMIT 1");
 				log.Info("char_tracker table already exists");
+				return true;
 			}
 			catch (Exception)
 			{
@@ -80,31 +88,23 @@ namespace ACE.Server.Managers
 						) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
 					log.Info("char_tracker table created successfully");
+					return true;
 				}
 				catch (Exception ex)
 				{
 					log.Error($"Failed to create char_tracker table: {ex.Message}");
+					return false;
 				}
 			}
 		}
 
 		/// <summary>
-		/// Extract IP address from EndPoint, removing port information
+		/// Extract IP address from EndPoint
 		/// </summary>
 		private static string GetPlayerIP(Player player)
 		{
-			if (player?.Session?.EndPoint == null)
-				return null;
-
-			var endPointString = player.Session.EndPoint.ToString();
-			var colonIndex = endPointString.LastIndexOf(':');
-
-			if (colonIndex > 0)
-			{
-				return endPointString.Substring(0, colonIndex);
-			}
-
-			return endPointString;
+			var endPoint = player?.Session?.EndPoint;
+			return endPoint?.Address.ToString();
 		}
 
 		/// <summary>
