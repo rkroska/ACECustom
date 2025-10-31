@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,9 @@ namespace ACE.Server.Managers
 		
 		// Semaphore to limit concurrent database operations (max 20 at a time)
 		private static readonly SemaphoreSlim _dbSemaphore = new SemaphoreSlim(20, 20);
+		
+		// Per-character locks to ensure INSERT completes before UPDATE for same character
+		private static readonly ConcurrentDictionary<uint, SemaphoreSlim> _characterLocks = new ConcurrentDictionary<uint, SemaphoreSlim>();
 
 		/// <summary>
 		/// Ensure the char_tracker table exists in the database
@@ -96,6 +100,14 @@ namespace ACE.Server.Managers
 					return false;
 				}
 			}
+		}
+
+		/// <summary>
+		/// Get or create a per-character lock to ensure INSERT completes before UPDATE
+		/// </summary>
+		private static SemaphoreSlim GetCharacterLock(uint characterId)
+		{
+			return _characterLocks.GetOrAdd(characterId, _ => new SemaphoreSlim(1, 1));
 		}
 
 		/// <summary>
@@ -201,62 +213,83 @@ namespace ACE.Server.Managers
 
 		private static async Task SaveCharTrackerRecord(CharTracker record)
 		{
-			await _dbSemaphore.WaitAsync().ConfigureAwait(false);
+			var characterLock = GetCharacterLock(record.CharacterId);
+			
+			// Acquire character-specific lock first to ensure ordering
+			await characterLock.WaitAsync().ConfigureAwait(false);
 			try
 			{
-				using (var context = new ShardDbContext())
+				// Then acquire global semaphore to limit total concurrent operations
+				await _dbSemaphore.WaitAsync().ConfigureAwait(false);
+				try
 				{
-					context.CharTracker.Add(record);
-					await context.SaveChangesAsync().ConfigureAwait(false);
+					using (var context = new ShardDbContext())
+					{
+						context.CharTracker.Add(record);
+						await context.SaveChangesAsync().ConfigureAwait(false);
+					}
 				}
-			}
-			catch (Exception ex)
-			{
-				log.Error($"Error saving char_tracker record: {ex.Message}");
-				log.Error($"Stack trace: {ex.StackTrace}");
+				catch (Exception ex)
+				{
+					log.Error($"Error saving char_tracker record: {ex.Message}");
+					log.Error($"Stack trace: {ex.StackTrace}");
+				}
+				finally
+				{
+					_dbSemaphore.Release();
+				}
 			}
 			finally
 			{
-				_dbSemaphore.Release();
+				characterLock.Release();
 			}
 		}
 
 		private static async Task UpdateCharTrackerRecord(uint characterId, int connectionDuration)
 		{
-			// Small delay to reduce race condition with INSERT
-			await Task.Delay(100).ConfigureAwait(false);
+			var characterLock = GetCharacterLock(characterId);
 			
-			await _dbSemaphore.WaitAsync().ConfigureAwait(false);
+			// Acquire character-specific lock first to ensure INSERT has completed
+			await characterLock.WaitAsync().ConfigureAwait(false);
 			try
 			{
-				using (var context = new ShardDbContext())
+				// Then acquire global semaphore to limit total concurrent operations
+				await _dbSemaphore.WaitAsync().ConfigureAwait(false);
+				try
 				{
-					// Find the most recent login record for this character with duration still at 0
-					var record = context.CharTracker
-						.Where(c => c.CharacterId == characterId && c.ConnectionDuration == 0)
-						.OrderByDescending(c => c.LoginTimestamp)
-						.FirstOrDefault();
+					using (var context = new ShardDbContext())
+					{
+						// Find the most recent login record for this character with duration still at 0
+						var record = context.CharTracker
+							.Where(c => c.CharacterId == characterId && c.ConnectionDuration == 0)
+							.OrderByDescending(c => c.LoginTimestamp)
+							.FirstOrDefault();
 
-					if (record != null)
-					{
-						record.ConnectionDuration = connectionDuration;
-						await context.SaveChangesAsync().ConfigureAwait(false);
-						log.Debug($"Updated char_tracker record ID {record.Id} with duration {connectionDuration}s");
-					}
-					else
-					{
-						log.Warn($"Could not find login record to update for character ID {characterId} (may have already been updated or INSERT pending)");
+						if (record != null)
+						{
+							record.ConnectionDuration = connectionDuration;
+							await context.SaveChangesAsync().ConfigureAwait(false);
+							log.Debug($"Updated char_tracker record ID {record.Id} with duration {connectionDuration}s");
+						}
+						else
+						{
+							log.Warn($"Could not find login record to update for character ID {characterId}");
+						}
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				log.Error($"Error updating char_tracker record: {ex.Message}");
-				log.Error($"Stack trace: {ex.StackTrace}");
+				catch (Exception ex)
+				{
+					log.Error($"Error updating char_tracker record: {ex.Message}");
+					log.Error($"Stack trace: {ex.StackTrace}");
+				}
+				finally
+				{
+					_dbSemaphore.Release();
+				}
 			}
 			finally
 			{
-				_dbSemaphore.Release();
+				characterLock.Release();
 			}
 		}
 	}
