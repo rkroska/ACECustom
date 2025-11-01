@@ -341,25 +341,8 @@ namespace ACE.Server.Managers
 			finally
 			{
 				characterLock.Release();
-				
-				// Cleanup: Remove the lock after logout completes since we don't need it anymore
-				// The lock is only needed to serialize login/logout for the same character
-				CleanupCharacterLock(characterId);
-			}
-		}
-
-		/// <summary>
-		/// Remove character lock after logout to prevent unbounded dictionary growth
-		/// </summary>
-		private static void CleanupCharacterLock(uint characterId)
-		{
-			// Only remove if no one else is waiting (CurrentCount == 1 means available)
-			if (_characterLocks.TryGetValue(characterId, out var semaphore) && semaphore.CurrentCount == 1)
-			{
-				if (_characterLocks.TryRemove(characterId, out var removedSemaphore))
-				{
-					removedSemaphore.Dispose();
-				}
+				// Note: We don't cleanup the semaphore here to avoid race conditions with concurrent logins
+				// The memory impact is negligible (~48 bytes per unique character)
 			}
 		}
 
