@@ -379,6 +379,7 @@ namespace ACE.Server.Command.Handlers
                     session.Player.DepositTradeNotes(true);
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
+                    return;
                 }
                 switch (iType)
                 {
