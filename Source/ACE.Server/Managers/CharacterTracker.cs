@@ -11,6 +11,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ACE.Server.Managers
 {
+	/// <summary>
+	/// Character login/logout tracking for investigating multi-character violations.
+	/// IP addresses are collected for security purposes and retained for investigation.
+	/// Note: IP addresses are considered PII under privacy regulations (GDPR, CCPA, etc.)
+	/// Consider implementing data retention policies and anonymization as required by your jurisdiction.
+	/// </summary>
 	public static class CharacterTracker
 	{
 		private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -22,6 +28,15 @@ namespace ACE.Server.Managers
 		
 		// Per-character locks to ensure INSERT completes before UPDATE for same character
 		private static readonly ConcurrentDictionary<uint, SemaphoreSlim> _characterLocks = new ConcurrentDictionary<uint, SemaphoreSlim>();
+		
+		// Time window for matching login records on logout (prevents matching old crashed sessions)
+		// Set to 7 days to accommodate long play sessions while still filtering ancient crash records
+		private static readonly TimeSpan LoginRecordMatchWindow = TimeSpan.FromDays(7);
+		
+		// Data retention settings
+		private static readonly int DataRetentionDays = 90;
+		private static DateTime _lastCleanupCheck = DateTime.MinValue;
+		private static readonly object _cleanupLock = new object();
 
 		/// <summary>
 		/// Ensure the char_tracker table exists in the database
@@ -43,6 +58,9 @@ namespace ACE.Server.Managers
 						{
 							log.Info("char_tracker table migration completed successfully");
 							_databaseMigrated = true;
+							
+							// Run initial cleanup check on startup
+							Task.Run(() => CheckAndRunCleanup());
 						}
 						else
 						{
@@ -54,6 +72,32 @@ namespace ACE.Server.Managers
 				{
 					log.Error($"Database migration failed for char_tracker: {ex.Message}");
 					log.Error($"Stack trace: {ex.StackTrace}");
+				}
+			}
+		}
+
+		/// <summary>
+		/// Check if cleanup is needed and run it (called periodically)
+		/// </summary>
+		private static void CheckAndRunCleanup()
+		{
+			lock (_cleanupLock)
+			{
+				// Only check once per day
+				if ((DateTime.UtcNow - _lastCleanupCheck).TotalDays < 1)
+					return;
+
+				_lastCleanupCheck = DateTime.UtcNow;
+
+				try
+				{
+					log.Info($"Running automatic char_tracker cleanup (retention: {DataRetentionDays} days)...");
+					var deletedCount = DeleteOldRecords(DataRetentionDays);
+					log.Info($"Automatic cleanup completed: {deletedCount} records deleted");
+				}
+				catch (Exception ex)
+				{
+					log.Error($"Error during automatic char_tracker cleanup: {ex.Message}");
 				}
 			}
 		}
@@ -134,6 +178,9 @@ namespace ACE.Server.Managers
 
 				// Ensure database is migrated before logging
 				EnsureDatabaseMigrated();
+				
+				// Check if daily cleanup is needed (throttled to once per day)
+				Task.Run(() => CheckAndRunCleanup());
 
 				var charTracker = new CharTracker
 				{
@@ -260,8 +307,12 @@ namespace ACE.Server.Managers
 					using (var context = new ShardDbContext())
 					{
 						// Find the most recent login record for this character with duration still at 0
+						// Only match records within time window to avoid updating old crashed sessions
+						var cutoffTime = DateTime.UtcNow.Subtract(LoginRecordMatchWindow);
 						var record = context.CharTracker
-							.Where(c => c.CharacterId == characterId && c.ConnectionDuration == 0)
+							.Where(c => c.CharacterId == characterId 
+								&& c.ConnectionDuration == 0 
+								&& c.LoginTimestamp > cutoffTime)
 							.OrderByDescending(c => c.LoginTimestamp)
 							.FirstOrDefault();
 
@@ -290,6 +341,85 @@ namespace ACE.Server.Managers
 			finally
 			{
 				characterLock.Release();
+				
+				// Cleanup: Remove the lock after logout completes since we don't need it anymore
+				// The lock is only needed to serialize login/logout for the same character
+				CleanupCharacterLock(characterId);
+			}
+		}
+
+		/// <summary>
+		/// Remove character lock after logout to prevent unbounded dictionary growth
+		/// </summary>
+		private static void CleanupCharacterLock(uint characterId)
+		{
+			// Only remove if no one else is waiting (CurrentCount == 1 means available)
+			if (_characterLocks.TryGetValue(characterId, out var semaphore) && semaphore.CurrentCount == 1)
+			{
+				if (_characterLocks.TryRemove(characterId, out var removedSemaphore))
+				{
+					removedSemaphore.Dispose();
+				}
+			}
+		}
+
+		/// <summary>
+		/// Anonymize IP addresses older than specified days for privacy compliance
+		/// </summary>
+		/// <param name="olderThanDays">Delete IPs from records older than this many days</param>
+		/// <returns>Number of records anonymized</returns>
+		public static int AnonymizeOldIPAddresses(int olderThanDays)
+		{
+			try
+			{
+				EnsureDatabaseMigrated();
+
+				var cutoffDate = DateTime.UtcNow.AddDays(-olderThanDays);
+
+				using (var context = new ShardDbContext())
+				{
+					var rowsAffected = context.Database.ExecuteSqlRaw(
+						"UPDATE char_tracker SET LoginIP = NULL WHERE LoginTimestamp < {0} AND LoginIP IS NOT NULL",
+						cutoffDate);
+
+					log.Info($"Anonymized {rowsAffected} char_tracker IP addresses older than {olderThanDays} days");
+					return rowsAffected;
+				}
+			}
+			catch (Exception ex)
+			{
+				log.Error($"Error anonymizing char_tracker IP addresses: {ex.Message}");
+				return 0;
+			}
+		}
+
+		/// <summary>
+		/// Delete records older than specified days to manage data retention
+		/// </summary>
+		/// <param name="olderThanDays">Delete records older than this many days</param>
+		/// <returns>Number of records deleted</returns>
+		public static int DeleteOldRecords(int olderThanDays)
+		{
+			try
+			{
+				EnsureDatabaseMigrated();
+
+				var cutoffDate = DateTime.UtcNow.AddDays(-olderThanDays);
+
+				using (var context = new ShardDbContext())
+				{
+					var rowsAffected = context.Database.ExecuteSqlRaw(
+						"DELETE FROM char_tracker WHERE LoginTimestamp < {0}",
+						cutoffDate);
+
+					log.Info($"Deleted {rowsAffected} char_tracker records older than {olderThanDays} days");
+					return rowsAffected;
+				}
+			}
+			catch (Exception ex)
+			{
+				log.Error($"Error deleting old char_tracker records: {ex.Message}");
+				return 0;
 			}
 		}
 	}
