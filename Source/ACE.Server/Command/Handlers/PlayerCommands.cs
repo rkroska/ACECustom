@@ -241,19 +241,6 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // Check for balance request (either /b alone or /b b)
-            if (parameters[0] == "b" && parameters.Length == 1)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Your balances are:", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Pyreals: {session.Player.BankedPyreals:N0}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Luminance: {session.Player.BankedLuminance:N0}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Legendary Keys: {session.Player.BankedLegendaryKeys:N0}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Mythical Keys: {session.Player.BankedMythicalKeys:N0}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Enlightened Coins: {session.Player.BankedEnlightenedCoins:N0}", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Weakly Enlightened Coins: {session.Player.BankedWeaklyEnlightenedCoins:N0}", ChatMessageType.System));
-                return;
-            }
-
             //cleanup edge cases
             if (session.Player.BankedPyreals < 0)
             {
