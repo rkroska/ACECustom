@@ -223,6 +223,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"TRANSFER COMMANDS:", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer pyreals <amount> <character> (or /b t p <amount> <character>) - Transfer pyreals", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer notes <denom> <count> <character> (or /b t n <denom> <count> <character>) - Transfer trade note value", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer luminance <amount> <character> (or /b t l <amount> <character>) - Transfer luminance", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer legendarykeys <amount> <character> (or /b t k <amount> <character>) - Transfer legendary keys", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer mythicalkeys <amount> <character> (or /b t mk <amount> <character>) - Transfer mythical keys", ChatMessageType.System));
@@ -234,6 +235,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n mmd - Withdraw 250k trade note", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n c 5 - Withdraw 5 trade notes of 10k each", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1m \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t n mmd 50 PlayerName - Transfer 50× 250k notes worth (12.5M pyreals)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
 
                 return;
@@ -381,6 +383,7 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                     return;
                 }
+                
                 switch (iType)
                 {
                     case 1:
@@ -501,7 +504,7 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "transfer" || parameters[0] == "t")
             {
-                if (parameters.Length > 4)
+                if (parameters.Length > 5)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"[BANK] Too many parameters, ensure you use \"quotes\" around player names with spaces.", ChatMessageType.System));
                     return;
@@ -519,6 +522,56 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 session.LastBankCommandTime = currentTime;
+                
+                // Special handling for trade note transfers: /b t n <denom> <count> <player>
+                if (iType == 3 && parameters.Length == 5)
+                {
+                    string denomination = parameters[2];
+                    if (!int.TryParse(parameters[3], out int noteCount) || noteCount <= 0)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid count. Please provide a positive number.", ChatMessageType.System));
+                        return;
+                    }
+                    
+                    string targetPlayer = parameters[4];
+                    
+                    // Map denomination to value (same as WithdrawTradeNotes)
+                    long noteValue = denomination.Trim().ToLower() switch
+                    {
+                        "i" => 100,
+                        "v" => 500,
+                        "x" => 1000,
+                        "l" => 5000,
+                        "c" => 10000,
+                        "d" => 50000,
+                        "m" => 100000,
+                        "md" => 150000,
+                        "mm" => 200000,
+                        "mmd" => 250000,
+                        _ => -1
+                    };
+                    
+                    if (noteValue == -1)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid denomination. Use: i(100), v(500), x(1k), l(5k), c(10k), d(50k), m(100k), md(150k), mm(200k), mmd(250k)", ChatMessageType.System));
+                        return;
+                    }
+                    
+                    long totalValue = noteValue * noteCount;
+                    
+                    // TransferPyreals handles messaging, but we want to add note context
+                    // Suppress the default message and send our own
+                    long oldBalance = session.Player.BankedPyreals ?? 0;
+                    if (session.Player.TransferPyreals(totalValue, targetPlayer))
+                    {
+                        // Transfer succeeded - the method already sent base message
+                        // Just note it was a trade note equivalent transfer
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"(Equivalent to {noteCount}× {denomination.ToUpper()} notes)", ChatMessageType.System));
+                    }
+                    
+                    return;
+                }
+                
                 //transfer
                 switch (iType)
                 {

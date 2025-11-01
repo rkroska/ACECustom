@@ -1700,7 +1700,7 @@ namespace ACE.Server.WorldObjects
                     offlinePlayer.SaveBiotaToDatabase();
                     
                     // Send confirmation to sender
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Pyreal to {offlinePlayer.Name} (offline)", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Pyreals to {offlinePlayer.Name} (offline)", ChatMessageType.System));
                 }
                 else
                 {
@@ -1731,8 +1731,8 @@ namespace ACE.Server.WorldObjects
                     }
                     
                     // Send notification outside of locks
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Pyreal to {onlinePlayer.Name}", ChatMessageType.System));
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreals from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Pyreals to {onlinePlayer.Name}", ChatMessageType.System));
                 }
                 long newBalance = BankedPyreals ?? 0;
                 long targetNewBalance = 0;
