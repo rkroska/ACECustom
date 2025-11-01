@@ -808,6 +808,15 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("Amount must be greater than 0.", ChatMessageType.System));
                 return;
             }
+            
+            // Verify player has luminance flagged (earned through gameplay)
+            if (!this.MaximumLuminance.HasValue || this.MaximumLuminance == 0)
+            {
+                if (!suppressChat)
+                    Session.Network.EnqueueSend(new GameMessageSystemChat("You have not been luminance flagged yet. Complete the luminance quest first.", ChatMessageType.System));
+                return;
+            }
+            
             long actualAmount = 0;
             if (Amount <= this.AvailableLuminance)
             {
@@ -904,10 +913,11 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Verify player has luminance flagged (earned through gameplay)
             if (!this.MaximumLuminance.HasValue || this.MaximumLuminance == 0)
             {
-                this.MaximumLuminance = 1500000;
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.MaximumLuminance, this.MaximumLuminance ?? 0));
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You have not been luminance flagged yet. Complete the luminance quest first.", ChatMessageType.System));
+                return;
             }
             
             // Check if player has enough luminance banked
@@ -1504,9 +1514,9 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (count > 1000) // Reasonable limit to prevent abuse
+            if (count > 50000) // Reasonable limit to prevent abuse
             {
-                Session.Network.EnqueueSend(new GameMessageSystemChat("Count cannot exceed 1,000", ChatMessageType.System));
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Count cannot exceed 50,000", ChatMessageType.System));
                 return;
             }
 
@@ -1959,6 +1969,15 @@ namespace ACE.Server.WorldObjects
             if (tarplayer is OfflinePlayer)
             {
                 var offlinePlayer = tarplayer as OfflinePlayer;
+                
+                // Verify target player has luminance flagged (earned through gameplay)
+                var targetMaxLuminance = offlinePlayer.GetProperty(PropertyInt64.MaximumLuminance);
+                if (!targetMaxLuminance.HasValue || targetMaxLuminance == 0)
+                {
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"{offlinePlayer.Name} has not been luminance flagged yet and cannot receive luminance transfers.", ChatMessageType.System));
+                    return false;
+                }
+                
                 if (offlinePlayer.BankedLuminance == null)
                 {
                     offlinePlayer.BankedLuminance = 0;
