@@ -273,7 +273,7 @@ namespace ACE.Server.WorldObjects
             }          
         }
 
-        public void DepositLegendaryKeys()
+        public void DepositLegendaryKeys(bool suppressChat = false)
         {
             if (BankedLegendaryKeys == null)
             {
@@ -366,18 +366,21 @@ namespace ACE.Server.WorldObjects
                     BatchRemoveItems(itemsToRemove);
                 }
                 
-                if (totalDeposited > 0)
+                if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} legendary keys", ChatMessageType.System));
-                }
-                else
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No legendary keys found to deposit", ChatMessageType.System));
+                    if (totalDeposited > 0)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} legendary keys", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No legendary keys found to deposit", ChatMessageType.System));
+                    }
                 }
             }
         }
 
-        public void DepositMythicalKeys()
+        public void DepositMythicalKeys(bool suppressChat = false)
         {
             if (BankedMythicalKeys == null)
             {
@@ -471,18 +474,21 @@ namespace ACE.Server.WorldObjects
                     BatchRemoveItems(itemsToRemove);
                 }
                 
-                if (totalDeposited > 0)
+                if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} mythical keys", ChatMessageType.System));
-                }
-                else
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No mythical keys found to deposit", ChatMessageType.System));
+                    if (totalDeposited > 0)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} mythical keys", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No mythical keys found to deposit", ChatMessageType.System));
+                    }
                 }
             }
         }
 
-        public void DepositPeas()
+        public void DepositPeas(bool suppressChat = false)
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting DepositPeas operation with performance improvements");
@@ -676,19 +682,22 @@ namespace ACE.Server.WorldObjects
                 LogInventoryScan("DepositPeas", allItems.Count, containersProcessed, stopwatch.ElapsedMilliseconds, 
                     $"Pyreals: {pyrealsProcessed} | Gold: {goldProcessed} | Silver: {silverProcessed} | Copper: {copperProcessed}");
                 
-                if (totalDeposited > 0)
+                if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} pyreal peas", ChatMessageType.System));
-                }
-                else
-                {
-                    log.Debug($"[BANK_DEBUG] Player: {Name} | No pyreal peas were deposited");
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No pyreal peas found to deposit", ChatMessageType.System));
+                    if (totalDeposited > 0)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} pyreal peas", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        log.Debug($"[BANK_DEBUG] Player: {Name} | No pyreal peas were deposited");
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No pyreal peas found to deposit", ChatMessageType.System));
+                    }
                 }
             }
         }
 
-        public void DepositEnlightenedCoins()
+        public void DepositEnlightenedCoins(bool suppressChat = false)
         {
             if (BankedEnlightenedCoins == null)
             {
@@ -712,20 +721,23 @@ namespace ACE.Server.WorldObjects
                     }
                 }
                 
-                if (totalDeposited > 0)
+                if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} enlightened coins", ChatMessageType.System));
-                }
-                else
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No enlightened coins found to deposit", ChatMessageType.System));
+                    if (totalDeposited > 0)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} enlightened coins", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No enlightened coins found to deposit", ChatMessageType.System));
+                    }
                 }
             }
 
             this.SavePlayerToDatabase();
         }
 
-        public void DepositWeaklyEnlightenedCoins()
+        public void DepositWeaklyEnlightenedCoins(bool suppressChat = false)
         {
             if (BankedWeaklyEnlightenedCoins == null)
             {
@@ -749,13 +761,16 @@ namespace ACE.Server.WorldObjects
                     }
                 }
                 
-                if (totalDeposited > 0)
+                if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} weakly enlightened coins", ChatMessageType.System));
-                }
-                else
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No weakly enlightened coins found to deposit", ChatMessageType.System));
+                    if (totalDeposited > 0)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} weakly enlightened coins", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No weakly enlightened coins found to deposit", ChatMessageType.System));
+                    }
                 }
             }
 
@@ -829,7 +844,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Deposits all trade notes
         /// </summary>
-        public void DepositTradeNotes()
+        public void DepositTradeNotes(bool suppressChat = false)
         {
             if (BankedPyreals == null)
             {
@@ -864,13 +879,16 @@ namespace ACE.Server.WorldObjects
                 // Update client-side coin value tracking after removing trade notes
                 UpdateCoinValue();
                 
-                if (totalDeposited > 0)
+                if (!suppressChat)
                 {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} pyreals worth of trade notes", ChatMessageType.System));
-                }
-                else
-                {
-                    Session.Network.EnqueueSend(new GameMessageSystemChat("No trade notes found to deposit", ChatMessageType.System));
+                    if (totalDeposited > 0)
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {totalDeposited:N0} pyreals worth of trade notes", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        Session.Network.EnqueueSend(new GameMessageSystemChat("No trade notes found to deposit", ChatMessageType.System));
+                    }
                 }
             }
         }

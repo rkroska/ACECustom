@@ -368,31 +368,31 @@ namespace ACE.Server.Command.Handlers
                 //deposit
                 if (parameters.Count() == 1) //only means all
                 {
-                    //deposit all
+                    //deposit all - suppress individual messages
                     session.Player.DepositPyreals(true);
                     session.Player.DepositLuminance(true);
-                    session.Player.DepositLegendaryKeys();
-                    session.Player.DepositPeas();
-                    session.Player.DepositEnlightenedCoins();
-                    session.Player.DepositWeaklyEnlightenedCoins();
-                    session.Player.DepositMythicalKeys();
-                    session.Player.DepositTradeNotes();
+                    session.Player.DepositLegendaryKeys(true);
+                    session.Player.DepositPeas(true);
+                    session.Player.DepositEnlightenedCoins(true);
+                    session.Player.DepositWeaklyEnlightenedCoins(true);
+                    session.Player.DepositMythicalKeys(true);
+                    session.Player.DepositTradeNotes(true);
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, Mythical Keys, Enlightened Coins, Weakly Enlightened Coins, and Trade Notes!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                 }
                 if (parameters.Count() == 2 && parameters[1] == "a") //explicit all
                 {
-                    //deposit all
+                    //deposit all - suppress individual messages
                     session.Player.DepositPyreals(true);
                     session.Player.DepositLuminance(true);
-                    session.Player.DepositLegendaryKeys();
-                    session.Player.DepositPeas();
-                    session.Player.DepositEnlightenedCoins();
-                    session.Player.DepositWeaklyEnlightenedCoins();
-                    session.Player.DepositMythicalKeys();
-                    session.Player.DepositTradeNotes();
+                    session.Player.DepositLegendaryKeys(true);
+                    session.Player.DepositPeas(true);
+                    session.Player.DepositEnlightenedCoins(true);
+                    session.Player.DepositWeaklyEnlightenedCoins(true);
+                    session.Player.DepositMythicalKeys(true);
+                    session.Player.DepositTradeNotes(true);
 
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all Pyreals, Pyreal/Gold/Silver/Copper Peas, Luminance, Legendary Keys, Mythical Keys, Enlightened Coins, Weakly Enlightened Coins, and Trade Notes!", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                 }
                 switch (iType)
                 {
