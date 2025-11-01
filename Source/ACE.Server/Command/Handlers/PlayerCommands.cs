@@ -230,10 +230,10 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/bank transfer weaklyenlightenedcoins <amount> <character> (or /b t we <amount> <character>) - Transfer weakly enlightened coins", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"EXAMPLES:", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/b w p 1000000 - Withdraw 1M pyreals (gets 4 trade notes of 250k)", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b w p 1m - Withdraw 1M pyreals as coin stacks (40 stacks of 25k each)", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n mmd - Withdraw 250k trade note", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"/b w n c 5 - Withdraw 5 trade notes of 10k each", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1000000 \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"/b t p 1m \"Player Name\" - Transfer 1M pyreals to Player Name", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.System));
 
                 return;
@@ -366,21 +366,7 @@ namespace ACE.Server.Command.Handlers
                 session.LastBankCommandTime = currentTime;
 
                 //deposit
-                if (parameters.Count() == 1) //only means all
-                {
-                    //deposit all - suppress individual messages
-                    session.Player.DepositPyreals(true);
-                    session.Player.DepositLuminance(true);
-                    session.Player.DepositLegendaryKeys(true);
-                    session.Player.DepositPeas(true);
-                    session.Player.DepositEnlightenedCoins(true);
-                    session.Player.DepositWeaklyEnlightenedCoins(true);
-                    session.Player.DepositMythicalKeys(true);
-                    session.Player.DepositTradeNotes(true);
-
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
-                }
-                if (parameters.Count() == 2 && parameters[1] == "a") //explicit all
+                if (parameters.Count() == 1 || (parameters.Count() == 2 && parameters[1] == "a"))
                 {
                     //deposit all - suppress individual messages
                     session.Player.DepositPyreals(true);
