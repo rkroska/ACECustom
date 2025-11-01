@@ -236,11 +236,11 @@ namespace ACE.Server.Entity
                 this.SetFogColor(EnvironChangeType.BlackFog2);
             }
 
-            if (ThaelarynIslandLandblocks.Contains(this.Id.Landblock))
+            /*if (ThaelarynIslandLandblocks.Contains(this.Id.Landblock))
             {
                 this.SendEnvironChange(EnvironChangeType.BlackFog2);
                 this.SetFogColor(EnvironChangeType.BlackFog2);
-            }
+            }*/
         }
 
         public static readonly HashSet<ushort> connectionExemptLandblocks = new()
@@ -268,13 +268,13 @@ namespace ACE.Server.Entity
             0xC1F8, 0xC2F8, 0xC3F8, 0xC4F8
         };
 
-        public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
+        /*public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
         {
             0xF66C, 0xF76C, 0xF86C, 0xF66B, 0xF76B, 0xF86B, 0xF76A, 0xF86A, 0xF96A, 0xF669, 0xF769, 0xF869, 0xF969, 0xF668, 0xF768, 0xF868, 0xF968,
             0xF467, 0xF567, 0xF667, 0xF767, 0xF867, 0xF967, 0xF666, 0xF766, 0xF866, 0xF966, 0xF565, 0xF665, 0xF765, 0xF865, 0xF965, 0xF564, 0xF664,
             0xF764, 0xF864, 0xF964, 0xF563, 0xF663, 0xF763, 0xF863, 0xF963, 0xF462, 0xF562, 0xF662, 0xF762, 0xF862, 0xF962, 0xF361, 0xF461, 0xF561,
             0xF661, 0xF761
-        };
+        };*/
 
         /// <summary>
         /// Monster Locations, Generators<para />
@@ -625,7 +625,9 @@ namespace ACE.Server.Entity
                 // Decay world objects
                 if (lastHeartBeat != DateTime.MinValue)
                 {
-                    foreach (var wo in worldObjects.Values)
+                    // Make a copy since objects might get removed during decay
+                    var worldObjectsCopy = worldObjects.Values.ToList();
+                    foreach (var wo in worldObjectsCopy)
                     {
                         if (wo.IsDecayable())
                             wo.Decay(thisHeartBeat - lastHeartBeat);
@@ -692,8 +694,16 @@ namespace ACE.Server.Entity
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             stopwatch.Restart();
-            foreach (var player in players)
+            // Iterate backwards to avoid issues when players disconnect during tick
+            for (int i = players.Count - 1; i >= 0; i--)
+            {
+                // Add bounds check to prevent IndexOutOfRangeException
+                if (i >= players.Count)
+                    break;
+                    
+                var player = players[i];
                 player.Player_Tick(currentUnixTime);
+            }
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_Player_Tick, stopwatch.Elapsed.TotalSeconds);
 
             stopwatch.Restart();
@@ -1083,8 +1093,9 @@ namespace ACE.Server.Entity
         {
             if (string.IsNullOrWhiteSpace(message)) return;
 
-            foreach (var wo in worldObjects.Values.Where(w => w.HearLocalSignals).ToList())
+            foreach (var wo in worldObjects.Values)
             {
+                if (!wo.HearLocalSignals) continue;
                 if (emitter == wo) continue;
 
                 if (emitter.IsWithinUseRadiusOf(wo, wo.HearLocalSignalsRadius))
@@ -1315,16 +1326,14 @@ namespace ACE.Server.Entity
         /// </summary>
         public void EnqueueBroadcast(ICollection<Player> excludeList, bool adjacents, Position pos = null, float? maxRangeSq = null, params GameMessage[] msgs)
         {
-            var players = worldObjects.Values.OfType<Player>();
-
-            // for landblock death broadcasts:
-            // exclude players that have already been broadcast to within range of the death
-            if (excludeList != null)
-                players = players.Except(excludeList);
-
             // broadcast messages to player in this landblock
-            foreach (var player in players)
+            foreach (var player in this.players)
             {
+                // for landblock death broadcasts:
+                // exclude players that have already been broadcast to within range of the death
+                if (excludeList != null && excludeList.Contains(player))
+                    continue;
+
                 if (pos != null && maxRangeSq != null)
                 {
                     var distSq = player.Location.SquaredDistanceTo(pos);
@@ -1337,8 +1346,11 @@ namespace ACE.Server.Entity
             // if applicable, iterate into adjacent landblocks
             if (adjacents)
             {
-                foreach (var adjacent in this.Adjacents.Where(adj => adj != null))
+                foreach (var adjacent in this.Adjacents)
+                {
+                    if (adjacent == null) continue;
                     adjacent.EnqueueBroadcast(excludeList, false, pos, maxRangeSq, msgs);
+                }
             }
         }
 

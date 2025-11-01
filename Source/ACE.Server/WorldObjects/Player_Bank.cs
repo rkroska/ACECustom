@@ -1554,7 +1554,7 @@ namespace ACE.Server.WorldObjects
 
         private IPlayer FindTargetByName(string name)
         {
-            return PlayerManager.FindFirstPlayerByName(name);
+            return PlayerManager.FindByName(name);
         }
 
         public bool TransferPyreals(long Amount, string CharacterDestination)
@@ -1738,6 +1738,10 @@ namespace ACE.Server.WorldObjects
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Legendary Keys", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }
         }
@@ -1811,6 +1815,9 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Mythical Keys", Amount, TransferLogger.TransferTypeBankTransfer);
 
                 return true;
             }
@@ -1894,6 +1901,10 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }
             
@@ -1968,6 +1979,10 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Enlightened Coins", Amount, TransferLogger.TransferTypeBankTransfer);
+                
                 return true;
             }
         }
@@ -2040,8 +2055,12 @@ namespace ACE.Server.WorldObjects
                 {
                     this.SavePlayerToDatabase();
                 }
+                
+                // Log the transfer
+                TransferLogger.LogBankTransfer(this, CharacterDestination, "Weakly Enlightened Coins", Amount, TransferLogger.TransferTypeBankTransfer);
+                
+                return true;
             }
-            return true;
         }
         public long? BankedLuminance
         {

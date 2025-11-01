@@ -1326,6 +1326,13 @@ namespace ACE.Server.Command.Handlers.Processors
             //SyncInstances(session, landblock, instances, variation);
         }
 
+        // Alias for createinst
+        [CommandHandler("cin", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Alias for createinst - Spawns a new wcid or classname as a landblock instance", "<wcid or classname>")]
+        public static void HandleCreateInstAlias(Session session, params string[] parameters)
+        {
+            HandleCreateInst(session, parameters);
+        }
+
         /// <summary>
         /// Serializes landblock instances to XXYY.sql file,
         /// import into database, and clears the cached landblock instances
@@ -2177,6 +2184,13 @@ namespace ACE.Server.Command.Handlers.Processors
             
         }
 
+        // Alias for import-discord
+        [CommandHandler("id", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for import-discord - Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
+        public static void HandleDiscordImportAlias(Session session, params string[] parameters)
+        {
+            HandleDiscordImport(session, parameters);
+        }
+
         [CommandHandler("import-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports JSON content from Discord to the server folder", "<filename>")]
         public static void HandleDiscordJsonImport(Session session, params string[] parameters)
         {
@@ -2222,6 +2236,13 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Error importing JSON from Discord: {e.Message}");
             }
+        }
+
+        // Alias for import-discord-clothing
+        [CommandHandler("idc", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for import-discord-clothing - Imports JSON content from Discord to the server folder", "<filename>")]
+        public static void HandleDiscordJsonImportAlias(Session session, params string[] parameters)
+        {
+            HandleDiscordJsonImport(session, parameters);
         }
 
         private static string getFilename(uint fileId)
@@ -2284,6 +2305,13 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Error exporting ClothingBase {clothingBaseId:X8} to Discord: {ex.Message}");
             }
+        }
+
+        // Alias for export-discord-clothing
+        [CommandHandler("edc", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for export-discord-clothing - Exports a ClothingBase entry to JSON and sends it to Discord.")]
+        public static void HandleExportClothingToDiscordAlias(Session session, params string[] parameters)
+        {
+            HandleExportClothingToDiscord(session, parameters);
         }
 
         [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type]")]
@@ -2350,6 +2378,13 @@ namespace ACE.Server.Command.Handlers.Processors
                     ExportDiscordWeenie(session, param);
                     break;
             }
+        }
+
+        // Alias for export-discord
+        [CommandHandler("ed", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for export-discord - Exports content from database to SQL file and load to Discord", "<wcid> [content-type]")]
+        public static void HandleExportSqlToDiscordAlias(Session session, params string[] parameters)
+        {
+            HandleExportSqlToDiscord(session, parameters);
         }
 
         [CommandHandler("export-sql", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file", "<wcid> [content-type]")]
@@ -3030,6 +3065,13 @@ namespace ACE.Server.Command.Handlers.Processors
             //DatabaseManager.World.GetCachedWeenie(weenieId);
         }
 
+        // Alias for refreshweenie
+        [CommandHandler("rw", AccessLevel.Developer, CommandHandlerFlag.None, "Alias for refreshweenie - Clears the weenie database cache for one specific weenie")]
+        public static void HandleRefreshWeenieAlias(Session session, params string[] parameters)
+        {
+            HandleRefreshWeenie(session, parameters);
+        }
+
         [CommandHandler("clearcache", AccessLevel.Developer, CommandHandlerFlag.None, "Clears the various database caches. This enables live editing of the database information")]
         public static void HandleClearCache(Session session, params string[] parameters)
         {
@@ -3094,6 +3136,25 @@ namespace ACE.Server.Command.Handlers.Processors
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing quest cache");
                 DatabaseManager.World.ClearAllCachedQuests();
             }
+        }
+
+        // Alias for clearcache recipe
+        [CommandHandler("ccr", AccessLevel.Developer, CommandHandlerFlag.None, "Alias for clearcache recipe - Clears the recipe cache")]
+        public static void HandleClearCacheRecipeAlias(Session session, params string[] parameters)
+        {
+            var recipeParams = new string[] { "recipe" };
+            HandleClearCache(session, recipeParams);
+        }
+
+        // Alias for clear-clothing-cache
+        [CommandHandler("ccc", AccessLevel.Developer, CommandHandlerFlag.None, "Alias for clear-clothing-cache - Clears the clothing cache")]
+        public static void HandleClearClothingCacheAlias(Session session, params string[] parameters)
+        {
+            var response = CommandManager.GetCommandHandler(session, "clear-clothing-cache", parameters, out var commandInfo);
+            if (commandInfo != null && response == CommandHandlerResponse.Ok)
+                ((CommandHandler)commandInfo.Handler).Invoke(session, parameters);
+            else
+                CommandHandlerHelper.WriteOutputInfo(session, "clear-clothing-cache command not found");
         }
 
         [Flags]
