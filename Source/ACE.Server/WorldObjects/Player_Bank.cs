@@ -35,6 +35,62 @@ namespace ACE.Server.WorldObjects
         private const int TRADE_NOTE_MAX_STACK = 250;
         private const int MMD_TRADE_NOTE_MAX_STACK = 5000;
 
+        /// <summary>
+        /// Parses a number string with optional suffix (k, m, b, t, q).
+        /// Supports: plain numbers (5, 1000), suffixed (10k, 1.5m), and decimals (1.55m, 1234k)
+        /// </summary>
+        /// <param name="input">String to parse (e.g., "10k", "1.5m", "1000")</param>
+        /// <param name="value">Parsed value as long</param>
+        /// <returns>True if parsing succeeded, false otherwise</returns>
+        public static bool TryParseAmount(string input, out long value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(input))
+                return false;
+
+            input = input.Trim().ToLower();
+
+            // Determine multiplier based on suffix
+            long multiplier = 1;
+            string numberPart = input;
+
+            if (input.EndsWith("q"))
+            {
+                multiplier = 1_000_000_000_000_000L; // quadrillion
+                numberPart = input.Substring(0, input.Length - 1);
+            }
+            else if (input.EndsWith("t"))
+            {
+                multiplier = 1_000_000_000_000L; // trillion
+                numberPart = input.Substring(0, input.Length - 1);
+            }
+            else if (input.EndsWith("b"))
+            {
+                multiplier = 1_000_000_000L; // billion
+                numberPart = input.Substring(0, input.Length - 1);
+            }
+            else if (input.EndsWith("m"))
+            {
+                multiplier = 1_000_000L; // million
+                numberPart = input.Substring(0, input.Length - 1);
+            }
+            else if (input.EndsWith("k"))
+            {
+                multiplier = 1_000L; // thousand
+                numberPart = input.Substring(0, input.Length - 1);
+            }
+
+            // Try to parse the numeric part (supports decimals)
+            if (double.TryParse(numberPart, out double numericValue))
+            {
+                // Calculate final value and round to nearest long
+                value = (long)Math.Round(numericValue * multiplier);
+                return value >= 0; // Reject negative values
+            }
+
+            return false;
+        }
+
         #region Bank Debugging Helpers
 
         /// <summary>

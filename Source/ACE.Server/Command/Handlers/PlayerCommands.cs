@@ -326,9 +326,9 @@ namespace ACE.Server.Command.Handlers
                 // Skip amount parsing for trade notes (iType = 3) since parameters[2] is the denomination
                 if (iType != 3)
                 {
-                    if (!long.TryParse(parameters[2], out amount))
+                    if (!Player.TryParseAmount(parameters[2], out amount))
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Check the amount parameter, it needs to be a number.", ChatMessageType.System));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid amount. Use numbers with optional suffix: 10k, 1.5m, 2b, etc.", ChatMessageType.System));
                         return;
                     }
                     if (amount <= 0)
