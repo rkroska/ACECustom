@@ -546,9 +546,6 @@ namespace ACE.Server.Command.Handlers
                     
                     long totalValue = noteValue * noteCount;
                     
-                    // TransferPyreals handles messaging, but we want to add note context
-                    // Suppress the default message and send our own
-                    long oldBalance = session.Player.BankedPyreals ?? 0;
                     if (session.Player.TransferPyreals(totalValue, targetPlayer))
                     {
                         // Transfer succeeded - the method already sent base message

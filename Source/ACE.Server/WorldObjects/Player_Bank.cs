@@ -1978,10 +1978,12 @@ namespace ACE.Server.WorldObjects
             else
             {
                 var onlinePlayer = (Player)tarplayer;
-                if (!onlinePlayer.MaximumLuminance.HasValue)
+                
+                // Verify target player has luminance flagged (earned through gameplay)
+                if (!onlinePlayer.MaximumLuminance.HasValue || onlinePlayer.MaximumLuminance == 0)
                 {
-                    onlinePlayer.MaximumLuminance = 1500000;
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.MaximumLuminance, onlinePlayer.MaximumLuminance ?? 0));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"{onlinePlayer.Name} has not been luminance flagged yet and cannot receive luminance transfers.", ChatMessageType.System));
+                    return false;
                 }
 
                 // No capacity check needed for banked luminance
