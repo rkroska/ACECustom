@@ -469,35 +469,10 @@ namespace ACE.Server.Command.Handlers
                 {
                     case 1:
                         //withdraw pyreals
-                        if (session.Player.BankedPyreals != null && amount > session.Player.BankedPyreals)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this withdrawl", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                            break;
-                        }
                         session.Player.WithdrawPyreals(amount);
                         break;
                     case 2:
                         //withdraw lum
-                        if (session.Player.BankedLuminance != null && amount > session.Player.BankedLuminance)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this withdrawl", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount + session.Player.AvailableLuminance > session.Player.MaximumLuminance)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot withdraw that much luminance, it would put you over your maximum.", ChatMessageType.System));
-                            break;
-                        }
                         session.Player.WithdrawLuminance(amount);
                         break;
                     case 3:
@@ -521,77 +496,15 @@ namespace ACE.Server.Command.Handlers
                         session.Player.WithdrawTradeNotes(denomination, noteCount);
                         break;
                     case 4:
-                        if (session.Player.BankedLegendaryKeys != null && amount > session.Player.BankedLegendaryKeys)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough keys banked to make this withdrawl", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                            break;
-                        }
-                        // We have 25-use, 10-use, and single-use keys, so don't check back space beforehand
-                        //if (amount >= session.Player.GetFreeInventorySlots())
-                        //{
-                        //    session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many keys.", ChatMessageType.System));
-                        //    break;
-                        //}
                         session.Player.WithdrawLegendaryKeys(amount);
                         break;
                     case 6:
-                        if (session.Player.BankedEnlightenedCoins != null && amount > session.Player.BankedEnlightenedCoins)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough enlightened coins banked to make this withdrawl", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.GetFreeInventorySlots() <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many enlightened coins.", ChatMessageType.System));
-                            break;
-                        }
                         session.Player.WithdrawEnlightenedCoins(amount);
                         break;
                     case 7:
-                        if (session.Player.BankedMythicalKeys != null && amount > session.Player.BankedMythicalKeys)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough Mythical keys banked to make this withdrawl", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                            break;
-                        }
-                        // We have 25-use, 10-use, and single-use keys, so don't check back space beforehand
-                        //if (amount >= session.Player.GetFreeInventorySlots())
-                        //{
-                        //    session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many Mythical keys.", ChatMessageType.System));
-                        //    break;
-                        //}
                         session.Player.WithdrawMythicalKeys(amount);
                         break;
                     case 8:
-                        if (session.Player.BankedWeaklyEnlightenedCoins != null && amount > session.Player.BankedWeaklyEnlightenedCoins)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough weakly enlightened coins banked to make this withdrawl", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to withdraw", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.GetFreeInventorySlots() <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough bag space to withdraw that many weakly enlightened coins.", ChatMessageType.System));
-                            break;
-                        }
                         session.Player.WithdrawWeaklyEnlightenedCoins(amount);
                         break;
                     default:
@@ -624,118 +537,23 @@ namespace ACE.Server.Command.Handlers
                 {
                     case 1:
                         //transfer pyreals
-                        if (session.Player.BankedPyreals != null && amount > session.Player.BankedPyreals)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough pyreals banked to make this transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.TransferPyreals(amount, transferTargetName))
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Pyreal to {transferTargetName}", ChatMessageType.System));
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Pyreals to {transferTargetName}", ChatMessageType.System));
-                        }
-
+                        session.Player.TransferPyreals(amount, transferTargetName);
                         break;
                     case 2:
                         //transfer lum
-                        if (session.Player.BankedLuminance != null && amount > session.Player.BankedLuminance)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance banked to make this transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.TransferLuminance(amount, transferTargetName))
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Luminance to {transferTargetName}", ChatMessageType.System));
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Luminance to {transferTargetName}", ChatMessageType.System));
-                        }
+                        session.Player.TransferLuminance(amount, transferTargetName);
                         break;
                     case 4:
-                        if (session.Player.BankedLegendaryKeys != null && amount > session.Player.BankedLegendaryKeys)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough keys banked to make this transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.TransferLegendaryKeys(amount, transferTargetName))
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Legendary Keys to {transferTargetName}", ChatMessageType.System));
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Legendary Keys to {transferTargetName}", ChatMessageType.System));
-                        }
+                        session.Player.TransferLegendaryKeys(amount, transferTargetName);
                         break;
                     case 6:
-                        if (session.Player.BankedEnlightenedCoins != null && amount > session.Player.BankedEnlightenedCoins)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough enlightened coins banked to make this transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.TransferEnlightenedCoins(amount, transferTargetName))
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Enlightened coins to {transferTargetName}", ChatMessageType.System));
-                        }
+                        session.Player.TransferEnlightenedCoins(amount, transferTargetName);
                         break;
                     case 7:
-                        if (session.Player.BankedMythicalKeys != null && amount > session.Player.BankedMythicalKeys)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough Mythical keys banked to make this transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.TransferMythicalKeys(amount, transferTargetName))
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Mythical Keys to {transferTargetName}", ChatMessageType.System));
-                        }
-                        else
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Not eligible or transfer failed: Mythical Keys to {transferTargetName}", ChatMessageType.System));
-                        }
+                        session.Player.TransferMythicalKeys(amount, transferTargetName);
                         break;
                     case 8:
-                        if (session.Player.BankedWeaklyEnlightenedCoins != null && amount > session.Player.BankedWeaklyEnlightenedCoins)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough weakly enlightened coins banked to make this transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (amount <= 0)
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"You need to provide a positive number to transfer", ChatMessageType.System));
-                            break;
-                        }
-                        if (session.Player.TransferWeaklyEnlightenedCoins(amount, transferTargetName))
-                        {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {amount:N0} Weakly Enlightened coins to {transferTargetName}", ChatMessageType.System));
-                        }
+                        session.Player.TransferWeaklyEnlightenedCoins(amount, transferTargetName);
                         break;
                 }
             }

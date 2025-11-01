@@ -1095,12 +1095,12 @@ namespace ACE.Server.WorldObjects
                     
                     if (keys10Created > 0)
                     {
-                        summary += $" and {keys10Created:N0} 10-use key(s)";
+                        summary += keys25Created > 0 ? $", {keys10Created:N0} 10-use key(s)" : $" - {keys10Created:N0} 10-use key(s)";
                     }
                     
                     if (keys1Created > 0)
                     {
-                        summary += $" and {keys1Created:N0} single-use key(s)";
+                        summary += (keys25Created > 0 || keys10Created > 0) ? $", {keys1Created:N0} single-use key(s)" : $" - {keys1Created:N0} single-use key(s)";
                     }
                     
                     Session.Network.EnqueueSend(new GameMessageSystemChat(summary, ChatMessageType.System));
@@ -1196,12 +1196,12 @@ namespace ACE.Server.WorldObjects
                     
                     if (keys10Created > 0)
                     {
-                        summary += $" and {keys10Created:N0} 10-use key(s)";
+                        summary += keys25Created > 0 ? $", {keys10Created:N0} 10-use key(s)" : $" - {keys10Created:N0} 10-use key(s)";
                     }
                     
                     if (keys1Created > 0)
                     {
-                        summary += $" and {keys1Created:N0} single-use key(s)";
+                        summary += (keys25Created > 0 || keys10Created > 0) ? $", {keys1Created:N0} single-use key(s)" : $" - {keys1Created:N0} single-use key(s)";
                     }
                     
                     Session.Network.EnqueueSend(new GameMessageSystemChat(summary, ChatMessageType.System));
@@ -1606,6 +1606,13 @@ namespace ACE.Server.WorldObjects
                     var offlinePlayer = tarplayer as OfflinePlayer;
                     log.Debug($"[BANK_DEBUG] Player: {Name} | Transferring to offline player | Target: {offlinePlayer.Name} | Target old balance: {offlinePlayer.BankedPyreals:N0}");
                     
+                    lock (balanceLock)
+                    {
+                        // Deduct from sender
+                        this.BankedPyreals -= Amount;
+                    }
+                    
+                    // Add to offline receiver
                     if (offlinePlayer.BankedPyreals == null)
                     {
                         offlinePlayer.BankedPyreals = Amount;
@@ -1617,6 +1624,9 @@ namespace ACE.Server.WorldObjects
                         log.Debug($"[BANK_DEBUG] Player: {Name} | Added {Amount:N0} to target player's BankedPyreals | New balance: {offlinePlayer.BankedPyreals:N0}");
                     }
                     offlinePlayer.SaveBiotaToDatabase();
+                    
+                    // Send confirmation to sender
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Pyreal to {offlinePlayer.Name} (offline)", ChatMessageType.System));
                 }
                 else
                 {
@@ -1648,6 +1658,7 @@ namespace ACE.Server.WorldObjects
                     
                     // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Pyreal from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Pyreal to {onlinePlayer.Name}", ChatMessageType.System));
                 }
                 long newBalance = BankedPyreals ?? 0;
                 long targetNewBalance = 0;
@@ -1703,6 +1714,14 @@ namespace ACE.Server.WorldObjects
                 if (tarplayer is OfflinePlayer)
                 {
                     var offlinePlayer = tarplayer as OfflinePlayer;
+                    
+                    lock (balanceLock)
+                    {
+                        // Deduct from sender
+                        this.BankedLegendaryKeys -= Amount;
+                    }
+                    
+                    // Add to offline receiver
                     if (offlinePlayer.BankedLegendaryKeys == null)
                     {
                         offlinePlayer.BankedLegendaryKeys = Amount;
@@ -1712,6 +1731,9 @@ namespace ACE.Server.WorldObjects
                         offlinePlayer.BankedLegendaryKeys += Amount;
                     }
                     offlinePlayer.SaveBiotaToDatabase();
+                    
+                    // Send confirmation to sender
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Legendary Keys to {offlinePlayer.Name} (offline)", ChatMessageType.System));
                 }
                 else
                 {
@@ -1736,6 +1758,7 @@ namespace ACE.Server.WorldObjects
                     
                     // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Legendary Keys from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Legendary Keys to {onlinePlayer.Name}", ChatMessageType.System));
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLegendaryKeys, this.BankedLegendaryKeys ?? 0));
                 
@@ -1772,6 +1795,14 @@ namespace ACE.Server.WorldObjects
                 if (tarplayer is OfflinePlayer)
                 {
                     var offlinePlayer = tarplayer as OfflinePlayer;
+                    
+                    lock (balanceLock)
+                    {
+                        // Deduct from sender
+                        this.BankedMythicalKeys -= Amount;
+                    }
+                    
+                    // Add to offline receiver
                     if (offlinePlayer.BankedMythicalKeys == null)
                     {
                         offlinePlayer.BankedMythicalKeys = Amount;
@@ -1781,6 +1812,9 @@ namespace ACE.Server.WorldObjects
                         offlinePlayer.BankedMythicalKeys += Amount;
                     }
                     offlinePlayer.SaveBiotaToDatabase();
+                    
+                    // Send confirmation to sender
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Mythical Keys to {offlinePlayer.Name} (offline)", ChatMessageType.System));
                 }
                 else
                 {
@@ -1805,12 +1839,15 @@ namespace ACE.Server.WorldObjects
                     
                     // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Mythical Keys from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Mythical Keys to {onlinePlayer.Name}", ChatMessageType.System));
+                    // Persist to database for significant transfers (performance optimization)
                     if (Amount > 1)
                     {
                         onlinePlayer.SavePlayerToDatabase();
                     }
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedMythicalKeys, this.BankedMythicalKeys ?? 0));
+                // Persist to database for significant transfers (performance optimization)
                 if (Amount > 1)
                 {
                     this.SavePlayerToDatabase();
@@ -1845,51 +1882,58 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
-            if (tarplayer != null)
+            if (tarplayer is OfflinePlayer)
             {
-                if (tarplayer is OfflinePlayer)
+                var offlinePlayer = tarplayer as OfflinePlayer;
+                if (offlinePlayer.BankedLuminance == null)
                 {
-                    var offlinePlayer = tarplayer as OfflinePlayer;
-                    if (offlinePlayer.BankedLuminance == null)
-                    {
-                        offlinePlayer.BankedLuminance = 0;
-                    }
-
-                    this.BankedLuminance -= Amount;
-                    offlinePlayer.BankedLuminance += Amount;
-                    offlinePlayer.SaveBiotaToDatabase();
+                    offlinePlayer.BankedLuminance = 0;
                 }
-                else
+
+                lock (balanceLock)
                 {
-                    var onlinePlayer = (Player)tarplayer;
-                    if (!onlinePlayer.MaximumLuminance.HasValue)
-                    {
-                        onlinePlayer.MaximumLuminance = 1500000;
-                        onlinePlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.MaximumLuminance, onlinePlayer.MaximumLuminance ?? 0));
-                    }
+                    this.BankedLuminance -= Amount;
+                }
+                
+                offlinePlayer.BankedLuminance += Amount;
+                offlinePlayer.SaveBiotaToDatabase();
+                
+                // Send confirmation to sender
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Luminance to {offlinePlayer.Name} (offline)", ChatMessageType.System));
+            }
+            else
+            {
+                var onlinePlayer = (Player)tarplayer;
+                if (!onlinePlayer.MaximumLuminance.HasValue)
+                {
+                    onlinePlayer.MaximumLuminance = 1500000;
+                    onlinePlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(onlinePlayer, PropertyInt64.MaximumLuminance, onlinePlayer.MaximumLuminance ?? 0));
+                }
 
-                    // No capacity check needed for banked luminance
+                // No capacity check needed for banked luminance
 
-                    // Deadlock-safe double-lock using consistent ordering
-                    object lockA = this.balanceLock;
-                    object lockB = onlinePlayer.balanceLock;
-                    bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
-                    var firstLock = sourceFirst ? lockA : lockB;
-                    var secondLock = sourceFirst ? lockB : lockA;
-                    
-                    lock (firstLock)
+                // Deadlock-safe double-lock using consistent ordering
+                object lockA = this.balanceLock;
+                object lockB = onlinePlayer.balanceLock;
+                bool sourceFirst = string.CompareOrdinal(this.Name, onlinePlayer.Name) <= 0;
+                var firstLock = sourceFirst ? lockA : lockB;
+                var secondLock = sourceFirst ? lockB : lockA;
+                
+                lock (firstLock)
+                {
+                    lock (secondLock)
                     {
-                        lock (secondLock)
-                        {
-                            // Perform atomic transfer
-                            this.BankedLuminance -= Amount;
-                            onlinePlayer.BankedLuminance = (onlinePlayer.BankedLuminance ?? 0) + Amount;
-                        }
+                        // Perform atomic transfer
+                        this.BankedLuminance -= Amount;
+                        onlinePlayer.BankedLuminance = (onlinePlayer.BankedLuminance ?? 0) + Amount;
                     }
-                    
+                }
+                
                     // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} luminance from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Luminance to {onlinePlayer.Name}", ChatMessageType.System));
                     
+                    // Persist to database for significant transfers (performance optimization)
                     if (Amount > 100000)
                     {
                         onlinePlayer.SavePlayerToDatabase();
@@ -1897,18 +1941,16 @@ namespace ACE.Server.WorldObjects
                 }
                 
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedLuminance, this.BankedLuminance ?? 0));
+                // Persist to database for significant transfers (performance optimization)
                 if (Amount > 100000)
                 {
                     this.SavePlayerToDatabase();
                 }
-                
-                // Log the transfer
-                TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, TransferLogger.TransferTypeBankTransfer);
-                
-                return true;
-            }
             
-            return false; // This should never be reached, but added for completeness
+            // Log the transfer
+            TransferLogger.LogBankTransfer(this, CharacterDestination, "Luminance", Amount, TransferLogger.TransferTypeBankTransfer);
+            
+            return true;
         }
         public bool TransferEnlightenedCoins(long Amount, string CharacterDestination)
         {
@@ -1936,6 +1978,14 @@ namespace ACE.Server.WorldObjects
                 if (tarplayer is OfflinePlayer)
                 {
                     var offlinePlayer = tarplayer as OfflinePlayer;
+                    
+                    lock (balanceLock)
+                    {
+                        // Deduct from sender
+                        this.BankedEnlightenedCoins -= Amount;
+                    }
+                    
+                    // Add to offline receiver
                     if (offlinePlayer.BankedEnlightenedCoins == null)
                     {
                         offlinePlayer.BankedEnlightenedCoins = Amount;
@@ -1945,6 +1995,9 @@ namespace ACE.Server.WorldObjects
                         offlinePlayer.BankedEnlightenedCoins += Amount;
                     }
                     offlinePlayer.SaveBiotaToDatabase();
+                    
+                    // Send confirmation to sender
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Enlightened Coins to {offlinePlayer.Name} (offline)", ChatMessageType.System));
                 }
                 else
                 {
@@ -1969,12 +2022,15 @@ namespace ACE.Server.WorldObjects
                     
                     // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Enlightened Coins from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Enlightened Coins to {onlinePlayer.Name}", ChatMessageType.System));
+                    // Persist to database for significant transfers (performance optimization)
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
                     }
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedEnlightenedCoins, this.BankedEnlightenedCoins ?? 0));
+                // Persist to database for significant transfers (performance optimization)
                 if (Amount > 10)
                 {
                     this.SavePlayerToDatabase();
@@ -2012,6 +2068,14 @@ namespace ACE.Server.WorldObjects
                 if (tarplayer is OfflinePlayer)
                 {
                     var offlinePlayer = tarplayer as OfflinePlayer;
+                    
+                    lock (balanceLock)
+                    {
+                        // Deduct from sender
+                        this.BankedWeaklyEnlightenedCoins -= Amount;
+                    }
+                    
+                    // Add to offline receiver
                     if (offlinePlayer.BankedWeaklyEnlightenedCoins == null)
                     {
                         offlinePlayer.BankedWeaklyEnlightenedCoins = Amount;
@@ -2021,6 +2085,9 @@ namespace ACE.Server.WorldObjects
                         offlinePlayer.BankedWeaklyEnlightenedCoins += Amount;
                     }
                     offlinePlayer.SaveBiotaToDatabase();
+                    
+                    // Send confirmation to sender
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Weakly Enlightened Coins to {offlinePlayer.Name} (offline)", ChatMessageType.System));
                 }
                 else
                 {
@@ -2045,12 +2112,15 @@ namespace ACE.Server.WorldObjects
                     
                     // Send notification outside of locks
                     onlinePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"Received {Amount:N0} Weakly Enlightened Coins from {this.Name}", ChatMessageType.System));
+                    Session.Network.EnqueueSend(new GameMessageSystemChat($"Transferred {Amount:N0} Weakly Enlightened Coins to {onlinePlayer.Name}", ChatMessageType.System));
+                    // Persist to database for significant transfers (performance optimization)
                     if (Amount > 10)
                     {
                         onlinePlayer.SavePlayerToDatabase();
                     }
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedWeaklyEnlightenedCoins, this.BankedWeaklyEnlightenedCoins ?? 0));
+                // Persist to database for significant transfers (performance optimization)
                 if (Amount > 10)
                 {
                     this.SavePlayerToDatabase();
