@@ -65,6 +65,7 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<TrackedItem> TrackedItems { get; set; }
         public virtual DbSet<TransferMonitoringConfigDb> TransferMonitoringConfigs { get; set; }
         public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
+        public virtual DbSet<CharTracker> CharTracker { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -105,6 +106,17 @@ namespace ACE.Database.Models.Shard
             modelBuilder.Entity<TrackedItem>().ToTable("tracked_items");
             modelBuilder.Entity<TransferMonitoringConfigDb>().ToTable("transfer_monitoring_configs");
             modelBuilder.Entity<BankCommandBlacklist>().ToTable("transfer_blacklist");
+            modelBuilder.Entity<CharTracker>(entity =>
+            {
+                entity.ToTable("char_tracker");
+                
+                // Add indexes for common query patterns
+                entity.HasIndex(e => e.CharacterId, "IX_char_tracker_CharacterId");
+                entity.HasIndex(e => e.AccountName, "IX_char_tracker_AccountName");
+                entity.HasIndex(e => e.CharacterName, "IX_char_tracker_CharacterName");
+                entity.HasIndex(e => e.LoginIP, "IX_char_tracker_LoginIP");
+                entity.HasIndex(e => e.LoginTimestamp, "IX_char_tracker_LoginTimestamp");
+            });
 
             modelBuilder.HasCharSet("utf8")
                 .UseCollation("utf8_general_ci");

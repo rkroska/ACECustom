@@ -260,6 +260,9 @@ namespace ACE.Server
             log.Info("Initializing Transfer Monitoring...");
             TransferLogger.InitializeTransferMonitoring();
 
+            log.Info("Initializing Character Tracker...");
+            CharacterTracker.EnsureDatabaseMigrated();
+
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 

@@ -100,6 +100,8 @@ namespace ACE.Server.Network
 
         public DateTime LastQBCommandTime { get; set; }
 
+        public DateTime LoginTime { get; set; }
+
         public Session(ConnectionListener connectionListener, IPEndPoint endPoint, ushort clientId, ushort serverId)
         {
             EndPoint = endPoint;
@@ -254,6 +256,9 @@ namespace ACE.Server.Network
         public void LogOffPlayer(bool forceImmediate = false)
         {
             if (Player == null) return;
+
+            // Log character logout to char_tracker table
+            CharacterTracker.LogCharacterLogout(Player);
 
             // Character database objects are not cached. Each session gets a new character entity and dbContext from ShardDatabase.
             // To ensure the latest version of the character is saved before any new logins pull these records again, we queue a save here if necessary, at the instant logoff is requested.
