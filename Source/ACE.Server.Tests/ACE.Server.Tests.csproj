@@ -45,4 +45,12 @@
       </None>
     </ItemGroup>
 
+  <!-- Run banking tests after build -->
+  <Target Name="RunBankingTests"
+          AfterTargets="Build"
+          Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true' and '$(RunBankingTestsOnBuildInner)' != 'true'">
+    <Exec Command="$(DotNetExe) test &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) --no-build --nologo --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal -p:RunBankingTestsOnBuildInner=true"
+          ContinueOnError="false" />
+  </Target>
+
 </Project>

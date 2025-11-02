@@ -17,6 +17,7 @@
     <RetainVMGarbageCollection>true</RetainVMGarbageCollection>
   </PropertyGroup>
 
+
   <PropertyGroup>
     <Authors>ACEmulator Contributors</Authors>
     <RepositoryType>git</RepositoryType>
