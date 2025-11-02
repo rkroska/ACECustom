@@ -42,6 +42,12 @@ namespace ACE.Server.Network.Managers
         /// </summary>
         public static readonly ActionQueue InboundMessageQueue = new ActionQueue();
 
+        /// <summary>
+        /// Process an incoming client packet, routing it to the appropriate session or handling connection-level handshake and login rejection logic.
+        /// </summary>
+        /// <param name="connectionListener">The listener instance that received the packet (used to determine which server port handled the packet).</param>
+        /// <param name="packet">The inbound client packet to process.</param>
+        /// <param name="endPoint">The remote client's IP endpoint that sent the packet.</param>
         public static void ProcessPacket(ConnectionListener connectionListener, ClientPacket packet, IPEndPoint endPoint)
         {
             if (connectionListener.ListenerEndpoint.Port == ConfigManager.Config.Server.Network.Port + 1)
