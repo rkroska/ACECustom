@@ -801,7 +801,6 @@ namespace ACE.Server.WorldObjects
         /// <param name="Amount"></param>
         public void DepositLuminance(long Amount, bool suppressChat = false)
         {
-            if (BankedLuminance == null) { BankedLuminance = 0;}
             if (Amount <= 0)
             {
                 if (!suppressChat)
@@ -816,6 +815,9 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("You have not been luminance flagged yet. Complete the luminance quest first.", ChatMessageType.System));
                 return;
             }
+            
+            // Initialize BankedLuminance only for flagged players
+            if (BankedLuminance == null) { BankedLuminance = 0;}
             
             long actualAmount = 0;
             if (Amount <= this.AvailableLuminance)
