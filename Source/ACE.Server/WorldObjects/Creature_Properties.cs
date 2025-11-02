@@ -201,7 +201,7 @@ namespace ACE.Server.WorldObjects
                 case ResistanceType.Electric:
                     return (ResistElectric ?? 1.0) * GetResistanceMod(DamageType.Electric, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Nether:
-                    return (ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod);
+                    return (ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod) * GetNetherResistRatingMod();
                 case ResistanceType.HealthBoost:
                     return (ResistHealthBoost ?? 1.0) * GetHealingRatingMod();
                 case ResistanceType.HealthDrain:
@@ -238,7 +238,7 @@ namespace ACE.Server.WorldObjects
         public double ResistColdMod => (ResistCold ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Cold);
         public double ResistAcidMod => (ResistAcid ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Acid);
         public double ResistElectricMod => (ResistElectric ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Electric);
-        public double ResistNetherMod => (ResistNether ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Nether);
+        public double ResistNetherMod => (ResistNether ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Nether) * GetNetherResistRatingMod();
 
         public bool NoCorpse
         {

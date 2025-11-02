@@ -445,16 +445,29 @@ namespace ACE.Server.WorldObjects
 
         public int GetNetherResistRating()
         {
-            // there is a property defined for this,
-            // but does anything use this?
-
             // get from base properties (monsters)?
             var netherResistRating = NetherResistRating ?? 0;
 
             // additive enchantments
             var enchantments = EnchantmentManager.GetRating(PropertyInt.NetherResistRating);
 
-            return netherResistRating + enchantments;
+            // equipment ratings
+            var equipment = GetEquippedItemsRatingSum(PropertyInt.GearNetherResist);
+
+            return netherResistRating + equipment + enchantments;
+        }
+
+        public float GetNetherResistRatingMod()
+        {
+            var netherResistRating = GetNetherResistRating();
+
+            // Apply scalar from property manager
+            var scalar = PropertyManager.GetDouble("nether_resist_rating_scalar").Item;
+            var scaledRating = (int)(netherResistRating * scalar);
+
+            var allowBug = PropertyManager.GetBool("allow_negative_rating_curve").Item;
+
+            return GetNegativeRatingMod(scaledRating, allowBug);
         }
 
         public int GetGearMaxHealth()

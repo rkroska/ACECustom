@@ -1609,11 +1609,16 @@ namespace ACE.Server.WorldObjects.Managers
                 var dotResistRatingMod = Creature.GetNegativeRatingMod(creature.GetDotResistanceRating());  // should this be here, or somewhere else?
                                                                                                             // should this affect NetherDotDamageRating?
 
+                // apply nether resist rating for nether DoTs
+                var netherResistRatingMod = 1.0f;
+                if (damageType == DamageType.Nether)
+                    netherResistRatingMod = creature.GetNetherResistRatingMod();
+
                 //Console.WriteLine("DR: " + Creature.ModToRating(damageRatingMod));
                 //Console.WriteLine("DRR: " + Creature.NegativeModToRating(damageResistRatingMod));
                 //Console.WriteLine("NRR: " + Creature.NegativeModToRating(netherResistRatingMod));
 
-                tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod;
+                tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)
