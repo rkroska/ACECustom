@@ -18,6 +18,17 @@ namespace ACE.Database
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // Given a task, returns the string key that uniquely identifies it, or throws an exception if a string key does not exist.
+        private static string GetUniqueTaskKey(Task t)
+        {
+            string key = t.AsyncState as string;
+            if (string.IsNullOrEmpty(key))
+            {
+                throw new InvalidOperationException("UniqueQueue keying failed: Task.AsyncState must be a non-null, non-empty string.");
+            }
+            return key;
+        }
+
         /// <summary>
         /// This is the base database that SerializedShardDatabase is a wrapper for.
         /// </summary>
@@ -26,8 +37,7 @@ namespace ACE.Database
         protected readonly Stopwatch stopwatch = new Stopwatch();
 
         private readonly BlockingCollection<Task> _readOnlyQueue = new BlockingCollection<Task>();
-
-        private readonly UniqueQueue<Task> _uniqueQueue = new UniqueQueue<Task>(t => t.AsyncState);
+        private readonly UniqueQueue<Task, string> _uniqueQueue = new(t => GetUniqueTaskKey(t));
         private bool _workerThreadRunning = true;
 
         private Thread _workerThreadReadOnly;
@@ -65,12 +75,12 @@ namespace ACE.Database
 
         public List<string> QueueReport()
         {
-            return _uniqueQueue.ToArray().Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
+            return _uniqueQueue.ToArray().Select(t => t.AsyncState as string ?? $"Task#{t.Id}").ToList();
         }
 
         public List<string> ReadOnlyQueueReport()
         {
-            return _readOnlyQueue.Select(x => x.AsyncState?.ToString() ?? "Unknown Task").ToList();
+            return _readOnlyQueue.Select(t => t.AsyncState as string ?? $"Task#{t.Id}").ToList();
         }
 
         private void DoReadOnlyWork()
@@ -140,7 +150,7 @@ namespace ACE.Database
                         if (stopwatch.ElapsedMilliseconds >= 5000)
                         {
                             log.Error(
-                                $"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_uniqueQueue.Count}");
+                                $"Task: {t.AsyncState as string ?? $"Task#{t.Id}"} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_uniqueQueue.Count}");
                         }
                     }
                     catch (Exception ex)
