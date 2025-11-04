@@ -491,8 +491,8 @@ namespace ACE.Server.WorldObjects
                 // Use hash to get better distribution for sequential GUIDs
                 var guidHash = Guid.Full.GetHashCode();
                 var random = new Random(guidHash);
-                // Use (interval - 1) to prevent offset == interval (which equals no offset)
-                initialDelay = random.NextDouble() * (RegenerationInterval - 1.0);
+                // NextDouble() returns [0.0, 1.0), so offset will be in range [0, RegenerationInterval)
+                initialDelay = random.NextDouble() * RegenerationInterval;
                 
                 var nextSpawnTime = Time.GetUnixTime() + initialDelay;
                 log.Info($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, hash={guidHash})");
