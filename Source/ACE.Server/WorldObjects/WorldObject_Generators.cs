@@ -480,9 +480,28 @@ namespace ACE.Server.WorldObjects
 
             CurrentlyPoweringUp = true;
 
-            if (GeneratorInitialDelay > 0)
+            // Calculate initial spawn time with optional randomization
+            var initialDelay = GeneratorInitialDelay;
+            
+            // Only apply randomization if GeneratorInitialDelay is NOT already set
+            // This preserves existing generator behavior
+            if (RandomizeSpawnTime && GeneratorInitialDelay == 0 && RegenerationInterval > 0)
             {
-                NextGeneratorRegenerationTime = GetNextRegenerationTime(GeneratorInitialDelay);
+                // Calculate deterministic random offset based on generator GUID
+                // Use hash to get better distribution for sequential GUIDs
+                var guidHash = Guid.Full.GetHashCode();
+                var random = new Random(guidHash);
+                // Use (interval - 1) to prevent offset == interval (which equals no offset)
+                initialDelay = random.NextDouble() * (RegenerationInterval - 1.0);
+                
+                var nextSpawnTime = Time.GetUnixTime() + initialDelay;
+                log.Info($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, hash={guidHash})");
+            }
+
+            if (initialDelay > 0)
+            {
+                // Set spawn time directly to avoid GetNextRegenerationTime's RegenerationTimestamp check
+                NextGeneratorRegenerationTime = Time.GetUnixTime() + initialDelay;
                 CurrentLandblock?.ResortWorldObjectIntoSortedGeneratorRegenerationList(this);
             }
             else
@@ -497,6 +516,7 @@ namespace ACE.Server.WorldObjects
 
         private double GetNextRegenerationTime(double generatorInitialDelay)
         {
+            // Original ACE behavior: spawn immediately on first load if never spawned before
             if (RegenerationTimestamp == 0)
                 return Time.GetUnixTime();
 
