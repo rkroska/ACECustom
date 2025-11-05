@@ -2736,11 +2736,19 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Maximum time in seconds to randomize spawn times (defaults to 30s if not set)
         /// When RandomizeSpawnTime is enabled, initial spawn delay will be between 0 and min(RegenerationInterval, MaxRandomSpawnTime)
+        /// Value must be non-negative; negative values are clamped to 0
         /// </summary>
         public double MaxRandomSpawnTime
         {
             get => GetProperty(PropertyFloat.MaxRandomSpawnTime) ?? 30d;
-            set { if (value == 30d) RemoveProperty(PropertyFloat.MaxRandomSpawnTime); else SetProperty(PropertyFloat.MaxRandomSpawnTime, value); }
+            set 
+            { 
+                var clampedValue = Math.Max(0, value); // Ensure non-negative
+                if (clampedValue == 30d) 
+                    RemoveProperty(PropertyFloat.MaxRandomSpawnTime); 
+                else 
+                    SetProperty(PropertyFloat.MaxRandomSpawnTime, clampedValue); 
+            }
         }
 
         /* quest properties */
