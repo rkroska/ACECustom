@@ -131,7 +131,11 @@ namespace ACE.Server.WorldObjects
             SetProperty(PropertyFloat.RegenerationTimestamp, currentUnixTime);
 
             if (cachedRegenerationInterval > 0)
+            {
+                // RandomizeSpawnTime offset is applied once in StartGenerator()
+                // After that, just maintain the offset by adding regular interval
                 NextGeneratorRegenerationTime = currentUnixTime + cachedRegenerationInterval;
+            }
             else
                 NextGeneratorRegenerationTime = double.MaxValue;
 
