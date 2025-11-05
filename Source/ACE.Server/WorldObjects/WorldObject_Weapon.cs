@@ -1110,7 +1110,33 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            TryCastSpell(spell, target, attacker, this, isWeaponSpell: true, fromProc: true);
+            // not sure if this should go before or after the resist check
+            // after would match Player_Magic, but would require changing the signature of TryCastSpell yet again
+            // starting with the simpler check here
+            if (!selfTarget && target != null && target.NonProjectileMagicImmune && !spell.IsProjectile)
+            {
+                if (attacker is Player player)
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {target.Name} with {spell.Name}", ChatMessageType.Magic));
+
+                return;
+            }
+
+            var itemCaster = this is Creature ? null : this;
+
+            // For self-targeted spells, use the attacker as the target
+            var spellTarget = selfTarget ? attacker : target;
+
+            if (spell.NonComponentTargetType == ItemType.None)
+                attacker.TryCastSpell(spell, null, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+            else if (spell.NonComponentTargetType == ItemType.Vestements)
+            {
+                // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
+                // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
+                // current test case: 33990 Composite Bow casting Tattercoat
+                attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+            }
+            else
+                attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
         }
 
         private bool? isMasterable;

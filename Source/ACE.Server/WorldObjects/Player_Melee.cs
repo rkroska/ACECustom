@@ -326,6 +326,7 @@ namespace ACE.Server.WorldObjects
 
             var prevTime = 0.0f;
             int strikeCounter = 0;
+            int successfulHitCounter = 0;
 
             for (var i = 0; i < numStrikes; i++)
             {
@@ -347,8 +348,14 @@ namespace ACE.Server.WorldObjects
 
                     var damageEvent = DamageTarget(creature, weapon);
 
+                    // Only increment successful hit counter when we actually deal damage
+                    // This ensures procs are based on successful hits, not swing attempts
+                    bool hitSuccessful = damageEvent != null && damageEvent.HasDamage;
+                    if (hitSuccessful)
+                        successfulHitCounter++;
+
                     // handle target procs on primary: default only first hit, or geometric decay if weapon allows multi-strike procs
-                    if (damageEvent != null && damageEvent.HasDamage)
+                    if (hitSuccessful)
                     {
                         float multiplier;
                         if (weapon != null && weapon.AllowMultiStrikeProcs)
@@ -361,14 +368,15 @@ namespace ACE.Server.WorldObjects
                             }
                             else
                             {
-                                var exp = Math.Max(0, strikeCounter - 1);
+                                // Use successful hit counter for decay calculation
+                                var exp = Math.Max(0, successfulHitCounter - 1);
                                 multiplier = (float)Math.Pow(r, exp);
                             }
                         }
                         else
                         {
                             // only first successful hit rolls
-                            multiplier = strikeCounter == 1 ? 1.0f : 0.0f;
+                            multiplier = successfulHitCounter == 1 ? 1.0f : 0.0f;
                         }
 
                         if (multiplier > 0f)
@@ -384,23 +392,31 @@ namespace ACE.Server.WorldObjects
                             return;
                         
                         // Calculate the strike multiplier for this hit (same as primary)
-                        float strikeMultiplier;
-                        if (weapon.AllowMultiStrikeProcs)
+                        // Only calculate if this hit was successful
+                        float strikeMultiplier = 0f;
+                        if (hitSuccessful)
                         {
-                            var r = weapon.MultiStrikeDecay;
-                            if (r >= 1.0f)
+                            if (weapon.AllowMultiStrikeProcs)
                             {
-                                // If r = 1.0f (stored 0.0f), no reduction
-                                strikeMultiplier = 1.0f;
+                                var r = weapon.MultiStrikeDecay;
+                                if (r >= 1.0f)
+                                {
+                                    // If r = 1.0f (stored 0.0f), no reduction
+                                    strikeMultiplier = 1.0f;
+                                }
+                                else
+                                {
+                                    // Use successful hit counter for decay calculation
+                                    var exp = Math.Max(0, successfulHitCounter - 1);
+                                    strikeMultiplier = (float)Math.Pow(r, exp);
+                                }
                             }
                             else
                             {
-                                var exp = Math.Max(0, strikeCounter - 1);
-                                strikeMultiplier = (float)Math.Pow(r, exp);
+                                // only first successful hit rolls
+                                strikeMultiplier = successfulHitCounter == 1 ? 1.0f : 0.0f;
                             }
                         }
-                        else
-                            strikeMultiplier = strikeCounter == 1 ? 1.0f : 0.0f;
 
                         if (strikeMultiplier > 0f)
                         {
@@ -416,7 +432,7 @@ namespace ACE.Server.WorldObjects
                                 // Handle weapon-only procs for cleaved targets: uses strike-decayed chance then applies cleave decay
                                 if (cleaveDamageEvent != null && cleaveDamageEvent.HasDamage)
                                 {
-                                    TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, weapon?.CleaveTargets ?? 1, strikeCounter, strikeMultiplier);
+                                    TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, weapon?.CleaveTargets ?? 1, successfulHitCounter, strikeMultiplier);
                                 }
                             }
                         }
