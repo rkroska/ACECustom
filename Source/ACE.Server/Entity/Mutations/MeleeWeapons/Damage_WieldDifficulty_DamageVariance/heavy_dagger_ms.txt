@@ -476,7 +476,7 @@ Tier chances: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     - Chance: 10%:
         DamageVariance = 0.4
 
-    DaggerMS (HeavyWeapons) Mutation #10 (276 samples):
+DaggerMS (HeavyWeapons) Mutation #10 (276 samples):
 
 Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
 
@@ -534,7 +534,7 @@ Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 1, 0
         WieldSkillType = WeaponSkill
         WieldDifficulty = 575
 
-        DaggerMS (HeavyWeapons) Mutation #11 (276 samples):
+DaggerMS (HeavyWeapons) Mutation #11 (276 samples):
 
 Tier chances: 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
 
