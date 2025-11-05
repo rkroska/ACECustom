@@ -2723,6 +2723,16 @@ namespace ACE.Server.WorldObjects
             set { if (value == 0d) RemoveProperty(PropertyFloat.GeneratorInitialDelay); else SetProperty(PropertyFloat.GeneratorInitialDelay, value); }
         }
 
+        /// <summary>
+        /// When enabled, automatically staggers generator spawn times to prevent synchronized bursts
+        /// Each generator gets a deterministic offset (0 to RegenerationInterval-1) based on its GUID
+        /// </summary>
+        public bool RandomizeSpawnTime
+        {
+            get => GetProperty(PropertyBool.RandomizeSpawnTime) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.RandomizeSpawnTime); else SetProperty(PropertyBool.RandomizeSpawnTime, value); }
+        }
+
         /* quest properties */
 
         public string Quest

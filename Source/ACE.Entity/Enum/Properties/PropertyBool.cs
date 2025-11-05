@@ -171,6 +171,7 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         AutowieldLeft                    = 130,
         IsMule                           = 131,
+        RandomizeSpawnTime               = 132,
 
         /* custom */
         LinkedPortalOneSummon            = 9001,
