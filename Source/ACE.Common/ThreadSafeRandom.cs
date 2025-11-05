@@ -9,13 +9,14 @@ namespace ACE.Common
     {
         // A single, thread-safe random to create seeds.
         private static readonly Random _globalRandom = new();
+        private static readonly object _seedLock = new();
 
         // Use the global generator to seed each new thread-local instance
         private static readonly ThreadLocal<Random> _threadRandom = new(() =>
         {
             // Lock to ensure _globalRandom is accessed by only one thread at a time when generating the next seed.
             int seed;
-            lock (_globalRandom)
+            lock (_seedLock)
             {
                 seed = _globalRandom.Next();
             }
