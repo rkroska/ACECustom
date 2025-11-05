@@ -227,10 +227,13 @@ namespace ACE.Server.Entity
             long? cachedLuminanceAugmentCount = null;
             long damageBonus = 0;
             
-            if (isMissile && attacker.LuminanceAugmentMissileCount > 0)
+            if (isMissile)
             {
-                cachedLuminanceAugmentCount = attacker.LuminanceAugmentMissileCount.Value;
-                damageBonus = cachedLuminanceAugmentCount.Value;
+                if (attacker.LuminanceAugmentMissileCount > 0)
+                {
+                    cachedLuminanceAugmentCount = attacker.LuminanceAugmentMissileCount.Value;
+                    damageBonus = cachedLuminanceAugmentCount.Value;
+                }
             }
             else if (attacker.LuminanceAugmentMeleeCount > 0)
             {
