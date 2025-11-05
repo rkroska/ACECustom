@@ -222,15 +222,23 @@ namespace ACE.Server.Entity
 
             if (GeneralFailure) return 0.0f;
 
+            // Cache luminance augment count once to avoid redundant property access
             var isMissile = Weapon != null && Weapon.IsMissileWeapon;
+            long? cachedLuminanceAugmentCount = null;
             long damageBonus = 0;
-            if (isMissile && attacker.LuminanceAugmentMissileCount > 0)
+            
+            if (isMissile)
             {
-                damageBonus = attacker.LuminanceAugmentMissileCount.Value;
+                if (attacker.LuminanceAugmentMissileCount > 0)
+                {
+                    cachedLuminanceAugmentCount = attacker.LuminanceAugmentMissileCount.Value;
+                    damageBonus = cachedLuminanceAugmentCount.Value;
+                }
             }
             else if (attacker.LuminanceAugmentMeleeCount > 0)
             {
-                damageBonus = attacker.LuminanceAugmentMeleeCount.Value;
+                cachedLuminanceAugmentCount = attacker.LuminanceAugmentMeleeCount.Value;
+                damageBonus = cachedLuminanceAugmentCount.Value;
             }
 
             BaseDamage += damageBonus;
@@ -271,31 +279,8 @@ namespace ACE.Server.Entity
             if (playerDefender != null && (playerDefender.IsLoggingOut || playerDefender.PKLogout))
                 CriticalChance = 1.0f;
 
-            // Define a configurable parameter for critical damage adjustment
-            float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier").Item;
-
-            float luminanceAugmentBonus = 0;
-
-            switch (CombatType)
-            {
-                case CombatType.Melee:
-                    if (attacker.LuminanceAugmentMeleeCount > 0)
-                    {
-                        luminanceAugmentBonus = attacker.LuminanceAugmentMeleeCount.Value * luminanceAugmentCritDamageMultiplier;
-                    }
-                    break;
-
-                case CombatType.Missile:
-                    if (attacker.LuminanceAugmentMissileCount > 0)
-                    {
-                        luminanceAugmentBonus = attacker.LuminanceAugmentMissileCount.Value * luminanceAugmentCritDamageMultiplier;
-                    }
-                    break;
-            }
-
-                // Inside the critical hit check
-
-                if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
+            // Inside the critical hit check - only calculate crit bonus if we actually crit
+            if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
             {
                 if (playerDefender != null && playerDefender.AugmentationCriticalDefense > 0)
                 {
@@ -309,6 +294,14 @@ namespace ACE.Server.Entity
                 if (!CriticalDefended)
                 {
                     IsCritical = true;
+
+                    // Calculate luminance augment crit bonus using cached value (only if we have one)
+                    float luminanceAugmentBonus = 0;
+                    if (cachedLuminanceAugmentCount.HasValue && cachedLuminanceAugmentCount.Value > 0)
+                    {
+                        float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier").Item;
+                        luminanceAugmentBonus = cachedLuminanceAugmentCount.Value * luminanceAugmentCritDamageMultiplier;
+                    }
 
                     // Update the CriticalDamageMod to include luminance augment bonus
                     CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender) + luminanceAugmentBonus;
