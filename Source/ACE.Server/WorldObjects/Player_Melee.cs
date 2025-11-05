@@ -325,7 +325,7 @@ namespace ACE.Server.WorldObjects
             TryProcEquippedItems(this, this, true, weapon);
 
             var prevTime = 0.0f;
-            bool targetProc = false;
+            int strikeCounter = 0;
 
             for (var i = 0; i < numStrikes; i++)
             {
@@ -337,6 +337,7 @@ namespace ACE.Server.WorldObjects
 
                 actionChain.AddAction(this, () =>
                 {
+                    strikeCounter++;
                     if (IsDead)
                     {
                         Attacking = false;
@@ -346,21 +347,78 @@ namespace ACE.Server.WorldObjects
 
                     var damageEvent = DamageTarget(creature, weapon);
 
-                    // handle target procs
-                    if (damageEvent != null && damageEvent.HasDamage && !targetProc)
+                    // handle target procs on primary: default only first hit, or geometric decay if weapon allows multi-strike procs
+                    if (damageEvent != null && damageEvent.HasDamage)
                     {
-                        TryProcEquippedItems(this, creature, false, weapon);
-                        targetProc = true;
+                        float multiplier;
+                        if (weapon != null && weapon.AllowMultiStrikeProcs)
+                        {
+                            var r = weapon.MultiStrikeDecay;
+                            if (r >= 1.0f)
+                            {
+                                // If r = 1.0f (stored 0.0f), no reduction
+                                multiplier = 1.0f;
+                            }
+                            else
+                            {
+                                var exp = Math.Max(0, strikeCounter - 1);
+                                multiplier = (float)Math.Pow(r, exp);
+                            }
+                        }
+                        else
+                        {
+                            // only first successful hit rolls
+                            multiplier = strikeCounter == 1 ? 1.0f : 0.0f;
+                        }
+
+                        if (multiplier > 0f)
+                            TryProcEquippedItemsWithChanceMod(this, creature, false, weapon, multiplier);
                     }
 
-                    if (weapon != null && weapon.IsCleaving)
+                    if (weapon != null && weapon.IsCleaving && creature != null)
                     {
                         var cleave = GetCleaveTarget(creature, weapon);
-
-                        foreach (var cleaveHit in cleave)
+                        
+                        // Check if cleave list is null or empty
+                        if (cleave == null || cleave.Count == 0)
+                            return;
+                        
+                        // Calculate the strike multiplier for this hit (same as primary)
+                        float strikeMultiplier;
+                        if (weapon.AllowMultiStrikeProcs)
                         {
-                            // target procs don't happen for cleaving
-                            DamageTarget(cleaveHit, weapon);
+                            var r = weapon.MultiStrikeDecay;
+                            if (r >= 1.0f)
+                            {
+                                // If r = 1.0f (stored 0.0f), no reduction
+                                strikeMultiplier = 1.0f;
+                            }
+                            else
+                            {
+                                var exp = Math.Max(0, strikeCounter - 1);
+                                strikeMultiplier = (float)Math.Pow(r, exp);
+                            }
+                        }
+                        else
+                            strikeMultiplier = strikeCounter == 1 ? 1.0f : 0.0f;
+
+                        if (strikeMultiplier > 0f)
+                        {
+                            foreach (var cleaveHit in cleave)
+                            {
+                                // Skip null cleave targets
+                                if (cleaveHit == null)
+                                    continue;
+
+                                // Apply cast on strike effects to cleaved targets
+                                var cleaveDamageEvent = DamageTarget(cleaveHit, weapon);
+                                
+                                // Handle weapon-only procs for cleaved targets: uses strike-decayed chance then applies cleave decay
+                                if (cleaveDamageEvent != null && cleaveDamageEvent.HasDamage)
+                                {
+                                    TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, weapon?.CleaveTargets ?? 1, strikeCounter, strikeMultiplier);
+                                }
+                            }
                         }
                     }
                 });

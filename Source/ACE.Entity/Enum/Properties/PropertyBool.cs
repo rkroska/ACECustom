@@ -196,5 +196,13 @@ namespace ACE.Entity.Enum.Properties
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
         IsSplitArrowKill                 = 9032,
+        /// <summary>
+        /// If TRUE on a weapon, allows multi-strike hits to each roll a proc with decay
+        /// </summary>
+        WeaponAllowMultiStrikeProcs      = 9034,
+        /// <summary>
+        /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
+        /// </summary>
+        WeaponProcOnCleaveTargets        = 9035,
     }
 }

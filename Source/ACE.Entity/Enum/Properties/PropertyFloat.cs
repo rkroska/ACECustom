@@ -241,5 +241,14 @@ namespace ACE.Entity.Enum.Properties
         SplitArrowRange                 = 9032,
         [AssessmentProperty]
         SplitArrowDamageMultiplier     = 9033,
+        /// <summary>
+        /// Geometric decay r for multi-strike proc chance per hit (default 0.5)
+        /// </summary>
+        WeaponMultiStrikeDecay         = 9034,
+        /// <summary>
+        /// Geometric decay r for cleave proc chance per hit (default 0.5)
+        /// Applied per strike on cleaved targets, independent of multi-strike decay
+        /// </summary>
+        WeaponCleaveStrikeDecay        = 9035,
     }
 }

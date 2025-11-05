@@ -942,6 +942,75 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
+        /// Default is FALSE
+        /// </summary>
+        public bool ProcOnCleaveTargets
+        {
+            get => GetProperty(PropertyBool.WeaponProcOnCleaveTargets) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.WeaponProcOnCleaveTargets); else SetProperty(PropertyBool.WeaponProcOnCleaveTargets, value); }
+        }
+
+        // Deprecated: Non-projectile cleave proc flag removed in favor of single toggle
+
+        /// <summary>
+        /// If TRUE, multi-strike hits each roll a proc using geometric decay
+        /// </summary>
+        public bool AllowMultiStrikeProcs
+        {
+            get => GetProperty(PropertyBool.WeaponAllowMultiStrikeProcs) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.WeaponAllowMultiStrikeProcs); else SetProperty(PropertyBool.WeaponAllowMultiStrikeProcs, value); }
+        }
+
+        /// <summary>
+        /// Geometric decay factor r for multi-strike (default 0.5)
+        /// Stored value is complement c = (1 - r). Getter returns r = (1 - c).
+        /// </summary>
+        public float MultiStrikeDecay
+        {
+            get
+            {
+                var stored = (float)(GetProperty(PropertyFloat.WeaponMultiStrikeDecay) ?? 0.5f); // default 0.5 => r = 0.5
+                if (stored < 0f) stored = 0f;
+                if (stored > 1f) stored = 1f;
+                var r = 1.0f - stored;
+                if (r < 0f) r = 0f;
+                if (r > 1f) r = 1f;
+                return r;
+            }
+            set
+            {
+                var clamped = Math.Clamp(value, 0f, 1f);
+                var stored = 1.0f - clamped;
+                SetProperty(PropertyFloat.WeaponMultiStrikeDecay, stored);
+            }
+        }
+
+        /// <summary>
+        /// Geometric decay factor r for cleave procs per strike (default 0.5)
+        /// Stored value is complement c = (1 - r). Getter returns r = (1 - c).
+        /// </summary>
+        public float CleaveStrikeDecay
+        {
+            get
+            {
+                var stored = (float)(GetProperty(PropertyFloat.WeaponCleaveStrikeDecay) ?? 0.5f);
+                if (stored < 0f) stored = 0f;
+                if (stored > 1f) stored = 1f;
+                var r = 1.0f - stored;
+                if (r < 0f) r = 0f;
+                if (r > 1f) r = 1f;
+                return r;
+            }
+            set
+            {
+                var clamped = Math.Clamp(value, 0f, 1f);
+                var stored = 1.0f - clamped;
+                SetProperty(PropertyFloat.WeaponCleaveStrikeDecay, stored);
+            }
+        }
+
+        /// <summary>
         /// Returns TRUE if this item has a proc / 'cast on strike' spell
         /// </summary>
         public bool HasProc => ProcSpell != null;
@@ -1009,6 +1078,39 @@ namespace ACE.Server.WorldObjects
             }
             else
                 attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, true, true);
+        }
+
+        /// <summary>
+        /// Try to proc with an external chance multiplier applied to the computed proc rate.
+        /// </summary>
+        public void TryProcItemWithChanceMod(WorldObject attacker, Creature target, bool selfTarget, float chanceMultiplier)
+        {
+            var baseChance = ProcSpellRate ?? 0.0f;
+
+            if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
+                baseChance = Aetheria.CalcProcRate(this, wielder);
+
+            var chance = Math.Clamp(baseChance * Math.Max(0f, chanceMultiplier), 0f, 1f);
+
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+            if (rng >= chance)
+                return;
+
+            var spell = new Spell(ProcSpell.Value);
+
+            if (spell.NotFound)
+            {
+                if (attacker is Player player)
+                {
+                    if (spell._spellBase == null)
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"SpellId {ProcSpell.Value} Invalid.", ChatMessageType.System));
+                    else
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{spell.Name} spell not implemented, yet!", ChatMessageType.System));
+                }
+                return;
+            }
+
+            TryCastSpell(spell, target, attacker, this, isWeaponSpell: true, fromProc: true);
         }
 
         private bool? isMasterable;
