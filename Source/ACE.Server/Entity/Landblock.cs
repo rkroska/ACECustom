@@ -567,9 +567,6 @@ namespace ACE.Server.Entity
                 int monstersProcessed = 0;
                 const int maxMonstersPerTick = 50;
                 
-                // Track creatures that need processing to detect saturation
-                int creaturesNeedingProcessing = 0;
-                
                 while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
                     var first = sortedCreaturesByNextTick.First.Value;
@@ -577,7 +574,6 @@ namespace ACE.Server.Entity
                     // If they wanted to run before or at now
                     if (first.NextMonsterTickTime <= currentUnixTime)
                     {
-                        creaturesNeedingProcessing++;
                         sortedCreaturesByNextTick.RemoveFirst();
                         first.Monster_Tick(currentUnixTime);
                         sortedCreaturesByNextTick.AddLast(first); // All creatures tick at a fixed interval
@@ -589,16 +585,29 @@ namespace ACE.Server.Entity
                     }
                 }
                 
+                // Check if throttle is saturated by counting remaining creatures that are overdue
+                int remainingDueCount = 0;
+                if (monstersProcessed >= maxMonstersPerTick && sortedCreaturesByNextTick.Count > 0)
+                {
+                    // Count how many remaining creatures are overdue for processing
+                    foreach (var creature in sortedCreaturesByNextTick)
+                    {
+                        if (creature.NextMonsterTickTime <= currentUnixTime)
+                            remainingDueCount++;
+                        else
+                            break; // List is sorted, so we can stop once we hit a future tick time
+                    }
+                }
+                
                 // Alert if throttle is consistently maxed out (queue saturation)
-                if (monstersProcessed >= maxMonstersPerTick && creaturesNeedingProcessing > monstersProcessed)
+                if (monstersProcessed >= maxMonstersPerTick && remainingDueCount > 0)
                 {
                     monsterTickThrottleWarningCount++;
                     
                     // Warn every 60 seconds if consistently saturated
                     if (DateTime.UtcNow - lastMonsterThrottleWarning > TimeSpan.FromSeconds(60))
                     {
-                        var queueDepth = creaturesNeedingProcessing - monstersProcessed;
-                        var warningMsg = $"[PERFORMANCE] Landblock {Id:X8} Monster_Tick throttle saturated! Processed {monstersProcessed}/{creaturesNeedingProcessing} creatures. Consider increasing maxMonstersPerTick from {maxMonstersPerTick}. Warnings: {monsterTickThrottleWarningCount}";
+                        var warningMsg = $"[PERFORMANCE] Landblock {Id:X8} Monster_Tick throttle saturated! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain. Total creatures: {sortedCreaturesByNextTick.Count}. Consider increasing maxMonstersPerTick from {maxMonstersPerTick}. Warnings: {monsterTickThrottleWarningCount}";
                         log.Warn(warningMsg);
                         
                         // Send to Discord if configured
