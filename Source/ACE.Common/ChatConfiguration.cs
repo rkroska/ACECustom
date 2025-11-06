@@ -25,6 +25,10 @@ namespace ACE.Common
         public string WebhookURL { get; set; }
         public long ClothingModUploadChannelId { get; set; }
         public long ClothingModExportChannelId { get; set; }
+        
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long PerformanceAlertsChannelId { get; set; }
 
     }
 }

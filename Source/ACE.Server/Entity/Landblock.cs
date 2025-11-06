@@ -27,6 +27,7 @@ using ACE.Server.Network.GameMessages;
 using ACE.Server.WorldObjects;
 
 using Position = ACE.Entity.Position;
+using ACE.Common;
 
 namespace ACE.Server.Entity
 {
@@ -88,6 +89,10 @@ namespace ACE.Server.Entity
         private readonly LinkedList<WorldObject> sortedWorldObjectsByNextHeartbeat = new LinkedList<WorldObject>();
         private readonly LinkedList<WorldObject> sortedGeneratorsByNextGeneratorUpdate = new LinkedList<WorldObject>();
         private readonly LinkedList<WorldObject> sortedGeneratorsByNextRegeneration = new LinkedList<WorldObject>();
+        
+        // Monster tick throttle monitoring
+        private int monsterTickThrottleWarningCount = 0;
+        private DateTime lastMonsterThrottleWarning = DateTime.MinValue;
 
         /// <summary>
         /// This is used to detect and manage cross-landblock group (which is potentially cross-thread) operations.
@@ -554,22 +559,71 @@ namespace ACE.Server.Entity
             if (!IsDormant)
             {
                 stopwatch.Restart();
-                while (sortedCreaturesByNextTick.Count > 0) // Monster_Tick()
+                
+                // Throttle monster processing to prevent multi-second spikes during mass spawns
+                // Without this, 400+ creatures can cause 4+ second freezes
+                // Tuning: Lower = safer spikes (30-40), Higher = faster AI reactions (60-75)
+                // At 50: ~0.15s max spike, 447 creatures = 2.7s total delay for last creature
+                int monstersProcessed = 0;
+                const int maxMonstersPerTick = 50;
+                
+                // Track creatures that need processing to detect saturation
+                int creaturesNeedingProcessing = 0;
+                
+                while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
                     var first = sortedCreaturesByNextTick.First.Value;
 
                     // If they wanted to run before or at now
                     if (first.NextMonsterTickTime <= currentUnixTime)
                     {
+                        creaturesNeedingProcessing++;
                         sortedCreaturesByNextTick.RemoveFirst();
                         first.Monster_Tick(currentUnixTime);
                         sortedCreaturesByNextTick.AddLast(first); // All creatures tick at a fixed interval
+                        monstersProcessed++;
                     }
                     else
                     {
                         break;
                     }
                 }
+                
+                // Alert if throttle is consistently maxed out (queue saturation)
+                if (monstersProcessed >= maxMonstersPerTick && creaturesNeedingProcessing > monstersProcessed)
+                {
+                    monsterTickThrottleWarningCount++;
+                    
+                    // Warn every 60 seconds if consistently saturated
+                    if (DateTime.UtcNow - lastMonsterThrottleWarning > TimeSpan.FromSeconds(60))
+                    {
+                        var queueDepth = creaturesNeedingProcessing - monstersProcessed;
+                        var warningMsg = $"[PERFORMANCE] Landblock {Id:X8} Monster_Tick throttle saturated! Processed {monstersProcessed}/{creaturesNeedingProcessing} creatures. Consider increasing maxMonstersPerTick from {maxMonstersPerTick}. Warnings: {monsterTickThrottleWarningCount}";
+                        log.Warn(warningMsg);
+                        
+                        // Send to Discord if configured
+                        if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                        {
+                            try
+                            {
+                                Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"Failed to send Monster_Tick throttle warning to Discord: {ex.Message}");
+                            }
+                        }
+                        
+                        lastMonsterThrottleWarning = DateTime.UtcNow;
+                        monsterTickThrottleWarningCount = 0;
+                    }
+                }
+                else
+                {
+                    // Reset counter when not saturated
+                    monsterTickThrottleWarningCount = 0;
+                }
+                
                 ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_Monster_Tick, stopwatch.Elapsed.TotalSeconds);
             }
 
@@ -744,6 +798,11 @@ namespace ACE.Server.Entity
 
         private void ProcessPendingWorldObjectAdditionsAndRemovals()
         {
+            // Early exit optimization - this method is called 11 times per tick
+            // Most calls find nothing to process, so avoid the iteration overhead
+            if (pendingAdditions.IsEmpty && pendingRemovals.Count == 0)
+                return;
+            
             if (!pendingAdditions.IsEmpty)
             {
                 foreach (var kvp in pendingAdditions)
