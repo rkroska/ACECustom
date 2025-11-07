@@ -4443,34 +4443,25 @@ namespace ACE.Server.Command.Handlers
             output.AppendLine($"Weenie Class ID: {combatPet.WeenieClassId}");
             output.AppendLine();
 
-            // Calculate summon augmentation count from attribute differences
+            // Get augmentation counts directly from the pet owner (player who summoned it)
             int summonAugCount = 0;
-            if (weenie.PropertiesAttribute != null && combatPet.Biota.PropertiesAttribute != null)
-            {
-                var weenieStr = weenie.PropertiesAttribute.TryGetValue(PropertyAttribute.Strength, out var weenieAttr) ? weenieAttr.InitLevel : 0;
-                var currentStr = combatPet.Strength.StartingValue;
-                if (currentStr >= weenieStr)
-                    summonAugCount = (int)(currentStr - weenieStr);
-            }
-
-            // Calculate item augmentation count from stored values
             int itemAugCount = 0;
-            float itemAugPercentage = 0f;
-            var itemAugAttackMod = combatPet.ItemAugAttackMod;
-            if (itemAugAttackMod > 0.20f)
-            {
-                itemAugPercentage = itemAugAttackMod - 0.20f;
-                // Reverse calculate item aug count (approximate)
-                itemAugCount = ReverseCalculateItemAugCount(itemAugPercentage);
-            }
-
-            // Get life augmentation protection rating directly from stored value
             int lifeAugCount = 0;
+            float itemAugPercentage = 0f;
             float lifeAugProtectionRating = combatPet.LifeAugProtectionRating;
-            if (lifeAugProtectionRating > 0f)
+            
+            if (combatPet.P_PetOwner != null)
             {
-                // Reverse calculate life aug count (approximate)
-                lifeAugCount = ReverseCalculateLifeAugCount(lifeAugProtectionRating);
+                // Get augmentation counts directly from the player
+                summonAugCount = (int)(combatPet.P_PetOwner.LuminanceAugmentSummonCount ?? 0);
+                itemAugCount = (int)(combatPet.P_PetOwner.LuminanceAugmentItemCount ?? 0);
+                lifeAugCount = (int)(combatPet.P_PetOwner.LuminanceAugmentLifeCount ?? 0);
+                
+                // Calculate item aug percentage from the actual count
+                if (itemAugCount > 0)
+                {
+                    itemAugPercentage = CombatPet.GetItemAugPercentageRating(itemAugCount);
+                }
             }
 
             // Attributes
@@ -4728,23 +4719,46 @@ namespace ACE.Server.Command.Handlers
             output.AppendLine("=== ARMOR ===");
             var itemAugArmorBonus = combatPet.ItemAugArmorBonus;
             
-            // Get base armor from weenie data (first body part with armor > 0)
+            // Get base armor from weenie data - average across all body parts with armor > 0
             uint weenieBaseArmor = 0;
+            var bodyPartsWithArmor = new List<(CombatBodyPart part, uint armor)>();
             if (weenie.PropertiesBodyPart != null)
             {
-                foreach (var weenieBodyPart in weenie.PropertiesBodyPart.Values)
+                foreach (var weenieBodyPart in weenie.PropertiesBodyPart)
                 {
-                    if (weenieBodyPart.BaseArmor > 0)
+                    if (weenieBodyPart.Value.BaseArmor > 0)
                     {
-                        weenieBaseArmor = (uint)weenieBodyPart.BaseArmor;
-                        break;
+                        bodyPartsWithArmor.Add((weenieBodyPart.Key, (uint)weenieBodyPart.Value.BaseArmor));
                     }
+                }
+                
+                if (bodyPartsWithArmor.Count > 0)
+                {
+                    // Calculate average armor across all body parts
+                    var armorSum = bodyPartsWithArmor.Sum(bp => bp.armor);
+                    weenieBaseArmor = (uint)(armorSum / bodyPartsWithArmor.Count);
                 }
             }
             
             var totalArmor = weenieBaseArmor + itemAugArmorBonus;
             
-            output.AppendLine($"Base Armor (Weenie): {weenieBaseArmor}");
+            if (bodyPartsWithArmor.Count > 0)
+            {
+                output.AppendLine($"Base Armor (Weenie - Average): {weenieBaseArmor} (from {bodyPartsWithArmor.Count} body part(s))");
+                if (bodyPartsWithArmor.Count > 1)
+                {
+                    output.AppendLine("Per-Part Base Armor:");
+                    foreach (var (part, armor) in bodyPartsWithArmor)
+                    {
+                        output.AppendLine($"  {part}: {armor}");
+                    }
+                }
+            }
+            else
+            {
+                output.AppendLine($"Base Armor (Weenie): {weenieBaseArmor}");
+            }
+            
             if (itemAugArmorBonus > 0)
             {
                 var armorBase = 200;
@@ -4774,52 +4788,44 @@ namespace ACE.Server.Command.Handlers
                 DamageType.Nether
             };
 
+            // Calculate life aug protection rating from player's life aug count (reuse from outer scope)
+            if (lifeAugCount > 0 && lifeAugProtectionRating <= 0f)
+            {
+                lifeAugProtectionRating = CombatPet.GetLifeAugProtectRating(lifeAugCount);
+            }
+
             foreach (var damageType in allDamageTypes)
             {
-                // Get existing protection mod from enchantments
+                // Get base resistance mod (what the pet would have without life augs)
+                // This is natural resistance + existing protection mods, but no life aug
+                var naturalResistMod = combatPet.GetNaturalResistance(damageType);
                 var existingProtectionMod = combatPet.EnchantmentManager.GetProtectionResistanceMod(damageType);
-                // Reuse lifeAugProtectionRating from outer scope
+                var vulnMod = combatPet.EnchantmentManager.GetVulnerabilityResistanceMod(damageType);
                 
-                // Calculate combined protection
-                float combinedProtectionMod = existingProtectionMod;
-                if (lifeAugProtectionRating > 0f)
-                {
-                    var lifeAugProtectionMod = 1.0f - lifeAugProtectionRating;
-                    if (existingProtectionMod >= 1.0f)
-                    {
-                        // No existing protection - use 1.0 as base, then apply life aug
-                        combinedProtectionMod = lifeAugProtectionMod;
-                    }
-                    else
-                    {
-                        // Existing protection - combine with life aug (multiplicative)
-                        combinedProtectionMod *= lifeAugProtectionMod;
-                    }
-                }
+                // Protection mod becomes either life protection or natural resistance, whichever is more powerful
+                var baseProtectionMod = existingProtectionMod;
+                if (baseProtectionMod > naturalResistMod)
+                    baseProtectionMod = naturalResistMod;
                 
-                // Get full resistance mod (includes life aug protection from our override)
-                var resistanceMod = combatPet.GetResistanceMod(damageType, null, null);
-                var baseResistance = 1.0f;
-                var existingProtection = existingProtectionMod >= 1.0f ? 0.0f : (1.0f - existingProtectionMod);
-                var lifeAugProtection = lifeAugProtectionRating;
-                var combinedProtection = 1.0f - combinedProtectionMod;
+                // Base resistance mod (without life augs)
+                var baseResistanceMod = baseProtectionMod * vulnMod;
+                
+                // Get actual current resistance mod from the pet (includes life aug protection)
+                var currentResistanceMod = combatPet.GetResistanceMod(damageType, null, null);
+                
+                // Calculate life aug protection (how much protection is being applied)
+                // Protection reduces the resistance mod, so we show it as a positive protection value
+                var lifeAugProtection = baseResistanceMod - currentResistanceMod;
 
-                // Show breakdown
-                output.AppendLine($"{damageType}:");
-                output.AppendLine($"  Base Resistance: {baseResistance:F3}");
-                if (existingProtection > 0f)
-                {
-                    output.AppendLine($"  Existing Protection: {existingProtection:F3}");
-                }
+                // Show breakdown: Base - Protection = Current (lower resistance mod = more protection)
                 if (lifeAugProtection > 0f)
                 {
-                    output.AppendLine($"  Life Aug Protection: {lifeAugProtection:F3}");
+                    output.AppendLine($"{damageType}: Base {baseResistanceMod:F3} - Protection {lifeAugProtection:F3} = Resistance Mod {currentResistanceMod:F3}");
                 }
-                if (combinedProtection > 0f)
+                else
                 {
-                    output.AppendLine($"  Combined Protection: {combinedProtection:F3}");
+                    output.AppendLine($"{damageType}: Base {baseResistanceMod:F3} = Resistance Mod {currentResistanceMod:F3} (No Life Aug Protection)");
                 }
-                output.AppendLine($"  Final Resistance Mod: {resistanceMod:F3}");
             }
             output.AppendLine();
 
@@ -4836,70 +4842,74 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, output.ToString());
         }
 
+        /// <summary>
+        /// Reverse calculates item aug count from percentage using binary search on the actual formula
+        /// </summary>
         private static int ReverseCalculateItemAugCount(float percentage)
         {
-            // Reverse calculate item aug count from percentage
-            // This is approximate since the formula has diminishing returns
-            int count = 0;
-            float current = 0f;
-            while (current < percentage && count < 1000)
+            // Binary search on the actual formula to find the count that produces the target percentage
+            int left = 0;
+            int right = 10000; // Reasonable upper bound
+            int result = 0;
+            
+            while (left <= right)
             {
-                if (count < 100)
-                    current += 0.01f;
-                else if (count < 150)
-                    current += 0.0075f;
-                else if (count < 200)
-                    current += 0.005625f;
-                else if (count < 250)
-                    current += 0.004218f;
-                else if (count < 300)
-                    current += 0.003164f;
-                else if (count < 350)
-                    current += 0.002373f;
-                else if (count < 400)
-                    current += 0.001779f;
-                else if (count < 450)
-                    current += 0.001334f;
+                int mid = (left + right) / 2;
+                float calculated = CombatPet.GetItemAugPercentageRating(mid);
+                
+                if (Math.Abs(calculated - percentage) < 0.0001f)
+                {
+                    result = mid;
+                    break;
+                }
+                
+                if (calculated < percentage)
+                {
+                    left = mid + 1;
+                    result = mid; // Keep track of the closest value
+                }
                 else
-                    current += 0.00100f;
-                count++;
+                {
+                    right = mid - 1;
+                }
             }
-            return count;
+            
+            return result;
         }
 
+        /// <summary>
+        /// Reverse calculates life aug count from protection rating using binary search on the actual formula
+        /// </summary>
         private static int ReverseCalculateLifeAugCount(float protectionRating)
         {
-            // Reverse calculate life aug count from protection rating
-            // This is approximate since the formula has diminishing returns
-            int count = 0;
-            float current = 0f;
-            while (current < protectionRating && count < 1000)
+            // Binary search on the actual formula to find the count that produces the target protection rating
+            int left = 0;
+            int right = 10000; // Reasonable upper bound
+            int result = 0;
+            
+            while (left <= right)
             {
-                if (count < 10)
-                    current += 0.01f;
-                else if (count < 30)
-                    current += 0.005f;
-                else if (count < 50)
-                    current += 0.0025f;
-                else if (count < 70)
-                    current += 0.00125f;
-                else if (count < 100)
-                    current += 0.000625f;
-                else if (count < 120)
-                    current += 0.000312f;
-                else if (count < 150)
-                    current += 0.000156f;
-                else if (count < 175)
-                    current += 0.000078f;
-                else if (count < 200)
-                    current += 0.000039f;
-                else if (count < 225)
-                    current += 0.0000195f;
+                int mid = (left + right) / 2;
+                float calculated = CombatPet.GetLifeAugProtectRating(mid);
+                
+                if (Math.Abs(calculated - protectionRating) < 0.0001f)
+                {
+                    result = mid;
+                    break;
+                }
+                
+                if (calculated < protectionRating)
+                {
+                    left = mid + 1;
+                    result = mid; // Keep track of the closest value
+                }
                 else
-                    current += 0.0000100f;
-                count++;
+                {
+                    right = mid - 1;
+                }
             }
-            return count;
+            
+            return result;
         }
 
         // god

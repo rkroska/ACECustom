@@ -308,7 +308,11 @@ namespace ACE.Server.WorldObjects
                 defenseMod += _itemAugDefenseMod;
             }
 
-            var effectiveDefense = (uint)Math.Round(GetCreatureSkill(defenseSkill).Current * defenseMod * burdenMod * stanceMod + defenseImbues);
+            var creatureSkill = GetCreatureSkill(defenseSkill);
+            if (creatureSkill == null)
+                return 0;
+
+            var effectiveDefense = (uint)Math.Round(creatureSkill.Current * defenseMod * burdenMod * stanceMod + defenseImbues);
 
             if (IsExhausted) effectiveDefense = 0;
 
@@ -367,31 +371,27 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override float GetResistanceMod(DamageType damageType, WorldObject attacker, WorldObject weapon, float weaponResistanceMod = 1.0f)
         {
+            // If no life augmentation, just call base method
+            if (_lifeAugProtectionRating <= 0f)
+            {
+                return base.GetResistanceMod(damageType, attacker, weapon, weaponResistanceMod);
+            }
+            
             // Get existing protection mod from enchantments
             var existingProtectionMod = EnchantmentManager.GetProtectionResistanceMod(damageType);
             
-            // Apply life augmentation protection rating
-            if (_lifeAugProtectionRating > 0f)
-            {
-                var lifeAugProtectionMod = 1.0f - _lifeAugProtectionRating;
-                
-                // If no existing protection (null/1.0), use 1.0 as base then apply life aug
-                // Otherwise, combine existing protection with life aug (multiplicative)
-                if (existingProtectionMod >= 1.0f)
-                {
-                    // No existing protection - use 1.0 as base, then apply life aug
-                    existingProtectionMod = lifeAugProtectionMod;
-                }
-                else
-                {
-                    // Existing protection - combine with life aug (multiplicative)
-                    existingProtectionMod *= lifeAugProtectionMod;
-                }
-            }
+            // Calculate life augmentation protection modifier
+            var lifeAugProtectionMod = 1.0f - _lifeAugProtectionRating;
             
-            // Get base resistance mod (this will use our modified protection mod)
-            // We need to temporarily override the protection mod, then call base
-            // Actually, we need to get the full base resistance mod and then apply our protection
+            // Combine existing protection with life aug (multiplicative)
+            // If no existing protection (>= 1.0), use life aug as the protection
+            // Otherwise, combine existing protection with life aug
+            var combinedProtectionMod = existingProtectionMod >= 1.0f 
+                ? lifeAugProtectionMod 
+                : existingProtectionMod * lifeAugProtectionMod;
+            
+            // Now we need to use the base class logic but with our combined protection mod
+            // Since we can't easily inject it into the base method, we duplicate the minimal necessary logic
             var ignoreMagicResist = (weapon?.IgnoreMagicResist ?? false) || (attacker?.IgnoreMagicResist ?? false);
             
             if (ignoreMagicResist)
@@ -404,17 +404,36 @@ namespace ACE.Server.WorldObjects
             var naturalResistMod = GetNaturalResistance(damageType);
             
             // Use our combined protection mod (existing + life aug)
-            var protMod = existingProtectionMod;
+            var protMod = combinedProtectionMod;
             
             // protection mod becomes either life protection or natural resistance,
             // whichever is more powerful (more powerful = lower value here)
             if (protMod > naturalResistMod)
                 protMod = naturalResistMod;
             
-            // Apply vulnerability mod
-            var resistanceMod = protMod * vulnMod * weaponResistanceMod;
+            // Note: Player augmentation resistance is handled in base class, but CombatPets aren't Players
+            // so we skip that logic here
             
-            return resistanceMod;
+            // vulnerability mod becomes either life vuln or weapon resistance mod,
+            // whichever is more powerful
+            if (vulnMod < weaponResistanceMod)
+                vulnMod = weaponResistanceMod;
+            
+            if (ignoreMagicResist)
+            {
+                // convert to additive space
+                var addProt = -ModToRating(protMod);
+                var addVuln = ModToRating(vulnMod);
+                
+                // scale
+                addProt = IgnoreMagicResistScaled(addProt);
+                addVuln = IgnoreMagicResistScaled(addVuln);
+                
+                protMod = GetNegativeRatingMod(addProt);
+                vulnMod = GetPositiveRatingMod(addVuln);
+            }
+            
+            return protMod * vulnMod;
         }
 
         /// <summary>
@@ -459,7 +478,7 @@ namespace ACE.Server.WorldObjects
         /// Gets the item augmentation percentage rating using the same scaling formula as players
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static float GetItemAugPercentageRating(long itemAugAmt)
+        public static float GetItemAugPercentageRating(long itemAugAmt)
         {
             float bonus = 0;
             for (int x = 0; x < itemAugAmt; x++)
@@ -507,7 +526,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Gets the life augmentation protection rating using the same diminishing returns formula as players
         /// </summary>
-        private static float GetLifeAugProtectRating(long lifeAugAmt)
+        public static float GetLifeAugProtectRating(long lifeAugAmt)
         {
             float bonus = 0;
             for (int x = 0; x < lifeAugAmt; x++)
