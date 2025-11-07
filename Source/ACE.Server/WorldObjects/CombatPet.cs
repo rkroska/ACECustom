@@ -444,7 +444,7 @@ namespace ACE.Server.WorldObjects
             if (target == null || imbuedEffects == ImbuedEffectType.Undef)
                 return;
 
-            // Get existing imbued effects
+            // Get existing imbued effects from all slots
             var existingEffects = (ImbuedEffectType)(
                 (target.GetProperty(PropertyInt.ImbuedEffect) ?? 0) |
                 (target.GetProperty(PropertyInt.ImbuedEffect2) ?? 0) |
@@ -455,6 +455,7 @@ namespace ACE.Server.WorldObjects
             // Combine with gem's imbued effects
             var combinedEffects = existingEffects | imbuedEffects;
 
+            // Always combine all existing slots with gem effects, regardless of which slots are populated
             // Apply to the first available ImbuedEffect slot
             if (target.GetProperty(PropertyInt.ImbuedEffect) == null)
             {
@@ -462,9 +463,8 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                // Combine with existing first slot
-                var existingFirst = (ImbuedEffectType)(target.GetProperty(PropertyInt.ImbuedEffect) ?? 0);
-                target.SetProperty(PropertyInt.ImbuedEffect, (int)(existingFirst | imbuedEffects));
+                // Combine all existing slots (1-5) with gem effects
+                target.SetProperty(PropertyInt.ImbuedEffect, (int)combinedEffects);
             }
 
             // Set icon underlay if there's a primary imbue effect
