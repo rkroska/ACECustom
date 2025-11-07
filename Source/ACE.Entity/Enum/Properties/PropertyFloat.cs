@@ -244,11 +244,11 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>
         /// Geometric decay r for multi-strike proc chance per hit (default 0.5)
         /// </summary>
-        WeaponMultiStrikeDecay         = 9034,
+        WeaponMultiStrikeDecay         = 9035,
         /// <summary>
         /// Geometric decay r for cleave proc chance per hit (default 0.5)
         /// Applied per strike on cleaved targets, independent of multi-strike decay
         /// </summary>
-        WeaponCleaveStrikeDecay        = 9035,
+        WeaponCleaveStrikeDecay        = 9036,
     }
 }

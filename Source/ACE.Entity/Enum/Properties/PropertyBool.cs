@@ -199,10 +199,10 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>
         /// If TRUE on a weapon, allows multi-strike hits to each roll a proc with decay
         /// </summary>
-        WeaponAllowMultiStrikeProcs      = 9034,
+        WeaponAllowMultiStrikeProcs      = 9035,
         /// <summary>
         /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
         /// </summary>
-        WeaponProcOnCleaveTargets        = 9035,
+        WeaponProcOnCleaveTargets        = 9036,
     }
 }
