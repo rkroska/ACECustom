@@ -325,7 +325,8 @@ namespace ACE.Server.WorldObjects
             TryProcEquippedItems(this, this, true, weapon);
 
             var prevTime = 0.0f;
-            bool targetProc = false;
+            int strikeCounter = 0;
+            int successfulHitCounter = 0;
 
             for (var i = 0; i < numStrikes; i++)
             {
@@ -337,6 +338,7 @@ namespace ACE.Server.WorldObjects
 
                 actionChain.AddAction(this, () =>
                 {
+                    strikeCounter++;
                     if (IsDead)
                     {
                         Attacking = false;
@@ -346,21 +348,68 @@ namespace ACE.Server.WorldObjects
 
                     var damageEvent = DamageTarget(creature, weapon);
 
-                    // handle target procs
-                    if (damageEvent != null && damageEvent.HasDamage && !targetProc)
+                    // Only increment successful hit counter when we actually deal damage
+                    // This ensures procs are based on successful hits, not swing attempts
+                    bool hitSuccessful = damageEvent != null && damageEvent.HasDamage;
+                    if (hitSuccessful)
+                        successfulHitCounter++;
+
+                    // handle target procs on primary: default only first hit, or geometric decay if weapon allows multi-strike procs
+                    float strikeMultiplier = 0f;
+                    if (hitSuccessful)
                     {
-                        TryProcEquippedItems(this, creature, false, weapon);
-                        targetProc = true;
+                        if (weapon != null && weapon.AllowMultiStrikeProcs)
+                        {
+                            var r = weapon.MultiStrikeDecay;
+                            if (r >= 1.0f)
+                            {
+                                // If r = 1.0f (stored 0.0f), no reduction
+                                strikeMultiplier = 1.0f;
+                            }
+                            else
+                            {
+                                // Use successful hit counter for decay calculation
+                                var exp = Math.Max(0, successfulHitCounter - 1);
+                                strikeMultiplier = (float)Math.Pow(r, exp);
+                            }
+                        }
+                        else
+                        {
+                            // only first successful hit rolls
+                            strikeMultiplier = successfulHitCounter == 1 ? 1.0f : 0.0f;
+                        }
+
+                        if (strikeMultiplier > 0f)
+                            TryProcEquippedItemsWithChanceMod(this, creature, false, weapon, strikeMultiplier);
                     }
 
-                    if (weapon != null && weapon.IsCleaving)
+                    if (weapon != null && weapon.IsCleaving && creature != null)
                     {
                         var cleave = GetCleaveTarget(creature, weapon);
-
+                        
+                        // Check if cleave list is null or empty
+                        if (cleave == null || cleave.Count == 0)
+                            return;
+                        
+                        // Apply cleave damage regardless of primary hit success
+                        // Procs only happen if primary hit was successful (strikeMultiplier > 0f)
+                        // strikeMultiplier is already calculated above and matches primary target behavior
                         foreach (var cleaveHit in cleave)
                         {
-                            // target procs don't happen for cleaving
-                            DamageTarget(cleaveHit, weapon);
+                            // Skip null cleave targets
+                            if (cleaveHit == null)
+                                continue;
+
+                            // Apply cast on strike effects to cleaved targets
+                            var cleaveDamageEvent = DamageTarget(cleaveHit, weapon);
+                            
+                            // Handle weapon-only procs for cleaved targets: uses strike-decayed chance then applies cleave decay
+                            // Only proc if primary hit was successful and dealt damage
+                            // strikeMultiplier will be 1.0f on first successful hit even if AllowMultiStrikeProcs is false
+                            if (cleaveDamageEvent != null && cleaveDamageEvent.HasDamage && strikeMultiplier > 0f)
+                            {
+                                TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, weapon?.CleaveTargets ?? 1, successfulHitCounter, strikeMultiplier);
+                            }
                         }
                     }
                 });
