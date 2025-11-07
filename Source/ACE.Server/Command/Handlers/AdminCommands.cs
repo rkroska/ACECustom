@@ -4569,14 +4569,23 @@ namespace ACE.Server.Command.Handlers
                 var weaponDefenseMod = combatPet.ItemAugDefenseMod;
                 var weaponDamageBonus = combatPet.ItemAugDamageBonus;
 
-                // Item augs have a base of 0.20, then scaling
-                var attackBase = 0.20f;
-                var attackAug = weaponAttackMod - attackBase;
-                var defenseBase = 0.20f;
-                var defenseAug = weaponDefenseMod - defenseBase;
+                // Only show item aug breakdown if item augs are present
+                if (weaponAttackMod > 0 || weaponDefenseMod > 0)
+                {
+                    // Item augs have a base of 0.20, then scaling
+                    var attackBase = 0.20f;
+                    var attackAug = weaponAttackMod - attackBase;
+                    var defenseBase = 0.20f;
+                    var defenseAug = weaponDefenseMod - defenseBase;
 
-                output.AppendLine($"Attack Mod: Base {attackBase:F2} + Aug {attackAug:F2} = Total {weaponAttackMod:F2}");
-                output.AppendLine($"Defense Mod: Base {defenseBase:F2} + Aug {defenseAug:F2} = Total {weaponDefenseMod:F2}");
+                    output.AppendLine($"Attack Mod: Base {attackBase:F2} + Aug {attackAug:F2} = Total {weaponAttackMod:F2}");
+                    output.AppendLine($"Defense Mod: Base {defenseBase:F2} + Aug {defenseAug:F2} = Total {weaponDefenseMod:F2}");
+                }
+                else
+                {
+                    output.AppendLine($"Attack Mod: {weaponAttackMod:F2} (No Item Augs)");
+                    output.AppendLine($"Defense Mod: {weaponDefenseMod:F2} (No Item Augs)");
+                }
                 
                 // Get pet's melee, missile augmentation bonuses (only melee/missile apply to physical damage)
                 var meleeAugBonus = (long)(combatPet.LuminanceAugmentMeleeCount ?? 0);
@@ -4615,16 +4624,10 @@ namespace ACE.Server.Command.Handlers
                             var weenieDVar = weeniePart.DVar;
                             var weenieDType = weeniePart.DType;
 
-                            // Calculate current damage with augmentation bonuses
-                            // Item augs have a base of 20, then scaling
-                            var damageBase = 20;
-                            var damageAug = weaponDamageBonus - damageBase; // Scaling part only
-                            var itemAugBonus = weaponDamageBonus; // Full item aug bonus (base + aug)
-                            
-                            // Reuse the melee/missile augmentation bonuses already calculated above
-                            
                             var baseDamage = weenieDVal;
-                            var totalDamageBonus = itemAugBonus + applicableAugBonus;
+                            
+                            // Calculate total damage bonus (item augs + melee/missile augs)
+                            var totalDamageBonus = weaponDamageBonus + applicableAugBonus;
                             var totalDamage = baseDamage + totalDamageBonus;
 
                             // Calculate min/max damage
@@ -4633,13 +4636,24 @@ namespace ACE.Server.Command.Handlers
 
                             output.AppendLine($"  {part} ({weenieDType}):");
                             output.AppendLine($"    Base Damage: {baseDamage} (Variance: {weenieDVar:F2})");
-                            output.AppendLine($"    Item Aug - Base Mod: +{damageBase}");
-                            output.AppendLine($"    Item Aug - Scaling: +{damageAug}");
-                            output.AppendLine($"    Item Aug - Total: +{itemAugBonus}");
+                            
+                            // Only show item aug breakdown if item augs are present
+                            if (weaponDamageBonus > 0)
+                            {
+                                // Item augs have a base of 20, then scaling
+                                var damageBase = 20;
+                                var damageAug = weaponDamageBonus - damageBase; // Scaling part only
+                                
+                                output.AppendLine($"    Item Aug - Base Mod: +{damageBase}");
+                                output.AppendLine($"    Item Aug - Scaling: +{damageAug}");
+                                output.AppendLine($"    Item Aug - Total: +{weaponDamageBonus}");
+                            }
+                            
                             if (applicableAugBonus > 0)
                             {
                                 output.AppendLine($"    Pet Aug ({currentCombatType}): +{applicableAugBonus}");
                             }
+                            
                             output.AppendLine($"    Total Bonus: +{totalDamageBonus}");
                             output.AppendLine($"    Total Damage: {totalDamage} (Range: {minDamage:F1} - {maxDamage:F1})");
                         }

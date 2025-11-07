@@ -365,7 +365,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Override GetResistanceMod to apply life augmentation protection rating directly
         /// </summary>
-        public new float GetResistanceMod(DamageType damageType, WorldObject attacker, WorldObject weapon, float weaponResistanceMod = 1.0f)
+        public override float GetResistanceMod(DamageType damageType, WorldObject attacker, WorldObject weapon, float weaponResistanceMod = 1.0f)
         {
             // Get existing protection mod from enchantments
             var existingProtectionMod = EnchantmentManager.GetProtectionResistanceMod(damageType);
