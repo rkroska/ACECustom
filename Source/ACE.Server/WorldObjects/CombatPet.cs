@@ -456,16 +456,8 @@ namespace ACE.Server.WorldObjects
             var combinedEffects = existingEffects | imbuedEffects;
 
             // Always combine all existing slots with gem effects, regardless of which slots are populated
-            // Apply to the first available ImbuedEffect slot
-            if (target.GetProperty(PropertyInt.ImbuedEffect) == null)
-            {
-                target.SetProperty(PropertyInt.ImbuedEffect, (int)combinedEffects);
-            }
-            else
-            {
-                // Combine all existing slots (1-5) with gem effects
-                target.SetProperty(PropertyInt.ImbuedEffect, (int)combinedEffects);
-            }
+            // Apply to the first ImbuedEffect slot (combining all existing slots with gem effects)
+            target.SetProperty(PropertyInt.ImbuedEffect, (int)combinedEffects);
 
             // Set icon underlay if there's a primary imbue effect
             if (RecipeManager.IconUnderlay.TryGetValue(imbuedEffects, out var iconUnderlay))
