@@ -117,6 +117,11 @@ namespace ACE.Server.Command.Handlers
             sb.Append($"Landblocks: {(loadedLandblocks.Count - dormantLandblocks):N0} active ({activeDungeonLandblocks:N0} dungeons), {dormantLandblocks:N0} dormant ({dormantDungeonLandblocks:N0} dungeons), Landblock Groups: {LandblockManager.LandblockGroupsCount:N0} - Players: {players:N0}, Creatures: {creatures:N0}, Missiles: {missiles:N0}, Other: {other:N0}, Total: {total:N0}.{'\n'}"); // 11 total blocks loaded. 11 active. 0 pending dormancy. 0 dormant. 314 unloaded.
             // 11 total blocks loaded. 11 active. 0 pending dormancy. 0 dormant. 314 unloaded.
 
+            // Action Queue status
+            var worldManagerQueueCount = WorldManager.ActionQueue.Count();
+            var networkManagerQueueCount = Network.Managers.NetworkManager.InboundMessageQueue.Count();
+            sb.Append($"Action Queues - WorldManager: {worldManagerQueueCount:N0}, NetworkManager: {networkManagerQueueCount:N0}{'\n'}");
+
             if (ServerPerformanceMonitor.IsRunning)
                 sb.Append($"Server Performance Monitor - UpdateGameWorld ~5m {ServerPerformanceMonitor.GetEventHistory5m(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_Entire).AverageEventDuration:N3}, ~1h {ServerPerformanceMonitor.GetEventHistory1h(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_Entire).AverageEventDuration:N3} s{'\n'}");
             else
@@ -143,6 +148,40 @@ namespace ACE.Server.Command.Handlers
             sb.Append($"Portal.dat has {DatManager.PortalDat.FileCache.Count:N0} files cached of {DatManager.PortalDat.AllFiles.Count:N0} total{'\n'}");
             sb.Append($"Cell.dat has {DatManager.CellDat.FileCache.Count:N0} files cached of {DatManager.CellDat.AllFiles.Count:N0} total{'\n'}");
 
+            CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");
+        }
+
+        // queuestatus
+        [CommandHandler("queuestatus", AccessLevel.Advocate, CommandHandlerFlag.None, 0, "Displays current action queue status and throttle information")]
+        public static void HandleQueueStatus(Session session, params string[] parameters)
+        {
+            var sb = new StringBuilder();
+            
+            sb.Append($"Action Queue Status:{'\n'}");
+            sb.Append($"WorldManager ActionQueue: {WorldManager.ActionQueue.Count():N0} actions queued (Throttle: 250/tick){'\n'}");
+            sb.Append($"NetworkManager InboundMessageQueue: {Network.Managers.NetworkManager.InboundMessageQueue.Count():N0} actions queued (Throttle: 250/tick){'\n'}");
+            
+            // Get busiest landblocks by creature count
+            var loadedLandblocks = LandblockManager.GetLoadedLandblocks();
+            var busiestByCreatures = loadedLandblocks
+                .Select(lb => new
+                {
+                    Landblock = lb.Value,
+                    CreatureCount = lb.Value.GetAllWorldObjectsForDiagnostics().Count(wo => wo is Creature),
+                    PlayerCount = lb.Value.GetAllWorldObjectsForDiagnostics().Count(wo => wo is Player)
+                })
+                .Where(x => x.CreatureCount > 0)
+                .OrderByDescending(x => x.CreatureCount)
+                .Take(5);
+            
+            sb.Append($"{'\n'}Top 5 Landblocks by Creature Count (Monster_Tick throttle: 50/tick):{'\n'}");
+            foreach (var item in busiestByCreatures)
+            {
+                var ticksNeeded = Math.Ceiling(item.CreatureCount / 50.0);
+                var delaySeconds = ticksNeeded * 0.3;
+                sb.Append($"  {item.Landblock.Id:X8} - {item.CreatureCount:N0} creatures, {item.PlayerCount} players (Processing time: ~{delaySeconds:N1}s for all creatures){'\n'}");
+            }
+            
             CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");
         }
 
