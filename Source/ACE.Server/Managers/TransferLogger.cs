@@ -510,7 +510,7 @@ namespace ACE.Server.Managers
                 // Check master switch first
                 if (!Config.EnableTransferLogging)
                 {
-                    log.Info("Skipping logging - transfer logging disabled");
+                    log.Debug("Skipping logging - transfer logging disabled");
                     return;
                 }
 
@@ -521,7 +521,7 @@ namespace ACE.Server.Managers
                                                (!Config.TrackAllItems && !ShouldTrackItem(itemName)));
                 if (requiresExplicitTracking)
                 {
-                    log.Info($"Skipping logging for untracked item: {itemName}");
+                    log.Debug($"Skipping logging for untracked item: {itemName}");
                     return;
                 }
 
@@ -615,7 +615,7 @@ namespace ACE.Server.Managers
                 // Only log if item tracking is enabled and this item should be tracked
                 if (!Config.EnableItemTracking || !ShouldTrackItem(item.Name))
                 {
-                    log.Info($"Skipping logging for untracked item: {item.Name}");
+                    log.Debug($"Skipping logging for untracked item: {item.Name}");
                     return;
                 }
 
@@ -680,7 +680,7 @@ namespace ACE.Server.Managers
 
             if (!hasTrackedItems)
             {
-                log.Info($"Skipping trade logging - no tracked items in trade");
+                log.Debug($"Skipping trade logging - no tracked items in trade");
                 return;
                 }
 
@@ -771,7 +771,7 @@ namespace ACE.Server.Managers
 
                 if (!ShouldTrackItem(item.Name))
                 {
-                    log.Info($"Skipping ground pickup logging for untracked item: {item.Name}");
+                    log.Debug($"Skipping ground pickup logging for untracked item: {item.Name}");
                     return;
                 }
 
@@ -827,7 +827,7 @@ namespace ACE.Server.Managers
 
                 if (!ShouldTrackItem(itemName))
                 {
-                    log.Info($"Skipping ground pickup logging for untracked item: {itemName}");
+                    log.Debug($"Skipping ground pickup logging for untracked item: {itemName}");
                     return;
                 }
 
@@ -878,7 +878,7 @@ namespace ACE.Server.Managers
 
                 if (!ShouldTrackItem(item.Name))
                 {
-                    log.Info($"Skipping ground drop logging for untracked item: {item.Name}");
+                    log.Debug($"Skipping ground drop logging for untracked item: {item.Name}");
                     return;
                 }
 
@@ -930,7 +930,7 @@ namespace ACE.Server.Managers
 
                 if (!ShouldTrackItem(item.Name))
                 {
-                    log.Info($"Skipping chest deposit logging for untracked item: {item.Name}");
+                    log.Debug($"Skipping chest deposit logging for untracked item: {item.Name}");
                     return;
                 }
 
@@ -987,7 +987,7 @@ namespace ACE.Server.Managers
 
                 if (!ShouldTrackItem(item.Name))
                 {
-                    log.Info($"Skipping chest withdrawal logging for untracked item: {item.Name}");
+                    log.Debug($"Skipping chest withdrawal logging for untracked item: {item.Name}");
                     return;
                 }
 
