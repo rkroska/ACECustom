@@ -4413,6 +4413,481 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        // debugsummon
+        [CommandHandler("debugsummon", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Shows augmentation breakdown for selected CombatPet",
+            "Displays base values from weenie and augmentation bonuses for the selected summon.\n"
+            + "Shows: Attributes, Skills, Weapon Stats, and Life Resistances.")]
+        public static void HandleDebugSummon(Session session, params string[] parameters)
+        {
+            var combatPet = CommandHandlerHelper.GetLastAppraisedObject(session) as CombatPet;
+
+            if (combatPet == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "You must select a CombatPet (summon) to use this command.");
+                return;
+            }
+
+            // Get original weenie data
+            var weenie = DatabaseManager.World.GetCachedWeenie(combatPet.WeenieClassId);
+            if (weenie == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Could not find weenie data for {combatPet.WeenieClassId}.");
+                return;
+            }
+
+            var output = new System.Text.StringBuilder();
+            // Clean pet name for display (remove special characters that might render incorrectly)
+            var petName = combatPet.Name?.Replace("+", "").Trim() ?? "Unknown";
+            output.AppendLine($"=== Augmentation Breakdown for {petName} ===");
+            output.AppendLine($"Weenie Class ID: {combatPet.WeenieClassId}");
+            output.AppendLine();
+
+            // Calculate summon augmentation count from attribute differences
+            int summonAugCount = 0;
+            if (weenie.PropertiesAttribute != null && combatPet.Biota.PropertiesAttribute != null)
+            {
+                var weenieStr = weenie.PropertiesAttribute.TryGetValue(PropertyAttribute.Strength, out var weenieAttr) ? weenieAttr.InitLevel : 0;
+                var currentStr = combatPet.Strength.StartingValue;
+                if (currentStr >= weenieStr)
+                    summonAugCount = (int)(currentStr - weenieStr);
+            }
+
+            // Calculate item augmentation count from stored values
+            int itemAugCount = 0;
+            float itemAugPercentage = 0f;
+            var itemAugAttackMod = combatPet.ItemAugAttackMod;
+            if (itemAugAttackMod > 0.20f)
+            {
+                itemAugPercentage = itemAugAttackMod - 0.20f;
+                // Reverse calculate item aug count (approximate)
+                itemAugCount = ReverseCalculateItemAugCount(itemAugPercentage);
+            }
+
+            // Get life augmentation protection rating directly from stored value
+            int lifeAugCount = 0;
+            float lifeAugProtectionRating = combatPet.LifeAugProtectionRating;
+            if (lifeAugProtectionRating > 0f)
+            {
+                // Reverse calculate life aug count (approximate)
+                lifeAugCount = ReverseCalculateLifeAugCount(lifeAugProtectionRating);
+            }
+
+            // Attributes
+            output.AppendLine("=== ATTRIBUTES ===");
+            var allAttributes = new[]
+            {
+                PropertyAttribute.Strength,
+                PropertyAttribute.Endurance,
+                PropertyAttribute.Coordination,
+                PropertyAttribute.Quickness,
+                PropertyAttribute.Focus,
+                PropertyAttribute.Self
+            };
+
+            foreach (var attr in allAttributes)
+            {
+                uint weenieBase = 0;
+                if (weenie.PropertiesAttribute != null && weenie.PropertiesAttribute.TryGetValue(attr, out var weenieAttr))
+                    weenieBase = weenieAttr.InitLevel;
+
+                var currentBase = combatPet.Attributes[attr].StartingValue;
+                var currentTotal = combatPet.Attributes[attr].Base;
+                var augBonus = currentBase - weenieBase;
+
+                output.AppendLine($"{attr}: Base {weenieBase} + Aug {augBonus} = Total {currentTotal} (Current: {combatPet.Attributes[attr].Current})");
+            }
+            output.AppendLine();
+
+            // Skills
+            output.AppendLine("=== SKILLS ===");
+            if (weenie.PropertiesSkill != null)
+            {
+                foreach (var weenieSkill in weenie.PropertiesSkill)
+                {
+                    var skill = weenieSkill.Key;
+                    var weenieInitLevel = weenieSkill.Value.InitLevel;
+
+                    var creatureSkill = combatPet.GetCreatureSkill(skill);
+                    if (creatureSkill != null)
+                    {
+                        var currentInitLevel = creatureSkill.InitLevel;
+                        var augBonus = currentInitLevel - weenieInitLevel;
+                        var currentBase = creatureSkill.Base;
+                        var currentTotal = creatureSkill.Current;
+
+                        output.AppendLine($"{skill}: Base {weenieInitLevel} + Aug {augBonus} = InitLevel {currentInitLevel} | Base Total: {currentBase} | Current Total: {currentTotal}");
+                    }
+                }
+            }
+            output.AppendLine();
+
+            // Weapon Stats or Body Part Stats
+            var weapon = combatPet.GetEquippedMeleeWeapon();
+            if (weapon != null)
+            {
+                output.AppendLine("=== WEAPON STATS ===");
+                var weaponAttackMod = combatPet.ItemAugAttackMod;
+                var weaponDefenseMod = combatPet.ItemAugDefenseMod;
+                var weaponDamageBonus = combatPet.ItemAugDamageBonus;
+
+                // Item augs have a base of 0.20, then scaling
+                var attackBase = 0.20f;
+                var attackAug = weaponAttackMod - attackBase;
+                var defenseBase = 0.20f;
+                var defenseAug = weaponDefenseMod - defenseBase;
+                
+                // Damage bonus: base is 20, then scaling
+                var damageBase = 20;
+                var damageAug = weaponDamageBonus - damageBase;
+                var itemAugDamageBonus = weaponDamageBonus; // Full item aug bonus (base + aug)
+
+                // Get pet's melee, missile augmentation bonuses (only melee/missile apply to physical damage)
+                var meleeAugBonus = (long)(combatPet.LuminanceAugmentMeleeCount ?? 0);
+                var missileAugBonus = (long)(combatPet.LuminanceAugmentMissileCount ?? 0);
+                
+                // Determine which aug applies based on combat type (default to melee for weapons)
+                var currentCombatType = combatPet.CurrentAttack ?? CombatType.Melee;
+                var applicableAugBonus = currentCombatType == CombatType.Missile ? missileAugBonus : meleeAugBonus;
+                var totalDamageBonus = itemAugDamageBonus + applicableAugBonus;
+
+                output.AppendLine($"Attack Mod: Base {attackBase:F2} + Aug {attackAug:F2} = Total {weaponAttackMod:F2}");
+                output.AppendLine($"Defense Mod: Base {defenseBase:F2} + Aug {defenseAug:F2} = Total {weaponDefenseMod:F2}");
+                output.AppendLine($"Damage Bonus - Item Aug: Base {damageBase} + Aug {damageAug} = Total {itemAugDamageBonus}");
+                if (applicableAugBonus > 0)
+                {
+                    output.AppendLine($"Damage Bonus - Pet Aug ({currentCombatType}): +{applicableAugBonus}");
+                }
+                output.AppendLine($"Damage Bonus - Total: {totalDamageBonus}");
+                output.AppendLine();
+            }
+            else
+            {
+                // Body Part Stats (no weapon)
+                output.AppendLine("=== BODY PART STATS (No Weapon) ===");
+                var weaponAttackMod = combatPet.ItemAugAttackMod;
+                var weaponDefenseMod = combatPet.ItemAugDefenseMod;
+                var weaponDamageBonus = combatPet.ItemAugDamageBonus;
+
+                // Item augs have a base of 0.20, then scaling
+                var attackBase = 0.20f;
+                var attackAug = weaponAttackMod - attackBase;
+                var defenseBase = 0.20f;
+                var defenseAug = weaponDefenseMod - defenseBase;
+
+                output.AppendLine($"Attack Mod: Base {attackBase:F2} + Aug {attackAug:F2} = Total {weaponAttackMod:F2}");
+                output.AppendLine($"Defense Mod: Base {defenseBase:F2} + Aug {defenseAug:F2} = Total {weaponDefenseMod:F2}");
+                
+                // Get pet's melee, missile augmentation bonuses (only melee/missile apply to physical damage)
+                var meleeAugBonus = (long)(combatPet.LuminanceAugmentMeleeCount ?? 0);
+                var missileAugBonus = (long)(combatPet.LuminanceAugmentMissileCount ?? 0);
+                
+                // Determine which aug applies based on combat type (default to melee for body parts)
+                var currentCombatType = combatPet.CurrentAttack ?? CombatType.Melee;
+                var applicableAugBonus = currentCombatType == CombatType.Missile ? missileAugBonus : meleeAugBonus;
+                
+                if (applicableAugBonus > 0)
+                {
+                    output.AppendLine($"Pet Aug ({currentCombatType}): +{applicableAugBonus}");
+                }
+                output.AppendLine();
+
+                // Show body parts with damage > 0
+                if (weenie.PropertiesBodyPart != null && combatPet.Biota.PropertiesBodyPart != null)
+                {
+                    var bodyPartsWithDamage = new List<(CombatBodyPart part, PropertiesBodyPart weeniePart, PropertiesBodyPart biotaPart)>();
+                    
+                    foreach (var weenieBodyPart in weenie.PropertiesBodyPart)
+                    {
+                        if (weenieBodyPart.Value.DVal > 0)
+                        {
+                            combatPet.Biota.PropertiesBodyPart.TryGetValue(weenieBodyPart.Key, out var biotaBodyPart);
+                            bodyPartsWithDamage.Add((weenieBodyPart.Key, weenieBodyPart.Value, biotaBodyPart));
+                        }
+                    }
+
+                    if (bodyPartsWithDamage.Count > 0)
+                    {
+                        output.AppendLine("Body Parts (Base Damage + Base Mod + Aug = Total):");
+                        foreach (var (part, weeniePart, biotaPart) in bodyPartsWithDamage)
+                        {
+                            var weenieDVal = weeniePart.DVal;
+                            var weenieDVar = weeniePart.DVar;
+                            var weenieDType = weeniePart.DType;
+
+                            // Calculate current damage with augmentation bonuses
+                            // Item augs have a base of 20, then scaling
+                            var damageBase = 20;
+                            var damageAug = weaponDamageBonus - damageBase; // Scaling part only
+                            var itemAugBonus = weaponDamageBonus; // Full item aug bonus (base + aug)
+                            
+                            // Reuse the melee/missile augmentation bonuses already calculated above
+                            
+                            var baseDamage = weenieDVal;
+                            var totalDamageBonus = itemAugBonus + applicableAugBonus;
+                            var totalDamage = baseDamage + totalDamageBonus;
+
+                            // Calculate min/max damage
+                            var maxDamage = totalDamage;
+                            var minDamage = maxDamage * (1.0f - weenieDVar);
+
+                            output.AppendLine($"  {part} ({weenieDType}):");
+                            output.AppendLine($"    Base Damage: {baseDamage} (Variance: {weenieDVar:F2})");
+                            output.AppendLine($"    Item Aug - Base Mod: +{damageBase}");
+                            output.AppendLine($"    Item Aug - Scaling: +{damageAug}");
+                            output.AppendLine($"    Item Aug - Total: +{itemAugBonus}");
+                            if (applicableAugBonus > 0)
+                            {
+                                output.AppendLine($"    Pet Aug ({currentCombatType}): +{applicableAugBonus}");
+                            }
+                            output.AppendLine($"    Total Bonus: +{totalDamageBonus}");
+                            output.AppendLine($"    Total Damage: {totalDamage} (Range: {minDamage:F1} - {maxDamage:F1})");
+                        }
+                        output.AppendLine();
+                    }
+                }
+            }
+
+            // Imbued Effects
+            output.AppendLine("=== IMBUED EFFECTS ===");
+            var weaponForImbues = combatPet.GetEquippedMeleeWeapon();
+            WorldObject targetForImbues = weaponForImbues ?? (WorldObject)combatPet;
+            
+            var imbuedEffects = targetForImbues.GetImbuedEffects();
+            if (imbuedEffects != ImbuedEffectType.Undef)
+            {
+                output.AppendLine($"Applied to: {(weaponForImbues != null ? "Weapon" : "Creature (Body Parts)")}");
+                output.AppendLine("Imbued Effects:");
+                
+                var effectNames = new List<string>();
+                if (imbuedEffects.HasFlag(ImbuedEffectType.CriticalStrike))
+                    effectNames.Add("Critical Strike");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.CripplingBlow))
+                    effectNames.Add("Crippling Blow");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.ArmorRending))
+                    effectNames.Add("Armor Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.SlashRending))
+                    effectNames.Add("Slash Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.PierceRending))
+                    effectNames.Add("Pierce Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.BludgeonRending))
+                    effectNames.Add("Bludgeon Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.AcidRending))
+                    effectNames.Add("Acid Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.ColdRending))
+                    effectNames.Add("Cold Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.ElectricRending))
+                    effectNames.Add("Electric Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.FireRending))
+                    effectNames.Add("Fire Rending");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.NetherRending))
+                    effectNames.Add("Nether Rending");
+                // Note: Defense imbues (Melee Defense, Missile Defense, Magic Defense) are excluded and won't appear
+                if (imbuedEffects.HasFlag(ImbuedEffectType.Spellbook))
+                    effectNames.Add("Spellbook");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.IgnoreSomeMagicProjectileDamage))
+                    effectNames.Add("Ignore Some Magic Projectile Damage");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.AlwaysCritical))
+                    effectNames.Add("Always Critical");
+                if (imbuedEffects.HasFlag(ImbuedEffectType.IgnoreAllArmor))
+                    effectNames.Add("Ignore All Armor");
+                
+                if (effectNames.Count > 0)
+                {
+                    foreach (var effectName in effectNames)
+                    {
+                        output.AppendLine($"  - {effectName}");
+                    }
+                }
+                else
+                {
+                    output.AppendLine("  None");
+                }
+            }
+            else
+            {
+                output.AppendLine("No imbued effects applied");
+            }
+            output.AppendLine();
+
+            // Armor
+            output.AppendLine("=== ARMOR ===");
+            var itemAugArmorBonus = combatPet.ItemAugArmorBonus;
+            
+            // Get base armor from weenie data (first body part with armor > 0)
+            uint weenieBaseArmor = 0;
+            if (weenie.PropertiesBodyPart != null)
+            {
+                foreach (var weenieBodyPart in weenie.PropertiesBodyPart.Values)
+                {
+                    if (weenieBodyPart.BaseArmor > 0)
+                    {
+                        weenieBaseArmor = (uint)weenieBodyPart.BaseArmor;
+                        break;
+                    }
+                }
+            }
+            
+            var totalArmor = weenieBaseArmor + itemAugArmorBonus;
+            
+            output.AppendLine($"Base Armor (Weenie): {weenieBaseArmor}");
+            if (itemAugArmorBonus > 0)
+            {
+                var armorBase = 200;
+                var armorAug = itemAugArmorBonus - armorBase;
+                output.AppendLine($"Item Aug - Base Mod: +{armorBase}");
+                output.AppendLine($"Item Aug - Scaling: +{armorAug}");
+                output.AppendLine($"Item Aug - Total: +{itemAugArmorBonus}");
+            }
+            else
+            {
+                output.AppendLine($"Item Aug - Total: +0 (No item augmentations)");
+            }
+            output.AppendLine($"Total Armor: {totalArmor}");
+            output.AppendLine();
+
+            // Life Resistances
+            output.AppendLine("=== LIFE RESISTANCES ===");
+            var allDamageTypes = new[]
+            {
+                DamageType.Slash,
+                DamageType.Pierce,
+                DamageType.Bludgeon,
+                DamageType.Cold,
+                DamageType.Fire,
+                DamageType.Acid,
+                DamageType.Electric,
+                DamageType.Nether
+            };
+
+            foreach (var damageType in allDamageTypes)
+            {
+                // Get existing protection mod from enchantments
+                var existingProtectionMod = combatPet.EnchantmentManager.GetProtectionResistanceMod(damageType);
+                // Reuse lifeAugProtectionRating from outer scope
+                
+                // Calculate combined protection
+                float combinedProtectionMod = existingProtectionMod;
+                if (lifeAugProtectionRating > 0f)
+                {
+                    var lifeAugProtectionMod = 1.0f - lifeAugProtectionRating;
+                    if (existingProtectionMod >= 1.0f)
+                    {
+                        // No existing protection - use 1.0 as base, then apply life aug
+                        combinedProtectionMod = lifeAugProtectionMod;
+                    }
+                    else
+                    {
+                        // Existing protection - combine with life aug (multiplicative)
+                        combinedProtectionMod *= lifeAugProtectionMod;
+                    }
+                }
+                
+                // Get full resistance mod (includes life aug protection from our override)
+                var resistanceMod = combatPet.GetResistanceMod(damageType, null, null);
+                var baseResistance = 1.0f;
+                var existingProtection = existingProtectionMod >= 1.0f ? 0.0f : (1.0f - existingProtectionMod);
+                var lifeAugProtection = lifeAugProtectionRating;
+                var combinedProtection = 1.0f - combinedProtectionMod;
+
+                // Show breakdown
+                output.AppendLine($"{damageType}:");
+                output.AppendLine($"  Base Resistance: {baseResistance:F3}");
+                if (existingProtection > 0f)
+                {
+                    output.AppendLine($"  Existing Protection: {existingProtection:F3}");
+                }
+                if (lifeAugProtection > 0f)
+                {
+                    output.AppendLine($"  Life Aug Protection: {lifeAugProtection:F3}");
+                }
+                if (combinedProtection > 0f)
+                {
+                    output.AppendLine($"  Combined Protection: {combinedProtection:F3}");
+                }
+                output.AppendLine($"  Final Resistance Mod: {resistanceMod:F3}");
+            }
+            output.AppendLine();
+
+            // Summary
+            output.AppendLine("=== SUMMARY ===");
+            output.AppendLine($"Summon Augmentations: {summonAugCount}");
+            output.AppendLine($"Item Augmentations: {itemAugCount} (Percentage: {itemAugPercentage:F4})");
+            output.AppendLine($"Life Augmentations: {lifeAugCount} (Protection Rating: {lifeAugProtectionRating:F4})");
+            output.AppendLine($"Melee Augmentations: {combatPet.LuminanceAugmentMeleeCount ?? 0}");
+            output.AppendLine($"Missile Augmentations: {combatPet.LuminanceAugmentMissileCount ?? 0}");
+            output.AppendLine($"War Augmentations: {combatPet.LuminanceAugmentWarCount ?? 0}");
+            output.AppendLine($"Void Augmentations: {combatPet.LuminanceAugmentVoidCount ?? 0}");
+
+            CommandHandlerHelper.WriteOutputInfo(session, output.ToString());
+        }
+
+        private static int ReverseCalculateItemAugCount(float percentage)
+        {
+            // Reverse calculate item aug count from percentage
+            // This is approximate since the formula has diminishing returns
+            int count = 0;
+            float current = 0f;
+            while (current < percentage && count < 1000)
+            {
+                if (count < 100)
+                    current += 0.01f;
+                else if (count < 150)
+                    current += 0.0075f;
+                else if (count < 200)
+                    current += 0.005625f;
+                else if (count < 250)
+                    current += 0.004218f;
+                else if (count < 300)
+                    current += 0.003164f;
+                else if (count < 350)
+                    current += 0.002373f;
+                else if (count < 400)
+                    current += 0.001779f;
+                else if (count < 450)
+                    current += 0.001334f;
+                else
+                    current += 0.00100f;
+                count++;
+            }
+            return count;
+        }
+
+        private static int ReverseCalculateLifeAugCount(float protectionRating)
+        {
+            // Reverse calculate life aug count from protection rating
+            // This is approximate since the formula has diminishing returns
+            int count = 0;
+            float current = 0f;
+            while (current < protectionRating && count < 1000)
+            {
+                if (count < 10)
+                    current += 0.01f;
+                else if (count < 30)
+                    current += 0.005f;
+                else if (count < 50)
+                    current += 0.0025f;
+                else if (count < 70)
+                    current += 0.00125f;
+                else if (count < 100)
+                    current += 0.000625f;
+                else if (count < 120)
+                    current += 0.000312f;
+                else if (count < 150)
+                    current += 0.000156f;
+                else if (count < 175)
+                    current += 0.000078f;
+                else if (count < 200)
+                    current += 0.000039f;
+                else if (count < 225)
+                    current += 0.0000195f;
+                else
+                    current += 0.0000100f;
+                count++;
+            }
+            return count;
+        }
+
         // god
         [CommandHandler("god", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 0,
             "Turns current character into a god!",
