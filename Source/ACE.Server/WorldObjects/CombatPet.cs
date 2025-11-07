@@ -75,12 +75,15 @@ namespace ACE.Server.WorldObjects
             IsAwake = true;
 
             // copy ratings from pet device
-            DamageRating = petDevice.GearDamage;
-            DamageResistRating = petDevice.GearDamageResist;
-            CritDamageRating = petDevice.GearCritDamage;
-            CritDamageResistRating = petDevice.GearCritDamageResist;
-            CritRating = petDevice.GearCrit;
-            CritResistRating = petDevice.GearCritResist;
+            if (petDevice != null)
+            {
+                DamageRating = petDevice.GearDamage;
+                DamageResistRating = petDevice.GearDamageResist;
+                CritDamageRating = petDevice.GearCritDamage;
+                CritDamageResistRating = petDevice.GearCritDamageResist;
+                CritRating = petDevice.GearCrit;
+                CritResistRating = petDevice.GearCritResist;
+            }
 
             // copy all augmentation counts from player (for damage scaling)
             LuminanceAugmentMeleeCount = player.LuminanceAugmentMeleeCount;
@@ -270,7 +273,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override uint GetEffectiveAttackSkill()
         {
-            var attackSkill = GetCreatureSkill(GetCurrentAttackSkill()).Current;
+            var creatureSkill = GetCreatureSkill(GetCurrentAttackSkill());
+            if (creatureSkill == null)
+                return 0;
+
+            var attackSkill = creatureSkill.Current;
 
             // Get the base offense mod (may or may not include wielder enchantments depending on enchantability)
             // GetWeaponOffenseModifier is a static method in WorldObject_Weapon (partial class of WorldObject)
@@ -329,11 +336,20 @@ namespace ACE.Server.WorldObjects
             else
             {
                 // Body part damage
-                var maxDamage = attackPart.DVal;
-                var variance = attackPart.DVar;
+                if (attackPart == null)
+                {
+                    // Fallback to default damage if attackPart is null
+                    var baseDamage = new BaseDamage(0, 0.0f);
+                    baseDamageMod = new BaseDamageMod(baseDamage);
+                }
+                else
+                {
+                    var maxDamage = attackPart.DVal;
+                    var variance = attackPart.DVar;
 
-                var baseDamage = new BaseDamage(maxDamage, variance);
-                baseDamageMod = new BaseDamageMod(baseDamage);
+                    var baseDamage = new BaseDamage(maxDamage, variance);
+                    baseDamageMod = new BaseDamageMod(baseDamage);
+                }
             }
 
             // ALWAYS apply item augmentation damage bonus directly, regardless of weapon type or enchantability
