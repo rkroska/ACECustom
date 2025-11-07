@@ -143,12 +143,18 @@ namespace ACE.Server.WorldObjects
 
                     if (threadSafe && sourceCreature != null)
                     {
-                        // Skip procs for split arrows to prevent cast-on-strike effects
                         var isSplitArrowProjectile = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
-                        if (!isSplitArrowProjectile)
+
+                        if (isSplitArrowProjectile)
                         {
-                            // This can result in spell projectiles being added to either sourceCreature or targetCreature landblock.
-                            // worldObject is hitting targetCreature, so they should almost always be in the same landblock
+                            // Apply weapon-only, per-target procs for split arrows, governed by single toggle
+                            // Divide chance by number of split arrows configured on the weapon
+                            var splitCount = worldObject.ProjectileLauncher?.GetProperty(PropertyInt.SplitArrowCount) ?? 0;
+                            sourceCreature.TryProcWeaponOnCleaveTarget(sourceCreature, targetCreature, worldObject.ProjectileLauncher, splitCount);
+                        }
+                        else
+                        {
+                            // Normal projectile: use standard proc handling
                             worldObject.TryProcEquippedItems(sourceCreature, targetCreature, false, worldObject.ProjectileLauncher);
                         }
                     }

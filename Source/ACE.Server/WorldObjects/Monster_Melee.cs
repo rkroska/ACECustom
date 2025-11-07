@@ -136,6 +136,30 @@ namespace ACE.Server.WorldObjects
                             TryProcEquippedItems(this, target, false, weapon);
                             targetProc = true;
                         }
+                        
+                        // Handle cleave damage for monsters (physical damage only, no procs)
+                        if (weapon != null && weapon.IsCleaving)
+                        {
+                            var cleave = GetCleaveTarget(target, weapon);
+                            
+                            foreach (var cleaveHit in cleave)
+                            {
+                                var cleaveDamageEvent = DamageEvent.CalculateDamage(this, cleaveHit, weapon, motionCommand, attackFrames[0].attackHook);
+                                
+                                if (cleaveDamageEvent.HasDamage)
+                                {
+                                    if (cleaveHit is Player cleavePlayer)
+                                    {
+                                        cleavePlayer.TakeDamage(this, cleaveDamageEvent);
+                                    }
+                                    else
+                                    {
+                                        cleaveHit.TakeDamage(this, cleaveDamageEvent.DamageType, cleaveDamageEvent.Damage);
+                                        EmitSplatter(cleaveHit, cleaveDamageEvent.Damage);
+                                    }
+                                }
+                            }
+                        }
                     }
                     else
                         target.OnEvade(this, CombatType.Melee);
