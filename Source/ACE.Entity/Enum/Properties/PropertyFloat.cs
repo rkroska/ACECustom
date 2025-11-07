@@ -250,5 +250,6 @@ namespace ACE.Entity.Enum.Properties
         /// Applied per strike on cleaved targets, independent of multi-strike decay
         /// </summary>
         WeaponCleaveStrikeDecay        = 9036,
+        MaxRandomSpawnTime              = 9034,
     }
 }

@@ -10,17 +10,29 @@ namespace ACE.Server.Entity.Actions
     {
         protected ConcurrentQueue<IAction> Queue { get; } = new ConcurrentQueue<IAction>();
 
-        #if WRAP_AND_MEASURE_ACT_WITH_STOPWATCH
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        #if WRAP_AND_MEASURE_ACT_WITH_STOPWATCH
         private readonly System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
         #endif
+        
+        // Action queue throttle monitoring
+        private int actionQueueThrottleWarningCount = 0;
+        private DateTime lastActionQueueThrottleWarning = DateTime.MinValue;
 
         public void RunActions()
         {
             if (Queue.IsEmpty)
                 return;
 
-            var count = Queue.Count;
+            // Throttle action processing to prevent cascade failures during high load
+            // During mass spawns or combat, 500+ actions can queue and cause multi-second freezes
+            // Process max 250 per tick to maintain responsiveness
+            // Tuning: Lower = safer (150-200), Higher = faster queue clearing (250-300)
+            // Set to 250 based on observed queue spikes up to 500 during spawn events
+            const int actionThrottleLimit = 250;
+            var originalQueueSize = Queue.Count;
+            var count = Math.Min(originalQueueSize, actionThrottleLimit);
 
             for (int i = 0; i < count; i++)
             {
@@ -52,6 +64,41 @@ namespace ACE.Server.Entity.Actions
                     if (enqueue != null)
                         enqueue.Item1.EnqueueAction(enqueue.Item2);
                 }
+            }
+            
+            // Alert if throttle is consistently maxed out (queue saturation)
+            if (originalQueueSize >= actionThrottleLimit)
+            {
+                actionQueueThrottleWarningCount++;
+                
+                // Warn every 60 seconds if consistently saturated
+                if (DateTime.UtcNow - lastActionQueueThrottleWarning > TimeSpan.FromSeconds(60))
+                {
+                    var remainingActions = Queue.Count;
+                    var warningMsg = $"[PERFORMANCE] ActionQueue throttle saturated! Processed {count} actions, {remainingActions} remain queued. Original queue size: {originalQueueSize}. Consider increasing limit from {actionThrottleLimit}. Warnings: {actionQueueThrottleWarningCount}";
+                    log.Warn(warningMsg);
+                    
+                    // Send to Discord if configured
+                    if (ACE.Common.ConfigManager.Config.Chat.EnableDiscordConnection && ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    {
+                        try
+                        {
+                            ACE.Server.Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Failed to send ActionQueue throttle warning to Discord: {ex.Message}");
+                        }
+                    }
+                    
+                    lastActionQueueThrottleWarning = DateTime.UtcNow;
+                    actionQueueThrottleWarningCount = 0;
+                }
+            }
+            else
+            {
+                // Reset counter when not saturated
+                actionQueueThrottleWarningCount = 0;
             }
         }
 
