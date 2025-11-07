@@ -4667,7 +4667,7 @@ namespace ACE.Server.Command.Handlers
             var weaponForImbues = combatPet.GetEquippedMeleeWeapon();
             WorldObject targetForImbues = weaponForImbues ?? (WorldObject)combatPet;
             
-            var imbuedEffects = targetForImbues.GetImbuedEffects();
+            var imbuedEffects = RecipeManager.GetImbuedEffects(targetForImbues);
             if (imbuedEffects != ImbuedEffectType.Undef)
             {
                 output.AppendLine($"Applied to: {(weaponForImbues != null ? "Weapon" : "Creature (Body Parts)")}");

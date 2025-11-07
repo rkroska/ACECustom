@@ -154,7 +154,7 @@ namespace ACE.Server.WorldObjects
             // Note: Defense imbues (Melee Defense, Missile Defense, Magic Defense) are excluded
             if (petDevice != null)
             {
-                var gemImbuedEffects = petDevice.GetImbuedEffects();
+                var gemImbuedEffects = RecipeManager.GetImbuedEffects(petDevice);
                 
                 // Exclude defense imbues (Melee Defense, Missile Defense, Magic Defense)
                 var excludedDefenseImbues = ImbuedEffectType.MeleeDefense | ImbuedEffectType.MissileDefense | ImbuedEffectType.MagicDefense;
@@ -319,7 +319,7 @@ namespace ACE.Server.WorldObjects
         /// Override GetBaseDamage to ALWAYS apply item augmentation bonuses,
         /// regardless of whether the summon has a weapon or if the weapon is enchantable
         /// </summary>
-        public new BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
+        public override BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
         {
             if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
                 return GetMissileDamage();
