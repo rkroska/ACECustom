@@ -482,6 +482,7 @@ namespace ACE.Server.WorldObjects
 
             // Calculate initial spawn time with optional randomization
             var initialDelay = GeneratorInitialDelay;
+            var isRandomized = false;
             
             // Only apply randomization if GeneratorInitialDelay is NOT already set
             // This preserves existing generator behavior
@@ -491,17 +492,28 @@ namespace ACE.Server.WorldObjects
                 // Use hash to get better distribution for sequential GUIDs
                 var guidHash = Guid.Full.GetHashCode();
                 var random = new Random(guidHash);
-                // NextDouble() returns [0.0, 1.0), so offset will be in range [0, RegenerationInterval)
-                initialDelay = random.NextDouble() * RegenerationInterval;
+                // Cap the randomization at either MaxRandomSpawnTime or RegenerationInterval, whichever is lower
+                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
+                // NextDouble() returns [0.0, 1.0), so offset will be in range [0, maxOffset)
+                initialDelay = random.NextDouble() * maxOffset;
+                isRandomized = true;
                 
                 var nextSpawnTime = Time.GetUnixTime() + initialDelay;
-                log.Info($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, hash={guidHash})");
+                log.Debug($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, maxOffset={maxOffset:F2}s, hash={guidHash})");
             }
 
             if (initialDelay > 0)
             {
-                // Set spawn time directly to avoid GetNextRegenerationTime's RegenerationTimestamp check
-                NextGeneratorRegenerationTime = Time.GetUnixTime() + initialDelay;
+                if (isRandomized)
+                {
+                    // For randomized delays, apply even on first spawn to stagger server startup
+                    NextGeneratorRegenerationTime = Time.GetUnixTime() + initialDelay;
+                }
+                else
+                {
+                    // For manual GeneratorInitialDelay, use GetNextRegenerationTime to preserve immediate first-spawn behavior
+                    NextGeneratorRegenerationTime = GetNextRegenerationTime(initialDelay);
+                }
                 CurrentLandblock?.ResortWorldObjectIntoSortedGeneratorRegenerationList(this);
             }
             else

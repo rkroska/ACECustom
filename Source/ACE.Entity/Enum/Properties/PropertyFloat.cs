@@ -241,5 +241,6 @@ namespace ACE.Entity.Enum.Properties
         SplitArrowRange                 = 9032,
         [AssessmentProperty]
         SplitArrowDamageMultiplier     = 9033,
+        MaxRandomSpawnTime              = 9034,
     }
 }
