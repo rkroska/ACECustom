@@ -210,72 +210,81 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// This is initialized the first time an item is equipped that has a rating. If it is null, there are no equipped items with ratings.
         /// </summary>
-        private Dictionary<PropertyInt, int> equippedItemsRatingCache;
+        private struct EquippedItemsRatingCache
+        {
+            private int[] ratings; // Only 11 entries max
+
+            public void Set(PropertyInt rating, int value)
+            {
+                if (ratings == null)
+                    ratings = new int[11];
+                ratings[GetIndex(rating)] = value;
+            }
+
+            public int Get(PropertyInt rating)
+            {
+                return ratings?[GetIndex(rating)] ?? 0;
+            }
+
+            private static int GetIndex(PropertyInt rating)
+            {
+                // Map PropertyInt enum to array index (0-10)
+                return rating switch
+                {
+                    PropertyInt.GearCritDamage => 0,
+                    PropertyInt.GearCritDamageResist => 1,
+                    PropertyInt.GearCrit => 2,
+                    PropertyInt.GearCritResist => 3,
+                    PropertyInt.GearDamage => 4,
+                    PropertyInt.GearDamageResist => 5,
+                    PropertyInt.GearHealingBoost => 6,
+                    PropertyInt.GearNetherResist => 7,
+                    PropertyInt.GearLifeResist => 8,
+                    PropertyInt.GearMaxHealth => 9,
+                    PropertyInt.GearPKDamageRating => 10,
+                    _ => 0
+                };
+            }
+        }
+
+        private EquippedItemsRatingCache equippedItemsRatingCache;
 
         private void AddItemToEquippedItemsRatingCache(WorldObject wo)
         {
             if ((wo.GearDamage ?? 0) == 0 && (wo.GearDamageResist ?? 0) == 0 && (wo.GearCritDamage ?? 0) == 0 && (wo.GearCritDamageResist ?? 0) == 0 && (wo.GearHealingBoost ?? 0) == 0 && (wo.GearMaxHealth ?? 0) == 0 && (wo.GearPKDamageRating ?? 0) == 0 && (wo.GearPKDamageResistRating ?? 0) == 0 && (wo.GearCrit ?? 0) == 0 && (wo.GearCritResist ?? 0) == 0 && (wo.GearNetherResistRating ?? 0) == 0)
                 return;
 
-            if (equippedItemsRatingCache == null)
-            {
-                equippedItemsRatingCache = new Dictionary<PropertyInt, int>
-                {
-                    { PropertyInt.GearDamage, 0 },
-                    { PropertyInt.GearDamageResist, 0 },
-                    { PropertyInt.GearCritDamage, 0 },
-                    { PropertyInt.GearCritDamageResist, 0 },
-                    { PropertyInt.GearHealingBoost, 0 },
-                    { PropertyInt.GearMaxHealth, 0 },
-                    { PropertyInt.GearPKDamageRating, 0 },
-                    { PropertyInt.GearPKDamageResistRating, 0 },
-                    { PropertyInt.GearCrit, 0 },
-                    { PropertyInt.GearCritResist, 0 },
-                    { PropertyInt.GearNetherResist, 0 }
-                };
-            }
-
-            equippedItemsRatingCache[PropertyInt.GearDamage] += (wo.GearDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearDamageResist] += (wo.GearDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamage] += (wo.GearCritDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamageResist] += (wo.GearCritDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearHealingBoost] += (wo.GearHealingBoost ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearMaxHealth] += (wo.GearMaxHealth ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageRating] += (wo.GearPKDamageRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageResistRating] += (wo.GearPKDamageResistRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCrit] += (wo.GearCrit ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritResist] += (wo.GearCritResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearNetherResist] += (wo.GearNetherResistRating ?? 0);
+            equippedItemsRatingCache.Set(PropertyInt.GearDamage, equippedItemsRatingCache.Get(PropertyInt.GearDamage) + (wo.GearDamage ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearDamageResist, equippedItemsRatingCache.Get(PropertyInt.GearDamageResist) + (wo.GearDamageResist ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCritDamage, equippedItemsRatingCache.Get(PropertyInt.GearCritDamage) + (wo.GearCritDamage ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCritDamageResist, equippedItemsRatingCache.Get(PropertyInt.GearCritDamageResist) + (wo.GearCritDamageResist ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearHealingBoost, equippedItemsRatingCache.Get(PropertyInt.GearHealingBoost) + (wo.GearHealingBoost ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearMaxHealth, equippedItemsRatingCache.Get(PropertyInt.GearMaxHealth) + (wo.GearMaxHealth ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearPKDamageRating, equippedItemsRatingCache.Get(PropertyInt.GearPKDamageRating) + (wo.GearPKDamageRating ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearPKDamageResistRating, equippedItemsRatingCache.Get(PropertyInt.GearPKDamageResistRating) + (wo.GearPKDamageResistRating ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCrit, equippedItemsRatingCache.Get(PropertyInt.GearCrit) + (wo.GearCrit ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCritResist, equippedItemsRatingCache.Get(PropertyInt.GearCritResist) + (wo.GearCritResist ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearNetherResist, equippedItemsRatingCache.Get(PropertyInt.GearNetherResist) + (wo.GearNetherResistRating ?? 0));
         }
 
         private void RemoveItemFromEquippedItemsRatingCache(WorldObject wo)
         {
-            if (equippedItemsRatingCache == null)
-                return;
-
-            equippedItemsRatingCache[PropertyInt.GearDamage] -= (wo.GearDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearDamageResist] -= (wo.GearDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamage] -= (wo.GearCritDamage ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritDamageResist] -= (wo.GearCritDamageResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearHealingBoost] -= (wo.GearHealingBoost ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearMaxHealth] -= (wo.GearMaxHealth ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageRating] -= (wo.GearPKDamageRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearPKDamageResistRating] -= (wo.GearPKDamageResistRating ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCrit] -= (wo.GearCrit ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearCritResist] -= (wo.GearCritResist ?? 0);
-            equippedItemsRatingCache[PropertyInt.GearNetherResist] -= (wo.GearNetherResistRating ?? 0);
+            equippedItemsRatingCache.Set(PropertyInt.GearDamage, equippedItemsRatingCache.Get(PropertyInt.GearDamage) - (wo.GearDamage ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearDamageResist, equippedItemsRatingCache.Get(PropertyInt.GearDamageResist) - (wo.GearDamageResist ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCritDamage, equippedItemsRatingCache.Get(PropertyInt.GearCritDamage) - (wo.GearCritDamage ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCritDamageResist, equippedItemsRatingCache.Get(PropertyInt.GearCritDamageResist) - (wo.GearCritDamageResist ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearHealingBoost, equippedItemsRatingCache.Get(PropertyInt.GearHealingBoost) - (wo.GearHealingBoost ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearMaxHealth, equippedItemsRatingCache.Get(PropertyInt.GearMaxHealth) - (wo.GearMaxHealth ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearPKDamageRating, equippedItemsRatingCache.Get(PropertyInt.GearPKDamageRating) - (wo.GearPKDamageRating ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearPKDamageResistRating, equippedItemsRatingCache.Get(PropertyInt.GearPKDamageResistRating) - (wo.GearPKDamageResistRating ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCrit, equippedItemsRatingCache.Get(PropertyInt.GearCrit) - (wo.GearCrit ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearCritResist, equippedItemsRatingCache.Get(PropertyInt.GearCritResist) - (wo.GearCritResist ?? 0));
+            equippedItemsRatingCache.Set(PropertyInt.GearNetherResist, equippedItemsRatingCache.Get(PropertyInt.GearNetherResist) - (wo.GearNetherResistRating ?? 0));
         }
 
         public int GetEquippedItemsRatingSum(PropertyInt rating)
         {
-            if (equippedItemsRatingCache == null)
-                return 0;
-
-            if (equippedItemsRatingCache.TryGetValue(rating, out var value))
-                return value;
-
-            log.Error($"Creature_Equipment.GetEquippedItemsRatingsSum() does not support {rating}");
-            return 0;
+            return equippedItemsRatingCache.Get(rating);
         }
 
         /// <summary>
@@ -782,7 +791,7 @@ namespace ACE.Server.WorldObjects
             // based on property name found in older data, this property was only found 5 weenies (entirely contained in Focusing Stone quest)
             // guessing that the value might have possibly allowed for either Death or Wielded treasure, but technically it might have only been the former.
             // so for now, coded for checking both types.
-            // Although the property's name seemingly was removed, either it's value was still used in code OR its value was moved into DeathTreasureType/CreateList
+            // Although the property's name seemingly was removed, either its value was still used in code OR its value was moved into DeathTreasureType/CreateList
             // because pcaps for these 5 objects do show similar, if not exact, results on corpses.
 
             var treasureDeath = DatabaseManager.World.GetCachedDeathTreasure(InventoryTreasureType.Value);

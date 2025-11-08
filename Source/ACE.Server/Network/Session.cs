@@ -42,10 +42,30 @@ namespace ACE.Server.Network
         public string LoggingIdentifier { get; private set; } = "Unverified";
 
         public AccessLevel AccessLevel { get; private set; }
+        public Session() { }
+        // Set initial capacity based on typical character count
+        public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>(5);
 
-        public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>();
+        private Player _player;
+        private WeakReference<Player> _playerWeakRef;
 
-        public Player Player { get; private set; }
+        public Player Player 
+        { 
+            get 
+            {
+                if (_playerWeakRef != null && _playerWeakRef.TryGetTarget(out var player))
+                    return player;
+                return _player;
+            }
+            private set 
+            {
+                _player = value;
+                _playerWeakRef = null;
+            }
+        }
+
+        public long MemoryBaseline { get; set; } = 0;
+        public long MemoryBaselineTimestamp { get; set; } = 0;
 
 
         public DateTime logOffRequestTime;
@@ -77,7 +97,7 @@ namespace ACE.Server.Network
         /// <summary>
         /// The rate at which ProcessDDDQueue executes (and sends DDD patch data out to client)
         /// </summary>
-        private static readonly RateLimiter dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
+        private RateLimiter dddDataQueueRateLimiter;
 
         /// <summary>
         /// Rate limiter for /passwd command
@@ -106,6 +126,7 @@ namespace ACE.Server.Network
         {
             EndPoint = endPoint;
             Network = new NetworkSession(this, connectionListener, clientId, serverId);
+            dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
         }
 
 
@@ -255,7 +276,7 @@ namespace ACE.Server.Network
         /// </summary>
         public void LogOffPlayer(bool forceImmediate = false)
         {
-            if (Player == null) return;
+            if (_player == null) return;
 
             // Log character logout to char_tracker table
             CharacterTracker.LogCharacterLogout(Player);
@@ -270,7 +291,12 @@ namespace ACE.Server.Network
                 var result = Player.LogOut(false, forceImmediate);
 
                 if (result)
+                {
                     logOffRequestTime = DateTime.UtcNow;
+                    // Convert to weak reference to allow GC if needed
+                    _playerWeakRef = new WeakReference<Player>(_player);
+                    _player = null;
+                }
             }
         }
 
@@ -359,6 +385,10 @@ namespace ACE.Server.Network
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
             // In the future, we should set Network to null and funnel Network communication through Session, instead of accessing Session.Network directly.
             Network.ReleaseResources();
+
+            // Clear DDD queue
+            dddDataQueue = null;
+            dddDataQueueRateLimiter = null;
         }
 
 
@@ -403,6 +433,12 @@ namespace ACE.Server.Network
             {
                 Network.EnqueueSend(new GameMessageDDDDataMessage(dataFile.DatFileId, dataFile.DatDatabaseType));
                 dddDataQueueRateLimiter.RegisterEvent();
+                
+                // Clear queue if empty to free memory
+                if (dddDataQueue.IsEmpty)
+                {
+                    dddDataQueue = null;
+                }
             }
         }
     }

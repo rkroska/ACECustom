@@ -1,21 +1,7 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Threading;
-using Microsoft.EntityFrameworkCore;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Models.Auth;
-using ShardModels = ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -31,8 +17,20 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
-
+using log4net;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading;
 using Position = ACE.Entity.Position;
+using ShardModels = ACE.Database.Models.Shard;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -50,6 +48,22 @@ namespace ACE.Server.Command.Handlers
         // {
         //     //TODO: output
         // }
+
+        [CommandHandler("memstats", AccessLevel.Advocate, CommandHandlerFlag.None, 0)]
+        public static void HandleMemStats(Session session, params string[] parameters)
+        {
+            var gcMemInfo = GC.GetGCMemoryInfo();
+            var sb = new StringBuilder();
+
+            sb.AppendLine($"Total Memory: {GC.GetTotalMemory(false) / 1024 / 1024:N0} MB");
+            sb.AppendLine($"Heap Size: {gcMemInfo.HeapSizeBytes / 1024 / 1024:N0} MB");
+            sb.AppendLine($"Fragmented: {gcMemInfo.FragmentedBytes / 1024 / 1024:N0} MB");
+            sb.AppendLine($"Gen 0 Collections: {GC.CollectionCount(0)}");
+            sb.AppendLine($"Gen 1 Collections: {GC.CollectionCount(1)}");
+            sb.AppendLine($"Gen 2 Collections: {GC.CollectionCount(2)}");
+
+            CommandHandlerHelper.WriteOutputInfo(session, sb.ToString());
+        }
 
         // bankaudit {subcommand} {parameters}
         [CommandHandler("bankaudit", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
