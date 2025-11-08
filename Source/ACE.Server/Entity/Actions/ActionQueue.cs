@@ -27,10 +27,12 @@ namespace ACE.Server.Entity.Actions
 
             // Throttle action processing to prevent cascade failures during high load
             // During mass spawns or combat, 500+ actions can queue and cause multi-second freezes
-            // Process max 250 per tick to maintain responsiveness
-            // Tuning: Lower = safer (150-200), Higher = faster queue clearing (250-300)
-            // Set to 250 based on observed queue spikes up to 500 during spawn events
-            const int actionThrottleLimit = 250;
+            // Process max 300 per tick to maintain responsiveness
+            // Tuning: Lower = safer (200-250), Higher = faster queue clearing (300-400)
+            // Increased from 250 to 300 based on production queue spikes during events
+            // Configurable via: /modifylong action_queue_throttle_limit <value> (min: 50, recommended: 250-400)
+            var throttleValue = (int)ACE.Server.Managers.PropertyManager.GetLong("action_queue_throttle_limit", 300).Item;
+            var actionThrottleLimit = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
             var originalQueueSize = Queue.Count;
             var count = Math.Min(originalQueueSize, actionThrottleLimit);
 
@@ -67,15 +69,17 @@ namespace ACE.Server.Entity.Actions
             }
             
             // Alert if throttle is consistently maxed out (queue saturation)
+            // Only alert after 3+ consecutive ticks of saturation to filter out temporary bursts
             if (originalQueueSize >= actionThrottleLimit)
             {
                 actionQueueThrottleWarningCount++;
                 
-                // Warn every 60 seconds if consistently saturated
-                if (DateTime.UtcNow - lastActionQueueThrottleWarning > TimeSpan.FromSeconds(60))
+                // Only warn if saturated for 3+ consecutive ticks AND 60 seconds since last warning
+                // This filters out expected temporary bursts (1-2 ticks) while catching sustained issues
+                if (actionQueueThrottleWarningCount >= 3 && DateTime.UtcNow - lastActionQueueThrottleWarning > TimeSpan.FromSeconds(60))
                 {
                     var remainingActions = Queue.Count;
-                    var warningMsg = $"[PERFORMANCE] ActionQueue throttle saturated! Processed {count} actions, {remainingActions} remain queued. Original queue size: {originalQueueSize}. Consider increasing limit from {actionThrottleLimit}. Warnings: {actionQueueThrottleWarningCount}";
+                    var warningMsg = $"[PERFORMANCE] ActionQueue throttle saturated for {actionQueueThrottleWarningCount} consecutive ticks! Processed {count} actions, {remainingActions} remain queued. Original queue size: {originalQueueSize}. Consider increasing limit from {actionThrottleLimit}.";
                     log.Warn(warningMsg);
                     
                     // Send to Discord if configured
@@ -92,7 +96,7 @@ namespace ACE.Server.Entity.Actions
                     }
                     
                     lastActionQueueThrottleWarning = DateTime.UtcNow;
-                    actionQueueThrottleWarningCount = 0;
+                    // Don't reset counter here - let it continue tracking consecutive saturations
                 }
             }
             else
