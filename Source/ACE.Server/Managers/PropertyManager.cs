@@ -642,7 +642,9 @@ namespace ACE.Server.Managers
                 ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs")),
                 ("bank_command_limit", new Property<long>(5, "The number of seconds a player must wait between making a bank deposit or withdrawl")),
                 ("clap_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the clap command")),
-                ("qb_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the qb list command"))
+                ("qb_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the qb list command")),
+                ("monster_tick_throttle_limit", new Property<long>(75, "Maximum number of monsters to process per tick per landblock. Higher = faster AI reactions but larger spikes during mass spawns. Adjust based on Discord alerts.")),
+                ("action_queue_throttle_limit", new Property<long>(300, "Maximum number of actions to process per tick. Higher = faster queue clearing but larger CPU spikes during heavy load. Adjust based on Discord alerts."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
