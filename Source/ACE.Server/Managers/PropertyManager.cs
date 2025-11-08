@@ -82,7 +82,12 @@ namespace ACE.Server.Managers
         public static void StopUpdating()
         {
             if (_workerThread != null)
+            {
                 _workerThread.Stop();
+                _workerThread.Elapsed -= DoWork;
+                _workerThread.Dispose();
+                _workerThread = null;
+            }
         }
 
 

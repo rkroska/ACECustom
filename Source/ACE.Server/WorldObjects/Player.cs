@@ -642,6 +642,10 @@ namespace ACE.Server.WorldObjects
         private void FinalizeLogout()
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
+            
+            // Clear action queue to prevent memory leak
+            actionQueue?.Clear();
+            
             SetPropertiesAtLogOut();
             SavePlayerToDatabase(true);
             // Don't set the player offline until they have successfully saved

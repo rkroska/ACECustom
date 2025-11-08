@@ -106,17 +106,19 @@ namespace ACE.Database
                 connection.Open();
                 var command = connection.CreateCommand();
                 command.CommandText = sql;
-                var reader = command.ExecuteReader();
 
                 var gaps = new List<(uint start, uint end)>();
 
-                while (reader.Read())
+                using (var reader = command.ExecuteReader())
                 {
-                    var gap_starts_at               = reader.GetFieldValue<long>(0);
-                    var gap_ends_at_not_inclusive   = reader.GetFieldValue<decimal>(1);
-                    //var running_total_available_ids = reader.GetFieldValue<double>(2);
+                    while (reader.Read())
+                    {
+                        var gap_starts_at               = reader.GetFieldValue<long>(0);
+                        var gap_ends_at_not_inclusive   = reader.GetFieldValue<decimal>(1);
+                        //var running_total_available_ids = reader.GetFieldValue<double>(2);
 
-                    gaps.Add(((uint)gap_starts_at, (uint)gap_ends_at_not_inclusive - 1));
+                        gaps.Add(((uint)gap_starts_at, (uint)gap_ends_at_not_inclusive - 1));
+                    }
                 }
 
                 return gaps;

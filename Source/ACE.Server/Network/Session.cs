@@ -355,6 +355,10 @@ namespace ACE.Server.Network
 
             NetworkManager.RemoveSession(this);
 
+            // Clear DDD data queue to prevent memory leak
+            dddDataQueue?.Clear();
+            dddDataQueue = null;
+
             // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
             // In the future, we should set Network to null and funnel Network communication through Session, instead of accessing Session.Network directly.
