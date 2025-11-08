@@ -474,7 +474,6 @@ namespace ACE.Server.WorldObjects
         public void StartHotspotSpawnLoopWithDelay()
         {
             hotspotLoopCTS?.Cancel();
-            hotspotLoopCTS?.Dispose();
             hotspotLoopCTS = new CancellationTokenSource();
 
             hotspotLoopTask = Task.Run(async () =>
@@ -499,7 +498,6 @@ namespace ACE.Server.WorldObjects
         public void StartGrappleLoopWithDelay()
         {
             grappleLoopCTS?.Cancel();
-            grappleLoopCTS?.Dispose();
             grappleLoopCTS = new CancellationTokenSource();
 
             grappleLoopTask = Task.Run(async () =>

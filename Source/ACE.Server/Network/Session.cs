@@ -355,9 +355,12 @@ namespace ACE.Server.Network
 
             NetworkManager.RemoveSession(this);
 
-            // Clear DDD data queue to prevent memory leak
-            dddDataQueue?.Clear();
-            dddDataQueue = null;
+            // Atomically detach and drain the DDD queue to prevent memory leak and race conditions
+            var oldQueue = System.Threading.Interlocked.Exchange(ref dddDataQueue, null);
+            if (oldQueue != null)
+            {
+                while (oldQueue.TryDequeue(out _)) { }
+            }
 
             // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
@@ -395,7 +398,8 @@ namespace ACE.Server.Network
         /// </summary>
         private void ProcessDDDQueue()
         {
-            if (dddDataQueue == null || dddDataQueueRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
+            var queue = System.Threading.Volatile.Read(ref dddDataQueue);
+            if (queue == null || dddDataQueueRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
                 return;
 
             if (BeginDDDSentTime != DateTime.MinValue && DateTime.UtcNow < BeginDDDSentTime.AddSeconds(5))
@@ -403,7 +407,7 @@ namespace ACE.Server.Network
 
             BeginDDDSentTime = DateTime.MinValue;
 
-            if (dddDataQueue.TryDequeue(out var dataFile))
+            if (queue.TryDequeue(out var dataFile))
             {
                 Network.EnqueueSend(new GameMessageDDDDataMessage(dataFile.DatFileId, dataFile.DatDatabaseType));
                 dddDataQueueRateLimiter.RegisterEvent();

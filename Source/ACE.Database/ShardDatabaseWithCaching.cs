@@ -61,7 +61,11 @@ namespace ACE.Database
             }
 
             foreach (var removal in removals)
+            {
+                if (biotaCache.TryGetValue(removal, out var cacheObj))
+                    cacheObj.Context?.Dispose();
                 biotaCache.Remove(removal);
+            }
 
             lastMaintenanceInterval = DateTime.UtcNow;
         }
