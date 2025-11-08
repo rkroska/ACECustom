@@ -200,7 +200,11 @@ namespace ACE.Database
         public override bool RemoveBiota(uint id)
         {
             lock (biotaCacheMutex)
+            {
+                if (biotaCache.TryGetValue(id, out var cacheObj))
+                    cacheObj.Context?.Dispose();
                 biotaCache.Remove(id);
+            }
 
             return base.RemoveBiota(id);
         }

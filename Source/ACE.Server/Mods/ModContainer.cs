@@ -162,6 +162,7 @@ namespace ACE.Server.Mods
         public void Restart()
         {
             Disable();
+            Initialize(); // Recreate the Loader after disposal
             Enable();
         }
 
