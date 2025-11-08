@@ -38,13 +38,20 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // Initialize desync offset on first tick if not already set
-            // This spreads monster ticks across time to prevent synchronized mass processing
-            // Offset is maintained across all ticks to ensure consistent tick rate
+            // Initialize desync offset on first tick only to spread spawns across time
+            // After first tick, use standard interval to maintain consistent tick rate
             if (monsterTickDesyncOffset < 0)
+            {
+                // First tick: Apply desync offset to stagger initial spawn timing
                 monsterTickDesyncOffset = Common.ThreadSafeRandom.Next(0.0f, (float)(monsterTickInterval * 2));
-
-            NextMonsterTickTime = currentUnixTime + monsterTickInterval + monsterTickDesyncOffset;
+                NextMonsterTickTime = currentUnixTime + monsterTickInterval + monsterTickDesyncOffset;
+                monsterTickDesyncOffset = 0; // Mark as applied, use standard interval from now on
+            }
+            else
+            {
+                // Subsequent ticks: Use standard interval (offset is maintained via currentUnixTime)
+                NextMonsterTickTime = currentUnixTime + monsterTickInterval;
+            }
 
             if (!IsAwake)
             {
