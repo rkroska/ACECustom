@@ -224,7 +224,10 @@ namespace ACE.Server.Network
                     DatabaseManager.Shard.GetCharacter(Characters[i].Id, x =>
                     {
                         x.IsDeleted = true;
-                        DatabaseManager.Shard.SaveCharacter(x, new ReaderWriterLockSlim(), null);
+                        using (var rwLock = new ReaderWriterLockSlim())
+                        {
+                            DatabaseManager.Shard.SaveCharacter(x, rwLock, null);
+                        }
 
                         PlayerManager.ProcessDeletedPlayer(x.Id);
 

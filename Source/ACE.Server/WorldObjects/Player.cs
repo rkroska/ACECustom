@@ -648,6 +648,7 @@ namespace ACE.Server.WorldObjects
             
             SetPropertiesAtLogOut();
             SavePlayerToDatabase(true);
+            
             // Don't set the player offline until they have successfully saved
             //PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
