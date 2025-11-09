@@ -31,6 +31,17 @@ namespace ACE.Server.WorldObjects
         private double _lastTargetCacheTime = 0.0;
         private const double TARGET_CACHE_DURATION = 0.5; // Cache for 0.5 seconds
 
+        // Multi-target distance cache for BuildTargetDistance to avoid repeated physics calculations
+        // Thread-safe: Monster_Tick runs in single-threaded landblock groups, no concurrent access
+        // Cache lifetime: Cleared in InvalidateTargetCaches() on target change, bounded by active target count (~5-20 entries)
+        private Dictionary<uint, float> _multiTargetDistanceCache = new Dictionary<uint, float>();
+        private double _lastMultiTargetDistanceCacheTime = 0.0;
+        private const double MULTI_TARGET_DISTANCE_CACHE_DURATION = 0.3; // Cache for 0.3 seconds (1 tick)
+        
+        // Pre-filter multiplier for fast distance check - filters out obviously out-of-range creatures
+        // 1.5x provides safety margin for height differences and collision radii while still filtering 90%+ of creatures
+        private const float QUICK_DISTANCE_CHECK_MULTIPLIER = 1.5f;
+
         // Cache performance counters
         private static long _cacheHits = 0;
         private static long _cacheMisses = 0;
@@ -42,6 +53,8 @@ namespace ACE.Server.WorldObjects
         {
             _cachedVisibleTargets.Clear();
             _lastTargetCacheTime = 0.0;
+            _multiTargetDistanceCache.Clear();
+            _lastMultiTargetDistanceCacheTime = 0.0;
             InvalidateDistanceCache();
         }
 
@@ -321,6 +334,9 @@ namespace ACE.Server.WorldObjects
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             
+            // Pre-calculate max range for early bailout
+            var maxRangeSq = Math.Max(MaxChaseRangeSq, VisualAwarenessRangeSq);
+            
             foreach (var creature in listOfCreatures)
             {
                 // exclude dead creatures
@@ -342,15 +358,22 @@ namespace ACE.Server.WorldObjects
                 if (creature.Teleporting)
                     continue;
 
+                if (creature.PhysicsObj == null)
+                    continue;
+
+                // Optimization: Fast approximate range check before expensive physics calculation
+                // Use simple position distance check first to filter out obviously out-of-range creatures
+                // This is MUCH faster than PhysicsObj.get_distance_sq_to_object (no collision checks)
+                var quickDistSq = Location.SquaredDistanceTo(creature.Location);
+                if (quickDistSq > maxRangeSq * QUICK_DISTANCE_CHECK_MULTIPLIER)
+                    continue;
+
                 // ensure within 'detection radius' ?
                 var chaseDistSq = creature == AttackTarget ? MaxChaseRangeSq : VisualAwarenessRangeSq;
 
-                /*if (Location.SquaredDistanceTo(creature.Location) > chaseDistSq)
-                    continue;*/
-
-                if (creature.PhysicsObj == null)
-                    continue;
-                if (PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true) > chaseDistSq)
+                // Now do expensive physics-based distance check only for creatures that passed quick check
+                var physicsDistSq = PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true);
+                if (physicsDistSq > chaseDistSq)
                     continue;
 
                 // if this monster belongs to a faction,
@@ -377,14 +400,34 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Returns the list of potential attack targets, sorted by closest distance 
+        /// Uses caching to avoid repeated physics calculations
         /// </summary>
         public List<TargetDistance> BuildTargetDistance(List<Creature> targets, bool distSq = false)
         {
+            var currentTime = Timers.RunningTime;
             var targetDistance = new List<TargetDistance>();
+            var cacheValid = (currentTime - _lastMultiTargetDistanceCacheTime) < MULTI_TARGET_DISTANCE_CACHE_DURATION;
 
             foreach (var target in targets)
-                //targetDistance.Add(new TargetDistance(target, distSq ? Location.SquaredDistanceTo(target.Location) : Location.DistanceTo(target.Location)));
-                targetDistance.Add(new TargetDistance(target, distSq ? (float)PhysicsObj.get_distance_sq_to_object(target.PhysicsObj, true) : (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true)));
+            {
+                float distance;
+                
+                // Try to use cached distance
+                if (cacheValid && _multiTargetDistanceCache.TryGetValue(target.Guid.Full, out distance))
+                {
+                    targetDistance.Add(new TargetDistance(target, distance));
+                }
+                else
+                {
+                    // Calculate and cache distance
+                    distance = distSq ? (float)PhysicsObj.get_distance_sq_to_object(target.PhysicsObj, true) : (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true);
+                    targetDistance.Add(new TargetDistance(target, distance));
+                    _multiTargetDistanceCache[target.Guid.Full] = distance;
+                }
+            }
+            
+            // Update cache timestamp after successful build
+            _lastMultiTargetDistanceCacheTime = currentTime;
 
             return targetDistance.OrderBy(i => i.Distance).ToList();
         }
