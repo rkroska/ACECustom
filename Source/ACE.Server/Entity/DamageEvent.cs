@@ -222,37 +222,41 @@ namespace ACE.Server.Entity
 
             if (GeneralFailure) return 0.0f;
 
-            // Cache luminance augment count once to avoid redundant property access
-            var isMissile = Weapon != null && Weapon.IsMissileWeapon;
+            // Cache luminance augment count once to avoid redundant property access (ONLY for CombatPets)
             long? cachedLuminanceAugmentCount = null;
-            long damageBonus = 0;
             
-            if (isMissile)
+            if (attacker is CombatPet)
             {
-                if (attacker.LuminanceAugmentMissileCount > 0)
+                var isMissile = Weapon != null && Weapon.IsMissileWeapon;
+                long damageBonus = 0;
+                
+                if (isMissile)
                 {
-                    cachedLuminanceAugmentCount = attacker.LuminanceAugmentMissileCount.Value;
+                    if (attacker.LuminanceAugmentMissileCount > 0)
+                    {
+                        cachedLuminanceAugmentCount = attacker.LuminanceAugmentMissileCount.Value;
+                        damageBonus = cachedLuminanceAugmentCount.Value;
+                    }
+                }
+                else if (attacker.LuminanceAugmentMeleeCount > 0)
+                {
+                    cachedLuminanceAugmentCount = attacker.LuminanceAugmentMeleeCount.Value;
                     damageBonus = cachedLuminanceAugmentCount.Value;
                 }
-            }
-            else if (attacker.LuminanceAugmentMeleeCount > 0)
-            {
-                cachedLuminanceAugmentCount = attacker.LuminanceAugmentMeleeCount.Value;
-                damageBonus = cachedLuminanceAugmentCount.Value;
-            }
 
-            // Add melee/missile aug bonus to BaseDamageMod.DamageBonus so it affects both min and max damage
-            // This ensures both item augs and melee/missile augs properly affect the damage range
-            if (BaseDamageMod != null && damageBonus > 0)
-            {
-                BaseDamageMod.DamageBonus += damageBonus;
-                // Re-roll BaseDamage now that DamageBonus has been updated (affects both min and max)
-                BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
-            }
-            else if (damageBonus > 0)
-            {
-                // Fallback: if BaseDamageMod is null, add directly to BaseDamage
-                BaseDamage += damageBonus;
+                // Add melee/missile aug bonus to BaseDamageMod.DamageBonus so it affects both min and max damage
+                // This ensures both item augs and melee/missile augs properly affect the damage range
+                if (BaseDamageMod != null && damageBonus > 0)
+                {
+                    BaseDamageMod.DamageBonus += damageBonus;
+                    // Re-roll BaseDamage now that DamageBonus has been updated (affects both min and max)
+                    BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
+                }
+                else if (damageBonus > 0)
+                {
+                    // Fallback: if BaseDamageMod is null, add directly to BaseDamage
+                    BaseDamage += damageBonus;
+                }
             }
 
             // get damage modifiers
