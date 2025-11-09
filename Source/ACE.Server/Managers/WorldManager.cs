@@ -223,7 +223,11 @@ namespace ACE.Server.Managers
                 session.Player.Location = new Position(session.Player.Sanctuary);
 
             //explicitly set the varation if the player has one saved in their playerBiota
-            var savedLoc = playerBiota.GetPosition(PositionType.Location, new ReaderWriterLockSlim());
+            Position savedLoc;
+            using (var rwLock = new ReaderWriterLockSlim())
+            {
+                savedLoc = playerBiota.GetPosition(PositionType.Location, rwLock);
+            }
             if (savedLoc != null)
             {
                 session.Player.Location.Variation = savedLoc.Variation;

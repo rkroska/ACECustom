@@ -194,7 +194,12 @@ namespace ACE.Database.OfflineTools.Shard
                     converted.Id = newId;
 
                     // Save the new biota
-                    if (!shardDatabase.SaveBiota(converted, new ReaderWriterLockSlim()))
+                    bool saveResult;
+                    using (var rwLock = new ReaderWriterLockSlim())
+                    {
+                        saveResult = shardDatabase.SaveBiota(converted, rwLock);
+                    }
+                    if (!saveResult)
                     {
                         Interlocked.Increment(ref numOfErrors);
                         log.Fatal($"Failed to save new biota with id 0x{fullBiota.Id:X8} to the database. Please rollback your shard.");
@@ -282,7 +287,12 @@ namespace ACE.Database.OfflineTools.Shard
                     converted.Id = newId;
 
                     // Save the new biota
-                    if (!shardDatabase.SaveBiota(converted, new ReaderWriterLockSlim()))
+                    bool saveResult;
+                    using (var rwLock = new ReaderWriterLockSlim())
+                    {
+                        saveResult = shardDatabase.SaveBiota(converted, rwLock);
+                    }
+                    if (!saveResult)
                     {
                         Interlocked.Increment(ref numOfErrors);
                         log.Fatal($"Failed to save new biota with id 0x{fullBiota.Id:X8} to the database. Please rollback your shard.");

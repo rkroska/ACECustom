@@ -256,9 +256,19 @@ namespace ACE.Server.Network
                     DatabaseManager.Shard.GetCharacter(Characters[i].Id, x =>
                     {
                         x.IsDeleted = true;
-                        DatabaseManager.Shard.SaveCharacter(x, new ReaderWriterLockSlim(), null);
-
-                        PlayerManager.ProcessDeletedPlayer(x.Id);
+                        var rwLock = new ReaderWriterLockSlim();
+                        DatabaseManager.Shard.SaveCharacter(x, rwLock, result =>
+                        {
+                            try
+                            {
+                                // Save completed
+                                PlayerManager.ProcessDeletedPlayer(x.Id);
+                            }
+                            finally
+                            {
+                                rwLock.Dispose();
+                            }
+                        });
 
                         //Characters.RemoveAt(i);
                     });                    
@@ -392,6 +402,13 @@ namespace ACE.Server.Network
 
             NetworkManager.RemoveSession(this);
 
+            // Atomically detach and drain the DDD queue to prevent memory leak and race conditions
+            var oldQueue = System.Threading.Interlocked.Exchange(ref dddDataQueue, null);
+            if (oldQueue != null)
+            {
+                while (oldQueue.TryDequeue(out _)) { }
+            }
+
             // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
             // In the future, we should set Network to null and funnel Network communication through Session, instead of accessing Session.Network directly.
@@ -432,7 +449,8 @@ namespace ACE.Server.Network
         /// </summary>
         private void ProcessDDDQueue()
         {
-            if (dddDataQueue == null || dddDataQueueRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
+            var queue = System.Threading.Volatile.Read(ref dddDataQueue);
+            if (queue == null || dddDataQueueRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
                 return;
 
             if (BeginDDDSentTime != DateTime.MinValue && DateTime.UtcNow < BeginDDDSentTime.AddSeconds(5))
@@ -440,7 +458,7 @@ namespace ACE.Server.Network
 
             BeginDDDSentTime = DateTime.MinValue;
 
-            if (dddDataQueue.TryDequeue(out var dataFile))
+            if (queue.TryDequeue(out var dataFile))
             {
                 Network.EnqueueSend(new GameMessageDDDDataMessage(dataFile.DatFileId, dataFile.DatDatabaseType));
                 dddDataQueueRateLimiter.RegisterEvent();
