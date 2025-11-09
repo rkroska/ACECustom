@@ -34,7 +34,8 @@ namespace ACE.Server.WorldObjects
         // Multi-target distance cache for BuildTargetDistance to avoid repeated physics calculations
         // Thread-safe: Monster_Tick runs in single-threaded landblock groups, no concurrent access
         // Cache lifetime: Cleared in InvalidateTargetCaches() on target change, bounded by active target count (~5-20 entries)
-        private Dictionary<uint, float> _multiTargetDistanceCache = new Dictionary<uint, float>();
+        // Cache key includes distSq flag to prevent mixing squared and linear distances
+        private Dictionary<(uint TargetId, bool DistSq), float> _multiTargetDistanceCache = new Dictionary<(uint, bool), float>();
         private double _lastMultiTargetDistanceCacheTime = 0.0;
         private const double MULTI_TARGET_DISTANCE_CACHE_DURATION = 0.3; // Cache for 0.3 seconds (1 tick)
         
@@ -410,10 +411,11 @@ namespace ACE.Server.WorldObjects
 
             foreach (var target in targets)
             {
+                var cacheKey = (target.Guid.Full, distSq);
                 float distance;
                 
                 // Try to use cached distance
-                if (cacheValid && _multiTargetDistanceCache.TryGetValue(target.Guid.Full, out distance))
+                if (cacheValid && _multiTargetDistanceCache.TryGetValue(cacheKey, out distance))
                 {
                     targetDistance.Add(new TargetDistance(target, distance));
                 }
@@ -422,7 +424,7 @@ namespace ACE.Server.WorldObjects
                     // Calculate and cache distance
                     distance = distSq ? (float)PhysicsObj.get_distance_sq_to_object(target.PhysicsObj, true) : (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true);
                     targetDistance.Add(new TargetDistance(target, distance));
-                    _multiTargetDistanceCache[target.Guid.Full] = distance;
+                    _multiTargetDistanceCache[cacheKey] = distance;
                 }
             }
             

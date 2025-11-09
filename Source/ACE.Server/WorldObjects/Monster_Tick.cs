@@ -21,6 +21,19 @@ namespace ACE.Server.WorldObjects
         private bool firstUpdate = true;
 
         /// <summary>
+        /// Determines if an idle monster can skip full AI processing
+        /// Returns true only if: no target, idle state, not awake, and hasn't been damaged
+        /// Ensures monsters still respond to attacks and proximity aggro
+        /// </summary>
+        private bool ShouldSkipIdleMonsterTick()
+        {
+            return AttackTarget == null && 
+                   MonsterState == State.Idle && 
+                   !IsAwake && 
+                   DamageHistory.IsEmpty;
+        }
+
+        /// <summary>
         /// Primary dispatch for monster think
         /// </summary>
         public void Monster_Tick(double currentUnixTime)
