@@ -40,8 +40,9 @@ namespace ACE.Server.WorldObjects
         private const double MULTI_TARGET_DISTANCE_CACHE_DURATION = 0.3; // Cache for 0.3 seconds (1 tick)
         
         // Pre-filter multiplier for fast distance check - filters out obviously out-of-range creatures
-        // 1.5x provides safety margin for height differences and collision radii while still filtering 90%+ of creatures
-        private const float QUICK_DISTANCE_CHECK_MULTIPLIER = 1.5f;
+        // Applied to squared distance: 2.25 = (1.5)^2 to provide 1.5x linear safety margin
+        // This accounts for height differences and collision radii while still filtering 90%+ of creatures
+        private const float QUICK_DISTANCE_CHECK_MULTIPLIER_SQ = 2.25f;
 
         // Cache performance counters
         private static long _cacheHits = 0;
@@ -366,7 +367,7 @@ namespace ACE.Server.WorldObjects
                 // Use simple position distance check first to filter out obviously out-of-range creatures
                 // This is MUCH faster than PhysicsObj.get_distance_sq_to_object (no collision checks)
                 var quickDistSq = Location.SquaredDistanceTo(creature.Location);
-                if (quickDistSq > maxRangeSq * QUICK_DISTANCE_CHECK_MULTIPLIER)
+                if (quickDistSq > maxRangeSq * QUICK_DISTANCE_CHECK_MULTIPLIER_SQ)
                     continue;
 
                 // ensure within 'detection radius' ?

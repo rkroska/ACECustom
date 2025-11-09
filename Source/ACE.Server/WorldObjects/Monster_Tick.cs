@@ -22,14 +22,14 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Determines if an idle monster can skip full AI processing
-        /// Returns true only if: no target, idle state, not awake, and hasn't been damaged
+        /// Returns true only if: no target, idle state, and hasn't been damaged
+        /// Note: Only called after !IsAwake early return, so IsAwake is always true here
         /// Ensures monsters still respond to attacks and proximity aggro
         /// </summary>
         private bool ShouldSkipIdleMonsterTick()
         {
             return AttackTarget == null && 
                    MonsterState == State.Idle && 
-                   !IsAwake && 
                    DamageHistory.IsEmpty;
         }
 
