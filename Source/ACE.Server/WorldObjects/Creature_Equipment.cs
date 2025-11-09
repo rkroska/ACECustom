@@ -212,12 +212,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private struct EquippedItemsRatingCache
         {
-            private int[] ratings; // Only 11 entries max
+            private int[] ratings; // Only 12 entries max
 
             public void Set(PropertyInt rating, int value)
             {
                 if (ratings == null)
-                    ratings = new int[11];
+                    ratings = new int[12];
                 ratings[GetIndex(rating)] = value;
             }
 
@@ -242,6 +242,7 @@ namespace ACE.Server.WorldObjects
                     PropertyInt.GearLifeResist => 8,
                     PropertyInt.GearMaxHealth => 9,
                     PropertyInt.GearPKDamageRating => 10,
+                    PropertyInt.GearPKDamageResistRating => 11,
                     _ => 0
                 };
             }

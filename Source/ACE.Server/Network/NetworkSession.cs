@@ -410,33 +410,52 @@ namespace ACE.Server.Network
                 }
             }
 
-            // Use ArrayPool
+            // Calculate required buffer size
             int reqDataSize = 4 + (retransmitBuffer.Count * 4);
-            byte[] reqData = ArrayPool<byte>.Shared.Rent(reqDataSize);
+            
+            // Rent buffer from pool temporarily to write data
+            byte[] pooledBuffer = ArrayPool<byte>.Shared.Rent(reqDataSize);
             
             try
             {
-                var reqPacket = new ServerPacket();
-                var msReqData = new MemoryStream(reqData, 0, reqDataSize, true, true);
+                // Write data to pooled buffer
+                int offset = 0;
+                BitConverter.GetBytes((uint)retransmitBuffer.Count).CopyTo(pooledBuffer, offset);
+                offset += 4;
                 
-                msReqData.Write(BitConverter.GetBytes((uint)retransmitBuffer.Count), 0, 4);
                 foreach (var k in retransmitBuffer)
-                    msReqData.Write(BitConverter.GetBytes(k), 0, 4);
+                {
+                    BitConverter.GetBytes(k).CopyTo(pooledBuffer, offset);
+                    offset += 4;
+                }
                 
-                reqPacket.Data = msReqData;
+                // Create packet with its own copy of the data (not referencing the pooled buffer)
+                var reqPacket = new ServerPacket();
+                
+                // Create a MemoryStream that owns its own byte array copy
+                // This ensures the packet doesn't reference the pooled buffer after we return it
+                byte[] ownedData = new byte[reqDataSize];
+                Array.Copy(pooledBuffer, 0, ownedData, 0, reqDataSize);
+                reqPacket.Data = new MemoryStream(ownedData, 0, reqDataSize, false, true);
+                
                 reqPacket.Header.Flags = PacketHeaderFlags.RequestRetransmit;
                 EnqueueSend(reqPacket);
                 
                 LastRequestForRetransmitTime = DateTime.UtcNow;
-                packetLog.DebugFormat("[{0}] Requested retransmit of {1}", 
-                    session.LoggingIdentifier, 
-                    string.Join(", ", retransmitBuffer));
+                
+                if (packetLog.IsDebugEnabled)
+                {
+                    packetLog.DebugFormat("[{0}] Requested retransmit of {1}", 
+                        session.LoggingIdentifier, 
+                        string.Join(", ", retransmitBuffer));
+                }
                 
                 NetworkStatistics.S2C_RequestsForRetransmit_Aggregate_Increment();
             }
             finally
             {
-                ArrayPool<byte>.Shared.Return(reqData, true);
+                // Now it's safe to return the pooled buffer since the packet has its own copy
+                ArrayPool<byte>.Shared.Return(pooledBuffer, true);
             }
         }
 
@@ -1061,7 +1080,8 @@ namespace ACE.Server.Network
             {
                 if (timestamp is ushort ts)
                 {
-                    return currentTime - ts;
+                    int age = (currentTime - ts) & 0xFFFF;
+                    return age;
                 }
                 return 0;
             }
