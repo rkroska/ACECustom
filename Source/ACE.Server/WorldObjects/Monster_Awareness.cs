@@ -422,6 +422,11 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
+                    // Defensive: Skip if target was destroyed between filtering and distance calculation
+                    // Extremely rare edge case, but prevents NullReferenceException
+                    if (PhysicsObj == null || target.PhysicsObj == null)
+                        continue;
+                    
                     // Calculate and cache distance
                     distance = distSq ? (float)PhysicsObj.get_distance_sq_to_object(target.PhysicsObj, true) : (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true);
                     targetDistance.Add(new TargetDistance(target, distance));
