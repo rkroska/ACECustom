@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 using System.Timers;
 using ACE.Entity.Enum;
 using ACE.Server.Network;
@@ -14,7 +15,7 @@ namespace ACE.Server.Managers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static Timer _monitorTimer;
+        private static System.Timers.Timer _monitorTimer;
         private static readonly ConcurrentDictionary<uint, Session> _monitoringSessions = new ConcurrentDictionary<uint, Session>();
 
         private static long _lastTotalMemory;
@@ -34,15 +35,29 @@ namespace ACE.Server.Managers
                 session,
                 (key, existingSession) => session);
 
+            // Thread-safe timer creation using Interlocked.CompareExchange
             if (_monitorTimer == null)
             {
-                _monitorTimer = new Timer(30000); // 30 seconds
-                _monitorTimer.Elapsed += MonitorMemory;
-                _monitorTimer.Start();
-                _monitorStartTime = DateTime.UtcNow;
-                _lastTotalMemory = GC.GetTotalMemory(false);
+                // Create a new timer instance
+                var newTimer = new System.Timers.Timer(30000); // 30 seconds
+                newTimer.Elapsed += MonitorMemory;
 
-                log.Info("Memory monitor started");
+                // Atomically set _monitorTimer only if it's still null
+                var existingTimer = Interlocked.CompareExchange(ref _monitorTimer, newTimer, null);
+
+                if (existingTimer == null)
+                {
+                    // We successfully set the timer, so start it and initialize state
+                    newTimer.Start();
+                    _monitorStartTime = DateTime.UtcNow;
+                    _lastTotalMemory = GC.GetTotalMemory(false);
+                    log.Info("Memory monitor started");
+                }
+                else
+                {
+                    // Another thread already created the timer, dispose our unused instance
+                    newTimer.Dispose();
+                }
             }
         }
 
@@ -55,13 +70,26 @@ namespace ACE.Server.Managers
             // Remove the entry by GUID to clear stale entries
             _monitoringSessions.TryRemove(session.Player.Guid.Full, out _);
 
-            if (_monitoringSessions.IsEmpty && _monitorTimer != null)
+            if (_monitoringSessions.IsEmpty)
             {
-                _monitorTimer.Stop();
-                _monitorTimer.Dispose();
-                _monitorTimer = null;
+                // Capture the current timer reference
+                var currentTimer = _monitorTimer;
 
-                log.Info("Memory monitor stopped");
+                if (currentTimer != null)
+                {
+                    // Atomically set _monitorTimer to null only if it still references the same timer
+                    var replacedTimer = Interlocked.CompareExchange(ref _monitorTimer, null, currentTimer);
+
+                    if (replacedTimer == currentTimer)
+                    {
+                        // We successfully cleared the timer, so stop and dispose it
+                        currentTimer.Stop();
+                        currentTimer.Dispose();
+                        log.Info("Memory monitor stopped");
+                    }
+                    // If replacedTimer != currentTimer, another thread already replaced it,
+                    // so we don't dispose (that thread is responsible for cleanup)
+                }
             }
         }
 

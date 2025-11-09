@@ -42,7 +42,7 @@ namespace ACE.Server.Network
         public string LoggingIdentifier { get; private set; } = "Unverified";
 
         public AccessLevel AccessLevel { get; private set; }
-        public Session() { }
+
         // Set initial capacity based on typical character count
         public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>(5);
 
@@ -53,8 +53,19 @@ namespace ACE.Server.Network
         { 
             get 
             {
-                if (_playerWeakRef != null && _playerWeakRef.TryGetTarget(out var player))
-                    return player;
+                // If we have a weak reference, try to get the target
+                if (_playerWeakRef != null)
+                {
+                    // Cache the result to keep it alive for the duration of this call
+                    // and avoid race condition where GC could reclaim between TryGetTarget and return
+                    if (_playerWeakRef.TryGetTarget(out var player))
+                        return player;
+                    
+                    // Weak reference target was collected, return null
+                    return null;
+                }
+                
+                // Return the strong reference if we have one
                 return _player;
             }
             private set 
