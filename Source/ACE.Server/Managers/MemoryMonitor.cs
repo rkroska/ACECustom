@@ -23,7 +23,16 @@ namespace ACE.Server.Managers
 
         public static void Start(Session session)
         {
-            _monitoringSessions.TryAdd(session.Player.Guid.Full, session);
+            // Null check - return immediately if session or player is null
+            if (session?.Player == null)
+                return;
+
+            // Use AddOrUpdate to ensure new session replaces any existing entry for the same player GUID
+            // This handles cases where a player disconnects and reconnects
+            _monitoringSessions.AddOrUpdate(
+                session.Player.Guid.Full,
+                session,
+                (key, existingSession) => session);
 
             if (_monitorTimer == null)
             {
@@ -39,6 +48,11 @@ namespace ACE.Server.Managers
 
         public static void Stop(Session session)
         {
+            // Null check - return immediately if session or player is null
+            if (session?.Player == null)
+                return;
+
+            // Remove the entry by GUID to clear stale entries
             _monitoringSessions.TryRemove(session.Player.Guid.Full, out _);
 
             if (_monitoringSessions.IsEmpty && _monitorTimer != null)
