@@ -463,38 +463,23 @@ namespace ACE.Server.WorldObjects
         {
             float resistMod = defaultModifier;
 
-            if (wielder == null)
+            if (wielder == null || weapon == null)
                 return defaultModifier;
 
             // handle quest weapon fixed resistance cleaving
-            if (weapon != null && weapon.ResistanceModifierType != null && weapon.ResistanceModifierType == damageType)
+            if (weapon.ResistanceModifierType != null && weapon.ResistanceModifierType == damageType)
                 resistMod = 1.0f + (float)(weapon.ResistanceModifier ?? defaultModifier);       // 1.0 in the data, equivalent to a level 5 vuln
 
             // handle elemental resistance rending
             var rendDamageType = GetRendDamageType(damageType);
 
             if (rendDamageType == ImbuedEffectType.Undef)
-            {
-                if (weapon != null)
-                    log.Debug($"{wielder.Name}.GetRendDamageType({damageType}) unexpected damage type for {weapon.Name} ({weapon.Guid})");
-                return resistMod;
-            }
+                log.Debug($"{wielder.Name}.GetRendDamageType({damageType}) unexpected damage type for {weapon.Name} ({weapon.Guid})");
 
-            // Check weapon first, then check creature itself for CombatPets without weapons
-            bool hasRending = false;
-            if (weapon != null && weapon.HasImbuedEffect(rendDamageType))
-            {
-                hasRending = true;
-            }
-            else if (wielder is CombatPet && wielder.HasImbuedEffect(rendDamageType))
-            {
-                // For CombatPets without weapons, check if rending was applied to the creature itself
-                hasRending = true;
-            }
-
-            if (hasRending && skill != null)
+            if (rendDamageType != ImbuedEffectType.Undef && weapon.HasImbuedEffect(rendDamageType) && skill != null)
             {
                 var rendingMod = GetRendingMod(skill);
+
                 resistMod = Math.Max(resistMod, rendingMod);
             }
 
