@@ -562,10 +562,17 @@ namespace ACE.Server.Entity
                 
                 // Throttle monster processing to prevent multi-second spikes during mass spawns
                 // Without this, 400+ creatures can cause 4+ second freezes
-                // Tuning: Lower = safer spikes (30-40), Higher = faster AI reactions (60-75)
-                // At 50: ~0.15s max spike, 447 creatures = 2.7s total delay for last creature
+                // Tuning: Lower = safer spikes (50-60), Higher = faster AI reactions (75-100)
+                // At 75: ~0.2s max spike, 447 creatures = 1.8s total delay for last creature
+                // Increased from 50 to 75 based on production saturation warnings
+                // Configurable via: /modifylong monster_tick_throttle_limit <value> (min: 50, recommended: 75-125)
                 int monstersProcessed = 0;
-                const int maxMonstersPerTick = 50;
+                var throttleValue = (int)PropertyManager.GetLong("monster_tick_throttle_limit", 75).Item;
+                var maxMonstersPerTick = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
+                
+                if (throttleValue < 50 && throttleValue != maxMonstersPerTick)
+                    log.Warn($"[PERFORMANCE] monster_tick_throttle_limit set to {throttleValue}, enforcing minimum of 50. This value is too low and may cause server performance issues.");
+
                 
                 while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
@@ -600,14 +607,16 @@ namespace ACE.Server.Entity
                 }
                 
                 // Alert if throttle is consistently maxed out (queue saturation)
+                // Only alert after 3+ consecutive ticks of saturation to filter out temporary bursts
                 if (monstersProcessed >= maxMonstersPerTick && remainingDueCount > 0)
                 {
                     monsterTickThrottleWarningCount++;
                     
-                    // Warn every 60 seconds if consistently saturated
-                    if (DateTime.UtcNow - lastMonsterThrottleWarning > TimeSpan.FromSeconds(60))
+                    // Only warn if saturated for 3+ consecutive ticks AND 60 seconds since last warning
+                    // This filters out expected initial dungeon load bursts (1-2 ticks) while catching sustained issues
+                    if (monsterTickThrottleWarningCount >= 3 && DateTime.UtcNow - lastMonsterThrottleWarning > TimeSpan.FromSeconds(60))
                     {
-                        var warningMsg = $"[PERFORMANCE] Landblock {Id:X8} Monster_Tick throttle saturated! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain. Total creatures: {sortedCreaturesByNextTick.Count}. Consider increasing maxMonstersPerTick from {maxMonstersPerTick}. Warnings: {monsterTickThrottleWarningCount}";
+                        var warningMsg = $"[PERFORMANCE] Landblock {Id:X8} Monster_Tick throttle saturated for {monsterTickThrottleWarningCount} consecutive ticks! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain. Total creatures: {sortedCreaturesByNextTick.Count}. Consider increasing maxMonstersPerTick from {maxMonstersPerTick}.";
                         log.Warn(warningMsg);
                         
                         // Send to Discord if configured
@@ -624,7 +633,7 @@ namespace ACE.Server.Entity
                         }
                         
                         lastMonsterThrottleWarning = DateTime.UtcNow;
-                        monsterTickThrottleWarningCount = 0;
+                        // Don't reset counter here - let it continue tracking consecutive saturations
                     }
                 }
                 else
