@@ -5639,9 +5639,21 @@ namespace ACE.Server.Command.Handlers
                         if (foundCharacterMatch == null)
                         {
                             CommandHandlerHelper.WriteOutputInfo(session, $"Error, a player named \"{oldName}\" cannot be found.", ChatMessageType.Broadcast);
+                            return;
                         }
 
-                        DatabaseManager.Shard.RenameCharacter(foundCharacterMatch, newName, new ReaderWriterLockSlim(), null);
+                        var rwLock = new ReaderWriterLockSlim();
+                        DatabaseManager.Shard.RenameCharacter(foundCharacterMatch, newName, rwLock, result =>
+                        {
+                            try
+                            {
+                                // Rename completed
+                            }
+                            finally
+                            {
+                                rwLock.Dispose();
+                            }
+                        });
                     });
 
                     offlinePlayer.SetProperty(PropertyString.Name, newName);
