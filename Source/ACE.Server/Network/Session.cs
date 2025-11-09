@@ -224,12 +224,19 @@ namespace ACE.Server.Network
                     DatabaseManager.Shard.GetCharacter(Characters[i].Id, x =>
                     {
                         x.IsDeleted = true;
-                        using (var rwLock = new ReaderWriterLockSlim())
+                        var rwLock = new ReaderWriterLockSlim();
+                        DatabaseManager.Shard.SaveCharacter(x, rwLock, result =>
                         {
-                            DatabaseManager.Shard.SaveCharacter(x, rwLock, null);
-                        }
-
-                        PlayerManager.ProcessDeletedPlayer(x.Id);
+                            try
+                            {
+                                // Save completed
+                                PlayerManager.ProcessDeletedPlayer(x.Id);
+                            }
+                            finally
+                            {
+                                rwLock.Dispose();
+                            }
+                        });
 
                         //Characters.RemoveAt(i);
                     });                    

@@ -110,24 +110,17 @@ namespace ACE.Database
 
         public override Biota GetBiota(uint id, bool doNotAddToCache = false)
         {
-            if (ObjectGuid.IsPlayer(id))
-            {
-                if (PlayerBiotaRetentionTime > TimeSpan.Zero)
-                {
-                    using (var context = new ShardDbContext())
-                    {
-                        var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
-                        return biota;
-                    } // Context disposed immediately after loading
-                }
-            }
-            else if (NonPlayerBiotaRetentionTime > TimeSpan.Zero)
+            var shouldCache = ObjectGuid.IsPlayer(id) 
+                ? PlayerBiotaRetentionTime > TimeSpan.Zero 
+                : NonPlayerBiotaRetentionTime > TimeSpan.Zero;
+            
+            if (shouldCache)
             {
                 using (var context = new ShardDbContext())
                 {
-                    var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
+                    var biota = GetBiota(context, id, doNotAddToCache);
                     return biota;
-                } // Context disposed immediately after loading
+                }
             }
 
             return base.GetBiota(id, doNotAddToCache);
@@ -142,7 +135,8 @@ namespace ACE.Database
 
             if (cachedBiota != null)
             {
-                cachedBiota.LastSeen = DateTime.UtcNow;
+                lock (biotaCacheMutex)
+                    cachedBiota.LastSeen = DateTime.UtcNow;
 
                 using (var context = new ShardDbContext())
                 {
@@ -164,9 +158,12 @@ namespace ACE.Database
 
                     var result = DoSaveBiota(context, existingBiota);
                     
-                    // Update the cached copy with the fresh data
+                    // Update the cached copy with the fresh data (thread-safe)
                     if (result)
-                        cachedBiota.CachedObject = existingBiota;
+                    {
+                        lock (biotaCacheMutex)
+                            cachedBiota.CachedObject = existingBiota;
+                    }
                     
                     return result;
                 }
