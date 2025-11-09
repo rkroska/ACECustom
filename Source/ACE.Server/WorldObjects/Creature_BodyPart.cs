@@ -57,6 +57,12 @@ namespace ACE.Server.WorldObjects
 
             var effectiveAL = armorVsType + enchantmentMod;
 
+            // Add item augmentation armor bonus directly for CombatPets (not an enchantment)
+            if (Creature is CombatPet combatPet)
+            {
+                effectiveAL += combatPet.ItemAugArmorBonus;
+            }
+
             // handle monsters w/ multiple layers of armor
             foreach (var armorLayer in armorLayers)
                 effectiveAL += GetArmorMod(armorLayer, damageType, ignoreMagicArmor);
