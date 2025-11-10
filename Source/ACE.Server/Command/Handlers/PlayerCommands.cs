@@ -32,6 +32,12 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // Clap command tracking for admin monitoring
+        // Note: ClapPlayerCounts can grow unbounded - use /topclap reset to clear periodically
+        // ClapMinuteCounts is bounded to 60 entries (0-59 minutes)
+        private static readonly ConcurrentDictionary<string, long> ClapPlayerCounts = new ConcurrentDictionary<string, long>();
+        private static readonly ConcurrentDictionary<int, long> ClapMinuteCounts = new ConcurrentDictionary<int, long>();
+
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
         {
@@ -622,6 +628,13 @@ namespace ACE.Server.Command.Handlers
             if (session.Player == null)
                 return;
 
+            // Prevent exploit: check player state before allowing clap (teleporting, busy, death, etc.)
+            if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsBusy || session.Player.IsInDeathProcess)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Cannot clap while teleporting, busy, or dead.", ChatMessageType.System));
+                return;
+            }
+
             if (session.Player.QuestManager.GetCurrentSolves("AutoCraftingEnabled") < 1)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must have received the AutoCraftingEnabled quest stamp in order to use this command.", ChatMessageType.Broadcast));
@@ -638,15 +651,94 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            session.LastClapCommandTime = currentTime;
-            const long ClapCostPerUnit = 250000L;
-
-
-            // OPTIMIZATION: Early exit if no materials available - prevents unnecessary processing
-            if (!HasAnyAetheriaMaterials(session.Player)) {
-                session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+            // EXPLOIT PREVENTION: Prevent queueing multiple claps during jitter window
+            if (session.ClapCommandInProgress)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("A clap command is already in progress.", ChatMessageType.System));
                 return;
             }
+
+            // Mark clap as in-progress to prevent spam queueing
+            session.ClapCommandInProgress = true;
+
+            // NOTE: Cooldown is NOT updated here - it's updated in ProcessClapCommand after all checks pass
+            // This prevents players from losing their cooldown if they die/logout during the jitter delay
+            
+            // OPTIMIZATION: Add jitter to prevent synchronized ActionQueue bursts when many players clap simultaneously
+            // When 20+ players run /clap at the same time (e.g., on the hour), the ActionQueue saturates
+            // Random delay spreads the load across multiple ticks, preventing spikes
+            // Configurable via: /modifylong clap_jitter_player_threshold <count> (set to 999 to disable, 0 to always enable)
+            //                   /modifylong clap_jitter_max_ms <milliseconds> (default 2000 = 0-2 second delay)
+            var onlinePlayerCount = PlayerManager.GetAllOnline().Count;
+            var jitterThreshold = Math.Max(0, (int)PropertyManager.GetLong("clap_jitter_player_threshold", 100).Item);
+            
+            if (onlinePlayerCount > jitterThreshold)
+            {
+                var maxJitterMs = Math.Max(0, Math.Min(10000, (int)PropertyManager.GetLong("clap_jitter_max_ms", 2000).Item)); // Cap at 10 seconds
+                var jitterMs = Common.ThreadSafeRandom.Next(0, Math.Max(1, maxJitterMs));
+                var jitterSeconds = jitterMs / 1000.0;
+                
+                var actionChain = new Entity.Actions.ActionChain();
+                actionChain.AddDelaySeconds(jitterSeconds);
+                actionChain.AddAction(session.Player, () => ProcessClapCommand(session));
+                actionChain.EnqueueChain();
+
+                // Jitter applied silently - no client notification
+                return;
+            }
+            
+            // Low player count - process immediately without delay
+            ProcessClapCommand(session);
+        }
+
+        private static void ProcessClapCommand(Session session)
+        {
+            var startTime = System.Diagnostics.Stopwatch.StartNew();
+            
+            // EXPLOIT PREVENTION: Re-check all conditions after jitter delay
+            // Player could have logged out, died, started teleporting, etc. during the 0-2 second delay
+            
+            // Check 1: Session termination (logout initiated)
+            if (session == null || session.State == Network.Enum.SessionState.TerminationStarted)
+            {
+                log.Debug($"[CLAP] Skipping clap - session terminating");
+                if (session != null) session.ClapCommandInProgress = false;
+                return; // Can't send message to logged out player
+            }
+            
+            // Check 2: Player object validity
+            if (session.Player == null || session.Player.Location == null)
+            {
+                log.Debug($"[CLAP] Skipping clap - player invalid or logged out");
+                session.ClapCommandInProgress = false;
+                return; // Can't send message to invalid player
+            }
+            
+            // Check 3: Player state (teleporting, busy, dead, etc.)
+            if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsBusy || session.Player.IsInDeathProcess)
+            {
+                log.Debug($"[CLAP] Skipping clap - player is busy/teleporting/dead");
+                session.Network.EnqueueSend(new GameMessageSystemChat("Clap cancelled - you became busy, started teleporting, or died.", ChatMessageType.System));
+                session.ClapCommandInProgress = false;
+                return;
+            }
+            
+            // Check 4: Re-check materials (player might have used them during jitter delay)
+            if (!HasAnyAetheriaMaterials(session.Player)) {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+                session.ClapCommandInProgress = false;
+                return; // Don't consume cooldown if no materials
+            }
+            
+            // NOTE: Cooldown is NOT set here - it will be set at the very end after all item consumption succeeds
+            // This prevents cooldown loss if item consumption fails mid-way (critical for fairness)
+            
+            // Track clap usage for admin monitoring
+            ClapPlayerCounts.AddOrUpdate(session.Player.Name, 1, (key, oldValue) => oldValue + 1);
+            var currentMinute = DateTime.UtcNow.Minute;
+            ClapMinuteCounts.AddOrUpdate(currentMinute, 1, (key, oldValue) => oldValue + 1);
+            
+            const long ClapCostPerUnit = 250000L;
 
             // OPTIMIZATION: Reduced inventory scans - do grouped queries instead of individual ones
             // OLD CODE (commented out):
@@ -714,6 +806,7 @@ namespace ACE.Server.Command.Handlers
             if (redComboCount == 0 && blueComboCount == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+                session.ClapCommandInProgress = false;
                 return;
             }
 
@@ -725,6 +818,7 @@ namespace ACE.Server.Command.Handlers
             if (session.Player.BankedPyreals < totalClapCost)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough banked pyreals to perform this action. Required: {totalClapCost}, Available: {session.Player.BankedPyreals}", ChatMessageType.Broadcast));
+                session.ClapCommandInProgress = false;
                 return;
             }
 
@@ -745,6 +839,7 @@ namespace ACE.Server.Command.Handlers
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Coalesced Aetheria from inventory.", ChatMessageType.System));
+                    session.ClapCommandInProgress = false;
                     return;
                 }
                 redItemsToConsume--;
@@ -754,6 +849,7 @@ namespace ACE.Server.Command.Handlers
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(310147, Math.Min(redItemsToConsume, redChunkCount))) // Red Chunk
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Chunks from inventory.", ChatMessageType.System));
+                    session.ClapCommandInProgress = false;
                     return;
                 }
                 redItemsToConsume -= redChunkCount;
@@ -763,6 +859,7 @@ namespace ACE.Server.Command.Handlers
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(42644, redItemsToConsume)) // Red Powder
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Powder from inventory.", ChatMessageType.System));
+                    session.ClapCommandInProgress = false;
                     return;
                 }
             }
@@ -770,6 +867,7 @@ namespace ACE.Server.Command.Handlers
             if (!session.Player.TryConsumeFromInventoryWithNetworking(34276, redComboCount)) // Empyrean Trinket
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Empyrean Trinkets from inventory.", ChatMessageType.System));
+                session.ClapCommandInProgress = false;
                 return;
             }
 
@@ -782,6 +880,7 @@ namespace ACE.Server.Command.Handlers
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Coalesced Aetheria from inventory.", ChatMessageType.System));
+                    session.ClapCommandInProgress = false;
                     return;
                 }
                 blueItemsToConsume--;
@@ -791,6 +890,7 @@ namespace ACE.Server.Command.Handlers
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(310149, Math.Min(blueItemsToConsume, blueChunkCount))) // Blue Chunk
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Chunks from inventory.", ChatMessageType.System));
+                    session.ClapCommandInProgress = false;
                     return;
                 }
                 blueItemsToConsume -= blueChunkCount;
@@ -800,6 +900,7 @@ namespace ACE.Server.Command.Handlers
                 if (!session.Player.TryConsumeFromInventoryWithNetworking(300019, blueItemsToConsume)) // Blue Powder
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Powder from inventory.", ChatMessageType.System));
+                    session.ClapCommandInProgress = false;
                     return;
                 }
             }
@@ -807,6 +908,7 @@ namespace ACE.Server.Command.Handlers
             if (!session.Player.TryConsumeFromInventoryWithNetworking(34277, blueComboCount)) // Falatacot Trinket
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Falatacot Trinkets from inventory.", ChatMessageType.System));
+                session.ClapCommandInProgress = false;
                 return;
             }
 
@@ -832,6 +934,16 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Player.SavePlayerToDatabase();
             }
+
+            // CRITICAL: Only update cooldown AFTER all item consumption and coin awards succeed
+            // This prevents cooldown loss if any step fails mid-way (fairness + exploit prevention)
+            session.LastClapCommandTime = DateTime.UtcNow;
+            
+            // Clear in-progress flag on success
+            session.ClapCommandInProgress = false;
+
+            startTime.Stop();
+            log.Debug($"[CLAP TIMING] Player {session.Player.Name} processed clap in {startTime.ElapsedMilliseconds}ms (Red: {redComboCount}, Blue: {blueComboCount*3})");
         }
 
         public static bool HasAnyAetheriaMaterials(Player player) {
@@ -852,6 +964,86 @@ namespace ACE.Server.Command.Handlers
             bool canCraftBlue = totalBlueAetheria > 0 && falatacotTrinkets > 0;
 
             return canCraftRed || canCraftBlue;
+        }
+
+        [CommandHandler("topclap", AccessLevel.Admin, CommandHandlerFlag.None, 1,
+            "Shows clap command usage statistics",
+            "player - Shows top players by clap usage\n" +
+            "time - Shows which minutes of the hour have the most claps\n" +
+            "reset - Clears all tracking data")]
+        public static void HandleTopClap(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /topclap <player|time|reset>", ChatMessageType.System));
+                return;
+            }
+
+            var subcommand = parameters[0].ToLowerInvariant();
+
+            if (subcommand == "player")
+            {
+                var topPlayers = ClapPlayerCounts
+                    .OrderByDescending(kvp => kvp.Value)
+                    .Take(25)
+                    .ToList();
+
+                if (topPlayers.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("No clap data recorded yet.", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("=== Top 25 Players by Clap Usage ===", ChatMessageType.Broadcast));
+                for (int i = 0; i < topPlayers.Count; i++)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"{i + 1}. {topPlayers[i].Key}: {topPlayers[i].Value:N0} claps",
+                        ChatMessageType.Broadcast));
+                }
+            }
+            else if (subcommand == "time")
+            {
+                var topMinutes = ClapMinuteCounts
+                    .OrderByDescending(kvp => kvp.Value)
+                    .ToList();
+
+                if (topMinutes.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("No clap data recorded yet.", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("=== Claps by Minute of Hour (Most Active First) ===", ChatMessageType.Broadcast));
+                foreach (var minute in topMinutes)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $":{minute.Key:D2} - {minute.Value:N0} claps",
+                        ChatMessageType.Broadcast));
+                }
+
+                // Also show total
+                var totalClaps = topMinutes.Sum(kvp => kvp.Value);
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Total: {totalClaps:N0} claps recorded", ChatMessageType.Broadcast));
+            }
+            else if (subcommand == "reset")
+            {
+                var playerCount = ClapPlayerCounts.Count;
+                var minuteCount = ClapMinuteCounts.Count;
+                var totalClaps = ClapPlayerCounts.Values.Sum();
+
+                ClapPlayerCounts.Clear();
+                ClapMinuteCounts.Clear();
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Clap tracking reset. Cleared {totalClaps:N0} total claps from {playerCount} players and {minuteCount} minute buckets.",
+                    ChatMessageType.Broadcast));
+                log.Info($"[CLAP TRACKING] Admin {session.Player.Name} reset clap statistics ({totalClaps} claps cleared)");
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /topclap <player|time|reset>", ChatMessageType.System));
+            }
         }
 
         [CommandHandler("enl", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Enlightenment Alias", "")]

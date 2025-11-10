@@ -97,6 +97,8 @@ namespace ACE.Server.Network
         public DateTime LastBankCommandTime { get; set; }
 
         public DateTime LastClapCommandTime { get; set; }
+        
+        public bool ClapCommandInProgress { get; set; }
 
         public DateTime LastQBCommandTime { get; set; }
 
