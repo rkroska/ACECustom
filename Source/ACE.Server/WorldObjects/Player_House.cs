@@ -225,7 +225,7 @@ namespace ACE.Server.WorldObjects
             logLine += "Required items:";
             foreach (var buyItem in rentItems)
             {
-                var stackStr = buyItem.StackSize != null && buyItem.StackSize > 1 ? buyItem.StackSize.ToString() + " " : "";
+                var stackStr = buyItem.Num > 1 ? buyItem.Num.ToString() + " " : "";
                 //Console.WriteLine($"{stackStr}{buyItem.Name}");
                 logLine += $"{stackStr}{buyItem.Name}" + Environment.NewLine;
             }
@@ -727,7 +727,7 @@ namespace ACE.Server.WorldObjects
             logLine += "Required items:";
             foreach (var buyItem in buyItems)
             {
-                var stackStr = buyItem.StackSize != null && buyItem.StackSize > 1 ? buyItem.StackSize.ToString() + " " : "";
+                var stackStr = buyItem.Num > 1 ? buyItem.Num.ToString() + " " : "";
                 //Console.WriteLine($"{stackStr}{buyItem.Name}");
                 logLine += $"{stackStr}{buyItem.Name}" + Environment.NewLine;
             }
@@ -769,7 +769,7 @@ namespace ACE.Server.WorldObjects
         /// Returns TRUE if player inventory contains the required items to purchase house
         /// </summary>
         /// <param name="items">The items required to purchase a house</param>
-        public bool HasItems(List<WorldObject> sentItems, List<WorldObject> buyItems)
+        public bool HasItems(List<WorldObject> sentItems, List<HousePayment> buyItems)
         {
             // requires: no duplicate individual items in list,
             // ie. items have already been stacked
@@ -778,7 +778,7 @@ namespace ACE.Server.WorldObjects
                 // special handling for currency
                 if (buyItem.Name.Equals("Pyreal"))
                 {
-                    if (!HasCurrency(sentItems, (uint)(buyItem.StackSize ?? 1)))
+                    if (!HasCurrency(sentItems, (uint)(buyItem.Num)))
                         return false;
                 }
                 else if (!HasItem(sentItems, buyItem))
@@ -791,14 +791,14 @@ namespace ACE.Server.WorldObjects
         /// Returns TRUE if player inventory contains an item required to purchase house
         /// </summary>
         /// <param name="item">An item to search for, using stack size as the minimum amount</param>
-        public bool HasItem(List<WorldObject> sentItems, WorldObject buyItem)
+        public bool HasItem(List<WorldObject> sentItems, HousePayment buyItem)
         {
-            var stackStr = buyItem.StackSize != null && buyItem.StackSize > 1 ? buyItem.StackSize.ToString() + " " : "";
+            var stackStr =  buyItem.Num > 1 ? buyItem.Num.ToString() + " " : "";
             //Console.WriteLine($"Checking for item: {stackStr}{buyItem.Name}");
             log.Info($"[HOUSE] Checking for item: {stackStr}{buyItem.Name}");
 
             // get all items of this wcid from inventory
-            var itemMatches = sentItems.Where(i => i.WeenieClassId == buyItem.WeenieClassId).ToList();
+            var itemMatches = sentItems.Where(i => i.WeenieClassId == buyItem.WeenieID).ToList();
             var totalStack = itemMatches.Select(i => (int)(i.StackSize ?? 1)).Sum();
 
             if (itemMatches.Count == 0)
@@ -807,7 +807,7 @@ namespace ACE.Server.WorldObjects
                 log.Info($"[HOUSE] No matching items found.");
                 return false;
             }
-            var required = buyItem.StackSize ?? 1;
+            var required = buyItem.Num;
             if (totalStack < required)
             {
                 //Console.WriteLine($"Found {totalStack} items, requires {required}.");

@@ -12,33 +12,6 @@ namespace ACE.Server.WorldObjects
 {
     partial class WorldObject
     {
-        public List<WorldObject> GetCreateListForSlumLord(DestinationType type)
-        {
-            var items = new List<WorldObject>();
-
-            foreach (var item in Biota.PropertiesCreateList.Where(x => x.DestinationType == type))
-            {
-                var wo = WorldObjectFactory.CreateNewWorldObject(item.WeenieClassId);
-
-                if (item.Palette > 0)
-                    wo.PaletteTemplate = item.Palette;
-
-                if (item.Shade > 0)
-                    wo.Shade = item.Shade;
-
-                if (item.StackSize > 0)
-                {
-                    if (wo is Stackable)
-                        wo.SetStackSize(item.StackSize);
-                    else
-                        wo.StackSize = item.StackSize;  // item isn't a stackable object, but we want multiples of it while not displaying multiple single items in the profile. Munge stacksize to get us there.
-                }
-
-                items.Add(wo);
-            }
-            return items;
-        }
-
         public static List<WorldObject> GenerateWieldedTreasureSets(List<TreasureWielded> items)
         {
             var curIdx = 0;
