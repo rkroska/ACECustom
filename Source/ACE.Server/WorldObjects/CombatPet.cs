@@ -26,6 +26,10 @@ namespace ACE.Server.WorldObjects
 
         // Store all imbued effects from PetDevice (gem)
         private ImbuedEffectType _gemImbuedEffects = ImbuedEffectType.Undef;
+        
+        // Track where we applied imbued effects so we can remove them on resummon
+        private WorldObject _previousImbuedTarget = null;
+        private ImbuedEffectType _previousImbuedEffects = ImbuedEffectType.Undef;
 
         // Public getters for debug command
         public float ItemAugAttackMod => _itemAugAttackMod;
@@ -63,12 +67,43 @@ namespace ACE.Server.WorldObjects
         {
         }
 
+        public override void Destroy(bool fromLandblockUnload = false)
+        {
+            // Clean up imbued effects before destroying the pet
+            // This ensures effects are removed even if the pet is destroyed without being resummoned
+            if (_previousImbuedTarget != null && _previousImbuedEffects != ImbuedEffectType.Undef)
+            {
+                RemoveImbuedEffectsFromWorldObject(_previousImbuedTarget, _previousImbuedEffects);
+                _previousImbuedTarget = null;
+                _previousImbuedEffects = ImbuedEffectType.Undef;
+            }
+
+            base.Destroy(fromLandblockUnload);
+        }
+
         public override bool? Init(Player player, PetDevice petDevice)
         {
             var success = base.Init(player, petDevice);
 
             if (success == null || !success.Value)
                 return success;
+
+            // Clear cached augmentation and gem imbue state between summons
+            // This prevents old values from persisting when resummoning with different augs/gems
+            _itemAugAttackMod = 0f;
+            _itemAugDefenseMod = 0f;
+            _itemAugDamageBonus = 0;
+            _itemAugArmorBonus = 0;
+            _lifeAugProtectionRating = 0f;
+            _gemImbuedEffects = ImbuedEffectType.Undef;
+            
+            // Remove previously applied imbued effects from the previous target
+            if (_previousImbuedTarget != null && _previousImbuedEffects != ImbuedEffectType.Undef)
+            {
+                RemoveImbuedEffectsFromWorldObject(_previousImbuedTarget, _previousImbuedEffects);
+                _previousImbuedTarget = null;
+                _previousImbuedEffects = ImbuedEffectType.Undef;
+            }
 
             SetCombatMode(CombatMode.Melee);
             MonsterState = State.Awake;
@@ -90,6 +125,7 @@ namespace ACE.Server.WorldObjects
             LuminanceAugmentMissileCount = player.LuminanceAugmentMissileCount;
             LuminanceAugmentWarCount = player.LuminanceAugmentWarCount;
             LuminanceAugmentVoidCount = player.LuminanceAugmentVoidCount;
+            LuminanceAugmentSummonCount = player.LuminanceAugmentSummonCount;
 
             // Apply summoning augmentation bonuses: +1 to all attributes and +1 to all skills per augmentation level
             var augCount = (int)(player.LuminanceAugmentSummonCount ?? 0);
@@ -140,6 +176,7 @@ namespace ACE.Server.WorldObjects
                 // At level 1 item aug: +200 base, then scaling on top
                 _itemAugArmorBonus = 200 + (int)(200.0f * itemAugPercentage);
             }
+            // Note: If itemAugCount is 0, _itemAug* fields remain at 0 (already reset above)
 
             // Store life augmentation protection rating directly (not as enchantments)
             var lifeAugCount = (long)(player.LuminanceAugmentLifeCount ?? 0);
@@ -148,6 +185,7 @@ namespace ACE.Server.WorldObjects
                 // Calculate protection rating using diminishing returns formula
                 _lifeAugProtectionRating = GetLifeAugProtectRating(lifeAugCount);
             }
+            // Note: If lifeAugCount is 0, _lifeAugProtectionRating remains at 0 (already reset above)
 
             // Apply all imbued effects from PetDevice (gem) to the summon's weapon or body
             // This includes armor rending and all damage-type rending (slash, pierce, bludgeon, fire, cold, acid, electric, nether)
@@ -166,17 +204,16 @@ namespace ACE.Server.WorldObjects
                 {
                     // Try to apply to weapon first
                     var weapon = GetEquippedMeleeWeapon();
-                    if (weapon != null)
-                    {
-                        // Apply imbued effects to the weapon
-                        ApplyImbuedEffectsToWorldObject(weapon, filteredImbuedEffects);
-                    }
-                    else
-                    {
-                        // No weapon - apply to the creature itself (for body parts)
-                        ApplyImbuedEffectsToWorldObject(this, filteredImbuedEffects);
-                    }
+                    WorldObject target = weapon ?? (WorldObject)this;
+                    
+                    // Apply imbued effects to the weapon or creature
+                    ApplyImbuedEffectsToWorldObject(target, filteredImbuedEffects);
+                    
+                    // Track where we applied effects so we can remove them on resummon
+                    _previousImbuedTarget = target;
+                    _previousImbuedEffects = filteredImbuedEffects;
                 }
+                // Note: If filteredImbuedEffects is Undef, _gemImbuedEffects remains Undef (already reset above)
             }
 
             // are CombatPets supposed to attack monsters that are in the same faction as the pet owner?
@@ -463,6 +500,35 @@ namespace ACE.Server.WorldObjects
             if (RecipeManager.IconUnderlay.TryGetValue(imbuedEffects, out var iconUnderlay))
             {
                 target.IconUnderlayId = iconUnderlay;
+            }
+        }
+
+        /// <summary>
+        /// Removes previously applied imbued effects from a WorldObject (weapon or creature)
+        /// </summary>
+        private static void RemoveImbuedEffectsFromWorldObject(WorldObject target, ImbuedEffectType effectsToRemove)
+        {
+            if (target == null || effectsToRemove == ImbuedEffectType.Undef)
+                return;
+
+            // Get existing imbued effects from all slots
+            var existingEffects = (ImbuedEffectType)(
+                (target.GetProperty(PropertyInt.ImbuedEffect) ?? 0) |
+                (target.GetProperty(PropertyInt.ImbuedEffect2) ?? 0) |
+                (target.GetProperty(PropertyInt.ImbuedEffect3) ?? 0) |
+                (target.GetProperty(PropertyInt.ImbuedEffect4) ?? 0) |
+                (target.GetProperty(PropertyInt.ImbuedEffect5) ?? 0));
+
+            // Remove the effects we previously applied
+            var remainingEffects = existingEffects & ~effectsToRemove;
+
+            // Update the first ImbuedEffect slot with remaining effects
+            target.SetProperty(PropertyInt.ImbuedEffect, (int)remainingEffects);
+            
+            // Clear icon underlay if we removed all effects
+            if (remainingEffects == ImbuedEffectType.Undef)
+            {
+                target.IconUnderlayId = null;
             }
         }
 

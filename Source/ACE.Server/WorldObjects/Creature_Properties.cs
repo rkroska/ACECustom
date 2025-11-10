@@ -396,6 +396,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMissileCount); else SetProperty(PropertyInt64.LumAugMissileCount, value.Value); }
         }
 
+        public long? LuminanceAugmentSummonCount
+        {
+            get => GetProperty(PropertyInt64.LumAugSummonCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugSummonCount); else SetProperty(PropertyInt64.LumAugSummonCount, value.Value); }
+        }
+
         public long? LuminanceAugmentMeleeDefenseCount
         {
             get => GetProperty(PropertyInt64.LumAugMeleeDefenseCount) ?? 0;

@@ -4443,26 +4443,18 @@ namespace ACE.Server.Command.Handlers
             output.AppendLine($"Weenie Class ID: {combatPet.WeenieClassId}");
             output.AppendLine();
 
-            // Get augmentation counts directly from the pet owner (player who summoned it)
-            int summonAugCount = 0;
-            int itemAugCount = 0;
-            int lifeAugCount = 0;
-            float itemAugPercentage = 0f;
-            float lifeAugProtectionRating = combatPet.LifeAugProtectionRating;
+            // Get augmentation values directly from the pet's stored state (not from owner)
+            // Get summon aug count directly from pet (stored at Init)
+            var summonAugCount = (int)(combatPet.LuminanceAugmentSummonCount ?? 0);
             
-            if (combatPet.P_PetOwner != null)
-            {
-                // Get augmentation counts directly from the player
-                summonAugCount = (int)(combatPet.P_PetOwner.LuminanceAugmentSummonCount ?? 0);
-                itemAugCount = (int)(combatPet.P_PetOwner.LuminanceAugmentItemCount ?? 0);
-                lifeAugCount = (int)(combatPet.P_PetOwner.LuminanceAugmentLifeCount ?? 0);
-                
-                // Calculate item aug percentage from the actual count
-                if (itemAugCount > 0)
-                {
-                    itemAugPercentage = CombatPet.GetItemAugPercentageRating(itemAugCount);
-                }
-            }
+            // Get item augmentation values directly from pet (stored at Init)
+            var itemAugAttackMod = combatPet.ItemAugAttackMod;
+            var itemAugDefenseMod = combatPet.ItemAugDefenseMod;
+            var itemAugDamageBonus = combatPet.ItemAugDamageBonus;
+            var itemAugArmorBonus = combatPet.ItemAugArmorBonus;
+            
+            // Get life augmentation protection rating directly from pet (stored at Init)
+            var lifeAugProtectionRating = combatPet.LifeAugProtectionRating;
 
             // Attributes
             output.AppendLine("=== ATTRIBUTES ===");
@@ -4531,7 +4523,7 @@ namespace ACE.Server.Command.Handlers
                 // Damage bonus: base is 20, then scaling
                 var damageBase = 20;
                 var damageAug = weaponDamageBonus - damageBase;
-                var itemAugDamageBonus = weaponDamageBonus; // Full item aug bonus (base + aug)
+                // itemAugDamageBonus already declared at method scope
 
                 // Get pet's melee, missile augmentation bonuses (only melee/missile apply to physical damage)
                 var meleeAugBonus = (long)(combatPet.LuminanceAugmentMeleeCount ?? 0);
@@ -4717,7 +4709,7 @@ namespace ACE.Server.Command.Handlers
 
             // Armor
             output.AppendLine("=== ARMOR ===");
-            var itemAugArmorBonus = combatPet.ItemAugArmorBonus;
+            // itemAugArmorBonus already declared at method scope
             
             // Get base armor from weenie data - average across all body parts with armor > 0
             uint weenieBaseArmor = 0;
@@ -4788,11 +4780,7 @@ namespace ACE.Server.Command.Handlers
                 DamageType.Nether
             };
 
-            // Calculate life aug protection rating from player's life aug count (reuse from outer scope)
-            if (lifeAugCount > 0 && lifeAugProtectionRating <= 0f)
-            {
-                lifeAugProtectionRating = CombatPet.GetLifeAugProtectRating(lifeAugCount);
-            }
+            // Use life aug protection rating directly from pet (already retrieved above)
 
             foreach (var damageType in allDamageTypes)
             {
@@ -4832,8 +4820,8 @@ namespace ACE.Server.Command.Handlers
             // Summary
             output.AppendLine("=== SUMMARY ===");
             output.AppendLine($"Summon Augmentations: {summonAugCount}");
-            output.AppendLine($"Item Augmentations: {itemAugCount} (Percentage: {itemAugPercentage:F4})");
-            output.AppendLine($"Life Augmentations: {lifeAugCount} (Protection Rating: {lifeAugProtectionRating:F4})");
+            output.AppendLine($"Item Augmentations - Attack Mod: {itemAugAttackMod:F4} | Defense Mod: {itemAugDefenseMod:F4} | Damage Bonus: {itemAugDamageBonus} | Armor Bonus: {itemAugArmorBonus}");
+            output.AppendLine($"Life Augmentations - Protection Rating: {lifeAugProtectionRating:F4}");
             output.AppendLine($"Melee Augmentations: {combatPet.LuminanceAugmentMeleeCount ?? 0}");
             output.AppendLine($"Missile Augmentations: {combatPet.LuminanceAugmentMissileCount ?? 0}");
             output.AppendLine($"War Augmentations: {combatPet.LuminanceAugmentWarCount ?? 0}");
@@ -4842,75 +4830,7 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, output.ToString());
         }
 
-        /// <summary>
-        /// Reverse calculates item aug count from percentage using binary search on the actual formula
-        /// </summary>
-        private static int ReverseCalculateItemAugCount(float percentage)
-        {
-            // Binary search on the actual formula to find the count that produces the target percentage
-            int left = 0;
-            int right = 10000; // Reasonable upper bound
-            int result = 0;
-            
-            while (left <= right)
-            {
-                int mid = (left + right) / 2;
-                float calculated = CombatPet.GetItemAugPercentageRating(mid);
-                
-                if (Math.Abs(calculated - percentage) < 0.0001f)
-                {
-                    result = mid;
-                    break;
-                }
-                
-                if (calculated < percentage)
-                {
-                    left = mid + 1;
-                    result = mid; // Keep track of the closest value
-                }
-                else
-                {
-                    right = mid - 1;
-                }
-            }
-            
-            return result;
-        }
 
-        /// <summary>
-        /// Reverse calculates life aug count from protection rating using binary search on the actual formula
-        /// </summary>
-        private static int ReverseCalculateLifeAugCount(float protectionRating)
-        {
-            // Binary search on the actual formula to find the count that produces the target protection rating
-            int left = 0;
-            int right = 10000; // Reasonable upper bound
-            int result = 0;
-            
-            while (left <= right)
-            {
-                int mid = (left + right) / 2;
-                float calculated = CombatPet.GetLifeAugProtectRating(mid);
-                
-                if (Math.Abs(calculated - protectionRating) < 0.0001f)
-                {
-                    result = mid;
-                    break;
-                }
-                
-                if (calculated < protectionRating)
-                {
-                    left = mid + 1;
-                    result = mid; // Keep track of the closest value
-                }
-                else
-                {
-                    right = mid - 1;
-                }
-            }
-            
-            return result;
-        }
 
         // god
         [CommandHandler("god", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 0,
