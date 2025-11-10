@@ -241,19 +241,7 @@ namespace ACE.Server.Entity
                 damageBonus = cachedLuminanceAugmentCount.Value;
             }
 
-            // Add melee/missile aug bonus to BaseDamageMod.DamageBonus so it affects both min and max damage
-            // This ensures both item augs and melee/missile augs properly affect the damage range
-            if (BaseDamageMod != null && damageBonus > 0)
-            {
-                BaseDamageMod.DamageBonus += damageBonus;
-                // Re-roll BaseDamage now that DamageBonus has been updated (affects both min and max)
-                BaseDamage = (float)ThreadSafeRandom.Next(BaseDamageMod.MinDamage, BaseDamageMod.MaxDamage);
-            }
-            else if (damageBonus > 0)
-            {
-                // Fallback: if BaseDamageMod is null, add directly to BaseDamage
-                BaseDamage += damageBonus;
-            }
+            BaseDamage += damageBonus;
 
             // get damage modifiers
             PowerMod = attacker.GetPowerMod(Weapon);
