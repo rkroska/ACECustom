@@ -652,14 +652,12 @@ namespace ACE.Server.Command.Handlers
             }
 
             // EXPLOIT PREVENTION: Prevent queueing multiple claps during jitter window
-            if (session.ClapCommandInProgress)
+            // Use atomic operation to prevent race condition (two threads checking simultaneously)
+            if (!session.BeginClapIfIdle())
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("A clap command is already in progress.", ChatMessageType.System));
                 return;
             }
-
-            // Mark clap as in-progress to prevent spam queueing
-            session.ClapCommandInProgress = true;
 
             // NOTE: Cooldown is NOT updated here - it's updated in ProcessClapCommand after all checks pass
             // This prevents players from losing their cooldown if they die/logout during the jitter delay
@@ -693,52 +691,50 @@ namespace ACE.Server.Command.Handlers
 
         private static void ProcessClapCommand(Session session)
         {
-            var startTime = System.Diagnostics.Stopwatch.StartNew();
-            
-            // EXPLOIT PREVENTION: Re-check all conditions after jitter delay
-            // Player could have logged out, died, started teleporting, etc. during the 0-2 second delay
-            
-            // Check 1: Session termination (logout initiated)
-            if (session == null || session.State == Network.Enum.SessionState.TerminationStarted)
+            try
             {
-                log.Debug($"[CLAP] Skipping clap - session terminating");
-                if (session != null) session.ClapCommandInProgress = false;
-                return; // Can't send message to logged out player
-            }
-            
-            // Check 2: Player object validity
-            if (session.Player == null || session.Player.Location == null)
-            {
-                log.Debug($"[CLAP] Skipping clap - player invalid or logged out");
-                session.ClapCommandInProgress = false;
-                return; // Can't send message to invalid player
-            }
-            
-            // Check 3: Player state (teleporting, busy, dead, etc.)
-            if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsBusy || session.Player.IsInDeathProcess)
-            {
-                log.Debug($"[CLAP] Skipping clap - player is busy/teleporting/dead");
-                session.Network.EnqueueSend(new GameMessageSystemChat("Clap cancelled - you became busy, started teleporting, or died.", ChatMessageType.System));
-                session.ClapCommandInProgress = false;
-                return;
-            }
-            
-            // Check 4: Re-check materials (player might have used them during jitter delay)
-            if (!HasAnyAetheriaMaterials(session.Player)) {
-                session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
-                session.ClapCommandInProgress = false;
-                return; // Don't consume cooldown if no materials
-            }
-            
-            // NOTE: Cooldown is NOT set here - it will be set at the very end after all item consumption succeeds
-            // This prevents cooldown loss if item consumption fails mid-way (critical for fairness)
-            
-            // Track clap usage for admin monitoring
-            ClapPlayerCounts.AddOrUpdate(session.Player.Name, 1, (key, oldValue) => oldValue + 1);
-            var currentMinute = DateTime.UtcNow.Minute;
-            ClapMinuteCounts.AddOrUpdate(currentMinute, 1, (key, oldValue) => oldValue + 1);
-            
-            const long ClapCostPerUnit = 250000L;
+                var startTime = System.Diagnostics.Stopwatch.StartNew();
+                
+                // EXPLOIT PREVENTION: Re-check all conditions after jitter delay
+                // Player could have logged out, died, started teleporting, etc. during the 0-2 second delay
+                
+                // Check 1: Session termination (logout initiated)
+                if (session == null || session.State == Network.Enum.SessionState.TerminationStarted)
+                {
+                    log.Debug($"[CLAP] Skipping clap - session terminating");
+                    return; // Can't send message to logged out player
+                }
+                
+                // Check 2: Player object validity
+                if (session.Player == null || session.Player.Location == null)
+                {
+                    log.Debug($"[CLAP] Skipping clap - player invalid or logged out");
+                    return; // Can't send message to invalid player
+                }
+                
+                // Check 3: Player state (teleporting, busy, dead, etc.)
+                if (session.Player.Teleporting || session.Player.TooBusyToRecall || session.Player.IsBusy || session.Player.IsInDeathProcess)
+                {
+                    log.Debug($"[CLAP] Skipping clap - player is busy/teleporting/dead");
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Clap cancelled - you became busy, started teleporting, or died.", ChatMessageType.System));
+                    return;
+                }
+                
+                // Check 4: Re-check materials (player might have used them during jitter delay)
+                if (!HasAnyAetheriaMaterials(session.Player)) {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+                    return; // Don't consume cooldown if no materials
+                }
+                
+                // NOTE: Cooldown is NOT set here - it will be set at the very end after all item consumption succeeds
+                // This prevents cooldown loss if item consumption fails mid-way (critical for fairness)
+                
+                // Track clap usage for admin monitoring
+                ClapPlayerCounts.AddOrUpdate(session.Player.Name, 1, (key, oldValue) => oldValue + 1);
+                var currentMinute = DateTime.UtcNow.Minute;
+                ClapMinuteCounts.AddOrUpdate(currentMinute, 1, (key, oldValue) => oldValue + 1);
+                
+                const long ClapCostPerUnit = 250000L;
 
             // OPTIMIZATION: Reduced inventory scans - do grouped queries instead of individual ones
             // OLD CODE (commented out):
@@ -802,25 +798,23 @@ namespace ACE.Server.Command.Handlers
             int redComboCount = Math.Min(totalRedAetheriaCount, empyreanTrinketCount);
             int blueComboCount = Math.Min(totalBlueAetheriaCount, falatacotTrinketCount);
 
-            // If nothing is craftable, bail before any removals or cost checks
-            if (redComboCount == 0 && blueComboCount == 0)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
-                session.ClapCommandInProgress = false;
-                return;
-            }
+                // If nothing is craftable, bail before any removals or cost checks
+                if (redComboCount == 0 && blueComboCount == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("You don't have any aetheria materials to process.", ChatMessageType.System));
+                    return;
+                }
 
-            // MMD cost applies only to Coalesced + Chunks (no cost for powder)
-            long redNonPowderUsed  = Math.Min((long)redComboCount, (long)redAetheriaCount + redChunkCount);
-            long blueNonPowderUsed = Math.Min((long)blueComboCount, (long)blueAetheriaCount + blueChunkCount);
-            long totalClapCost = (redNonPowderUsed + blueNonPowderUsed) * ClapCostPerUnit;
+                // MMD cost applies only to Coalesced + Chunks (no cost for powder)
+                long redNonPowderUsed  = Math.Min((long)redComboCount, (long)redAetheriaCount + redChunkCount);
+                long blueNonPowderUsed = Math.Min((long)blueComboCount, (long)blueAetheriaCount + blueChunkCount);
+                long totalClapCost = (redNonPowderUsed + blueNonPowderUsed) * ClapCostPerUnit;
 
-            if (session.Player.BankedPyreals < totalClapCost)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough banked pyreals to perform this action. Required: {totalClapCost}, Available: {session.Player.BankedPyreals}", ChatMessageType.Broadcast));
-                session.ClapCommandInProgress = false;
-                return;
-            }
+                if (session.Player.BankedPyreals < totalClapCost)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough banked pyreals to perform this action. Required: {totalClapCost}, Available: {session.Player.BankedPyreals}", ChatMessageType.Broadcast));
+                    return;
+                }
 
             // OLD CODE (commented out):
             /*
@@ -831,119 +825,128 @@ namespace ACE.Server.Command.Handlers
             }
             */
 
-            // Consume items and bank coins
-            // Red Aetheria + Empyrean Trinkets
-            int redItemsToConsume = redComboCount;
-            foreach (var item in redAetheriaItems.Take(Math.Min(redItemsToConsume, redAetheriaCount)))
-            {
-                if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
+                // Consume items and bank coins
+                // Red Aetheria + Empyrean Trinkets
+                int redItemsToConsume = redComboCount;
+                foreach (var item in redAetheriaItems.Take(Math.Min(redItemsToConsume, redAetheriaCount)))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Coalesced Aetheria from inventory.", ChatMessageType.System));
-                    session.ClapCommandInProgress = false;
+                    if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Coalesced Aetheria from inventory.", ChatMessageType.System));
+                        return;
+                    }
+                    redItemsToConsume--;
+                }
+                if (redItemsToConsume > 0)
+                {
+                    if (!session.Player.TryConsumeFromInventoryWithNetworking(310147, Math.Min(redItemsToConsume, redChunkCount))) // Red Chunk
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Chunks from inventory.", ChatMessageType.System));
+                        return;
+                    }
+                    redItemsToConsume -= redChunkCount;
+                }
+                if (redItemsToConsume > 0)
+                {
+                    if (!session.Player.TryConsumeFromInventoryWithNetworking(42644, redItemsToConsume)) // Red Powder
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Powder from inventory.", ChatMessageType.System));
+                        return;
+                    }
+                }
+
+                if (!session.Player.TryConsumeFromInventoryWithNetworking(34276, redComboCount)) // Empyrean Trinket
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Empyrean Trinkets from inventory.", ChatMessageType.System));
                     return;
                 }
-                redItemsToConsume--;
-            }
-            if (redItemsToConsume > 0)
-            {
-                if (!session.Player.TryConsumeFromInventoryWithNetworking(310147, Math.Min(redItemsToConsume, redChunkCount))) // Red Chunk
+
+                session.Player.BankedEnlightenedCoins += redComboCount;
+
+                // Blue Aetheria + Falatacot Trinkets
+                int blueItemsToConsume = blueComboCount;
+                foreach (var item in blueAetheriaItems.Take(Math.Min(blueItemsToConsume, blueAetheriaCount)))
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Chunks from inventory.", ChatMessageType.System));
-                    session.ClapCommandInProgress = false;
+                    if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Coalesced Aetheria from inventory.", ChatMessageType.System));
+                        return;
+                    }
+                    blueItemsToConsume--;
+                }
+                if (blueItemsToConsume > 0)
+                {
+                    if (!session.Player.TryConsumeFromInventoryWithNetworking(310149, Math.Min(blueItemsToConsume, blueChunkCount))) // Blue Chunk
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Chunks from inventory.", ChatMessageType.System));
+                        return;
+                    }
+                    blueItemsToConsume -= blueChunkCount;
+                }
+                if (blueItemsToConsume > 0)
+                {
+                    if (!session.Player.TryConsumeFromInventoryWithNetworking(300019, blueItemsToConsume)) // Blue Powder
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Powder from inventory.", ChatMessageType.System));
+                        return;
+                    }
+                }
+
+                if (!session.Player.TryConsumeFromInventoryWithNetworking(34277, blueComboCount)) // Falatacot Trinket
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Falatacot Trinkets from inventory.", ChatMessageType.System));
                     return;
                 }
-                redItemsToConsume -= redChunkCount;
-            }
-            if (redItemsToConsume > 0)
-            {
-                if (!session.Player.TryConsumeFromInventoryWithNetworking(42644, redItemsToConsume)) // Red Powder
+
+                // Award 3 Weakly Enlightened Coins per crafting unit
+                session.Player.BankedWeaklyEnlightenedCoins += blueComboCount * 3; // Replace with the actual property for Weakly Enlightened Coins
+
+                // Deduct ClapCost for Coalesced Aetheria and Chunks
+                session.Player.BankedPyreals -= totalClapCost;
+
+                // OPTIMIZATION: Track if we need to save to database (only save once at the end)
+                // Save only if redComboCount > 30 or blueComboCount > 90
+                bool needsSave = redComboCount > 30 || blueComboCount > 90;
+
+                // OPTIMIZATION: Could batch property update messages here instead of individual updates
+                // Current approach: Properties are updated individually as they change
+                // Future optimization: Could collect all property changes and send them in one batch
+
+                // Notify the player
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redComboCount} Enlightened Coins and {blueComboCount * 3} Weakly Enlightened Coins! Total cost (Coalesced Aetheria and Chunks only): {totalClapCost} pyreals.", ChatMessageType.Broadcast));
+
+                // OPTIMIZATION: Save to database only once at the end if we processed any items
+                if (needsSave)
                 {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Red Powder from inventory.", ChatMessageType.System));
-                    session.ClapCommandInProgress = false;
-                    return;
+                    session.Player.SavePlayerToDatabase();
                 }
+
+                // CRITICAL: Only update cooldown AFTER all item consumption and coin awards succeed
+                // This prevents cooldown loss if any step fails mid-way (fairness + exploit prevention)
+                session.LastClapCommandTime = DateTime.UtcNow;
+
+                startTime.Stop();
+                log.Debug($"[CLAP TIMING] Player {session.Player.Name} processed clap in {startTime.ElapsedMilliseconds}ms (Red: {redComboCount}, Blue: {blueComboCount*3})");
             }
-
-            if (!session.Player.TryConsumeFromInventoryWithNetworking(34276, redComboCount)) // Empyrean Trinket
+            catch (Exception ex)
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Empyrean Trinkets from inventory.", ChatMessageType.System));
-                session.ClapCommandInProgress = false;
-                return;
-            }
-
-            session.Player.BankedEnlightenedCoins += redComboCount;
-
-            // Blue Aetheria + Falatacot Trinkets
-            int blueItemsToConsume = blueComboCount;
-            foreach (var item in blueAetheriaItems.Take(Math.Min(blueItemsToConsume, blueAetheriaCount)))
-            {
-                if (!session.Player.TryConsumeFromInventoryWithNetworking(item))
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Coalesced Aetheria from inventory.", ChatMessageType.System));
-                    session.ClapCommandInProgress = false;
-                    return;
+                // Defensive: ensure player sees a failure message only if still valid
+                try 
+                { 
+                    session?.Network.EnqueueSend(new GameMessageSystemChat("Clap failed due to an unexpected error.", ChatMessageType.System)); 
+                } 
+                catch 
+                { 
+                    // Best effort - log only
                 }
-                blueItemsToConsume--;
+                log.Error($"[CLAP] Unhandled error during clap for player {session?.Player?.Name ?? "Unknown"}", ex);
             }
-            if (blueItemsToConsume > 0)
+            finally
             {
-                if (!session.Player.TryConsumeFromInventoryWithNetworking(310149, Math.Min(blueItemsToConsume, blueChunkCount))) // Blue Chunk
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Chunks from inventory.", ChatMessageType.System));
-                    session.ClapCommandInProgress = false;
-                    return;
-                }
-                blueItemsToConsume -= blueChunkCount;
+                // CRITICAL: Always clear the in-flight flag, even on exceptions
+                // This prevents soft-locking the command for this session
+                session?.EndClap();
             }
-            if (blueItemsToConsume > 0)
-            {
-                if (!session.Player.TryConsumeFromInventoryWithNetworking(300019, blueItemsToConsume)) // Blue Powder
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Blue Powder from inventory.", ChatMessageType.System));
-                    session.ClapCommandInProgress = false;
-                    return;
-                }
-            }
-
-            if (!session.Player.TryConsumeFromInventoryWithNetworking(34277, blueComboCount)) // Falatacot Trinket
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to remove Falatacot Trinkets from inventory.", ChatMessageType.System));
-                session.ClapCommandInProgress = false;
-                return;
-            }
-
-            // Award 3 Weakly Enlightened Coins per crafting unit
-            session.Player.BankedWeaklyEnlightenedCoins += blueComboCount * 3; // Replace with the actual property for Weakly Enlightened Coins
-
-            // Deduct ClapCost for Coalesced Aetheria and Chunks
-            session.Player.BankedPyreals -= totalClapCost;
-
-            // OPTIMIZATION: Track if we need to save to database (only save once at the end)
-            // Save only if redComboCount > 30 or blueComboCount > 90
-            bool needsSave = redComboCount > 30 || blueComboCount > 90;
-
-            // OPTIMIZATION: Could batch property update messages here instead of individual updates
-            // Current approach: Properties are updated individually as they change
-            // Future optimization: Could collect all property changes and send them in one batch
-
-            // Notify the player
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redComboCount} Enlightened Coins and {blueComboCount * 3} Weakly Enlightened Coins! Total cost (Coalesced Aetheria and Chunks only): {totalClapCost} pyreals.", ChatMessageType.Broadcast));
-
-            // OPTIMIZATION: Save to database only once at the end if we processed any items
-            if (needsSave)
-            {
-                session.Player.SavePlayerToDatabase();
-            }
-
-            // CRITICAL: Only update cooldown AFTER all item consumption and coin awards succeed
-            // This prevents cooldown loss if any step fails mid-way (fairness + exploit prevention)
-            session.LastClapCommandTime = DateTime.UtcNow;
-            
-            // Clear in-progress flag on success
-            session.ClapCommandInProgress = false;
-
-            startTime.Stop();
-            log.Debug($"[CLAP TIMING] Player {session.Player.Name} processed clap in {startTime.ElapsedMilliseconds}ms (Red: {redComboCount}, Blue: {blueComboCount*3})");
         }
 
         public static bool HasAnyAetheriaMaterials(Player player) {

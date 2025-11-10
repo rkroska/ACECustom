@@ -98,7 +98,21 @@ namespace ACE.Server.Network
 
         public DateTime LastClapCommandTime { get; set; }
         
-        public bool ClapCommandInProgress { get; set; }
+        // Atomic in-flight flag for /clap to prevent race conditions
+        private int _clapInProgress; // 0 = idle, 1 = in-flight
+        
+        /// <summary>
+        /// Atomically begins a clap command if none is in progress.
+        /// </summary>
+        /// <returns>True if clap started successfully, false if one is already running</returns>
+        public bool BeginClapIfIdle() =>
+            System.Threading.Interlocked.CompareExchange(ref _clapInProgress, 1, 0) == 0;
+        
+        /// <summary>
+        /// Clears the in-flight clap flag (safe to call multiple times)
+        /// </summary>
+        public void EndClap() =>
+            System.Threading.Volatile.Write(ref _clapInProgress, 0);
 
         public DateTime LastQBCommandTime { get; set; }
 
