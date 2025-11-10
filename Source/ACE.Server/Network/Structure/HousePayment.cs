@@ -28,38 +28,12 @@ namespace ACE.Server.Network.Structure
         /// </summary>
         public int Remaining => Math.Max(0, Num - Paid);
 
-        public HousePayment() { }
-
-        public HousePayment(string weenieName, ushort stackSize = 1)
+        public HousePayment(Weenie weenie, int stackSize = 1)
         {
-            var weenie = DatabaseManager.World.GetCachedWeenie(weenieName);
-            Init(weenie, stackSize);
-        }
-
-        public HousePayment(Weenie weenie, ushort stackSize = 1)
-        {
-            Init(weenie, stackSize);
-        }
-
-        public HousePayment(WorldObject wo)
-        {
-            Init(wo);
-        }
-
-        public void Init(Weenie weenie, ushort stackSize = 1)
-        {
-            var wo = WorldObjectFactory.CreateNewWorldObject(weenie.ClassName);
-            wo.SetStackSize(stackSize);
             WeenieID = weenie.WeenieClassId;
-            Init(wo);
-        }
-
-        public void Init(WorldObject wo)
-        {
-            WeenieID = wo.WeenieClassId;
-            Name = wo.Name;
-            PluralName = wo.GetPluralName();
-            Num = wo.StackSize ?? 1;
+            Name = weenie.GetName();
+            PluralName = weenie.GetPluralName();
+            Num = stackSize;
         }
 
         /// <summary>

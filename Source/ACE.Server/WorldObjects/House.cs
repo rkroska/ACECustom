@@ -98,15 +98,14 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                houseData.SetBuyItems(SlumLord.GetBuyItems());
-                houseData.SetRentItems(SlumLord.GetRentItems());
+                houseData.Buy = SlumLord.GetBuyItems();
+                houseData.Rent = SlumLord.GetRentItems();
             }
 
             if (owner != null)
             {
                 houseData.BuyTime = (uint)(owner.HousePurchaseTimestamp ?? 0);
                 houseData.RentTime = GetRentTimestamp(houseData.BuyTime);
-                houseData.SetPaidItems(SlumLord);
             }
 
             if (HouseStatus == HouseStatus.InActive)
