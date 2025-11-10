@@ -60,6 +60,12 @@ namespace ACE.Server.Entity
         public float TotalHealth => TotalDamage.Values.Sum(i => i.TotalDamage);
 
         /// <summary>
+        /// Returns true if this creature has not taken any damage yet
+        /// Used for idle monster optimization to ensure damaged monsters always tick
+        /// </summary>
+        public bool IsEmpty => TotalDamage.Count == 0;
+
+        /// <summary>
         /// Returns the DamageHistoryInfo for the top damager
         /// for determining 'Killed by' corpse looting rights
         /// </summary>
