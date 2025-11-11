@@ -248,7 +248,7 @@ namespace ACE.Server.Network
 
         public void CheckCharactersForDeletion()
         {
-            for (int i = Characters.Count - 1; i > 0; i--)
+            for (int i = Characters.Count - 1; i >= 0; i--)
             {
                 if (Characters[i].DeleteTime > 0 && Time.GetUnixTime() > Characters[i].DeleteTime)
                 {
