@@ -334,7 +334,14 @@ namespace ACE.Server.Entity
             // armor rending and cleaving
             var armorRendingMod = 1.0f;
             if (Weapon != null && Weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            {
                 armorRendingMod = WorldObject.GetArmorRendingMod(attackSkill);
+            }
+            else if (attacker is CombatPet && attacker.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            {
+                // For CombatPets without weapons, check if armor rending was applied to the creature itself
+                armorRendingMod = WorldObject.GetArmorRendingMod(attackSkill);
+            }
 
             var armorCleavingMod = attacker.GetArmorCleavingMod(Weapon);
 
