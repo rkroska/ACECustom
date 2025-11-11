@@ -143,7 +143,7 @@ namespace ACE.Server.WorldObjects
                     OnExhausted();
                 }
                 // retail was missing the 'exhausted done' automatic hook here
-                else if (prevVal == 0 && PropertyManager.GetBool("runrate_add_hooks").Item)
+                else if (prevVal == 0 && PropertyManager.GetBool("runrate_add_hooks"))
                 {
                     HandleRunRateUpdate();
                 }

@@ -277,7 +277,7 @@ namespace ACE.Server.WorldObjects
 
         public void ApplyConsumable(MotionCommand useMotion, Action action, float animMod = 1.0f)
         {
-            if (PropertyManager.GetBool("allow_fast_chug").Item && FastTick)
+            if (PropertyManager.GetBool("allow_fast_chug") && FastTick)
             {
                 ApplyConsumableWithAnimationCallbacks(useMotion, action);
                 return;

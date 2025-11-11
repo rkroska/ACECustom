@@ -86,7 +86,7 @@ namespace ACE.Server.WorldObjects
                 FellowVitalUpdate = false;
             }
 
-            if (House != null && PropertyManager.GetBool("house_rent_enabled").Item)
+            if (House != null && PropertyManager.GetBool("house_rent_enabled"))
             {
                 if (houseRentWarnTimestamp > 0 && currentUnixTime > houseRentWarnTimestamp)
                 {
@@ -186,7 +186,7 @@ namespace ACE.Server.WorldObjects
             if (!PhysicsObj.IsMovingOrAnimating)
                 PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
 
-            if (!PropertyManager.GetBool("client_movement_formula").Item || moveToState.StandingLongJump)
+            if (!PropertyManager.GetBool("client_movement_formula") || moveToState.StandingLongJump)
                 OnMoveToState_ServerMethod(moveToState);
             else
                 OnMoveToState_ClientMethod(moveToState);

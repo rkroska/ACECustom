@@ -398,9 +398,9 @@ namespace ACE.Server.Entity
                         return;
                     }
 
-                    if (PropertyManager.GetBool("override_encounter_spawn_rates").Item)
+                    if (PropertyManager.GetBool("override_encounter_spawn_rates"))
                     {
-                        wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval").Item;
+                        wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval");
 
                         wo.ReinitializeHeartbeats();
 
@@ -419,7 +419,7 @@ namespace ACE.Server.Entity
                             }
 
                             foreach (var profile in wo.Biota.PropertiesGenerator)
-                                profile.Delay = (float)PropertyManager.GetDouble("encounter_delay").Item;
+                                profile.Delay = (float)PropertyManager.GetDouble("encounter_delay");
                         }
                     }
 
@@ -567,7 +567,7 @@ namespace ACE.Server.Entity
                 // Increased from 50 to 75 based on production saturation warnings
                 // Configurable via: /modifylong monster_tick_throttle_limit <value> (min: 50, recommended: 75-125)
                 int monstersProcessed = 0;
-                var throttleValue = (int)PropertyManager.GetLong("monster_tick_throttle_limit", 75).Item;
+                var throttleValue = (int)PropertyManager.GetLong("monster_tick_throttle_limit", 75);
                 var maxMonstersPerTick = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
                 
                 if (throttleValue < 50 && throttleValue != maxMonstersPerTick)
@@ -1094,7 +1094,7 @@ namespace ACE.Server.Entity
             // more than corpse_spam_limit corpses on a single landblock.
             else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
             {
-                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
+                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit");
                 int corpsesForThisPlayer = 0;
 
                 Corpse oldestCorpseNotDecayingSoon = null;

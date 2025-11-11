@@ -52,7 +52,7 @@ namespace ACE.Server.Entity.Actions
             // Tuning: Lower = safer (200-250), Higher = faster queue clearing (300-400)
             // Increased from 250 to 300 based on production queue spikes during events
             // Configurable via: /modifylong action_queue_throttle_limit <value> (min: 50, recommended: 250-400)
-            var throttleValue = (int)ACE.Server.Managers.PropertyManager.GetLong("action_queue_throttle_limit", 300).Item;
+            var throttleValue = (int)ACE.Server.Managers.PropertyManager.GetLong("action_queue_throttle_limit", 300);
             var actionThrottleLimit = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
             var originalQueueSize = Queue.Count;
             var count = Math.Min(originalQueueSize, actionThrottleLimit);

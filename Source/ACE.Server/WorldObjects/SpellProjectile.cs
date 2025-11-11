@@ -594,7 +594,7 @@ namespace ACE.Server.WorldObjects
                     // apply void_pvp_modifier *on top of* the player's natural resistance to nether
 
                     // this supposedly brings the direct damage from void spells in pvp closer to retail
-                    resistanceMod *= (float)PropertyManager.GetDouble("void_pvp_modifier").Item;
+                    resistanceMod *= (float)PropertyManager.GetDouble("void_pvp_modifier");
                 }
 
                 finalDamage = baseDamage + critDamageBonus + skillBonus;

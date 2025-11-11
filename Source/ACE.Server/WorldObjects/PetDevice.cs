@@ -119,7 +119,7 @@ namespace ACE.Server.WorldObjects
 
             if (player.CurrentActivePet != null && player.CurrentActivePet is CombatPet)
             {
-                if (PropertyManager.GetBool("pet_stow_replace").Item)
+                if (PropertyManager.GetBool("pet_stow_replace"))
                 {
                     // original ace
                     player.SendTransientError($"{player.CurrentActivePet.Name} is already active");

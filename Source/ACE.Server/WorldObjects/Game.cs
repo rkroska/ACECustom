@@ -63,7 +63,7 @@ namespace ACE.Server.WorldObjects
 
         public void ActOnJoin(Player player)
         {
-            if (!PropertyManager.GetBool("chess_enabled").Item)
+            if (!PropertyManager.GetBool("chess_enabled"))
             {
                 ActOnJoin_Legacy(player);
                 return;
