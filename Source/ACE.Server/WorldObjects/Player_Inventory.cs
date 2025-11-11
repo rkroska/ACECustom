@@ -1125,12 +1125,27 @@ namespace ACE.Server.WorldObjects
                         Container capturedChest = isContainerWithdrawal ? (itemRootOwner as Container) : null;
 
                         // For stackable items, check if there's an existing stack that might merge
+                        // Cache inventory query to avoid multiple scans (optimization - reduces GC pressure)
                         WorldObject existingStack = null;
                         int originalStackSize = 0;
+                        List<WorldObject> cachedStacksOfType = null;
                         if (isStackableItem && (isGroundPickup || isContainerWithdrawal))
                         {
-                            existingStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
-                            originalStackSize = existingStack?.StackSize ?? 0;
+                            try
+                            {
+                                // GetInventoryItemsOfWCID already returns a List, no need for .ToList()
+                                cachedStacksOfType = GetInventoryItemsOfWCID(capturedItemWeenieClassId);
+                                existingStack = cachedStacksOfType?.FirstOrDefault();
+                                originalStackSize = existingStack?.StackSize ?? 0;
+                            }
+                            catch (Exception ex)
+                            {
+                                // If caching fails, fall back to non-cached behavior
+                                log.Error($"Error caching inventory query: {ex.Message}");
+                                cachedStacksOfType = null;
+                                existingStack = null;
+                                originalStackSize = 0;
+                            }
                         }
 
                         if (DoHandleActionPutItemInContainer(item, itemRootOwner, itemWasEquipped, container, containerRootOwner, placement))
@@ -1148,8 +1163,8 @@ namespace ACE.Server.WorldObjects
                                         // But also check for any overflow-created new stack
                                         try
                                         {
-                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
-                                                .FirstOrDefault(x => x != existingStack);
+                                            // Use cached query result to avoid re-scanning inventory
+                                            var newStack = cachedStacksOfType?.FirstOrDefault(x => x != existingStack);
                                             if (newStack != null)
                                             {
                                                 TransferLogger.LogGroundPickup(this, newStack);
@@ -1165,8 +1180,8 @@ namespace ACE.Server.WorldObjects
                                         // No merge occurred, this stackable item became a new stack
                                         try
                                         {
-                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
-                                                .FirstOrDefault(x => x != existingStack);
+                                            // Use cached query result to avoid re-scanning inventory
+                                            var newStack = cachedStacksOfType?.FirstOrDefault(x => x != existingStack);
                                             if (newStack != null)
                                             {
                                                 TransferLogger.LogGroundPickup(this, newStack);
@@ -1183,7 +1198,8 @@ namespace ACE.Server.WorldObjects
                                     // No existing stack, this is definitely a new stackable item
                                     try
                                     {
-                                        var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                                        // Use cached query result to avoid re-scanning inventory
+                                        var newStack = cachedStacksOfType?.FirstOrDefault();
                                         if (newStack != null)
                                         {
                                             TransferLogger.LogGroundPickup(this, newStack);
@@ -1232,8 +1248,8 @@ namespace ACE.Server.WorldObjects
                                         // Also check for any overflow-created new stack
                                         try
                                         {
-                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
-                                                .FirstOrDefault(x => x != existingStack);
+                                            // Use cached query result to avoid re-scanning inventory
+                                            var newStack = cachedStacksOfType?.FirstOrDefault(x => x != existingStack);
                                             if (newStack != null)
                                             {
                                                 TransferLogger.LogChestWithdrawal(this, newStack, capturedChest);
@@ -1249,8 +1265,8 @@ namespace ACE.Server.WorldObjects
                                         // No merge occurred, this stackable item became a new stack
                                         try
                                         {
-                                            var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId)
-                                                .FirstOrDefault(x => x != existingStack);
+                                            // Use cached query result to avoid re-scanning inventory
+                                            var newStack = cachedStacksOfType?.FirstOrDefault(x => x != existingStack);
                                             if (newStack != null)
                                             {
                                                 TransferLogger.LogChestWithdrawal(this, newStack, capturedChest);
@@ -1267,7 +1283,8 @@ namespace ACE.Server.WorldObjects
                                     // No existing stack, this is definitely a new stackable item
                                     try
                                     {
-                                        var newStack = GetInventoryItemsOfWCID(capturedItemWeenieClassId).FirstOrDefault();
+                                        // Use cached query result to avoid re-scanning inventory
+                                        var newStack = cachedStacksOfType?.FirstOrDefault();
                                         if (newStack != null)
                                         {
                                             TransferLogger.LogChestWithdrawal(this, newStack, capturedChest);

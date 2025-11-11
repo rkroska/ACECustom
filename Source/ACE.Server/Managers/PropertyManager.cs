@@ -614,7 +614,8 @@ namespace ACE.Server.Managers
                 ("version_info_enabled", new Property<bool>(false, "toggles the /aceversion player command")),
                 ("vendor_shop_uses_generator", new Property<bool>(false, "enables or disables vendors using generator system in addition to createlist to create artificial scarcity")),
                 ("world_closed", new Property<bool>(false, "enable this to startup world as a closed to players world")),
-                ("enl_removes_society", new Property<bool>(true, "if true, enlightenment will remove society flags"))
+                ("enl_removes_society", new Property<bool>(true, "if true, enlightenment will remove society flags")),
+                ("action_queue_tracking_enabled", new Property<bool>(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<long>> DefaultLongProperties =
@@ -644,7 +645,11 @@ namespace ACE.Server.Managers
                 ("clap_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the clap command")),
                 ("qb_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the qb list command")),
                 ("monster_tick_throttle_limit", new Property<long>(75, "Maximum number of monsters to process per tick per landblock. Higher = faster AI reactions but larger spikes during mass spawns. Adjust based on Discord alerts.")),
-                ("action_queue_throttle_limit", new Property<long>(300, "Maximum number of actions to process per tick. Higher = faster queue clearing but larger CPU spikes during heavy load. Adjust based on Discord alerts."))
+                ("action_queue_throttle_limit", new Property<long>(300, "Maximum number of actions to process per tick. Higher = faster queue clearing but larger CPU spikes during heavy load. Adjust based on Discord alerts.")),
+                ("action_queue_track_threshold_ms", new Property<long>(10, "ActionQueue tracking: Only track actions taking longer than this many milliseconds. Lower = more detailed tracking but more overhead.")),
+                ("action_queue_warn_threshold_ms", new Property<long>(100, "ActionQueue tracking: Log warnings and send Discord alerts for actions exceeding this threshold in milliseconds.")),
+                ("action_queue_report_interval_minutes", new Property<long>(5, "ActionQueue tracking: Generate aggregated performance reports every N minutes.")),
+                ("action_queue_discord_max_alerts_per_minute", new Property<long>(3, "ActionQueue tracking: Maximum number of Discord alerts per minute to prevent API throttling. 0 = disable Discord alerts."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
