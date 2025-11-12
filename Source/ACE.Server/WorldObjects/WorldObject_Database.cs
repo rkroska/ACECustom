@@ -29,7 +29,12 @@ namespace ACE.Server.WorldObjects
 
         public DateTime LastRequestedDatabaseSave { get; protected set; }
         
-        internal bool SaveInProgress { get; set; }
+        private volatile bool _saveInProgress;
+        internal bool SaveInProgress 
+        { 
+            get => _saveInProgress;
+            set => _saveInProgress = value;
+        }
         private DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
@@ -38,6 +43,36 @@ namespace ACE.Server.WorldObjects
         /// The primary use for this is to trigger save on add/modify/remove of properties.
         /// </summary>
         public bool ChangesDetected { get; set; }
+        
+        private void DetectAndLogConcurrentSave()
+        {
+            if (SaveInProgress)
+            {
+                var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
+                
+                // Check if stackable item data changed during race (corruption risk)
+                var currentStack = StackSize;
+                var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
+                var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
+                
+                // Format stack info (only for stackable items)
+                var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
+                log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
+                
+                // Track races with changed data (HIGH RISK!) or slow timing for Discord
+                if (stackChanged || timeInFlight > 50)
+                {
+                    var ownerContext = this is Player p ? $"[{p.Name}] " : 
+                                      (this.Container is Player owner ? $"[{owner.Name}] " : "");
+                    var raceInfo = stackChanged 
+                        ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                        : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
+                    dbRacesThisMinute.Add(raceInfo);
+                    SendAggregatedDbRaceAlert();
+                }
+            }
+        }
 
         /// <summary>
         /// Best practice says you should use this lock any time you read/write the Biota.<para />

@@ -113,8 +113,22 @@ namespace ACE.Server.Managers
                 const int MAX_LOGIN_RETRIES = 10;
                 if (loginRetryCount >= MAX_LOGIN_RETRIES)
                 {
-                    log.Error($"[LOGIN BLOCK] {character.Name} exceeded max login retries ({MAX_LOGIN_RETRIES}). Save stuck for {(DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds:N1}s. Forcing login.");
-                    offlinePlayer.SaveInProgress = false;
+                    var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
+                    log.Error($"[LOGIN BLOCK] {character.Name} login REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck for {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}. Refusing login to prevent data corruption.");
+                    
+                    // Send high-severity Discord alert
+                    if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    {
+                        try
+                        {
+                            var msg = $"🔴 **CRITICAL LOGIN FAILURE**: `{character.Name}` blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}. **MANUAL INTERVENTION REQUIRED**";
+                            DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                        }
+                        catch { }
+                    }
+                    
+                    // Do NOT clear SaveInProgress - refuse login to prevent corruption
+                    return;
                 }
                 else
                 {

@@ -85,7 +85,7 @@ namespace ACE.Server.Entity
             {
                 // For bulk saves (enqueueSave=false), SaveInProgress remains true
                 // It will be cleared by the caller when the bulk save completes
-                onCompleted?.Invoke(true);
+                // Note: onCompleted callback responsibility is delegated to the bulk-save caller
             }
         }
 
