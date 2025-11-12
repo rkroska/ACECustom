@@ -73,8 +73,7 @@ namespace ACE.Server.WorldObjects
                 var raceInfo = stackChanged 
                     ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
                     : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
-                dbRacesThisMinute.Add(raceInfo);
-                SendAggregatedDbRaceAlert();
+                SendAggregatedDbRaceAlert(raceInfo);
             }
         }
 
@@ -343,10 +342,13 @@ namespace ACE.Server.WorldObjects
             return true;
         }
         
-        private static void SendAggregatedDbRaceAlert()
+        private static void SendAggregatedDbRaceAlert(string raceInfo = null)
         {
             lock (dbAlertLock)
             {
+                if (raceInfo != null)
+                    dbRacesThisMinute.Add(raceInfo);
+
                 var now = DateTime.UtcNow;
                 
                 // Reset counter every minute and send summary

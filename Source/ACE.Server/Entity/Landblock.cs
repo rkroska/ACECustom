@@ -1378,18 +1378,21 @@ namespace ACE.Server.Entity
             {
                 DatabaseManager.Shard.SaveBiotasInParallel(
                     biotas,
-                    result => {
+                    result =>
+                    {
                         // Clear SaveInProgress flags on world thread for thread safety
                         var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
                         clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
                         {
-                            if (result)
+                            foreach (var wo in savedObjects)
                             {
-                                foreach (var wo in savedObjects)
-                                {
-                                    if (!wo.IsDestroyed)
-                                        wo.SaveInProgress = false;
-                                }
+                                if (!wo.IsDestroyed)
+                                    wo.SaveInProgress = false;
+                            }
+
+                            if (!result)
+                            {
+                                log.Warn($"[LANDLOCK SAVE] Bulk save for landblock {Id.Raw}{(VariationId.HasValue ? $":v{VariationId.Value}" : string.Empty)} returned false; SaveInProgress flags cleared to avoid stuck state.");
                             }
                         });
                         clearFlagsAction.EnqueueChain();

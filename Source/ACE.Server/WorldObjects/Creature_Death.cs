@@ -671,22 +671,27 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // Bulk save with callback to clear SaveInProgress flags
-                DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
-                {
-                    var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
-                    clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                DatabaseManager.Shard.SaveBiotasInParallel(
+                    biotas,
+                    result =>
                     {
-                        if (result)
+                        var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                        clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
                         {
                             foreach (var wo in savedObjects)
                             {
                                 if (!wo.IsDestroyed)
                                     wo.SaveInProgress = false;
                             }
-                        }
-                    });
-                    clearFlagsAction.EnqueueChain();
-                }, $"CorpseSave:{corpse.Guid}");
+
+                            if (!result)
+                            {
+                                log.Warn($"[CORPSE SAVE] Bulk save for corpse {corpse.Guid} returned false; SaveInProgress flags cleared to avoid stuck state.");
+                            }
+                        });
+                        clearFlagsAction.EnqueueChain();
+                    },
+                    $"CorpseSave:{corpse.Guid}");
             }
         }
 
