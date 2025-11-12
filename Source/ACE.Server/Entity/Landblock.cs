@@ -1392,7 +1392,7 @@ namespace ACE.Server.Entity
 
                             if (!result)
                             {
-                                log.Warn($"[LANDLOCK SAVE] Bulk save for landblock {Id.Raw}{(VariationId.HasValue ? $":v{VariationId.Value}" : string.Empty)} returned false; SaveInProgress flags cleared to avoid stuck state.");
+                                log.Warn($"[LANDBLOCK SAVE] Bulk save for landblock {Id.Raw}{(VariationId.HasValue ? $":v{VariationId.Value}" : string.Empty)} returned false; SaveInProgress flags cleared to avoid stuck state.");
                             }
                         });
                         clearFlagsAction.EnqueueChain();
