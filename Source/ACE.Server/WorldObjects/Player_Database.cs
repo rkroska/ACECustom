@@ -109,14 +109,16 @@ namespace ACE.Server.WorldObjects
                         possession.SaveInProgress = false;
                     }
                     
-                    if (duringLogout)
+                    if (result)
                     {
-                        // Don't set the player offline until they have been successfully saved
-                        PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                        if (duringLogout)
+                        {
+                            // Don't set the player offline until they have been successfully saved
+                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                        }
+                        log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTime).TotalMilliseconds:N0} ms to process the request.");
                     }
-                    log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTime).TotalMilliseconds:N0} ms to process the request.");
-
-                    if (!result)
+                    else
                     {
                         // This will trigger a boot on next player tick
                         BiotaSaveFailed = true;
