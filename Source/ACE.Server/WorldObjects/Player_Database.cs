@@ -100,7 +100,6 @@ namespace ACE.Server.WorldObjects
 
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
-                // Marshal flag cleanup to world thread to avoid cross-thread collection access
                 var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
                 clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
                 {

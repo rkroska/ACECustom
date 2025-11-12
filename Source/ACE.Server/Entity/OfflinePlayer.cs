@@ -70,22 +70,16 @@ namespace ACE.Server.Entity
         public void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
         {
             LastRequestedDatabaseSave = DateTime.UtcNow;
-            SaveInProgress = true;  // Mark save as in-progress
+            SaveInProgress = true;
             ChangesDetected = false;
 
             if (enqueueSave)
             {
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
-                    SaveInProgress = false;  // Clear in-progress flag when save completes
+                    SaveInProgress = false;
                     onCompleted?.Invoke(result);
                 });
-            }
-            else
-            {
-                // For bulk saves (enqueueSave=false), SaveInProgress remains true
-                // It will be cleared by the caller when the bulk save completes
-                // Note: onCompleted callback responsibility is delegated to the bulk-save caller
             }
         }
 

@@ -107,27 +107,24 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            // Prevent item loss race condition: block login if logout save still pending
             if (offlinePlayer.SaveInProgress)
             {
                 const int MAX_LOGIN_RETRIES = 10;
                 if (loginRetryCount >= MAX_LOGIN_RETRIES)
                 {
                     var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
-                    log.Error($"[LOGIN BLOCK] {character.Name} login REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck for {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}. Refusing login to prevent data corruption.");
+                    log.Error($"[LOGIN BLOCK] {character.Name} REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}");
                     
-                    // Send high-severity Discord alert
                     if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
-                            var msg = $"🔴 **CRITICAL LOGIN FAILURE**: `{character.Name}` blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}. **MANUAL INTERVENTION REQUIRED**";
+                            var msg = $"🔴 **CRITICAL**: `{character.Name}` login blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}";
                             DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                         }
                         catch { }
                     }
                     
-                    // Do NOT clear SaveInProgress - refuse login to prevent corruption
                     return;
                 }
                 else
@@ -141,7 +138,6 @@ namespace ACE.Server.Managers
                     retryChain.AddDelaySeconds(2.0);
                     retryChain.AddAction(WorldManager.ActionQueue, () =>
                     {
-                        // Validate session is still valid before retrying login
                         if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
                             PlayerEnterWorld(session, character, loginRetryCount + 1);
                     });
@@ -503,18 +499,13 @@ namespace ACE.Server.Managers
         {
             var now = DateTime.UtcNow;
             
-            // Reset counter every minute
             if ((now - lastLoginBlockAlert).TotalMinutes >= 1)
-            {
                 loginBlockAlertsThisMinute = 0;
-            }
             
-            // Check rate limit (configurable via /modifylong login_block_discord_max_alerts_per_minute)
             var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3).Item;
             if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
-                return;  // Drop alert to prevent Discord API spam
+                return;
             
-            // Check Discord is configured
             if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
                 ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                 return;

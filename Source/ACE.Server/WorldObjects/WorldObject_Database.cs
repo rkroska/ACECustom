@@ -46,31 +46,36 @@ namespace ACE.Server.WorldObjects
         
         private void DetectAndLogConcurrentSave()
         {
-            if (SaveInProgress)
+            if (!SaveInProgress)
+                return;
+
+            if (SaveStartTime == DateTime.MinValue)
             {
-                var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
-                
-                // Check if stackable item data changed during race (corruption risk)
-                var currentStack = StackSize;
-                var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
-                var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
-                
-                // Format stack info (only for stackable items)
-                var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-                log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
-                
-                // Track races with changed data (HIGH RISK!) or slow timing for Discord
-                if (stackChanged || timeInFlight > 50)
-                {
-                    var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                      (this.Container is Player owner ? $"[{owner.Name}] " : "");
-                    var raceInfo = stackChanged 
-                        ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                        : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
-                    dbRacesThisMinute.Add(raceInfo);
-                    SendAggregatedDbRaceAlert();
-                }
+                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {Name} (0x{Guid})");
+                SaveInProgress = false;
+                SaveStartTime = DateTime.UtcNow;
+                return;
+            }
+            
+            var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+            var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
+            
+            var currentStack = StackSize;
+            var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
+            var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
+            
+            var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
+            log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
+            
+            if (stackChanged || timeInFlight > 50)
+            {
+                var ownerContext = this is Player p ? $"[{p.Name}] " : 
+                                  (this.Container is Player owner ? $"[{owner.Name}] " : "");
+                var raceInfo = stackChanged 
+                    ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                    : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
+                dbRacesThisMinute.Add(raceInfo);
+                SendAggregatedDbRaceAlert();
             }
         }
 
@@ -128,7 +133,6 @@ namespace ACE.Server.WorldObjects
                 }
             }
             
-            // Make sure all of our positions in the biota are up to date with our current cached values.
             foreach (var kvp in positionCache)
             {
                 if (kvp.Value != null)
@@ -138,7 +142,7 @@ namespace ACE.Server.WorldObjects
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;  // Snapshot for corruption detection
+            LastSavedStackSize = StackSize;
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -147,30 +151,42 @@ namespace ACE.Server.WorldObjects
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
-                    var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                    SaveInProgress = false;
-                    
-                    // Check for slow saves (configurable threshold)
-                    var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
-                    if (saveTime > slowThreshold && this is not Player)
+                    try
                     {
-                        var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
-                        log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
-                        
-                        // Throttled Discord alert
-                        SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
-                    }
-                    
-                    // Check database queue size after save completes
-                    CheckDatabaseQueueSize();
-                    
-                    if (!result)
-                    {
-                        if (this is Player player)
+                        if (IsDestroyed)
                         {
-                            // This will trigger a boot on next player tick
-                            player.BiotaSaveFailed = true;
+                            log.Warn($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            return;
                         }
+                        
+                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
+                        if (saveTime > slowThreshold && this is not Player)
+                        {
+                            var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
+                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
+                            SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+                        }
+                        
+                        CheckDatabaseQueueSize();
+                        
+                        if (!result)
+                        {
+                            if (this is Player player)
+                            {
+                                // This will trigger a boot on next player tick
+                                player.BiotaSaveFailed = true;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
+                    }
+                    finally
+                    {
+                        // ALWAYS clear SaveInProgress, even if callback throws
+                        SaveInProgress = false;
                     }
                 });
             }
@@ -213,7 +229,6 @@ namespace ACE.Server.WorldObjects
                 }
             }
             
-            // Make sure all of our positions in the biota are up to date with our current cached values.
             foreach (var kvp in positionCache)
             {
                 if (kvp.Value != null)
@@ -223,7 +238,7 @@ namespace ACE.Server.WorldObjects
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;  // Snapshot for corruption detection
+            LastSavedStackSize = StackSize;
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -232,42 +247,44 @@ namespace ACE.Server.WorldObjects
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
-                    var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                    SaveInProgress = false;
-                    
-                    // Check for slow saves (configurable threshold)
-                    var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
-                    if (saveTime > slowThreshold && this is not Player)
+                    try
                     {
-                        var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
-                        log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
-                        
-                        // Throttled Discord alert
-                        SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
-                    }
-                    
-                    // Check database queue size after save completes
-                    CheckDatabaseQueueSize();
-                    
-                    if (!result)
-                    {
-                        if (this is Player player)
+                        if (IsDestroyed)
                         {
-                            // This will trigger a boot on next player tick
-                            player.BiotaSaveFailed = true;
+                            log.Warn($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            return;
                         }
+                        
+                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
+                        if (saveTime > slowThreshold && this is not Player)
+                        {
+                            var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
+                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
+                            SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+                        }
+                        
+                        CheckDatabaseQueueSize();
+                        
+                        if (!result && this is Player player)
+                            player.BiotaSaveFailed = true;
+                        
+                        onCompleted?.Invoke(result);
                     }
-                    
-                    // Invoke the completion callback
-                    onCompleted?.Invoke(result);
+                    catch (Exception ex)
+                    {
+                        log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
+                    }
+                    finally
+                    {
+                        SaveInProgress = false;
+                    }
                 });
             }
             else
             {
                 // Note: For bulk saves (enqueueSave=false), SaveInProgress remains true
                 // It will be cleared by the caller when the bulk save completes
-                // If not enqueuing, invoke callback immediately with success
-                onCompleted?.Invoke(true);
             }
         }
 
