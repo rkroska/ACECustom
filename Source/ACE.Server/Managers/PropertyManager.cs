@@ -649,7 +649,13 @@ namespace ACE.Server.Managers
                 ("action_queue_track_threshold_ms", new Property<long>(10, "ActionQueue tracking: Only track actions taking longer than this many milliseconds. Lower = more detailed tracking but more overhead.")),
                 ("action_queue_warn_threshold_ms", new Property<long>(100, "ActionQueue tracking: Log warnings and send Discord alerts for actions exceeding this threshold in milliseconds.")),
                 ("action_queue_report_interval_minutes", new Property<long>(5, "ActionQueue tracking: Generate aggregated performance reports every N minutes.")),
-                ("action_queue_discord_max_alerts_per_minute", new Property<long>(3, "ActionQueue tracking: Maximum number of Discord alerts per minute to prevent API throttling. 0 = disable Discord alerts."))
+                ("action_queue_discord_max_alerts_per_minute", new Property<long>(3, "ActionQueue tracking: Maximum number of Discord alerts per minute to prevent API throttling. 0 = disable Discord alerts.")),
+                ("login_block_discord_max_alerts_per_minute", new Property<long>(3, "Item loss prevention: Max Discord alerts per minute for login blocking. Set to 0 to disable Discord alerts.")),
+                ("db_race_discord_max_alerts_per_minute", new Property<long>(1, "DB diagnostics: Max Discord alerts per minute for concurrent save detection. Sends aggregated summary. 0 = disable.")),
+                ("db_slow_discord_max_alerts_per_minute", new Property<long>(5, "DB diagnostics: Max Discord alerts per minute for slow saves. 0 = disable.")),
+                ("db_slow_threshold_ms", new Property<long>(1000, "DB diagnostics: Item saves slower than this (ms) trigger warnings and Discord alerts.")),
+                ("db_queue_alert_threshold", new Property<long>(100, "DB diagnostics: Send Discord alert when database queue count exceeds this value. 0 = disable.")),
+                ("db_queue_discord_max_alerts_per_minute", new Property<long>(2, "DB diagnostics: Max Discord alerts per minute for high database queue. 0 = disable."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =

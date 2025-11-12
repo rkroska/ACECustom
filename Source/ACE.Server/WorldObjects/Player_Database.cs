@@ -100,6 +100,13 @@ namespace ACE.Server.WorldObjects
 
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
+                // Clear save flags after bulk complete
+                SaveInProgress = false;
+                foreach (var possession in GetAllPossessions())
+                {
+                    possession.SaveInProgress = false;
+                }
+                
                 if (duringLogout)
                 {
                     // Don't set the player offline until they have been successfully saved

@@ -43,9 +43,10 @@ namespace ACE.Server.Entity
         public bool IsDeleted => DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(Guid.Full).IsDeleted;
         public bool IsPendingDeletion => DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(Guid.Full).DeleteTime > 0 && !IsDeleted;
 
-        public DateTime LastRequestedDatabaseSave { get; protected set; }
+        public DateTime LastRequestedDatabaseSave { get; set; }
 
         public bool ChangesDetected { get; set; }
+        public bool SaveInProgress { get; set; }
 
         public readonly ReaderWriterLockSlim BiotaDatabaseLock = new ReaderWriterLockSlim();
 
@@ -69,12 +70,22 @@ namespace ACE.Server.Entity
         public void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
         {
             LastRequestedDatabaseSave = DateTime.UtcNow;
+            SaveInProgress = true;  // Mark save as in-progress
             ChangesDetected = false;
 
             if (enqueueSave)
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, onCompleted);
+            {
+                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
+                {
+                    SaveInProgress = false;  // Clear in-progress flag when save completes
+                    onCompleted?.Invoke(result);
+                });
+            }
             else
+            {
+                SaveInProgress = false;  // Not actually saving, clear immediately
                 onCompleted?.Invoke(true);
+            }
         }
 
 

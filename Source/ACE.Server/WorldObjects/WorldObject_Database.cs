@@ -1,10 +1,12 @@
 using System;
+using System.Linq;
 using System.Threading;
 
 using ACE.Common;
 using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 
 namespace ACE.Server.WorldObjects
@@ -12,8 +14,23 @@ namespace ACE.Server.WorldObjects
     partial class WorldObject
     {
         private readonly bool biotaOriginatedFromDatabase;
+        
+        // Discord throttling for database diagnostics alerts
+        private static DateTime lastDbRaceAlert = DateTime.MinValue;
+        private static int dbRaceAlertsThisMinute = 0;
+        private static System.Collections.Concurrent.ConcurrentBag<string> dbRacesThisMinute = new();
+        
+        private static DateTime lastDbSlowAlert = DateTime.MinValue;
+        private static int dbSlowAlertsThisMinute = 0;
+        
+        private static DateTime lastDbQueueAlert = DateTime.MinValue;
+        private static int dbQueueAlertsThisMinute = 0;
 
         public DateTime LastRequestedDatabaseSave { get; protected set; }
+        
+        internal bool SaveInProgress { get; set; }
+        private DateTime SaveStartTime { get; set; }
+        private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
         /// <summary>
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
@@ -47,6 +64,34 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
+            // Detect concurrent saves
+            if (SaveInProgress)
+            {
+                var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
+                
+                // Check if stackable item data changed during race (corruption risk)
+                var currentStack = StackSize;
+                var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
+                var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
+                
+                // Format stack info (only for stackable items)
+                var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
+                log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
+                
+                // Track races with changed data (HIGH RISK!) or slow timing for Discord
+                if (stackChanged || timeInFlight > 50)
+                {
+                    var ownerContext = this is Player p ? $"[{p.Name}] " : 
+                                      (this.Container is Player owner ? $"[{owner.Name}] " : "");
+                    var raceInfo = stackChanged 
+                        ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                        : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
+                    dbRacesThisMinute.Add(raceInfo);
+                    SendAggregatedDbRaceAlert();
+                }
+            }
+            
             // Make sure all of our positions in the biota are up to date with our current cached values.
             foreach (var kvp in positionCache)
             {
@@ -55,6 +100,9 @@ namespace ACE.Server.WorldObjects
             }
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
+            SaveInProgress = true;
+            SaveStartTime = DateTime.UtcNow;
+            LastSavedStackSize = StackSize;  // Snapshot for corruption detection
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -63,6 +111,23 @@ namespace ACE.Server.WorldObjects
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
+                    var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                    SaveInProgress = false;
+                    
+                    // Check for slow saves (configurable threshold)
+                    var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
+                    if (saveTime > slowThreshold && this is not Player)
+                    {
+                        var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
+                        log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
+                        
+                        // Throttled Discord alert
+                        SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+                    }
+                    
+                    // Check database queue size after save completes
+                    CheckDatabaseQueueSize();
+                    
                     if (!result)
                     {
                         if (this is Player player)
@@ -73,6 +138,7 @@ namespace ACE.Server.WorldObjects
                     }
                 });
             }
+            // For bulk saves, SaveInProgress cleared by caller after bulk completes
         }
 
         /// <summary>
@@ -83,6 +149,34 @@ namespace ACE.Server.WorldObjects
         /// <param name="onCompleted">Optional callback to invoke when the save operation completes</param>
         public virtual void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
         {
+            // Detect concurrent saves
+            if (SaveInProgress)
+            {
+                var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
+                
+                // Check if stackable item data changed during race (corruption risk)
+                var currentStack = StackSize;
+                var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
+                var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
+                
+                // Format stack info (only for stackable items)
+                var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
+                log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
+                
+                // Track races with changed data (HIGH RISK!) or slow timing for Discord
+                if (stackChanged || timeInFlight > 50)
+                {
+                    var ownerContext = this is Player p ? $"[{p.Name}] " : 
+                                      (this.Container is Player owner ? $"[{owner.Name}] " : "");
+                    var raceInfo = stackChanged 
+                        ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                        : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
+                    dbRacesThisMinute.Add(raceInfo);
+                    SendAggregatedDbRaceAlert();
+                }
+            }
+            
             // Make sure all of our positions in the biota are up to date with our current cached values.
             foreach (var kvp in positionCache)
             {
@@ -91,6 +185,9 @@ namespace ACE.Server.WorldObjects
             }
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
+            SaveInProgress = true;
+            SaveStartTime = DateTime.UtcNow;
+            LastSavedStackSize = StackSize;  // Snapshot for corruption detection
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -99,6 +196,23 @@ namespace ACE.Server.WorldObjects
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
+                    var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                    SaveInProgress = false;
+                    
+                    // Check for slow saves (configurable threshold)
+                    var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
+                    if (saveTime > slowThreshold && this is not Player)
+                    {
+                        var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
+                        log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
+                        
+                        // Throttled Discord alert
+                        SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+                    }
+                    
+                    // Check database queue size after save completes
+                    CheckDatabaseQueueSize();
+                    
                     if (!result)
                     {
                         if (this is Player player)
@@ -114,6 +228,8 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
+                // Note: For bulk saves (enqueueSave=false), SaveInProgress remains true
+                // It will be cleared by the caller when the bulk save completes
                 // If not enqueuing, invoke callback immediately with success
                 onCompleted?.Invoke(true);
             }
@@ -214,6 +330,123 @@ namespace ACE.Server.WorldObjects
             }
 
             return true;
+        }
+        
+        private static void SendAggregatedDbRaceAlert()
+        {
+            var now = DateTime.UtcNow;
+            
+            // Reset counter every minute and send summary
+            if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
+            {
+                // Check Discord is configured
+                if (ConfigManager.Config.Chat.EnableDiscordConnection && 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                {
+                    try
+                    {
+                        var topItems = dbRacesThisMinute.Take(10).ToList();
+                        var msg = $"⚠️ **DB RACE**: {dbRacesThisMinute.Count} concurrent saves detected in last minute\n" +
+                                 $"Top items: `{string.Join("`, `", topItems)}`";
+                        
+                        DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                            ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                        
+                        dbRaceAlertsThisMinute++;
+                        lastDbRaceAlert = now;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Failed to send DB race alert to Discord: {ex.Message}");
+                    }
+                }
+                
+                // Clear the bag for next minute
+                dbRacesThisMinute = new System.Collections.Concurrent.ConcurrentBag<string>();
+                dbRaceAlertsThisMinute = 0;
+            }
+        }
+        
+        private static void SendDbSlowDiscordAlert(string itemName, double saveTime, int stackSize, string ownerInfo)
+        {
+            var now = DateTime.UtcNow;
+            
+            // Reset counter every minute
+            if ((now - lastDbSlowAlert).TotalMinutes >= 1)
+            {
+                dbSlowAlertsThisMinute = 0;
+            }
+            
+            // Check rate limit (configurable via /modifylong db_slow_discord_max_alerts_per_minute)
+            var maxAlerts = PropertyManager.GetLong("db_slow_discord_max_alerts_per_minute", 5).Item;
+            if (maxAlerts <= 0 || dbSlowAlertsThisMinute >= maxAlerts)
+                return;  // Drop alert to prevent Discord API spam
+            
+            // Check Discord is configured
+            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                return;
+            
+            try
+            {
+                var msg = $"🔴 **DB SLOW**: `{itemName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
+                
+                DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                
+                dbSlowAlertsThisMinute++;
+                lastDbSlowAlert = now;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to send DB slow alert to Discord: {ex.Message}");
+            }
+        }
+        
+        private static void CheckDatabaseQueueSize()
+        {
+            var queueThreshold = PropertyManager.GetLong("db_queue_alert_threshold", 100).Item;
+            if (queueThreshold <= 0)
+                return;  // Monitoring disabled
+            
+            var queueCount = DatabaseManager.Shard.QueueCount;
+            if (queueCount <= queueThreshold)
+                return;  // Queue size acceptable
+            
+            var now = DateTime.UtcNow;
+            
+            // Reset counter every minute
+            if ((now - lastDbQueueAlert).TotalMinutes >= 1)
+            {
+                dbQueueAlertsThisMinute = 0;
+            }
+            
+            // Check rate limit (configurable via /modifylong db_queue_discord_max_alerts_per_minute)
+            var maxAlerts = PropertyManager.GetLong("db_queue_discord_max_alerts_per_minute", 2).Item;
+            if (maxAlerts <= 0 || dbQueueAlertsThisMinute >= maxAlerts)
+                return;
+            
+            // Check Discord is configured
+            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                return;
+            
+            try
+            {
+                var msg = $"🔴 **DB QUEUE HIGH**: Queue count at **{queueCount}** (threshold: {queueThreshold}). Potential save delays and item loss risk!";
+                
+                DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                
+                dbQueueAlertsThisMinute++;
+                lastDbQueueAlert = now;
+                
+                log.Warn($"[DB QUEUE] Database queue count: {queueCount} exceeds threshold {queueThreshold}");
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to send DB queue alert to Discord: {ex.Message}");
+            }
         }
     }
 }

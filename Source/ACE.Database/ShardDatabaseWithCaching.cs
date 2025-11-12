@@ -24,7 +24,6 @@ namespace ACE.Database
         private class CacheObject<T>
         {
             public DateTime LastSeen;
-            public ShardDbContext Context;
             public T CachedObject;
         }
 
@@ -66,17 +65,17 @@ namespace ACE.Database
             lastMaintenanceInterval = DateTime.UtcNow;
         }
 
-        private void TryAddToCache(ShardDbContext context, Biota biota)
+        private void TryAddToCache(Biota biota)
         {
             lock (biotaCacheMutex)
             {
                 if (ObjectGuid.IsPlayer(biota.Id))
                 {
                     if (PlayerBiotaRetentionTime > TimeSpan.Zero)
-                        biotaCache[biota.Id] = new CacheObject<Biota> {LastSeen = DateTime.UtcNow, Context = context, CachedObject = biota};
+                        biotaCache[biota.Id] = new CacheObject<Biota> {LastSeen = DateTime.UtcNow, CachedObject = biota};
                 }
                 else if (NonPlayerBiotaRetentionTime > TimeSpan.Zero)
-                    biotaCache[biota.Id] = new CacheObject<Biota> {LastSeen = DateTime.UtcNow, Context = context, CachedObject = biota};
+                    biotaCache[biota.Id] = new CacheObject<Biota> {LastSeen = DateTime.UtcNow, CachedObject = biota};
             }
         }
 
@@ -104,7 +103,7 @@ namespace ACE.Database
             var biota = base.GetBiota(context, id);
 
             if (biota != null && !doNotAddToCache)
-                TryAddToCache(context, biota);
+                TryAddToCache(biota);
 
             return biota;
         }
@@ -115,20 +114,20 @@ namespace ACE.Database
             {
                 if (PlayerBiotaRetentionTime > TimeSpan.Zero)
                 {
-                    var context = new ShardDbContext();
-
-                    var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
-
-                    return biota;
+                    using (var context = new ShardDbContext())
+                    {
+                        var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
+                        return biota;
+                    }
                 }
             }
             else if (NonPlayerBiotaRetentionTime > TimeSpan.Zero)
             {
-                var context = new ShardDbContext();
-
-                var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
-
-                return biota;
+                using (var context = new ShardDbContext())
+                {
+                    var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
+                    return biota;
+                }
             }
 
             return base.GetBiota(id, doNotAddToCache);
@@ -145,52 +144,63 @@ namespace ACE.Database
             {
                 cachedBiota.LastSeen = DateTime.UtcNow;
 
+                using (var context = new ShardDbContext())
+                {
+                    var existingBiota = base.GetBiota(context, biota.Id);
+
+                    rwLock.EnterReadLock();
+                    try
+                    {
+                        ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                    }
+                    finally
+                    {
+                        rwLock.ExitReadLock();
+                    }
+
+                    if (DoSaveBiota(context, existingBiota))
+                    {
+                        cachedBiota.CachedObject = existingBiota;
+                        return true;
+                    }
+
+                    return false;
+                }
+            }
+
+            // Biota does not exist in the cache
+            using (var context = new ShardDbContext())
+            {
+                var existingBiota = base.GetBiota(context, biota.Id);
+
                 rwLock.EnterReadLock();
                 try
                 {
-                    ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(cachedBiota.Context, biota, cachedBiota.CachedObject);
+                    if (existingBiota == null)
+                    {
+                        existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
+
+                        context.Biota.Add(existingBiota);
+                    }
+                    else
+                    {
+                        ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                    }
                 }
                 finally
                 {
                     rwLock.ExitReadLock();
                 }
 
-                return DoSaveBiota(cachedBiota.Context, cachedBiota.CachedObject);
-            }
-
-            // Biota does not exist in the cache
-
-            var context = new ShardDbContext();
-
-            var existingBiota = base.GetBiota(context, biota.Id);
-
-            rwLock.EnterReadLock();
-            try
-            {
-                if (existingBiota == null)
+                if (DoSaveBiota(context, existingBiota))
                 {
-                    existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
+                    TryAddToCache(existingBiota);
 
-                    context.Biota.Add(existingBiota);
+                    return true;
                 }
-                else
-                {
-                    ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
-                }
-            }
-            finally
-            {
-                rwLock.ExitReadLock();
-            }
 
-            if (DoSaveBiota(context, existingBiota))
-            {
-                TryAddToCache(context, existingBiota);
-
-                return true;
+                return false;
             }
-
-            return false;
         }
 
         public override bool RemoveBiota(uint id)

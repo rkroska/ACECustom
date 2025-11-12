@@ -33,6 +33,10 @@ namespace ACE.Server.Managers
     public static class WorldManager
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        // Discord throttling for login block alerts
+        private static DateTime lastLoginBlockAlert = DateTime.MinValue;
+        private static int loginBlockAlertsThisMinute = 0;
 
         private static readonly PhysicsEngine Physics;
 
@@ -93,7 +97,7 @@ namespace ACE.Server.Managers
                 PlayerManager.BootAllPlayers();
         }
 
-        public static void PlayerEnterWorld(Session session, LoginCharacter character)
+        public static void PlayerEnterWorld(Session session, LoginCharacter character, int loginRetryCount = 0)
         {
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
 
@@ -101,6 +105,30 @@ namespace ACE.Server.Managers
             {
                 log.Error($"PlayerEnterWorld requested for character.Id 0x{character.Id:X8} not found in PlayerManager OfflinePlayers.");
                 return;
+            }
+
+            // Prevent item loss race condition: block login if logout save still pending
+            if (offlinePlayer.SaveInProgress)
+            {
+                const int MAX_LOGIN_RETRIES = 10;
+                if (loginRetryCount >= MAX_LOGIN_RETRIES)
+                {
+                    log.Error($"[LOGIN BLOCK] {character.Name} exceeded max login retries ({MAX_LOGIN_RETRIES}). Save stuck for {(DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds:N1}s. Forcing login.");
+                    offlinePlayer.SaveInProgress = false;
+                }
+                else
+                {
+                    var timeWaiting = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalMilliseconds;
+                    log.Warn($"[LOGIN BLOCK] {character.Name} login delayed (retry {loginRetryCount + 1}/{MAX_LOGIN_RETRIES}), save in-progress {timeWaiting:N0}ms.");
+                    
+                    SendLoginBlockDiscordAlert(character.Name, timeWaiting);
+                    
+                    var retryChain = new ACE.Server.Entity.Actions.ActionChain();
+                    retryChain.AddDelaySeconds(2.0);
+                    retryChain.AddAction(WorldManager.ActionQueue, () => PlayerEnterWorld(session, character, loginRetryCount + 1));
+                    retryChain.EnqueueChain();
+                    return;
+                }
             }
 
             DatabaseManager.Shard.GetCharacter(character.Id, fullCharacter =>
@@ -451,5 +479,41 @@ namespace ACE.Server.Managers
         /// Function to begin ending the operations inside of an active world.
         /// </summary>
         public static void StopWorld() { pendingWorldStop = true; }
+        
+        private static void SendLoginBlockDiscordAlert(string characterName, double timeWaiting)
+        {
+            var now = DateTime.UtcNow;
+            
+            // Reset counter every minute
+            if ((now - lastLoginBlockAlert).TotalMinutes >= 1)
+            {
+                loginBlockAlertsThisMinute = 0;
+            }
+            
+            // Check rate limit (configurable via /modifylong login_block_discord_max_alerts_per_minute)
+            var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3).Item;
+            if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
+                return;  // Drop alert to prevent Discord API spam
+            
+            // Check Discord is configured
+            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                return;
+            
+            try
+            {
+                var msg = $"⚠️ **LOGIN DELAYED**: `{characterName}` tried to login during save (pending {timeWaiting:N0}ms). Delayed 2s to prevent item loss.";
+                
+                DiscordChatManager.SendDiscordMessage("ITEM LOSS PREVENTION", msg, 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                
+                loginBlockAlertsThisMinute++;
+                lastLoginBlockAlert = now;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to send login block alert to Discord: {ex.Message}");
+            }
+        }
     }
 }
