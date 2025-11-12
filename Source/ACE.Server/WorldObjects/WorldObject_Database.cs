@@ -16,6 +16,7 @@ namespace ACE.Server.WorldObjects
         private readonly bool biotaOriginatedFromDatabase;
         
         // Discord throttling for database diagnostics alerts
+        private static readonly object dbAlertLock = new object();
         private static DateTime lastDbRaceAlert = DateTime.MinValue;
         private static int dbRaceAlertsThisMinute = 0;
         private static System.Collections.Concurrent.ConcurrentBag<string> dbRacesThisMinute = new();
@@ -334,72 +335,78 @@ namespace ACE.Server.WorldObjects
         
         private static void SendAggregatedDbRaceAlert()
         {
-            var now = DateTime.UtcNow;
-            
-            // Reset counter every minute and send summary
-            if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
+            lock (dbAlertLock)
             {
-                // Check Discord is configured
-                if (ConfigManager.Config.Chat.EnableDiscordConnection && 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
-                {
-                    try
-                    {
-                        var topItems = dbRacesThisMinute.Take(10).ToList();
-                        var msg = $"⚠️ **DB RACE**: {dbRacesThisMinute.Count} concurrent saves detected in last minute\n" +
-                                 $"Top items: `{string.Join("`, `", topItems)}`";
-                        
-                        DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
-                            ConfigManager.Config.Chat.PerformanceAlertsChannelId);
-                        
-                        dbRaceAlertsThisMinute++;
-                        lastDbRaceAlert = now;
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Failed to send DB race alert to Discord: {ex.Message}");
-                    }
-                }
+                var now = DateTime.UtcNow;
                 
-                // Clear the bag for next minute
-                dbRacesThisMinute = new System.Collections.Concurrent.ConcurrentBag<string>();
-                dbRaceAlertsThisMinute = 0;
+                // Reset counter every minute and send summary
+                if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
+                {
+                    // Check Discord is configured
+                    if (ConfigManager.Config.Chat.EnableDiscordConnection && 
+                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    {
+                        try
+                        {
+                            var topItems = dbRacesThisMinute.Take(10).ToList();
+                            var msg = $"⚠️ **DB RACE**: {dbRacesThisMinute.Count} concurrent saves detected in last minute\n" +
+                                     $"Top items: `{string.Join("`, `", topItems)}`";
+                            
+                            DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                                ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            
+                            dbRaceAlertsThisMinute++;
+                            lastDbRaceAlert = now;
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Failed to send DB race alert to Discord: {ex.Message}");
+                        }
+                    }
+                    
+                    // Clear the bag for next minute
+                    dbRacesThisMinute = new System.Collections.Concurrent.ConcurrentBag<string>();
+                    dbRaceAlertsThisMinute = 0;
+                }
             }
         }
         
         private static void SendDbSlowDiscordAlert(string itemName, double saveTime, int stackSize, string ownerInfo)
         {
-            var now = DateTime.UtcNow;
-            
-            // Reset counter every minute
-            if ((now - lastDbSlowAlert).TotalMinutes >= 1)
+            lock (dbAlertLock)
             {
-                dbSlowAlertsThisMinute = 0;
-            }
-            
-            // Check rate limit (configurable via /modifylong db_slow_discord_max_alerts_per_minute)
-            var maxAlerts = PropertyManager.GetLong("db_slow_discord_max_alerts_per_minute", 5).Item;
-            if (maxAlerts <= 0 || dbSlowAlertsThisMinute >= maxAlerts)
-                return;  // Drop alert to prevent Discord API spam
-            
-            // Check Discord is configured
-            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
-                return;
-            
-            try
-            {
-                var msg = $"🔴 **DB SLOW**: `{itemName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
+                var now = DateTime.UtcNow;
                 
-                DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                // Reset counter every minute
+                if ((now - lastDbSlowAlert).TotalMinutes >= 1)
+                {
+                    dbSlowAlertsThisMinute = 0;
+                }
                 
-                dbSlowAlertsThisMinute++;
-                lastDbSlowAlert = now;
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to send DB slow alert to Discord: {ex.Message}");
+                // Check rate limit (configurable via /modifylong db_slow_discord_max_alerts_per_minute)
+                var maxAlerts = PropertyManager.GetLong("db_slow_discord_max_alerts_per_minute", 5).Item;
+                if (maxAlerts <= 0 || dbSlowAlertsThisMinute >= maxAlerts)
+                    return;  // Drop alert to prevent Discord API spam
+                
+                // Check Discord is configured
+                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                    return;
+                
+                try
+                {
+                    var msg = $"🔴 **DB SLOW**: `{itemName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
+                    
+                    DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                        ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                    
+                    dbSlowAlertsThisMinute++;
+                    lastDbSlowAlert = now;
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to send DB slow alert to Discord: {ex.Message}");
+                }
             }
         }
         
@@ -413,39 +420,42 @@ namespace ACE.Server.WorldObjects
             if (queueCount <= queueThreshold)
                 return;  // Queue size acceptable
             
-            var now = DateTime.UtcNow;
-            
-            // Reset counter every minute
-            if ((now - lastDbQueueAlert).TotalMinutes >= 1)
+            lock (dbAlertLock)
             {
-                dbQueueAlertsThisMinute = 0;
-            }
-            
-            // Check rate limit (configurable via /modifylong db_queue_discord_max_alerts_per_minute)
-            var maxAlerts = PropertyManager.GetLong("db_queue_discord_max_alerts_per_minute", 2).Item;
-            if (maxAlerts <= 0 || dbQueueAlertsThisMinute >= maxAlerts)
-                return;
-            
-            // Check Discord is configured
-            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
-                return;
-            
-            try
-            {
-                var msg = $"🔴 **DB QUEUE HIGH**: Queue count at **{queueCount}** (threshold: {queueThreshold}). Potential save delays and item loss risk!";
+                var now = DateTime.UtcNow;
                 
-                DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                // Reset counter every minute
+                if ((now - lastDbQueueAlert).TotalMinutes >= 1)
+                {
+                    dbQueueAlertsThisMinute = 0;
+                }
                 
-                dbQueueAlertsThisMinute++;
-                lastDbQueueAlert = now;
+                // Check rate limit (configurable via /modifylong db_queue_discord_max_alerts_per_minute)
+                var maxAlerts = PropertyManager.GetLong("db_queue_discord_max_alerts_per_minute", 2).Item;
+                if (maxAlerts <= 0 || dbQueueAlertsThisMinute >= maxAlerts)
+                    return;
                 
-                log.Warn($"[DB QUEUE] Database queue count: {queueCount} exceeds threshold {queueThreshold}");
-            }
-            catch (Exception ex)
-            {
-                log.Error($"Failed to send DB queue alert to Discord: {ex.Message}");
+                // Check Discord is configured
+                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                    return;
+                
+                try
+                {
+                    var msg = $"🔴 **DB QUEUE HIGH**: Queue count at **{queueCount}** (threshold: {queueThreshold}). Potential save delays and item loss risk!";
+                    
+                    DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                        ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                    
+                    dbQueueAlertsThisMinute++;
+                    lastDbQueueAlert = now;
+                    
+                    log.Warn($"[DB QUEUE] Database queue count: {queueCount} exceeds threshold {queueThreshold}");
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to send DB queue alert to Discord: {ex.Message}");
+                }
             }
         }
     }

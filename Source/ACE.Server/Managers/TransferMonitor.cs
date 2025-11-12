@@ -42,11 +42,14 @@ namespace ACE.Server.Managers
                 var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
                 if (currentTransfers > HighTransferRateThreshold)
                 {
-                    // Only warn once per minute to prevent spam from bulk trades
-                    if (DateTime.UtcNow - lastHighTransferWarning > TimeSpan.FromMinutes(1))
+                    // Only warn once per minute to prevent spam from bulk trades (thread-safe)
+                    lock (resetLock)
                     {
-                        log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
-                        lastHighTransferWarning = DateTime.UtcNow;
+                        if (DateTime.UtcNow - lastHighTransferWarning > TimeSpan.FromMinutes(1))
+                        {
+                            log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
+                            lastHighTransferWarning = DateTime.UtcNow;
+                        }
                     }
                 }
                 

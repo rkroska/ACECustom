@@ -151,7 +151,15 @@ namespace ACE.Database
                     rwLock.EnterReadLock();
                     try
                     {
-                        ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                        if (existingBiota == null)
+                        {
+                            existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
+                            context.Biota.Add(existingBiota);
+                        }
+                        else
+                        {
+                            ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                        }
                     }
                     finally
                     {

@@ -83,7 +83,8 @@ namespace ACE.Server.Entity
             }
             else
             {
-                SaveInProgress = false;  // Not actually saving, clear immediately
+                // For bulk saves (enqueueSave=false), SaveInProgress remains true
+                // It will be cleared by the caller when the bulk save completes
                 onCompleted?.Invoke(true);
             }
         }
