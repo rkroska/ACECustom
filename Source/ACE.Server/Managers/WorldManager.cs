@@ -128,7 +128,7 @@ namespace ACE.Server.Managers
                     retryChain.AddAction(WorldManager.ActionQueue, () =>
                     {
                         // Validate session is still valid before retrying login
-                        if (session != null && session.Player == null && session.State != Network.Enum.SessionState.NetworkTimeout)
+                        if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
                             PlayerEnterWorld(session, character, loginRetryCount + 1);
                     });
                     retryChain.EnqueueChain();
