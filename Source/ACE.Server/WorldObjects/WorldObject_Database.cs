@@ -108,6 +108,7 @@ namespace ACE.Server.WorldObjects
             if (SaveInProgress)
             {
                 DetectAndLogConcurrentSave();
+                return; // Abort save attempt - already in progress
             }
             
             foreach (var kvp in positionCache)
@@ -181,29 +182,9 @@ namespace ACE.Server.WorldObjects
             // Detect concurrent saves
             if (SaveInProgress)
             {
-                var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
-                
-                // Check if stackable item data changed during race (corruption risk)
-                var currentStack = StackSize;
-                var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
-                var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
-                
-                // Format stack info (only for stackable items)
-                var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-                log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
-                
-                // Track races with changed data (HIGH RISK!) or slow timing for Discord
-                if (stackChanged || timeInFlight > 50)
-                {
-                    var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                      (this.Container is Player owner ? $"[{owner.Name}] " : "");
-                    var raceInfo = stackChanged 
-                        ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                        : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
-                    dbRacesThisMinute.Add(raceInfo);
-                    SendAggregatedDbRaceAlert();
-                }
+                DetectAndLogConcurrentSave();
+                onCompleted?.Invoke(false); // Notify caller that save was rejected
+                return; // Abort save attempt - already in progress
             }
             
             foreach (var kvp in positionCache)

@@ -1364,35 +1364,54 @@ namespace ACE.Server.Entity
         private void SaveDB()
         {
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+            var savedObjects = new List<WorldObject>();
 
             foreach (var wo in worldObjects.Values)
             {
                 if (wo.IsStaticThatShouldPersistToShard() || wo.IsDynamicThatShouldPersistToShard())
-                    AddWorldObjectToBiotasSaveCollection(wo, biotas);
+                {
+                    AddWorldObjectToBiotasSaveCollection(wo, biotas, savedObjects);
+                }
             }
 
             if (biotas.Count > 0)
             {
                 DatabaseManager.Shard.SaveBiotasInParallel(
                     biotas,
-                    result => { },
+                    result => {
+                        // Clear SaveInProgress flags on world thread for thread safety
+                        var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                        clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                        {
+                            if (result)
+                            {
+                                foreach (var wo in savedObjects)
+                                {
+                                    if (!wo.IsDestroyed)
+                                        wo.SaveInProgress = false;
+                                }
+                            }
+                        });
+                        clearFlagsAction.EnqueueChain();
+                    },
                     $"SaveDB:Landblock:{this.Id.Raw}{(this.VariationId.HasValue ? $":v{this.VariationId.Value}" : string.Empty)}"
                 );
             }
         }
 
-        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas, List<WorldObject> savedObjects)
         {
-            if (wo.ChangesDetected)
+            if (wo.ChangesDetected && !wo.SaveInProgress)
             {
                 wo.SaveBiotaToDatabase(false);
                 biotas.Add((wo.Biota, wo.BiotaDatabaseLock));
+                savedObjects.Add(wo);
             }
 
             if (wo is Container container)
             {
                 foreach (var item in container.Inventory.Values)
-                    AddWorldObjectToBiotasSaveCollection(item, biotas);
+                    AddWorldObjectToBiotasSaveCollection(item, biotas, savedObjects);
             }
         }
 
