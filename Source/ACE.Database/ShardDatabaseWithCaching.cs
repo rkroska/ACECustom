@@ -133,6 +133,10 @@ namespace ACE.Database
             return base.GetBiota(id, skipCache);
         }
 
+        // Caller is responsible for holding this `rwLock` the entire time the biota is being read from
+        // or written back to the shard database. It keeps the world-thread mutations (inventory updates,
+        // physics ticks, etc.) from racing with the serialization work done here so we don't stamp over
+        // in-flight changes or capture a half-mutated object graph.
         public override bool SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)
         {
             CacheObject<Biota> cachedBiota;
