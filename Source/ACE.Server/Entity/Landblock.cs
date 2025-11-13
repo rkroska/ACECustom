@@ -1091,11 +1091,29 @@ namespace ACE.Server.Entity
             if (wo is Corpse && wo.Level.HasValue)
             {
                 var corpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
-                var corpseList = worldObjects.Values.Union(pendingAdditions.Values).Where(w => w is Corpse && w.Level.HasValue && w.VictimId == wo.VictimId).OrderBy(w => w.CreationTimestamp);
+                var allWos = worldObjects.Values.Union(pendingAdditions.Values);
 
-                if (corpseList.Count() > corpseLimit)
+                int corpseCount = 0;
+                WorldObject oldestCorpseNotDecayingSoon = null;
+                foreach (var w in allWos)
                 {
-                    var corpse = GetObject(corpseList.First(w => w.TimeToRot > Corpse.EmptyDecayTime).Guid);
+                    if (w is Corpse && w.Level.HasValue && w.VictimId == wo.VictimId)
+                    {
+                        corpseCount++;
+                        if (oldestCorpseNotDecayingSoon == null)
+                        {
+                            oldestCorpseNotDecayingSoon = w;
+                        }
+                        else if (w.TimeToRot > Corpse.EmptyDecayTime && w.CreationTimestamp < oldestCorpseNotDecayingSoon.CreationTimestamp)
+                        {
+                            oldestCorpseNotDecayingSoon = w;
+                        }
+                    }
+                }
+
+                if (corpseCount > corpseLimit && oldestCorpseNotDecayingSoon != null) 
+                {
+                    var corpse = GetObject(oldestCorpseNotDecayingSoon.Guid);
 
                     if (corpse != null)
                     {
