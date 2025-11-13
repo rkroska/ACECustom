@@ -797,7 +797,7 @@ namespace ACE.Server.WorldObjects
         /// If this is a container or a creature, all of the inventory and/or equipped objects will also be destroyed.<para />
         /// An object should only be destroyed once.
         /// </summary>
-        public void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
+        public virtual void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
             if (IsDestroyed)
             {
