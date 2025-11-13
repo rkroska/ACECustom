@@ -319,21 +319,29 @@ namespace ACE.Server.Network.Handlers
                 character.DeleteTime = (ulong)(Time.GetUnixTime() + charRestoreTime);
                 character.IsDeleted = false;
 
-                DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
+                var rwLock = new ReaderWriterLockSlim();
+                DatabaseManager.Shard.SaveCharacter(character, rwLock, result =>
                 {
-                    if (result)
+                    try
                     {
-                        DatabaseManager.Shard.GetLoginCharacters(session.AccountId, false, result =>
+                        if (result)
                         {
-                            var cs = result.OrderByDescending(o => o.LastLoginTimestamp).ToList();
-                            session.UpdateCharacters(cs);
-                            session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
+                            DatabaseManager.Shard.GetLoginCharacters(session.AccountId, false, result =>
+                            {
+                                var cs = result.OrderByDescending(o => o.LastLoginTimestamp).ToList();
+                                session.UpdateCharacters(cs);
+                                session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
 
-                            PlayerManager.HandlePlayerDelete(character.Id);
-                        });
+                                PlayerManager.HandlePlayerDelete(character.Id);
+                            });
+                        }
+                        else
+                            session.SendCharacterError(CharacterError.Delete);
                     }
-                    else
-                        session.SendCharacterError(CharacterError.Delete);
+                    finally
+                    {
+                        rwLock.Dispose();
+                    }
                 });
             });
 
@@ -384,19 +392,27 @@ namespace ACE.Server.Network.Handlers
                         character.DeleteTime = 0;
                         character.IsDeleted = false;
 
-                        DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
+                        var rwLock = new ReaderWriterLockSlim();
+                        DatabaseManager.Shard.SaveCharacter(character, rwLock, result =>
                         {
-                            var name = character.Name;
+                            try
+                            {
+                                var name = character.Name;
 
-                            if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && session.AccessLevel > AccessLevel.Advocate)
-                                name = "+" + name;
-                            else if (!ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && character.IsPlussed)
-                                name = "+" + name;
+                                if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && session.AccessLevel > AccessLevel.Advocate)
+                                    name = "+" + name;
+                                else if (!ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && character.IsPlussed)
+                                    name = "+" + name;
 
-                            if (result)
-                                session.Network.EnqueueSend(new GameMessageCharacterRestore(guid, name, 0u));
-                            else
-                                SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Corrupt);
+                                if (result)
+                                    session.Network.EnqueueSend(new GameMessageCharacterRestore(guid, name, 0u));
+                                else
+                                    SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Corrupt);
+                            }
+                            finally
+                            {
+                                rwLock.Dispose();
+                            }
                         });
                     }
                 });

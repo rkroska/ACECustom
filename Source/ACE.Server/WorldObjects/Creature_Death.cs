@@ -39,8 +39,20 @@ namespace ACE.Server.WorldObjects
             IsTurning = false;
             IsMoving = false;
 
-            grappleLoopCTS?.Cancel();
-            hotspotLoopCTS?.Cancel();
+            // Cancel loops and dispose CTS after tasks complete to avoid ObjectDisposedException
+            var oldGrappleCts = System.Threading.Interlocked.Exchange(ref grappleLoopCTS, null);
+            oldGrappleCts?.Cancel();
+            var oldGrappleTask = grappleLoopTask;
+            grappleLoopTask = null;
+            if (oldGrappleCts != null && oldGrappleTask != null)
+                _ = oldGrappleTask.ContinueWith(_ => oldGrappleCts.Dispose(), System.Threading.Tasks.TaskScheduler.Default);
+
+            var oldHotspotCts = System.Threading.Interlocked.Exchange(ref hotspotLoopCTS, null);
+            oldHotspotCts?.Cancel();
+            var oldHotspotTask = hotspotLoopTask;
+            hotspotLoopTask = null;
+            if (oldHotspotCts != null && oldHotspotTask != null)
+                _ = oldHotspotTask.ContinueWith(_ => oldHotspotCts.Dispose(), System.Threading.Tasks.TaskScheduler.Default);
 
             // Reset fog to Clear upon death only if the creature was enraged
             if (IsEnraged && CurrentLandblock != null)

@@ -88,25 +88,33 @@ namespace ACE.Server.Command.Handlers
                     {
                         character.DeleteTime = (ulong)Time.GetUnixTime();
                         character.IsDeleted = true;
-                        DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
+                        var rwLock = new ReaderWriterLockSlim();
+                        DatabaseManager.Shard.SaveCharacter(character, rwLock, result =>
                         {
-                            if (result)
+                            try
                             {
-                                var deleteOfflineChain = new ActionChain();
-                                deleteOfflineChain.AddAction(WorldManager.ActionQueue, () => PlayerManager.HandlePlayerDelete(character.Id));
-                                deleteOfflineChain.AddDelayForOneTick();
-                                deleteOfflineChain.AddAction(WorldManager.ActionQueue, () =>
+                                if (result)
                                 {
-                                    var success = PlayerManager.ProcessDeletedPlayer(character.Id);
-                                    if (success)
-                                        CommandHandlerHelper.WriteOutputInfo(session, $"Successfully {(isOnline ? "booted and " : "")}deleted character {foundPlayer.Name} (0x{foundPlayer.Guid}).", ChatMessageType.Broadcast);
-                                    else
-                                        CommandHandlerHelper.WriteOutputInfo(session, $"Unable to {(isOnline ? "boot and " : "")}delete character {foundPlayer.Name} (0x{foundPlayer.Guid}) due to PlayerManager failure.", ChatMessageType.Broadcast);
-                                });
-                                deleteOfflineChain.EnqueueChain();
+                                    var deleteOfflineChain = new ActionChain();
+                                    deleteOfflineChain.AddAction(WorldManager.ActionQueue, () => PlayerManager.HandlePlayerDelete(character.Id));
+                                    deleteOfflineChain.AddDelayForOneTick();
+                                    deleteOfflineChain.AddAction(WorldManager.ActionQueue, () =>
+                                    {
+                                        var success = PlayerManager.ProcessDeletedPlayer(character.Id);
+                                        if (success)
+                                            CommandHandlerHelper.WriteOutputInfo(session, $"Successfully {(isOnline ? "booted and " : "")}deleted character {foundPlayer.Name} (0x{foundPlayer.Guid}).", ChatMessageType.Broadcast);
+                                        else
+                                            CommandHandlerHelper.WriteOutputInfo(session, $"Unable to {(isOnline ? "boot and " : "")}delete character {foundPlayer.Name} (0x{foundPlayer.Guid}) due to PlayerManager failure.", ChatMessageType.Broadcast);
+                                    });
+                                    deleteOfflineChain.EnqueueChain();
+                                }
+                                else
+                                    CommandHandlerHelper.WriteOutputInfo(session, $"Unable to {(isOnline ? "boot and " : "")}delete character {foundPlayer.Name} (0x{foundPlayer.Guid}) due to shard database SaveCharacter failure.", ChatMessageType.Broadcast);
                             }
-                            else
-                                CommandHandlerHelper.WriteOutputInfo(session, $"Unable to {(isOnline ? "boot and " : "")}delete character {foundPlayer.Name} (0x{foundPlayer.Guid}) due to shard database SaveCharacter failure.", ChatMessageType.Broadcast);
+                            finally
+                            {
+                                rwLock.Dispose();
+                            }
                         });
                     }
                     else
