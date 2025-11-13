@@ -1091,7 +1091,7 @@ namespace ACE.Server.Entity
             }
             // For player corpses, we prevent a single player from spamming corpses on a single
             // landblock. We search for and mark their oldest corpse for early decay if they have  
-            // more than corpse_spam_limit corpses on a single lamdblock.
+            // more than corpse_spam_limit corpses on a single landblock.
             else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
             {
                 long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
