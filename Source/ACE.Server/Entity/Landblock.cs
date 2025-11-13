@@ -1086,12 +1086,13 @@ namespace ACE.Server.Entity
             wo.NotifyPlayers();
 
             if (wo is Player player)
+            {
                 player.SetFogColor(FogColor);
-
+            }
             // For player corpses, we prevent a single player from spamming corpses on a single
             // landblock. We search for and mark their oldest corpse for early decay if they have  
             // more than corpse_spam_limit corpses on a single lamdblock.
-            if (wo is Corpse new_corpse && !new_corpse.IsMonster)
+            else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
             {
                 long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
                 int corpsesForThisPlayer = 0;
@@ -1110,7 +1111,7 @@ namespace ACE.Server.Entity
                     }
                 }
 
-                if (corpsesForThisPlayer > perPlayerCorpseLimit && oldestCorpseNotDecayingSoon != null) 
+                if (corpsesForThisPlayer > perPlayerCorpseLimit && oldestCorpseNotDecayingSoon != null)
                 {
                     var corpse = GetObject(oldestCorpseNotDecayingSoon.Guid);
 
