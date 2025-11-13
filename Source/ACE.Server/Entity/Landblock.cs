@@ -1100,8 +1100,7 @@ namespace ACE.Server.Entity
                 Corpse oldestCorpseNotDecayingSoon = null;
                 foreach (WorldObject w in worldObjects.Values.Union(pendingAdditions.Values))
                 {
-                    if (w is not Corpse) continue; // Not a corpse.
-                    Corpse existingCorpse = w as Corpse;
+                    if (w is not Corpse existingCorpse) continue; // Not a corpse.
                     if (existingCorpse.VictimId != new_corpse.VictimId) continue; // Not this player's corpse.
                     corpsesForThisPlayer++;
                     if (existingCorpse.TimeToRot <= Corpse.EmptyDecayTime) continue; // Corpse already decaying soon.
