@@ -583,7 +583,7 @@ namespace ACE.Server.Entity
                     {
                         sortedCreaturesByNextTick.RemoveFirst();
                         // If the monster is dead, remove from the sorted tick list and don't re-add it.
-                        if (!monster.IsDead) continue;
+                        if (monster.IsDead) continue;
                         monster.Monster_Tick(currentUnixTime);
                         sortedCreaturesByNextTick.AddLast(monster); // All creatures tick at a fixed interval
                         monstersProcessed++;
