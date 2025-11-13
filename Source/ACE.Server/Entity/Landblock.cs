@@ -576,14 +576,16 @@ namespace ACE.Server.Entity
                 
                 while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
-                    var first = sortedCreaturesByNextTick.First.Value;
+                    var monster = sortedCreaturesByNextTick.First.Value;
 
                     // If they wanted to run before or at now
-                    if (first.NextMonsterTickTime <= currentUnixTime)
+                    if (monster.NextMonsterTickTime <= currentUnixTime)
                     {
                         sortedCreaturesByNextTick.RemoveFirst();
-                        first.Monster_Tick(currentUnixTime);
-                        sortedCreaturesByNextTick.AddLast(first); // All creatures tick at a fixed interval
+                        // If the monster is dead, remove from the sorted tick list and don't re-add it.
+                        if (!monster.IsDead) continue;
+                        monster.Monster_Tick(currentUnixTime);
+                        sortedCreaturesByNextTick.AddLast(monster); // All creatures tick at a fixed interval
                         monstersProcessed++;
                     }
                     else
