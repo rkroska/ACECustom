@@ -86,7 +86,7 @@ namespace ACE.Database
         }
 
 
-        public override Biota GetBiota(ShardDbContext context, uint id, bool doNotAddToCache = false)
+        public override Biota GetBiota(ShardDbContext context, uint id, bool skipCache = false)
         {
             lock (biotaCacheMutex)
             {
@@ -102,13 +102,13 @@ namespace ACE.Database
 
             var biota = base.GetBiota(context, id);
 
-            if (biota != null && !doNotAddToCache)
+            if (biota != null && !skipCache)
                 TryAddToCache(biota);
 
             return biota;
         }
 
-        public override Biota GetBiota(uint id, bool doNotAddToCache = false)
+        public override Biota GetBiota(uint id, bool skipCache = false)
         {
             if (ObjectGuid.IsPlayer(id))
             {
@@ -116,7 +116,7 @@ namespace ACE.Database
                 {
                     using (var context = new ShardDbContext())
                     {
-                        var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
+                        var biota = GetBiota(context, id, skipCache); // This will add the result into the caches
                         return biota;
                     }
                 }
@@ -125,12 +125,12 @@ namespace ACE.Database
             {
                 using (var context = new ShardDbContext())
                 {
-                    var biota = GetBiota(context, id, doNotAddToCache); // This will add the result into the caches
+                    var biota = GetBiota(context, id, skipCache); // This will add the result into the caches
                     return biota;
                 }
             }
 
-            return base.GetBiota(id, doNotAddToCache);
+            return base.GetBiota(id, skipCache);
         }
 
         public override bool SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)
