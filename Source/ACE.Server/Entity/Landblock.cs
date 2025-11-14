@@ -1077,38 +1077,37 @@ namespace ACE.Server.Entity
             wo.NotifyPlayers();
 
             if (wo is Player player)
-                player.SetFogColor(FogColor);
-
-            if (wo is Corpse && wo.Level.HasValue)
             {
-                var corpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
-                var allWos = worldObjects.Values.Union(pendingAdditions.Values);
+                player.SetFogColor(FogColor);
+            }
+            // For player corpses, we prevent a single player from spamming corpses on a single
+            // landblock. We search for and mark their oldest corpse for early decay if they have  
+            // more than corpse_spam_limit corpses on a single landblock.
+            else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
+            {
+                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
+                int corpsesForThisPlayer = 0;
 
-                int corpseCount = 0;
-                WorldObject oldestCorpseNotDecayingSoon = null;
-                foreach (var w in allWos)
+                Corpse oldestCorpseNotDecayingSoon = null;
+                foreach (WorldObject w in worldObjects.Values.Union(pendingAdditions.Values))
                 {
-                    if (w is Corpse && w.Level.HasValue && w.VictimId == wo.VictimId)
+                    if (w is not Corpse existingCorpse) continue; // Not a corpse.
+                    if (existingCorpse.VictimId != new_corpse.VictimId) continue; // Not this player's corpse.
+                    corpsesForThisPlayer++;
+                    if (existingCorpse.TimeToRot <= Corpse.EmptyDecayTime) continue; // Corpse already decaying soon.
+                    if (oldestCorpseNotDecayingSoon == null || oldestCorpseNotDecayingSoon.CreationTimestamp > existingCorpse.CreationTimestamp)
                     {
-                        corpseCount++;
-                        if (oldestCorpseNotDecayingSoon == null)
-                        {
-                            oldestCorpseNotDecayingSoon = w;
-                        }
-                        else if (w.TimeToRot > Corpse.EmptyDecayTime && w.CreationTimestamp < oldestCorpseNotDecayingSoon.CreationTimestamp)
-                        {
-                            oldestCorpseNotDecayingSoon = w;
-                        }
+                        oldestCorpseNotDecayingSoon = existingCorpse;
                     }
                 }
 
-                if (corpseCount > corpseLimit && oldestCorpseNotDecayingSoon != null) 
+                if (corpsesForThisPlayer > perPlayerCorpseLimit && oldestCorpseNotDecayingSoon != null)
                 {
                     var corpse = GetObject(oldestCorpseNotDecayingSoon.Guid);
 
                     if (corpse != null)
                     {
-                        log.Warn($"[CORPSE] Landblock.AddWorldObjectInternal(): {wo.Name} (0x{wo.Guid}) exceeds the per player limit of {corpseLimit} corpses for 0x{Id.Landblock:X4}. Adjusting TimeToRot for oldest {corpse.Name} (0x{corpse.Guid}), CreationTimestamp: {corpse.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(corpse.CreationTimestamp ?? 0).ToLocalTime():yyyy-MM-dd HH:mm:ss}), to Corpse.EmptyDecayTime({Corpse.EmptyDecayTime}).");
+                        log.Warn($"[CORPSE] Landblock.AddWorldObjectInternal(): {wo.Name} (0x{wo.Guid}) exceeds the per player limit of {perPlayerCorpseLimit} corpses for 0x{Id.Landblock:X4}. Adjusting TimeToRot for oldest {corpse.Name} (0x{corpse.Guid}), CreationTimestamp: {corpse.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(corpse.CreationTimestamp ?? 0).ToLocalTime():yyyy-MM-dd HH:mm:ss}), to Corpse.EmptyDecayTime({Corpse.EmptyDecayTime}).");
                         corpse.TimeToRot = Corpse.EmptyDecayTime;
                     }
                 }
