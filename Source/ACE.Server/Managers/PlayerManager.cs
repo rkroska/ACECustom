@@ -531,6 +531,10 @@ namespace ACE.Server.Managers
 
                 offlinePlayer.Allegiance = player.Allegiance;
                 offlinePlayer.AllegianceNode = player.AllegianceNode;
+                
+                // Transfer save state to offline player for login blocking
+                offlinePlayer.SaveInProgress = player.SaveInProgress;
+                offlinePlayer.LastRequestedDatabaseSave = player.LastRequestedDatabaseSave;
 
                 if (!offlinePlayers.TryAdd(offlinePlayer.Guid.Full, offlinePlayer))
                     return false;
