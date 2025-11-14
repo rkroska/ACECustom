@@ -43,40 +43,9 @@ namespace ACE.Server.Network
 
         public AccessLevel AccessLevel { get; private set; }
 
-        // Set initial capacity based on typical character count
-        public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>(5);
+        public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>();
 
-        private Player _player;
-        private WeakReference<Player> _playerWeakRef;
-
-        public Player Player 
-        { 
-            get 
-            {
-                // If we have a weak reference, try to get the target
-                if (_playerWeakRef != null)
-                {
-                    // Cache the result to keep it alive for the duration of this call
-                    // and avoid race condition where GC could reclaim between TryGetTarget and return
-                    if (_playerWeakRef.TryGetTarget(out var player))
-                        return player;
-                    
-                    // Weak reference target was collected, return null
-                    return null;
-                }
-                
-                // Return the strong reference if we have one
-                return _player;
-            }
-            private set 
-            {
-                _player = value;
-                _playerWeakRef = null;
-            }
-        }
-
-        public long MemoryBaseline { get; set; } = 0;
-        public long MemoryBaselineTimestamp { get; set; } = 0;
+        public Player Player { get; private set; }
 
 
         public DateTime logOffRequestTime;
@@ -108,7 +77,7 @@ namespace ACE.Server.Network
         /// <summary>
         /// The rate at which ProcessDDDQueue executes (and sends DDD patch data out to client)
         /// </summary>
-        private RateLimiter dddDataQueueRateLimiter;
+        private static readonly RateLimiter dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
 
         /// <summary>
         /// Rate limiter for /passwd command
@@ -137,7 +106,6 @@ namespace ACE.Server.Network
         {
             EndPoint = endPoint;
             Network = new NetworkSession(this, connectionListener, clientId, serverId);
-            dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
         }
 
 
@@ -248,7 +216,7 @@ namespace ACE.Server.Network
 
         public void CheckCharactersForDeletion()
         {
-            for (int i = Characters.Count - 1; i >= 0; i--)
+            for (int i = Characters.Count - 1; i > 0; i--)
             {
                 if (Characters[i].DeleteTime > 0 && Time.GetUnixTime() > Characters[i].DeleteTime)
                 {
@@ -256,19 +224,9 @@ namespace ACE.Server.Network
                     DatabaseManager.Shard.GetCharacter(Characters[i].Id, x =>
                     {
                         x.IsDeleted = true;
-                        var rwLock = new ReaderWriterLockSlim();
-                        DatabaseManager.Shard.SaveCharacter(x, rwLock, result =>
-                        {
-                            try
-                            {
-                                // Save completed
-                                PlayerManager.ProcessDeletedPlayer(x.Id);
-                            }
-                            finally
-                            {
-                                rwLock.Dispose();
-                            }
-                        });
+                        DatabaseManager.Shard.SaveCharacter(x, new ReaderWriterLockSlim(), null);
+
+                        PlayerManager.ProcessDeletedPlayer(x.Id);
 
                         //Characters.RemoveAt(i);
                     });                    
@@ -297,7 +255,7 @@ namespace ACE.Server.Network
         /// </summary>
         public void LogOffPlayer(bool forceImmediate = false)
         {
-            if (_player == null) return;
+            if (Player == null) return;
 
             // Log character logout to char_tracker table
             CharacterTracker.LogCharacterLogout(Player);
@@ -312,12 +270,7 @@ namespace ACE.Server.Network
                 var result = Player.LogOut(false, forceImmediate);
 
                 if (result)
-                {
                     logOffRequestTime = DateTime.UtcNow;
-                    // Convert to weak reference to allow GC if needed
-                    _playerWeakRef = new WeakReference<Player>(_player);
-                    _player = null;
-                }
             }
         }
 
@@ -402,21 +355,10 @@ namespace ACE.Server.Network
 
             NetworkManager.RemoveSession(this);
 
-            // Atomically detach and drain the DDD queue to prevent memory leak and race conditions
-            var oldQueue = System.Threading.Interlocked.Exchange(ref dddDataQueue, null);
-            if (oldQueue != null)
-            {
-                while (oldQueue.TryDequeue(out _)) { }
-            }
-
             // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
             // In the future, we should set Network to null and funnel Network communication through Session, instead of accessing Session.Network directly.
             Network.ReleaseResources();
-
-            // Clear DDD queue
-            dddDataQueue = null;
-            dddDataQueueRateLimiter = null;
         }
 
 
@@ -449,8 +391,7 @@ namespace ACE.Server.Network
         /// </summary>
         private void ProcessDDDQueue()
         {
-            var queue = System.Threading.Volatile.Read(ref dddDataQueue);
-            if (queue == null || dddDataQueueRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
+            if (dddDataQueue == null || dddDataQueueRateLimiter.GetSecondsToWaitBeforeNextEvent() > 0)
                 return;
 
             if (BeginDDDSentTime != DateTime.MinValue && DateTime.UtcNow < BeginDDDSentTime.AddSeconds(5))
@@ -458,16 +399,10 @@ namespace ACE.Server.Network
 
             BeginDDDSentTime = DateTime.MinValue;
 
-            if (queue.TryDequeue(out var dataFile))
+            if (dddDataQueue.TryDequeue(out var dataFile))
             {
                 Network.EnqueueSend(new GameMessageDDDDataMessage(dataFile.DatFileId, dataFile.DatDatabaseType));
                 dddDataQueueRateLimiter.RegisterEvent();
-                
-                // Clear queue if empty to free memory
-                if (dddDataQueue.IsEmpty)
-                {
-                    dddDataQueue = null;
-                }
             }
         }
     }

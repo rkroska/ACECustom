@@ -196,11 +196,11 @@ namespace ACE.Server.WorldObjects
             if (BankedPyreals == null)
             {
                 BankedPyreals = 0;
-                log.Debug($"[BANK_DEBUG] Player: {Name} | Initialized BankedPyreals to 0");
+                log.Info($"[BANK_DEBUG] Player: {Name} | Initialized BankedPyreals to 0");
             }
             
             long oldBalance = BankedPyreals ?? 0;
-            log.Debug($"[BANK_DEBUG] Player: {Name} | Current BankedPyreals: {oldBalance:N0} | Requested Amount: {Amount:N0}");
+            log.Info($"[BANK_DEBUG] Player: {Name} | Current BankedPyreals: {oldBalance:N0} | Requested Amount: {Amount:N0}");
             
             lock (balanceLock)
             {
@@ -496,11 +496,11 @@ namespace ACE.Server.WorldObjects
             if (BankedPyreals == null)
             {
                 BankedPyreals = 0;
-                log.Debug($"[BANK_DEBUG] Player: {Name} | Initialized BankedPyreals to 0");
+                log.Info($"[BANK_DEBUG] Player: {Name} | Initialized BankedPyreals to 0");
             }
             
             long oldBalance = BankedPyreals ?? 0;
-            log.Debug($"[BANK_DEBUG] Player: {Name} | Current BankedPyreals: {oldBalance:N0}");
+            log.Info($"[BANK_DEBUG] Player: {Name} | Current BankedPyreals: {oldBalance:N0}");
             
             lock (balanceLock)
             {
@@ -972,7 +972,7 @@ namespace ACE.Server.WorldObjects
             }
             
             stopwatch.Stop();
-            log.Debug($"[BANK_PERF] Player: {Name} | BatchRemoveItems completed in {stopwatch.ElapsedMilliseconds}ms | Removed {itemsToRemove.Count} items");
+            log.Info($"[BANK_PERF] Player: {Name} | BatchRemoveItems completed in {stopwatch.ElapsedMilliseconds}ms | Removed {itemsToRemove.Count} items");
         }
 
         /// <summary>
@@ -1029,7 +1029,7 @@ namespace ACE.Server.WorldObjects
             }
             
             stopwatch.Stop();
-            log.Debug($"[BANK_PERF] Player: {Name} | CreatePyreals completed in {stopwatch.ElapsedMilliseconds}ms | Created: {successfullyCreated:N0} pyreals in {createdItems.Count} stacks");
+            log.Info($"[BANK_PERF] Player: {Name} | CreatePyreals completed in {stopwatch.ElapsedMilliseconds}ms | Created: {successfullyCreated:N0} pyreals in {createdItems.Count} stacks");
             
             // Return the amount that was successfully created
             return successfullyCreated;
@@ -1056,7 +1056,7 @@ namespace ACE.Server.WorldObjects
             }
             
             // Create pyreal coins for the requested amount (outside lock)
-            log.Debug($"[BANK_DEBUG] Player: {Name} | Creating {Amount:N0} pyreal coins");
+            log.Info($"[BANK_DEBUG] Player: {Name} | Creating {Amount:N0} pyreal coins");
             long successfullyCreated = CreatePyreals(Amount);
             log.Debug($"[BANK_DEBUG] Player: {Name} | Pyreal coin creation | Requested: {Amount:N0} | Successfully Created: {successfullyCreated:N0}");
             
@@ -1670,7 +1670,7 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
-            log.Debug($"[BANK_DEBUG] Player: {Name} | Target player found | Name: {tarplayer.Name} | Type: {(tarplayer is OfflinePlayer ? "Offline" : "Online")}");
+            log.Info($"[BANK_DEBUG] Player: {Name} | Target player found | Name: {tarplayer.Name} | Type: {(tarplayer is OfflinePlayer ? "Offline" : "Online")}");
             
             long oldBalance = BankedPyreals ?? 0;
             long targetOldBalance = 0;
@@ -1762,8 +1762,8 @@ namespace ACE.Server.WorldObjects
                 LogBankChange("TransferPyreals_Source", "Pyreals", Amount, oldBalance, newBalance, $"Transferred to {tarplayer.Name}");
                 LogBankChange("TransferPyreals_Target", "Pyreals", Amount, targetOldBalance, targetNewBalance, $"Received from {this.Name}");
                 LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, true, "Transfer completed successfully");
-
-                log.Debug($"[BANK_DEBUG] Player: {Name} | Transfer completed | Source new balance: {newBalance:N0} | Target new balance: {targetNewBalance:N0}");
+                
+                log.Info($"[BANK_DEBUG] Player: {Name} | Transfer completed | Source new balance: {newBalance:N0} | Target new balance: {targetNewBalance:N0}");
                 return true;
             }
             catch (Exception ex)

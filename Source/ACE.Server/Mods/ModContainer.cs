@@ -143,14 +143,6 @@ namespace ACE.Server.Mods
             {
                 Instance?.Dispose();
                 Instance = null;
-                
-                // Unsubscribe from event and dispose loader to prevent memory leak
-                if (Loader != null)
-                {
-                    Loader.Reloaded -= Reload;
-                    Loader.Dispose();
-                    Loader = null;
-                }
             }
             catch (TypeInitializationException ex)
             {
@@ -162,7 +154,6 @@ namespace ACE.Server.Mods
         public void Restart()
         {
             Disable();
-            Initialize(); // Recreate the Loader after disposal
             Enable();
         }
 

@@ -71,10 +71,6 @@ namespace ACE.Database
             _readOnlyQueue.CompleteAdding();
             _workerThreadReadOnly.Join();
             _workerThread.Join();
-            
-            // Dispose collections to release sync primitives
-            _readOnlyQueue.Dispose();
-            _uniqueQueue.Dispose();
         }
 
         public List<string> QueueReport()

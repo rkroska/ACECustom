@@ -34,8 +34,7 @@ namespace ACE.Server.Network.Enum
         CharacterSaveFailed,
         BiotaSaveFailed,
         DATsPatchingDisabled,
-        DATsNewerThanServer,
-        PacketQueueOverflow
+        DATsNewerThanServer
     }
     public static class SessionTerminationReasonHelper
     {
@@ -67,8 +66,7 @@ namespace ACE.Server.Network.Enum
             "Character Save Failed",
             "Biota Save Failed",
             "Client has older DATs than server and patching is disabled",
-            "Client has newer DATs than server and cannot be downgraded",
-            "Packet Queue Overflow"
+            "Client has newer DATs than server and cannot be downgraded"
         };
         public static string GetDescription(this SessionTerminationReason reason)
         {

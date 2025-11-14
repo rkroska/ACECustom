@@ -69,14 +69,11 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void ResyncVariables()
         {
-            var timer = _workerThread;
-            if (timer == null) return;
-
-            timer.Stop();
+            _workerThread.Stop();
 
             DoWork(null, null);
 
-            timer.Start();
+            _workerThread.Start();
         }
 
         /// <summary>
@@ -84,13 +81,8 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void StopUpdating()
         {
-            var timer = System.Threading.Interlocked.Exchange(ref _workerThread, null);
-            if (timer != null)
-            {
-                timer.Stop();
-                timer.Elapsed -= DoWork;
-                timer.Dispose();
-            }
+            if (_workerThread != null)
+                _workerThread.Stop();
         }
 
 

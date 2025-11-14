@@ -820,15 +820,12 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var item in container.Inventory.Values)
                     item.Destroy();
-                container.Inventory.Clear();
             }
 
             if (this is Creature creature)
             {
                 foreach (var item in creature.EquippedObjects.Values)
                     item.Destroy();
-                creature.EquippedObjects.Clear();
-                creature.DamageHistory?.Reset();
             }
 
             if (this is Pet pet && pet.P_PetOwner?.CurrentActivePet == this)
@@ -838,18 +835,9 @@ namespace ACE.Server.WorldObjects
             {
                 foreach (var wo in vendor.DefaultItemsForSale.Values)
                     wo.Destroy();
-                vendor.DefaultItemsForSale.Clear();
 
                 foreach (var wo in vendor.UniqueItemsForSale.Values)
                     wo.Destroy();
-                vendor.UniqueItemsForSale.Clear();
-            }
-
-            if (this is Corpse corpse)
-            {
-                // Clear permittee HashSet to prevent memory leak
-                corpse.permitteeOpened?.Clear();
-                corpse.permitteeOpened = null;
             }
 
             if (raiseNotifyOfDestructionEvent)
