@@ -135,5 +135,23 @@ namespace ACE.Server.Managers
             _discordSocketClient.StartAsync();
             
         }
+
+        public static void Shutdown()
+        {
+            if (_discordSocketClient != null)
+            {
+                try
+                {
+                    _discordSocketClient.StopAsync().Wait();
+                    _discordSocketClient.LogoutAsync().Wait();
+                    _discordSocketClient.Dispose();
+                    _discordSocketClient = null;
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error shutting down Discord client: {ex.Message}");
+                }
+            }
+        }
     }
 }

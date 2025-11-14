@@ -206,6 +206,13 @@ namespace ACE.Server.Managers
             log.Info("Saving OfflinePlayers that have unsaved changes...");
             PlayerManager.SaveOfflinePlayersWithChanges();
 
+            // Shutdown Discord connection
+            if (ConfigManager.Config.Chat.EnableDiscordConnection)
+            {
+                log.Debug("Shutting down Discord connection...");
+                DiscordChatManager.Shutdown();
+            }
+
             // Wait for the database queue to empty
             logUpdateTS = DateTime.MinValue;
             int shardQueueCount;

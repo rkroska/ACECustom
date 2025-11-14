@@ -144,7 +144,7 @@ namespace ACE.Server.WorldObjects
         /// with this combination of factors, a table is required here to keep track of which permittees opened a permitter's locked corpse,
         /// so they can repeatedly open/close it
         /// </summary>
-        private HashSet<uint> permitteeOpened = null;
+        internal HashSet<uint> permitteeOpened = null;
 
         /// <summary>
         /// Returns TRUE if input player has permission to loot this corpse

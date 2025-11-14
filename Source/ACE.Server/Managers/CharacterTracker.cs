@@ -155,6 +155,17 @@ namespace ACE.Server.Managers
 		}
 
 		/// <summary>
+		/// Cleanup character lock after logout to prevent memory leak
+		/// </summary>
+		private static void ReleaseCharacterLock(uint characterId)
+		{
+			if (_characterLocks.TryRemove(characterId, out var semaphore))
+			{
+				semaphore?.Dispose();
+			}
+		}
+
+		/// <summary>
 		/// Extract IP address from EndPoint
 		/// </summary>
 		private static string GetPlayerIP(Player player)
@@ -246,8 +257,20 @@ namespace ACE.Server.Managers
 					return;
 				}
 
-				// Process in background thread
-				Task.Run(() => UpdateCharTrackerRecord(player.Character.Id, connectionDuration));
+				// Process in background thread and cleanup lock after completion
+				var characterId = player.Character.Id;
+				Task.Run(async () =>
+				{
+					try
+					{
+						await UpdateCharTrackerRecord(characterId, connectionDuration);
+					}
+					finally
+					{
+						// Cleanup the character lock to prevent memory leak
+						ReleaseCharacterLock(characterId);
+					}
+				});
 
 				log.Debug($"Character logout logged: {player.Name} (Duration: {connectionDuration}s)");
 			}
@@ -289,6 +312,7 @@ namespace ACE.Server.Managers
 			finally
 			{
 				characterLock.Release();
+				// Note: Lock cleanup is deferred to logout to avoid race conditions
 			}
 		}
 
