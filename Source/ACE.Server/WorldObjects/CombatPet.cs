@@ -67,7 +67,7 @@ namespace ACE.Server.WorldObjects
         {
         }
 
-        public override void Destroy(bool fromLandblockUnload = false)
+        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
             // Clean up imbued effects before destroying the pet
             // This ensures effects are removed even if the pet is destroyed without being resummoned
@@ -78,7 +78,7 @@ namespace ACE.Server.WorldObjects
                 _previousImbuedEffects = ImbuedEffectType.Undef;
             }
 
-            base.Destroy(fromLandblockUnload);
+            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
         }
 
         public override bool? Init(Player player, PetDevice petDevice)
