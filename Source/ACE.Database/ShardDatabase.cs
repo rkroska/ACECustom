@@ -234,7 +234,7 @@ namespace ACE.Database
             biota.PopulatedCollectionFlags = (uint)populatedCollectionFlags;
         }
 
-        public virtual Biota GetBiota(ShardDbContext context, uint id, bool doNotAddToCache = false)
+        public virtual Biota GetBiota(ShardDbContext context, uint id, bool skipCache = false)
         {
             var biota = context.Biota
                 .FirstOrDefault(r => r.Id == id);
@@ -273,11 +273,11 @@ namespace ACE.Database
             return biota;
         }
 
-        public virtual Biota GetBiota(uint id, bool doNotAddToCache = false)
+        public virtual Biota GetBiota(uint id, bool skipCache = false)
         {
             using (var context = new ShardDbContext())
             {
-                return GetBiota(context, id, doNotAddToCache);
+                return GetBiota(context, id, skipCache);
             }
         }
 
