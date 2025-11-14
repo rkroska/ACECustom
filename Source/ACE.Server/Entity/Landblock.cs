@@ -576,14 +576,16 @@ namespace ACE.Server.Entity
                 
                 while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
-                    var first = sortedCreaturesByNextTick.First.Value;
+                    var monster = sortedCreaturesByNextTick.First.Value;
 
                     // If they wanted to run before or at now
-                    if (first.NextMonsterTickTime <= currentUnixTime)
+                    if (monster.NextMonsterTickTime <= currentUnixTime)
                     {
                         sortedCreaturesByNextTick.RemoveFirst();
-                        first.Monster_Tick(currentUnixTime);
-                        sortedCreaturesByNextTick.AddLast(first); // All creatures tick at a fixed interval
+                        // If the monster is dead, remove from the sorted tick list and don't re-add it.
+                        if (monster.IsDead) continue;
+                        monster.Monster_Tick(currentUnixTime);
+                        sortedCreaturesByNextTick.AddLast(monster); // All creatures tick at a fixed interval
                         monstersProcessed++;
                     }
                     else
@@ -1084,20 +1086,37 @@ namespace ACE.Server.Entity
             wo.NotifyPlayers();
 
             if (wo is Player player)
-                player.SetFogColor(FogColor);
-
-            if (wo is Corpse && wo.Level.HasValue)
             {
-                var corpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
-                var corpseList = worldObjects.Values.Union(pendingAdditions.Values).Where(w => w is Corpse && w.Level.HasValue && w.VictimId == wo.VictimId).OrderBy(w => w.CreationTimestamp);
+                player.SetFogColor(FogColor);
+            }
+            // For player corpses, we prevent a single player from spamming corpses on a single
+            // landblock. We search for and mark their oldest corpse for early decay if they have  
+            // more than corpse_spam_limit corpses on a single landblock.
+            else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
+            {
+                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
+                int corpsesForThisPlayer = 0;
 
-                if (corpseList.Count() > corpseLimit)
+                Corpse oldestCorpseNotDecayingSoon = null;
+                foreach (WorldObject w in worldObjects.Values.Union(pendingAdditions.Values))
                 {
-                    var corpse = GetObject(corpseList.First(w => w.TimeToRot > Corpse.EmptyDecayTime).Guid);
+                    if (w is not Corpse existingCorpse) continue; // Not a corpse.
+                    if (existingCorpse.VictimId != new_corpse.VictimId) continue; // Not this player's corpse.
+                    corpsesForThisPlayer++;
+                    if (existingCorpse.TimeToRot <= Corpse.EmptyDecayTime) continue; // Corpse already decaying soon.
+                    if (oldestCorpseNotDecayingSoon == null || oldestCorpseNotDecayingSoon.CreationTimestamp > existingCorpse.CreationTimestamp)
+                    {
+                        oldestCorpseNotDecayingSoon = existingCorpse;
+                    }
+                }
+
+                if (corpsesForThisPlayer > perPlayerCorpseLimit && oldestCorpseNotDecayingSoon != null)
+                {
+                    var corpse = GetObject(oldestCorpseNotDecayingSoon.Guid);
 
                     if (corpse != null)
                     {
-                        log.Warn($"[CORPSE] Landblock.AddWorldObjectInternal(): {wo.Name} (0x{wo.Guid}) exceeds the per player limit of {corpseLimit} corpses for 0x{Id.Landblock:X4}. Adjusting TimeToRot for oldest {corpse.Name} (0x{corpse.Guid}), CreationTimestamp: {corpse.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(corpse.CreationTimestamp ?? 0).ToLocalTime():yyyy-MM-dd HH:mm:ss}), to Corpse.EmptyDecayTime({Corpse.EmptyDecayTime}).");
+                        log.Warn($"[CORPSE] Landblock.AddWorldObjectInternal(): {wo.Name} (0x{wo.Guid}) exceeds the per player limit of {perPlayerCorpseLimit} corpses for 0x{Id.Landblock:X4}. Adjusting TimeToRot for oldest {corpse.Name} (0x{corpse.Guid}), CreationTimestamp: {corpse.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(corpse.CreationTimestamp ?? 0).ToLocalTime():yyyy-MM-dd HH:mm:ss}), to Corpse.EmptyDecayTime({Corpse.EmptyDecayTime}).");
                         corpse.TimeToRot = Corpse.EmptyDecayTime;
                     }
                 }
@@ -1364,35 +1383,57 @@ namespace ACE.Server.Entity
         private void SaveDB()
         {
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+            var savedObjects = new List<WorldObject>();
 
             foreach (var wo in worldObjects.Values)
             {
                 if (wo.IsStaticThatShouldPersistToShard() || wo.IsDynamicThatShouldPersistToShard())
-                    AddWorldObjectToBiotasSaveCollection(wo, biotas);
+                {
+                    AddWorldObjectToBiotasSaveCollection(wo, biotas, savedObjects);
+                }
             }
 
             if (biotas.Count > 0)
             {
                 DatabaseManager.Shard.SaveBiotasInParallel(
                     biotas,
-                    result => { },
+                    result =>
+                    {
+                        // Clear SaveInProgress flags on world thread for thread safety
+                        var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                        clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                        {
+                            foreach (var wo in savedObjects)
+                            {
+                                if (!wo.IsDestroyed)
+                                    wo.SaveInProgress = false;
+                            }
+
+                            if (!result)
+                            {
+                                log.Warn($"[LANDBLOCK SAVE] Bulk save for landblock {Id.Raw}{(VariationId.HasValue ? $":v{VariationId.Value}" : string.Empty)} returned false; SaveInProgress flags cleared to avoid stuck state.");
+                            }
+                        });
+                        clearFlagsAction.EnqueueChain();
+                    },
                     $"SaveDB:Landblock:{this.Id.Raw}{(this.VariationId.HasValue ? $":v{this.VariationId.Value}" : string.Empty)}"
                 );
             }
         }
 
-        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas, List<WorldObject> savedObjects)
         {
-            if (wo.ChangesDetected)
+            if (wo.ChangesDetected && !wo.SaveInProgress)
             {
                 wo.SaveBiotaToDatabase(false);
                 biotas.Add((wo.Biota, wo.BiotaDatabaseLock));
+                savedObjects.Add(wo);
             }
 
             if (wo is Container container)
             {
                 foreach (var item in container.Inventory.Values)
-                    AddWorldObjectToBiotasSaveCollection(item, biotas);
+                    AddWorldObjectToBiotasSaveCollection(item, biotas, savedObjects);
             }
         }
 

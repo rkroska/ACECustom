@@ -2299,9 +2299,6 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Summon50" ? 50 :
                                                    emote.Message == "Summon100" ? 100 : 0;
 
-                                    // Calculate the total damage reduction for summons (3 per aug)
-                                    double damageReduction = augCount * 3.0;
-
                                     // Base cost per augmentation
                                     double baseCost = (double)emote.Amount;
                                     double percentIncrease = (double)emote.Percent;
@@ -2315,13 +2312,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                     // Apply the cost multipliers based on the augment thresholds
                                     double additionalMultiplier = 1.0;
-                                    if (summonAugs >= 2000)
+                                    if (summonAugs >= 4000)
                                     {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 4000
                                     }
-                                    else if (summonAugs >= 1750)
+                                    else if (summonAugs >= 2750)
                                     {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
                                     }
 
                                     totalCost *= additionalMultiplier;
@@ -2358,8 +2355,8 @@ namespace ACE.Server.WorldObjects.Managers
                                             if (itemId != 0)
                                                 player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
-                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your summons damage resist rating by {damageReduction}.", ChatMessageType.Broadcast));
-                                        }), $"You are about to spend {totalCost:N0} luminance to add {damageReduction} points to your summons damage resist rating. Are you sure?");
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your summons attributes and skills by {augCount} point(s) each.", ChatMessageType.Broadcast));
+                                        }), $"You are about to spend {totalCost:N0} luminance to add {augCount} point(s) to all of your summons attributes and skills. Are you sure?");
                                     }
                                 }
                                 break;
