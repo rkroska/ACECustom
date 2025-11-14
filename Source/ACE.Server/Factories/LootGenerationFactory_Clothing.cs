@@ -637,7 +637,7 @@ namespace ACE.Server.Factories
         {
             if (roll == null)
             {
-                if (!PropertyManager.GetBool("equipmentsetid_enabled").Item)
+                if (!PropertyManager.GetBool("equipmentsetid_enabled"))
                     return false;
 
                 if (profile.Tier < 6 || !wo.HasArmorLevel())
@@ -646,11 +646,11 @@ namespace ACE.Server.Factories
                 if (wo.ClothingPriority == null || (wo.ClothingPriority & (CoverageMask)CoverageMaskHelper.Outerwear) == 0)
                     return false;
 
-                var dropRate = PropertyManager.GetDouble("equipmentsetid_drop_rate").Item;
+                var dropRate = PropertyManager.GetDouble("equipmentsetid_drop_rate");
                 var dropRateMod = 1.0 / dropRate;
 
                 var lootQualityMod = 1.0f;
-                if (PropertyManager.GetBool("loot_quality_mod").Item)
+                if (PropertyManager.GetBool("loot_quality_mod"))
                     lootQualityMod = 1.0f - profile.LootQualityMod;
 
                 // initial base 10% chance to add a random EquipmentSet, which can be adjusted via equipmentsetid_drop_rate
@@ -664,7 +664,7 @@ namespace ACE.Server.Factories
                 wo.EquipmentSetId = EquipmentSetChance.Roll(wo, profile, roll);
             }
 
-            if (wo.EquipmentSetId != null && PropertyManager.GetBool("equipmentsetid_name_decoration").Item)
+            if (wo.EquipmentSetId != null && PropertyManager.GetBool("equipmentsetid_name_decoration"))
             {
                 var equipSetId = wo.EquipmentSetId;
 

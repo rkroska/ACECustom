@@ -392,14 +392,14 @@ namespace ACE.Server.Factories
                 player.Sanctuary = new Position(player.Location);
                 player.SetProperty(PropertyBool.RecallsDisabled, true);
 
-                if (PropertyManager.GetBool("pk_server").Item)
+                if (PropertyManager.GetBool("pk_server"))
                     player.SetProperty(PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus.PK);
-                else if (PropertyManager.GetBool("pkl_server").Item)
+                else if (PropertyManager.GetBool("pkl_server"))
                     player.SetProperty(PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus.NPK);
 
-                if ((PropertyManager.GetBool("pk_server").Item || PropertyManager.GetBool("pkl_server").Item) && PropertyManager.GetBool("pk_server_safe_training_academy").Item)
+                if ((PropertyManager.GetBool("pk_server") || PropertyManager.GetBool("pkl_server")) && PropertyManager.GetBool("pk_server_safe_training_academy"))
                 {
-                    player.SetProperty(PropertyFloat.MinimumTimeSincePk, -PropertyManager.GetDouble("pk_new_character_grace_period").Item);
+                    player.SetProperty(PropertyFloat.MinimumTimeSincePk, -PropertyManager.GetDouble("pk_new_character_grace_period"));
                     player.SetProperty(PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus.NPK);
                 }
             }
@@ -579,7 +579,7 @@ namespace ACE.Server.Factories
 
         public static WorldObject CreateIOU(uint missingWeenieId)
         {
-            if (!PropertyManager.GetBool("iou_trades").Item)
+            if (!PropertyManager.GetBool("iou_trades"))
             {
                 log.Warn($"CreateIOU: Skipping creation of IOU for missing weenie {missingWeenieId} because IOU system is disabled.");
 

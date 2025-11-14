@@ -99,7 +99,7 @@ namespace ACE.Server.Managers
 
             if (eventName.Equals("EventIsPKWorld", StringComparison.OrdinalIgnoreCase)) // special event
             {
-                var serverPkState = PropertyManager.GetBool("pk_server").Item;
+                var serverPkState = PropertyManager.GetBool("pk_server");
 
                 return serverPkState;
             }
@@ -148,7 +148,7 @@ namespace ACE.Server.Managers
 
             if (eventName.Equals("EventIsPKWorld", StringComparison.OrdinalIgnoreCase)) // special event
             {
-                if (PropertyManager.GetBool("pk_server").Item)
+                if (PropertyManager.GetBool("pk_server"))
                     return GameEventState.On;
                 else
                     return GameEventState.Off;

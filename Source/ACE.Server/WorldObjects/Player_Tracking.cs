@@ -252,7 +252,7 @@ namespace ACE.Server.WorldObjects
             // a DO and then a CO is the only thing that fixes this issue (/objsend can help with this)
             // this part probably deviates from retail a bit, but is the equivalent automated fix
 
-            var fixLevel = PropertyManager.GetLong("teleport_visibility_fix").Item;
+            var fixLevel = PropertyManager.GetLong("teleport_visibility_fix");
 
             // disabled by default
             if (fixLevel < 1) return;

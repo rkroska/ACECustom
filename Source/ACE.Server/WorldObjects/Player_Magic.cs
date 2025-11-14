@@ -461,7 +461,7 @@ namespace ACE.Server.WorldObjects
             // verify target type for item enchantment
             if (spell.School == MagicSchool.ItemEnchantment && !VerifyNonComponentTargetType(spell, target))
             {
-                if (spell.DispelSchool != MagicSchool.ItemEnchantment || !PropertyManager.GetBool("item_dispel").Item)
+                if (spell.DispelSchool != MagicSchool.ItemEnchantment || !PropertyManager.GetBool("item_dispel"))
                     return true;
             }
 
@@ -734,7 +734,7 @@ namespace ACE.Server.WorldObjects
             }
 
             //Console.WriteLine($"Angle: " + angle);
-            var maxAngle = PropertyManager.GetDouble("spellcast_max_angle").Item;
+            var maxAngle = PropertyManager.GetDouble("spellcast_max_angle");
 
             if (RecordCast.Enabled)
                 RecordCast.Log($"DoCastSpell(angle={angle} vs. {maxAngle})");
@@ -809,7 +809,7 @@ namespace ACE.Server.WorldObjects
 
             if (FastTick)
             {
-                if (PropertyManager.GetDouble("spellcast_max_angle").Item > 5.0f && IsWithinAngle(target))
+                if (PropertyManager.GetDouble("spellcast_max_angle") > 5.0f && IsWithinAngle(target))
                 {
                     // emulate current gdle TurnTo - doesn't match retail, but some players may prefer this
                     OnMoveComplete_Magic(WeenieError.None);
@@ -945,14 +945,14 @@ namespace ACE.Server.WorldObjects
 
             IsBusy = true;
 
-            var queue = PropertyManager.GetBool("spellcast_recoil_queue").Item;
+            var queue = PropertyManager.GetBool("spellcast_recoil_queue");
 
             if (queue)
                 MagicState.CanQueue = true;
 
             if (FastTick)
             {
-                var fastbuff = selfTarget && PropertyManager.GetBool("fastbuff").Item;
+                var fastbuff = selfTarget && PropertyManager.GetBool("fastbuff");
 
                 // return to magic ready stance
                 var actionChain = new ActionChain();
@@ -1179,7 +1179,7 @@ namespace ACE.Server.WorldObjects
 
         public void TryBurnComponents(Spell spell)
         {
-            if (SafeSpellComponents || PropertyManager.GetBool("safe_spell_comps").Item)
+            if (SafeSpellComponents || PropertyManager.GetBool("safe_spell_comps"))
                 return;
 
             var burned = spell.TryBurnComponents(this);
@@ -1202,7 +1202,7 @@ namespace ACE.Server.WorldObjects
                 var item = GetInventoryItemsOfWCID(wcid).FirstOrDefault();
                 if (item == null)
                 {
-                    if (SpellComponentsRequired && PropertyManager.GetBool("require_spell_comps").Item)
+                    if (SpellComponentsRequired && PropertyManager.GetBool("require_spell_comps"))
                         log.Warn($"{Name}.TryBurnComponents({spellComponent.Name}): not found in inventory");
                     else
                         burned.RemoveAt(i);
@@ -1227,7 +1227,7 @@ namespace ACE.Server.WorldObjects
         {
             spell.Formula.GetPlayerFormula(this);
 
-            if (!SpellComponentsRequired || !PropertyManager.GetBool("require_spell_comps").Item)
+            if (!SpellComponentsRequired || !PropertyManager.GetBool("require_spell_comps"))
                 return true;
 
             var requiredComps = spell.Formula.GetRequiredComps();

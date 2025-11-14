@@ -433,7 +433,7 @@ namespace ACE.Server.WorldObjects
             
             if (ignoreMagicResist)
             {
-                if (!(attacker is Player) || !(this is Player) || PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar").Item == 1.0)
+                if (!(attacker is Player) || !(this is Player) || PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar") == 1.0)
                     return weaponResistanceMod;
             }
             

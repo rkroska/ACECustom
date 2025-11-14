@@ -178,7 +178,7 @@ namespace ACE.Server.Entity.Chess
 
             if (Sides[(int)Chess.InverseColor(color)] == null)
             {
-                var ai_enabled = PropertyManager.GetDouble("chess_ai_start_time").Item;
+                var ai_enabled = PropertyManager.GetDouble("chess_ai_start_time");
                 if (ai_enabled > 0)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"If another player doesn't join within {ai_enabled} seconds, the game will automatically start with AI", ChatMessageType.Broadcast));

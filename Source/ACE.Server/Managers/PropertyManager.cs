@@ -101,15 +101,13 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallback property should be cached.</param>
         /// <returns>A boolean value representing the property</returns>
-        public static Property<bool> GetBool(string key, bool fallback = false, bool cacheFallback = true)
+        public static bool GetBool(string key, bool fallback = false, bool cacheFallback = true)
         {
             // first, check the cache. If the key exists in the cache, grab it regardless of its modified value
             // then, check the database. if the key exists in the database, grab it and cache it
             // finally, set it to a default of false.
             if (CachedBooleanSettings.TryGetValue(key, out ConfigurationEntry<bool> cachedBooleanSetting))
-            {
-                return new Property<bool>(cachedBooleanSetting.Item, cachedBooleanSetting.Description);
-            }
+                return cachedBooleanSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetBool(key);
 
@@ -120,7 +118,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedBooleanSettings[key] = new ConfigurationEntry<bool>(useFallback, value, dbValue?.Description);
 
-            return new Property<bool>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -157,10 +155,10 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallback property should be cached</param>
         /// <returns>An integer value representing the property</returns>
-        public static Property<long> GetLong(string key, long fallback = 0, bool cacheFallback = true)
+        public static long GetLong(string key, long fallback = 0, bool cacheFallback = true)
         {
             if (CachedLongSettings.TryGetValue(key, out ConfigurationEntry<long> cachedLongSetting))
-                return new Property<long>(cachedLongSetting.Item, cachedLongSetting.Description);
+                return cachedLongSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetLong(key);
 
@@ -171,7 +169,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedLongSettings[key] = new ConfigurationEntry<long>(useFallback, value, dbValue?.Description);
 
-            return new Property<long>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -207,10 +205,10 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallpack property should be cached</param>
         /// <returns>A float value representing the property</returns>
-        public static Property<double> GetDouble(string key, double fallback = 0.0f, bool cacheFallback = true)
+        public static double GetDouble(string key, double fallback = 0.0f, bool cacheFallback = true)
         {
             if (CachedDoubleSettings.TryGetValue(key, out ConfigurationEntry<double> cachedDoubleSetting))
-                return new Property<double>(cachedDoubleSetting.Item, cachedDoubleSetting.Description);
+                return cachedDoubleSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetDouble(key);
 
@@ -221,7 +219,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedDoubleSettings[key] = new ConfigurationEntry<double>(useFallback, value, dbValue?.Description);
 
-            return new Property<double>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -272,10 +270,10 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallback value will be cached.</param>
         /// <returns>A string value representing the property</returns>
-        public static Property<string> GetString(string key, string fallback = "", bool cacheFallback = true)
+        public static string GetString(string key, string fallback = "", bool cacheFallback = true)
         {
             if (CachedStringSettings.TryGetValue(key, out ConfigurationEntry<string> cachedStringSetting))
-                return new Property<string>(cachedStringSetting.Item, cachedStringSetting.Description);
+                return cachedStringSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetString(key);
 
@@ -286,7 +284,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedStringSettings[key] = new ConfigurationEntry<string>(useFallback, value, dbValue?.Description);
 
-            return new Property<string>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -398,15 +396,15 @@ namespace ACE.Server.Managers
         {
             string props = "Boolean properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultBooleanProperties)
-                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetBool(item.Key).Item, item.Value.Item);
+                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetBool(item.Key), item.Value.Item);
 
             props += "\nLong properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultLongProperties)
-                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetLong(item.Key).Item, item.Value.Item);
+                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetLong(item.Key), item.Value.Item);
 
             props += "\nDouble properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultDoubleProperties)
-                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetDouble(item.Key).Item, item.Value.Item);
+                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetDouble(item.Key), item.Value.Item);
 
             props += "\nString properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultStringProperties)

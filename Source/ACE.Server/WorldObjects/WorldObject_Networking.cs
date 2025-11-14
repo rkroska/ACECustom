@@ -305,7 +305,7 @@ namespace ACE.Server.WorldObjects
                 physicsState &= ~PhysicsState.Cloaked;
             }
 
-            if (this is SpellProjectile && PropertyManager.GetBool("spell_projectile_ethereal").Item)
+            if (this is SpellProjectile && PropertyManager.GetBool("spell_projectile_ethereal"))
                 physicsState |= PhysicsState.Ethereal;
 
             writer.Write((uint)physicsState);
@@ -829,7 +829,7 @@ namespace ACE.Server.WorldObjects
             {
                 var openable = !IsLocked;
 
-                if (WeenieType == WeenieType.Chest && !openable && PropertyManager.GetBool("fix_chest_missing_inventory_window").Item)
+                if (WeenieType == WeenieType.Chest && !openable && PropertyManager.GetBool("fix_chest_missing_inventory_window"))
                     openable = true;
 
                 UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Openable, openable);
@@ -1134,7 +1134,7 @@ namespace ACE.Server.WorldObjects
 
         public float EnqueueMotionPersist(ActionChain actionChain, MotionStance stance, MotionCommand motionCommand, float speed = 1.0f)
         {
-            if (!PropertyManager.GetBool("persist_movement").Item)
+            if (!PropertyManager.GetBool("persist_movement"))
             {
                 return EnqueueMotion(actionChain, stance, motionCommand, speed);
             }
@@ -1167,7 +1167,7 @@ namespace ACE.Server.WorldObjects
 
         public float EnqueueMotionPersist(ActionChain actionChain, MotionCommand motionCommand, float speed = 1.0f, bool useStance = true, MotionCommand? prevCommand = null, bool castGesture = false, bool half = false)
         {
-            if (!PropertyManager.GetBool("persist_movement").Item)
+            if (!PropertyManager.GetBool("persist_movement"))
             {
                 return EnqueueMotion(actionChain, motionCommand, speed, useStance, prevCommand, castGesture, half);
             }

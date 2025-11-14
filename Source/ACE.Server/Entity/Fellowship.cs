@@ -111,7 +111,7 @@ namespace ACE.Server.Entity
             }
             else
             {
-                if (PropertyManager.GetBool("fellow_busy_no_recruit").Item && newMember.IsBusy)
+                if (PropertyManager.GetBool("fellow_busy_no_recruit") && newMember.IsBusy)
                 {
                     inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is busy.", ChatMessageType.Broadcast));
                     return;
@@ -452,7 +452,7 @@ namespace ACE.Server.Entity
 
             var fellows = GetFellowshipMembers();
 
-            var allEvenShareLevel = PropertyManager.GetLong("fellowship_even_share_level").Item;
+            var allEvenShareLevel = PropertyManager.GetLong("fellowship_even_share_level");
             var allOverEvenShareLevel = !fellows.Values.Any(f => (f.Level ?? 1) < allEvenShareLevel);
 
             if (allOverEvenShareLevel)
@@ -500,7 +500,7 @@ namespace ACE.Server.Entity
             shareType &= ~ShareType.Fellowship;
 
             // quest turn-ins: flat share (retail default)
-            if (xpType == XpType.Quest && !PropertyManager.GetBool("fellow_quest_bonus").Item)
+            if (xpType == XpType.Quest && !PropertyManager.GetBool("fellow_quest_bonus"))
             {
                 var perAmount = (long)amount / fellowshipMembers.Count;
 
@@ -528,7 +528,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
                     {
                         member.GrantXP((long)amount, xpType, shareType);
                         continue;
@@ -560,7 +560,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
                     {
                         member.GrantXP((long)amount, xpType, shareType);
                         continue;
@@ -610,7 +610,7 @@ namespace ACE.Server.Entity
                 foreach (var member in fellowshipMembers.Values)
                 {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
                     {
                         player.GrantLuminance((long)amount, fellowXpType, shareType);
                         continue;
@@ -717,7 +717,7 @@ namespace ACE.Server.Entity
                 var elapsed = (now - _lastLogTime).TotalSeconds;
                 var total = distCalcs + sameLB + indoorOutdoor + diffLBIndoor;
                 
-                if (total > 0 && PropertyManager.GetBool("fellowship_xp_debug_logging", false).Item)
+                if (total > 0 && PropertyManager.GetBool("fellowship_xp_debug_logging", false))
                 {
                     var optimizedChecks = sameLB + indoorOutdoor + diffLBIndoor;
                     var optimizationPct = (optimizedChecks * 100.0 / total);
@@ -806,7 +806,7 @@ namespace ACE.Server.Entity
         {
             var fellows = GetFellowshipMembers();
 
-            var landblockRange = PropertyManager.GetBool("fellow_kt_landblock").Item;
+            var landblockRange = PropertyManager.GetBool("fellow_kt_landblock");
 
             var results = new List<Player>();
 

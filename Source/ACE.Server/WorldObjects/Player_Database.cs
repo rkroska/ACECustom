@@ -39,7 +39,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public long PlayerSaveIntervalSecs
         {
-            get => PropertyManager.GetLong("player_save_interval", DefaultPlayerSaveIntervalSecs).Item;
+            get => PropertyManager.GetLong("player_save_interval", DefaultPlayerSaveIntervalSecs);
         }
 
         /// <summary>

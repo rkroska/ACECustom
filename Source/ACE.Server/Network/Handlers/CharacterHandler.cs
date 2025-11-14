@@ -50,13 +50,13 @@ namespace ACE.Server.Network.Handlers
             var characterCreateInfo = new CharacterCreateInfo();
             characterCreateInfo.Unpack(message.Payload);
             
-            if (PropertyManager.GetBool("taboo_table").Item && DatManager.PortalDat.TabooTable.ContainsBadWord(characterCreateInfo.Name.ToLowerInvariant()))
+            if (PropertyManager.GetBool("taboo_table") && DatManager.PortalDat.TabooTable.ContainsBadWord(characterCreateInfo.Name.ToLowerInvariant()))
             {
                 SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.NameBanned);
                 return;
             }
 
-            if (PropertyManager.GetBool("creature_name_check").Item && DatabaseManager.World.IsCreatureNameInWorldDatabase(characterCreateInfo.Name))
+            if (PropertyManager.GetBool("creature_name_check") && DatabaseManager.World.IsCreatureNameInWorldDatabase(characterCreateInfo.Name))
             {
                 SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.NameBanned);
                 return;
@@ -71,7 +71,7 @@ namespace ACE.Server.Network.Handlers
                 }
             });
 
-            if ((characterCreateInfo.Heritage == HeritageGroup.Olthoi || characterCreateInfo.Heritage == HeritageGroup.OlthoiAcid) && PropertyManager.GetBool("olthoi_play_disabled").Item)
+            if ((characterCreateInfo.Heritage == HeritageGroup.Olthoi || characterCreateInfo.Heritage == HeritageGroup.OlthoiAcid) && PropertyManager.GetBool("olthoi_play_disabled"))
             {
                 SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Pending);
                 return;
@@ -251,7 +251,7 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            if ((offlinePlayer.Heritage == (int)HeritageGroup.Olthoi || offlinePlayer.Heritage == (int)HeritageGroup.OlthoiAcid) && PropertyManager.GetBool("olthoi_play_disabled").Item)
+            if ((offlinePlayer.Heritage == (int)HeritageGroup.Olthoi || offlinePlayer.Heritage == (int)HeritageGroup.OlthoiAcid) && PropertyManager.GetBool("olthoi_play_disabled"))
             {
                 session.SendCharacterError(CharacterError.EnterGameCouldntPlaceCharacter);
                 return;
@@ -315,7 +315,7 @@ namespace ACE.Server.Network.Handlers
 
                 session.Network.EnqueueSend(new GameMessageCharacterDelete());
 
-                var charRestoreTime = PropertyManager.GetLong("char_delete_time", 3600).Item;
+                var charRestoreTime = PropertyManager.GetLong("char_delete_time", 3600);
                 character.DeleteTime = (ulong)(Time.GetUnixTime() + charRestoreTime);
                 character.IsDeleted = false;
 

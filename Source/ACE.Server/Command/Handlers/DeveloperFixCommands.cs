@@ -114,7 +114,7 @@ namespace ACE.Server.Command.Handlers
                     // only do this if server operators have opted into this functionality
                     if (attr.Value.InitLevel > 100 && attr.Value.InitLevel <= 104
                         && player.Account.AccessLevel == (uint)AccessLevel.Player
-                        && PropertyManager.GetBool("attribute_augmentation_safety_cap").Item)
+                        && PropertyManager.GetBool("attribute_augmentation_safety_cap"))
                     {
                         var augmentationExploitMessageBuilder = new StringBuilder();
                         foundIssues = true;

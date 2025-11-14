@@ -255,14 +255,14 @@ namespace ACE.Server.Factories
         {
             int numMinors = 0;
 
-            var dropRate = PropertyManager.GetDouble("minor_cantrip_drop_rate").Item;
+            var dropRate = PropertyManager.GetDouble("minor_cantrip_drop_rate");
             if (dropRate <= 0)
                 return 0;
 
             var dropRateMod = 1.0 / dropRate;
 
             double lootQualityMod = 1.0f;
-            if (PropertyManager.GetBool("loot_quality_mod").Item && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
+            if (PropertyManager.GetBool("loot_quality_mod") && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
             switch (profile.Tier)
@@ -309,14 +309,14 @@ namespace ACE.Server.Factories
         {
             int numMajors = 0;
 
-            var dropRate = PropertyManager.GetDouble("major_cantrip_drop_rate").Item;
+            var dropRate = PropertyManager.GetDouble("major_cantrip_drop_rate");
             if (dropRate <= 0)
                 return 0;
 
             var dropRateMod = 1.0 / dropRate;
 
             double lootQualityMod = 1.0f;
-            if (PropertyManager.GetBool("loot_quality_mod").Item && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
+            if (PropertyManager.GetBool("loot_quality_mod") && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
             switch (profile.Tier)
@@ -364,14 +364,14 @@ namespace ACE.Server.Factories
             if (profile.Tier < 9)
                 return 0;
 
-            var dropRate = PropertyManager.GetDouble("epic_cantrip_drop_rate").Item;
+            var dropRate = PropertyManager.GetDouble("epic_cantrip_drop_rate");
             if (dropRate <= 0)
                 return 0;
 
             var dropRateMod = 1.0 / dropRate;
 
             double lootQualityMod = 1.0f;
-            if (PropertyManager.GetBool("loot_quality_mod").Item && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
+            if (PropertyManager.GetBool("loot_quality_mod") && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
             // 25% base chance for no epics for tier 7
@@ -411,14 +411,14 @@ namespace ACE.Server.Factories
             if (profile.Tier < 9)
                 return 0;
 
-            var dropRate = PropertyManager.GetDouble("legendary_cantrip_drop_rate").Item;
+            var dropRate = PropertyManager.GetDouble("legendary_cantrip_drop_rate");
             if (dropRate <= 0)
                 return 0;
 
             var dropRateMod = 1.0 / dropRate;
 
             double lootQualityMod = 1.0f;
-            if (PropertyManager.GetBool("loot_quality_mod").Item && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
+            if (PropertyManager.GetBool("loot_quality_mod") && profile.LootQualityMod > 0 && profile.LootQualityMod < 1)
                 lootQualityMod = 1.0f - profile.LootQualityMod;
 
             if (profile.Tier == 10)
