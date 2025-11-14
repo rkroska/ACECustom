@@ -122,6 +122,19 @@ namespace ACE.Server
                 log.Error(ex.ToString());
             }
 
+            // Configure GC for server workloads
+            // Note: SustainedLowLatency was causing finalization queue buildup and longer Gen 1 pauses
+            // Using Interactive (default) mode instead for better finalization throughput
+            try
+            {
+                System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.Interactive;
+                log.Info("GC Latency Mode set to Interactive (default) for balanced performance.");
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"Failed to set GC Latency Mode: {ex.Message}");
+            }
+
             log.Info("Starting ACEmulator...");
 
             if (IsRunningInContainer)
