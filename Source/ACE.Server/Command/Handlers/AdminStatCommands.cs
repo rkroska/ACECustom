@@ -158,8 +158,9 @@ namespace ACE.Server.Command.Handlers
             var sb = new StringBuilder();
             
             sb.Append($"Action Queue Status:{'\n'}");
-            sb.Append($"WorldManager ActionQueue: {WorldManager.ActionQueue.Count():N0} actions queued (Throttle: 250/tick){'\n'}");
-            sb.Append($"NetworkManager InboundMessageQueue: {Network.Managers.NetworkManager.InboundMessageQueue.Count():N0} actions queued (Throttle: 250/tick){'\n'}");
+            var actionThrottle = PropertyManager.GetLong("action_queue_throttle_limit", 300);
+            sb.Append($"WorldManager ActionQueue: {WorldManager.ActionQueue.Count():N0} actions queued (Throttle: {actionThrottle}/tick){'\n'}");
+            sb.Append($"NetworkManager InboundMessageQueue: {Network.Managers.NetworkManager.InboundMessageQueue.Count():N0} actions queued (Throttle: {actionThrottle}/tick){'\n'}");
             
             // Get busiest landblocks by creature count
             var loadedLandblocks = LandblockManager.GetLoadedLandblocks();
@@ -174,12 +175,103 @@ namespace ACE.Server.Command.Handlers
                 .OrderByDescending(x => x.CreatureCount)
                 .Take(5);
             
-            sb.Append($"{'\n'}Top 5 Landblocks by Creature Count (Monster_Tick throttle: 50/tick):{'\n'}");
+            var monsterThrottle = PropertyManager.GetLong("monster_tick_throttle_limit", 75);
+            sb.Append($"{'\n'}Top 5 Landblocks by Creature Count (Monster_Tick throttle: {monsterThrottle}/tick):{'\n'}");
             foreach (var item in busiestByCreatures)
             {
-                var ticksNeeded = Math.Ceiling(item.CreatureCount / 50.0);
+                var ticksNeeded = Math.Ceiling(item.CreatureCount / (double)monsterThrottle);
                 var delaySeconds = ticksNeeded * 0.3;
                 sb.Append($"  {item.Landblock.Id:X8} - {item.CreatureCount:N0} creatures, {item.PlayerCount} players (Processing time: ~{delaySeconds:N1}s for all creatures){'\n'}");
+            }
+            
+            CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");
+        }
+
+        // tickdistribution
+        [CommandHandler("tickdistribution", AccessLevel.Advocate, CommandHandlerFlag.None, 0, "Shows monster tick time distribution to verify desynchronization")]
+        public static void HandleTickDistribution(Session session, params string[] parameters)
+        {
+            var sb = new StringBuilder();
+            var currentTime = Time.GetUnixTime();
+            
+            sb.Append($"Monster Tick Distribution Analysis (Current Time: {currentTime:F3}){'\n'}");
+            sb.Append($"======================================{'\n'}{'\n'}");
+            
+            var loadedLandblocks = LandblockManager.GetLoadedLandblocks();
+            var allCreatures = loadedLandblocks
+                .SelectMany(lb => lb.Value.GetAllWorldObjectsForDiagnostics())
+                .OfType<Creature>()
+                .Where(c => !(c is Player))
+                .ToList();
+            
+            if (allCreatures.Count == 0)
+            {
+                sb.Append($"No creatures found on server.{'\n'}");
+                CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");
+                return;
+            }
+            
+            sb.Append($"Total Creatures: {allCreatures.Count:N0}{'\n'}{'\n'}");
+            
+            // Calculate time until next tick for each creature
+            var tickDelays = allCreatures
+                .Select(c => c.NextMonsterTickTime - currentTime)
+                .Where(delay => delay >= 0 && delay <= 1.0) // Only show creatures ticking in next second
+                .OrderBy(d => d)
+                .ToList();
+            
+            if (tickDelays.Count == 0)
+            {
+                sb.Append($"No creatures scheduled to tick in the next second.{'\n'}");
+                CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");
+                return;
+            }
+            
+            sb.Append($"Creatures ticking in next 1.0 second: {tickDelays.Count:N0}{'\n'}{'\n'}");
+            
+            // Create 20 buckets of 0.05s each (covers 1 second)
+            const int bucketCount = 20;
+            const double bucketSize = 0.05; // 50ms buckets
+            var buckets = new int[bucketCount];
+            
+            foreach (var delay in tickDelays)
+            {
+                var bucketIndex = Math.Min((int)(delay / bucketSize), bucketCount - 1);
+                buckets[bucketIndex]++;
+            }
+            
+            // Display histogram
+            sb.Append($"Tick Distribution (50ms buckets):{'\n'}");
+            sb.Append($"{"Time Range",-20} {"Count",-8} {"Bar"}{'\n'}");
+            sb.Append($"{"=",-20} {"=",-8} {"="}{'\n'}");
+            
+            for (int i = 0; i < bucketCount; i++)
+            {
+                var startTime = i * bucketSize;
+                var endTime = (i + 1) * bucketSize;
+                var count = buckets[i];
+                var bar = new string('█', Math.Min(count / 5, 60)); // Scale bar, max 60 chars
+                
+                sb.Append($"{startTime:F3}s - {endTime:F3}s  {count,-8} {bar}{'\n'}");
+            }
+            
+            sb.Append($"{'\n'}Distribution Stats:{'\n'}");
+            sb.Append($"  Min delay: {tickDelays.Min():F3}s{'\n'}");
+            sb.Append($"  Max delay: {tickDelays.Max():F3}s{'\n'}");
+            sb.Append($"  Avg delay: {tickDelays.Average():F3}s{'\n'}");
+            sb.Append($"  Spread: {(tickDelays.Max() - tickDelays.Min()):F3}s{'\n'}");
+            
+            // Check if synchronized (all within 0.1s window)
+            var spread = tickDelays.Max() - tickDelays.Min();
+            if (spread < 0.1)
+            {
+                sb.Append($"{'\n'}⚠️ WARNING: Ticks are SYNCHRONIZED (spread < 0.1s){'\n'}");
+                sb.Append($"   Desynchronization may not be working!{'\n'}");
+            }
+            else
+            {
+                sb.Append($"{'\n'}✅ Ticks are DESYNCHRONIZED (spread = {spread:F3}s){'\n'}");
+                sb.Append($"   Load should be well-distributed across server ticks.{'\n'}");
             }
             
             CommandHandlerHelper.WriteOutputInfo(session, $"{sb}");

@@ -345,7 +345,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void TakeDamageOverTime_NotifySource(Player source, DamageType damageType, float amount, bool aetheria = false)
         {
-            if (!PropertyManager.GetBool("show_dot_messages").Item)
+            if (!PropertyManager.GetBool("show_dot_messages"))
                 return;
 
             var iAmount = (uint)Math.Round(amount);

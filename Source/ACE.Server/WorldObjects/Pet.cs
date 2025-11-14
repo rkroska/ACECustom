@@ -102,7 +102,7 @@ namespace ACE.Server.WorldObjects
 
         public bool? HandleCurrentActivePet(Player player)
         {
-            if (PropertyManager.GetBool("pet_stow_replace").Item)
+            if (PropertyManager.GetBool("pet_stow_replace"))
                 return HandleCurrentActivePet_Replace(player);
             else
                 return HandleCurrentActivePet_Retail(player);

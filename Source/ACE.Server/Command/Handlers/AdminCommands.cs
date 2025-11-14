@@ -2155,7 +2155,7 @@ namespace ACE.Server.Command.Handlers
                         if (wo is Player) // I don't recall if @smite all would kill players in range, assuming it didn't
                             continue;
 
-                        var useTakeDamage = PropertyManager.GetBool("smite_uses_takedamage").Item;
+                        var useTakeDamage = PropertyManager.GetBool("smite_uses_takedamage");
 
                         if (wo is Creature creature && creature.Attackable)
                             creature.Smite(session.Player, useTakeDamage);
@@ -2189,7 +2189,7 @@ namespace ACE.Server.Command.Handlers
                     // playerSession will be null when the character is not found
                     if (player != null)
                     {
-                        player.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage").Item);
+                        player.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage"));
 
                         PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {player.Name}");
                         return;
@@ -2211,7 +2211,7 @@ namespace ACE.Server.Command.Handlers
 
                     if (wo != null)
                     {
-                        wo.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage").Item);
+                        wo.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage"));
 
                         PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
                     }
@@ -3332,7 +3332,7 @@ namespace ACE.Server.Command.Handlers
                 DoCopyChar(session, existingCharName, existingPlayer.Guid.Full, false, newCharName, account.AccountId);
                 return;
             }
-            else if ( session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account").Item)
+            else if ( session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account"))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Account is out of free character slots.", ChatMessageType.Broadcast);
                 return;
@@ -6303,15 +6303,6 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 var boolVal = bool.Parse(parameters[1]);
-
-                var prevState = PropertyManager.GetBool(parameters[0]);
-
-                if (prevState.Item == boolVal && !string.IsNullOrWhiteSpace(prevState.Description))
-                {
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Bool property is already {boolVal} for {parameters[0]}!");
-                    return;
-                }
-
                 if (PropertyManager.ModifyBool(parameters[0], boolVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Bool property successfully updated!");
@@ -6335,7 +6326,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleFetchServerBoolProperty(Session session, params string[] parameters)
         {
             var boolVal = PropertyManager.GetBool(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]} - {boolVal.Description ?? "No Description"}: {boolVal.Item}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {boolVal}");
         }
 
         [CommandHandler("modifylong", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a long", "modifylong (string) (long)")]
@@ -6362,7 +6353,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleFetchServerLongProperty(Session session, params string[] parameters)
         {
             var intVal = PropertyManager.GetLong(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]} - {intVal.Description ?? "No Description"}: {intVal.Item}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {intVal}");
         }
 
         [CommandHandler("modifydouble", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a double", "modifyfloat (string) (double)")]
@@ -6389,7 +6380,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleFetchServerFloatProperty(Session session, params string[] parameters)
         {
             var floatVal = PropertyManager.GetDouble(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]} - {floatVal.Description ?? "No Description"}: {floatVal.Item}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {floatVal}");
         }
 
         [CommandHandler("modifystring", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a string", "modifystring (string) (string)")]
@@ -6408,7 +6399,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleFetchServerStringProperty(Session session, params string[] parameters)
         {
             var stringVal = PropertyManager.GetString(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]} - {stringVal.Description ?? "No Description"}: {stringVal.Item}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {stringVal}");
         }
 
         [CommandHandler("modifypropertydesc", AccessLevel.Admin, CommandHandlerFlag.None, 3, "Modifies a server property's description", "modifypropertydesc <STRING|BOOL|DOUBLE|LONG> (string) (string)")]

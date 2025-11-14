@@ -47,7 +47,7 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            var allowCraftInCombat = PropertyManager.GetBool("allow_combat_mode_crafting").Item;
+            var allowCraftInCombat = PropertyManager.GetBool("allow_combat_mode_crafting");
 
             if (!allowCraftInCombat && player.CombatMode != CombatMode.NonCombat)
             {
@@ -341,7 +341,7 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            if (PropertyManager.GetBool("craft_exact_msg").Item)
+            if (PropertyManager.GetBool("craft_exact_msg"))
             {
                 var exactMsg = $"You have a {(float)percent} percent chance of using {source.NameWithMaterial} on {target.NameWithMaterial}.";
 

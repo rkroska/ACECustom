@@ -73,7 +73,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // retail was missing the 'raise attribute' runrate hook here
-                if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks").Item)
+                if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
                     HandleRunRateUpdate();
             }
 

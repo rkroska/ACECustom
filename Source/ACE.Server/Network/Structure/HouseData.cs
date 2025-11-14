@@ -27,7 +27,7 @@ namespace ACE.Server.Network.Structure
             Buy = [];
             Rent = [];
 
-            if (!PropertyManager.GetBool("house_rent_enabled", true).Item)
+            if (!PropertyManager.GetBool("house_rent_enabled", true))
                 MaintenanceFree = true;
         }
     }
