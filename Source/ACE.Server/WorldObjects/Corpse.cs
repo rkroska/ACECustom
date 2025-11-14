@@ -24,7 +24,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// The maximum number of seconds for an empty corpse to stick around
         /// </summary>
-        public static long EmptyDecayTime => PropertyManager.GetLong("empty_corpse_decay_seconds").Item;
+        public static long EmptyDecayTime => PropertyManager.GetLong("empty_corpse_decay_seconds");
 
         /// <summary>
         /// Flag indicates if a corpse is from a monster or a player

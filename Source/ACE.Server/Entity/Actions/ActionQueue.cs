@@ -38,13 +38,13 @@ namespace ACE.Server.Entity.Actions
                 return;
 
             // CONFIGURABLE: Enable/disable performance tracking
-            var enableTracking = ACE.Server.Managers.PropertyManager.GetBool("action_queue_tracking_enabled", false).Item;
+            var enableTracking = ACE.Server.Managers.PropertyManager.GetBool("action_queue_tracking_enabled", false);
             
             // CONFIGURABLE: Performance thresholds (in milliseconds) - validated to prevent invalid values
-            var trackThresholdMs = Math.Max(1, ACE.Server.Managers.PropertyManager.GetLong("action_queue_track_threshold_ms", 10).Item);
-            var warnThresholdMs = Math.Max(trackThresholdMs, ACE.Server.Managers.PropertyManager.GetLong("action_queue_warn_threshold_ms", 100).Item);
-            var reportIntervalMinutes = Math.Max(1, ACE.Server.Managers.PropertyManager.GetLong("action_queue_report_interval_minutes", 5).Item);
-            var discordMaxAlertsPerMinute = Math.Max(0, ACE.Server.Managers.PropertyManager.GetLong("action_queue_discord_max_alerts_per_minute", 3).Item);
+            var trackThresholdMs = Math.Max(1, ACE.Server.Managers.PropertyManager.GetLong("action_queue_track_threshold_ms", 10));
+            var warnThresholdMs = Math.Max(trackThresholdMs, ACE.Server.Managers.PropertyManager.GetLong("action_queue_warn_threshold_ms", 100));
+            var reportIntervalMinutes = Math.Max(1, ACE.Server.Managers.PropertyManager.GetLong("action_queue_report_interval_minutes", 5));
+            var discordMaxAlertsPerMinute = Math.Max(0, ACE.Server.Managers.PropertyManager.GetLong("action_queue_discord_max_alerts_per_minute", 3));
 
             // Throttle action processing to prevent cascade failures during high load
             // During mass spawns or combat, 500+ actions can queue and cause multi-second freezes

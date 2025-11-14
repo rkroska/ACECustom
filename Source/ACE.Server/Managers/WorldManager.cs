@@ -502,7 +502,7 @@ namespace ACE.Server.Managers
             if ((now - lastLoginBlockAlert).TotalMinutes >= 1)
                 loginBlockAlertsThisMinute = 0;
             
-            var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3).Item;
+            var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3);
             if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
                 return;
             
