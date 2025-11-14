@@ -86,7 +86,7 @@ namespace ACE.Database
         }
 
 
-        public override Biota GetBiota(ShardDbContext context, uint id, bool skipCache = false)
+        public override Biota GetBiota(ShardDbContext context, uint id, bool doNotAddToCache = false)
         {
             lock (biotaCacheMutex)
             {
@@ -108,7 +108,7 @@ namespace ACE.Database
             return biota;
         }
 
-        public override Biota GetBiota(uint id, bool skipCache = false)
+        public override Biota GetBiota(uint id, bool doNotAddToCache = false)
         {
             var shouldCache = ObjectGuid.IsPlayer(id) 
                 ? PlayerBiotaRetentionTime > TimeSpan.Zero 
@@ -118,29 +118,14 @@ namespace ACE.Database
             {
                 using (var context = new ShardDbContext())
                 {
-                    using (var context = new ShardDbContext())
-                    {
-                        var biota = GetBiota(context, id, skipCache); // This will add the result into the caches
-                        return biota;
-                    }
-                }
-            }
-            else if (NonPlayerBiotaRetentionTime > TimeSpan.Zero)
-            {
-                using (var context = new ShardDbContext())
-                {
-                    var biota = GetBiota(context, id, skipCache); // This will add the result into the caches
+                    var biota = GetBiota(context, id, doNotAddToCache);
                     return biota;
                 }
             }
 
-            return base.GetBiota(id, skipCache);
+            return base.GetBiota(id, doNotAddToCache);
         }
 
-        // Caller is responsible for holding this `rwLock` the entire time the biota is being read from
-        // or written back to the shard database. It keeps the world-thread mutations (inventory updates,
-        // physics ticks, etc.) from racing with the serialization work done here so we don't stamp over
-        // in-flight changes or capture a half-mutated object graph.
         public override bool SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)
         {
             CacheObject<Biota> cachedBiota;
@@ -154,57 +139,6 @@ namespace ACE.Database
                     cachedBiota.LastSeen = DateTime.UtcNow;
 
                 using (var context = new ShardDbContext())
-                {
-                    var existingBiota = base.GetBiota(context, biota.Id);
-
-                    rwLock.EnterReadLock();
-                    try
-                    {
-                        if (existingBiota == null)
-                        {
-                            existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
-                            context.Biota.Add(existingBiota);
-                        }
-                        else
-                        {
-                            ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
-                        }
-                    }
-                    finally
-                    {
-                        rwLock.ExitReadLock();
-                    }
-
-                    if (DoSaveBiota(context, existingBiota))
-                    {
-                        cachedBiota.CachedObject = existingBiota;
-                        return true;
-                    }
-
-                    return false;
-                }
-            }
-
-            // Biota does not exist in the cache
-            using (var context = new ShardDbContext())
-            {
-                var existingBiota = base.GetBiota(context, biota.Id);
-
-                rwLock.EnterReadLock();
-                try
-                {
-                    if (existingBiota == null)
-                    {
-                        existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
-
-                        context.Biota.Add(existingBiota);
-                    }
-                    else
-                    {
-                        ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
-                    }
-                }
-                finally
                 {
                     // Reload the biota from database with the new context to avoid concurrency issues
                     var existingBiota = base.GetBiota(context, biota.Id);
@@ -232,6 +166,32 @@ namespace ACE.Database
                     }
                     
                     return result;
+                }
+            }
+
+            // Biota does not exist in the cache
+
+            using (var context = new ShardDbContext())
+            {
+                var existingBiota = base.GetBiota(context, biota.Id);
+
+                rwLock.EnterReadLock();
+                try
+                {
+                    if (existingBiota == null)
+                    {
+                        existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
+
+                        context.Biota.Add(existingBiota);
+                    }
+                    else
+                    {
+                        ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                    }
+                }
+                finally
+                {
+                    rwLock.ExitReadLock();
                 }
 
                 if (DoSaveBiota(context, existingBiota))

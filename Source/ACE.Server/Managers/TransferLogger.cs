@@ -668,22 +668,28 @@ namespace ACE.Server.Managers
                 // Ensure database is migrated before logging
                 EnsureDatabaseMigrated();
 
-            // Only log if item tracking is enabled
+            // Only log if item tracking is enabled and any traded items should be tracked
             if (!Config.EnableItemTracking)
             {
                 log.Info("Skipping trade logging - item tracking disabled");
                 return;
             }
 
-            // Log each tracked item from player1 to player2
+            var hasTrackedItems = player1Escrow.Any(item => ShouldTrackItem(item.Name)) || 
+                                 player2Escrow.Any(item => ShouldTrackItem(item.Name));
+
+            if (!hasTrackedItems)
+            {
+                log.Debug($"Skipping trade logging - no tracked items in trade");
+                return;
+                }
+
+            var player1Value = player1Escrow.Sum(item => CalculateItemValue(item, item.StackSize ?? 1));
+            var player2Value = player2Escrow.Sum(item => CalculateItemValue(item, item.StackSize ?? 1));
+
+            // Log each item from player1 to player2
             foreach (var item in player1Escrow)
             {
-                // Only log if this specific item should be tracked
-                if (!ShouldTrackItem(item.Name))
-                {
-                    log.Debug($"Skipping untracked item in trade: {item.Name}");
-                    continue;
-                }
             var transferLog = new TransferLog
             {
                     TransferType = TransferTypeTrade,
@@ -707,15 +713,9 @@ namespace ACE.Server.Managers
                 Task.Run(() => ProcessTransferLogBackground(transferLog));
             }
 
-            // Log each tracked item from player2 to player1
+            // Log each item from player2 to player1
             foreach (var item in player2Escrow)
             {
-                // Only log if this specific item should be tracked
-                if (!ShouldTrackItem(item.Name))
-                {
-                    log.Debug($"Skipping untracked item in trade: {item.Name}");
-                    continue;
-                }
             var reverseTransferLog = new TransferLog
             {
                     TransferType = TransferTypeTrade,

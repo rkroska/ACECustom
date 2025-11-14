@@ -765,13 +765,22 @@ namespace ACE.Server.WorldObjects
                 item.Container = null;
                 item.PlacementPosition = null;
 
-                // Move all the existing items PlacementPosition over (optimized: single loop)
-                var useBackpackSlot = item.UseBackpackSlot;
-                foreach (var invItem in Inventory.Values)
+                // Move all the existing items PlacementPosition over.
+                if (!item.UseBackpackSlot)
                 {
-                    // Only adjust items in same category (pack items OR containers)
-                    if (invItem.UseBackpackSlot == useBackpackSlot && invItem.PlacementPosition > removedItemsPlacementPosition)
-                        invItem.PlacementPosition--;
+                    foreach (var invItem in Inventory.Values)
+                    {
+                        if (!invItem.UseBackpackSlot && invItem.PlacementPosition > removedItemsPlacementPosition)
+                            invItem.PlacementPosition--;
+                    }
+                }
+                else
+                {
+                    foreach (var invItem in Inventory.Values)
+                    {
+                        if (invItem.UseBackpackSlot && invItem.PlacementPosition > removedItemsPlacementPosition)
+                            invItem.PlacementPosition--;
+                    }
                 }
 
                 EncumbranceVal -= (item.EncumbranceVal ?? 0);
@@ -905,9 +914,7 @@ namespace ACE.Server.WorldObjects
         {
             // send createobject for all objects in this container's inventory to player
             var itemsToSend = new List<GameMessage>();
-            var containerViews = new List<GameMessage>();
 
-            // Optimized: Single loop instead of two separate scans
             foreach (var item in Inventory.Values)
             {
                 // FIXME: only send messages for unknown objects
@@ -917,17 +924,17 @@ namespace ACE.Server.WorldObjects
                 {
                     foreach (var containerItem in container.Inventory.Values)
                         itemsToSend.Add(new GameMessageCreateObject(containerItem));
-                    
-                    // Send sub-container view (previously done in second loop)
-                    containerViews.Add(new GameEventViewContents(player.Session, container));
                 }
             }
 
             player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, this));
-            
-            // Send all container views
-            if (containerViews.Count > 0)
-                player.Session.Network.EnqueueSend(containerViews.ToArray());
+
+            // send sub-containers
+            foreach (var item in Inventory.Values)
+            {
+                if (item is Container container)
+                    player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, container));
+            }
 
             player.Session.Network.EnqueueSend(itemsToSend.ToArray());
         }

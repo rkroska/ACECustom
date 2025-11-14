@@ -26,7 +26,6 @@ namespace ACE.Server.Managers
         
         // Alert thresholds
         private const int HighTransferRateThreshold = 10;
-        private static DateTime lastHighTransferWarning = DateTime.MinValue;
 
         public static void RecordTransfer(TransferLog transferLog)
         {
@@ -38,19 +37,11 @@ namespace ACE.Server.Managers
                 // Update counters (thread-safe)
                 Interlocked.Increment(ref transfersLastMinute);
                 
-                // Evaluate alerts including this event (rate-limited to prevent log spam)
+                // Evaluate alerts including this event
                 var currentTransfers = Interlocked.Add(ref transfersLastMinute, 0);
                 if (currentTransfers > HighTransferRateThreshold)
                 {
-                    // Only warn once per minute to prevent spam from bulk trades (thread-safe)
-                    lock (resetLock)
-                    {
-                        if (DateTime.UtcNow - lastHighTransferWarning > TimeSpan.FromMinutes(1))
-                        {
-                            log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
-                            lastHighTransferWarning = DateTime.UtcNow;
-                        }
-                    }
+                    log.Warn($"High transfer rate detected: {currentTransfers} transfers in the last minute");
                 }
                 
                 // Note: Suspicious and value tracking removed - focusing on account/character age patterns

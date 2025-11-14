@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading;
 
 using ACE.Database;
 using ACE.Database.Models.World;
@@ -666,44 +664,10 @@ namespace ACE.Server.WorldObjects
 
             if (saveCorpse)
             {
-                var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
-                var savedObjects = new List<WorldObject>();
+                corpse.SaveBiotaToDatabase();
 
-                // Save corpse
-                corpse.SaveBiotaToDatabase(false);
-                biotas.Add((corpse.Biota, corpse.BiotaDatabaseLock));
-                savedObjects.Add(corpse);
-
-                // Save all items in corpse
                 foreach (var item in corpse.Inventory.Values)
-                {
-                    item.SaveBiotaToDatabase(false);
-                    biotas.Add((item.Biota, item.BiotaDatabaseLock));
-                    savedObjects.Add(item);
-                }
-
-                // Bulk save with callback to clear SaveInProgress flags
-                DatabaseManager.Shard.SaveBiotasInParallel(
-                    biotas,
-                    result =>
-                    {
-                        var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
-                        clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
-                        {
-                            foreach (var wo in savedObjects)
-                            {
-                                if (!wo.IsDestroyed)
-                                    wo.SaveInProgress = false;
-                            }
-
-                            if (!result)
-                            {
-                                log.Warn($"[CORPSE SAVE] Bulk save for corpse {corpse.Guid} returned false; SaveInProgress flags cleared to avoid stuck state.");
-                            }
-                        });
-                        clearFlagsAction.EnqueueChain();
-                    },
-                    $"CorpseSave:{corpse.Guid}");
+                    item.SaveBiotaToDatabase();
             }
         }
 

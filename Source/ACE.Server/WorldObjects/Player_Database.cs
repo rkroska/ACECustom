@@ -100,31 +100,18 @@ namespace ACE.Server.WorldObjects
 
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
-                var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
-                clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                if (duringLogout)
                 {
-                    SaveInProgress = false;
-                    foreach (var possession in GetAllPossessions())
-                    {
-                        possession.SaveInProgress = false;
-                    }
-                    
-                    if (result)
-                    {
-                        if (duringLogout)
-                        {
-                            // Don't set the player offline until they have been successfully saved
-                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
-                        }
-                        log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTime).TotalMilliseconds:N0} ms to process the request.");
-                    }
-                    else
-                    {
-                        // This will trigger a boot on next player tick
-                        BiotaSaveFailed = true;
-                    }
-                });
-                clearFlagsAction.EnqueueChain();
+                    // Don't set the player offline until they have been successfully saved
+                    PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                }
+                log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTime).TotalMilliseconds:N0} ms to process the request.");
+
+                if (!result)
+                {
+                    // This will trigger a boot on next player tick
+                    BiotaSaveFailed = true;
+                }
             }, this.Guid.ToString());
         }
 
