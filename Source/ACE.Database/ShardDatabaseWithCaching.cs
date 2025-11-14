@@ -102,7 +102,7 @@ namespace ACE.Database
 
             var biota = base.GetBiota(context, id);
 
-            if (biota != null && !doNotAddToCache)
+            if (biota != null && !skipCache)
                 TryAddToCache(biota);
 
             return biota;
@@ -110,13 +110,9 @@ namespace ACE.Database
 
         public override Biota GetBiota(uint id, bool skipCache = false)
         {
-            var shouldCache = ObjectGuid.IsPlayer(id) 
-                ? PlayerBiotaRetentionTime > TimeSpan.Zero 
-                : NonPlayerBiotaRetentionTime > TimeSpan.Zero;
-            
-            if (shouldCache)
+            if (ObjectGuid.IsPlayer(id))
             {
-                using (var context = new ShardDbContext())
+                if (PlayerBiotaRetentionTime > TimeSpan.Zero)
                 {
                     using (var context = new ShardDbContext())
                     {
@@ -150,8 +146,7 @@ namespace ACE.Database
 
             if (cachedBiota != null)
             {
-                lock (biotaCacheMutex)
-                    cachedBiota.LastSeen = DateTime.UtcNow;
+                cachedBiota.LastSeen = DateTime.UtcNow;
 
                 using (var context = new ShardDbContext())
                 {
@@ -206,32 +201,7 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    // Reload the biota from database with the new context to avoid concurrency issues
-                    var existingBiota = base.GetBiota(context, biota.Id);
-                    
-                    if (existingBiota == null)
-                        return false;
-
-                    rwLock.EnterReadLock();
-                    try
-                    {
-                        ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
-                    }
-                    finally
-                    {
-                        rwLock.ExitReadLock();
-                    }
-
-                    var result = DoSaveBiota(context, existingBiota);
-                    
-                    // Update the cached copy with the fresh data (thread-safe)
-                    if (result)
-                    {
-                        lock (biotaCacheMutex)
-                            cachedBiota.CachedObject = existingBiota;
-                    }
-                    
-                    return result;
+                    rwLock.ExitReadLock();
                 }
 
                 if (DoSaveBiota(context, existingBiota))

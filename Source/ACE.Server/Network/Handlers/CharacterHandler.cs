@@ -319,29 +319,21 @@ namespace ACE.Server.Network.Handlers
                 character.DeleteTime = (ulong)(Time.GetUnixTime() + charRestoreTime);
                 character.IsDeleted = false;
 
-                var rwLock = new ReaderWriterLockSlim();
-                DatabaseManager.Shard.SaveCharacter(character, rwLock, result =>
+                DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
                 {
-                    try
+                    if (result)
                     {
-                        if (result)
+                        DatabaseManager.Shard.GetLoginCharacters(session.AccountId, false, result =>
                         {
-                            DatabaseManager.Shard.GetLoginCharacters(session.AccountId, false, result =>
-                            {
-                                var cs = result.OrderByDescending(o => o.LastLoginTimestamp).ToList();
-                                session.UpdateCharacters(cs);
-                                session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
+                            var cs = result.OrderByDescending(o => o.LastLoginTimestamp).ToList();
+                            session.UpdateCharacters(cs);
+                            session.Network.EnqueueSend(new GameMessageCharacterList(session.Characters, session));
 
-                                PlayerManager.HandlePlayerDelete(character.Id);
-                            });
-                        }
-                        else
-                            session.SendCharacterError(CharacterError.Delete);
+                            PlayerManager.HandlePlayerDelete(character.Id);
+                        });
                     }
-                    finally
-                    {
-                        rwLock.Dispose();
-                    }
+                    else
+                        session.SendCharacterError(CharacterError.Delete);
                 });
             });
 
@@ -392,27 +384,19 @@ namespace ACE.Server.Network.Handlers
                         character.DeleteTime = 0;
                         character.IsDeleted = false;
 
-                        var rwLock = new ReaderWriterLockSlim();
-                        DatabaseManager.Shard.SaveCharacter(character, rwLock, result =>
+                        DatabaseManager.Shard.SaveCharacter(character, new ReaderWriterLockSlim(), result =>
                         {
-                            try
-                            {
-                                var name = character.Name;
+                            var name = character.Name;
 
-                                if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && session.AccessLevel > AccessLevel.Advocate)
-                                    name = "+" + name;
-                                else if (!ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && character.IsPlussed)
-                                    name = "+" + name;
+                            if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && session.AccessLevel > AccessLevel.Advocate)
+                                name = "+" + name;
+                            else if (!ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && character.IsPlussed)
+                                name = "+" + name;
 
-                                if (result)
-                                    session.Network.EnqueueSend(new GameMessageCharacterRestore(guid, name, 0u));
-                                else
-                                    SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Corrupt);
-                            }
-                            finally
-                            {
-                                rwLock.Dispose();
-                            }
+                            if (result)
+                                session.Network.EnqueueSend(new GameMessageCharacterRestore(guid, name, 0u));
+                            else
+                                SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Corrupt);
                         });
                     }
                 });

@@ -63,16 +63,13 @@ namespace ACE.Server.Network
         /// </summary>
         private readonly ConcurrentDictionary<uint /*seq*/, ServerPacket> cachedPackets = new ConcurrentDictionary<uint /*seq*/, ServerPacket>();
 
-        private static readonly TimeSpan cachedPacketPruneInterval = TimeSpan.FromSeconds(2); // Reduced from 5 to 2
+        private static readonly TimeSpan cachedPacketPruneInterval = TimeSpan.FromSeconds(5);
         private DateTime lastCachedPacketPruneTime;
 
         /// <summary>
         /// Number of seconds to retain cachedPackets
         /// </summary>
-        private const int cachedPacketRetentionTime = 30; // Reduced from 200 to 30 seconds
-
-        // Add reusable buffer at class level
-        private readonly List<uint> retransmitBuffer = new List<uint>(115);
+        private const int cachedPacketRetentionTime = 200;
 
         /// <summary>
         /// This is referenced by multiple thread:<para />
@@ -140,19 +137,10 @@ namespace ACE.Server.Network
         /// Currently this is only used publicly once during login.  If that changes it's thread safety should be re
         /// </summary>
         /// <param name="packets"></param>
-        private const int maxPacketQueueSize = 1000;
-
         public void EnqueueSend(params ServerPacket[] packets)
         {
-            if (isReleased) return;
-
-            // Check queue size before adding
-            if (packetQueue.Count > maxPacketQueueSize)
-            {
-                log.Warn($"[{session.LoggingIdentifier}] Packet queue overflow ({packetQueue.Count}), terminating session");
-                session.Terminate(SessionTerminationReason.PacketQueueOverflow);
+            if (isReleased) // Session has been removed
                 return;
-            }
 
             foreach (var packet in packets)
             {
@@ -169,8 +157,6 @@ namespace ACE.Server.Network
         {
             if (isReleased) // Session has been removed
                 return;
-
-            CleanupOutOfOrderCollections(); // ADD THIS
 
             if (DateTime.UtcNow - lastCachedPacketPruneTime > cachedPacketPruneInterval)
                 PruneCachedPackets();
@@ -236,36 +222,17 @@ namespace ACE.Server.Network
             FlushPackets();
         }
 
-        // Add max cache size check
-        private const int maxCachedPackets = 1000;
-
         private void PruneCachedPackets()
         {
             lastCachedPacketPruneTime = DateTime.UtcNow;
+
             var currentTime = (ushort)Timers.PortalYearTicks;
 
-            // Time-based removal
-            var removalList = cachedPackets.Values
-                .Where(x => (currentTime >= x.Header.Time ? currentTime : currentTime + ushort.MaxValue) - x.Header.Time > cachedPacketRetentionTime)
-                .Select(x => x.Header.Sequence)
-                .ToList();
+            // Make sure our comparison still works when ushort wraps every 18.2 hours.
+            var removalList = cachedPackets.Values.Where(x => (currentTime >= x.Header.Time ? currentTime : currentTime + ushort.MaxValue) - x.Header.Time > cachedPacketRetentionTime);
 
-            foreach (var sequence in removalList)
-                cachedPackets.TryRemove(sequence, out _);
-
-            // Size-based removal if still too large
-            if (cachedPackets.Count > maxCachedPackets)
-            {
-                var excess = cachedPackets.Count - maxCachedPackets;
-                var oldest = cachedPackets.Values
-                    .OrderBy(x => x.Header.Sequence)
-                    .Take(excess)
-                    .Select(x => x.Header.Sequence)
-                    .ToList();
-
-                foreach (var sequence in oldest)
-                    cachedPackets.TryRemove(sequence, out _);
-            }
+            foreach (var packet in removalList)
+                cachedPackets.TryRemove(packet.Header.Sequence, out _);
         }
 
         // This is called from ConnectionListener.OnDataReceieve()->Session.ProcessPacket()->This
@@ -386,77 +353,41 @@ namespace ACE.Server.Network
         private void DoRequestForRetransmission(uint rcvdSeq)
         {
             var desiredSeq = lastReceivedPacketSequence + 1;
-            
-            // Reuse list
-            retransmitBuffer.Clear();
-            retransmitBuffer.Add(desiredSeq);
-            
+            List<uint> needSeq = new List<uint>();
+            needSeq.Add(desiredSeq);
             uint bottom = desiredSeq + 1;
             if (rcvdSeq < bottom || rcvdSeq - bottom > CryptoSystem.MaximumEffortLevel)
             {
                 session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
                 return;
             }
-            
             uint seqIdCount = 1;
             for (uint a = bottom; a < rcvdSeq; a++)
             {
                 if (!outOfOrderPackets.ContainsKey(a))
                 {
-                    retransmitBuffer.Add(a);
+                    needSeq.Add(a);
                     seqIdCount++;
                     if (seqIdCount >= MaxNumNakSeqIds)
+                    {
                         break;
+                    }
                 }
             }
 
-            // Calculate required buffer size
-            int reqDataSize = 4 + (retransmitBuffer.Count * 4);
-            
-            // Rent buffer from pool temporarily to write data
-            byte[] pooledBuffer = ArrayPool<byte>.Shared.Rent(reqDataSize);
-            
-            try
-            {
-                // Write data to pooled buffer
-                int offset = 0;
-                BitConverter.GetBytes((uint)retransmitBuffer.Count).CopyTo(pooledBuffer, offset);
-                offset += 4;
-                
-                foreach (var k in retransmitBuffer)
-                {
-                    BitConverter.GetBytes(k).CopyTo(pooledBuffer, offset);
-                    offset += 4;
-                }
-                
-                // Create packet with its own copy of the data (not referencing the pooled buffer)
-                var reqPacket = new ServerPacket();
-                
-                // Create a MemoryStream that owns its own byte array copy
-                // This ensures the packet doesn't reference the pooled buffer after we return it
-                byte[] ownedData = new byte[reqDataSize];
-                Array.Copy(pooledBuffer, 0, ownedData, 0, reqDataSize);
-                reqPacket.Data = new MemoryStream(ownedData, 0, reqDataSize, false, true);
-                
-                reqPacket.Header.Flags = PacketHeaderFlags.RequestRetransmit;
-                EnqueueSend(reqPacket);
-                
-                LastRequestForRetransmitTime = DateTime.UtcNow;
-                
-                if (packetLog.IsDebugEnabled)
-                {
-                    packetLog.DebugFormat("[{0}] Requested retransmit of {1}", 
-                        session.LoggingIdentifier, 
-                        string.Join(", ", retransmitBuffer));
-                }
-                
-                NetworkStatistics.S2C_RequestsForRetransmit_Aggregate_Increment();
-            }
-            finally
-            {
-                // Now it's safe to return the pooled buffer since the packet has its own copy
-                ArrayPool<byte>.Shared.Return(pooledBuffer, true);
-            }
+            ServerPacket reqPacket = new ServerPacket();
+            byte[] reqData = new byte[4 + (needSeq.Count * 4)];
+            MemoryStream msReqData = new MemoryStream(reqData, 0, reqData.Length, true, true);
+            msReqData.Write(BitConverter.GetBytes((uint)needSeq.Count), 0, 4);
+            needSeq.ForEach(k => msReqData.Write(BitConverter.GetBytes(k), 0, 4));
+            reqPacket.Data = msReqData;
+            reqPacket.Header.Flags = PacketHeaderFlags.RequestRetransmit;
+
+            EnqueueSend(reqPacket);
+
+            LastRequestForRetransmitTime = DateTime.UtcNow;
+            packetLog.DebugFormat("[{0}] Requested retransmit of {1}", session.LoggingIdentifier, needSeq.Select(k => k.ToString()).Aggregate((a, b) => a + ", " + b));
+            NetworkStatistics.S2C_RequestsForRetransmit_Aggregate_Increment();
         }
 
         private DateTime LastRequestForRetransmitTime = DateTime.MinValue;
@@ -1030,61 +961,6 @@ namespace ACE.Server.Network
             packetQueue.Clear();
 
             ConnectionData.CryptoClient.ReleaseResources();
-        }
-
-        // Add periodic cleanup
-        private DateTime lastOutOfOrderCleanup = DateTime.UtcNow;
-        private static readonly TimeSpan outOfOrderCleanupInterval = TimeSpan.FromSeconds(30);
-        private const int maxOutOfOrderAge = 60; // seconds
-
-        private void CleanupOutOfOrderCollections()
-        {
-            if (DateTime.UtcNow - lastOutOfOrderCleanup < outOfOrderCleanupInterval)
-                return;
-
-            lastOutOfOrderCleanup = DateTime.UtcNow;
-            var currentTime = (ushort)Timers.PortalYearTicks;
-
-            // Remove old out-of-order packets (older than 60 seconds)
-            var oldPackets = outOfOrderPackets
-                .Where(kvp => TimeHelper.GetAge(kvp.Value.Header.Time, currentTime) > maxOutOfOrderAge)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var key in oldPackets)
-                outOfOrderPackets.TryRemove(key, out _);
-
-            // Clean up old out-of-order messages
-            if (outOfOrderFragments.Count > 100) // Safety limit
-            {
-                var oldMessages = outOfOrderFragments
-                    .OrderBy(kvp => kvp.Key)
-                    .Take(outOfOrderFragments.Count - 50)
-                    .Select(kvp => kvp.Key)
-                    .ToList();
-
-                foreach (var key in oldMessages)
-                    outOfOrderFragments.TryRemove(key, out _);
-            }
-        }
-
-        private class TimeHelper
-        {
-            /// <summary>
-            /// returns the integer age in seconds between the given timestamp and the current time
-            /// </summary>
-            /// <param name="timestamp"></param>
-            /// <param name="currentTime"></param>
-            /// <returns></returns>
-            internal static int GetAge(object timestamp, ushort currentTime)
-            {
-                if (timestamp is ushort ts)
-                {
-                    int age = (currentTime - ts) & 0xFFFF;
-                    return age;
-                }
-                return 0;
-            }
         }
     }
 }
