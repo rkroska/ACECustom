@@ -37,7 +37,7 @@ namespace ACE.Server.Factories
 
         public static List<WorldObject> CreateRandomLootObjects(TreasureDeath profile)
         {
-            if (!PropertyManager.GetBool("legacy_loot_system").Item)
+            if (!PropertyManager.GetBool("legacy_loot_system"))
                 return CreateRandomLootObjects_New(profile);
 
             stopwatch.Value.Restart();
@@ -122,7 +122,7 @@ namespace ACE.Server.Factories
                 itemChance = ThreadSafeRandom.Next(1, 100);
                 if (itemChance <= profile.MundaneItemChance)
                 {
-                    double dropRate = PropertyManager.GetDouble("aetheria_drop_rate").Item;
+                    double dropRate = PropertyManager.GetDouble("aetheria_drop_rate");
                     double dropRateMod = 1.0 / dropRate;
 
                     // Coalesced Aetheria doesn't drop in loot tiers less than 5
@@ -263,7 +263,7 @@ namespace ACE.Server.Factories
 
         private static WorldObject TryRollAetheria(TreasureDeath profile)
         {
-            var aetheria_drop_rate = (float)PropertyManager.GetDouble("aetheria_drop_rate").Item;
+            var aetheria_drop_rate = (float)PropertyManager.GetDouble("aetheria_drop_rate");
 
             if (aetheria_drop_rate <= 0.0f)
                 return null;

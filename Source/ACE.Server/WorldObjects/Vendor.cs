@@ -66,7 +66,7 @@ namespace ACE.Server.WorldObjects
         {
             ObjectDescriptionFlags |= ObjectDescriptionFlag.Vendor;
 
-            if (!PropertyManager.GetBool("vendor_shop_uses_generator").Item)
+            if (!PropertyManager.GetBool("vendor_shop_uses_generator"))
             {
                 GeneratorProfiles.RemoveAll(p => p.Biota.WhereCreate.HasFlag(RegenLocationType.Shop));
             }
@@ -132,7 +132,7 @@ namespace ACE.Server.WorldObjects
             foreach (var item in Biota.PropertiesCreateList.Where(x => x.DestinationType == DestinationType.Shop))
                 LoadInventoryItem(itemsForSale, item.WeenieClassId, item.Palette, item.Shade, item.StackSize);
 
-            //if (Biota.PropertiesGenerator != null && !PropertyManager.GetBool("vendor_shop_uses_generator").Item)
+            //if (Biota.PropertiesGenerator != null && !PropertyManager.GetBool("vendor_shop_uses_generator"))
             //{
             //    foreach (var item in Biota.PropertiesGenerator.Where(x => x.WhereCreate.HasFlag(RegenLocationType.Shop)))
             //        LoadInventoryItem(itemsForSale, item.WeenieClassId, (int?)item.PaletteId, item.Shade, item.StackSize);
@@ -677,7 +677,7 @@ namespace ACE.Server.WorldObjects
 
                 var rotTime = Time.GetDateTimeFromTimestamp(soldTime.Value);
 
-                rotTime = rotTime.AddSeconds(PropertyManager.GetDouble("vendor_unique_rot_time", 300).Item);
+                rotTime = rotTime.AddSeconds(PropertyManager.GetDouble("vendor_unique_rot_time", 300));
 
                 if (DateTime.UtcNow >= rotTime)
                 {

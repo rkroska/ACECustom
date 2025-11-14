@@ -342,7 +342,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
-                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit");
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
@@ -429,7 +429,7 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "withdraw" || parameters[0] == "w")
             {
-                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit");
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
@@ -498,7 +498,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 
                 // Rate limiting for transfer commands
-                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit").Item;
+                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit");
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
@@ -628,7 +628,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var commandSecondsLimit = PropertyManager.GetLong("clap_command_limit").Item;
+            var commandSecondsLimit = PropertyManager.GetLong("clap_command_limit");
             var currentTime = DateTime.UtcNow;
 
             var lastCommandTimeSeconds = (currentTime - session.LastClapCommandTime).TotalSeconds;
@@ -1120,7 +1120,7 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                var commandSecondsLimit = PropertyManager.GetLong("qb_command_limit").Item;
+                var commandSecondsLimit = PropertyManager.GetLong("qb_command_limit");
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastQBCommandTime).TotalSeconds;
@@ -1270,7 +1270,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("myquests", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows your quest log")]
         public static void HandleQuests(Session session, params string[] parameters)
         {
-            if (PropertyManager.GetBool("myquest_throttle_enabled").Item)
+            if (PropertyManager.GetBool("myquest_throttle_enabled"))
             {
                 var currentTime = DateTime.UtcNow;
 
@@ -1283,7 +1283,7 @@ namespace ACE.Server.Command.Handlers
 
             session.LastMyQuestsCommandTime = DateTime.UtcNow;
 
-            if (!PropertyManager.GetBool("quest_info_enabled").Item)
+            if (!PropertyManager.GetBool("quest_info_enabled"))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"myquests\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1309,7 +1309,7 @@ namespace ACE.Server.Command.Handlers
 
                 var minDelta = quest.MinDelta;
                 if (QuestManager.CanScaleQuestMinDelta(quest))
-                    minDelta = (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate").Item);
+                    minDelta = (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate"));
 
                 var text = $"{playerQuest.QuestName.ToLower()} - {playerQuest.NumTimesCompleted} solves ({playerQuest.LastTimeCompleted}) \"{quest.Message}\" {quest.MaxSolves} {minDelta}";
                 questMessages.Add(text);
@@ -1566,7 +1566,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("config", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Manually sets a character option on the server.\nUse /config list to see a list of settings.", "<setting> <on/off>")]
         public static void HandleConfig(Session session, params string[] parameters)
         {
-            if (!PropertyManager.GetBool("player_config_command").Item)
+            if (!PropertyManager.GetBool("player_config_command"))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"config\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1657,7 +1657,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("aceversion", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows this server's version data")]
         public static void HandleACEversion(Session session, params string[] parameters)
         {
-            if (!PropertyManager.GetBool("version_info_enabled").Item)
+            if (!PropertyManager.GetBool("version_info_enabled"))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"aceversion\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1694,7 +1694,7 @@ namespace ACE.Server.Command.Handlers
             )]
         public static void HandleReportbug(Session session, params string[] parameters)
         {
-            if (!PropertyManager.GetBool("reportbug_enabled").Item)
+            if (!PropertyManager.GetBool("reportbug_enabled"))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"reportbug\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1735,7 +1735,7 @@ namespace ACE.Server.Command.Handlers
             var sv = ServerBuildInfo.FullVersion;
             var pv = databaseVersion.PatchVersion;
 
-            //var ct = PropertyManager.GetString("reportbug_content_type").Item;
+            //var ct = PropertyManager.GetString("reportbug_content_type");
             var cg = category.ToLower();
 
             var w = "";

@@ -18,12 +18,12 @@ namespace ACE.Server.WorldObjects
                 return;
 
             // following the same model as Player_Xp
-            var questModifier = PropertyManager.GetDouble("quest_lum_modifier").Item;
-            var modifier = PropertyManager.GetDouble("luminance_modifier").Item;
+            var questModifier = PropertyManager.GetDouble("quest_lum_modifier");
+            var modifier = PropertyManager.GetDouble("luminance_modifier");
             if (xpType == XpType.Quest)
                 modifier *= questModifier;
             var quest = GetQuestCountXPBonus();
-            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05).Item;
+            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05);
 
             var enlightenment = GetEnglightenmentXPBonus();
             // should this be passed upstream to fellowship?

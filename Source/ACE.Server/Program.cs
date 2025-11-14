@@ -364,7 +364,7 @@ namespace ACE.Server
             DateTime buildDate = new FileInfo(Assembly.GetExecutingAssembly().Location).LastWriteTime;
             log.Info($"Server Build Date: {buildDate}");
 
-            if (!PropertyManager.GetBool("world_closed", false).Item)
+            if (!PropertyManager.GetBool("world_closed", false))
             {
                 WorldManager.Open(null);
             }

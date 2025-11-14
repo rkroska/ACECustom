@@ -137,7 +137,7 @@ namespace ACE.Server.WorldObjects
                         }
                         
                         var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
+                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
@@ -213,7 +213,7 @@ namespace ACE.Server.WorldObjects
                         }
                         
                         var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000).Item;
+                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
@@ -394,7 +394,7 @@ namespace ACE.Server.WorldObjects
                 }
                 
                 // Check rate limit (configurable via /modifylong db_slow_discord_max_alerts_per_minute)
-                var maxAlerts = PropertyManager.GetLong("db_slow_discord_max_alerts_per_minute", 5).Item;
+                var maxAlerts = PropertyManager.GetLong("db_slow_discord_max_alerts_per_minute", 5);
                 if (maxAlerts <= 0 || dbSlowAlertsThisMinute >= maxAlerts)
                     return;  // Drop alert to prevent Discord API spam
                 
@@ -422,7 +422,7 @@ namespace ACE.Server.WorldObjects
         
         private static void CheckDatabaseQueueSize()
         {
-            var queueThreshold = PropertyManager.GetLong("db_queue_alert_threshold", 100).Item;
+            var queueThreshold = PropertyManager.GetLong("db_queue_alert_threshold", 100);
             if (queueThreshold <= 0)
                 return;  // Monitoring disabled
             
@@ -441,7 +441,7 @@ namespace ACE.Server.WorldObjects
                 }
                 
                 // Check rate limit (configurable via /modifylong db_queue_discord_max_alerts_per_minute)
-                var maxAlerts = PropertyManager.GetLong("db_queue_discord_max_alerts_per_minute", 2).Item;
+                var maxAlerts = PropertyManager.GetLong("db_queue_discord_max_alerts_per_minute", 2);
                 if (maxAlerts <= 0 || dbQueueAlertsThisMinute >= maxAlerts)
                     return;
                 

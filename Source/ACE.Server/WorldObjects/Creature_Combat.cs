@@ -415,28 +415,28 @@ namespace ACE.Server.WorldObjects
 
             if (isBow)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("missile_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("missile_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
 
             if (weapon?.WeaponSkill == Skill.FinesseWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("finesse_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("finesse_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.TwoHandedCombat)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("twohanded_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("twohanded_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.LightWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("light_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("light_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.HeavyWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("heavy_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("heavy_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
 

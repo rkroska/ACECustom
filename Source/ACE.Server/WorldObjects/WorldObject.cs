@@ -927,7 +927,7 @@ namespace ACE.Server.WorldObjects
                 motionInterp.apply_raw_movement(true, true);
             }
 
-            if (persist && PropertyManager.GetBool("persist_movement").Item)
+            if (persist && PropertyManager.GetBool("persist_movement"))
                 motion.Persist(CurrentMotionState);
 
             // hardcoded ready?
@@ -950,7 +950,7 @@ namespace ACE.Server.WorldObjects
         {
             var motion = new Motion(stance);
 
-            if (PropertyManager.GetBool("persist_movement").Item)
+            if (PropertyManager.GetBool("persist_movement"))
                 motion.Persist(CurrentMotionState);
 
             CurrentMotionState = motion;
