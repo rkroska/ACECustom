@@ -1,3 +1,4 @@
+using System;
 using ACE.Common;
 using ACE.Database.Models.Auth;
 using ACE.DatLoader;
@@ -13,6 +14,7 @@ namespace ACE.Server.WorldObjects
     partial class Player
     {
         public const double AttributeXpMod = 0.077;
+        private const uint MinimumAttributeStartingValue = 10;
         public bool HandleActionRaiseAttribute(PropertyAttribute attribute, ulong amount)
         {
             if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
@@ -115,6 +117,83 @@ namespace ACE.Server.WorldObjects
             creatureAttribute.Ranks = rank;
             creatureAttribute.ExperienceSpent = (uint)xpCost;
             SetExtendedAttributeExperience(creatureAttribute, xpCost);
+            return true;
+        }
+
+        /// <summary>
+        /// Permanently increases the attribute StartingValue (InitLevel) without spending XP.
+        /// </summary>
+        /// <param name="attribute">Primary attribute to boost.</param>
+        /// <param name="amount">Number of ranks to add to the template/base value.</param>
+        /// <returns>true if the grant succeeded.</returns>
+        public bool GrantFreeAttributeRanks(PropertyAttribute attribute, uint amount = 1)
+        {
+            if (amount == 0)
+                return false;
+
+            if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
+                return false;
+
+            var availableIncrease = uint.MaxValue - creatureAttribute.StartingValue;
+            var increase = Math.Min(amount, availableIncrease);
+
+            if (increase == 0)
+                return false;
+
+            creatureAttribute.StartingValue += increase;
+
+            Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateAttribute(this, creatureAttribute));
+
+            if (attribute == PropertyAttribute.Endurance)
+            {
+                Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, Health));
+            }
+            else if (attribute == PropertyAttribute.Self)
+            {
+                Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, Mana));
+            }
+
+            if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
+                HandleRunRateUpdate();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Decreases the attribute StartingValue (InitLevel) without refunding XP.
+        /// </summary>
+        public bool RevokeFreeAttributeRanks(PropertyAttribute attribute, uint amount = 1)
+        {
+            if (amount == 0)
+                return false;
+
+            if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
+                return false;
+
+            var availableDecrease = creatureAttribute.StartingValue > MinimumAttributeStartingValue
+                ? creatureAttribute.StartingValue - MinimumAttributeStartingValue
+                : 0;
+            var decrease = Math.Min(amount, availableDecrease);
+
+            if (decrease == 0)
+                return false;
+
+            creatureAttribute.StartingValue -= decrease;
+
+            Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateAttribute(this, creatureAttribute));
+
+            if (attribute == PropertyAttribute.Endurance)
+            {
+                Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, Health));
+            }
+            else if (attribute == PropertyAttribute.Self)
+            {
+                Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, Mana));
+            }
+
+            if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
+                HandleRunRateUpdate();
+
             return true;
         }
 

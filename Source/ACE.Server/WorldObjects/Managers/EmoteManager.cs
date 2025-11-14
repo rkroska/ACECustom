@@ -2408,6 +2408,14 @@ namespace ACE.Server.WorldObjects.Managers
 
                     }
                     break;
+                case EmoteType.GrantAttributeStat:
+                    if (player != null && emote.Stat != null)
+                    {
+                        var attribute = (PropertyAttribute)emote.Stat;
+                        var amount = emote.Amount.HasValue && emote.Amount.Value > 0 ? (uint)emote.Amount.Value : 1u;
+                        player.GrantFreeAttributeRanks(attribute, amount);
+                    }
+                    break;
                 case EmoteType.SetEnvironment:
                     if (WorldObject == null || WorldObject.CurrentLandblock == null)
                     {
