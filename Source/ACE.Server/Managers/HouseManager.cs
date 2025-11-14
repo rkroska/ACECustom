@@ -604,7 +604,9 @@ namespace ACE.Server.Managers
         private static HouseData GetHouseData(House house)
         {
             var houseData = new HouseData();
-            houseData.Rent = house.SlumLord.GetRentItems();
+
+            houseData.SetRentItems(house.SlumLord.GetRentItems());
+            houseData.SetPaidItems(house.SlumLord);
 
             if (house.HouseStatus == HouseStatus.InActive)
                 houseData.MaintenanceFree = true;
