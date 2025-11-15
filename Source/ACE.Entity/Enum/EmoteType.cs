@@ -140,6 +140,7 @@ namespace ACE.Entity.Enum
         QuestCompletionCount          = 131, //Custom
         DropFellow                    = 132, //Custom
         GrantAttributeStat            = 133, //Custom
+        GrantVitalStat                = 134, //Custom
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

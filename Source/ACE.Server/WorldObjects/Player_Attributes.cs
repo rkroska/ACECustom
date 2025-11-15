@@ -15,6 +15,7 @@ namespace ACE.Server.WorldObjects
     {
         public const double AttributeXpMod = 0.077;
         private const uint MinimumAttributeStartingValue = 10;
+        private const uint MinimumVitalStartingValue = 10;
         public bool HandleActionRaiseAttribute(PropertyAttribute attribute, ulong amount)
         {
             if (!Attributes.TryGetValue(attribute, out var creatureAttribute))
@@ -160,6 +161,30 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Permanently increases a secondary attribute (vital) StartingValue without spending XP.
+        /// </summary>
+        public bool GrantFreeVitalRanks(PropertyAttribute2nd vital, uint amount = 1)
+        {
+            if (amount == 0)
+                return false;
+
+            if (!Vitals.TryGetValue(vital, out var creatureVital))
+                return false;
+
+            var availableIncrease = uint.MaxValue - creatureVital.StartingValue;
+            var increase = Math.Min(amount, availableIncrease);
+
+            if (increase == 0)
+                return false;
+
+            creatureVital.StartingValue += increase;
+
+            Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, creatureVital));
+
+            return true;
+        }
+
+        /// <summary>
         /// Decreases the attribute StartingValue (InitLevel) without refunding XP.
         /// </summary>
         public bool RevokeFreeAttributeRanks(PropertyAttribute attribute, uint amount = 1)
@@ -193,6 +218,32 @@ namespace ACE.Server.WorldObjects
 
             if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
                 HandleRunRateUpdate();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Decreases a secondary attribute (vital) StartingValue without refunding XP.
+        /// </summary>
+        public bool RevokeFreeVitalRanks(PropertyAttribute2nd vital, uint amount = 1)
+        {
+            if (amount == 0)
+                return false;
+
+            if (!Vitals.TryGetValue(vital, out var creatureVital))
+                return false;
+
+            var availableDecrease = creatureVital.StartingValue > MinimumVitalStartingValue
+                ? creatureVital.StartingValue - MinimumVitalStartingValue
+                : 0;
+            var decrease = Math.Min(amount, availableDecrease);
+
+            if (decrease == 0)
+                return false;
+
+            creatureVital.StartingValue -= decrease;
+
+            Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, creatureVital));
 
             return true;
         }

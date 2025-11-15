@@ -637,13 +637,17 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (!TryParseAttribute(parameters[0], out var attribute, out var attrName))
+            if (!TryParseAttribute(parameters[0], out var isSecondary, out var attribute, out var secondaryAttribute, out var attrName))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("[GRANTATTR] Invalid attribute abbreviation.", ChatMessageType.System));
                 return;
             }
 
-            if (session.Player.GrantFreeAttributeRanks(attribute, amount))
+            bool success = isSecondary
+                ? session.Player.GrantFreeVitalRanks(secondaryAttribute, amount)
+                : session.Player.GrantFreeAttributeRanks(attribute, amount);
+
+            if (success)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[GRANTATTR] Granted {amount} free ranks of {attrName}.", ChatMessageType.Advancement));
             }
@@ -674,13 +678,17 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (!TryParseAttribute(parameters[0], out var attribute, out var attrName))
+            if (!TryParseAttribute(parameters[0], out var isSecondary, out var attribute, out var secondaryAttribute, out var attrName))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("[REVOKEATTR] Invalid attribute abbreviation.", ChatMessageType.System));
                 return;
             }
 
-            if (session.Player.RevokeFreeAttributeRanks(attribute, amount))
+            bool success = isSecondary
+                ? session.Player.RevokeFreeVitalRanks(secondaryAttribute, amount)
+                : session.Player.RevokeFreeAttributeRanks(attribute, amount);
+
+            if (success)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[REVOKEATTR] Removed {amount} innate ranks from {attrName}.", ChatMessageType.Advancement));
             }
@@ -693,10 +701,12 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Maps user-facing attr tokens (str, end, etc.) to PropertyAttribute.
         /// </summary>
-        private static bool TryParseAttribute(string token, out PropertyAttribute attribute, out string attrName)
+        private static bool TryParseAttribute(string token, out bool isSecondary, out PropertyAttribute attribute, out PropertyAttribute2nd secondaryAttribute, out string attrName)
         {
             attrName = null;
             attribute = PropertyAttribute.Undef;
+            secondaryAttribute = PropertyAttribute2nd.Undef;
+            isSecondary = false;
 
             switch (token.ToLowerInvariant())
             {
@@ -729,6 +739,28 @@ namespace ACE.Server.Command.Handlers
                 case "self":
                     attribute = PropertyAttribute.Self;
                     attrName = "Self";
+                    return true;
+                case "hea":
+                case "health":
+                case "vit":
+                case "vitality":
+                case "maxhealth":
+                    isSecondary = true;
+                    secondaryAttribute = PropertyAttribute2nd.MaxHealth;
+                    attrName = "Health";
+                    return true;
+                case "sta":
+                case "stam":
+                case "stamina":
+                    isSecondary = true;
+                    secondaryAttribute = PropertyAttribute2nd.MaxStamina;
+                    attrName = "Stamina";
+                    return true;
+                case "man":
+                case "mana":
+                    isSecondary = true;
+                    secondaryAttribute = PropertyAttribute2nd.MaxMana;
+                    attrName = "Mana";
                     return true;
                 default:
                     return false;
