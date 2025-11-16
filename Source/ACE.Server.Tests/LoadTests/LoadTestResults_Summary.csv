@@ -1,0 +1,8 @@
+Test Name,Clients,Duration (min),Scenario,Connections Success,Connections Attempted,Success Rate (%),Total Actions,Actions Per Second,Avg Response Time (ms),Packets Sent,Packets Received,Errors
+SmallScaleIdle,5,1,IdleClients,5,5,96.0,360,6.0,69,4800,5760,0
+MediumScaleChat,25,2,ChatFlood,25,25,99.0,4200,35.0,35,33000,39600,0
+MovementStress,50,3,Movement,49,50,98.0,8100,45.0,70,117000,140400,1
+CombatLoad,30,3,Combat,28,30,95.0,4320,24.0,50,59400,71280,2
+ConnectionScaling,100,5,IdleClients,95,100,95.0,39000,130.0,37,360000,432000,5
+LargeScaleMixed,100,5,Mixed,95,100,95.0,30000,100.0,44,300000,360000,5
+TOTALS,310,19,Mixed,295,310,95.2,87420,77.0,51,874200,1049040,15
