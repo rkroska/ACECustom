@@ -171,7 +171,7 @@ namespace ACE.Server.WorldObjects
 
             if (item.ChangesDetected)
             {
-                item.SaveBiotaToDatabase(false);
+                // REMOVE THIS LINE: item.SaveBiotaToDatabase(false);
                 biotas.Add((item.Biota, item.BiotaDatabaseLock));
             }
 
@@ -183,7 +183,7 @@ namespace ACE.Server.WorldObjects
                 {
                     if (subItem.ChangesDetected)
                     {
-                        subItem.SaveBiotaToDatabase(false);
+                        // REMOVE THIS LINE: subItem.SaveBiotaToDatabase(false);
                         biotas.Add((subItem.Biota, subItem.BiotaDatabaseLock));
                     }
                 }
@@ -1568,7 +1568,7 @@ namespace ACE.Server.WorldObjects
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"Error logging chest/container deposit: {ex.Message}");
+                    log.Error($"Error logging chest deposit: {ex.Message}");
                 }
             }
 
@@ -1771,7 +1771,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (rootOwner != this) // Item is on the landscape, or in a landblock chest
+            if (rootOwner != this) // Movement is an item pickup off the landblock
             {
                 if (CombatMode != CombatMode.NonCombat)
                 {
@@ -2257,7 +2257,7 @@ namespace ACE.Server.WorldObjects
 
             if (!TryCreateInInventoryWithNetworking(dequippedItem))
             {
-                Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Failed to add dequip back into inventory!")); // Custom error message
+                Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Failed to add dequipped item back into inventory!")); // Custom error message
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
 
                 // todo: if this happens, we should just put back the dequipped item to where it was
