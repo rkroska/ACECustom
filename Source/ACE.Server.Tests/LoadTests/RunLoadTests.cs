@@ -18,7 +18,13 @@ namespace ACE.Server.Tests.LoadTests
             Console.WriteLine();
 
             var serverHost = args.Length > 0 ? args[0] : "127.0.0.1";
-            var serverPort = args.Length > 1 ? int.Parse(args[1]) : 9000;
+
+            var serverPort = 9000;
+            if (args.Length > 1 && !int.TryParse(args[1], out serverPort))
+            {
+                Console.WriteLine($"Invalid port '{args[1]}', defaulting to 9000.");
+                serverPort = 9000;
+            }
 
             Console.WriteLine($"Target Server: {serverHost}:{serverPort}");
             Console.WriteLine();
