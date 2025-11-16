@@ -613,6 +613,160 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban list - Show all bank command blacklisted players/accounts", ChatMessageType.System));
         }
 
+        /// <summary>
+        /// Grants free attribute ranks (adjusts StartingValue) without affecting XP.
+        /// </summary>
+        /// <remarks>
+        /// Used for testing purposes only.
+        /// </remarks>
+        /// <example>
+        /// /grantattr str 2
+        /// </example>
+        [CommandHandler("grantattr", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Grants innate attribute ranks to current character without XP cost.",
+            "Usage: /grantattr <attr> [amount]")]
+        public static void HandleGrantAttribute(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            uint amount = 1;
+            if (parameters.Length > 1 && (!uint.TryParse(parameters[1], out amount) || amount == 0))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("[GRANTATTR] Amount must be a positive whole number.", ChatMessageType.System));
+                return;
+            }
+
+            if (!TryParseAttribute(parameters[0], out var isSecondary, out var attribute, out var secondaryAttribute, out var attrName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("[GRANTATTR] Invalid attribute abbreviation.", ChatMessageType.System));
+                return;
+            }
+
+            bool success = isSecondary
+                ? session.Player.GrantFreeVitalRanks(secondaryAttribute, amount)
+                : session.Player.GrantFreeAttributeRanks(attribute, amount);
+
+            if (success)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[GRANTATTR] Granted {amount} free ranks of {attrName}.", ChatMessageType.Advancement));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[GRANTATTR] Failed to grant {attrName}.", ChatMessageType.System));
+            }
+        }
+
+        /// <summary>
+        /// Removes innate attribute ranks granted via GrantFreeAttributeRanks.
+        /// </summary>
+        /// <example>
+        /// /revokeattr str 1
+        /// </example>
+        [CommandHandler("revokeattr", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Removes innate attribute ranks from the current character.",
+            "Usage: /revokeattr <attr> [amount]")]
+        public static void HandleRevokeAttribute(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            uint amount = 1;
+            if (parameters.Length > 1 && (!uint.TryParse(parameters[1], out amount) || amount == 0))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("[REVOKEATTR] Amount must be a positive whole number.", ChatMessageType.System));
+                return;
+            }
+
+            if (!TryParseAttribute(parameters[0], out var isSecondary, out var attribute, out var secondaryAttribute, out var attrName))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("[REVOKEATTR] Invalid attribute abbreviation.", ChatMessageType.System));
+                return;
+            }
+
+            bool success = isSecondary
+                ? session.Player.RevokeFreeVitalRanks(secondaryAttribute, amount)
+                : session.Player.RevokeFreeAttributeRanks(attribute, amount);
+
+            if (success)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[REVOKEATTR] Removed {amount} innate ranks from {attrName}.", ChatMessageType.Advancement));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[REVOKEATTR] Unable to remove ranks from {attrName}.", ChatMessageType.System));
+            }
+        }
+
+        /// <summary>
+        /// Maps user-facing attr tokens (str, end, etc.) to PropertyAttribute.
+        /// </summary>
+        private static bool TryParseAttribute(string token, out bool isSecondary, out PropertyAttribute attribute, out PropertyAttribute2nd secondaryAttribute, out string attrName)
+        {
+            attrName = null;
+            attribute = PropertyAttribute.Undef;
+            secondaryAttribute = PropertyAttribute2nd.Undef;
+            isSecondary = false;
+
+            switch (token.ToLowerInvariant())
+            {
+                case "str":
+                case "strength":
+                    attribute = PropertyAttribute.Strength;
+                    attrName = "Strength";
+                    return true;
+                case "end":
+                case "endurance":
+                    attribute = PropertyAttribute.Endurance;
+                    attrName = "Endurance";
+                    return true;
+                case "coo":
+                case "coordination":
+                    attribute = PropertyAttribute.Coordination;
+                    attrName = "Coordination";
+                    return true;
+                case "qui":
+                case "quickness":
+                    attribute = PropertyAttribute.Quickness;
+                    attrName = "Quickness";
+                    return true;
+                case "foc":
+                case "focus":
+                    attribute = PropertyAttribute.Focus;
+                    attrName = "Focus";
+                    return true;
+                case "sel":
+                case "self":
+                    attribute = PropertyAttribute.Self;
+                    attrName = "Self";
+                    return true;
+                case "hea":
+                case "health":
+                case "vit":
+                case "vitality":
+                case "maxhealth":
+                    isSecondary = true;
+                    secondaryAttribute = PropertyAttribute2nd.MaxHealth;
+                    attrName = "Health";
+                    return true;
+                case "sta":
+                case "stam":
+                case "stamina":
+                    isSecondary = true;
+                    secondaryAttribute = PropertyAttribute2nd.MaxStamina;
+                    attrName = "Stamina";
+                    return true;
+                case "man":
+                case "mana":
+                    isSecondary = true;
+                    secondaryAttribute = PropertyAttribute2nd.MaxMana;
+                    attrName = "Mana";
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private static void HandleTransferSummaries(Session session, string[] parameters)
         {
             if (parameters.Length < 1)
