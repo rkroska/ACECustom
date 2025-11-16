@@ -16,6 +16,7 @@ namespace ACE.Server.Tests.LoadTests
         private readonly List<LoadTestClient> clients = new List<LoadTestClient>();
         private readonly LoadTestConfiguration config;
         private readonly LoadTestMetrics metrics;
+        private readonly object metricsLock = new object();
         private CancellationTokenSource cancellationTokenSource;
         private bool isRunning;
 
@@ -54,10 +55,6 @@ namespace ACE.Server.Tests.LoadTests
                 // Phase 3: Run test scenario
                 Console.WriteLine($"Phase 3: Running {config.Scenario} scenario...");
                 await RunScenarioAsync(cancellationTokenSource.Token);
-
-                // Phase 4: Disconnect all clients
-                Console.WriteLine("Phase 4: Disconnecting clients...");
-                await DisconnectClientsAsync();
             }
             catch (Exception ex)
             {
@@ -67,6 +64,21 @@ namespace ACE.Server.Tests.LoadTests
             finally
             {
                 isRunning = false;
+                
+                // Phase 4: Disconnect all clients (always runs on success or failure)
+                try
+                {
+                    Console.WriteLine("Phase 4: Disconnecting clients...");
+                    await DisconnectClientsAsync();
+                }
+                catch (Exception cleanupEx)
+                {
+                    Console.WriteLine($"Error during cleanup: {cleanupEx.Message}");
+                    lock (metricsLock)
+                    {
+                        metrics.Errors.Add(cleanupEx);
+                    }
+                }
             }
 
             var testEnd = DateTime.UtcNow;
@@ -100,7 +112,7 @@ namespace ACE.Server.Tests.LoadTests
                 
                 var client = new LoadTestClient(config.ServerHost, config.ServerPort);
                 client.OnLog += msg => { if (config.VerboseLogging) Console.WriteLine(msg); };
-                client.OnError += ex => metrics.Errors.Add(ex);
+                client.OnError += ex => { lock (metricsLock) { metrics.Errors.Add(ex); } };
                 
                 clients.Add(client);
 
@@ -117,7 +129,10 @@ namespace ACE.Server.Tests.LoadTests
             
             var successfulConnections = clients.Count(c => c.State == LoadTestClientState.Connected);
             Console.WriteLine($"Connected: {successfulConnections}/{config.ConcurrentClients} clients");
-            metrics.SuccessfulConnections = successfulConnections;
+            lock (metricsLock)
+            {
+                metrics.SuccessfulConnections = successfulConnections;
+            }
         }
 
         private async Task ConnectClientAsync(LoadTestClient client, string accountName, string password)
@@ -128,19 +143,25 @@ namespace ACE.Server.Tests.LoadTests
                 var success = await client.ConnectAsync(accountName, password);
                 sw.Stop();
 
-                if (success)
+                lock (metricsLock)
                 {
-                    metrics.ConnectionTimes.Add(sw.Elapsed);
-                }
-                else
-                {
-                    metrics.FailedConnections++;
+                    if (success)
+                    {
+                        metrics.ConnectionTimes.Add(sw.Elapsed);
+                    }
+                    else
+                    {
+                        metrics.FailedConnections++;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedConnections++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedConnections++;
+                }
             }
         }
 
@@ -178,7 +199,10 @@ namespace ACE.Server.Tests.LoadTests
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                }
             }
         }
 
@@ -193,7 +217,10 @@ namespace ACE.Server.Tests.LoadTests
                 }
                 catch (Exception ex)
                 {
-                    metrics.Errors.Add(ex);
+                    lock (metricsLock)
+                    {
+                        metrics.Errors.Add(ex);
+                    }
                 }
             }
 
@@ -251,7 +278,10 @@ namespace ACE.Server.Tests.LoadTests
                 foreach (var client in clients.Where(c => c.State == LoadTestClientState.InWorld))
                 {
                     await client.PingAsync();
-                    metrics.ActionCount++;
+                    lock (metricsLock)
+                    {
+                        metrics.ActionCount++;
+                    }
                 }
 
                 await Task.Delay(5000, cancellationToken);
@@ -407,13 +437,19 @@ namespace ACE.Server.Tests.LoadTests
             {
                 await client.SendChatAsync(message);
                 sw.Stop();
-                metrics.ActionTimes.Add(sw.Elapsed);
-                metrics.ActionCount++;
+                lock (metricsLock)
+                {
+                    metrics.ActionTimes.Add(sw.Elapsed);
+                    metrics.ActionCount++;
+                }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedActions++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedActions++;
+                }
             }
         }
 
@@ -424,13 +460,19 @@ namespace ACE.Server.Tests.LoadTests
             {
                 await client.MoveAsync(x, y, z);
                 sw.Stop();
-                metrics.ActionTimes.Add(sw.Elapsed);
-                metrics.ActionCount++;
+                lock (metricsLock)
+                {
+                    metrics.ActionTimes.Add(sw.Elapsed);
+                    metrics.ActionCount++;
+                }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedActions++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedActions++;
+                }
             }
         }
 
@@ -441,13 +483,19 @@ namespace ACE.Server.Tests.LoadTests
             {
                 await client.MeleeAttackAsync(targetId, height, power);
                 sw.Stop();
-                metrics.ActionTimes.Add(sw.Elapsed);
-                metrics.ActionCount++;
+                lock (metricsLock)
+                {
+                    metrics.ActionTimes.Add(sw.Elapsed);
+                    metrics.ActionCount++;
+                }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedActions++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedActions++;
+                }
             }
         }
 
@@ -458,13 +506,19 @@ namespace ACE.Server.Tests.LoadTests
             {
                 await client.UseItemAsync(itemId);
                 sw.Stop();
-                metrics.ActionTimes.Add(sw.Elapsed);
-                metrics.ActionCount++;
+                lock (metricsLock)
+                {
+                    metrics.ActionTimes.Add(sw.Elapsed);
+                    metrics.ActionCount++;
+                }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedActions++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedActions++;
+                }
             }
         }
 
@@ -475,13 +529,19 @@ namespace ACE.Server.Tests.LoadTests
             {
                 await client.PickupItemAsync(itemId);
                 sw.Stop();
-                metrics.ActionTimes.Add(sw.Elapsed);
-                metrics.ActionCount++;
+                lock (metricsLock)
+                {
+                    metrics.ActionTimes.Add(sw.Elapsed);
+                    metrics.ActionCount++;
+                }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedActions++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedActions++;
+                }
             }
         }
 
@@ -492,13 +552,19 @@ namespace ACE.Server.Tests.LoadTests
             {
                 await client.DropItemAsync(itemId);
                 sw.Stop();
-                metrics.ActionTimes.Add(sw.Elapsed);
-                metrics.ActionCount++;
+                lock (metricsLock)
+                {
+                    metrics.ActionTimes.Add(sw.Elapsed);
+                    metrics.ActionCount++;
+                }
             }
             catch (Exception ex)
             {
-                metrics.Errors.Add(ex);
-                metrics.FailedActions++;
+                lock (metricsLock)
+                {
+                    metrics.Errors.Add(ex);
+                    metrics.FailedActions++;
+                }
             }
         }
 

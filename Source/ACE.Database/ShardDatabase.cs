@@ -399,6 +399,7 @@ namespace ACE.Database
                 // Load all existing biotas with their collections in one query to prevent duplicate key errors
                 var biotaIds = biotaList.Select(x => x.biota.Id).ToList();
                 var existingBiotas = context.Biota
+                    .Include(b => b.BiotaPropertiesAllegiance)
                     .Include(b => b.BiotaPropertiesAnimPart)
                     .Include(b => b.BiotaPropertiesAttribute)
                     .Include(b => b.BiotaPropertiesAttribute2nd)

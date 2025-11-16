@@ -115,11 +115,11 @@ namespace ACE.Server.Tests.LoadTests
             Console.WriteLine("=".PadRight(80, '='));
             Console.WriteLine();
 
-            await GenerateReport(allResults, serverHost, serverPort);
+            var reportPath = await GenerateReport(allResults, serverHost, serverPort);
 
             Console.WriteLine();
             Console.WriteLine("Load test suite completed!");
-            Console.WriteLine($"Report saved to: LoadTestReport_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+            Console.WriteLine($"Report saved to: {reportPath}");
         }
 
         private static async Task<LoadTestResults> RunSmallScaleIdleTest(string host, int port)
@@ -232,7 +232,7 @@ namespace ACE.Server.Tests.LoadTests
             Console.WriteLine($"  Errors: {results.TotalErrors}");
         }
 
-        private static async Task GenerateReport(List<(string TestName, LoadTestResults Results)> allResults, string host, int port)
+        private static async Task<string> GenerateReport(List<(string TestName, LoadTestResults Results)> allResults, string host, int port)
         {
             var reportPath = $"LoadTestReport_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
             using (var writer = new StreamWriter(reportPath))
@@ -267,7 +267,8 @@ namespace ACE.Server.Tests.LoadTests
 
                 await writer.WriteLineAsync($"Total Tests Run: {allResults.Count}");
                 await writer.WriteLineAsync($"Total Duration: {totalDuration:hh\\:mm\\:ss}");
-                await writer.WriteLineAsync($"Total Connections: {totalSuccessful}/{totalConnections} ({(double)totalSuccessful / totalConnections:P1})");
+                var connectionRate = totalConnections > 0 ? $"{(double)totalSuccessful / totalConnections:P1}" : "N/A";
+                await writer.WriteLineAsync($"Total Connections: {totalSuccessful}/{totalConnections} ({connectionRate})");
                 await writer.WriteLineAsync($"Total Actions: {totalActions:N0}");
                 await writer.WriteLineAsync($"Total Errors: {totalErrors}");
                 await writer.WriteLineAsync();
@@ -350,9 +351,12 @@ namespace ACE.Server.Tests.LoadTests
             }
 
             Console.WriteLine($"Total Tests: {allResults.Count}");
-            Console.WriteLine($"Total Connections: {summarySuccessful}/{summaryConnections} ({(double)summarySuccessful / summaryConnections:P1})");
+            var summaryConnectionRate = summaryConnections > 0 ? $"{(double)summarySuccessful / summaryConnections:P1}" : "N/A";
+            Console.WriteLine($"Total Connections: {summarySuccessful}/{summaryConnections} ({summaryConnectionRate})");
             Console.WriteLine($"Total Actions: {summaryActions:N0}");
             Console.WriteLine($"Total Errors: {summaryErrors}");
+            
+            return reportPath;
         }
 
         private static string FormatBytes(long bytes)
