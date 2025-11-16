@@ -86,6 +86,9 @@ namespace ACE.Server.Tests.LoadTests
             
             PrintResults(results);
             
+            // Clear clients list after results are generated
+            clients.Clear();
+            
             return results;
         }
 
@@ -225,7 +228,8 @@ namespace ACE.Server.Tests.LoadTests
             }
 
             await Task.Delay(100);
-            clients.Clear();
+            // Note: clients list is NOT cleared here to preserve data for result aggregation
+            // It will be cleared after results are generated in RunLoadTestAsync
         }
 
         #endregion
