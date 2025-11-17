@@ -1385,12 +1385,19 @@ namespace ACE.Server.Entity
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
             var savedObjects = new List<WorldObject>();
 
+            // First pass: only process objects that have changes or are containers
+            // This avoids iterating through static objects that never change
             foreach (var wo in worldObjects.Values)
             {
-                if (wo.IsStaticThatShouldPersistToShard() || wo.IsDynamicThatShouldPersistToShard())
-                {
-                    AddWorldObjectToBiotasSaveCollection(wo, biotas, savedObjects);
-                }
+                // Skip objects that don't need persistence entirely
+                if (!wo.IsStaticThatShouldPersistToShard() && !wo.IsDynamicThatShouldPersistToShard())
+                    continue;
+
+                // Early exit optimization: skip objects with no changes and no inventory
+                if (!wo.ChangesDetected && wo is not Container)
+                    continue;
+
+                AddWorldObjectToBiotasSaveCollection(wo, biotas, savedObjects);
             }
 
             if (biotas.Count > 0)
@@ -1430,8 +1437,13 @@ namespace ACE.Server.Entity
                 savedObjects.Add(wo);
             }
 
+            // Only recurse into containers - most objects don't have inventory
             if (wo is Container container)
             {
+                // Early exit if container is empty
+                if (container.Inventory.Count == 0)
+                    return;
+
                 foreach (var item in container.Inventory.Values)
                     AddWorldObjectToBiotasSaveCollection(item, biotas, savedObjects);
             }
