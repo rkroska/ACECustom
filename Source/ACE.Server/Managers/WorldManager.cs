@@ -107,45 +107,6 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            if (offlinePlayer.SaveInProgress)
-            {
-                const int MAX_LOGIN_RETRIES = 10;
-                if (loginRetryCount >= MAX_LOGIN_RETRIES)
-                {
-                    var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
-                    log.Error($"[LOGIN BLOCK] {character.Name} REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}");
-                    
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
-                    {
-                        try
-                        {
-                            var msg = $"🔴 **CRITICAL**: `{character.Name}` login blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}";
-                            DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
-                        }
-                        catch { }
-                    }
-                    
-                    return;
-                }
-                else
-                {
-                    var timeWaiting = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalMilliseconds;
-                    log.Warn($"[LOGIN BLOCK] {character.Name} login delayed (retry {loginRetryCount + 1}/{MAX_LOGIN_RETRIES}), save in-progress {timeWaiting:N0}ms.");
-                    
-                    SendLoginBlockDiscordAlert(character.Name, timeWaiting);
-                    
-                    var retryChain = new ACE.Server.Entity.Actions.ActionChain();
-                    retryChain.AddDelaySeconds(2.0);
-                    retryChain.AddAction(WorldManager.ActionQueue, () =>
-                    {
-                        if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
-                            PlayerEnterWorld(session, character, loginRetryCount + 1);
-                    });
-                    retryChain.EnqueueChain();
-                    return;
-                }
-            }
-
             DatabaseManager.Shard.GetCharacter(character.Id, fullCharacter =>
             {
                 var start = DateTime.UtcNow;
