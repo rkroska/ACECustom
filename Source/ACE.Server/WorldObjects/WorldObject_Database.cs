@@ -38,40 +38,6 @@ namespace ACE.Server.WorldObjects
         /// The primary use for this is to trigger save on add/modify/remove of properties.
         /// </summary>
         public bool ChangesDetected { get; set; }
-        
-        private void DetectAndLogConcurrentSave()
-        {
-            if (!SaveInProgress)
-                return;
-
-            if (SaveStartTime == DateTime.MinValue)
-            {
-                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {Name} (0x{Guid})");
-                SaveInProgress = false;
-                SaveStartTime = DateTime.UtcNow;
-                return;
-            }
-            
-            var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-            var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
-            
-            var currentStack = StackSize;
-            var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
-            var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
-            
-            var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-            log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
-            
-            if (stackChanged || timeInFlight > 50)
-            {
-                var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                  (this.Container is Player owner ? $"[{owner.Name}] " : "");
-                var raceInfo = stackChanged 
-                    ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
-                SendAggregatedDbRaceAlert(raceInfo);
-            }
-        }
 
         /// <summary>
         /// Best practice says you should use this lock any time you read/write the Biota.<para />
@@ -111,11 +77,6 @@ namespace ACE.Server.WorldObjects
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
-<<<<<<< HEAD
-=======
-            SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;
->>>>>>> origin/master
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -128,18 +89,10 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-<<<<<<< HEAD
                             return;
                         }
                         
                         var saveTime = (DateTime.UtcNow - LastRequestedDatabaseSave).TotalMilliseconds;
-=======
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
-                            return;
-                        }
-                        
-                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
->>>>>>> origin/master
                         var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
                         if (saveTime > slowThreshold && this is not Player)
                         {
