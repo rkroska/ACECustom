@@ -111,6 +111,11 @@ namespace ACE.Server.WorldObjects
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
+<<<<<<< HEAD
+=======
+            SaveStartTime = DateTime.UtcNow;
+            LastSavedStackSize = StackSize;
+>>>>>>> origin/master
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -123,16 +128,38 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
+<<<<<<< HEAD
                             return;
                         }
                         
                         var saveTime = (DateTime.UtcNow - LastRequestedDatabaseSave).TotalMilliseconds;
+=======
+                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            return;
+                        }
+                        
+                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+>>>>>>> origin/master
                         var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
                             log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
                             SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+<<<<<<< HEAD
+=======
+                        }
+                        
+                        CheckDatabaseQueueSize();
+                        
+                        if (!result)
+                        {
+                            if (this is Player player)
+                            {
+                                // This will trigger a boot on next player tick
+                                player.BiotaSaveFailed = true;
+                            }
+>>>>>>> origin/master
                         }
                         
                         CheckDatabaseQueueSize();
@@ -145,6 +172,15 @@ namespace ACE.Server.WorldObjects
                                 player.BiotaSaveFailed = true;
                             }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
+                    }
+                    finally
+                    {
+                        // ALWAYS clear SaveInProgress, even if callback throws
+                        SaveInProgress = false;
                     }
                     catch (Exception ex)
                     {

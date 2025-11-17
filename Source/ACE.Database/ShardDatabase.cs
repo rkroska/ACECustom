@@ -234,50 +234,49 @@ namespace ACE.Database
             biota.PopulatedCollectionFlags = (uint)populatedCollectionFlags;
         }
 
-        public virtual Biota GetBiota(ShardDbContext context, uint id, bool doNotAddToCache = false)
+        public virtual Biota GetBiota(ShardDbContext context, uint id, bool skipCache = false)
         {
+            // Use eager loading with Include to avoid N+1 query problem
+            // AsSplitQuery() prevents Cartesian explosion with multiple collections
             var biota = context.Biota
+                .Include(b => b.BiotaPropertiesAnimPart)
+                .Include(b => b.BiotaPropertiesAttribute)
+                .Include(b => b.BiotaPropertiesAttribute2nd)
+                .Include(b => b.BiotaPropertiesBodyPart)
+                .Include(b => b.BiotaPropertiesBook)
+                .Include(b => b.BiotaPropertiesBookPageData)
+                .Include(b => b.BiotaPropertiesBool)
+                .Include(b => b.BiotaPropertiesCreateList)
+                .Include(b => b.BiotaPropertiesDID)
+                .Include(b => b.BiotaPropertiesEmote)
+                    .ThenInclude(e => e.BiotaPropertiesEmoteAction)
+                .Include(b => b.BiotaPropertiesEnchantmentRegistry)
+                .Include(b => b.BiotaPropertiesEventFilter)
+                .Include(b => b.BiotaPropertiesFloat)
+                .Include(b => b.BiotaPropertiesGenerator)
+                .Include(b => b.BiotaPropertiesIID)
+                .Include(b => b.BiotaPropertiesInt)
+                .Include(b => b.BiotaPropertiesInt64)
+                .Include(b => b.BiotaPropertiesPalette)
+                .Include(b => b.BiotaPropertiesPosition)
+                .Include(b => b.BiotaPropertiesSkill)
+                .Include(b => b.BiotaPropertiesSpellBook)
+                .Include(b => b.BiotaPropertiesString)
+                .Include(b => b.BiotaPropertiesTextureMap)
+                .Include(b => b.HousePermission)
+                .Include(b => b.BiotaPropertiesAllegiance)
+                .AsSplitQuery()
                 .FirstOrDefault(r => r.Id == id);
-
-            if (biota == null)
-                return null;
-
-            PopulatedCollectionFlags populatedCollectionFlags = (PopulatedCollectionFlags)biota.PopulatedCollectionFlags;
-
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesAnimPart)) biota.BiotaPropertiesAnimPart = context.BiotaPropertiesAnimPart.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesAttribute)) biota.BiotaPropertiesAttribute = context.BiotaPropertiesAttribute.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesAttribute2nd)) biota.BiotaPropertiesAttribute2nd = context.BiotaPropertiesAttribute2nd.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesBodyPart)) biota.BiotaPropertiesBodyPart = context.BiotaPropertiesBodyPart.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesBook)) biota.BiotaPropertiesBook = context.BiotaPropertiesBook.FirstOrDefault(r => r.ObjectId == biota.Id);
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesBookPageData)) biota.BiotaPropertiesBookPageData = context.BiotaPropertiesBookPageData.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesBool)) biota.BiotaPropertiesBool = context.BiotaPropertiesBool.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesCreateList)) biota.BiotaPropertiesCreateList = context.BiotaPropertiesCreateList.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesDID)) biota.BiotaPropertiesDID = context.BiotaPropertiesDID.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesEmote)) biota.BiotaPropertiesEmote = context.BiotaPropertiesEmote.Include(r => r.BiotaPropertiesEmoteAction).Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesEnchantmentRegistry)) biota.BiotaPropertiesEnchantmentRegistry = context.BiotaPropertiesEnchantmentRegistry.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesEventFilter)) biota.BiotaPropertiesEventFilter = context.BiotaPropertiesEventFilter.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesFloat)) biota.BiotaPropertiesFloat = context.BiotaPropertiesFloat.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesGenerator)) biota.BiotaPropertiesGenerator = context.BiotaPropertiesGenerator.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesIID)) biota.BiotaPropertiesIID = context.BiotaPropertiesIID.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesInt)) biota.BiotaPropertiesInt = context.BiotaPropertiesInt.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesInt64)) biota.BiotaPropertiesInt64 = context.BiotaPropertiesInt64.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesPalette)) biota.BiotaPropertiesPalette = context.BiotaPropertiesPalette.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesPosition)) biota.BiotaPropertiesPosition = context.BiotaPropertiesPosition.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesSkill)) biota.BiotaPropertiesSkill = context.BiotaPropertiesSkill.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesSpellBook)) biota.BiotaPropertiesSpellBook = context.BiotaPropertiesSpellBook.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesString)) biota.BiotaPropertiesString = context.BiotaPropertiesString.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesTextureMap)) biota.BiotaPropertiesTextureMap = context.BiotaPropertiesTextureMap.Where(r => r.ObjectId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.HousePermission)) biota.HousePermission = context.HousePermission.Where(r => r.HouseId == biota.Id).ToList();
-            if (populatedCollectionFlags.HasFlag(PopulatedCollectionFlags.BiotaPropertiesAllegiance)) biota.BiotaPropertiesAllegiance = context.BiotaPropertiesAllegiance.Where(r => r.AllegianceId == biota.Id).ToList();
 
             return biota;
         }
 
-        public virtual Biota GetBiota(uint id, bool doNotAddToCache = false)
+        public virtual Biota GetBiota(uint id, bool skipCache = false)
         {
             using (var context = new ShardDbContext())
             {
-                return GetBiota(context, id, doNotAddToCache);
+                context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+                return GetBiota(context, id, skipCache);
             }
         }
 
@@ -389,13 +388,104 @@ namespace ACE.Database
 
         public bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
         {
-            return Parallel.ForEach(biotas, (biota, state) =>
+            var biotaList = biotas.ToList();
+            
+            if (biotaList.Count == 0)
+                return true;
+
+            // Single transaction for all biotas improves performance
+            using (var context = new ShardDbContext())
             {
-                if (!SaveBiota(biota.biota, biota.rwLock))
+                // Load all existing biotas with their collections in one query to prevent duplicate key errors
+                var biotaIds = biotaList.Select(x => x.biota.Id).ToList();
+                var existingBiotas = context.Biota
+                    .Include(b => b.BiotaPropertiesAllegiance)
+                    .Include(b => b.BiotaPropertiesAnimPart)
+                    .Include(b => b.BiotaPropertiesAttribute)
+                    .Include(b => b.BiotaPropertiesAttribute2nd)
+                    .Include(b => b.BiotaPropertiesBodyPart)
+                    .Include(b => b.BiotaPropertiesBook)
+                    .Include(b => b.BiotaPropertiesBookPageData)
+                    .Include(b => b.BiotaPropertiesBool)
+                    .Include(b => b.BiotaPropertiesCreateList)
+                    .Include(b => b.BiotaPropertiesDID)
+                    .Include(b => b.BiotaPropertiesEmote)
+                        .ThenInclude(e => e.BiotaPropertiesEmoteAction)
+                    .Include(b => b.BiotaPropertiesEnchantmentRegistry)
+                    .Include(b => b.BiotaPropertiesEventFilter)
+                    .Include(b => b.BiotaPropertiesFloat)
+                    .Include(b => b.BiotaPropertiesGenerator)
+                    .Include(b => b.BiotaPropertiesIID)
+                    .Include(b => b.BiotaPropertiesInt)
+                    .Include(b => b.BiotaPropertiesInt64)
+                    .Include(b => b.BiotaPropertiesPalette)
+                    .Include(b => b.BiotaPropertiesPosition)
+                    .Include(b => b.BiotaPropertiesSkill)
+                    .Include(b => b.BiotaPropertiesSpellBook)
+                    .Include(b => b.BiotaPropertiesString)
+                    .Include(b => b.BiotaPropertiesTextureMap)
+                    .Include(b => b.HousePermission)
+                    .AsSplitQuery()
+                    .Where(b => biotaIds.Contains(b.Id))
+                    .ToDictionary(b => b.Id);
+
+                foreach (var (biota, rwLock) in biotaList)
                 {
-                    state.Stop();
+                    rwLock.EnterReadLock();
+                    try
+                    {
+                        if (!existingBiotas.TryGetValue(biota.Id, out var existingBiota))
+                        {
+                            // New biota - convert and add to context
+                            existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
+                            context.Biota.Add(existingBiota);
+                            existingBiotas[biota.Id] = existingBiota; // Track for subsequent operations
+                        }
+                        else
+                        {
+                            // Existing biota - update in place
+                            ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                        }
+                        
+                        SetBiotaPopulatedCollections(existingBiota);
+                    }
+                    finally
+                    {
+                        rwLock.ExitReadLock();
+                    }
                 }
-            }).IsCompleted;
+
+                // Single SaveChanges for all biotas
+                Exception firstException = null;
+                retry:
+
+                try
+                {
+                    context.SaveChanges();
+
+                    if (firstException != null)
+                        log.Debug($"[DATABASE] SaveBiotasInParallel (count: {biotaList.Count}) retry succeeded after initial exception of: {firstException.GetFullMessage()}");
+
+                    return true;
+                }
+                catch (DbUpdateConcurrencyException dbex)
+                {
+                    log.Error($"[DATABASE] SaveBiotasInParallel (count: {biotaList.Count}) failed with DbUpdateConcurrencyException: {dbex.GetFullMessage()}");
+                    return true; // data will re-save at a later point
+                }
+                catch (Exception ex)
+                {
+                    if (firstException == null)
+                    {
+                        firstException = ex;
+                        goto retry;
+                    }
+
+                    log.Error($"[DATABASE] SaveBiotasInParallel (count: {biotaList.Count}) failed first attempt with exception: {firstException.GetFullMessage()}");
+                    log.Error($"[DATABASE] SaveBiotasInParallel (count: {biotaList.Count}) failed second attempt with exception: {ex.GetFullMessage()}");
+                    return false;
+                }
+            }
         }
 
 
