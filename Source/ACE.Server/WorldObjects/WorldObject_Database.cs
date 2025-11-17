@@ -132,7 +132,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Warn($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                             return;
                         }
                         
@@ -208,7 +208,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Warn($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                             return;
                         }
                         
