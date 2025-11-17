@@ -2408,52 +2408,6 @@ namespace ACE.Server.WorldObjects.Managers
 
                     }
                     break;
-                case EmoteType.GrantAttributeStat:
-                    if (player != null && emote.Stat != null)
-                    {
-                        var amount = emote.Amount.HasValue && emote.Amount.Value > 0 ? (uint)emote.Amount.Value : 1u;
-                        if (!Enum.IsDefined(typeof(PropertyAttribute), (ushort)emote.Stat.Value))
-                        {
-                            log.Warn($"GrantAttributeStat: Unknown attribute id {emote.Stat.Value} for {WorldObject?.Name ?? "unknown"}.");
-                            break;
-                        }
-
-                        var attribute = (PropertyAttribute)emote.Stat.Value;
-                        var grantSucceeded = player.GrantFreeAttributeRanks(attribute, amount);
-                        var targetName = attribute.GetDescription();
-
-                        if (grantSucceeded)
-                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Your base {targetName} has been increased by {amount}.", ChatMessageType.Advancement));
-                        else
-                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Unable to increase {targetName}.", ChatMessageType.System));
-                    }
-                    break;
-                case EmoteType.GrantVitalStat:
-                    if (player != null && emote.Stat != null)
-                    {
-                        var amount = emote.Amount.HasValue && emote.Amount.Value > 0 ? (uint)emote.Amount.Value : 1u;
-                        if (!Enum.IsDefined(typeof(PropertyAttribute2nd), (ushort)emote.Stat.Value))
-                        {
-                            log.Warn($"GrantVitalStat: Unknown vital id {emote.Stat.Value} for {WorldObject?.Name ?? "unknown"}.");
-                            break;
-                        }
-
-                        var vital = (PropertyAttribute2nd)emote.Stat.Value;
-                        if (vital != PropertyAttribute2nd.MaxHealth && vital != PropertyAttribute2nd.MaxStamina && vital != PropertyAttribute2nd.MaxMana)
-                        {
-                            log.Warn($"GrantVitalStat: Vital {vital} is not supported for innate grants.");
-                            break;
-                        }
-
-                        var grantSucceeded = player.GrantFreeVitalRanks(vital, amount);
-                        var targetName = vital.GetDescription();
-
-                        if (grantSucceeded)
-                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Your base {targetName} has been increased by {amount}.", ChatMessageType.Advancement));
-                        else
-                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Unable to increase {targetName}.", ChatMessageType.System));
-                    }
-                    break;
                 case EmoteType.SetEnvironment:
                     if (WorldObject == null || WorldObject.CurrentLandblock == null)
                     {
@@ -3263,7 +3217,9 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             return AddEmote(newEmote);
-        }
 
+
+
+        }
     }
 }
