@@ -3407,7 +3407,8 @@ namespace ACE.Server.WorldObjects
                 {
                     var sourceStackRootPlayer = sourceStackRootOwner as Player;
 
-                    if (sourceStackRootOwner.TryRemoveFromInventory(sourceStack.Guid, out var stackToDestroy, true) ||
+                    // We don't bother to force a db save on inventory removal because we're about to destroy the stack anyway (and that will delete the db entry).
+                    if (sourceStackRootOwner.TryRemoveFromInventory(sourceStack.Guid, out var stackToDestroy) ||
                         sourceStackRootPlayer != null && sourceStackRootPlayer.TryDequipObjectWithNetworking(sourceStack.Guid, out stackToDestroy, DequipObjectAction.DequipToPack))  // test case: merge equipped phials with another stack in inventory
                     {
                         stackToDestroy?.Destroy();
