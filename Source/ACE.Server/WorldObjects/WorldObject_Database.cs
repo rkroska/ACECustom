@@ -99,20 +99,6 @@ namespace ACE.Server.WorldObjects
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
                             log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
                             SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
-<<<<<<< HEAD
-=======
-                        }
-                        
-                        CheckDatabaseQueueSize();
-                        
-                        if (!result)
-                        {
-                            if (this is Player player)
-                            {
-                                // This will trigger a boot on next player tick
-                                player.BiotaSaveFailed = true;
-                            }
->>>>>>> origin/master
                         }
                         
                         CheckDatabaseQueueSize();
@@ -125,15 +111,6 @@ namespace ACE.Server.WorldObjects
                                 player.BiotaSaveFailed = true;
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
-                    }
-                    finally
-                    {
-                        // ALWAYS clear SaveInProgress, even if callback throws
-                        SaveInProgress = false;
                     }
                     catch (Exception ex)
                     {
