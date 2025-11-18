@@ -76,8 +76,9 @@ namespace ACE.Server.Network
         private ConcurrentQueue<(uint DatFileId, DatDatabaseType DatDatabaseType)> dddDataQueue;
         /// <summary>
         /// The rate at which ProcessDDDQueue executes (and sends DDD patch data out to client)
+        /// Instance-based to avoid contention between sessions
         /// </summary>
-        private static readonly RateLimiter dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
+        private RateLimiter dddDataQueueRateLimiter;
 
         /// <summary>
         /// Rate limiter for /passwd command
@@ -355,6 +356,16 @@ namespace ACE.Server.Network
 
             NetworkManager.RemoveSession(this);
 
+            // Clean up DDD resources to prevent memory leaks
+            if (dddDataQueue != null)
+            {
+                while (dddDataQueue.TryDequeue(out _)) { }
+                dddDataQueue = null;
+            }
+            dddDataQueueRateLimiter = null;
+            BeginDDDSent = false;
+            BeginDDDSentTime = DateTime.MinValue;
+
             // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
             // In the future, we should set Network to null and funnel Network communication through Session, instead of accessing Session.Network directly.
@@ -381,7 +392,11 @@ namespace ACE.Server.Network
         /// </summary>
         public bool AddToDDDQueue(uint datFileId, DatDatabaseType datDatabaseType)
         {
-            dddDataQueue ??= new ConcurrentQueue<(uint, DatDatabaseType)>();
+            if (dddDataQueue == null)
+            {
+                dddDataQueue = new ConcurrentQueue<(uint, DatDatabaseType)>();
+                dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
+            }
             dddDataQueue.Enqueue((datFileId, datDatabaseType));
             return true;
         }
