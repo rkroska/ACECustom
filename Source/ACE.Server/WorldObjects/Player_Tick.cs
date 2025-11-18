@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -8,13 +10,13 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Sequence;
 using ACE.Server.Network.Structure;
 using ACE.Server.Physics;
-using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Common;
 
 namespace ACE.Server.WorldObjects
@@ -86,7 +88,7 @@ namespace ACE.Server.WorldObjects
                 FellowVitalUpdate = false;
             }
 
-            if (House != null && PropertyManager.GetBool("house_rent_enabled"))
+            if (House != null && PropertyManager.GetBool("house_rent_enabled").Item)
             {
                 if (houseRentWarnTimestamp > 0 && currentUnixTime > houseRentWarnTimestamp)
                 {
@@ -121,6 +123,10 @@ namespace ACE.Server.WorldObjects
             PK_DeathTick();
 
             GagsTick();
+
+            FreezeTick();
+
+            LimboTick();
 
             PhysicsObj.ObjMaint.DestroyObjects();
 
@@ -186,7 +192,7 @@ namespace ACE.Server.WorldObjects
             if (!PhysicsObj.IsMovingOrAnimating)
                 PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
 
-            if (!PropertyManager.GetBool("client_movement_formula") || moveToState.StandingLongJump)
+            if (!PropertyManager.GetBool("client_movement_formula").Item || moveToState.StandingLongJump)
                 OnMoveToState_ServerMethod(moveToState);
             else
                 OnMoveToState_ClientMethod(moveToState);
@@ -198,7 +204,7 @@ namespace ACE.Server.WorldObjects
         public void OnMoveToState_ClientMethod(MoveToState moveToState)
         {
             var rawState = moveToState.RawMotionState;
-            var prevState = LastMoveToState?.RawMotionState ?? Network.Structure.RawMotionState.None;
+            var prevState = LastMoveToState?.RawMotionState ?? RawMotionState.None;
 
             var mvp = new Physics.Animation.MovementParameters();
             mvp.HoldKeyToApply = rawState.CurrentHoldKey;
@@ -279,7 +285,7 @@ namespace ACE.Server.WorldObjects
                 minterp.RawState.SideStepCommand = 0;
             }
 
-            var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
+            var allowJump = minterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
             //PhysicsObj.cancel_moveto();
 
@@ -614,6 +620,64 @@ namespace ACE.Server.WorldObjects
                     SaveBiotaToDatabase();
                     SendUngagNotice();
                     gagNoticeSent = false;
+                }
+            }
+        }
+
+        private bool freezeNoticeSent = false;
+
+        public void FreezeTick()
+        {
+            if (IsFrozen)
+            {
+                if (!freezeNoticeSent)
+                {
+                    SendFreezeNotice();
+                    freezeNoticeSent = true;
+                }
+
+                // Check for freeze expiration (only for non-permanent freezes)
+                if (FrozenDuration > 0)
+                {
+                    FrozenDuration -= CachedHeartbeatInterval;
+
+                    if (FrozenDuration <= 0)
+                    {
+                        IsFrozen = false;
+                        FrozenTimestamp = 0;
+                        FrozenDuration = 0;
+                        SaveBiotaToDatabase();
+                        SendUnfreezeNotice();
+                        freezeNoticeSent = false;
+                    }
+                }
+                // If FrozenDuration is -1, it's a permanent freeze and won't auto-expire
+            }
+        }
+
+        private bool limboNoticeSent = false;
+
+        public void LimboTick()
+        {
+            if (IsInLimbo)
+            {
+                if (!limboNoticeSent)
+                {
+                    SendLimboNotice();
+                    limboNoticeSent = true;
+                }
+
+                // Check for limbo expiration
+                LimboDuration -= CachedHeartbeatInterval;
+
+                if (LimboDuration <= 0)
+                {
+                    IsInLimbo = false;
+                    LimboStartTimestamp = 0;
+                    LimboDuration = 0;
+                    SaveBiotaToDatabase();
+                    SendLimboExpiredNotice();
+                    limboNoticeSent = false;
                 }
             }
         }

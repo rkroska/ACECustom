@@ -128,6 +128,12 @@ namespace ACE.Server.WorldObjects
             if (player.Teleporting)
                 return new ActivationResult(false);
 
+            if (player.IsFrozen)
+            {
+                player.SendFreezeError();
+                return new ActivationResult(false);
+            }
+
             if (Destination == null)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Portal destination for portal ID {WeenieClassId} not yet implemented!", ChatMessageType.System));

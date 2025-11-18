@@ -33,6 +33,14 @@ namespace ACE.Server.Network.GameAction.Actions
                 return;
             }
 
+            // Check if target is in limbo - cannot receive tells
+            if (targetPlayer.IsInLimbo)
+            {
+                var statusMessage = new GameEventWeenieError(session, WeenieError.CharacterNotAvailable);
+                session.Network.EnqueueSend(statusMessage);
+                return;
+            }
+
             if (session.Player != targetPlayer)
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You tell {targetPlayer.Name}, \"{message}\"", ChatMessageType.OutgoingTell));
 

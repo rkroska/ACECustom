@@ -107,13 +107,13 @@ namespace ACE.Server.Entity
 
             if (newMember.Fellowship != null || FellowshipMembers.ContainsKey(newMember.Guid.Full))
             {
-                inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is already a member of a Fellowship.", ChatMessageType.Broadcast));
+                inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{newMember.Name} is already a member of a Fellowship.\", ChatMessageType.Broadcast));
             }
             else
             {
-                if (PropertyManager.GetBool("fellow_busy_no_recruit") && newMember.IsBusy)
+                if (PropertyManager.GetBool(\"fellow_busy_no_recruit\").Item && newMember.IsBusy)
                 {
-                    inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is busy.", ChatMessageType.Broadcast));
+                    inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{newMember.Name} is busy.\", ChatMessageType.Broadcast));
                     return;
                 }
 
@@ -125,7 +125,7 @@ namespace ACE.Server.Entity
                 {
                     if (!newMember.ConfirmationManager.EnqueueSend(new Confirmation_Fellowship(inviter.Guid, newMember.Guid), inviter.Name))
                     {
-                        inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is busy.", ChatMessageType.Broadcast));
+                        inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{newMember.Name} is busy.\", ChatMessageType.Broadcast));
                     }
                 }
             }
@@ -143,7 +143,7 @@ namespace ACE.Server.Entity
             if (!response)
             {
                 // player clicked 'no' on the fellowship popup
-                inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} declines your invite", ChatMessageType.Fellowship));
+                inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{player.Name} declines your invite\", ChatMessageType.Fellowship));
                 inviter.Session.Network.EnqueueSend(new GameEventWeenieError(inviter.Session, WeenieError.FellowshipDeclined));
                 return;
             }
@@ -161,22 +161,18 @@ namespace ACE.Server.Entity
 
             var fellowshipMembers = GetFellowshipMembers();
 
-            foreach (var member in fellowshipMembers.Values)
-            {
-                if (member.Guid == player.Guid) continue;
+            foreach (var member in fellowshipMembers.Values.Where(i => i.Guid != player.Guid))
                 member.Session.Network.EnqueueSend(new GameEventFellowshipUpdateFellow(member.Session, player, ShareXP));
-            }
 
             if (ShareLoot)
             {
-                foreach (var member in fellowshipMembers.Values)
+                foreach (var member in fellowshipMembers.Values.Where(i => i.Guid != player.Guid))
                 {
-                    if (member.Guid == player.Guid) continue;
-                    member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} has given you permission to loot his or her kills.", ChatMessageType.Broadcast));
-                    member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} may now loot your kills.", ChatMessageType.Broadcast));
+                    member.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{player.Name} has given you permission to loot his or her kills.\", ChatMessageType.Broadcast));
+                    member.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{player.Name} may now loot your kills.\", ChatMessageType.Broadcast));
 
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{member.Name} has given you permission to loot his or her kills.", ChatMessageType.Broadcast));
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{member.Name} may now loot your kills.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{member.Name} has given you permission to loot his or her kills.\", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{member.Name} may now loot your kills.\", ChatMessageType.Broadcast));
                 }
             }
 
@@ -194,7 +190,7 @@ namespace ACE.Server.Entity
 
             if (!fellowshipMembers.ContainsKey(player.Guid.Full))
             {
-                log.Warn($"{leader.Name} tried to dismiss {player.Name} from the fellowship, but {player.Name} was not found in the fellowship");
+                log.Warn($\"{leader.Name} tried to dismiss {player.Name} from the fellowship, but {player.Name} was not found in the fellowship\");
 
                 var done = true;
 
@@ -202,11 +198,11 @@ namespace ACE.Server.Entity
                 {
                     if (player.Fellowship == this)
                     {
-                        log.Warn($"{player.Name} still has a reference to this fellowship somehow. This shouldn't happen");
+                        log.Warn($\"{player.Name} still has a reference to this fellowship somehow. This shouldn't happen\");
                         done = false;
                     }
                     else
-                        log.Warn($"{player.Name} has a reference to a different fellowship. {leader.Name} is possibly sending crafted data!");
+                        log.Warn($\"{player.Name} has a reference to a different fellowship. {leader.Name} is possibly sending crafted data!\");
                 }
 
                 if (done) return;
@@ -215,7 +211,7 @@ namespace ACE.Server.Entity
             foreach (var member in fellowshipMembers.Values)
             {
                 member.Session.Network.EnqueueSend(new GameEventFellowshipDismiss(member.Session, player));
-                member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} dismissed from fellowship", ChatMessageType.Fellowship));
+                member.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{player.Name} dismissed from fellowship\", ChatMessageType.Fellowship));
             }
 
             FellowshipMembers.Remove(player.Guid.Full);
@@ -240,7 +236,7 @@ namespace ACE.Server.Entity
 
             foreach (var member in fellowshipMembers.Values)
             {
-                member.Session.Network.EnqueueSend(new GameEventChannelBroadcast(member.Session, Channel.FellowBroadcast, "", message));
+                member.Session.Network.EnqueueSend(new GameEventChannelBroadcast(member.Session, Channel.FellowBroadcast, \"\", message));
 
                 member.Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(member.Session));
             }
@@ -251,7 +247,12 @@ namespace ACE.Server.Entity
             var fellowshipMembers = GetFellowshipMembers();
 
             foreach (var member in fellowshipMembers.Values)
-                member.Session.Network.EnqueueSend(new GameEventChannelBroadcast(member.Session, Channel.FellowBroadcast, "", message));
+            {
+                // Skip members in limbo
+                if (member.IsInLimbo) continue;
+                
+                member.Session.Network.EnqueueSend(new GameEventChannelBroadcast(member.Session, Channel.FellowBroadcast, \"\", message));
+            }
         }
 
         public void TellFellow(WorldObject sender, string message)
@@ -259,7 +260,12 @@ namespace ACE.Server.Entity
             var fellowshipMembers = GetFellowshipMembers();
 
             foreach (var member in fellowshipMembers.Values)
+            {
+                // Skip members in limbo
+                if (member.IsInLimbo) continue;
+                
                 member.Session.Network.EnqueueSend(new GameEventChannelBroadcast(member.Session, Channel.Fellow, sender.Name, message));
+            }
         }
 
         private void SendWeenieErrorWithStringAndUpdate(WeenieErrorWithString error, string message)
@@ -290,11 +296,11 @@ namespace ACE.Server.Entity
 
                         if (ShareLoot)
                         {
-                            member.Session.Network.EnqueueSend(new GameMessageSystemChat("You no longer have permission to loot anyone else's kills.", ChatMessageType.Broadcast));
+                            member.Session.Network.EnqueueSend(new GameMessageSystemChat(\"You no longer have permission to loot anyone else's kills.\", ChatMessageType.Broadcast));
 
                             // you would expect this occur, but it did not in retail pcaps
                             //foreach (var fellow in fellowshipMembers.Values)
-                            //    member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{fellow.Name} does not have permission to loot your kills.", ChatMessageType.Broadcast));
+                            //    member.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{fellow.Name} does not have permission to loot your kills.\", ChatMessageType.Broadcast));
                         }
 
                         member.Fellowship = null;
@@ -314,7 +320,7 @@ namespace ACE.Server.Entity
                     player.Fellowship = null;
 
                     player.Session.Network.EnqueueSend(new GameEventFellowshipQuit(player.Session, player.Guid.Full));
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("You no longer have permission to loot anyone else's kills.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(\"You no longer have permission to loot anyone else's kills.\", ChatMessageType.Broadcast));
 
                     var fellowshipMembers = GetFellowshipMembers();
 
@@ -324,8 +330,8 @@ namespace ACE.Server.Entity
 
                         if (ShareLoot)
                         {
-                            member.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have lost permission to loot the kills of {player.Name}.", ChatMessageType.Broadcast));
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{member.Name} does not have permission to loot your kills.", ChatMessageType.Broadcast));
+                            member.Session.Network.EnqueueSend(new GameMessageSystemChat($\"You have lost permission to loot the kills of {player.Name}.\", ChatMessageType.Broadcast));
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{member.Name} does not have permission to loot your kills.\", ChatMessageType.Broadcast));
                         }
                     }
                     AssignNewLeader(null, null);
@@ -355,8 +361,8 @@ namespace ACE.Server.Entity
 
                     if (ShareLoot)
                     {
-                        member.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have lost permission to loot the kills of {player.Name}.", ChatMessageType.Broadcast));
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{member.Name} does not have permission to loot your kills.", ChatMessageType.Broadcast));
+                        member.Session.Network.EnqueueSend(new GameMessageSystemChat($\"You have lost permission to loot the kills of {player.Name}.\", ChatMessageType.Broadcast));
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{member.Name} does not have permission to loot your kills.\", ChatMessageType.Broadcast));
                     }
                 }
 
@@ -413,7 +419,7 @@ namespace ACE.Server.Entity
             IsLocked = isLocked;
 
             if (string.IsNullOrWhiteSpace(lockName))
-                lockName = "Undefined";
+                lockName = \"Undefined\";
 
             if (isLocked)
             {
@@ -425,7 +431,7 @@ namespace ACE.Server.Entity
                 if (!FellowshipLocks.TryAdd(lockName, new FellowshipLockData(timestamp)))
                     FellowshipLocks[lockName].UpdateTimestamp(timestamp);
 
-                SendBroadcastAndUpdate("Your fellowship is now locked.  You may not recruit new members.  If you leave the fellowship, you have 15 minutes to be recruited back into the fellowship.");
+                SendBroadcastAndUpdate(\"Your fellowship is now locked.  You may not recruit new members.  If you leave the fellowship, you have 15 minutes to be recruited back into the fellowship.\");
             }
             else
             {
@@ -435,7 +441,7 @@ namespace ACE.Server.Entity
 
                 FellowshipLocks.Remove(lockName);
 
-                SendBroadcastAndUpdate("Your fellowship is now unlocked.");
+                SendBroadcastAndUpdate(\"Your fellowship is now unlocked.\");
             }
         }
 
@@ -452,7 +458,7 @@ namespace ACE.Server.Entity
 
             var fellows = GetFellowshipMembers();
 
-            var allEvenShareLevel = PropertyManager.GetLong("fellowship_even_share_level");
+            var allEvenShareLevel = PropertyManager.GetLong(\"fellowship_even_share_level\").Item;
             var allOverEvenShareLevel = !fellows.Values.Any(f => (f.Level ?? 1) < allEvenShareLevel);
 
             if (allOverEvenShareLevel)
@@ -488,9 +494,9 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Splits XP amongst fellowship members, depending on XP type and fellow settings
         /// </summary>
-        /// <param name="amount">The input amount of XP</param>
-        /// <param name="xpType">The type of XP (quest XP is handled differently)</param>
-        /// <param name="player">The fellowship member who originated the XP</param>
+        /// <param name=\"amount\">The input amount of XP</param>
+        /// <param name=\"xpType\">The type of XP (quest XP is handled differently)</param>
+        /// <param name=\"player\">The fellowship member who originated the XP</param>
         public void SplitXp(ulong amount, XpType xpType, ShareType shareType, Player player)
         {
             // https://asheron.fandom.com/wiki/Announcements_-_2002/02_-_Fever_Dreams#Letter_to_the_Players_1
@@ -500,7 +506,7 @@ namespace ACE.Server.Entity
             shareType &= ~ShareType.Fellowship;
 
             // quest turn-ins: flat share (retail default)
-            if (xpType == XpType.Quest && !PropertyManager.GetBool("fellow_quest_bonus"))
+            if (xpType == XpType.Quest && !PropertyManager.GetBool(\"fellow_quest_bonus\").Item)
             {
                 var perAmount = (long)amount / fellowshipMembers.Count;
 
@@ -528,7 +534,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
+                    if (member == player && PropertyManager.GetBool(\"fellowship_additive\").Item)
                     {
                         member.GrantXP((long)amount, xpType, shareType);
                         continue;
@@ -560,7 +566,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
+                    if (member == player && PropertyManager.GetBool(\"fellowship_additive\").Item)
                     {
                         member.GrantXP((long)amount, xpType, shareType);
                         continue;
@@ -579,9 +585,9 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Splits luminance amongst fellowship members, depending on XP type and fellow settings
         /// </summary>
-        /// <param name="amount">The input amount of luminance</param>
-        /// <param name="xpType">The type of lumaniance (quest luminance is handled differently)</param>
-        /// <param name="player">The fellowship member who originated the luminance</param>
+        /// <param name=\"amount\">The input amount of luminance</param>
+        /// <param name=\"xpType\">The type of lumaniance (quest luminance is handled differently)</param>
+        /// <param name=\"player\">The fellowship member who originated the luminance</param>
         public void SplitLuminance(ulong amount, XpType xpType, ShareType shareType, Player player)
         {
             // https://asheron.fandom.com/wiki/Announcements_-_2002/02_-_Fever_Dreams#Letter_to_the_Players_1
@@ -610,7 +616,7 @@ namespace ACE.Server.Entity
                 foreach (var member in fellowshipMembers.Values)
                 {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
+                    if (member == player && PropertyManager.GetBool(\"fellowship_additive\").Item)
                     {
                         player.GrantLuminance((long)amount, fellowXpType, shareType);
                         continue;
@@ -717,18 +723,18 @@ namespace ACE.Server.Entity
                 var elapsed = (now - _lastLogTime).TotalSeconds;
                 var total = distCalcs + sameLB + indoorOutdoor + diffLBIndoor;
                 
-                if (total > 0 && PropertyManager.GetBool("fellowship_xp_debug_logging", false))
+                if (total > 0 && PropertyManager.GetBool(\"fellowship_xp_debug_logging\", false).Item)
                 {
                     var optimizedChecks = sameLB + indoorOutdoor + diffLBIndoor;
                     var optimizationPct = (optimizedChecks * 100.0 / total);
                     
-                    log.Info($"[FELLOWSHIP XP] Stats for last {elapsed:F1}s:");
-                    log.Info($"  Total checks: {total} ({total/elapsed:F1}/sec)");
-                    log.Info($"  - Same LB (optimized): {sameLB} ({sameLB * 100.0 / total:F1}%)");
-                    log.Info($"  - Distance calcs: {distCalcs} ({distCalcs * 100.0 / total:F1}%)");
-                    log.Info($"  - Indoor/outdoor mismatch: {indoorOutdoor} ({indoorOutdoor * 100.0 / total:F1}%)");
-                    log.Info($"  - Diff LB indoor: {diffLBIndoor} ({diffLBIndoor * 100.0 / total:F1}%)");
-                    log.Info($"  Optimization effectiveness: {optimizationPct:F1}% of checks skipped expensive Distance2D()");
+                    log.Info($\"[FELLOWSHIP XP] Stats for last {elapsed:F1}s:\");
+                    log.Info($\"  Total checks: {total} ({total/elapsed:F1}/sec)\");
+                    log.Info($\"  - Same LB (optimized): {sameLB} ({sameLB * 100.0 / total:F1}%)\");
+                    log.Info($\"  - Distance calcs: {distCalcs} ({distCalcs * 100.0 / total:F1}%)\");
+                    log.Info($\"  - Indoor/outdoor mismatch: {indoorOutdoor} ({indoorOutdoor * 100.0 / total:F1}%)\");
+                    log.Info($\"  - Diff LB indoor: {diffLBIndoor} ({diffLBIndoor * 100.0 / total:F1}%)\");
+                    log.Info($\"  Optimization effectiveness: {optimizationPct:F1}% of checks skipped expensive Distance2D()\");
                 }
                 
                 _lastLogTime = now;
@@ -806,7 +812,7 @@ namespace ACE.Server.Entity
         {
             var fellows = GetFellowshipMembers();
 
-            var landblockRange = PropertyManager.GetBool("fellow_kt_landblock");
+            var landblockRange = PropertyManager.GetBool(\"fellow_kt_landblock\").Item;
 
             var results = new List<Player>();
 
@@ -839,7 +845,7 @@ namespace ACE.Server.Entity
                 if (fellow == player)
                     continue;
 
-                fellow.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} is now level {player.Level}!", ChatMessageType.Broadcast));
+                fellow.Session.Network.EnqueueSend(new GameMessageSystemChat($\"{player.Name} is now level {player.Level}!\", ChatMessageType.Broadcast));
             }
         }
 
@@ -863,7 +869,7 @@ namespace ACE.Server.Entity
             foreach (var fellow in fellowshipMembers.Values)
             {
                 if (fellow != player)
-                    fellow.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your fellow {player.Name} has died!", ChatMessageType.Broadcast));
+                    fellow.Session.Network.EnqueueSend(new GameMessageSystemChat($\"Your fellow {player.Name} has died!\", ChatMessageType.Broadcast));
             }
         }
 
@@ -897,9 +903,9 @@ namespace ACE.Server.Entity
             foreach (var fellowGuid in fellowGuids)
             {
                 var offlinePlayer = PlayerManager.FindByGuid(fellowGuid);
-                var offlineName = offlinePlayer != null ? offlinePlayer.Name : "NULL";
+                var offlineName = offlinePlayer != null ? offlinePlayer.Name : \"NULL\";
 
-                log.Warn($"Dropped fellow: {offlineName}");
+                log.Warn($\"Dropped fellow: {offlineName}\");
                 fellowshipMembers.Remove(fellowGuid);
             }
             if (fellowGuids.Contains(FellowshipLeaderGuid))

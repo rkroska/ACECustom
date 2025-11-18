@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Linq;
 
 using log4net;
 
@@ -239,7 +238,6 @@ namespace ACE.Server.WorldObjects
         public bool IsPendingDeletion => Character.DeleteTime > 0 && !IsDeleted;
 
 
-
         // ******************************************************************* OLD CODE BELOW ********************************
         // ******************************************************************* OLD CODE BELOW ********************************
         // ******************************************************************* OLD CODE BELOW ********************************
@@ -319,7 +317,7 @@ namespace ACE.Server.WorldObjects
                 var currentSkill = (int)GetCreatureSkill(skill).Current;
                 int difficulty = (int)creature.GetCreatureSkill(Skill.Deception).Current;
 
-                if (PropertyManager.GetBool("assess_creature_mod") && skill == Skill.AssessCreature
+                if (PropertyManager.GetBool("assess_creature_mod").Item && skill == Skill.AssessCreature
                         && Skills[Skill.AssessCreature].AdvancementClass < SkillAdvancementClass.Trained)
                     currentSkill = (int)((Focus.Current + Self.Current) / 2);
 
@@ -510,7 +508,7 @@ namespace ACE.Server.WorldObjects
                     IsFrozen = true;
                     EnqueueBroadcastPhysicsState();
 
-                    LogoffTimestamp = Time.GetFutureUnixTime(PropertyManager.GetLong("pk_timer"));
+                    LogoffTimestamp = Time.GetFutureUnixTime(PropertyManager.GetLong("pk_timer").Item);
                     PlayerManager.AddPlayerToLogoffQueue(this);
                 }
                 return false;
@@ -539,7 +537,7 @@ namespace ACE.Server.WorldObjects
 
             if (!clientSessionTerminatedAbruptly)
             {
-                if (PropertyManager.GetBool("use_turbine_chat"))
+                if (PropertyManager.GetBool("use_turbine_chat").Item)
                 {
                     if (IsOlthoiPlayer)
                     {
@@ -868,6 +866,38 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
         }
 
+        public void SendFreezeNotice()
+        {
+            var msg = FrozenDuration == -1 
+                ? "You have been frozen by an admin. You cannot move, act, or teleport until unfrozen."
+                : "You have been frozen by an admin for 10 minutes. You cannot move, act, or teleport.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
+        }
+
+        public void SendUnfreezeNotice()
+        {
+            var msg = "You have been unfrozen.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
+        }
+
+        public void SendLimboNotice()
+        {
+            var msg = "You have been placed in limbo for 15 minutes. You cannot deal or receive damage, receive tells or channel messages, or salvage items.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
+        }
+
+        public void SendLimboExpiredNotice()
+        {
+            var msg = "You have been removed from limbo.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
+        }
+
+        public void SendFreezeError()
+        {
+            var msg = "You cannot do that while frozen.";
+            Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+        }
+
         public void HandleActionEmote(string message)
         {
             if (!IsGagged)
@@ -1176,7 +1206,7 @@ namespace ACE.Server.WorldObjects
                 {
                     IsBusy = false;
 
-                    if (PropertyManager.GetBool("allow_pkl_bump"))
+                    if (PropertyManager.GetBool("allow_pkl_bump").Item)
                     {
                         // check for collisions
                         PlayerKillerStatus = PlayerKillerStatus.PKLite;

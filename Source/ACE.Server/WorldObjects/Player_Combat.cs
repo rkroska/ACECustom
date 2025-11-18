@@ -119,7 +119,15 @@ namespace ACE.Server.WorldObjects
             if (target.Health.Current <= 0)
                 return null;
 
+            // Check if player is in limbo - cannot deal damage
+            if (IsInLimbo)
+                return null;
+
             var targetPlayer = target as Player;
+
+            // Check if target is in limbo - cannot be damaged
+            if (targetPlayer != null && targetPlayer.IsInLimbo)
+                return null;
 
             // check PK status
             var pkError = CheckPKStatusVsTarget(target, null);
@@ -472,6 +480,9 @@ namespace ACE.Server.WorldObjects
         public int TakeDamage(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, bool crit = false, AttackConditions attackConditions = AttackConditions.None)
         {
             if (Invincible || IsDead) return 0;
+
+            // Check if player is in limbo - cannot take damage
+            if (IsInLimbo) return 0;
 
             if (source is Creature creatureAttacker)
                 SetCurrentAttacker(creatureAttacker);
@@ -1009,7 +1020,7 @@ namespace ACE.Server.WorldObjects
             defender.UpdatePKTimer();
         }
 
-        public bool PKTimerActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PropertyManager.GetLong("pk_timer");
+        public bool PKTimerActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PropertyManager.GetLong("pk_timer").Item;
 
         public bool PKLogoutActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PKLogoffTimer.TotalSeconds;
 

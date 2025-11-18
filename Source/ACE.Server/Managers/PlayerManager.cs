@@ -37,11 +37,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly TimeSpan databaseSaveInterval = TimeSpan.FromHours(1);
 
-        /// <summary>
-        /// Timestamp of the last offline save check. Updated every hour regardless of whether saves were needed.
-        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
-        /// </summary>
-        private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
+        private static DateTime lastDatabaseSave = DateTime.MinValue;
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -69,24 +65,9 @@ namespace ACE.Server.Managers
 
         public static void Tick()
         {
-            // Database Save - only check once per hour
-            if (lastOfflineSaveCheck + databaseSaveInterval <= DateTime.UtcNow)
-            {
-                var now = DateTime.UtcNow;
-                log.Debug("[PLAYERMANAGER] Performing hourly offline save check");
-                try
-                {
-                    SaveOfflinePlayersWithChanges();
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[PLAYERMANAGER] Hourly offline save check threw: {ex}");
-                }
-                finally
-                {
-                    lastOfflineSaveCheck = now; // Always update timestamp
-                }
-            }
+            // Database Save
+            if (lastDatabaseSave + databaseSaveInterval <= DateTime.UtcNow)
+                SaveOfflinePlayersWithChanges();
 
             var currentUnixTime = Time.GetUnixTime();
 
@@ -108,101 +89,32 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Queues a background task to save any offline players that have ChangesDetected.
-        /// Actual persistence is performed by PerformOfflinePlayerSaves() on the DB worker.
+        /// This will save any player in the OfflinePlayers dictionary that has ChangesDetected. The biotas are saved in parallel.
         /// </summary>
         public static void SaveOfflinePlayersWithChanges()
         {
+            lastDatabaseSave = DateTime.UtcNow;
 
-            // Check if there are actually players with changes to save
-            var playersWithChanges = 0;
-            
+            var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+
             playersLock.EnterReadLock();
             try
             {
-                playersWithChanges = offlinePlayers.Values.Count(p => p.ChangesDetected);
-            }
-            finally
-            {
-                playersLock.ExitReadLock();
-            }
-
-            // Only queue the save if there are actually changes to save
-            if (playersWithChanges > 0)
-            {
-                log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
-                DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
+                foreach (var player in offlinePlayers.Values)
                 {
-                    if (success)
-                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
-                    else
-                        log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
-                });
-            }
-            else
-            {
-                log.Debug("[PLAYERMANAGER] No offline players with changes to save");
-            }
-        }
-
-        /// <summary>
-        /// Internal method to actually perform the offline player saves.
-        /// This is called by the queue system.
-        /// </summary>
-        internal static void PerformOfflinePlayerSaves()
-        {
-            log.Info("[PLAYERMANAGER] Performing offline save operation");
-            
-            var playersToSave = new List<OfflinePlayer>();
-            
-            playersLock.EnterReadLock();
-            try
-            {
-                playersToSave = offlinePlayers.Values.Where(p => p.ChangesDetected).ToList();
-            }
-            finally
-            {
-                playersLock.ExitReadLock();
-            }
-
-            if (playersToSave.Count > 0)
-            {
-                log.Info($"[PLAYERMANAGER] Enqueuing saves for {playersToSave.Count} offline players with changes");
-                
-                // Save each player with changes
-                foreach (var player in playersToSave)
-                {
-                    try
+                    if (player.ChangesDetected)
                     {
-                        // enqueue actual DB save with completion callback to ensure retry on failure
-                        player.SaveBiotaToDatabase(true, result =>
-                        {
-                            if (!result)
-                            {
-                                // Re-flag for retry on failure
-                                playersLock.EnterWriteLock();
-                                try { player.ChangesDetected = true; } finally { playersLock.ExitWriteLock(); }
-                                log.Error($"[PLAYERMANAGER] Offline save failed for {player.Name} ({player.Guid.Full}); will retry next cycle");
-                            }
-                            else
-                            {
-                                log.Debug($"[PLAYERMANAGER] Saved offline player: {player.Name}");
-                            }
-                        });
-                        log.Debug($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[PLAYERMANAGER] Failed to enqueue save for offline player {player.Name} ({player.Guid.Full}): {ex}");
+                        player.SaveBiotaToDatabase(false);
+                        biotas.Add((player.Biota, player.BiotaDatabaseLock));
                     }
                 }
-                
-                log.Info($"[PLAYERMANAGER] Enqueued saves for {playersToSave.Count} offline players");
             }
-            else
+            finally
             {
-                log.Debug("[PLAYERMANAGER] No offline players with changes to save");
+                playersLock.ExitReadLock();
             }
+
+            DatabaseManager.Shard.SaveBiotasInParallel(biotas, result => { }, "SaveOfflinePlayersWithChanges");
         }
         
 
@@ -285,87 +197,6 @@ namespace ACE.Server.Managers
             allPlayers.AddRange(onlinePlayers);
 
             return allPlayers;
-        }
-
-        /// <summary>
-        /// Returns all players (online and offline) that match the given predicate, searching online players first for performance.
-        /// </summary>
-        public static List<IPlayer> FindAllPlayers(Func<IPlayer, bool> predicate)
-        {
-            var results = new List<IPlayer>();
-            
-            playersLock.EnterReadLock();
-            try
-            {
-                // Search online players first (smaller collection, faster)
-                var onlineMatches = onlinePlayers.Values.Where(predicate);
-                results.AddRange(onlineMatches);
-                
-                // Then search offline players
-                var offlineMatches = offlinePlayers.Values.Where(predicate);
-                results.AddRange(offlineMatches);
-            }
-            finally
-            {
-                playersLock.ExitReadLock();
-            }
-            
-            return results;
-        }
-
-        /// <summary>
-        /// Returns the first player (online or offline) that matches the given predicate, searching online players first for performance.
-        /// </summary>
-        public static IPlayer FindFirstPlayer(Func<IPlayer, bool> predicate)
-        {
-            playersLock.EnterReadLock();
-            try
-            {
-                // Search online players first (smaller collection, faster)
-                var onlineMatch = onlinePlayers.Values.FirstOrDefault(predicate);
-                if (onlineMatch != null)
-                    return onlineMatch;
-                
-                // Only search offline players if not found online
-                return offlinePlayers.Values.FirstOrDefault(predicate);
-            }
-            finally
-            {
-                playersLock.ExitReadLock();
-            }
-        }
-
-        /// <summary>
-        /// Returns the first player (online or offline) that matches the given name, searching online players first for performance.
-        /// Handles admin names with + prefix and case-insensitive matching.
-        /// </summary>
-        public static IPlayer FindFirstPlayerByName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return null;
-            
-            playersLock.EnterReadLock();
-            try
-            {
-                var normalizedName = name.Trim();
-                
-                // Search online players first (smaller collection, faster)
-                var onlinePlayer = onlinePlayers.Values.FirstOrDefault(p => 
-                    p.Name.TrimStart('+').Equals(normalizedName.TrimStart('+'), StringComparison.OrdinalIgnoreCase));
-                
-                if (onlinePlayer != null)
-                    return onlinePlayer;
-                
-                // Only search offline players if not found online
-                var offlinePlayer = offlinePlayers.Values.FirstOrDefault(p => 
-                    p.Name.TrimStart('+').Equals(normalizedName.TrimStart('+'), StringComparison.OrdinalIgnoreCase) && 
-                    !p.IsPendingDeletion);
-                
-                return offlinePlayer;
-            }
-            finally
-            {
-                playersLock.ExitReadLock();
-            }
         }
 
         public static int GetOfflineCount()
@@ -531,10 +362,6 @@ namespace ACE.Server.Managers
 
                 offlinePlayer.Allegiance = player.Allegiance;
                 offlinePlayer.AllegianceNode = player.AllegianceNode;
-                
-                // Transfer save state to offline player for login blocking
-                offlinePlayer.SaveInProgress = player.SaveInProgress;
-                offlinePlayer.LastRequestedDatabaseSave = player.LastRequestedDatabaseSave;
 
                 if (!offlinePlayers.TryAdd(offlinePlayer.Guid.Full, offlinePlayer))
                     return false;
@@ -746,7 +573,7 @@ namespace ACE.Server.Managers
             }
                 
 
-            //if (PropertyManager.GetBool("log_audit", true))
+            //if (PropertyManager.GetBool("log_audit", true).Item)
                 //log.Info($"[AUDIT] {(issuer != null ? $"{issuer.Name} says on the Audit channel: " : "")}{message}");
 
             //LogBroadcastChat(Channel.Audit, issuer, message);
@@ -771,58 +598,58 @@ namespace ACE.Server.Managers
             switch (channel)
             {
                 case Channel.Abuse:
-                    if (!PropertyManager.GetBool("chat_log_abuse"))
+                    if (!PropertyManager.GetBool("chat_log_abuse").Item)
                         return;
                     break;
                 case Channel.Admin:
-                    if (!PropertyManager.GetBool("chat_log_admin"))
+                    if (!PropertyManager.GetBool("chat_log_admin").Item)
                         return;
                     break;
                 case Channel.AllBroadcast: // using this to sub in for a WorldBroadcast channel which isn't technically a channel
-                    if (!PropertyManager.GetBool("chat_log_global"))
+                    if (!PropertyManager.GetBool("chat_log_global").Item)
                         return;
                     break;
                 case Channel.Audit:
-                    if (!PropertyManager.GetBool("chat_log_audit"))
+                    if (!PropertyManager.GetBool("chat_log_audit").Item)
                         return;
                     break;
                 case Channel.Advocate1:
                 case Channel.Advocate2:
                 case Channel.Advocate3:
-                    if (!PropertyManager.GetBool("chat_log_advocate"))
+                    if (!PropertyManager.GetBool("chat_log_advocate").Item)
                         return;
                     break;
                 case Channel.Debug:
-                    if (!PropertyManager.GetBool("chat_log_debug"))
+                    if (!PropertyManager.GetBool("chat_log_debug").Item)
                         return;
                     break;
                 case Channel.Fellow:
                 case Channel.FellowBroadcast:
-                    if (!PropertyManager.GetBool("chat_log_fellow"))
+                    if (!PropertyManager.GetBool("chat_log_fellow").Item)
                         return;
                     break;
                 case Channel.Help:
-                    if (!PropertyManager.GetBool("chat_log_help"))
+                    if (!PropertyManager.GetBool("chat_log_help").Item)
                         return;
                     break;
                 case Channel.Olthoi:
-                    if (!PropertyManager.GetBool("chat_log_olthoi"))
+                    if (!PropertyManager.GetBool("chat_log_olthoi").Item)
                         return;
                     break;
                 case Channel.QA1:
                 case Channel.QA2:
-                    if (!PropertyManager.GetBool("chat_log_qa"))
+                    if (!PropertyManager.GetBool("chat_log_qa").Item)
                         return;
                     break;
                 case Channel.Sentinel:
-                    if (!PropertyManager.GetBool("chat_log_sentinel"))
+                    if (!PropertyManager.GetBool("chat_log_sentinel").Item)
                         return;
                     break;
 
                 case Channel.SocietyCelHanBroadcast:
                 case Channel.SocietyEldWebBroadcast:
                 case Channel.SocietyRadBloBroadcast:
-                    if (!PropertyManager.GetBool("chat_log_society"))
+                    if (!PropertyManager.GetBool("chat_log_society").Item)
                         return;
                     break;
 
@@ -831,7 +658,7 @@ namespace ACE.Server.Managers
                 case Channel.Monarch:
                 case Channel.Patron:
                 case Channel.Vassals:
-                    if (!PropertyManager.GetBool("chat_log_allegiance"))
+                    if (!PropertyManager.GetBool("chat_log_allegiance").Item)
                         return;
                     break;
 
@@ -844,7 +671,7 @@ namespace ACE.Server.Managers
                 case Channel.Shoushi:
                 case Channel.Yanshi:
                 case Channel.Yaraq:
-                    if (!PropertyManager.GetBool("chat_log_townchans"))
+                    if (!PropertyManager.GetBool("chat_log_townchans").Item)
                         return;
                     break;
 
@@ -908,6 +735,80 @@ namespace ACE.Server.Managers
             return true;
         }
 
+        public static bool FreezePlayer(Player issuer, string playerName, bool permanent = false)
+        {
+            var player = FindByName(playerName);
+
+            if (player == null)
+                return false;
+
+            player.SetProperty(ACE.Entity.Enum.Properties.PropertyBool.IsFrozen, true);
+            player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.FrozenTimestamp, Common.Time.GetUnixTime());
+            
+            if (permanent)
+            {
+                player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.FrozenDuration, -1); // -1 indicates permanent freeze
+            }
+            else
+            {
+                player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.FrozenDuration, 600); // 10 minutes
+            }
+
+            player.SaveBiotaToDatabase();
+
+            var freezeType = permanent ? "permanently frozen" : "frozen for ten minutes";
+            BroadcastToAuditChannel(issuer, $"{issuer.Name} has {freezeType} {player.Name}.");
+
+            return true;
+        }
+
+        public static bool UnfreezePlayer(Player issuer, string playerName)
+        {
+            var player = FindByName(playerName);
+
+            if (player == null)
+                return false;
+
+            player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyBool.IsFrozen);
+            player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.FrozenTimestamp);
+            player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.FrozenDuration);
+
+            player.SaveBiotaToDatabase();
+
+            BroadcastToAuditChannel(issuer, $"{issuer.Name} has unfrozen {player.Name}.");
+
+            return true;
+        }
+
+        public static bool SetPlayerLimbo(Player issuer, string playerName, bool enable = true)
+        {
+            var player = FindByName(playerName);
+
+            if (player == null)
+                return false;
+
+            if (enable)
+            {
+                player.SetProperty(ACE.Entity.Enum.Properties.PropertyBool.Limbo, true);
+                player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.LimboStartTimestamp, Common.Time.GetUnixTime());
+                player.SetProperty(ACE.Entity.Enum.Properties.PropertyFloat.LimboDuration, 900); // 15 minutes
+
+                BroadcastToAuditChannel(issuer, $"{issuer.Name} has put {player.Name} in limbo for fifteen minutes.");
+            }
+            else
+            {
+                player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyBool.Limbo);
+                player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.LimboStartTimestamp);
+                player.RemoveProperty(ACE.Entity.Enum.Properties.PropertyFloat.LimboDuration);
+
+                BroadcastToAuditChannel(issuer, $"{issuer.Name} has removed {player.Name} from limbo.");
+            }
+
+            player.SaveBiotaToDatabase();
+
+            return true;
+        }
+
         public static void BootAllPlayers()
         {
             foreach (var player in GetAllOnline().Where(p => p.Session.AccessLevel < AccessLevel.Advocate))
@@ -930,7 +831,7 @@ namespace ACE.Server.Managers
                             player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
                         }
 
-                        var msg = $"This world has been changed to a Player Killer world. All players will become Player Killers in {PropertyManager.GetDouble("pk_respite_timer")} seconds.";
+                        var msg = $"This world has been changed to a Player Killer world. All players will become Player Killers in {PropertyManager.GetDouble("pk_respite_timer").Item} seconds.";
                         BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
                         LogBroadcastChat(Channel.AllBroadcast, null, msg);
                     }
@@ -951,7 +852,7 @@ namespace ACE.Server.Managers
                     }
                     break;
                 case "pkl_server":
-                    if (PropertyManager.GetBool("pk_server"))
+                    if (PropertyManager.GetBool("pk_server").Item)
                         return;
                     if (enabled)
                     {
@@ -964,7 +865,7 @@ namespace ACE.Server.Managers
                             player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
                         }
 
-                        var msg = $"This world has been changed to a Player Killer Lite world. All players will become Player Killer Lites in {PropertyManager.GetDouble("pk_respite_timer")} seconds.";
+                        var msg = $"This world has been changed to a Player Killer Lite world. All players will become Player Killer Lites in {PropertyManager.GetDouble("pk_respite_timer").Item} seconds.";
                         BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
                         LogBroadcastChat(Channel.AllBroadcast, null, msg);
                     }
@@ -989,7 +890,7 @@ namespace ACE.Server.Managers
 
         public static bool IsAccountAtMaxCharacterSlots(string accountName)
         {
-            var slotsAvailable = (int)PropertyManager.GetLong("max_chars_per_account");
+            var slotsAvailable = (int)PropertyManager.GetLong("max_chars_per_account").Item;
             var onlinePlayersTotal = 0;
             var offlinePlayersTotal = 0;
 
