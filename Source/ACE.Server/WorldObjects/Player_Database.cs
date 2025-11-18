@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading;
 
 using ACE.Common;
@@ -84,15 +85,29 @@ namespace ACE.Server.WorldObjects
 
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
+            // Save player biota - this sets SaveInProgress for the player
             SaveBiotaToDatabase(false);
             biotas.Add((Biota, BiotaDatabaseLock));
 
+            // Track which items were in the batch so we can restore ChangesDetected on failure
+            var itemsInBatch = new System.Collections.Generic.HashSet<uint>();
+            
+            // For possessions, prepare them for batch save
+            // We call SaveBiotaToDatabase(false) to sync position cache and prepare the biota,
+            // but we don't want to block individual saves with newer changes, so we'll handle
+            // SaveInProgress differently - the individual save logic will check for stale data
             foreach (var possession in GetAllPossessions())
             {
                 if (possession.ChangesDetected)
                 {
+                    // Sync position cache and prepare biota for save
+                    // This sets SaveInProgress = true and clears ChangesDetected = false
                     possession.SaveBiotaToDatabase(false);
                     biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                    itemsInBatch.Add(possession.Guid.Full);
+                    // Note: SaveInProgress remains true, which will block individual saves
+                    // But the individual save logic in SaveBiotaToDatabase will check for stale data
+                    // and allow saves with newer changes (ChangesDetected = true) to proceed
                 }
             }
 
@@ -111,6 +126,19 @@ namespace ACE.Server.WorldObjects
                     
                     if (result)
                     {
+                        // Clear ChangesDetected for successfully saved items that were in the batch
+                        // Items that weren't in the batch but have ChangesDetected=true are newer changes that should be preserved
+                        foreach (var possession in GetAllPossessions())
+                        {
+                            if (itemsInBatch.Contains(possession.Guid.Full))
+                            {
+                                // Item was in the batch - clear ChangesDetected since it was successfully saved
+                                possession.ChangesDetected = false;
+                            }
+                            // Items not in itemsInBatch might have newer changes (ChangesDetected=true) - preserve them
+                        }
+                        ChangesDetected = false;
+                        
                         if (duringLogout)
                         {
                             // Don't set the player offline until they have been successfully saved
@@ -120,6 +148,19 @@ namespace ACE.Server.WorldObjects
                     }
                     else
                     {
+                        // Batch save failed - restore ChangesDetected for items that were in the batch
+                        // to prevent data loss
+                        foreach (var possession in GetAllPossessions())
+                        {
+                            if (itemsInBatch.Contains(possession.Guid.Full))
+                            {
+                                // Item was in the batch - restore ChangesDetected so it can be retried
+                                possession.ChangesDetected = true;
+                                log.Warn($"[SAVE] Batch save failed for {Name} - restored ChangesDetected for {possession.Name} (0x{possession.Guid}) to prevent data loss");
+                            }
+                        }
+                        ChangesDetected = true;
+                        
                         // This will trigger a boot on next player tick
                         BiotaSaveFailed = true;
                     }

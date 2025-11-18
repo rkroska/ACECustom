@@ -4,13 +4,18 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 
+using log4net;
+
 using ACE.Database.Models.Shard;
 using ACE.Entity;
+using ACE.Entity.Enum.Properties;
 
 namespace ACE.Database
 {
     public class ShardDatabaseWithCaching : ShardDatabase
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         public TimeSpan PlayerBiotaRetentionTime { get; set; }
         public TimeSpan NonPlayerBiotaRetentionTime { get; set; }
 
@@ -96,6 +101,17 @@ namespace ACE.Database
                 {
                     cachedBiota.LastSeen = DateTime.UtcNow;
 
+                    // DEBUG: Check ContainerId in cached biota
+                    uint? cachedContainerId = null;
+                    if (cachedBiota.CachedObject.BiotaPropertiesIID != null)
+                    {
+                        var containerProp = cachedBiota.CachedObject.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container);
+                        if (containerProp != null)
+                            cachedContainerId = containerProp.Value;
+                    }
+
+                    log.Debug($"[CACHE DEBUG] Returning cached biota {id} (0x{id:X8}) | Cached ContainerId={cachedContainerId} (0x{(cachedContainerId ?? 0):X8})");
+
                     return cachedBiota.CachedObject;
                 }
             }
@@ -103,7 +119,20 @@ namespace ACE.Database
             var biota = base.GetBiota(context, id);
 
             if (biota != null && !skipCache)
+            {
+                // DEBUG: Check ContainerId in biota loaded from database
+                uint? dbContainerId = null;
+                if (biota.BiotaPropertiesIID != null)
+                {
+                    var containerProp = biota.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container);
+                    if (containerProp != null)
+                        dbContainerId = containerProp.Value;
+                }
+
+                log.Debug($"[CACHE DEBUG] Loaded biota {id} (0x{id:X8}) from database | DB ContainerId={dbContainerId} (0x{(dbContainerId ?? 0):X8}) | Adding to cache");
+
                 TryAddToCache(biota);
+            }
 
             return biota;
         }
@@ -172,7 +201,16 @@ namespace ACE.Database
 
                     if (DoSaveBiota(context, existingBiota))
                     {
-                        cachedBiota.CachedObject = existingBiota;
+                        // Invalidate cache entry - Entity Framework objects may have stale data
+                        // after SaveChanges() without explicit reload. Removing from cache ensures
+                        // next load will fetch fresh data from database.
+                        lock (biotaCacheMutex)
+                        {
+                            biotaCache.Remove(biota.Id);
+                        }
+                        
+                        log.Debug($"[CACHE DEBUG] Invalidated cache entry for biota {biota.Id} (0x{biota.Id:X8}) after save - will reload from database on next access");
+                        
                         return true;
                     }
 
@@ -206,13 +244,41 @@ namespace ACE.Database
 
                 if (DoSaveBiota(context, existingBiota))
                 {
-                    TryAddToCache(existingBiota);
-
+                    // Don't cache immediately after save - Entity Framework objects may have stale data
+                    // after SaveChanges() without explicit reload. Next load will fetch fresh data.
+                    log.Debug($"[CACHE DEBUG] Saved biota {biota.Id} (0x{biota.Id:X8}) not in cache - will be cached on next load from database");
+                    
                     return true;
                 }
 
                 return false;
             }
+        }
+
+        public override bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        {
+            var biotaList = biotas.ToList();
+            
+            // Call base implementation to save to database
+            var result = base.SaveBiotasInParallel(biotas);
+            
+            if (result)
+            {
+                // Invalidate cache entries for all saved biotas
+                // Entity Framework objects may have stale data after SaveChanges() without explicit reload
+                lock (biotaCacheMutex)
+                {
+                    foreach (var (biota, _) in biotaList)
+                    {
+                        if (biotaCache.Remove(biota.Id))
+                        {
+                            log.Debug($"[CACHE DEBUG] Invalidated cache entry for biota {biota.Id} (0x{biota.Id:X8}) after batch save - will reload from database on next access");
+                        }
+                    }
+                }
+            }
+            
+            return result;
         }
 
         public override bool RemoveBiota(uint id)
