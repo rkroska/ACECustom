@@ -17,8 +17,6 @@ namespace ACE.Server.WorldObjects
         
         // Discord throttling for database diagnostics alerts
         private static readonly object dbAlertLock = new object();
-        private static DateTime lastDbRaceAlert = DateTime.MinValue;
-        private static System.Collections.Concurrent.ConcurrentBag<string> dbRacesThisMinute = new();
         
         private static DateTime lastDbSlowAlert = DateTime.MinValue;
         private static int dbSlowAlertsThisMinute = 0;
@@ -34,48 +32,12 @@ namespace ACE.Server.WorldObjects
             get => _saveInProgress;
             set => _saveInProgress = value;
         }
-        private DateTime SaveStartTime { get; set; }
-        private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
         /// <summary>
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
         /// The primary use for this is to trigger save on add/modify/remove of properties.
         /// </summary>
         public bool ChangesDetected { get; set; }
-        
-        private void DetectAndLogConcurrentSave()
-        {
-            if (!SaveInProgress)
-                return;
-
-            if (SaveStartTime == DateTime.MinValue)
-            {
-                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {Name} (0x{Guid})");
-                SaveInProgress = false;
-                SaveStartTime = DateTime.UtcNow;
-                return;
-            }
-            
-            var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-            var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
-            
-            var currentStack = StackSize;
-            var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
-            var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
-            
-            var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-            log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
-            
-            if (stackChanged || timeInFlight > 50)
-            {
-                var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                  (this.Container is Player owner ? $"[{owner.Name}] " : "");
-                var raceInfo = stackChanged 
-                    ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
-                SendAggregatedDbRaceAlert(raceInfo);
-            }
-        }
 
         /// <summary>
         /// Best practice says you should use this lock any time you read/write the Biota.<para />
@@ -105,10 +67,7 @@ namespace ACE.Server.WorldObjects
         {
             // Detect concurrent saves
             if (SaveInProgress)
-            {
-                DetectAndLogConcurrentSave();
                 return; // Abort save attempt - already in progress
-            }
             
             foreach (var kvp in positionCache)
             {
@@ -118,8 +77,6 @@ namespace ACE.Server.WorldObjects
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
-            SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -132,11 +89,10 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                             return;
                         }
                         
-                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                        var saveTime = (DateTime.UtcNow - LastRequestedDatabaseSave).TotalMilliseconds;
                         var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
                         if (saveTime > slowThreshold && this is not Player)
                         {
@@ -181,7 +137,6 @@ namespace ACE.Server.WorldObjects
             // Detect concurrent saves
             if (SaveInProgress)
             {
-                DetectAndLogConcurrentSave();
                 onCompleted?.Invoke(false); // Notify caller that save was rejected
                 return; // Abort save attempt - already in progress
             }
@@ -194,8 +149,6 @@ namespace ACE.Server.WorldObjects
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
-            SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;
             ChangesDetected = false;
 
             if (enqueueSave)
@@ -208,11 +161,10 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                             return;
                         }
                         
-                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                        var saveTime = (DateTime.UtcNow - LastRequestedDatabaseSave).TotalMilliseconds;
                         var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
                         if (saveTime > slowThreshold && this is not Player)
                         {
@@ -340,45 +292,6 @@ namespace ACE.Server.WorldObjects
             }
 
             return true;
-        }
-        
-        private static void SendAggregatedDbRaceAlert(string raceInfo = null)
-        {
-            lock (dbAlertLock)
-            {
-                if (raceInfo != null)
-                    dbRacesThisMinute.Add(raceInfo);
-
-                var now = DateTime.UtcNow;
-                
-                // Reset counter every minute and send summary
-                if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
-                {
-                    // Check Discord is configured
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && 
-                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
-                    {
-                        try
-                        {
-                            var topItems = dbRacesThisMinute.Take(10).ToList();
-                            var msg = $"⚠️ **DB RACE**: {dbRacesThisMinute.Count} concurrent saves detected in last minute\n" +
-                                     $"Top items: `{string.Join("`, `", topItems)}`";
-                            
-                            DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
-                                ConfigManager.Config.Chat.PerformanceAlertsChannelId);
-                            
-                            lastDbRaceAlert = now;
-                        }
-                        catch (Exception ex)
-                        {
-                            log.Error($"Failed to send DB race alert to Discord: {ex.Message}");
-                        }
-                    }
-                    
-                    // Clear the bag for next minute
-                    dbRacesThisMinute = new System.Collections.Concurrent.ConcurrentBag<string>();
-                }
-            }
         }
         
         private static void SendDbSlowDiscordAlert(string itemName, double saveTime, int stackSize, string ownerInfo)

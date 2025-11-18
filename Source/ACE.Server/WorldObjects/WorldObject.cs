@@ -810,7 +810,6 @@ namespace ACE.Server.WorldObjects
             // Clear any pending save flags to prevent stuck saves on destroyed objects
             if (SaveInProgress)
             {
-                log.Debug($"[DESTROY] Clearing stuck SaveInProgress flag for {Name} (0x{Guid}) - was in-flight for {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                 SaveInProgress = false;
             }
 
