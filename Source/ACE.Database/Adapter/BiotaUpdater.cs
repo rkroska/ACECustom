@@ -10,220 +10,145 @@ namespace ACE.Database.Adapter
 {
     public static class BiotaUpdater
     {
-        public static void UpdateDatabaseBiota(ShardDbContext context, ACE.Entity.Models.Biota sourceBiota, ACE.Database.Models.Shard.Biota targetBiota)
+        /// <summary>
+        /// Synchronizes a source property dictionary with a target database collection.
+        /// </summary>
+        /// <typeparam name="TKey">The property enum type (e.g., PropertyInt)</typeparam>
+        /// <typeparam name="TValue">The property value type (e.g., int)</typeparam>
+        /// <typeparam name="TEntity">The database entity type (e.g., BiotaPropertiesInt)</typeparam>
+        /// <param name="sourceDictionary">The source dictionary from the entity model.</param>
+        /// <param name="targetCollection">The target collection from the database model.</param>
+        /// <param name="dbSet">The DbSet used for removing entities from the context.</param>
+        /// <param name="keySelector">A function to get the key from a database entity (e.g., e => (PropertyInt)e.Type).</param>
+        /// <param name="valueSelector">A function to get the value from a database entity (e.g., e => e.Value).</param>
+        /// <param name="valueSetter">An action to set the value on a database entity (e.g., (e, v) => e.Value = v).</param>
+        /// <param name="addFunction">An action to add a new property to the target biota (e.g., (k, v) => targetBiota.SetProperty(k, v)).</param>
+        private static void UpdateProperties<TKey, TValue, TEntity>(
+            IDictionary<TKey, TValue> sourceDictionary,
+            ICollection<TEntity> targetCollection,
+            Microsoft.EntityFrameworkCore.DbSet<TEntity> dbSet,
+            Func<TEntity, TKey> keySelector,
+            Func<TEntity, TValue> valueSelector,
+            Action<TEntity, TValue> valueSetter,
+            Action<TKey, TValue> addFunction)
+            where TKey : notnull
+            where TEntity : class
         {
-            targetBiota.WeenieClassId = sourceBiota.WeenieClassId;
-            targetBiota.WeenieType = (int)sourceBiota.WeenieType;
-
-
-            if (sourceBiota.PropertiesBool != null)
+            if (sourceDictionary != null)
             {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesBool.ToDictionary(r => (PropertyBool)r.Type, r => r);
+                // Optimization for O(1) lookups
+                var existingValues = targetCollection.ToDictionary(keySelector);
 
-                foreach (var kvp in sourceBiota.PropertiesBool)
-                {
-                    if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
-                    {
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
-                    }
-                    else if (existingValue.Value != kvp.Value)
-                    {
-                        existingValue.Value = kvp.Value;
-                    }
-                }
-
-                foreach (var value in targetBiota.BiotaPropertiesBool.ToList())
-                {
-                    if (!sourceBiota.PropertiesBool.ContainsKey((PropertyBool)value.Type))
-                        context.BiotaPropertiesBool.Remove(value);
-                }
-            }
-            else
-            {
-                foreach (var value in targetBiota.BiotaPropertiesBool.ToList())
-                    context.BiotaPropertiesBool.Remove(value);
-            }
-
-            if (sourceBiota.PropertiesDID != null)
-            {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesDID.ToDictionary(r => (PropertyDataId)r.Type, r => r);
-
-                foreach (var kvp in sourceBiota.PropertiesDID)
-                {
-                    if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
-                    {
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
-                    }
-                    else if (existingValue.Value != kvp.Value)
-                    {
-                        existingValue.Value = kvp.Value;
-                    }
-                }
-
-                foreach (var value in targetBiota.BiotaPropertiesDID.ToList())
-                {
-                    if (!sourceBiota.PropertiesDID.ContainsKey((PropertyDataId)value.Type))
-                        context.BiotaPropertiesDID.Remove(value);
-                }
-            }
-            else
-            {
-                foreach (var value in targetBiota.BiotaPropertiesDID.ToList())
-                    context.BiotaPropertiesDID.Remove(value);
-            }
-
-            if (sourceBiota.PropertiesFloat != null)
-            {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesFloat.ToDictionary(r => (PropertyFloat)r.Type, r => r);
-
-                foreach (var kvp in sourceBiota.PropertiesFloat)
-                {
-                    if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
-                    {
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
-                    }
-                    else if (existingValue.Value != kvp.Value)
-                    {
-                        existingValue.Value = kvp.Value;
-                    }
-                }
-
-                foreach (var value in targetBiota.BiotaPropertiesFloat.ToList())
-                {
-                    if (!sourceBiota.PropertiesFloat.ContainsKey((PropertyFloat)value.Type))
-                        context.BiotaPropertiesFloat.Remove(value);
-                }
-            }
-            else
-            {
-                foreach (var value in targetBiota.BiotaPropertiesFloat.ToList())
-                    context.BiotaPropertiesFloat.Remove(value);
-            }
-
-            if (sourceBiota.PropertiesIID != null)
-            {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesIID.ToDictionary(r => (PropertyInstanceId)r.Type, r => r);
-
-                foreach (var kvp in sourceBiota.PropertiesIID)
-                {
-                    if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
-                    {
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
-                    }
-                    else if (existingValue.Value != kvp.Value)
-                    {
-                        existingValue.Value = kvp.Value;
-                    }
-                }
-
-                foreach (var value in targetBiota.BiotaPropertiesIID.ToList())
-                {
-                    if (!sourceBiota.PropertiesIID.ContainsKey((PropertyInstanceId)value.Type))
-                        context.BiotaPropertiesIID.Remove(value);
-                }
-            }
-            else
-            {
-                foreach (var value in targetBiota.BiotaPropertiesIID.ToList())
-                    context.BiotaPropertiesIID.Remove(value);
-            }
-
-            if (sourceBiota.PropertiesInt != null)
-            {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesInt.ToDictionary(r => (PropertyInt)r.Type, r => r);
-
-                foreach (var kvp in sourceBiota.PropertiesInt)
+                // Add or update properties from source
+                foreach (var kvp in sourceDictionary)
                 {
                     if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
                     {
                         // Property doesn't exist, add it
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
+                        addFunction(kvp.Key, kvp.Value);
                     }
-                    else if (existingValue.Value != kvp.Value)
+                    // Use EqualityComparer for robust value comparison
+                    else if (!EqualityComparer<TValue>.Default.Equals(valueSelector(existingValue), kvp.Value))
                     {
                         // Property exists but value changed, update it
-                        existingValue.Value = kvp.Value;
+                        valueSetter(existingValue, kvp.Value);
                     }
                     // If value exists and hasn't changed, no action needed
                 }
 
                 // Remove properties that are no longer in source
-                foreach (var value in targetBiota.BiotaPropertiesInt.ToList())
+                foreach (var entity in targetCollection.ToList())
                 {
-                    if (!sourceBiota.PropertiesInt.ContainsKey((PropertyInt)value.Type))
-                        context.BiotaPropertiesInt.Remove(value);
+                    if (!sourceDictionary.ContainsKey(keySelector(entity)))
+                    {
+                        dbSet.Remove(entity);
+                    }
                 }
             }
             else
             {
-                // Source has no int properties, remove all from target
-                foreach (var value in targetBiota.BiotaPropertiesInt.ToList())
-                    context.BiotaPropertiesInt.Remove(value);
-            }
-
-            if (sourceBiota.PropertiesInt64 != null)
-            {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesInt64.ToDictionary(r => (PropertyInt64)r.Type, r => r);
-
-                foreach (var kvp in sourceBiota.PropertiesInt64)
+                // Source has no properties of this type, remove all from target
+                foreach (var entity in targetCollection.ToList())
                 {
-                    if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
-                    {
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
-                    }
-                    else if (existingValue.Value != kvp.Value)
-                    {
-                        existingValue.Value = kvp.Value;
-                    }
-                }
-
-                foreach (var value in targetBiota.BiotaPropertiesInt64.ToList())
-                {
-                    if (!sourceBiota.PropertiesInt64.ContainsKey((PropertyInt64)value.Type))
-                        context.BiotaPropertiesInt64.Remove(value);
+                    dbSet.Remove(entity);
                 }
             }
-            else
-            {
-                foreach (var value in targetBiota.BiotaPropertiesInt64.ToList())
-                    context.BiotaPropertiesInt64.Remove(value);
-            }
+        }
 
-            if (sourceBiota.PropertiesString != null)
-            {
-                // Optimization to avoid full iterations - use dictionary for O(1) lookups
-                var existingValues = targetBiota.BiotaPropertiesString.ToDictionary(r => (PropertyString)r.Type, r => r);
+        public static void UpdateDatabaseBiota(ShardDbContext context, ACE.Entity.Models.Biota sourceBiota, ACE.Database.Models.Shard.Biota targetBiota)
+        {
+            targetBiota.WeenieClassId = sourceBiota.WeenieClassId;
+            targetBiota.WeenieType = (int)sourceBiota.WeenieType;
 
-                foreach (var kvp in sourceBiota.PropertiesString)
-                {
-                    if (!existingValues.TryGetValue(kvp.Key, out var existingValue))
-                    {
-                        targetBiota.SetProperty(kvp.Key, kvp.Value);
-                    }
-                    else if (existingValue.Value != kvp.Value)
-                    {
-                        existingValue.Value = kvp.Value;
-                    }
-                }
+            UpdateProperties(
+                sourceBiota.PropertiesBool,
+                targetBiota.BiotaPropertiesBool,
+                context.BiotaPropertiesBool,
+                r => (PropertyBool)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
 
-                foreach (var value in targetBiota.BiotaPropertiesString.ToList())
-                {
-                    if (!sourceBiota.PropertiesString.ContainsKey((PropertyString)value.Type))
-                        context.BiotaPropertiesString.Remove(value);
-                }
-            }
-            else
-            {
-                foreach (var value in targetBiota.BiotaPropertiesString.ToList())
-                    context.BiotaPropertiesString.Remove(value);
-            }
+            UpdateProperties(
+                sourceBiota.PropertiesDID,
+                targetBiota.BiotaPropertiesDID,
+                context.BiotaPropertiesDID,
+                r => (PropertyDataId)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
 
+            UpdateProperties(
+                sourceBiota.PropertiesFloat,
+                targetBiota.BiotaPropertiesFloat,
+                context.BiotaPropertiesFloat,
+                r => (PropertyFloat)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
+
+            UpdateProperties(
+                sourceBiota.PropertiesIID,
+                targetBiota.BiotaPropertiesIID,
+                context.BiotaPropertiesIID,
+                r => (PropertyInstanceId)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
+
+            UpdateProperties(
+                sourceBiota.PropertiesInt,
+                targetBiota.BiotaPropertiesInt,
+                context.BiotaPropertiesInt,
+                r => (PropertyInt)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
+
+            UpdateProperties(
+                sourceBiota.PropertiesInt64,
+                targetBiota.BiotaPropertiesInt64,
+                context.BiotaPropertiesInt64,
+                r => (PropertyInt64)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
+
+            UpdateProperties(
+                sourceBiota.PropertiesString,
+                targetBiota.BiotaPropertiesString,
+                context.BiotaPropertiesString,
+                r => (PropertyString)r.Type,
+                r => r.Value,
+                (e, v) => e.Value = v,
+                (k, v) => targetBiota.SetProperty(k, v)
+            );
 
             if (sourceBiota.PropertiesPosition != null)
             {
