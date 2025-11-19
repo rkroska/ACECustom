@@ -117,20 +117,6 @@ namespace ACE.Server.WorldObjects
 
             var requestedTime = DateTime.UtcNow;
 
-            // CRITICAL: Invalidate biota cache for items being saved BEFORE queuing the save
-            // This prevents quick relogin from loading stale cached biota data
-            // If the player logs in quickly, GetBiota will fetch fresh from database instead of stale cache
-            // Note: DatabaseManager.Shard is SerializedShardDatabase, which wraps BaseDatabase (ShardDatabaseWithCaching)
-            if (DatabaseManager.Shard.BaseDatabase is ACE.Database.ShardDatabaseWithCaching cachingDb)
-            {
-                foreach (var (biota, _) in biotas)
-                {
-                    // Invalidate cache so subsequent GetBiota calls will fetch fresh from database
-                    // This is safe because we're about to save, so the database will have the correct data
-                    cachingDb.InvalidateBiotaCache(biota.Id);
-                }
-            }
-
             // During logout, use async callback but ensure player is marked as saving to prevent quick relogin
             // We don't block the logout thread to avoid crashes, but we ensure the player stays "online" 
             // until save completes, which prevents login until save is done
