@@ -104,8 +104,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
+#if DEBUG
             var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
             log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {itemInfo} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
+#endif
             
             // For individual saves, check if this item belongs to a player with a batch save in progress
             // If the item has newer changes (ChangesDetected = true), we want to allow the save to proceed
@@ -139,7 +141,9 @@ namespace ACE.Server.WorldObjects
                 {
                     // This individual save would overwrite correct side pack ContainerId with stale player GUID
                     // Skip it - the batch save will save the correct state
+#if DEBUG
                     log.Debug($"[SAVE] Skipping individual save for {Name} (0x{Guid}) - would overwrite correct ContainerId {staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}) with stale player GUID");
+#endif
                     return;
                 }
                 // If property says side pack GUID and biota says player GUID, this is a legitimate move
@@ -149,7 +153,9 @@ namespace ACE.Server.WorldObjects
                 // Allow the save to proceed even if SaveInProgress is true
                 // It will queue after the batch save and save the newer state
                 allowSaveDespiteInProgress = true;
+#if DEBUG
                 log.Debug($"[SAVE] Allowing individual save for {Name} (0x{Guid}) during player batch save - has newer changes (Property ContainerId={staleCheckPropertyContainerId}, Biota ContainerId={staleCheckBiotaContainerId})");
+#endif
             }
             
             // Detect concurrent saves at item level
@@ -166,12 +172,17 @@ namespace ACE.Server.WorldObjects
             {
                 var locationPos = positionCache.TryGetValue(PositionType.Location, out var loc) ? loc : null;
                 var locationProperty = Location; // Read through property getter
+#if DEBUG
+                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                 log.Debug($"[SAVE DEBUG] {itemInfo} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
+#endif
                 
                 // If Location property exists but isn't in cache, add it
                 if (locationProperty != null && locationPos == null)
                 {
+#if DEBUG
                     log.Warn($"[SAVE DEBUG] {itemInfo} Location property exists but not in cache! Adding to cache...");
+#endif
                     positionCache[PositionType.Location] = locationProperty;
                 }
             }
@@ -181,10 +192,13 @@ namespace ACE.Server.WorldObjects
                 if (kvp.Value != null)
                 {
                     Biota.SetPosition(kvp.Key, kvp.Value, BiotaDatabaseLock);
+#if DEBUG
                     if (this is Player && kvp.Key == PositionType.Location)
                     {
+                        var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                         log.Debug($"[SAVE DEBUG] {itemInfo} Synced Location position to biota | Position={kvp.Value}");
                     }
+#endif
                 }
             }
 
@@ -196,7 +210,9 @@ namespace ACE.Server.WorldObjects
             // Instead, we directly update the biota to match Container
             uint? propertyContainerId = null;
             uint? propertyGetterContainerId = ContainerId; // Always read the property getter for comparison
+#if DEBUG
             string containerInfo = "null";
+#endif
             
             if (Container != null)
             {
@@ -204,14 +220,17 @@ namespace ACE.Server.WorldObjects
                 // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must be Biota.Id
                 // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID
                 propertyContainerId = Container.Biota.Id;
+#if DEBUG
                 containerInfo = $"{Container.Name} (0x{Container.Guid})";
                 
                 // Log mismatch but don't fix ContainerId property during save (it would set ChangesDetected)
                 // Instead, we'll update the biota directly to match Container
                 if (propertyGetterContainerId != Container.Biota.Id)
                 {
+                    var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                     log.Warn($"[SAVE DEBUG] {itemInfo} ContainerId property mismatch detected | ContainerId property={propertyGetterContainerId} (0x{(propertyGetterContainerId ?? 0):X8}) | Container.Biota.Id={Container.Biota.Id} (0x{Container.Biota.Id:X8}) | Will sync biota directly (not fixing property to avoid ChangesDetected)");
                 }
+#endif
             }
             else
             {
@@ -222,7 +241,9 @@ namespace ACE.Server.WorldObjects
                 {
                     // Item is equipped - ContainerId should be null/cleared
                     propertyContainerId = null;
+#if DEBUG
                     containerInfo = $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))";
+#endif
                 }
                 else
                 {
@@ -231,7 +252,10 @@ namespace ACE.Server.WorldObjects
                 }
             }
             
+#if DEBUG
+            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
             log.Debug($"[SAVE DEBUG] {itemInfo} ContainerId sync check | Container={containerInfo} | Container.Guid={propertyContainerId} (0x{(propertyContainerId ?? 0):X8}) | ContainerId property={propertyGetterContainerId} (0x{(propertyGetterContainerId ?? 0):X8})");
+#endif
             
             // Always force-update the biota with the current ContainerId value
             // This ensures the biota matches the actual container, even if there was a timing issue
@@ -244,7 +268,10 @@ namespace ACE.Server.WorldObjects
                     biotaContainerIdValue = biotaContainerId;
                 }
                 
+#if DEBUG
+                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                 log.Debug($"[SAVE DEBUG] {itemInfo} Biota ContainerId check | Biota ContainerId={biotaContainerIdValue} (0x{(biotaContainerIdValue ?? 0):X8}) | Property ContainerId={propertyContainerId} (0x{(propertyContainerId ?? 0):X8}) | Match={propertyContainerId == biotaContainerIdValue}");
+#endif
                 
                 // Always update biota to match the current container, even if they appear to match
                 // This handles race conditions and ensures correctness
@@ -254,14 +281,19 @@ namespace ACE.Server.WorldObjects
                     if (propertyContainerId.HasValue)
                     {
                         Biota.SetProperty(PropertyInstanceId.Container, propertyContainerId.Value, BiotaDatabaseLock, out var changed);
+#if DEBUG
                         log.Debug($"[SAVE DEBUG] {itemInfo} SYNCED ContainerId | Changed={changed} | From biota={biotaContainerIdValue} (0x{(biotaContainerIdValue ?? 0):X8}) | To container={propertyContainerId} (0x{propertyContainerId:X8})");
+#endif
                     }
                     else
                     {
                         Biota.TryRemoveProperty(PropertyInstanceId.Container, BiotaDatabaseLock);
+#if DEBUG
                         log.Debug($"[SAVE DEBUG] {itemInfo} REMOVED ContainerId | Biota had={biotaContainerIdValue} (0x{(biotaContainerIdValue ?? 0):X8}) | Container is null");
+#endif
                     }
                 }
+#if DEBUG
                 else
                 {
                     // Even if they match, log for debugging
@@ -275,6 +307,7 @@ namespace ACE.Server.WorldObjects
                     verifyBiotaContainerId = verifyValue;
                 }
                 log.Debug($"[SAVE DEBUG] {itemInfo} After sync verification | Biota ContainerId={verifyBiotaContainerId} (0x{(verifyBiotaContainerId ?? 0):X8}) | Expected={propertyContainerId} (0x{(propertyContainerId ?? 0):X8}) | Match={verifyBiotaContainerId == propertyContainerId}");
+#endif
             }
             finally
             {
@@ -304,13 +337,21 @@ namespace ACE.Server.WorldObjects
                     if (propertyWielder.HasValue)
                     {
                         Biota.SetProperty(PropertyInstanceId.Wielder, propertyWielder.Value, BiotaDatabaseLock, out var changed);
+#if DEBUG
                         if (changed)
+                        {
+                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                             log.Debug($"[SAVE DEBUG] {itemInfo} SYNCED Wielder | Changed={changed} | From biota={biotaWielder} (0x{(biotaWielder ?? 0):X8}) | To property={propertyWielder} (0x{propertyWielder:X8})");
+                        }
+#endif
                     }
                     else
                     {
                         Biota.TryRemoveProperty(PropertyInstanceId.Wielder, BiotaDatabaseLock);
+#if DEBUG
+                        var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                         log.Debug($"[SAVE DEBUG] {itemInfo} REMOVED Wielder | Biota had={biotaWielder} (0x{(biotaWielder ?? 0):X8})");
+#endif
                     }
                 }
                 finally
@@ -318,11 +359,14 @@ namespace ACE.Server.WorldObjects
                     BiotaDatabaseLock.ExitWriteLock();
                 }
             }
+#if DEBUG
             else if (propertyWielder.HasValue)
             {
                 // Even if they match, log for debugging (but only if Wielder has a value to avoid spam)
+                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                 log.Debug($"[SAVE DEBUG] {itemInfo} Wielder already synced | Wielder={propertyWielder} (0x{propertyWielder:X8})");
             }
+#endif
 
             // Ensure StackSize is synced from property to biota before save
             // This is critical for stack splits where StackSize changes but the biota might have stale data from cache
@@ -348,13 +392,21 @@ namespace ACE.Server.WorldObjects
                     if (propertyStackSize.HasValue)
                     {
                         Biota.SetProperty(PropertyInt.StackSize, propertyStackSize.Value, BiotaDatabaseLock, out var changed);
+#if DEBUG
                         if (changed)
+                        {
+                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                             log.Debug($"[SAVE DEBUG] {itemInfo} SYNCED StackSize | Changed={changed} | From biota={biotaStackSize} | To property={propertyStackSize}");
+                        }
+#endif
                     }
                     else
                     {
                         Biota.TryRemoveProperty(PropertyInt.StackSize, BiotaDatabaseLock);
+#if DEBUG
+                        var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                         log.Debug($"[SAVE DEBUG] {itemInfo} REMOVED StackSize | Biota had={biotaStackSize}");
+#endif
                     }
                 }
                 finally
@@ -362,11 +414,14 @@ namespace ACE.Server.WorldObjects
                     BiotaDatabaseLock.ExitWriteLock();
                 }
             }
+#if DEBUG
             else if (propertyStackSize.HasValue)
             {
                 // Even if they match, log for debugging (but only if StackSize has a value to avoid spam)
+                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                 log.Debug($"[SAVE DEBUG] {itemInfo} StackSize already synced | StackSize={propertyStackSize}");
             }
+#endif
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
@@ -384,6 +439,7 @@ namespace ACE.Server.WorldObjects
 
             if (enqueueSave)
             {
+#if DEBUG
                 // Log final ContainerId before queuing save
                 BiotaDatabaseLock.EnterReadLock();
                 try
@@ -393,12 +449,15 @@ namespace ACE.Server.WorldObjects
                     {
                         finalBiotaContainerId = finalValue;
                     }
+                    var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
                     log.Debug($"[SAVE DEBUG] {itemInfo} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
                 }
                 finally
                 {
                     BiotaDatabaseLock.ExitReadLock();
                 }
+#endif
                 
                 CheckpointTimestamp = Time.GetUnixTime();
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
@@ -423,6 +482,7 @@ namespace ACE.Server.WorldObjects
                         
                         CheckDatabaseQueueSize();
                         
+#if DEBUG
                         // Log save result with ContainerId
                         BiotaDatabaseLock.EnterReadLock();
                         try
@@ -432,12 +492,14 @@ namespace ACE.Server.WorldObjects
                             {
                                 savedBiotaContainerId = savedValue;
                             }
+                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                             log.Debug($"[SAVE DEBUG] {itemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
                         }
                         finally
                         {
                             BiotaDatabaseLock.ExitReadLock();
                         }
+#endif
                         
                         if (!result)
                         {
@@ -445,7 +507,10 @@ namespace ACE.Server.WorldObjects
                             if (hadChanges)
                             {
                                 ChangesDetected = true;
+#if DEBUG
+                                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                                 log.Warn($"[SAVE DEBUG] {itemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+#endif
                             }
                             
                             if (this is Player player)
@@ -461,7 +526,10 @@ namespace ACE.Server.WorldObjects
                         if (hadChanges)
                         {
                             ChangesDetected = true;
+#if DEBUG
+                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                             log.Warn($"[SAVE DEBUG] {itemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
+#endif
                         }
                         log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
                     }
