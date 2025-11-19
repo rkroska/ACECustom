@@ -56,7 +56,9 @@ namespace ACE.Database
         {
             // Use eager loading with Include to avoid N+1 query problem
             // AsSplitQuery() prevents Cartesian explosion with multiple collections
+            // AsNoTracking() disables change tracking since World DB entities are read-only templates
             var weenie = context.Weenie
+                .AsNoTracking()
                 .Include(w => w.WeeniePropertiesBool)
                 .Include(w => w.WeeniePropertiesDID)
                 .Include(w => w.WeeniePropertiesFloat)
@@ -161,6 +163,7 @@ namespace ACE.Database
         public Weenie GetWeenie(WorldDbContext context, string weenieClassName)
         {
             var result = context.Weenie
+                .AsNoTracking()
                 .FirstOrDefault(r => r.ClassName == weenieClassName);
 
             if (result != null)
@@ -186,6 +189,7 @@ namespace ACE.Database
         public Dictionary<uint, string> GetAllWeenieNames(WorldDbContext context)
         {
             return context.Weenie
+                .AsNoTracking()
                 .Include(r => r.WeeniePropertiesString)
                 .ToDictionary(r => r.ClassId, r => r.WeeniePropertiesString.FirstOrDefault(p => p.Type == (int)PropertyString.Name)?.Value ?? "");
         }
@@ -203,6 +207,7 @@ namespace ACE.Database
         public Dictionary<uint, string> GetAllWeenieClassNames(WorldDbContext context)
         {
             return context.Weenie
+                .AsNoTracking()
                 .ToDictionary(r => r.ClassId, r => r.ClassName);
         }
 
@@ -221,6 +226,8 @@ namespace ACE.Database
         {
             using (var context = new WorldDbContext())
             {
+                context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
                 var query = from weenie in context.Weenie
                             join winst in context.LandblockInstance on weenie.ClassId equals winst.WeenieClassId
                             where weenie.Type == (int)WeenieType.SlumLord
@@ -239,6 +246,7 @@ namespace ACE.Database
         public virtual CookBook GetCookbook(WorldDbContext context, uint sourceWeenieClassId, uint targetWeenieClassId)
         {
             var result = context.CookBook
+                .AsNoTracking()
                 .Include(r => r.Recipe)
                 .Include(r => r.Recipe.RecipeMod)
                     .ThenInclude(r => r.RecipeModsBool)
@@ -308,7 +316,7 @@ namespace ACE.Database
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                var baseRecords = context.CookBook.Where(i => i.RecipeId == recipeId).ToList();
+                var baseRecords = context.CookBook.AsNoTracking().Where(i => i.RecipeId == recipeId).ToList();
 
                 foreach (var baseRecord in baseRecords)
                 {
@@ -338,6 +346,7 @@ namespace ACE.Database
         public virtual Recipe GetRecipe(WorldDbContext context, uint recipeId)
         {
             var result = context.Recipe
+                .AsNoTracking()
                 .Include(r => r.RecipeMod)
                     .ThenInclude(r => r.RecipeModsBool)
                 .Include(r => r.RecipeMod)
@@ -377,6 +386,7 @@ namespace ACE.Database
         public virtual List<Event> GetAllEvents(WorldDbContext context)
         {
             return context.Event
+                .AsNoTracking()
                 .ToList();
         }
 
@@ -405,7 +415,10 @@ namespace ACE.Database
 
         public LandblockInstance GetLandblockInstanceByGuid(WorldDbContext context, uint guid)
         {
+            // NOTE: LandblockInstance can be modified by admin commands (createinst, removeinst, nudge, rotate)
+            // However, queries should still use AsNoTracking by default; admin commands create their own contexts
             return context.LandblockInstance
+                .AsNoTracking()
                 .Include(r => r.LandblockInstanceLink)
                 .FirstOrDefault(r => r.Guid == guid);
         }
@@ -422,7 +435,10 @@ namespace ACE.Database
 
         public List<LandblockInstance> GetLandblockInstancesByWcid(WorldDbContext context, uint wcid)
         {
+            // NOTE: LandblockInstance can be modified by admin commands (createinst, removeinst, nudge, rotate)
+            // However, queries should still use AsNoTracking by default; admin commands create their own contexts
             return context.LandblockInstance
+                .AsNoTracking()
                 .Include(r => r.LandblockInstanceLink)
                 .Where(i => i.WeenieClassId == wcid)
                 .ToList();
@@ -456,6 +472,7 @@ namespace ACE.Database
         public Dictionary<uint, string> GetAllSpellNames(WorldDbContext context)
         {
             return context.Spell
+                .AsNoTracking()
                 .ToDictionary(r => r.Id, r => r.Name);
         }
 
@@ -477,6 +494,7 @@ namespace ACE.Database
         public Dictionary<uint, TreasureDeath> GetAllTreasureDeath(WorldDbContext context)
         {
             return context.TreasureDeath
+                .AsNoTracking()
                 .ToDictionary(r => r.TreasureType, r => r);
         }
 
@@ -502,7 +520,7 @@ namespace ACE.Database
 
         public Dictionary<uint, List<TreasureWielded>> GetAllTreasureWielded(WorldDbContext context)
         {
-            var results = context.TreasureWielded;
+            var results = context.TreasureWielded.AsNoTracking();
 
             var treasure = new Dictionary<uint, List<TreasureWielded>>();
 
@@ -539,6 +557,7 @@ namespace ACE.Database
         public ACE.Database.Models.World.Version GetVersion(WorldDbContext context)
         {
             var version = context.Version
+                .AsNoTracking()
                 .FirstOrDefault(r => r.Id == 1);
 
             return version;
@@ -563,7 +582,7 @@ namespace ACE.Database
 
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
-            return context.LandblockInstance.FirstOrDefault(i => i.Guid >= 0xF0000000) == null;
+            return context.LandblockInstance.AsNoTracking().FirstOrDefault(i => i.Guid >= 0xF0000000) == null;
         }
 
         public bool IsWorldDatabaseGuidRangeValid()
