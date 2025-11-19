@@ -16,6 +16,19 @@ using ACE.Entity.Enum.Properties;
 
 namespace ACE.Database
 {
+    /// <summary>
+    /// Provides read-only access to the World database.
+    /// 
+    /// IMPORTANT: World database entities (Weenies, Recipes, etc.) are designed to be read-only 
+    /// and should NOT be modified or saved back to the database, except through Admin Commands.
+    /// 
+    /// All queries use AsNoTracking() to prevent Entity Framework change tracking overhead,
+    /// improving performance for read-only scenarios.
+    /// 
+    /// WORLD DATABASE WRITE LOCATIONS:
+    /// - DeveloperContentCommands.cs: SaveInstanceToWorldDatabase(), DeleteInstanceFromWorldDatabase(), UpdateInstanceInWorldDatabase()
+    ///   Used by admin commands to manage LandblockInstance entities (createinst, removeinst, etc.)
+    /// </summary>
     public class WorldDatabase
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -56,7 +69,9 @@ namespace ACE.Database
         {
             // Use eager loading with Include to avoid N+1 query problem
             // AsSplitQuery() prevents Cartesian explosion with multiple collections
+            // AsNoTracking() prevents change tracking since World database is read-only
             var weenie = context.Weenie
+                .AsNoTracking()
                 .Include(w => w.WeeniePropertiesBool)
                 .Include(w => w.WeeniePropertiesDID)
                 .Include(w => w.WeeniePropertiesFloat)
@@ -161,6 +176,7 @@ namespace ACE.Database
         public Weenie GetWeenie(WorldDbContext context, string weenieClassName)
         {
             var result = context.Weenie
+                .AsNoTracking()
                 .FirstOrDefault(r => r.ClassName == weenieClassName);
 
             if (result != null)
@@ -186,6 +202,7 @@ namespace ACE.Database
         public Dictionary<uint, string> GetAllWeenieNames(WorldDbContext context)
         {
             return context.Weenie
+                .AsNoTracking()
                 .Include(r => r.WeeniePropertiesString)
                 .ToDictionary(r => r.ClassId, r => r.WeeniePropertiesString.FirstOrDefault(p => p.Type == (int)PropertyString.Name)?.Value ?? "");
         }
@@ -203,6 +220,7 @@ namespace ACE.Database
         public Dictionary<uint, string> GetAllWeenieClassNames(WorldDbContext context)
         {
             return context.Weenie
+                .AsNoTracking()
                 .ToDictionary(r => r.ClassId, r => r.ClassName);
         }
 
@@ -239,6 +257,7 @@ namespace ACE.Database
         public virtual CookBook GetCookbook(WorldDbContext context, uint sourceWeenieClassId, uint targetWeenieClassId)
         {
             var result = context.CookBook
+                .AsNoTracking()
                 .Include(r => r.Recipe)
                 .Include(r => r.Recipe.RecipeMod)
                     .ThenInclude(r => r.RecipeModsBool)
@@ -338,6 +357,7 @@ namespace ACE.Database
         public virtual Recipe GetRecipe(WorldDbContext context, uint recipeId)
         {
             var result = context.Recipe
+                .AsNoTracking()
                 .Include(r => r.RecipeMod)
                     .ThenInclude(r => r.RecipeModsBool)
                 .Include(r => r.RecipeMod)
@@ -377,6 +397,7 @@ namespace ACE.Database
         public virtual List<Event> GetAllEvents(WorldDbContext context)
         {
             return context.Event
+                .AsNoTracking()
                 .ToList();
         }
 
@@ -406,6 +427,7 @@ namespace ACE.Database
         public LandblockInstance GetLandblockInstanceByGuid(WorldDbContext context, uint guid)
         {
             return context.LandblockInstance
+                .AsNoTracking()
                 .Include(r => r.LandblockInstanceLink)
                 .FirstOrDefault(r => r.Guid == guid);
         }
@@ -423,6 +445,7 @@ namespace ACE.Database
         public List<LandblockInstance> GetLandblockInstancesByWcid(WorldDbContext context, uint wcid)
         {
             return context.LandblockInstance
+                .AsNoTracking()
                 .Include(r => r.LandblockInstanceLink)
                 .Where(i => i.WeenieClassId == wcid)
                 .ToList();
@@ -456,6 +479,7 @@ namespace ACE.Database
         public Dictionary<uint, string> GetAllSpellNames(WorldDbContext context)
         {
             return context.Spell
+                .AsNoTracking()
                 .ToDictionary(r => r.Id, r => r.Name);
         }
 
@@ -477,6 +501,7 @@ namespace ACE.Database
         public Dictionary<uint, TreasureDeath> GetAllTreasureDeath(WorldDbContext context)
         {
             return context.TreasureDeath
+                .AsNoTracking()
                 .ToDictionary(r => r.TreasureType, r => r);
         }
 
@@ -502,7 +527,7 @@ namespace ACE.Database
 
         public Dictionary<uint, List<TreasureWielded>> GetAllTreasureWielded(WorldDbContext context)
         {
-            var results = context.TreasureWielded;
+            var results = context.TreasureWielded.AsNoTracking();
 
             var treasure = new Dictionary<uint, List<TreasureWielded>>();
 
@@ -539,6 +564,7 @@ namespace ACE.Database
         public ACE.Database.Models.World.Version GetVersion(WorldDbContext context)
         {
             var version = context.Version
+                .AsNoTracking()
                 .FirstOrDefault(r => r.Id == 1);
 
             return version;
@@ -563,7 +589,7 @@ namespace ACE.Database
 
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
-            return context.LandblockInstance.FirstOrDefault(i => i.Guid >= 0xF0000000) == null;
+            return context.LandblockInstance.AsNoTracking().FirstOrDefault(i => i.Guid >= 0xF0000000) == null;
         }
 
         public bool IsWorldDatabaseGuidRangeValid()
