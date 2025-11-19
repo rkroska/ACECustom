@@ -171,14 +171,9 @@ namespace ACE.Database
 
                     if (DoSaveBiota(context, existingBiota))
                     {
-                        // Invalidate cache entry - Entity Framework objects may have stale data
-                        // after SaveChanges() without explicit reload. Removing from cache ensures
-                        // next load will fetch fresh data from database.
                         lock (biotaCacheMutex)
-                        {
                             biotaCache.Remove(biota.Id);
-                        }
-                        
+
                         return true;
                     }
 
@@ -186,7 +181,6 @@ namespace ACE.Database
                 }
             }
 
-            // Biota does not exist in the cache
             using (var context = new ShardDbContext())
             {
                 var existingBiota = base.GetBiota(context, biota.Id);
@@ -211,7 +205,12 @@ namespace ACE.Database
                 }
 
                 if (DoSaveBiota(context, existingBiota))
+                {
+                    lock (biotaCacheMutex)
+                        biotaCache.Remove(biota.Id);
+
                     return true;
+                }
 
                 return false;
             }
@@ -220,21 +219,17 @@ namespace ACE.Database
         public override bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
         {
             var biotaList = biotas.ToList();
-            
-            // Call base implementation to save to database
             var result = base.SaveBiotasInParallel(biotas);
-            
+
             if (result)
             {
-                // Invalidate cache entries for all saved biotas
-                // Entity Framework objects may have stale data after SaveChanges() without explicit reload
                 lock (biotaCacheMutex)
                 {
                     foreach (var (biota, _) in biotaList)
                         biotaCache.Remove(biota.Id);
                 }
             }
-            
+
             return result;
         }
 
