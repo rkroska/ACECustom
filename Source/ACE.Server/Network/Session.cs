@@ -70,16 +70,23 @@ namespace ACE.Server.Network
         /// The time at which the BeginDDD message was sent to the client. Used to determine when to start processing dddDataQueue initially.
         /// </summary>
         public DateTime BeginDDDSentTime;
-        /// <summary>
-        /// Queue for data files missing at time of connection (Portal/Cell/Language DAT), and data files requested by client (Cell DAT)
-        /// </summary>
-        private ConcurrentQueue<(uint DatFileId, DatDatabaseType DatDatabaseType)> dddDataQueue;
-        /// <summary>
-        /// The rate at which ProcessDDDQueue executes (and sends DDD patch data out to client)
-        /// </summary>
-        private static readonly RateLimiter dddDataQueueRateLimiter = new RateLimiter(1000, TimeSpan.FromMinutes(1));
-
-        /// <summary>
+    /// <summary>
+    /// Queue for data files missing at time of connection (Portal/Cell/Language DAT), and data files requested by client (Cell DAT)
+    /// </summary>
+    private ConcurrentQueue<(uint DatFileId, DatDatabaseType DatDatabaseType)> dddDataQueue;
+    /// <summary>
+    /// The rate at which ProcessDDDQueue executes (and sends DDD patch data out to client)
+    /// Instance-based to avoid contention between sessions
+    /// </summary>
+    private RateLimiter dddDataQueueRateLimiter;
+    /// <summary>
+    /// Thread-safe lazy initializer for DDD queue and rate limiter to prevent race conditions
+    /// </summary>
+    private readonly Lazy<(ConcurrentQueue<(uint, DatDatabaseType)> queue, RateLimiter rateLimiter)> dddResources;
+    /// <summary>
+    /// Flag to track if DDD resources have been initialized (for cleanup purposes)
+    /// </summary>
+    private volatile bool dddResourcesInitialized;        /// <summary>
         /// Rate limiter for /passwd command
         /// </summary>
         public DateTime LastPassTime { get; set; }
@@ -102,13 +109,20 @@ namespace ACE.Server.Network
 
         public DateTime LoginTime { get; set; }
 
-        public Session(ConnectionListener connectionListener, IPEndPoint endPoint, ushort clientId, ushort serverId)
-        {
-            EndPoint = endPoint;
-            Network = new NetworkSession(this, connectionListener, clientId, serverId);
-        }
-
-
+    public Session(ConnectionListener connectionListener, IPEndPoint endPoint, ushort clientId, ushort serverId)
+    {
+        EndPoint = endPoint;
+        Network = new NetworkSession(this, connectionListener, clientId, serverId);
+        
+        // Initialize lazy DDD resources with thread-safe creation
+        dddResources = new Lazy<(ConcurrentQueue<(uint, DatDatabaseType)>, RateLimiter)>(
+            () =>
+            {
+                dddResourcesInitialized = true;
+                return (new ConcurrentQueue<(uint, DatDatabaseType)>(), new RateLimiter(1000, TimeSpan.FromMinutes(1)));
+            },
+            LazyThreadSafetyMode.ExecutionAndPublication);
+    }
         private bool CheckState(ClientPacket packet)
         {
             if (packet.Header.HasFlag(PacketHeaderFlags.LoginRequest) && State != SessionState.AuthLoginRequest)
@@ -353,9 +367,20 @@ namespace ACE.Server.Network
                 // At this point, if the player was on a landblock, they'll still exist on that landblock until the logout animation completes (~6s).
             }
 
-            NetworkManager.RemoveSession(this);
+        NetworkManager.RemoveSession(this);
 
-            // This is a temp fix to mark the Session.Network portion of the Session as released
+        // Clean up DDD resources to prevent memory leaks
+        if (dddResourcesInitialized)
+        {
+            if (dddDataQueue != null)
+            {
+                while (dddDataQueue.TryDequeue(out _)) { }
+                dddDataQueue = null;
+            }
+            dddDataQueueRateLimiter = null;
+        }
+        BeginDDDSent = false;
+        BeginDDDSentTime = DateTime.MinValue;            // This is a temp fix to mark the Session.Network portion of the Session as released
             // What this means is that we will release any network related resources, as well as avoid taking on additional resources
             // In the future, we should set Network to null and funnel Network communication through Session, instead of accessing Session.Network directly.
             Network.ReleaseResources();
@@ -376,17 +401,19 @@ namespace ACE.Server.Network
             Network.EnqueueSend(worldBroadcastMessage);
         }
 
-        /// <summary>
-        /// This will enqueue a file to be sent by ProcessDDDQueue.
-        /// </summary>
-        public bool AddToDDDQueue(uint datFileId, DatDatabaseType datDatabaseType)
-        {
-            dddDataQueue ??= new ConcurrentQueue<(uint, DatDatabaseType)>();
-            dddDataQueue.Enqueue((datFileId, datDatabaseType));
-            return true;
-        }
-
-        /// <summary>
+    /// <summary>
+    /// This will enqueue a file to be sent by ProcessDDDQueue.
+    /// </summary>
+    public bool AddToDDDQueue(uint datFileId, DatDatabaseType datDatabaseType)
+    {
+        // Thread-safe lazy initialization - only one thread will create the instances
+        var resources = dddResources.Value;
+        dddDataQueue = resources.queue;
+        dddDataQueueRateLimiter = resources.rateLimiter;
+        
+        dddDataQueue.Enqueue((datFileId, datDatabaseType));
+        return true;
+    }        /// <summary>
         /// This will Network.EnqueueSend queued data files from DDDManager/DDDHandler.
         /// </summary>
         private void ProcessDDDQueue()

@@ -47,6 +47,12 @@ namespace ACE.Database
 
             foreach (var kvp in biotaCache)
             {
+                if (kvp.Value == null || kvp.Value.CachedObject == null)
+                {
+                    removals.Add(kvp.Key);
+                    continue;
+                }
+
                 if (ObjectGuid.IsPlayer(kvp.Key))
                 {
                     if (kvp.Value.LastSeen + PlayerBiotaRetentionTime < DateTime.UtcNow)

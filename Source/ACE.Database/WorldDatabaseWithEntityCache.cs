@@ -279,24 +279,34 @@ namespace ACE.Database
                 {
                     using (var context = new WorldDbContext())
                     {
-                        var results = context.Weenie
+                        // Get random sample of ClassIds first to avoid loading all weenies
+                        var allIds = context.Weenie
                             .AsNoTracking()
                             .Where(r => r.Type == weenieTypeId)
+                            .Select(r => r.ClassId)
                             .ToList();
 
                         weenies = new List<ACE.Entity.Models.Weenie>();
 
-                        if (results.Count == 0)
+                        if (allIds.Count == 0)
                             return weenies;
 
-                        for (int i = 0; i < count; i++) //todo: convert to parallel.for
+                        // Select random IDs then load only those weenies
+                        var randomIds = new HashSet<uint>();
+                        for (int i = 0; i < Math.Min(count, allIds.Count); i++)
                         {
-                            var index = ThreadSafeRandom.Next(0, results.Count - 1);
-
-                            var weenie = GetCachedWeenie(results[index].ClassId);
-
-                            weenies.Add(weenie);
+                            var index = ThreadSafeRandom.Next(0, allIds.Count - 1);
+                            randomIds.Add(allIds[index]);
                         }
+
+                        foreach (var id in randomIds)
+                        {
+                            var weenie = GetCachedWeenie(id);
+                            if (weenie != null)
+                                weenies.Add(weenie);
+                        }
+
+
 
                         return weenies;
                     }

@@ -1,10 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
 namespace ACE.Server.Network
 {
-    internal class MessageBuffer
+    internal class MessageBuffer : IDisposable
     {
         private List<ClientPacketFragment> fragments = new List<ClientPacketFragment>();
 
@@ -36,16 +37,30 @@ namespace ACE.Server.Network
         public ClientMessage TryGetMessage()
         {
             fragments.Sort(delegate (ClientPacketFragment x, ClientPacketFragment y) { return x.Header.Index - y.Header.Index; });
-            MemoryStream stream = new MemoryStream();
-            BinaryWriter writer = new BinaryWriter(stream);
-            foreach (ClientPacketFragment fragment in fragments)
+            using (MemoryStream stream = new MemoryStream())
+            using (BinaryWriter writer = new BinaryWriter(stream))
             {
-                writer.Write(fragment.Data);
+                foreach (ClientPacketFragment fragment in fragments)
+                {
+                    writer.Write(fragment.Data);
+                }
+                stream.Seek(0, SeekOrigin.Begin);
+                if (stream.Length < 4) // ClientMessage must be a minimum of 4 bytes in length
+                    return null;
+                
+                // Copy to new array to avoid referencing disposed stream
+                byte[] messageData = stream.ToArray();
+                return new ClientMessage(messageData);
             }
-            stream.Seek(0, SeekOrigin.Begin);
-            if (stream.Length < 4) // ClientMessage must be a minimum of 4 bytes in length
-                return null;
-            return new ClientMessage(stream);
+        }
+
+        public void Dispose()
+        {
+            if (fragments != null)
+            {
+                fragments.Clear();
+                fragments = null;
+            }
         }
     }
 }
