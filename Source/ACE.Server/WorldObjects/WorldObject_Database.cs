@@ -173,7 +173,6 @@ namespace ACE.Server.WorldObjects
                 var locationPos = positionCache.TryGetValue(PositionType.Location, out var loc) ? loc : null;
                 var locationProperty = Location; // Read through property getter
 #if DEBUG
-                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                 log.Debug($"[SAVE DEBUG] {itemInfo} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
 #endif
                 
@@ -195,233 +194,47 @@ namespace ACE.Server.WorldObjects
 #if DEBUG
                     if (this is Player && kvp.Key == PositionType.Location)
                     {
-                        var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                         log.Debug($"[SAVE DEBUG] {itemInfo} Synced Location position to biota | Position={kvp.Value}");
                     }
 #endif
                 }
             }
 
-            // Ensure ContainerId is synced from property to biota before save
-            // This is critical for items being moved between containers, especially from player inventory to side packs
-            // Get the actual current ContainerId by checking the Container property first (most authoritative)
-            // Then check the property getter, then sync to biota
-            // NOTE: We do NOT modify ContainerId property here to avoid setting ChangesDetected during save
-            // Instead, we directly update the biota to match Container
-            uint? propertyContainerId = null;
-            uint? propertyGetterContainerId = ContainerId; // Always read the property getter for comparison
-#if DEBUG
-            string containerInfo = "null";
-#endif
-            
+            // Ensure ContainerId is set correctly before save (following Vendor's approach)
+            // Container property is the most authoritative - use Biota.Id (not Guid.Full)
+            // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must be Biota.Id
+            // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID
+            uint? expectedContainerId = null;
             if (Container != null)
             {
-                // Container property is the most authoritative - use Biota.Id (not Guid.Full)
-                // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must be Biota.Id
-                // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID
-                propertyContainerId = Container.Biota.Id;
-#if DEBUG
-                containerInfo = $"{Container.Name} (0x{Container.Guid})";
-                
-                // Log mismatch but don't fix ContainerId property during save (it would set ChangesDetected)
-                // Instead, we'll update the biota directly to match Container
-                if (propertyGetterContainerId != Container.Biota.Id)
-                {
-                    var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                    log.Warn($"[SAVE DEBUG] {itemInfo} ContainerId property mismatch detected | ContainerId property={propertyGetterContainerId} (0x{(propertyGetterContainerId ?? 0):X8}) | Container.Biota.Id={Container.Biota.Id} (0x{Container.Biota.Id:X8}) | Will sync biota directly (not fixing property to avoid ChangesDetected)");
-                }
-#endif
+                expectedContainerId = Container.Biota.Id;
             }
-            else
+            else if (WielderId.HasValue)
             {
-                // Fall back to property getter if Container is null
-                // BUT: If item is equipped (has Wielder), ContainerId should be cleared
+                // Item is equipped - ContainerId should be null/cleared
                 // Equipped items use Wielder, not ContainerId
-                if (WielderId.HasValue)
-                {
-                    // Item is equipped - ContainerId should be null/cleared
-                    propertyContainerId = null;
-#if DEBUG
-                    containerInfo = $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))";
-#endif
-                }
-                else
-                {
-                    // Item is not in a container and not equipped - might be on ground or orphaned
-                    propertyContainerId = propertyGetterContainerId;
-                }
+                expectedContainerId = null;
             }
+            // If Container is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
             
-#if DEBUG
-            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-            log.Debug($"[SAVE DEBUG] {itemInfo} ContainerId sync check | Container={containerInfo} | Container.Guid={propertyContainerId} (0x{(propertyContainerId ?? 0):X8}) | ContainerId property={propertyGetterContainerId} (0x{(propertyGetterContainerId ?? 0):X8})");
-#endif
-            
-            // Always force-update the biota with the current ContainerId value
-            // This ensures the biota matches the actual container, even if there was a timing issue
-            BiotaDatabaseLock.EnterWriteLock();
-            try
+            // Set ContainerId property directly (like Vendor does) - this updates biota and sets ChangesDetected
+            // Since we're already saving, we'll clear ChangesDetected after if needed
+            var hadChangesBeforeContainerId = ChangesDetected;
+            if (ContainerId != expectedContainerId)
             {
-                uint? biotaContainerIdValue = null;
-                if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var biotaContainerId))
-                {
-                    biotaContainerIdValue = biotaContainerId;
-                }
-                
+                ContainerId = expectedContainerId;
 #if DEBUG
-                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                log.Debug($"[SAVE DEBUG] {itemInfo} Biota ContainerId check | Biota ContainerId={biotaContainerIdValue} (0x{(biotaContainerIdValue ?? 0):X8}) | Property ContainerId={propertyContainerId} (0x{(propertyContainerId ?? 0):X8}) | Match={propertyContainerId == biotaContainerIdValue}");
+                log.Debug($"[SAVE DEBUG] {itemInfo} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
 #endif
-                
-                // Always update biota to match the current container, even if they appear to match
-                // This handles race conditions and ensures correctness
-                if (propertyContainerId != biotaContainerIdValue)
-                {
-                    // Need to sync - update biota to match property
-                    if (propertyContainerId.HasValue)
-                    {
-                        Biota.SetProperty(PropertyInstanceId.Container, propertyContainerId.Value, BiotaDatabaseLock, out var changed);
-#if DEBUG
-                        log.Debug($"[SAVE DEBUG] {itemInfo} SYNCED ContainerId | Changed={changed} | From biota={biotaContainerIdValue} (0x{(biotaContainerIdValue ?? 0):X8}) | To container={propertyContainerId} (0x{propertyContainerId:X8})");
-#endif
-                    }
-                    else
-                    {
-                        Biota.TryRemoveProperty(PropertyInstanceId.Container, BiotaDatabaseLock);
-#if DEBUG
-                        log.Debug($"[SAVE DEBUG] {itemInfo} REMOVED ContainerId | Biota had={biotaContainerIdValue} (0x{(biotaContainerIdValue ?? 0):X8}) | Container is null");
-#endif
-                    }
-                }
-#if DEBUG
-                else
-                {
-                    // Even if they match, log for debugging
-                    log.Debug($"[SAVE DEBUG] {itemInfo} ContainerId already synced | ContainerId={propertyContainerId} (0x{(propertyContainerId ?? 0):X8})");
-                }
-                
-                // Verify the biota was updated correctly
-                uint? verifyBiotaContainerId = null;
-                if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var verifyValue))
-                {
-                    verifyBiotaContainerId = verifyValue;
-                }
-                log.Debug($"[SAVE DEBUG] {itemInfo} After sync verification | Biota ContainerId={verifyBiotaContainerId} (0x{(verifyBiotaContainerId ?? 0):X8}) | Expected={propertyContainerId} (0x{(propertyContainerId ?? 0):X8}) | Match={verifyBiotaContainerId == propertyContainerId}");
-#endif
-            }
-            finally
-            {
-                BiotaDatabaseLock.ExitWriteLock();
+                // Clear ChangesDetected if we just set it (we're already saving)
+                if (!hadChangesBeforeContainerId)
+                    ChangesDetected = false;
             }
 
-            // Ensure Wielder is synced from property to biota before save
-            // This is critical for equipped items where Wielder must match the player
-            var propertyWielder = WielderId;
-            uint? biotaWielder = null;
-            BiotaDatabaseLock.EnterReadLock();
-            try
-            {
-                if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Wielder, out var wielderValue))
-                    biotaWielder = wielderValue;
-            }
-            finally
-            {
-                BiotaDatabaseLock.ExitReadLock();
-            }
-
-            if (propertyWielder != biotaWielder)
-            {
-                BiotaDatabaseLock.EnterWriteLock();
-                try
-                {
-                    if (propertyWielder.HasValue)
-                    {
-                        Biota.SetProperty(PropertyInstanceId.Wielder, propertyWielder.Value, BiotaDatabaseLock, out var changed);
-#if DEBUG
-                        if (changed)
-                        {
-                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                            log.Debug($"[SAVE DEBUG] {itemInfo} SYNCED Wielder | Changed={changed} | From biota={biotaWielder} (0x{(biotaWielder ?? 0):X8}) | To property={propertyWielder} (0x{propertyWielder:X8})");
-                        }
-#endif
-                    }
-                    else
-                    {
-                        Biota.TryRemoveProperty(PropertyInstanceId.Wielder, BiotaDatabaseLock);
-#if DEBUG
-                        var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                        log.Debug($"[SAVE DEBUG] {itemInfo} REMOVED Wielder | Biota had={biotaWielder} (0x{(biotaWielder ?? 0):X8})");
-#endif
-                    }
-                }
-                finally
-                {
-                    BiotaDatabaseLock.ExitWriteLock();
-                }
-            }
-#if DEBUG
-            else if (propertyWielder.HasValue)
-            {
-                // Even if they match, log for debugging (but only if Wielder has a value to avoid spam)
-                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                log.Debug($"[SAVE DEBUG] {itemInfo} Wielder already synced | Wielder={propertyWielder} (0x{propertyWielder:X8})");
-            }
-#endif
-
-            // Ensure StackSize is synced from property to biota before save
-            // This is critical for stack splits where StackSize changes but the biota might have stale data from cache
-            // Similar to ContainerId sync, we need to ensure the biota has the current StackSize value
-            var propertyStackSize = StackSize;
-            int? biotaStackSize = null;
-            BiotaDatabaseLock.EnterReadLock();
-            try
-            {
-                if (Biota.PropertiesInt != null && Biota.PropertiesInt.TryGetValue(PropertyInt.StackSize, out var stackSizeValue))
-                    biotaStackSize = stackSizeValue;
-            }
-            finally
-            {
-                BiotaDatabaseLock.ExitReadLock();
-            }
-
-            if (propertyStackSize != biotaStackSize)
-            {
-                BiotaDatabaseLock.EnterWriteLock();
-                try
-                {
-                    if (propertyStackSize.HasValue)
-                    {
-                        Biota.SetProperty(PropertyInt.StackSize, propertyStackSize.Value, BiotaDatabaseLock, out var changed);
-#if DEBUG
-                        if (changed)
-                        {
-                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                            log.Debug($"[SAVE DEBUG] {itemInfo} SYNCED StackSize | Changed={changed} | From biota={biotaStackSize} | To property={propertyStackSize}");
-                        }
-#endif
-                    }
-                    else
-                    {
-                        Biota.TryRemoveProperty(PropertyInt.StackSize, BiotaDatabaseLock);
-#if DEBUG
-                        var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                        log.Debug($"[SAVE DEBUG] {itemInfo} REMOVED StackSize | Biota had={biotaStackSize}");
-#endif
-                    }
-                }
-                finally
-                {
-                    BiotaDatabaseLock.ExitWriteLock();
-                }
-            }
-#if DEBUG
-            else if (propertyStackSize.HasValue)
-            {
-                // Even if they match, log for debugging (but only if StackSize has a value to avoid spam)
-                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                log.Debug($"[SAVE DEBUG] {itemInfo} StackSize already synced | StackSize={propertyStackSize}");
-            }
-#endif
+            // WielderId and StackSize: These properties are already set correctly when items are equipped/stacked
+            // Unlike ContainerId, we don't have a "source of truth" object to compare against, so we trust
+            // that they were set correctly earlier (e.g., when item was equipped or stack was split)
+            // Setting them here would be redundant and they're already correct from their respective operations
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
@@ -449,7 +262,6 @@ namespace ACE.Server.WorldObjects
                     {
                         finalBiotaContainerId = finalValue;
                     }
-                    var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
                     string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
                     log.Debug($"[SAVE DEBUG] {itemInfo} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
                 }
@@ -492,8 +304,8 @@ namespace ACE.Server.WorldObjects
                             {
                                 savedBiotaContainerId = savedValue;
                             }
-                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                            log.Debug($"[SAVE DEBUG] {itemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
+                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                            log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
                         }
                         finally
                         {
@@ -508,8 +320,8 @@ namespace ACE.Server.WorldObjects
                             {
                                 ChangesDetected = true;
 #if DEBUG
-                                var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                                log.Warn($"[SAVE DEBUG] {itemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+                                var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                                log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
 #endif
                             }
                             
@@ -527,8 +339,8 @@ namespace ACE.Server.WorldObjects
                         {
                             ChangesDetected = true;
 #if DEBUG
-                            var itemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
-                            log.Warn($"[SAVE DEBUG] {itemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
+                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                            log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
 #endif
                         }
                         log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
