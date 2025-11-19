@@ -85,18 +85,22 @@ namespace ACE.Server.WorldObjects
 
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
+            // Track player ChangesDetected state at batch collection time
+            var playerHadChanges = ChangesDetected;
+
             // Save player biota - this sets SaveInProgress for the player
             SaveBiotaToDatabase(false);
             biotas.Add((Biota, BiotaDatabaseLock));
 
-            // Track which items were in the batch so we can restore ChangesDetected on failure
+            // Get all possessions once and reuse for batch collection and flag clearing
+            var allPossessions = GetAllPossessions();
             var itemsInBatch = new System.Collections.Generic.HashSet<uint>();
             
             // For possessions, prepare them for batch save
             // We call SaveBiotaToDatabase(false) to sync position cache and prepare the biota,
             // but we don't want to block individual saves with newer changes, so we'll handle
             // SaveInProgress differently - the individual save logic will check for stale data
-            foreach (var possession in GetAllPossessions())
+            foreach (var possession in allPossessions)
             {
                 if (possession.ChangesDetected)
                 {
@@ -119,25 +123,28 @@ namespace ACE.Server.WorldObjects
                 clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
                 {
                     SaveInProgress = false;
-                    foreach (var possession in GetAllPossessions())
+                    foreach (var possession in allPossessions)
                     {
-                        possession.SaveInProgress = false;
+                        if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
+                            possession.SaveInProgress = false;
                     }
                     
                     if (result)
                     {
                         // Clear ChangesDetected for successfully saved items that were in the batch
                         // Items that weren't in the batch but have ChangesDetected=true are newer changes that should be preserved
-                        foreach (var possession in GetAllPossessions())
+                        foreach (var possession in allPossessions)
                         {
-                            if (itemsInBatch.Contains(possession.Guid.Full))
+                            if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             {
                                 // Item was in the batch - clear ChangesDetected since it was successfully saved
                                 possession.ChangesDetected = false;
                             }
-                            // Items not in itemsInBatch might have newer changes (ChangesDetected=true) - preserve them
                         }
-                        ChangesDetected = false;
+                        // Only clear player ChangesDetected if it was true at batch time
+                        // (we saved those changes; if new changes occurred, they'll set it back to true)
+                        if (playerHadChanges)
+                            ChangesDetected = false;
                         
                         if (duringLogout)
                         {
@@ -150,16 +157,17 @@ namespace ACE.Server.WorldObjects
                     {
                         // Batch save failed - restore ChangesDetected for items that were in the batch
                         // to prevent data loss
-                        foreach (var possession in GetAllPossessions())
+                        foreach (var possession in allPossessions)
                         {
-                            if (itemsInBatch.Contains(possession.Guid.Full))
+                            if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             {
                                 // Item was in the batch - restore ChangesDetected so it can be retried
                                 possession.ChangesDetected = true;
                                 log.Warn($"[SAVE] Batch save failed for {Name} - restored ChangesDetected for {possession.Name} (0x{possession.Guid}) to prevent data loss");
                             }
                         }
-                        ChangesDetected = true;
+                        // Restore player ChangesDetected to the value it had at batch time
+                        ChangesDetected = playerHadChanges;
                         
                         // This will trigger a boot on next player tick
                         BiotaSaveFailed = true;

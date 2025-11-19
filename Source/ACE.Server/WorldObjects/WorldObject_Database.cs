@@ -109,53 +109,47 @@ namespace ACE.Server.WorldObjects
             
             // For individual saves, check if this item belongs to a player with a batch save in progress
             // If the item has newer changes (ChangesDetected = true), we want to allow the save to proceed
-            // even if SaveInProgress is true (set by the batch save), so check this BEFORE the SaveInProgress check
+            // even if SaveInProgress is true (set by the batch save)
             bool allowSaveDespiteInProgress = false;
-            if (enqueueSave && this.Container is Player player && player.SaveInProgress)
+            if (enqueueSave && ChangesDetected && this.Container is Player player && player.SaveInProgress)
             {
-                // Check if item has newer changes (ChangesDetected will be true if there are new changes after batch collection)
-                if (ChangesDetected)
+                // Get the current ContainerId from the property (in-memory state)
+                var staleCheckPropertyContainerId = ContainerId;
+                
+                // Get the ContainerId from the biota (what's currently in the database)
+                uint? staleCheckBiotaContainerId = null;
+                BiotaDatabaseLock.EnterReadLock();
+                try
                 {
-                    // Get the current ContainerId from the property (in-memory state)
-                    var staleCheckPropertyContainerId = ContainerId;
-                    
-                    // Get the ContainerId from the biota (what's currently in the database)
-                    uint? staleCheckBiotaContainerId = null;
-                    BiotaDatabaseLock.EnterReadLock();
-                    try
-                    {
-                        if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var value))
-                            staleCheckBiotaContainerId = value;
-                    }
-                    finally
-                    {
-                        BiotaDatabaseLock.ExitReadLock();
-                    }
-                    
-                    // If property says player GUID but biota says side pack GUID, this is stale data
-                    // The batch save will have the correct side pack GUID, so skip this individual save
-                    // to avoid overwriting correct data with stale data
-                    // BUT: If property says side pack GUID and biota says player GUID, this is a legitimate move
-                    // from player inventory to side pack - allow it to proceed
-                    if (staleCheckPropertyContainerId.HasValue && staleCheckPropertyContainerId.Value == player.Guid.Full)
-                    {
-                        if (staleCheckBiotaContainerId.HasValue && staleCheckBiotaContainerId.Value != player.Guid.Full)
-                        {
-                            // This individual save would overwrite correct side pack ContainerId with stale player GUID
-                            // Skip it - the batch save will save the correct state
-                            log.Debug($"[SAVE] Skipping individual save for {Name} (0x{Guid}) - would overwrite correct ContainerId {staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}) with stale player GUID");
-                            return;
-                        }
-                    }
-                    // If property says side pack GUID and biota says player GUID, this is a legitimate move
-                    // from player inventory to side pack - allow it to proceed (don't skip)
-                    
-                    // Item has newer changes and doesn't have stale ContainerId data
-                    // Allow the save to proceed even if SaveInProgress is true
-                    // It will queue after the batch save and save the newer state
-                    allowSaveDespiteInProgress = true;
-                    log.Debug($"[SAVE] Allowing individual save for {Name} (0x{Guid}) during player batch save - has newer changes (Property ContainerId={staleCheckPropertyContainerId}, Biota ContainerId={staleCheckBiotaContainerId})");
+                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var value))
+                        staleCheckBiotaContainerId = value;
                 }
+                finally
+                {
+                    BiotaDatabaseLock.ExitReadLock();
+                }
+                
+                // If property says player GUID but biota says side pack GUID, this is stale data
+                // The batch save will have the correct side pack GUID, so skip this individual save
+                // to avoid overwriting correct data with stale data
+                // BUT: If property says side pack GUID and biota says player GUID, this is a legitimate move
+                // from player inventory to side pack - allow it to proceed
+                if (staleCheckPropertyContainerId.HasValue && staleCheckPropertyContainerId.Value == player.Guid.Full &&
+                    staleCheckBiotaContainerId.HasValue && staleCheckBiotaContainerId.Value != player.Guid.Full)
+                {
+                    // This individual save would overwrite correct side pack ContainerId with stale player GUID
+                    // Skip it - the batch save will save the correct state
+                    log.Debug($"[SAVE] Skipping individual save for {Name} (0x{Guid}) - would overwrite correct ContainerId {staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}) with stale player GUID");
+                    return;
+                }
+                // If property says side pack GUID and biota says player GUID, this is a legitimate move
+                // from player inventory to side pack - allow it to proceed (don't skip)
+                
+                // Item has newer changes and doesn't have stale ContainerId data
+                // Allow the save to proceed even if SaveInProgress is true
+                // It will queue after the batch save and save the newer state
+                allowSaveDespiteInProgress = true;
+                log.Debug($"[SAVE] Allowing individual save for {Name} (0x{Guid}) during player batch save - has newer changes (Property ContainerId={staleCheckPropertyContainerId}, Biota ContainerId={staleCheckBiotaContainerId})");
             }
             
             // Detect concurrent saves at item level

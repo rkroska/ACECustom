@@ -1468,16 +1468,9 @@ namespace ACE.Server.WorldObjects
 
             var prevContainer = item.Container;
             
-            // Log the move operation for debugging
-            var prevContainerGuid = prevContainer?.Guid.Full ?? 0;
-            var prevContainerInfo = prevContainer is Player prevPlayer ? $"Player {prevPlayer.Name}" : $"{prevContainer?.Name ?? "null"} (0x{prevContainerGuid:X8})";
-            var targetContainerGuid = container?.Guid.Full ?? 0;
-            var targetContainerInfo = container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{targetContainerGuid:X8})";
-            var itemRootGuid = itemRootOwner?.Guid.Full ?? 0;
-            var itemRootInfo = itemRootOwner is Player itemRootPlayer ? $"Player {itemRootPlayer.Name}" : $"{itemRootOwner?.Name ?? "null"} (0x{itemRootGuid:X8})";
-            var containerRootGuid = containerRootOwner?.Guid.Full ?? 0;
-            var containerRootInfo = containerRootOwner is Player containerRootPlayer ? $"Player {containerRootPlayer.Name}" : $"{containerRootOwner?.Name ?? "null"} (0x{containerRootGuid:X8})";
-            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer START for {item.Name} (0x{item.Guid}) | ItemRootOwner={itemRootInfo} | ContainerRootOwner={containerRootInfo} | Target Container={targetContainerInfo} | PrevContainer={prevContainerInfo} | ItemWasEquipped={itemWasEquipped}");
+#if DEBUG
+            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer START for {item.Name} (0x{item.Guid}) | ItemRootOwner={(itemRootOwner is Player itemRootPlayer ? $"Player {itemRootPlayer.Name}" : $"{itemRootOwner?.Name ?? "null"} (0x{(itemRootOwner?.Guid.Full ?? 0):X8})")} | ContainerRootOwner={(containerRootOwner is Player containerRootPlayer ? $"Player {containerRootPlayer.Name}" : $"{containerRootOwner?.Name ?? "null"} (0x{(containerRootOwner?.Guid.Full ?? 0):X8})")} | Target Container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | PrevContainer={(prevContainer is Player prevPlayer ? $"Player {prevPlayer.Name}" : $"{prevContainer?.Name ?? "null"} (0x{(prevContainer?.Guid.Full ?? 0):X8})")} | ItemWasEquipped={itemWasEquipped}");
+#endif
 
             OnPutItemInContainer(item.Guid.Full, container.Guid.Full, placement);
 
@@ -1522,7 +1515,9 @@ namespace ACE.Server.WorldObjects
 
             var burdenCheck = itemRootOwner != this && containerRootOwner == this;
             
-            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer calling TryAddToInventory for {item.Name} (0x{item.Guid}) | Target container={targetContainerInfo} | BurdenCheck={burdenCheck} | Placement={placement}");
+#if DEBUG
+            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer calling TryAddToInventory for {item.Name} (0x{item.Guid}) | Target container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | BurdenCheck={burdenCheck} | Placement={placement}");
+#endif
 
             if (!container.TryAddToInventory(item, placement, true, burdenCheck))
             {
@@ -1561,10 +1556,9 @@ namespace ACE.Server.WorldObjects
             // the database must be synced immediately
             if (prevContainer != null && !prevContainer.Stuck && container != prevContainer)
             {
-                var prevContainerInfo2 = prevContainer is Player prevPlayer2 ? $"Player {prevPlayer2.Name}" : $"{prevContainer.Name} (0x{prevContainer.Guid})";
-                var newContainerInfo = container is Player newPlayer ? $"Player {newPlayer.Name}" : $"{container.Name} (0x{container.Guid})";
-                var itemContainerGuid = item.Container?.Guid.Full ?? 0;
-                log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer triggering save for {item.Name} (0x{item.Guid}) | Moving from {prevContainerInfo2} to {newContainerInfo} | Item ContainerId={item.ContainerId} (0x{(item.ContainerId ?? 0):X8}) | Item Container={item.Container?.Name ?? "null"} (0x{itemContainerGuid:X8})");
+#if DEBUG
+                log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer triggering save for {item.Name} (0x{item.Guid}) | Moving from {(prevContainer is Player prevPlayer2 ? $"Player {prevPlayer2.Name}" : $"{prevContainer.Name} (0x{prevContainer.Guid})")} to {(container is Player newPlayer ? $"Player {newPlayer.Name}" : $"{container.Name} (0x{container.Guid})")} | Item ContainerId={item.ContainerId} (0x{(item.ContainerId ?? 0):X8}) | Item Container={item.Container?.Name ?? "null"} (0x{(item.Container?.Guid.Full ?? 0):X8})");
+#endif
                 item.SaveBiotaToDatabase();
             }
 

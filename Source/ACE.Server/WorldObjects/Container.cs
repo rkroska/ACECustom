@@ -186,6 +186,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void SortWorldObjectsIntoInventory(IList<WorldObject> worldObjects)
         {
+            var player = this as Player;
+
             // This will pull out all of our main pack items and side slot items (foci & containers)
             for (int i = worldObjects.Count - 1; i >= 0; i--)
             {
@@ -193,7 +195,7 @@ namespace ACE.Server.WorldObjects
                 var thisContainerId = Biota.Id;
                 var matches = itemContainerId == thisContainerId;
                 
-                if (this is Player)
+                if (player != null)
                 {
                     log.Debug($"[LOAD DEBUG] SortWorldObjectsIntoInventory checking {worldObjects[i].Name} (0x{worldObjects[i].Guid}) | Item ContainerId={itemContainerId} (0x{itemContainerId:X8}) | This ContainerId={thisContainerId} (0x{thisContainerId:X8}) | Matches={matches}");
                 }
@@ -226,13 +228,13 @@ namespace ACE.Server.WorldObjects
             // All that should be left are side pack sub contents.
 
             var sideContainers = GetCachedSideContainers();
-            if (this is Player player)
+            if (player != null)
             {
                 log.Debug($"[LOAD DEBUG] Player {player.Name} has {sideContainers.Count} side containers, {worldObjects.Count} remaining items to sort");
             }
             foreach (var container in sideContainers)
             {
-                if (this is Player player2)
+                if (player != null)
                 {
                     log.Debug($"[LOAD DEBUG] Processing side container {container.Name} (0x{container.Guid}) | Biota.Id={container.Biota.Id} (0x{container.Biota.Id:X8}) | Remaining items={worldObjects.Count}");
                 }
@@ -241,9 +243,9 @@ namespace ACE.Server.WorldObjects
                 Value += container.Value; // This value includes the containers value itself + all child items
             }
             
-            if (this is Player player3 && worldObjects.Count > 0)
+            if (player != null && worldObjects.Count > 0)
             {
-                log.Warn($"[LOAD DEBUG] Player {player3.Name} has {worldObjects.Count} items that couldn't be sorted into any container:");
+                log.Warn($"[LOAD DEBUG] Player {player.Name} has {worldObjects.Count} items that couldn't be sorted into any container:");
                 foreach (var wo in worldObjects)
                 {
                     log.Warn($"[LOAD DEBUG]   - {wo.Name} (0x{wo.Guid}) | ContainerId={wo.ContainerId} (0x{(wo.ContainerId ?? 0):X8})");
@@ -668,14 +670,13 @@ namespace ACE.Server.WorldObjects
 
                         foreach (var sidePack in containers)
                         {
-                            var sidePackInfo = $"{sidePack.Name} (0x{sidePack.Guid})";
-                            log.Debug($"[SAVE DEBUG] TryAddToInventory trying side pack {sidePackInfo} for {itemInfo}");
+                            log.Debug($"[SAVE DEBUG] TryAddToInventory trying side pack {sidePack.Name} (0x{sidePack.Guid}) for {itemInfo}");
                             if (sidePack.TryAddToInventory(worldObject, out container, placementPosition, true))
                             {
                                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
                                 Value += (worldObject.Value ?? 0);
                                 
-                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePackInfo}");
+                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
                                 return true;
                             }
                         }
