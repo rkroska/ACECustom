@@ -117,13 +117,97 @@ namespace ACE.Server.WorldObjects
 
             var requestedTime = DateTime.UtcNow;
 
+            // CRITICAL: Invalidate biota cache for items being saved BEFORE queuing the save
+            // This prevents quick relogin from loading stale cached biota data
+            // If the player logs in quickly, GetBiota will fetch fresh from database instead of stale cache
+            // Note: DatabaseManager.Shard is SerializedShardDatabase, which wraps BaseDatabase (ShardDatabaseWithCaching)
+            if (DatabaseManager.Shard.BaseDatabase is ACE.Database.ShardDatabaseWithCaching cachingDb)
+            {
+                foreach (var (biota, _) in biotas)
+                {
+                    // Invalidate cache so subsequent GetBiota calls will fetch fresh from database
+                    // This is safe because we're about to save, so the database will have the correct data
+                    cachingDb.InvalidateBiotaCache(biota.Id);
+                }
+            }
+
+            // During logout, use async callback but ensure player is marked as saving to prevent quick relogin
+            // We don't block the logout thread to avoid crashes, but we ensure the player stays "online" 
+            // until save completes, which prevents login until save is done
+            if (duringLogout)
+            {
+                // Mark that logout save is in progress - this prevents login until save completes
+                // The player will remain "online" until SwitchPlayerFromOnlineToOffline is called in the callback
+                DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
+                {
+                    var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                    clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                    {
+                        SaveInProgress = false;
+                        // Re-fetch possessions to avoid stale references, but only process items in batch
+                        var currentPossessions = GetAllPossessions();
+                        foreach (var possession in currentPossessions)
+                        {
+                            if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
+                                possession.SaveInProgress = false;
+                        }
+                        
+                        if (result)
+                        {
+                            // Clear ChangesDetected for successfully saved items that were in the batch
+                            foreach (var possession in currentPossessions)
+                            {
+                                if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
+                                {
+                                    possession.ChangesDetected = false;
+                                }
+                            }
+                            if (playerHadChanges)
+                                ChangesDetected = false;
+                            
+                            // Don't set the player offline until they have been successfully saved
+                            // This prevents login until save completes
+                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                            log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTime).TotalMilliseconds:N0} ms to process the request.");
+                        }
+                        else
+                        {
+                            // Batch save failed - restore ChangesDetected for items that were in the batch
+                            foreach (var possession in currentPossessions)
+                            {
+                                if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
+                                {
+                                    possession.ChangesDetected = true;
+                                    log.Warn($"[SAVE] Batch save failed for {Name} - restored ChangesDetected for {possession.Name} (0x{possession.Guid}) to prevent data loss");
+                                }
+                            }
+                            ChangesDetected = playerHadChanges;
+                            
+                            // Still set player offline even on failure, but mark as failed
+                            // This will trigger a boot on next player tick if they log back in
+                            BiotaSaveFailed = true;
+                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                        }
+                    });
+                    clearFlagsAction.EnqueueChain();
+                }, this.Guid.ToString());
+                
+                // Return immediately - don't block the logout thread
+                // The player will remain "online" until the save callback completes and calls SwitchPlayerFromOnlineToOffline
+                // This prevents login until save is done, without blocking threads
+                return;
+            }
+
+            // For non-logout saves, use async callback as before
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
                 var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
                 clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
                 {
                     SaveInProgress = false;
-                    foreach (var possession in allPossessions)
+                    // Re-fetch possessions to avoid stale references, but only process items in batch
+                    var currentPossessions = GetAllPossessions();
+                    foreach (var possession in currentPossessions)
                     {
                         if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             possession.SaveInProgress = false;
@@ -133,7 +217,7 @@ namespace ACE.Server.WorldObjects
                     {
                         // Clear ChangesDetected for successfully saved items that were in the batch
                         // Items that weren't in the batch but have ChangesDetected=true are newer changes that should be preserved
-                        foreach (var possession in allPossessions)
+                        foreach (var possession in currentPossessions)
                         {
                             if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             {
@@ -157,7 +241,7 @@ namespace ACE.Server.WorldObjects
                     {
                         // Batch save failed - restore ChangesDetected for items that were in the batch
                         // to prevent data loss
-                        foreach (var possession in allPossessions)
+                        foreach (var possession in currentPossessions)
                         {
                             if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             {

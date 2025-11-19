@@ -2655,13 +2655,41 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameMessageCreateObject(newStack));
             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, newStack, container));
 
+            var oldStackSize = stack.StackSize;
             if (!AdjustStack(stack, -amount, stackFoundInContainer, stackRootOwner))
                 return false;
+
+            var newStackSize = stack.StackSize;
+            log.Debug($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) | Old StackSize={oldStackSize} | New StackSize={newStackSize} | Amount split={amount} | ChangesDetected={stack.ChangesDetected}");
 
             if (stackRootOwner == null)
                 EnqueueBroadcast(new GameMessageSetStackSize(stack));
             else
                 Session.Network.EnqueueSend(new GameMessageSetStackSize(stack));
+
+            // CRITICAL: Save the original stack immediately after reducing its StackSize
+            // This ensures the StackSize change is persisted to the database before logout
+            // Without this, the original stack might retain its old StackSize on reload if there's a cache issue
+            // However, if a batch save is in progress, skip the immediate save to avoid duplicate saves
+            // The batch save will handle it (and now syncs StackSize correctly)
+            if (stack.ChangesDetected)
+            {
+                // Only save immediately if not already in a batch save
+                // If batch save is in progress, the StackSize sync we added will ensure correct value is saved
+                if (!stack.SaveInProgress)
+                {
+                    log.Debug($"[STACK SPLIT] Saving original stack {stack.Name} (0x{stack.Guid}) with StackSize={newStackSize}");
+                    stack.SaveBiotaToDatabase();
+                }
+                else
+                {
+                    log.Debug($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) has SaveInProgress=true, skipping immediate save (will be handled by batch save with StackSize sync)");
+                }
+            }
+            else
+            {
+                log.Warn($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) does NOT have ChangesDetected=true after AdjustStack! StackSize={oldStackSize}->{newStackSize}");
+            }
 
             // Log chest deposit for splits from player to chest
             bool isChestDeposit = stackRootOwner == this && 

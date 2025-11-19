@@ -240,5 +240,15 @@ namespace ACE.Database
 
             return base.RemoveBiota(id);
         }
+
+        /// <summary>
+        /// Invalidates the biota cache for the specified ID without removing it from the database.
+        /// This is useful when we're about to save new data and want to prevent stale cache from being used.
+        /// </summary>
+        public void InvalidateBiotaCache(uint id)
+        {
+            lock (biotaCacheMutex)
+                biotaCache.Remove(id);
+        }
     }
 }

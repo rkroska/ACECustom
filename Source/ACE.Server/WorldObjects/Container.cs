@@ -704,20 +704,23 @@ namespace ACE.Server.WorldObjects
 
             worldObject.OwnerId = Guid.Full;
             var oldContainerId = worldObject.ContainerId;
-            worldObject.ContainerId = Guid.Full;
+            // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
+            // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
+            // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
+            worldObject.ContainerId = Biota.Id;
             worldObject.Container = this;
             worldObject.PlacementPosition = placementPosition; // Server only variable that we use to remember/restore the order in which items exist in a container
             
             // Verify ContainerId was set correctly
             var newContainerId = worldObject.ContainerId;
-            var itemContainerGuid = worldObject.Container?.Guid.Full ?? 0;
-            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Guid.Full} (0x{Guid.Full:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Item Container property={worldObject.Container?.Name ?? "null"} (0x{itemContainerGuid:X8})");
+            var containerBiotaId = Biota.Id;
+            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
             
-            // Ensure ContainerId property matches Container - if they don't match, fix it
-            if (worldObject.Container != null && worldObject.ContainerId != worldObject.Container.Guid.Full)
+            // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
+            if (worldObject.ContainerId != Biota.Id)
             {
-                log.Warn($"[SAVE DEBUG] TryAddToInventory ContainerId mismatch detected for {itemInfo} | ContainerId property={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Container.Guid={worldObject.Container.Guid.Full} (0x{worldObject.Container.Guid.Full:X8}) | Fixing...");
-                worldObject.ContainerId = worldObject.Container.Guid.Full;
+                log.Warn($"[SAVE DEBUG] TryAddToInventory ContainerId mismatch detected for {itemInfo} | ContainerId property={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Container.Biota.Id={Biota.Id} (0x{Biota.Id:X8}) | Fixing...");
+                worldObject.ContainerId = Biota.Id;
             }
 
             // Move all the existing items PlacementPosition over.
