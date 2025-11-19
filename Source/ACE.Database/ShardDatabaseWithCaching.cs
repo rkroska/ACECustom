@@ -177,9 +177,7 @@ namespace ACE.Database
 
                     if (DoSaveBiota(context, existingBiota))
                     {
-                        lock (biotaCacheMutex)
-                            biotaCache.Remove(biota.Id);
-
+                        InvalidateBiotaCache(biota.Id);
                         return true;
                     }
 
@@ -212,9 +210,7 @@ namespace ACE.Database
 
                 if (DoSaveBiota(context, existingBiota))
                 {
-                    lock (biotaCacheMutex)
-                        biotaCache.Remove(biota.Id);
-
+                    InvalidateBiotaCache(biota.Id);
                     return true;
                 }
 
@@ -225,7 +221,7 @@ namespace ACE.Database
         public override bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
         {
             var biotaList = biotas.ToList();
-            var result = base.SaveBiotasInParallel(biotas);
+            var result = base.SaveBiotasInParallel(biotaList);
 
             if (result)
             {
@@ -241,9 +237,7 @@ namespace ACE.Database
 
         public override bool RemoveBiota(uint id)
         {
-            lock (biotaCacheMutex)
-                biotaCache.Remove(id);
-
+            InvalidateBiotaCache(id);
             return base.RemoveBiota(id);
         }
 
