@@ -54,62 +54,34 @@ namespace ACE.Database
         /// </summary>
         public virtual Weenie GetWeenie(WorldDbContext context, uint weenieClassId)
         {
-            var weenie = context.Weenie.FirstOrDefault(r => r.ClassId == weenieClassId);
-
-            if (weenie == null)
-                return null;
-
-            // Base properties for every weenie (ACBaseQualities)
-            weenie.WeeniePropertiesBool = context.WeeniePropertiesBool.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesDID = context.WeeniePropertiesDID.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesFloat = context.WeeniePropertiesFloat.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesIID = context.WeeniePropertiesIID.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesInt = context.WeeniePropertiesInt.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesInt64 = context.WeeniePropertiesInt64.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesPosition = context.WeeniePropertiesPosition.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesString = context.WeeniePropertiesString.Where(r => r.ObjectId == weenie.ClassId).ToList();
-
-            var weenieType = (WeenieType)weenie.Type;
-
-            bool isCreature = weenieType == WeenieType.Creature || weenieType == WeenieType.Cow ||
-                              weenieType == WeenieType.Sentinel || weenieType == WeenieType.Admin ||
-                              weenieType == WeenieType.Vendor ||
-                              weenieType == WeenieType.CombatPet || weenieType == WeenieType.Pet;
-
-            //.Include(r => r.LandblockInstances)   // When we grab a weenie, we don't need to also know everywhere it exists in the world
-            //.Include(r => r.PointsOfInterest)     // I think these are just foreign keys for the POI table
-
-            weenie.WeeniePropertiesAnimPart = context.WeeniePropertiesAnimPart.Where(r => r.ObjectId == weenie.ClassId).ToList();
-
-            if (isCreature)
-            {
-                weenie.WeeniePropertiesAttribute = context.WeeniePropertiesAttribute.Where(r => r.ObjectId == weenie.ClassId).ToList();
-                weenie.WeeniePropertiesAttribute2nd = context.WeeniePropertiesAttribute2nd.Where(r => r.ObjectId == weenie.ClassId).ToList();
-
-                weenie.WeeniePropertiesBodyPart = context.WeeniePropertiesBodyPart.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            }
-
-            if (weenieType == WeenieType.Book)
-            {
-                weenie.WeeniePropertiesBook = context.WeeniePropertiesBook.FirstOrDefault(r => r.ObjectId == weenie.ClassId);
-                weenie.WeeniePropertiesBookPageData = context.WeeniePropertiesBookPageData.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            }
-
-            weenie.WeeniePropertiesCreateList = context.WeeniePropertiesCreateList.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesEmote = context.WeeniePropertiesEmote.Include(r => r.WeeniePropertiesEmoteAction).Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesEventFilter = context.WeeniePropertiesEventFilter.Where(r => r.ObjectId == weenie.ClassId).ToList();
-
-            weenie.WeeniePropertiesGenerator = context.WeeniePropertiesGenerator.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            weenie.WeeniePropertiesPalette = context.WeeniePropertiesPalette.Where(r => r.ObjectId == weenie.ClassId).ToList();
-
-            if (isCreature)
-            {
-                weenie.WeeniePropertiesSkill = context.WeeniePropertiesSkill.Where(r => r.ObjectId == weenie.ClassId).ToList();
-            }
-
-            weenie.WeeniePropertiesSpellBook = context.WeeniePropertiesSpellBook.Where(r => r.ObjectId == weenie.ClassId).OrderBy(i => i.Id).ToList();
-
-            weenie.WeeniePropertiesTextureMap = context.WeeniePropertiesTextureMap.Where(r => r.ObjectId == weenie.ClassId).ToList();
+            // Use eager loading with Include to avoid N+1 query problem
+            // AsSplitQuery() prevents Cartesian explosion with multiple collections
+            var weenie = context.Weenie
+                .Include(w => w.WeeniePropertiesBool)
+                .Include(w => w.WeeniePropertiesDID)
+                .Include(w => w.WeeniePropertiesFloat)
+                .Include(w => w.WeeniePropertiesIID)
+                .Include(w => w.WeeniePropertiesInt)
+                .Include(w => w.WeeniePropertiesInt64)
+                .Include(w => w.WeeniePropertiesPosition)
+                .Include(w => w.WeeniePropertiesString)
+                .Include(w => w.WeeniePropertiesAnimPart)
+                .Include(w => w.WeeniePropertiesAttribute)
+                .Include(w => w.WeeniePropertiesAttribute2nd)
+                .Include(w => w.WeeniePropertiesBodyPart)
+                .Include(w => w.WeeniePropertiesBook)
+                .Include(w => w.WeeniePropertiesBookPageData)
+                .Include(w => w.WeeniePropertiesCreateList)
+                .Include(w => w.WeeniePropertiesEmote)
+                    .ThenInclude(e => e.WeeniePropertiesEmoteAction)
+                .Include(w => w.WeeniePropertiesEventFilter)
+                .Include(w => w.WeeniePropertiesGenerator)
+                .Include(w => w.WeeniePropertiesPalette)
+                .Include(w => w.WeeniePropertiesSkill)
+                .Include(w => w.WeeniePropertiesSpellBook)
+                .Include(w => w.WeeniePropertiesTextureMap)
+                .AsSplitQuery()
+                .FirstOrDefault(r => r.ClassId == weenieClassId);
 
             return weenie;
         }
