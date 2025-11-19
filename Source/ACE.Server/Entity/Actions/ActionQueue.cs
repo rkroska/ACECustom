@@ -8,10 +8,11 @@ namespace ACE.Server.Entity.Actions
 {
     public class ActionQueue : IActor
     {
-        protected ConcurrentQueue<IAction> Queue { get; } = new ConcurrentQueue<IAction>();
+        private ConcurrentQueue<IAction> Queue { get; } = new ConcurrentQueue<IAction>();
+        private ConcurrentDictionary<ActionType, int> CountByQueueItemType { get; } = new ConcurrentDictionary<ActionType, int>();
 
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-        
+
         // Action queue throttle monitoring
         private int actionQueueThrottleWarningCount = 0;
         private DateTime lastActionQueueThrottleWarning = DateTime.MinValue;
@@ -56,10 +57,15 @@ namespace ACE.Server.Entity.Actions
             var originalQueueSize = Queue.Count;
             var count = Math.Min(originalQueueSize, actionThrottleLimit);
 
+            Dictionary<ActionType, int> processedActionsThisTick = [];
             for (int i = 0; i < count; i++)
             {
                 if (Queue.TryDequeue(out var result))
                 {
+                    CountByQueueItemType.AddOrUpdate(result.Type, 0, (key, oldValue) => Math.Max(oldValue - 1, 0));
+                    processedActionsThisTick.TryAdd(result.Type, 0);
+                    processedActionsThisTick[result.Type]++;
+
                     // Track performance if enabled
                     if (enableTracking)
                         sw.Restart();
@@ -101,6 +107,16 @@ namespace ACE.Server.Entity.Actions
                 {
                     var remainingActions = Queue.Count;
                     var warningMsg = $"[PERFORMANCE] ActionQueue throttle saturated for {actionQueueThrottleWarningCount} consecutive ticks! Processed {count} actions, {remainingActions} remain queued. Original queue size: {originalQueueSize}. Consider increasing limit from {actionThrottleLimit}.";
+                    var actionsProcessed = processedActionsThisTick
+                        .OrderByDescending(kvp => kvp.Value)
+                        .Select(kvp => $" - {kvp.Value}x {kvp.Key}");
+                    warningMsg += "\nActions just processed:\n" + string.Join("\n", actionsProcessed);
+                    var actionsRemaining = CountByQueueItemType
+                        .Where(kvp => kvp.Value > 0)
+                        .OrderByDescending(kvp => kvp.Value)
+                        .Select(kvp => $" - {kvp.Value}x {kvp.Key}");
+                    warningMsg += "\nActions remaining:\n" + string.Join("\n", actionsRemaining);
+
                     log.Warn(warningMsg);
                     
                     // Send to Discord if configured
@@ -129,6 +145,7 @@ namespace ACE.Server.Entity.Actions
 
         public void EnqueueAction(IAction action) 
         {
+            CountByQueueItemType.AddOrUpdate(action.Type, 1, (key, oldValue) => oldValue + 1);
             Queue.Enqueue(action);
         }
 
