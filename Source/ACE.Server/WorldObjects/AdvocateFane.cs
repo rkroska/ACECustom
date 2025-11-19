@@ -85,7 +85,7 @@ namespace ACE.Server.WorldObjects
 
                 actionChain.AddDelaySeconds(useTime);
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.AdvocateFane_Reset, () =>
                 {
                     player.IsBusy = false;
                     Reset();
@@ -114,7 +114,7 @@ namespace ACE.Server.WorldObjects
             var successTime = EnqueueMotion(faneTimer, successMotion);
             player.LastUseTime += successTime;
 
-            faneTimer.AddAction(player, () =>
+            faneTimer.AddAction(player, ActionType.AdvocateFane_Bestow, () =>
             {
                 player.AdvocateQuest = true;
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UseMessage), ChatMessageType.Broadcast));
@@ -131,7 +131,7 @@ namespace ACE.Server.WorldObjects
                     Advocate.Bestow(player, (int)PropertyManager.GetDouble("advocate_fane_auto_bestow_level"));
             });
 
-            faneTimer.AddAction(player, () =>
+            faneTimer.AddAction(player, ActionType.AdvocateFane_Reset, () =>
             {
                 player.IsBusy = false;
                 Reset();

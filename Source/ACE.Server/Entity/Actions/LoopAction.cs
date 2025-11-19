@@ -4,6 +4,7 @@ namespace ACE.Server.Entity.Actions
 {
     public class LoopAction : ActionEventBase
     {
+        public override ActionType Type => ActionType.ControlFlowLoop;
         public Func<bool> Condition { get; }
         public ActionChain Body { get; }
 

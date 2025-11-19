@@ -53,7 +53,7 @@ namespace ACE.Server.WorldObjects
                 EnqueueMotion(actionChain, useAnimation, 1, false);
             }
 
-            actionChain.AddAction(this, () => base.OnActivate(activator));
+            actionChain.AddAction(this, ActionType.Switch_BaseOnActivate, () => base.OnActivate(activator));
 
             actionChain.EnqueueChain();
         }

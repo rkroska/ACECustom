@@ -204,7 +204,7 @@ namespace ACE.Server.Managers
         // We must also protect against cross-thread operations on vassal/patron (non-concurrent collections)
         public static void PassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct, luminance)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.AllegianceManager_DoPassXP, () => DoPassXP(vassalNode, amount, direct, luminance)));
         }
 
         private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
@@ -450,7 +450,7 @@ namespace ACE.Server.Managers
         // We must add thread safety to prevent AllegianceManager corruption
         public static void HandlePlayerDelete(uint playerGuid)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoHandlePlayerDelete(playerGuid)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.AllegianceManager_DoHandlePlayerDelete, () => DoHandlePlayerDelete(playerGuid)));
         }
 
         private static void DoHandlePlayerDelete(uint playerGuid)

@@ -112,7 +112,7 @@ namespace ACE.Server.WorldObjects
             var animLength = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.HouseRecall);
             actionChain.AddDelaySeconds(animLength);
             IsBusy = true;
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerLocation_TeleportToHouse, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -179,7 +179,7 @@ namespace ACE.Server.WorldObjects
             // Then do teleport
             IsBusy = true;
             lifestoneChain.AddDelaySeconds(DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.LifestoneRecall));
-            lifestoneChain.AddAction(this, () =>
+            lifestoneChain.AddAction(this, ActionType.PlayerLocation_TeleportToLifestone, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -245,7 +245,7 @@ namespace ACE.Server.WorldObjects
 
             // Then do teleport
             IsBusy = true;
-            mpChain.AddAction(this, () =>
+            mpChain.AddAction(this, ActionType.PlayerLocation_TeleportToMarketplace, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -317,7 +317,7 @@ namespace ACE.Server.WorldObjects
             IsBusy = true;
             var animLength = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.AllegianceHometownRecall);
             actionChain.AddDelaySeconds(animLength);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerLocation_TeleportToAllegianceHometown, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -412,7 +412,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(animLength);
 
             IsBusy = true;
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerLocation_TeleportToAllegianceMansion, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -528,7 +528,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(animLength);
 
             IsBusy = true;
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerLocation_TeleportToPKArena, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -612,7 +612,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(animLength);
 
             IsBusy = true;
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerLocation_TeleportToPKLArena, () =>
             {
                 IsBusy = false;
                 var endPos = new Position(Location);
@@ -668,9 +668,9 @@ namespace ACE.Server.WorldObjects
             if (currentFogColor.HasValue && currentFogColor != EnvironChangeType.Clear && !LandblockManager.GlobalFogColor.HasValue)
             {
                 var delayTelport = new ActionChain();
-                delayTelport.AddAction(this, () => ClearFogColor());
+                delayTelport.AddAction(this, ActionType.PlayerLocation_ClearFogColor, () => ClearFogColor());
                 delayTelport.AddDelaySeconds(1);
-                delayTelport.AddAction(this, () => WorldManager.ThreadSafeTeleport(this, _newPosition));
+                delayTelport.AddAction(this, ActionType.WorldManager_ThreadSafeTeleport, () => WorldManager.ThreadSafeTeleport(this, _newPosition));
 
                 delayTelport.EnqueueChain();
 
@@ -804,7 +804,7 @@ namespace ACE.Server.WorldObjects
                 // We'll check periodically to see when it's safe to let them materialize in
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(0.1);
-                actionChain.AddAction(this, OnTeleportComplete);
+                actionChain.AddAction(this, ActionType.PlayerLocation_OnTeleportComplete, OnTeleportComplete);
                 actionChain.EnqueueChain();
                 return;
             }

@@ -85,7 +85,7 @@ namespace ACE.Server.WorldObjects
                 actionChain.AddDelaySeconds(attackFrames[i].time * animLength - prevTime);
                 prevTime = attackFrames[i].time * animLength;
 
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.MonsterMelee_DoAttack, () =>
                 {
                     if (AttackTarget == null || IsDead || target.IsDead) return;
 

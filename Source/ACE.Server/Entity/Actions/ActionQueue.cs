@@ -34,8 +34,7 @@ namespace ACE.Server.Entity.Actions
 
         public void RunActions()
         {
-            if (Queue.IsEmpty)
-                return;
+            if (Queue.IsEmpty) return;
 
             // CONFIGURABLE: Enable/disable performance tracking
             var enableTracking = ACE.Server.Managers.PropertyManager.GetBool("action_queue_tracking_enabled", false);
@@ -79,8 +78,7 @@ namespace ACE.Server.Entity.Actions
                         }
                     }
 
-                    if (enqueue != null)
-                        enqueue.Item1.EnqueueAction(enqueue.Item2);
+                    enqueue?.Item1.EnqueueAction(enqueue.Item2);
                 }
             }
             
@@ -129,7 +127,7 @@ namespace ACE.Server.Entity.Actions
             }
         }
 
-        public void EnqueueAction(IAction action)
+        public void EnqueueAction(IAction action) 
         {
             Queue.Enqueue(action);
         }

@@ -489,7 +489,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.75f);
-            actionChain.AddAction(this, CheckTargets_Inner);
+            actionChain.AddAction(this, ActionType.MonsterAwareness_CheckTargetsInner, CheckTargets_Inner);
             actionChain.EnqueueChain();
         }
 

@@ -161,7 +161,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(delayTime);
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMelee_HandleTargetedAttack, () =>
                 {
                     if (!creatureTarget.IsAlive)
                     {
@@ -195,7 +195,7 @@ namespace ACE.Server.WorldObjects
 
                     var actionChain = new ActionChain();
                     actionChain.AddDelaySeconds(rotateTime);
-                    actionChain.AddAction(this, () => Attack(target, attackSequence));
+                    actionChain.AddAction(this, ActionType.PlayerMelee_Attack, () => Attack(target, attackSequence));
                     actionChain.EnqueueChain();
                 }
                 else
@@ -336,7 +336,7 @@ namespace ACE.Server.WorldObjects
                 actionChain.AddDelaySeconds(attackFrames[i].time * animLength - prevTime);
                 prevTime = attackFrames[i].time * animLength;
 
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMelee_AttackInner, () =>
                 {
                     strikeCounter++;
                     if (IsDead)
@@ -421,7 +421,7 @@ namespace ACE.Server.WorldObjects
             //actionChain.AddDelaySeconds(animLength - swingTime * numStrikes);
             actionChain.AddDelaySeconds(animLength - prevTime);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerMelee_PowerbarRefill, () =>
             {
                 Attacking = false;
 
@@ -442,7 +442,7 @@ namespace ACE.Server.WorldObjects
 
                     var nextAttack = new ActionChain();
                     nextAttack.AddDelaySeconds(nextRefillTime);
-                    nextAttack.AddAction(this, () => Attack(target, attackSequence, true));
+                    nextAttack.AddAction(this, ActionType.PlayerMelee_Attack, () => Attack(target, attackSequence, true));
                     nextAttack.EnqueueChain();
                 }
                 else
