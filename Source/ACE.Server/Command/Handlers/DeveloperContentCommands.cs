@@ -1552,6 +1552,11 @@ namespace ACE.Server.Command.Handlers.Processors
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has removed {(instance.IsLinkChild ? "child " : "")}[WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: (0x{guid:X8}) from landblock instances");
         }
 
+        /// <summary>
+        /// Saves a LandblockInstance to the World database.
+        /// WARNING: This is one of the few places where World database writes occur.
+        /// World database entities are generally read-only except through admin commands.
+        /// </summary>
         public static void SaveInstanceToWorldDatabase(LandblockInstance instance)
         {
             try
@@ -1569,6 +1574,11 @@ namespace ACE.Server.Command.Handlers.Processors
 
         }
 
+        /// <summary>
+        /// Deletes a LandblockInstance from the World database.
+        /// WARNING: This is one of the few places where World database writes occur.
+        /// World database entities are generally read-only except through admin commands.
+        /// </summary>
         public static void DeleteInstanceFromWorldDatabase(LandblockInstance instance)
         {
             try
@@ -1585,6 +1595,11 @@ namespace ACE.Server.Command.Handlers.Processors
             }
         }
 
+        /// <summary>
+        /// Updates a LandblockInstance in the World database.
+        /// WARNING: This is one of the few places where World database writes occur.
+        /// World database entities are generally read-only except through admin commands.
+        /// </summary>
         public static void UpdateInstanceInWorldDatabase(LandblockInstance instance)
         {
             try
