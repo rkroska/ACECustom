@@ -374,7 +374,8 @@ namespace ACE.Server.WorldObjects
             }
 
             // remove entire item from player's inventory
-            if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.SpendItem))
+            bool deferSave = true;
+            if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.SpendItem, deferSave))
             {
                 log.Error($"[HOUSE] {Name}.TryMoveItemForRent({slumlord.Name} ({slumlord.Guid}), {item.Name} ({item.Guid}) ) - TryRemoveFromInventoryWithNetworking failed!");
                 return false;

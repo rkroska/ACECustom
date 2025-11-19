@@ -225,7 +225,15 @@ namespace ACE.Server.WorldObjects
             return TryRemoveFromInventoryWithNetworking(new ObjectGuid(objectGuid), out item, removeFromInventoryAction); // todo fix
         }
 
-        public bool TryRemoveFromInventoryWithNetworking(ObjectGuid objectGuid, out WorldObject item, RemoveFromInventoryAction removeFromInventoryAction)
+        /// <summary>
+        /// Removes the item from inventory with networking.
+        /// </summary>
+        /// <param name="objectGuid"></param>
+        /// <param name="item"></param>
+        /// <param name="removeFromInventoryAction"></param>
+        /// <param name="deferSave">Set to true if the removal should not be saved in this function call. Mainly for use when the item is about to be saved elsewhere.</param>
+        /// <returns></returns>
+        public bool TryRemoveFromInventoryWithNetworking(ObjectGuid objectGuid, out WorldObject item, RemoveFromInventoryAction removeFromInventoryAction, bool deferSave = false)
         {
             if (!TryRemoveFromInventory(objectGuid, out item))
                 return false;
@@ -249,7 +257,7 @@ namespace ACE.Server.WorldObjects
                 // If we don't, the player can drop the item, log out, and log back in. If the landblock hasn't queued a database save in that time,
                 // the player will end up loading with this object in their inventory even though the landblock is the true owner. This is because
                 // when we load player inventory, the database still has the record that shows this player as the ContainerId for the item.
-                DeepSave(item);
+                if (!deferSave) DeepSave(item);
             }
 
             if (removeFromInventoryAction == RemoveFromInventoryAction.ConsumeItem || removeFromInventoryAction == RemoveFromInventoryAction.TradeItem)
@@ -3407,7 +3415,8 @@ namespace ACE.Server.WorldObjects
                 {
                     var sourceStackRootPlayer = sourceStackRootOwner as Player;
 
-                    if (sourceStackRootOwner.TryRemoveFromInventory(sourceStack.Guid, out var stackToDestroy, true) ||
+                    // We don't bother to force a db save on inventory removal because we're about to destroy the stack anyway (and that will delete the db entry).
+                    if (sourceStackRootOwner.TryRemoveFromInventory(sourceStack.Guid, out var stackToDestroy) ||
                         sourceStackRootPlayer != null && sourceStackRootPlayer.TryDequipObjectWithNetworking(sourceStack.Guid, out stackToDestroy, DequipObjectAction.DequipToPack))  // test case: merge equipped phials with another stack in inventory
                     {
                         stackToDestroy?.Destroy();
