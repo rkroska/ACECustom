@@ -383,20 +383,15 @@ namespace ACE.Server.Managers
 
         public static List<OfflinePlayer> GetAllOffline()
         {
-            var results = new List<OfflinePlayer>();
-
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in offlinePlayers.Values)
-                    results.Add(player);
+                return new List<OfflinePlayer>(offlinePlayers.Values);
             }
             finally
             {
                 playersLock.ExitReadLock();
             }
-
-            return results;
         }
 
         public static int GetOnlineCount()
@@ -464,20 +459,15 @@ namespace ACE.Server.Managers
 
         public static List<Player> GetAllOnline()
         {
-            var results = new List<Player>();
-
             playersLock.EnterReadLock();
             try
             {
-                foreach (var player in onlinePlayers.Values)
-                    results.Add(player);
+                return new List<Player>(onlinePlayers.Values);
             }
             finally
             {
                 playersLock.ExitReadLock();
             }
-
-            return results;
         }
 
 
@@ -756,10 +746,14 @@ namespace ACE.Server.Managers
         {
             if ((sender.ChannelsActive.HasValue && sender.ChannelsActive.Value.HasFlag(channel)) || ignoreActive)
             {
-                foreach (var player in GetAllOnline().Where(p => (p.ChannelsActive ?? 0).HasFlag(channel)))
+                var onlinePlayers = GetAllOnline();
+                foreach (var player in onlinePlayers)
                 {
-                    if (!player.SquelchManager.Squelches.Contains(sender) || ignoreSquelch)
-                        player.Session.Network.EnqueueSend(new GameEventChannelBroadcast(player.Session, channel, sender.Guid == player.Guid ? "" : sender.Name, message));
+                    if ((player.ChannelsActive ?? 0).HasFlag(channel))
+                    {
+                        if (!player.SquelchManager.Squelches.Contains(sender) || ignoreSquelch)
+                            player.Session.Network.EnqueueSend(new GameEventChannelBroadcast(player.Session, channel, sender.Guid == player.Guid ? "" : sender.Name, message));
+                    }
                 }
 
                 LogBroadcastChat(channel, sender, message);
@@ -860,16 +854,24 @@ namespace ACE.Server.Managers
 
         public static void BroadcastToChannelFromConsole(Channel channel, string message)
         {
-            foreach (var player in GetAllOnline().Where(p => (p.ChannelsActive ?? 0).HasFlag(channel)))
-                player.Session.Network.EnqueueSend(new GameEventChannelBroadcast(player.Session, channel, "CONSOLE", message));
+            var onlinePlayers = GetAllOnline();
+            foreach (var player in onlinePlayers)
+            {
+                if ((player.ChannelsActive ?? 0).HasFlag(channel))
+                    player.Session.Network.EnqueueSend(new GameEventChannelBroadcast(player.Session, channel, "CONSOLE", message));
+            }
 
             LogBroadcastChat(channel, null, message);
         }
 
         public static void BroadcastToChannelFromEmote(Channel channel, string message)
         {
-            foreach (var player in GetAllOnline().Where(p => (p.ChannelsActive ?? 0).HasFlag(channel)))
-                player.Session.Network.EnqueueSend(new GameEventChannelBroadcast(player.Session, channel, "EMOTE", message));
+            var onlinePlayers = GetAllOnline();
+            foreach (var player in onlinePlayers)
+            {
+                if ((player.ChannelsActive ?? 0).HasFlag(channel))
+                    player.Session.Network.EnqueueSend(new GameEventChannelBroadcast(player.Session, channel, "EMOTE", message));
+            }
         }
 
         public static bool GagPlayer(Player issuer, string playerName)
