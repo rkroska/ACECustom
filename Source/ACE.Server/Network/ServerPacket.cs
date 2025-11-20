@@ -51,7 +51,19 @@ namespace ACE.Server.Network
 
             if (Data != null && Data.Length > 0)
             {
-                var body = Data.GetBuffer();
+                byte[] body;
+                try
+                {
+                    // Try to get the internal buffer (works when MemoryStream is created with capacity)
+                    body = Data.GetBuffer();
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Fall back to ToArray() when MemoryStream is created from byte array
+                    // This happens in NetworkSession.cs when creating retransmit request packets
+                    body = Data.ToArray();
+                }
+                
                 int dataLength = (int)Data.Length;
                 Buffer.BlockCopy(body, 0, buffer, offset, dataLength);
                 offset += dataLength;
