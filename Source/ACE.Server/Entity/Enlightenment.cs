@@ -66,7 +66,7 @@ namespace ACE.Server.Entity
 
             // Then do teleport
             player.IsBusy = true;
-            enlChain.AddAction(player, () =>
+            enlChain.AddAction(player, ActionType.Enlightenment_DoEnlighten, () =>
             {
                 player.IsBusy = false;
                 var endPos = new ACE.Entity.Position(player.Location);

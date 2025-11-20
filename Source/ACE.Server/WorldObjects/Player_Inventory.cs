@@ -785,7 +785,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(animTime);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_SetPickupDone, () =>
             {
                 PickupState = PickupState.None;
                 IsBusy = false;
@@ -1051,7 +1051,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToTarget);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_DoPickup, () =>
                     {
                         // Was this item picked up by someone else?
                         if (itemRootOwner == null && item.CurrentLandblock == null)
@@ -1537,9 +1537,9 @@ namespace ACE.Server.WorldObjects
                     var landblockReturn = new ActionChain();
 
                     landblockReturn.AddDelaySeconds(1);
-                    landblockReturn.AddAction(prevLandblock, () => RemoveTrackedObject(item, false));
+                    landblockReturn.AddAction(prevLandblock, ActionType.PlayerInventory_RemoveTrackedObject, () => RemoveTrackedObject(item, false));
                     landblockReturn.AddDelaySeconds(1);
-                    landblockReturn.AddAction(prevLandblock, () =>
+                    landblockReturn.AddAction(prevLandblock, ActionType.PlayerInventory_AddObjectToLandblock, () =>
                     {
                         item.Location = new Position(prevLocation);
                         LandblockManager.AddObject(item);
@@ -1634,7 +1634,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = StartPickupChain();
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_DropItem, () =>
             {
                 if (CurrentLandblock == null) // Maybe we were teleported as we were motioning to drop the item
                 {
@@ -1827,7 +1827,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(rootOwner ?? item);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_GetAndWieldInventory, () =>
                     {
                         // Was this item picked up by someone else?
                         if (rootOwner == null && item.CurrentLandblock == null)
@@ -2580,7 +2580,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToObject);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToContainer, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
                         if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
@@ -2815,7 +2815,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = StartPickupChain();
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToLandblock, () =>
             {
                 if (CurrentLandblock == null) // Maybe we were teleported as we were motioning to drop the item
                 {
@@ -3010,7 +3010,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToObject);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToWield, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
                         if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
@@ -3320,7 +3320,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToObject);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_StackableMerge, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
                         if (sourceStackOriginalContainer != sourceStack.ContainerId || sourceStack.StackSize < amount)
@@ -3693,7 +3693,7 @@ namespace ACE.Server.WorldObjects
             // Player A equips weapon, gives weapon (while equipped) to player B.
             // Player B then gives weapon back to A. Player B is now bugged. The fix is to fix RemoveTrackedEquippedObject
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_GiveObjectToPlayer, () =>
             {
                 if (!target.TryCreateInInventoryWithNetworking(itemToGive, out _))
                 {

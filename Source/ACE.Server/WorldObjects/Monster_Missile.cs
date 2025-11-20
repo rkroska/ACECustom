@@ -45,7 +45,7 @@ namespace ACE.Server.WorldObjects
             //actionChain.AddDelaySeconds(0.5f);
 
             // do missile attack
-            actionChain.AddAction(this, LaunchMissile);
+            actionChain.AddAction(this, ActionType.MonsterMissile_LaunchMissile, LaunchMissile);
             actionChain.EnqueueChain();
         }
 
@@ -106,7 +106,7 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine("LaunchTime: " + launchTime);
 
             // launch projectile
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.MonsterMissile_LaunchMissileInner, () =>
             {
                 if (IsDead) return;
 
@@ -159,7 +159,7 @@ namespace ACE.Server.WorldObjects
 
             //log.Info($"{Name}.Reload time: launchTime({launchTime}) + reloadTime({reloadTime}) + linkTime({linkTime})");
 
-            actionChain.AddAction(this, () => EnqueueBroadcast(new GameMessageParentEvent(this, ammo,
+            actionChain.AddAction(this, ActionType.MonsterMissile_EnqueueBroadcast, () => EnqueueBroadcast(new GameMessageParentEvent(this, ammo,
                 ACE.Entity.Enum.ParentLocation.RightHand, ACE.Entity.Enum.Placement.RightHandCombat)));
 
             actionChain.EnqueueChain();
@@ -212,7 +212,7 @@ namespace ACE.Server.WorldObjects
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(NextMoveTime - Timers.RunningTime);
-                actionChain.AddAction(this, () => SwitchToMeleeAttack());
+                actionChain.AddAction(this, ActionType.MonsterMissile_SwitchToMeleeAttack, () => SwitchToMeleeAttack());
                 actionChain.EnqueueChain();
             }
             else
@@ -235,7 +235,7 @@ namespace ACE.Server.WorldObjects
 
             EnqueueMotion_Force(actionChain, MotionStance.HandCombat, MotionCommand.Ready, MotionCommand.NonCombat);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.MonsterMissile_SwitchToMeleeAttackInner, () =>
             {
                 if (IsDead) return;
 
@@ -259,7 +259,7 @@ namespace ACE.Server.WorldObjects
 
                 EnqueueMotion_Force(innerChain, MotionStance.NonCombat, MotionCommand.Ready, (MotionCommand)CurrentMotionState.Stance);
 
-                innerChain.AddAction(this, () =>
+                innerChain.AddAction(this, ActionType.MonsterMissile_SwitchToMeleeAttackInnerInner, () =>
                 {
                     if (IsDead) return;
 
@@ -292,7 +292,7 @@ namespace ACE.Server.WorldObjects
 
                     var swapChain = new ActionChain();
                     swapChain.AddDelaySeconds(2.0f);
-                    swapChain.AddAction(this, () => CurrentMotionState.Stance = newStance);
+                    swapChain.AddAction(this, ActionType.MonsterMissile_SetStance, () => CurrentMotionState.Stance = newStance);
                     swapChain.EnqueueChain();
 
                 });

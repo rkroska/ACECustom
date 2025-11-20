@@ -233,7 +233,7 @@ namespace ACE.Server.WorldObjects
             }
 
             actionChain.AddDelaySeconds(0.5f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.Corpse_DiscoverGeneratedRare, () =>
             {
                 if (Location != null && CorpseGeneratedRare)
                 {

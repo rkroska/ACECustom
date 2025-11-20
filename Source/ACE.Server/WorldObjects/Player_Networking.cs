@@ -65,7 +65,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(3.0f);
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
                 {
                     Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YouAreNonPKAgain));
                 });
@@ -142,7 +142,7 @@ namespace ACE.Server.WorldObjects
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(10.0f);
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerNetworking_SendShutdownMessage, () =>
                 {
                     SendMessage(ServerManager.ShutdownNoticeText(), ChatMessageType.WorldBroadcast);
                 });

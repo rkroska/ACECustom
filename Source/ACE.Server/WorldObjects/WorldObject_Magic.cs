@@ -593,14 +593,14 @@ namespace ACE.Server.WorldObjects
                     // ensure message is sent after enchantment.Message
                     var actionChain = new ActionChain();
                     actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(this, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
+                    actionChain.AddAction(this, ActionType.WorldObjectMagic_TryProcCloakSpell, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
                     actionChain.EnqueueChain();
                 }
 
                 // ensure emote process occurs after damage msg
                 var emoteChain = new ActionChain();
                 emoteChain.AddDelayForOneTick();
-                emoteChain.AddAction(targetCreature, () => targetCreature.EmoteManager.OnDamage(creature));
+                emoteChain.AddAction(targetCreature, ActionType.EmoteManager_OnDamage, () => targetCreature.EmoteManager.OnDamage(creature));
                 //if (critical)
                 //    emoteChain.AddAction(target, () => target.EmoteManager.OnReceiveCritical(creature));
                 emoteChain.EnqueueChain();
@@ -904,14 +904,14 @@ namespace ACE.Server.WorldObjects
                     // ensure message is sent after enchantment.Message
                     var actionChain = new ActionChain();
                     actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(this, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
+                    actionChain.AddAction(this, ActionType.WorldObjectMagic_TryProcCloakSpell, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
                     actionChain.EnqueueChain();
                 }
 
                 // ensure emote process occurs after damage msg
                 var emoteChain = new ActionChain();
                 emoteChain.AddDelayForOneTick();
-                emoteChain.AddAction(targetCreature, () => targetCreature.EmoteManager.OnDamage(creature));
+                emoteChain.AddAction(targetCreature, ActionType.EmoteManager_OnDamage, () => targetCreature.EmoteManager.OnDamage(creature));
                 //if (critical)
                 //    emoteChain.AddAction(targetCreature, () => targetCreature.EmoteManager.OnReceiveCritical(creature));
                 emoteChain.EnqueueChain();
@@ -1160,9 +1160,9 @@ namespace ACE.Server.WorldObjects
                 {
                     // lifestone recall
                     ActionChain lifestoneRecall = new ActionChain();
-                    lifestoneRecall.AddAction(targetPlayer, () => targetPlayer.DoPreTeleportHide());
+                    lifestoneRecall.AddAction(targetPlayer, ActionType.PlayerLocation_DoPreTeleportHide, () => targetPlayer.DoPreTeleportHide());
                     lifestoneRecall.AddDelaySeconds(2.0f);  // 2 second delay
-                    lifestoneRecall.AddAction(targetPlayer, () => targetPlayer.TeleToPosition(recall));
+                    lifestoneRecall.AddAction(targetPlayer, ActionType.PlayerLocation_TeleToPosition, () => targetPlayer.TeleToPosition(recall));
                     lifestoneRecall.EnqueueChain();
                 }
                 else
@@ -1186,9 +1186,9 @@ namespace ACE.Server.WorldObjects
                     }
 
                     ActionChain portalRecall = new ActionChain();
-                    portalRecall.AddAction(targetPlayer, () => targetPlayer.DoPreTeleportHide());
+                    portalRecall.AddAction(targetPlayer, ActionType.PlayerLocation_DoPreTeleportHide, () => targetPlayer.DoPreTeleportHide());
                     portalRecall.AddDelaySeconds(2.0f);  // 2 second delay
-                    portalRecall.AddAction(targetPlayer, () =>
+                    portalRecall.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
                     {
                         var teleportDest = new Position(portal.Destination);
                         AdjustDungeon(teleportDest);
@@ -1350,8 +1350,8 @@ namespace ACE.Server.WorldObjects
 
                 ActionChain portalSendingChain = new ActionChain();
                 //portalSendingChain.AddDelaySeconds(2.0f);  // 2 second delay
-                portalSendingChain.AddAction(targetPlayer, () => targetPlayer.DoPreTeleportHide());
-                portalSendingChain.AddAction(targetPlayer, () =>
+                portalSendingChain.AddAction(targetPlayer, ActionType.PlayerLocation_DoPreTeleportHide, () => targetPlayer.DoPreTeleportHide());
+                portalSendingChain.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
                 {
                     var teleportDest = new Position(spell.Position);
                     AdjustDungeon(teleportDest);
@@ -1403,8 +1403,8 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             var portalSendingChain = new ActionChain();
-            portalSendingChain.AddAction(targetPlayer, () => targetPlayer.DoPreTeleportHide());
-            portalSendingChain.AddAction(targetPlayer, () =>
+            portalSendingChain.AddAction(targetPlayer, ActionType.PlayerLocation_DoPreTeleportHide, () => targetPlayer.DoPreTeleportHide());
+            portalSendingChain.AddAction(targetPlayer, ActionType.WorldObjectMagic_AdjustDungeonAndTeleportPlayer, () =>
             {
                 var teleportDest = new Position(spell.Position);
                 AdjustDungeon(teleportDest);

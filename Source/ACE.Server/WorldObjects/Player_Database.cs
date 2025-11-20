@@ -8,6 +8,7 @@ using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -180,7 +181,7 @@ namespace ACE.Server.WorldObjects
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
                 var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
-                clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_SaveBiotasInParallelCallback, () =>
                 {
                     SaveInProgress = false;
                     // Re-fetch possessions to avoid stale references, but only process items in batch

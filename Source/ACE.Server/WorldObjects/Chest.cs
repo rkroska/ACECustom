@@ -191,7 +191,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(ChestResetInterval);
-                actionChain.AddAction(this, () => Reset(resetTimestamp));
+                actionChain.AddAction(this, ActionType.Chest_Reset, () => Reset(resetTimestamp));
                 actionChain.EnqueueChain();
 
                 ResetMessagePending = true;
