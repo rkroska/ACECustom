@@ -1524,7 +1524,7 @@ namespace ACE.Server.WorldObjects
             var burdenCheck = itemRootOwner != this && containerRootOwner == this;
             
 #if DEBUG
-            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer calling TryAddToInventory for {item.Name} (0x{item.Guid}) | Target container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | BurdenCheck={burdenCheck} | Placement={placement}");
+            //log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer calling TryAddToInventory for {item.Name} (0x{item.Guid}) | Target container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | BurdenCheck={burdenCheck} | Placement={placement}");
 #endif
 
             if (!container.TryAddToInventory(item, placement, true, burdenCheck))
