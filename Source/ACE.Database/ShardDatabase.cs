@@ -436,7 +436,7 @@ namespace ACE.Database
             }
         }
 
-        public bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        public virtual bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
         {
             var biotaList = biotas.ToList();
             
