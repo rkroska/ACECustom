@@ -101,7 +101,6 @@ namespace ACE.Database
                 if (biotaCache.TryGetValue(id, out var cachedBiota))
                 {
                     cachedBiota.LastSeen = DateTime.UtcNow;
-
                     return cachedBiota.CachedObject;
                 }
             }
@@ -178,7 +177,7 @@ namespace ACE.Database
 
                     if (DoSaveBiota(context, existingBiota))
                     {
-                        cachedBiota.CachedObject = existingBiota;
+                        InvalidateBiotaCache(biota.Id);
                         return true;
                     }
 
@@ -186,7 +185,6 @@ namespace ACE.Database
                 }
             }
 
-            // Biota does not exist in the cache
             using (var context = new ShardDbContext())
             {
                 var existingBiota = base.GetBiota(context, biota.Id);
@@ -212,8 +210,7 @@ namespace ACE.Database
 
                 if (DoSaveBiota(context, existingBiota))
                 {
-                    TryAddToCache(existingBiota);
-
+                    InvalidateBiotaCache(biota.Id);
                     return true;
                 }
 
@@ -221,12 +218,37 @@ namespace ACE.Database
             }
         }
 
+        public override bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        {
+            var biotaList = biotas.ToList();
+            var result = base.SaveBiotasInParallel(biotaList);
+
+            if (result)
+            {
+                lock (biotaCacheMutex)
+                {
+                    foreach (var (biota, _) in biotaList)
+                        biotaCache.Remove(biota.Id);
+                }
+            }
+
+            return result;
+        }
+
         public override bool RemoveBiota(uint id)
+        {
+            InvalidateBiotaCache(id);
+            return base.RemoveBiota(id);
+        }
+
+        /// <summary>
+        /// Invalidates the biota cache for the specified ID without removing it from the database.
+        /// This is useful when we're about to save new data and want to prevent stale cache from being used.
+        /// </summary>
+        public void InvalidateBiotaCache(uint id)
         {
             lock (biotaCacheMutex)
                 biotaCache.Remove(id);
-
-            return base.RemoveBiota(id);
         }
     }
 }

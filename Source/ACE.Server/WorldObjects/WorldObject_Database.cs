@@ -5,6 +5,7 @@ using System.Threading;
 using ACE.Common;
 using ACE.Database;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -103,27 +104,173 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
-            // Detect concurrent saves
-            if (SaveInProgress)
+#if DEBUG
+            string GetItemInfo() => this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+            log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
+#endif
+            
+            // For individual saves, check if this item belongs to a player with a batch save in progress
+            // If the item has newer changes (ChangesDetected = true), we want to allow the save to proceed
+            // even if SaveInProgress is true (set by the batch save)
+            bool allowSaveDespiteInProgress = false;
+            if (enqueueSave && ChangesDetected && this.Container is Player player && player.SaveInProgress)
+            {
+                // Get the current ContainerId from the property (in-memory state)
+                var staleCheckPropertyContainerId = ContainerId;
+                
+                // Get the ContainerId from the biota (what's currently in the database)
+                uint? staleCheckBiotaContainerId = null;
+                BiotaDatabaseLock.EnterReadLock();
+                try
+                {
+                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var value))
+                        staleCheckBiotaContainerId = value;
+                }
+                finally
+                {
+                    BiotaDatabaseLock.ExitReadLock();
+                }
+                
+                // If property says player GUID but biota says side pack GUID, this is stale data
+                // The batch save will have the correct side pack GUID, so skip this individual save
+                // to avoid overwriting correct data with stale data
+                // BUT: If property says side pack GUID and biota says player GUID, this is a legitimate move
+                // from player inventory to side pack - allow it to proceed
+                if (staleCheckPropertyContainerId.HasValue && staleCheckPropertyContainerId.Value == player.Guid.Full &&
+                    staleCheckBiotaContainerId.HasValue && staleCheckBiotaContainerId.Value != player.Guid.Full)
+                {
+                    // This individual save would overwrite correct side pack ContainerId with stale player GUID
+                    // Skip it - the batch save will save the correct state
+#if DEBUG
+                    log.Debug($"[SAVE] Skipping individual save for {Name} (0x{Guid}) - would overwrite correct ContainerId {staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}) with stale player GUID");
+#endif
+                    return;
+                }
+                // If property says side pack GUID and biota says player GUID, this is a legitimate move
+                // from player inventory to side pack - allow it to proceed (don't skip)
+                
+                // Item has newer changes and doesn't have stale ContainerId data
+                // Allow the save to proceed even if SaveInProgress is true
+                // It will queue after the batch save and save the newer state
+                allowSaveDespiteInProgress = true;
+#if DEBUG
+                log.Debug($"[SAVE] Allowing individual save for {Name} (0x{Guid}) during player batch save - has newer changes (Property ContainerId={staleCheckPropertyContainerId}, Biota ContainerId={staleCheckBiotaContainerId})");
+#endif
+            }
+            
+            // Detect concurrent saves at item level
+            // But allow saves with newer changes during player batch saves
+            if (SaveInProgress && !allowSaveDespiteInProgress)
             {
                 DetectAndLogConcurrentSave();
                 return; // Abort save attempt - already in progress
             }
             
+            // Sync position cache to biota FIRST - this must happen before any property modifications
+            // Log position cache contents for debugging (especially for players)
+            if (this is Player playerObj)
+            {
+                var locationPos = positionCache.TryGetValue(PositionType.Location, out var loc) ? loc : null;
+                var locationProperty = Location; // Read through property getter
+#if DEBUG
+                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
+#endif
+                
+                // If Location property exists but isn't in cache, add it
+                if (locationProperty != null && locationPos == null)
+                {
+#if DEBUG
+                    log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location property exists but not in cache! Adding to cache...");
+#endif
+                    positionCache[PositionType.Location] = locationProperty;
+                }
+            }
+            
             foreach (var kvp in positionCache)
             {
                 if (kvp.Value != null)
+                {
                     Biota.SetPosition(kvp.Key, kvp.Value, BiotaDatabaseLock);
+#if DEBUG
+                    if (this is Player && kvp.Key == PositionType.Location)
+                    {
+                        log.Debug($"[SAVE DEBUG] {GetItemInfo()} Synced Location position to biota | Position={kvp.Value}");
+                    }
+#endif
+                }
             }
+
+            // Ensure ContainerId is set correctly before save (following Vendor's approach)
+            // Container property is the most authoritative - use Biota.Id (not Guid.Full)
+            // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must be Biota.Id
+            // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID
+            uint? expectedContainerId = null;
+            if (Container != null)
+            {
+                expectedContainerId = Container.Biota.Id;
+            }
+            else if (WielderId.HasValue)
+            {
+                // Item is equipped - ContainerId should be null/cleared
+                // Equipped items use Wielder, not ContainerId
+                expectedContainerId = null;
+            }
+            // If Container is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
+            
+            // Set ContainerId property directly (like Vendor does) - this updates biota and sets ChangesDetected
+            // Since we're already saving, we'll clear ChangesDetected after if needed
+            var hadChangesBeforeContainerId = ChangesDetected;
+            if (ContainerId != expectedContainerId)
+            {
+                ContainerId = expectedContainerId;
+#if DEBUG
+                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
+#endif
+                // Clear ChangesDetected if we just set it (we're already saving)
+                if (!hadChangesBeforeContainerId)
+                    ChangesDetected = false;
+            }
+
+            // WielderId and StackSize: These properties are already set correctly when items are equipped/stacked
+            // Unlike ContainerId, we don't have a "source of truth" object to compare against, so we trust
+            // that they were set correctly earlier (e.g., when item was equipped or stack was split)
+            // Setting them here would be redundant and they're already correct from their respective operations
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
             SaveStartTime = DateTime.UtcNow;
             LastSavedStackSize = StackSize;
-            ChangesDetected = false;
+            
+            // For batch saves (enqueueSave=false), don't clear ChangesDetected here
+            // The caller will handle clearing it after the batch completes successfully
+            // For individual saves (enqueueSave=true), clear it now but restore on failure
+            var hadChanges = ChangesDetected;
+            if (enqueueSave)
+            {
+                ChangesDetected = false;
+            }
 
             if (enqueueSave)
             {
+#if DEBUG
+                // Log final ContainerId before queuing save
+                BiotaDatabaseLock.EnterReadLock();
+                try
+                {
+                    uint? finalBiotaContainerId = null;
+                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var finalValue))
+                    {
+                        finalBiotaContainerId = finalValue;
+                    }
+                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
+                    log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
+                }
+                finally
+                {
+                    BiotaDatabaseLock.ExitReadLock();
+                }
+#endif
+                
                 CheckpointTimestamp = Time.GetUnixTime();
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
@@ -147,8 +294,37 @@ namespace ACE.Server.WorldObjects
                         
                         CheckDatabaseQueueSize();
                         
+#if DEBUG
+                        // Log save result with ContainerId
+                        BiotaDatabaseLock.EnterReadLock();
+                        try
+                        {
+                            uint? savedBiotaContainerId = null;
+                            if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var savedValue))
+                            {
+                                savedBiotaContainerId = savedValue;
+                            }
+                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                            log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
+                        }
+                        finally
+                        {
+                            BiotaDatabaseLock.ExitReadLock();
+                        }
+#endif
+                        
                         if (!result)
                         {
+                            // Restore ChangesDetected if save failed so changes aren't lost
+                            if (hadChanges)
+                            {
+                                ChangesDetected = true;
+#if DEBUG
+                                var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                                log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+#endif
+                            }
+                            
                             if (this is Player player)
                             {
                                 // This will trigger a boot on next player tick
@@ -158,6 +334,15 @@ namespace ACE.Server.WorldObjects
                     }
                     catch (Exception ex)
                     {
+                        // Restore ChangesDetected if callback throws
+                        if (hadChanges)
+                        {
+                            ChangesDetected = true;
+#if DEBUG
+                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                            log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
+#endif
+                        }
                         log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
                     }
                     finally
