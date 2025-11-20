@@ -1734,7 +1734,7 @@ namespace ACE.Server.Physics
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObjects, () =>
                 {
                     foreach (var obj in newlyVisible)
                     {
@@ -1759,7 +1759,7 @@ namespace ACE.Server.Physics
                         // ensure post-teleport position is sent
                         var actionChain = new ActionChain();
                         actionChain.AddDelayForOneTick();
-                        actionChain.AddAction(player, () => player.TrackObject(wo));
+                        actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo));
                         actionChain.EnqueueChain();
                     }
                     else
@@ -1781,7 +1781,7 @@ namespace ACE.Server.Physics
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(TeleportCreateObjectDelay.TotalSeconds);
-                actionChain.AddAction(player, () => player.TrackObject(wo, true));
+                actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo, true));
                 actionChain.EnqueueChain();
             }
             else
@@ -1791,7 +1791,7 @@ namespace ACE.Server.Physics
                     // ensure post-teleport position is sent
                     var actionChain = new ActionChain();
                     actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(player, () => player.TrackObject(wo));
+                    actionChain.AddAction(player, ActionType.PhysicsObj_TrackObject, () => player.TrackObject(wo));
                     actionChain.EnqueueChain();
                 }
                 else

@@ -93,9 +93,9 @@ namespace ACE.Server.Command.Handlers
                             if (result)
                             {
                                 var deleteOfflineChain = new ActionChain();
-                                deleteOfflineChain.AddAction(WorldManager.ActionQueue, () => PlayerManager.HandlePlayerDelete(character.Id));
+                                deleteOfflineChain.AddAction(WorldManager.ActionQueue, ActionType.PlayerManager_HandleDeletePlayer, () => PlayerManager.HandlePlayerDelete(character.Id));
                                 deleteOfflineChain.AddDelayForOneTick();
-                                deleteOfflineChain.AddAction(WorldManager.ActionQueue, () =>
+                                deleteOfflineChain.AddAction(WorldManager.ActionQueue, ActionType.PlayerManager_ProcessDeletedPlayer, () =>
                                 {
                                     var success = PlayerManager.ProcessDeletedPlayer(character.Id);
                                     if (success)
