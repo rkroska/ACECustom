@@ -785,7 +785,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(animTime);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_SetPickupDone, () =>
             {
                 PickupState = PickupState.None;
                 IsBusy = false;
@@ -1051,7 +1051,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToTarget);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_DoPickup, () =>
                     {
                         // Was this item picked up by someone else?
                         if (itemRootOwner == null && item.CurrentLandblock == null)
@@ -1475,6 +1475,10 @@ namespace ACE.Server.WorldObjects
             Landblock prevLandblock = null;
 
             var prevContainer = item.Container;
+            
+#if DEBUG
+            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer START for {item.Name} (0x{item.Guid}) | ItemRootOwner={(itemRootOwner is Player itemRootPlayer ? $"Player {itemRootPlayer.Name}" : $"{itemRootOwner?.Name ?? "null"} (0x{(itemRootOwner?.Guid.Full ?? 0):X8})")} | ContainerRootOwner={(containerRootOwner is Player containerRootPlayer ? $"Player {containerRootPlayer.Name}" : $"{containerRootOwner?.Name ?? "null"} (0x{(containerRootOwner?.Guid.Full ?? 0):X8})")} | Target Container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | PrevContainer={(prevContainer is Player prevPlayer ? $"Player {prevPlayer.Name}" : $"{prevContainer?.Name ?? "null"} (0x{(prevContainer?.Guid.Full ?? 0):X8})")} | ItemWasEquipped={itemWasEquipped}");
+#endif
 
             OnPutItemInContainer(item.Guid.Full, container.Guid.Full, placement);
 
@@ -1518,6 +1522,10 @@ namespace ACE.Server.WorldObjects
             }
 
             var burdenCheck = itemRootOwner != this && containerRootOwner == this;
+            
+#if DEBUG
+            log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer calling TryAddToInventory for {item.Name} (0x{item.Guid}) | Target container={(container is Player targetPlayer ? $"Player {targetPlayer.Name}" : $"{container?.Name ?? "null"} (0x{(container?.Guid.Full ?? 0):X8})")} | BurdenCheck={burdenCheck} | Placement={placement}");
+#endif
 
             if (!container.TryAddToInventory(item, placement, true, burdenCheck))
             {
@@ -1529,9 +1537,9 @@ namespace ACE.Server.WorldObjects
                     var landblockReturn = new ActionChain();
 
                     landblockReturn.AddDelaySeconds(1);
-                    landblockReturn.AddAction(prevLandblock, () => RemoveTrackedObject(item, false));
+                    landblockReturn.AddAction(prevLandblock, ActionType.PlayerInventory_RemoveTrackedObject, () => RemoveTrackedObject(item, false));
                     landblockReturn.AddDelaySeconds(1);
-                    landblockReturn.AddAction(prevLandblock, () =>
+                    landblockReturn.AddAction(prevLandblock, ActionType.PlayerInventory_AddObjectToLandblock, () =>
                     {
                         item.Location = new Position(prevLocation);
                         LandblockManager.AddObject(item);
@@ -1555,7 +1563,12 @@ namespace ACE.Server.WorldObjects
             // when moving from a non-stuck container to a different container,
             // the database must be synced immediately
             if (prevContainer != null && !prevContainer.Stuck && container != prevContainer)
+            {
+#if DEBUG
+                log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer triggering save for {item.Name} (0x{item.Guid}) | Moving from {(prevContainer is Player prevPlayer2 ? $"Player {prevPlayer2.Name}" : $"{prevContainer.Name} (0x{prevContainer.Guid})")} to {(container is Player newPlayer ? $"Player {newPlayer.Name}" : $"{container.Name} (0x{container.Guid})")} | Item ContainerId={item.ContainerId} (0x{(item.ContainerId ?? 0):X8}) | Item Container={item.Container?.Name ?? "null"} (0x{(item.Container?.Guid.Full ?? 0):X8})");
+#endif
                 item.SaveBiotaToDatabase();
+            }
 
             Session.Network.EnqueueSend(
                 new GameMessagePublicUpdateInstanceID(item, PropertyInstanceId.Container, container.Guid),
@@ -1621,7 +1634,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = StartPickupChain();
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_DropItem, () =>
             {
                 if (CurrentLandblock == null) // Maybe we were teleported as we were motioning to drop the item
                 {
@@ -1814,7 +1827,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(rootOwner ?? item);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_GetAndWieldInventory, () =>
                     {
                         // Was this item picked up by someone else?
                         if (rootOwner == null && item.CurrentLandblock == null)
@@ -2567,7 +2580,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToObject);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToContainer, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
                         if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
@@ -2650,13 +2663,41 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameMessageCreateObject(newStack));
             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, newStack, container));
 
+            var oldStackSize = stack.StackSize;
             if (!AdjustStack(stack, -amount, stackFoundInContainer, stackRootOwner))
                 return false;
+
+            var newStackSize = stack.StackSize;
+            log.Debug($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) | Old StackSize={oldStackSize} | New StackSize={newStackSize} | Amount split={amount} | ChangesDetected={stack.ChangesDetected}");
 
             if (stackRootOwner == null)
                 EnqueueBroadcast(new GameMessageSetStackSize(stack));
             else
                 Session.Network.EnqueueSend(new GameMessageSetStackSize(stack));
+
+            // CRITICAL: Save the original stack immediately after reducing its StackSize
+            // This ensures the StackSize change is persisted to the database before logout
+            // Without this, the original stack might retain its old StackSize on reload if there's a cache issue
+            // However, if a batch save is in progress, skip the immediate save to avoid duplicate saves
+            // The batch save will handle it (and now syncs StackSize correctly)
+            if (stack.ChangesDetected)
+            {
+                // Only save immediately if not already in a batch save
+                // If batch save is in progress, the StackSize sync we added will ensure correct value is saved
+                if (!stack.SaveInProgress)
+                {
+                    log.Debug($"[STACK SPLIT] Saving original stack {stack.Name} (0x{stack.Guid}) with StackSize={newStackSize}");
+                    stack.SaveBiotaToDatabase();
+                }
+                else
+                {
+                    log.Debug($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) has SaveInProgress=true, skipping immediate save (will be handled by batch save with StackSize sync)");
+                }
+            }
+            else
+            {
+                log.Warn($"[STACK SPLIT] Original stack {stack.Name} (0x{stack.Guid}) does NOT have ChangesDetected=true after AdjustStack! StackSize={oldStackSize}->{newStackSize}");
+            }
 
             // Log chest deposit for splits from player to chest
             bool isChestDeposit = stackRootOwner == this && 
@@ -2774,7 +2815,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = StartPickupChain();
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToLandblock, () =>
             {
                 if (CurrentLandblock == null) // Maybe we were teleported as we were motioning to drop the item
                 {
@@ -2969,7 +3010,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToObject);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToWield, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
                         if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
@@ -3279,7 +3320,7 @@ namespace ACE.Server.WorldObjects
                     var pickupMotion = GetPickupMotion(moveToObject);
                     var pickupChain = AddPickupChainToMoveToChain(pickupMotion);
 
-                    pickupChain.AddAction(this, () =>
+                    pickupChain.AddAction(this, ActionType.PlayerInventory_StackableMerge, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
                         if (sourceStackOriginalContainer != sourceStack.ContainerId || sourceStack.StackSize < amount)
@@ -3652,7 +3693,7 @@ namespace ACE.Server.WorldObjects
             // Player A equips weapon, gives weapon (while equipped) to player B.
             // Player B then gives weapon back to A. Player B is now bugged. The fix is to fix RemoveTrackedEquippedObject
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerInventory_GiveObjectToPlayer, () =>
             {
                 if (!target.TryCreateInInventoryWithNetworking(itemToGive, out _))
                 {

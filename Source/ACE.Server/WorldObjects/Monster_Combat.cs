@@ -716,11 +716,11 @@ namespace ACE.Server.WorldObjects
             if (damageObj != null)
             {
                 actionChain.AddAction(new ActionChain.ChainElement(
-                    damageObj, new ActionEventDelegate(() => damageObj.DeleteObject())
+                    damageObj, new ActionEventDelegate(ActionType.MonsterCombat_DeleteObjectAfterDelay, () => damageObj.DeleteObject())
                 ));
             }
             actionChain.AddAction(new ActionChain.ChainElement(
-                visualObj, new ActionEventDelegate(() => visualObj.DeleteObject())
+                visualObj, new ActionEventDelegate(ActionType.MonsterCombat_DeleteObjectAfterDelay, () => visualObj.DeleteObject())
             ));
             actionChain.EnqueueChain();
         }

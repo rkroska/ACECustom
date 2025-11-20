@@ -303,7 +303,7 @@ namespace ACE.Server.Entity
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
-            actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
             {
                 // for mansion linking
                 var houses = new List<House>();
@@ -354,7 +354,7 @@ namespace ACE.Server.Entity
             var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock, VariationId);
             var factoryShardObjects = WorldObjectFactory.CreateWorldObjects(dynamics);
 
-            actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_SpawnDynamicShardObjects, () =>
             {
                 foreach (var fso in factoryShardObjects)
                     AddWorldObject(fso, VariationId);
@@ -376,7 +376,7 @@ namespace ACE.Server.Entity
 
                 if (wo == null) continue;
 
-                actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+                actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_SpawnEncounters, () =>
                 {
                     var xPos = Math.Clamp(encounter.CellX * 24.0f, 0.5f, 191.5f);
                     var yPos = Math.Clamp(encounter.CellY * 24.0f, 0.5f, 191.5f);
@@ -1408,7 +1408,7 @@ namespace ACE.Server.Entity
                     {
                         // Clear SaveInProgress flags on world thread for thread safety
                         var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
-                        clearFlagsAction.AddAction(WorldManager.ActionQueue, () =>
+                        clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.Landblock_ClearFlagsAfterSave, () =>
                         {
                             foreach (var wo in savedObjects)
                             {

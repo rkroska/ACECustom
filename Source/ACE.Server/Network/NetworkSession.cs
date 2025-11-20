@@ -687,7 +687,7 @@ namespace ACE.Server.Network
             }
 
             var actionChain = new ActionChain();
-            actionChain.AddAction(session.Player, () =>
+            actionChain.AddAction(session.Player, ActionType.Player_ForceLogOff, () =>
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat(clientMessage, ChatMessageType.Broadcast));
                 session.LogOffPlayer();
