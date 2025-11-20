@@ -1253,6 +1253,48 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IsGagged); else SetProperty(PropertyBool.IsGagged, value); }
         }
 
+        // ========================================
+        // =============== Freeze =================
+        // ========================================
+        public bool IsFrozen
+        {
+            get => GetProperty(PropertyBool.IsFrozen) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsFrozen); else SetProperty(PropertyBool.IsFrozen, value); }
+        }
+
+        public double FrozenTimestamp
+        {
+            get => GetProperty(PropertyFloat.FrozenTimestamp) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyFloat.FrozenTimestamp); else SetProperty(PropertyFloat.FrozenTimestamp, value); }
+        }
+
+        public double FrozenDuration
+        {
+            get => GetProperty(PropertyFloat.FrozenDuration) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyFloat.FrozenDuration); else SetProperty(PropertyFloat.FrozenDuration, value); }
+        }
+
+        // ========================================
+        // =============== Limbo ==================
+        // ========================================
+        public bool IsInLimbo
+        {
+            get => GetProperty(PropertyBool.Limbo) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.Limbo); else SetProperty(PropertyBool.Limbo, value); }
+        }
+
+        public double LimboStartTimestamp
+        {
+            get => GetProperty(PropertyFloat.LimboStartTimestamp) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyFloat.LimboStartTimestamp); else SetProperty(PropertyFloat.LimboStartTimestamp, value); }
+        }
+
+        public double LimboDuration
+        {
+            get => GetProperty(PropertyFloat.LimboDuration) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyFloat.LimboDuration); else SetProperty(PropertyFloat.LimboDuration, value); }
+        }
+
         public bool RecallsDisabled
         {
             get => GetProperty(PropertyBool.RecallsDisabled) ?? false;

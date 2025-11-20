@@ -77,6 +77,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (IsFrozen)
+            {
+                SendFreezeError();
+                return;
+            }
+
             if (TooBusyToRecall)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YoureTooBusy));
@@ -141,6 +147,12 @@ namespace ACE.Server.WorldObjects
             if (RecallsDisabled)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
+            if (IsFrozen)
+            {
+                SendFreezeError();
                 return;
             }
 
@@ -217,6 +229,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (IsFrozen)
+            {
+                SendFreezeError();
+                return;
+            }
+
             if (TooBusyToRecall)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YoureTooBusy));
@@ -283,6 +301,12 @@ namespace ACE.Server.WorldObjects
             if (RecallsDisabled)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
+            if (IsFrozen)
+            {
+                SendFreezeError();
                 return;
             }
 
@@ -376,6 +400,12 @@ namespace ACE.Server.WorldObjects
             if (RecallsDisabled)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
+            if (IsFrozen)
+            {
+                SendFreezeError();
                 return;
             }
 
@@ -500,6 +530,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (IsFrozen)
+            {
+                SendFreezeError();
+                return;
+            }
+
             if (TooBusyToRecall)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YoureTooBusy));
@@ -581,6 +617,12 @@ namespace ACE.Server.WorldObjects
             if (RecallsDisabled)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
+            if (IsFrozen)
+            {
+                SendFreezeError();
                 return;
             }
 
