@@ -134,7 +134,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(delayTime);
 
             // do missile attack
-            actionChain.AddAction(this, () => LaunchMissile(target, attackSequence, stance));
+            actionChain.AddAction(this, ActionType.PlayerMissile_LaunchMissile, () => LaunchMissile(target, attackSequence, stance));
             actionChain.EnqueueChain();
         }
 
@@ -190,7 +190,7 @@ namespace ACE.Server.WorldObjects
 
             // launch animation
             // point of no return beyond this point -- cannot be cancelled
-            actionChain.AddAction(this, () => Attacking = true);
+            actionChain.AddAction(this, ActionType.PlayerMissile_SetAttacking, () => Attacking = true);
 
             if (subsequent)
             {
@@ -227,7 +227,7 @@ namespace ACE.Server.WorldObjects
             var launchTime = EnqueueMotionPersist(actionChain, aimLevel);
 
             // launch projectile
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerMissile_LaunchProjectile, () =>
             {
                 // handle self-procs
                 TryProcEquippedItems(this, this, true, weapon);
@@ -248,7 +248,7 @@ namespace ACE.Server.WorldObjects
             // ammo remaining?
             if (!ammo.UnlimitedUse && (ammo.StackSize == null || ammo.StackSize <= 1))
             {
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMissile_OutOfAmmo, () =>
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You are out of ammunition!"));
                     SetCombatMode(CombatMode.NonCombat);
@@ -269,7 +269,7 @@ namespace ACE.Server.WorldObjects
             var linkTime = MotionTable.GetAnimationLength(MotionTableId, stance, MotionCommand.Reload, MotionCommand.Ready);
             //var cycleTime = MotionTable.GetCycleLength(MotionTableId, CurrentMotionState.Stance, MotionCommand.Ready);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerMissile_PlaceNewAmmo, () =>
             {
                 if (CombatMode == CombatMode.Missile)
                     EnqueueBroadcast(new GameMessageParentEvent(this, ammo, ACE.Entity.Enum.ParentLocation.RightHand, ACE.Entity.Enum.Placement.RightHandCombat));
@@ -277,7 +277,7 @@ namespace ACE.Server.WorldObjects
 
             actionChain.AddDelaySeconds(linkTime);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerMissile_PowerbarRefill, () =>
             {
                 Attacking = false;
 
@@ -296,7 +296,7 @@ namespace ACE.Server.WorldObjects
                     nextAttack.AddDelaySeconds(nextRefillTime);
 
                     // perform next attack
-                    nextAttack.AddAction(this, () => { LaunchMissile(target, attackSequence, stance, true); });
+                    nextAttack.AddAction(this, ActionType.PlayerMissile_LaunchMissile, () => { LaunchMissile(target, attackSequence, stance, true); });
                     nextAttack.EnqueueChain();
                 }
                 else

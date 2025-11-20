@@ -118,7 +118,7 @@ namespace ACE.Server.Managers
 
             if (!confirmed)
             {
-                actionChain.AddAction(player, () => player.SendMotionAsCommands(motionCommand, currentStance));
+                actionChain.AddAction(player, ActionType.PlayerMotion_SendMotionAsCommands, () => player.SendMotionAsCommands(motionCommand, currentStance));
                 actionChain.AddDelaySeconds(clapTime);
 
                 nextUseTime += clapTime;
@@ -126,14 +126,14 @@ namespace ACE.Server.Managers
 
             if (showDialog && !confirmed)
             {
-                actionChain.AddAction(player, () => ShowDialog(player, source, target, recipe, percentSuccess.Value));
-                actionChain.AddAction(player, () => player.IsBusy = false);
+                actionChain.AddAction(player, ActionType.RecipeManager_ShowDialogue, () => ShowDialog(player, source, target, recipe, percentSuccess.Value));
+                actionChain.AddAction(player, ActionType.Player_SetNonBusy, () => player.IsBusy = false);
             }
             else
             {
-                actionChain.AddAction(player, () => HandleRecipe(player, source, target, recipe, percentSuccess.Value));
+                actionChain.AddAction(player, ActionType.RecipeManager_HandleRecipe, () => HandleRecipe(player, source, target, recipe, percentSuccess.Value));
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.RecipeManager_FinishRecipe, () =>
                 {
                     if (!showDialog)
                         player.SendUseDoneEvent();

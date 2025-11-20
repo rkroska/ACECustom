@@ -20,7 +20,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionWorldBroadcast(string message, ChatMessageType messageType)
         {
             ActionChain chain = new ActionChain();
-            chain.AddAction(this, () => DoWorldBroadcast(message, messageType));
+            chain.AddAction(this, ActionType.CreatureNetworking_DoWorldBroadcast, () => DoWorldBroadcast(message, messageType));
             chain.EnqueueChain();
         }
 

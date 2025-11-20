@@ -703,7 +703,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.5f);
-            actionChain.AddAction(this, Sleep);
+            actionChain.AddAction(this, ActionType.MonsterNavigation_Sleep, Sleep);
             actionChain.EnqueueChain();
         }
     }

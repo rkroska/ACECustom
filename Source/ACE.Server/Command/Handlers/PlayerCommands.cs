@@ -1392,7 +1392,7 @@ namespace ACE.Server.Command.Handlers
             // update house panel for current player
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(3.0f);  // wait for slumlord inventory biotas above to save
-            actionChain.AddAction(session.Player, session.Player.HandleActionQueryHouse);
+            actionChain.AddAction(session.Player, ActionType.PlayerHouse_HandleActionQueryHouse, session.Player.HandleActionQueryHouse);
             actionChain.EnqueueChain();
 
             Console.WriteLine("OK");

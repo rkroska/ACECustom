@@ -93,23 +93,23 @@ namespace ACE.Server.Network.Managers
             {
                 if (messageHandlerInfo.Attribute.State == session.State)
                 {
-                    NetworkManager.InboundMessageQueue.EnqueueAction(new ActionEventDelegate(() =>
+                    NetworkManager.InboundMessageQueue.EnqueueAction(new ActionEventDelegate(ActionTypeConverter.FromGameMessageOpCode(opcode), () =>
                     {
                         // It's possible that before this work is executed by WorldManager, and after it was enqueued here, the session.Player was set to null
                         // To avoid null reference exceptions, we make sure that the player is valid before the message handler is invoked.
                         if (messageHandlerInfo.Attribute.State == Enum.SessionState.WorldConnected && session.Player == null)
                             return;
 
-                        try
-                        {
-                            messageHandlerInfo.Handler.Invoke(message, session);
-                        }
-                        catch (Exception ex)
-                        {
-                            log.Error($"Received GameMessage packet that threw an exception from account: {session.AccountId}:{session.Account}, player: {session.Player?.Name}, opcode: 0x{((int)opcode):X4}:{opcode}");
-                            log.Error(ex);
-                        }
-                    }));
+                            try
+                            {
+                                messageHandlerInfo.Handler.Invoke(message, session);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"Received GameMessage packet that threw an exception from account: {session.AccountId}:{session.Account}, player: {session.Player?.Name}, opcode: 0x{((int)opcode):X4}:{opcode}");
+                                log.Error(ex);
+                            }
+                        }));
                 }
             }
             else

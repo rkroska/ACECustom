@@ -72,7 +72,7 @@ namespace ACE.Server.WorldObjects
             {
                 ActionLoop = new ActionChain();
                 ActionLoop.AddDelaySeconds(CycleTimeNext);
-                ActionLoop.AddAction(this, () =>
+                ActionLoop.AddAction(this, ActionType.Hotspot_ActionLoop, () =>
                 {
                     if (Creatures != null && Creatures.Any())
                     {

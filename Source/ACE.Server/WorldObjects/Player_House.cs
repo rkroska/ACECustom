@@ -532,7 +532,7 @@ namespace ACE.Server.WorldObjects
             {
                 var evictChain = new ActionChain();
                 evictChain.AddDelaySeconds(5.0f);   // todo: need inventory callback
-                evictChain.AddAction(this, HandleEviction);
+                evictChain.AddAction(this, ActionType.PlayerHouse_HandleEvictionOnLogin, HandleEviction);
                 evictChain.EnqueueChain();
                 return;
             }
@@ -569,7 +569,7 @@ namespace ACE.Server.WorldObjects
         {
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(5.0f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerHouse_NotificationsOnLogin, () =>
             {
                 if (House == null || House.SlumLord == null) return;
 
@@ -658,7 +658,7 @@ namespace ACE.Server.WorldObjects
             // why has this changed? use callback?
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(3.0f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerHouse_SetHouseDataOnOwnerChange, () =>
             {
                 HandleActionQueryHouse();
                 house.UpdateRestrictionDB();

@@ -71,7 +71,7 @@ namespace ACE.Server.WorldObjects
                     var rotateTime = Rotate(target);
                     var actionChain = new ActionChain();
                     actionChain.AddDelaySeconds(rotateTime);
-                    actionChain.AddAction(this, () =>
+                    actionChain.AddAction(this, ActionType.PlayerMove_SetLastMoveAndCallCallback, () =>
                     {
                         lastCompletedMove = thisMoveToChainNumber;
                         callback(true);
@@ -139,7 +139,7 @@ namespace ACE.Server.WorldObjects
                 // target not reached yet
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(0.1f);
-                actionChain.AddAction(this, () => MoveToChain(target, thisMoveToChainNumber, callback, useRadius));
+                actionChain.AddAction(this, ActionType.PlayerMove_MoveToChain, () => MoveToChain(target, thisMoveToChainNumber, callback, useRadius));
                 actionChain.EnqueueChain();
             }
             else
@@ -195,7 +195,7 @@ namespace ACE.Server.WorldObjects
         {
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(MoveToRate);
-            actionChain.AddAction(this, MoveTo_Tick);
+            actionChain.AddAction(this, ActionType.PlayerMove_MoveToTick, MoveTo_Tick);
             actionChain.EnqueueChain();
         }
 

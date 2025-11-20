@@ -2844,7 +2844,7 @@ namespace ACE.Server.Command.Handlers
                                 {
                                     var updateHouseChain = new ActionChain();
                                     updateHouseChain.AddDelaySeconds(5.0f);
-                                    updateHouseChain.AddAction(onlinePlayer, onlinePlayer.HandleActionQueryHouse);
+                                    updateHouseChain.AddAction(onlinePlayer, ActionType.AdminCommands_HandleActionQueryHouse, onlinePlayer.HandleActionQueryHouse);
                                     updateHouseChain.EnqueueChain();
                                 }
                             }
@@ -2885,7 +2885,7 @@ namespace ACE.Server.Command.Handlers
                                 {
                                     var updateHouseChain = new ActionChain();
                                     updateHouseChain.AddDelaySeconds(5.0f);
-                                    updateHouseChain.AddAction(onlinePlayer, onlinePlayer.HandleActionQueryHouse);
+                                    updateHouseChain.AddAction(onlinePlayer, ActionType.AdminCommands_HandleActionQueryHouse, onlinePlayer.HandleActionQueryHouse);
                                     updateHouseChain.EnqueueChain();
                                 }
                             }

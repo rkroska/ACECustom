@@ -4,6 +4,8 @@ namespace ACE.Server.Entity.Actions
 {
     public abstract class ActionEventBase : IAction
     {
+        public abstract ActionType Type { get; }
+
         protected Tuple<IActor, IAction> NextAct { get; private set; }
 
         protected ActionEventBase()

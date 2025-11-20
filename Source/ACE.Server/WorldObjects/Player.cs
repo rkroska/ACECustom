@@ -595,11 +595,11 @@ namespace ACE.Server.WorldObjects
 
                     var logoutChain = new ActionChain();
 
-                    logoutChain.AddAction(this, () => SendMotionAsCommands(motionCommand, stanceNonCombat));
+                    logoutChain.AddAction(this, ActionType.Player_SendNonCombatStance, () => SendMotionAsCommands(motionCommand, stanceNonCombat));
                     logoutChain.AddDelaySeconds(animLength);
 
                     // remove the player from landblock management -- after the animation has run
-                    logoutChain.AddAction(WorldManager.ActionQueue, () =>
+                    logoutChain.AddAction(WorldManager.ActionQueue, ActionType.Player_FinalizeLogout, () =>
                     {
                         // If we're in the dying animation process, we cannot RemoveWorldObject and logout until that animation completes..
                         if (IsInDeathProcess)
@@ -1158,7 +1158,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(animTime);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.Player_PKLiteStartTransition, () =>
             {
                 IsBusy = true;
 
@@ -1172,7 +1172,7 @@ namespace ACE.Server.WorldObjects
                 // wait for animation to complete
                 animTime = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.EnterPKLite);
                 innerChain.AddDelaySeconds(animTime);
-                innerChain.AddAction(this, () =>
+                innerChain.AddAction(this, ActionType.Player_PKLiteSetState, () =>
                 {
                     IsBusy = false;
 

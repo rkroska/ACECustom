@@ -549,7 +549,7 @@ namespace ACE.Server.WorldObjects
             // perform clapping motion
             animTime += player.EnqueueMotion(actionChain, MotionCommand.ClapHands);
 
-            actionChain.AddAction(player, () =>
+            actionChain.AddAction(player, ActionType.PetDevice_Refill, () =>
             {
                 // re-verify
                 var useError = VerifyUseRequirements(player, spirit, this);

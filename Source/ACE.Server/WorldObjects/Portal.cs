@@ -349,7 +349,7 @@ namespace ACE.Server.WorldObjects
                 player.Location.Variation = portalDest.Variation;
             }
 
-            WorldManager.ThreadSafeTeleport(player, portalDest, new ActionEventDelegate(() =>
+            WorldManager.ThreadSafeTeleport(player, portalDest, new ActionEventDelegate(ActionType.Portal_Teleport, () =>
             {
                 // If the portal just used is able to be recalled to,
                 // save the destination coordinates to the LastPortal character position save table

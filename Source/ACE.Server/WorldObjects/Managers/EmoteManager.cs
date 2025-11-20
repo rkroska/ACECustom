@@ -217,7 +217,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                         var castChain = new ActionChain();
                         castChain.AddDelaySeconds(preCastTime);
-                        castChain.AddAction(creature, () =>
+                        castChain.AddAction(creature, ActionType.EmoteManager_CastSpell, () =>
                         {
                             creature.TryCastSpell_WithRedirects(spell, spellTarget, creature);
                             creature.PostCastMotion();
@@ -421,7 +421,7 @@ namespace ACE.Server.WorldObjects.Managers
                             delay = creature.Rotate(targetCreature);
                             motionChain.AddDelaySeconds(delay);
                         }
-                        motionChain.AddAction(WorldObject, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, stackSize > 0 ? stackSize : 1, emote.Palette ?? 0, emote.Shade ?? 0));
+                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_Give, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, stackSize > 0 ? stackSize : 1, emote.Palette ?? 0, emote.Shade ?? 0));
                         motionChain.EnqueueChain();
                     }
 
@@ -1013,7 +1013,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                                 var motionChain = new ActionChain();
                                 motionChain.AddDelaySeconds(animLength);
-                                motionChain.AddAction(WorldObject, () =>
+                                motionChain.AddAction(WorldObject, ActionType.EmoteManager_ExecuteMotion, () =>
                                 {
                                     // FIXME: better cycle handling
                                     var cmd = WorldObject.CurrentMotionState.MotionState.ForwardCommand;
@@ -1051,7 +1051,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                         var motionChain = new ActionChain();
                         motionChain.AddDelaySeconds(animLength);
-                        motionChain.AddAction(WorldObject, () => WorldObject.ExecuteMotion(startingMotion, false));
+                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_ExecuteMotion, () => WorldObject.ExecuteMotion(startingMotion, false));
 
                         motionChain.EnqueueChain();
                     }
@@ -2660,13 +2660,13 @@ namespace ACE.Server.WorldObjects.Managers
                 var actionChain = new ActionChain();
 
                 if (Debug)
-                    actionChain.AddAction(WorldObject, () => Console.Write($"{emote.Delay} - "));
+                    actionChain.AddAction(WorldObject, ActionType.EmoteManager_DebugDelay, () => Console.Write($"{emote.Delay} - "));
 
                 // delay = post-delay from actual time of previous emote
                 // emote.Delay = pre-delay for current emote
                 actionChain.AddDelaySeconds(delay + emote.Delay);
 
-                actionChain.AddAction(WorldObject, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote));
+                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote));
                 actionChain.EnqueueChain();
             }
             else
@@ -2708,7 +2708,7 @@ namespace ACE.Server.WorldObjects.Managers
                 {
                     var delayChain = new ActionChain();
                     delayChain.AddDelaySeconds(nextDelay);
-                    delayChain.AddAction(WorldObject, () =>
+                    delayChain.AddAction(WorldObject, ActionType.EmoteManager_ReduceNested, () =>
                     {
                         Nested--;
 

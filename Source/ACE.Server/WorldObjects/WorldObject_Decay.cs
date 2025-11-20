@@ -140,7 +140,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(1.0f);
-                actionChain.AddAction(this, () => Destroy());
+                actionChain.AddAction(this, ActionType.WorldObjectDecay_Destroy, () => Destroy());
                 actionChain.EnqueueChain();
             }
             else

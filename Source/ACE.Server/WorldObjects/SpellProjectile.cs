@@ -240,7 +240,7 @@ namespace ACE.Server.WorldObjects
 
             ActionChain selfDestructChain = new ActionChain();
             selfDestructChain.AddDelaySeconds(5.0);
-            selfDestructChain.AddAction(this, () => Destroy());
+            selfDestructChain.AddAction(this, ActionType.SpellProjectile_Destroy, () => Destroy());
             selfDestructChain.EnqueueChain();
         }
 

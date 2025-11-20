@@ -27,27 +27,15 @@ namespace ACE.Server.Entity.Actions
             lastElement = null;
         }
 
-        public ActionChain(IActor firstActor, Action firstAction)
-        {
-            FirstElement = new ChainElement(firstActor, new ActionEventDelegate(firstAction));
-            lastElement = FirstElement;
-        }
-
-        public ActionChain(IActor firstActor, IAction firstAction)
-        {
-            FirstElement = new ChainElement(firstActor, firstAction);
-            lastElement = FirstElement;
-        }
-
         public ActionChain(ChainElement elm)
         {
             FirstElement = elm;
             lastElement = FirstElement;
         }
 
-        public ActionChain AddAction(IActor actor, Action action)
+        public ActionChain AddAction(IActor actor, ActionType actionType, Action action)
         {
-            ChainElement newElm = new ChainElement(actor, new ActionEventDelegate(action));
+            ChainElement newElm = new ChainElement(actor, new ActionEventDelegate(actionType, action));
             AddAction(newElm);
 
             return this;

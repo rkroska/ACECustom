@@ -81,7 +81,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(readTime);
             player.LastUseTime += readTime;
 
-            actionChain.AddAction(player, () =>
+            actionChain.AddAction(player, ActionType.Scroll_Read, () =>
             {
                 if (player.SpellIsKnown(Spell.Id))
                 {
@@ -121,7 +121,7 @@ namespace ACE.Server.WorldObjects
 
             actionChain.AddDelaySeconds(animTime);
 
-            actionChain.AddAction(player, () => player.IsBusy = false);
+            actionChain.AddAction(player, ActionType.Player_SetNonBusy, () => player.IsBusy = false);
 
             actionChain.EnqueueChain();
         }

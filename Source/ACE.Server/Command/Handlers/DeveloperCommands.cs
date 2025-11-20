@@ -3185,7 +3185,7 @@ namespace ACE.Server.Command.Handlers
             // reload landblock
             var actionChain = new ActionChain();
             actionChain.AddDelayForOneTick();
-            actionChain.AddAction(session.Player, () =>
+            actionChain.AddAction(session.Player, ActionType.Landblock_Init, () =>
             {
                 landblock.Init(variation, true);
             });

@@ -87,7 +87,7 @@ namespace ACE.Server.WorldObjects
                 var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.Landblock << 16 | 0xFFFF), true, null);
 
                 // We enqueue the work onto the target landblock to ensure thread-safety. It's highly likely the lifestoneBlock is far away, and part of a different landblock group (and thus different thread).
-                lifestoneBlock.EnqueueAction(new ActionEventDelegate(() => lifestoneBlock.EnqueueBroadcast(excludePlayers, true, Sanctuary, LocalBroadcastRangeSq, broadcastMsg)));
+                lifestoneBlock.EnqueueAction(new ActionEventDelegate(ActionType.PlayerDeath_Broadcast, () => lifestoneBlock.EnqueueBroadcast(excludePlayers, true, Sanctuary, LocalBroadcastRangeSq, broadcastMsg)));
             }
 
             return deathMessage;
@@ -233,7 +233,7 @@ namespace ACE.Server.WorldObjects
             var animLength = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.Dead);
             dieChain.AddDelaySeconds(animLength + 1.0f);
 
-            dieChain.AddAction(this, () =>
+            dieChain.AddAction(this, ActionType.PlayerDeath_CreateCorpseAndTeleport, () =>
             {
                 CreateCorpse(topDamager, hadVitae);
 
@@ -266,7 +266,7 @@ namespace ACE.Server.WorldObjects
             // teleport to sanctuary or best location
             var newPosition = Sanctuary ?? Instantiation ?? Location;
 
-            WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(() =>
+            WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(ActionType.PlayerDeath_EnqueueTeleport, () =>
             {
                 // Stand back up
                 SetCombatMode(CombatMode.NonCombat);
@@ -276,7 +276,7 @@ namespace ACE.Server.WorldObjects
                 var teleportChain = new ActionChain();
                 if (!IsLoggingOut) // If we're in the process of logging out, we skip the delay
                     teleportChain.AddDelaySeconds(3.0f);
-                teleportChain.AddAction(this, () =>
+                teleportChain.AddAction(this, ActionType.PlayerDeath_Teleport, () =>
                 {
                     // currently happens while in portal space
                     var newHealth = (uint)Math.Round(Health.MaxValue * 0.75f);
@@ -352,7 +352,7 @@ namespace ACE.Server.WorldObjects
 
                 var suicideChain = new ActionChain();
                 suicideChain.AddDelaySeconds(3.0f);
-                suicideChain.AddAction(this, () => HandleSuicide(numDeaths, step + 1));
+                suicideChain.AddAction(this, ActionType.PlayerDeath_HandleSuicide, () => HandleSuicide(numDeaths, step + 1));
                 suicideChain.EnqueueChain();
             }
             else

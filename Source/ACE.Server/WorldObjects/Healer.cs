@@ -138,9 +138,9 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             //actionChain.AddAction(healer, () => healer.EnqueueBroadcastMotion(motion));
-            actionChain.AddAction(healer, () => healer.SendMotionAsCommands(motionCommand, currentStance));
+            actionChain.AddAction(healer, ActionType.Healer_SendMotion, () => healer.SendMotionAsCommands(motionCommand, currentStance));
             actionChain.AddDelaySeconds(animLength);
-            actionChain.AddAction(healer, () =>
+            actionChain.AddAction(healer, ActionType.Healer_DoHealing, () =>
             {
                 // check healing move distance cap
                 var endPos = new Physics.Common.Position(healer.PhysicsObj.Position);

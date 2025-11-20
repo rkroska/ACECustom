@@ -70,12 +70,12 @@ namespace ACE.Server.WorldObjects
                 player.LastUseTime += stanceTime;
             }
 
-            actionChain.AddAction(this, () => EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Twitch1)));
+            actionChain.AddAction(this, ActionType.Bindstone_EnqueueBroadcastMotion , () => EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Twitch1)));
 
             // player animation?
             player.LastUseTime += player.EnqueueMotion(actionChain, MotionCommand.Sanctuary);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.Bindstone_SetSanctuary, () =>
             {
                 if (player.IsWithinUseRadiusOf(this))
                 {

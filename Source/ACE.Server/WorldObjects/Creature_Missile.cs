@@ -43,7 +43,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // ensure ammo visibility for players
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.CreatureMissile_EnsureAmmoVisible, () =>
             {
                 if (CombatMode != CombatMode.Missile)
                     return;
@@ -52,7 +52,7 @@ namespace ACE.Server.WorldObjects
 
                 var delayChain = new ActionChain();
                 delayChain.AddDelaySeconds(0.001f);     // ensuring this message gets sent after player broadcasts above...
-                delayChain.AddAction(this, () =>
+                delayChain.AddAction(this, ActionType.CreatureMissile_EnqueueBroadcast, () =>
                 {
                     EnqueueBroadcast(new GameMessageParentEvent(this, ammo, ACE.Entity.Enum.ParentLocation.RightHand, ACE.Entity.Enum.Placement.RightHandCombat));
                 });

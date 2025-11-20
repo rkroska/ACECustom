@@ -865,7 +865,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(1.0f);
-            actionChain.AddAction(this, () => Destroy(raiseNotifyOfDestructionEvent));
+            actionChain.AddAction(this, ActionType.WorldObject_Destroy, () => Destroy(raiseNotifyOfDestructionEvent));
             actionChain.EnqueueChain();
         }
 

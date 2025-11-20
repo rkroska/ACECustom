@@ -158,7 +158,7 @@ namespace ACE.Server.WorldObjects
             // TODO: proper incremental rotation
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(rotateDelay);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.CreatureNavigation_Rotate, () =>
             {
                 if (target == null || target.Location == null)
                     return;
@@ -228,7 +228,7 @@ namespace ACE.Server.WorldObjects
             // TODO: proper incremental rotation
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(rotateDelay);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.CreatureNavigation_TurnToPosition, () =>
             {
                 var targetDir = position.GetCurrentDir();
                 Location.Rotate(targetDir);
@@ -274,7 +274,7 @@ namespace ACE.Server.WorldObjects
                 Console.WriteLine("TurnTime = " + rotateDelay);
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(rotateDelay);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.CreatureNavigation_TurnToTarget, () =>
             {
                 // fix me: in progress turn
                 //var targetDir = GetDirection(Location.ToGlobal(), target.Location.ToGlobal());
@@ -360,7 +360,7 @@ namespace ACE.Server.WorldObjects
         {
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(monsterTickInterval);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.CreatureNavigation_AddMoveToTick, () =>
             {
                 if (!IsDead && PhysicsObj?.MovementManager?.MoveToManager != null && PhysicsObj.IsMovingTo())
                 {

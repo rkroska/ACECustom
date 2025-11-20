@@ -92,7 +92,7 @@ namespace ACE.Server.Entity
             // perform clapping motion
             animTime += player.EnqueueMotion(actionChain, MotionCommand.ClapHands);
 
-            actionChain.AddAction(player, () =>
+            actionChain.AddAction(player, ActionType.Tailoring_DoTailoring, () =>
             {
                 // re-verify
                 var useError = VerifyUseRequirements(player, source, target);

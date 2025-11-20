@@ -167,7 +167,7 @@ namespace ACE.Server.WorldObjects
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(rotateTime);
 
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMagic_FinishCast, () =>
                 {
                     // ensure target still exists
                     targetCategory = GetTargetCategory(targetGuid, spellId, out target);
@@ -608,7 +608,7 @@ namespace ACE.Server.WorldObjects
 
             if (FastTick)
             {
-                castChain.AddAction(this, () =>
+                castChain.AddAction(this, ActionType.PlayerMagic_FastTick, () =>
                 {
                     PhysicsObj.StopCompletely(false);
 
@@ -623,7 +623,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (RecordCast.Enabled)
                 {
-                    castChain.AddAction(this, () =>
+                    castChain.AddAction(this, ActionType.PlayerMagic_RecordCast, () =>
                     {
                         var animLength = Physics.Animation.MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, windupGesture, CastSpeed);
                         RecordCast.Log($"Windup Gesture: {windupGesture}, Windup Time: {animLength}");
@@ -657,14 +657,14 @@ namespace ACE.Server.WorldObjects
 
             if (RecordCast.Enabled)
             {
-                castChain.AddAction(this, () =>
+                castChain.AddAction(this, ActionType.PlayerMagic_RecordCast, () =>
                 {
                     var animLength = Physics.Animation.MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, MagicState.CastGesture, CastSpeed);
                     RecordCast.Log($"Cast Gesture: {MagicState.CastGesture}, Cast Time: {animLength}");
                 });
             }
 
-            castChain.AddAction(this, () =>
+            castChain.AddAction(this, ActionType.PlayerMagic_StartCastingGesture, () =>
             {
                 if (!MagicState.IsCasting) return;
 
@@ -766,7 +766,7 @@ namespace ACE.Server.WorldObjects
 
                         var actionChain = new ActionChain();
                         actionChain.AddDelaySeconds(rotateTime);
-                        actionChain.AddAction(this, () => DoCastSpell(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus, false));
+                        actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus, false));
                         actionChain.EnqueueChain();
                     }
                     else
@@ -957,7 +957,7 @@ namespace ACE.Server.WorldObjects
                 // return to magic ready stance
                 var actionChain = new ActionChain();
                 EnqueueMotion(actionChain, MotionCommand.Ready, 1.0f, true, castGesture, false, fastbuff);
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMagic_ReturnToReadyStance, () =>
                 {
                     IsBusy = false;
                     SendUseDoneEvent();
@@ -979,7 +979,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(1.0f);   // TODO: get actual recoil timing
-                actionChain.AddAction(this, () => {
+                actionChain.AddAction(this, ActionType.PlayerMagic_ReturnToReadyStance, () => {
 
                     IsBusy = false;
                     SendUseDoneEvent();
@@ -1043,7 +1043,7 @@ namespace ACE.Server.WorldObjects
             MagicState.SetCastParams(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus);
 
             if (!FastTick)
-                spellChain.AddAction(this, () => DoCastSpell(MagicState));
+                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(MagicState));
 
             spellChain.EnqueueChain();
 
@@ -1170,7 +1170,7 @@ namespace ACE.Server.WorldObjects
             MagicState.SetCastParams(spell, null, magicSkill, manaUsed, null, castingPreCheckStatus);
 
             if (!FastTick)
-                spellChain.AddAction(this, () => DoCastSpell(MagicState));
+                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(MagicState));
 
             spellChain.EnqueueChain();
 
@@ -1260,7 +1260,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelayForOneTick();
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMagic_DoCastSpellOnMotionDone, () =>
                 {
                     if (!MagicState.IsCasting)
                         return;
@@ -1293,7 +1293,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelayForOneTick();
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerMagic_OnMoveComplete, () =>
             {
                 if (!MagicState.IsCasting) return;
 

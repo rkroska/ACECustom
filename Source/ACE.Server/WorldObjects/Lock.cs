@@ -120,7 +120,7 @@ namespace ACE.Server.WorldObjects
         {
             ActionChain chain = new ActionChain();
 
-            chain.AddAction(player, () =>
+            chain.AddAction(player, ActionType.Lock_UseUnlocker, () =>
             {
                 if (unlocker.WeenieType == WeenieType.Lockpick &&
                     player.Skills[Skill.Lockpick].AdvancementClass != SkillAdvancementClass.Trained &&

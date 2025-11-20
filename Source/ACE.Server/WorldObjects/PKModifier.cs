@@ -131,7 +131,7 @@ namespace ACE.Server.WorldObjects
                     actionChain.AddDelaySeconds(useTime);
                 }
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.PKModifier_EnqueueDissonanceAndReset, () =>
                 {
                     player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouFeelAHarshDissonance));
                     player.IsBusy = false;
@@ -160,7 +160,7 @@ namespace ACE.Server.WorldObjects
 
                 actionChain.AddDelaySeconds(useTime);
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.PKModifier_TogglePKStauts, () =>
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UseMessage), ChatMessageType.Broadcast));
                     player.PkLevelModifier += PkLevelModifier;

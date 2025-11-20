@@ -610,7 +610,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(1.0f);      // client needs time for primary attribute updates
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerSpells_HandleMaxVitalUpdate, () =>
             {
                 foreach (var maxVital in maxVitals)
                 {
