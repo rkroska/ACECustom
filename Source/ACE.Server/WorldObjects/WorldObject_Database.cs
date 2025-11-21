@@ -49,31 +49,35 @@ namespace ACE.Server.WorldObjects
             if (!SaveInProgress)
                 return;
 
+            // Capture Name and Guid early to avoid potential lock recursion
+            var itemName = Name;
+            var itemGuid = Guid;
+
             if (SaveStartTime == DateTime.MinValue)
             {
-                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {Name} (0x{Guid})");
+                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {itemName} (0x{itemGuid})");
                 SaveInProgress = false;
                 SaveStartTime = DateTime.UtcNow;
                 return;
             }
             
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-            var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{Guid}";
+            var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{itemGuid}";
             
             var currentStack = StackSize;
             var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
             var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
             
             var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-            log.Warn($"[DB RACE] {severityMarker} {playerInfo} {Name} | In-flight: {timeInFlight:N0}ms{stackInfo}");
+            log.Warn($"[DB RACE] {severityMarker} {playerInfo} {itemName} | In-flight: {timeInFlight:N0}ms{stackInfo}");
             
             if (stackChanged || timeInFlight > 50)
             {
                 var ownerContext = this is Player p ? $"[{p.Name}] " : 
                                   (this.Container is Player owner ? $"[{owner.Name}] " : "");
                 var raceInfo = stackChanged 
-                    ? $"{ownerContext}{Name} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{Name} ({timeInFlight:N0}ms)";
+                    ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                    : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
                 SendAggregatedDbRaceAlert(raceInfo);
             }
         }
@@ -104,8 +108,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
+            // Capture name and guid early to avoid lock recursion when logging
+            // The Name property getter calls GetProperty which tries to enter a read lock
+            // If we're already in a read lock (like when checking biota properties below),
+            // this would cause a LockRecursionException
+            var itemName = Name;
+            var itemGuid = Guid;
+
 #if DEBUG
-            string GetItemInfo() => this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+            string GetItemInfo() => this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
             log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
 #endif
             
@@ -279,7 +290,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {itemName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                             return;
                         }
                         
@@ -288,8 +299,8 @@ namespace ACE.Server.WorldObjects
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
-                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
-                            SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {itemName} (Stack: {StackSize}){ownerInfo}");
+                            SendDbSlowDiscordAlert(itemName, saveTime, StackSize ?? 0, ownerInfo);
                         }
                         
                         CheckDatabaseQueueSize();
@@ -304,7 +315,7 @@ namespace ACE.Server.WorldObjects
                             {
                                 savedBiotaContainerId = savedValue;
                             }
-                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
                             log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
                         }
                         finally
@@ -320,7 +331,7 @@ namespace ACE.Server.WorldObjects
                             {
                                 ChangesDetected = true;
 #if DEBUG
-                                var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                                var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
                                 log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
 #endif
                             }
@@ -339,11 +350,11 @@ namespace ACE.Server.WorldObjects
                         {
                             ChangesDetected = true;
 #if DEBUG
-                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{Name} (0x{Guid})";
+                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
                             log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
 #endif
                         }
-                        log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
+                        log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");
                     }
                     finally
                     {
@@ -363,6 +374,10 @@ namespace ACE.Server.WorldObjects
         /// <param name="onCompleted">Optional callback to invoke when the save operation completes</param>
         public virtual void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
         {
+            // Capture name and guid early to avoid lock recursion in callbacks
+            var itemName = Name;
+            var itemGuid = Guid;
+            
             // Detect concurrent saves
             if (SaveInProgress)
             {
@@ -393,7 +408,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {Name} (0x{Guid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {itemName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                             return;
                         }
                         
@@ -402,8 +417,8 @@ namespace ACE.Server.WorldObjects
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
-                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {Name} (Stack: {StackSize}){ownerInfo}");
-                            SendDbSlowDiscordAlert(Name, saveTime, StackSize ?? 0, ownerInfo);
+                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {itemName} (Stack: {StackSize}){ownerInfo}");
+                            SendDbSlowDiscordAlert(itemName, saveTime, StackSize ?? 0, ownerInfo);
                         }
                         
                         CheckDatabaseQueueSize();
@@ -415,7 +430,7 @@ namespace ACE.Server.WorldObjects
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"Exception in save callback for {Name} (0x{Guid}): {ex.Message}");
+                        log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");
                     }
                     finally
                     {

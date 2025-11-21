@@ -57,20 +57,23 @@ namespace ACE.Server.Network
 
         public SessionConnectionData()
         {
-            // Use RandomNumberGenerator for cryptographically secure random values
-            // More efficient than System.Random for connection security
+            // since the network processor is single threaded this can instantiate the .NET Core System.Random class without locking
+            Random rand = new Random();
+
+            // the client and server seeds determine where on the 32 bit wheel the stream cipher begins
+            // by picking a random initialization vector it makes it more difficult for an adversary to forge packets
             ClientSeed = new byte[4];
             ServerSeed = new byte[4];
-            byte[] cookieBytes = new byte[8];
 
-            System.Security.Cryptography.RandomNumberGenerator.Fill(ClientSeed);
-            System.Security.Cryptography.RandomNumberGenerator.Fill(ServerSeed);
-            System.Security.Cryptography.RandomNumberGenerator.Fill(cookieBytes);
+            rand.NextBytes(ClientSeed);
+            rand.NextBytes(ServerSeed);
 
             CryptoClient = new CryptoSystem(ClientSeed);
             IssacServer = new ISAAC(ServerSeed);
 
-            ConnectionCookie = BitConverter.ToUInt64(cookieBytes, 0);
+            byte[] bytes = new byte[8];
+            rand.NextBytes(bytes);
+            ConnectionCookie = BitConverter.ToUInt64(bytes, 0);
 
             PacketSequence = new UIntSequence(false);
         }
