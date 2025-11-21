@@ -598,99 +598,280 @@ namespace ACE.Database
         {
             List<Biota> inventory = null;
             List<Biota> wieldedItems = null;
-            Parallel.Invoke(
-                () => inventory = GetInventoryInParallel(id, true),
-                () => wieldedItems = GetWieldedItemsInParallel(id));
+            
+            try
+            {
+                Parallel.Invoke(
+                    () => 
+                    {
+                        try
+                        {
+                            inventory = GetInventoryInParallel(id, true);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"[DATABASE] GetPossessedBiotasInParallel failed to load inventory for character 0x{id:X8}: {ex.GetFullMessage()}");
+                            inventory = new List<Biota>(); // Ensure non-null
+                        }
+                    },
+                    () => 
+                    {
+                        try
+                        {
+                            wieldedItems = GetWieldedItemsInParallel(id);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"[DATABASE] GetPossessedBiotasInParallel failed to load wielded items for character 0x{id:X8}: {ex.GetFullMessage()}");
+                            wieldedItems = new List<Biota>(); // Ensure non-null
+                        }
+                    });
+            }
+            catch (AggregateException ex)
+            {
+                log.Error($"[DATABASE] GetPossessedBiotasInParallel Parallel.Invoke failed for character 0x{id:X8}: {ex.GetFullMessage()}");
+                
+                // Ensure both collections are initialized
+                if (inventory == null)
+                    inventory = new List<Biota>();
+                if (wieldedItems == null)
+                    wieldedItems = new List<Biota>();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[DATABASE] GetPossessedBiotasInParallel failed catastrophically for character 0x{id:X8}: {ex.GetFullMessage()}");
+                
+                // Ensure both collections are initialized
+                if (inventory == null)
+                    inventory = new List<Biota>();
+                if (wieldedItems == null)
+                    wieldedItems = new List<Biota>();
+            }
 
-            //var inventory = GetInventoryInParallel(id, true);
-
-            //var wieldedItems = GetWieldedItemsInParallel(id);
-
-            return new PossessedBiotas(inventory, wieldedItems);
+            return new PossessedBiotas(inventory ?? new List<Biota>(), wieldedItems ?? new List<Biota>());
         }
 
         public List<Biota> GetInventoryInParallel(uint parentId, bool includedNestedItems)
         {
-            using (var context = new ShardDbContext())
+            try
             {
-                context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
-
-                var results = context.BiotaPropertiesIID
-                    .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
-                    .Select(r => r.ObjectId)
-                    .ToList();
-
-                // Use parallel only for large result sets to avoid overhead
-                if (results.Count < 10)
+                using (var context = new ShardDbContext())
                 {
-                    var inventory = new List<Biota>();
-                    foreach (var result in results)
+                    context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+                    var results = context.BiotaPropertiesIID
+                        .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
+                        .Select(r => r.ObjectId)
+                        .ToList();
+
+                    // Use parallel only for large result sets to avoid overhead
+                    if (results.Count < 10)
                     {
-                        var biota = GetBiota(result);
-
-                        if (biota != null)
+                        var inventory = new List<Biota>();
+                        foreach (var result in results)
                         {
-                            inventory.Add(biota);
-
-                            if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
+                            try
                             {
-                                var subItems = GetInventoryInParallel(biota.Id, false);
-                                inventory.AddRange(subItems);
+                                var biota = GetBiota(result);
+
+                                if (biota != null)
+                                {
+                                    inventory.Add(biota);
+
+                                    if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
+                                    {
+                                        var subItems = GetInventoryInParallel(biota.Id, false);
+                                        inventory.AddRange(subItems);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"[DATABASE] GetInventoryInParallel failed to load biota 0x{result:X8} for parent 0x{parentId:X8}: {ex.GetFullMessage()}");
+                                // Continue loading other items
                             }
                         }
+                        return inventory;
                     }
-                    return inventory;
-                }
 
-                var inventoryBag = new ConcurrentBag<Biota>();
-
-                Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
-                {
-                    var biota = GetBiota(result);
-
-                    if (biota != null)
+                    try
                     {
-                        inventoryBag.Add(biota);
+                        // FIX: Batch load all biotas in ONE query instead of N queries
+                        var biotas = context.Biota
+                            .Include(b => b.BiotaPropertiesAnimPart)
+                            .Include(b => b.BiotaPropertiesAttribute)
+                            .Include(b => b.BiotaPropertiesAttribute2nd)
+                            .Include(b => b.BiotaPropertiesBodyPart)
+                            .Include(b => b.BiotaPropertiesBook)
+                            .Include(b => b.BiotaPropertiesBookPageData)
+                            .Include(b => b.BiotaPropertiesBool)
+                            .Include(b => b.BiotaPropertiesCreateList)
+                            .Include(b => b.BiotaPropertiesDID)
+                            .Include(b => b.BiotaPropertiesEmote)
+                                .ThenInclude(e => e.BiotaPropertiesEmoteAction)
+                            .Include(b => b.BiotaPropertiesEnchantmentRegistry)
+                            .Include(b => b.BiotaPropertiesEventFilter)
+                            .Include(b => b.BiotaPropertiesFloat)
+                            .Include(b => b.BiotaPropertiesGenerator)
+                            .Include(b => b.BiotaPropertiesIID)
+                            .Include(b => b.BiotaPropertiesInt)
+                            .Include(b => b.BiotaPropertiesInt64)
+                            .Include(b => b.BiotaPropertiesPalette)
+                            .Include(b => b.BiotaPropertiesPosition)
+                            .Include(b => b.BiotaPropertiesSkill)
+                            .Include(b => b.BiotaPropertiesSpellBook)
+                            .Include(b => b.BiotaPropertiesString)
+                            .Include(b => b.BiotaPropertiesTextureMap)
+                            .Include(b => b.HousePermission)
+                            .Include(b => b.BiotaPropertiesAllegiance)
+                            .AsSplitQuery()
+                            .Where(b => results.Contains(b.Id))
+                            .ToList();
 
-                        if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
+                        // Process nested containers if needed
+                        if (includedNestedItems)
                         {
-                            var subItems = GetInventoryInParallel(biota.Id, false);
-                            foreach (var item in subItems)
-                                inventoryBag.Add(item);
+                            var containers = biotas.Where(b => b.WeenieType == (int)WeenieType.Container).ToList();
+                            foreach (var container in containers)
+                            {
+                                try
+                                {
+                                    var subItems = GetInventoryInParallel(container.Id, false);
+                                    biotas.AddRange(subItems);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Error($"[DATABASE] GetInventoryInParallel failed to load nested items for container 0x{container.Id:X8}: {ex.GetFullMessage()}");
+                                    // Continue loading other containers
+                                }
+                            }
                         }
-                    }
-                });
 
-                return inventoryBag.ToList();
+                        return biotas;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        log.Error($"[DATABASE] GetInventoryInParallel batch load failed for parent 0x{parentId:X8} with InvalidOperationException (likely database connection issue): {ex.GetFullMessage()}");
+                        
+                        // Fallback to individual loading
+                        log.Warn($"[DATABASE] Falling back to individual item loading for parent 0x{parentId:X8}");
+                        var fallbackInventory = new List<Biota>();
+                        foreach (var result in results)
+                        {
+                            try
+                            {
+                                var biota = GetBiota(result);
+                                if (biota != null)
+                                    fallbackInventory.Add(biota);
+                            }
+                            catch (Exception fallbackEx)
+                            {
+                                log.Error($"[DATABASE] Fallback load also failed for biota 0x{result:X8}: {fallbackEx.GetFullMessage()}");
+                            }
+                        }
+                        return fallbackInventory;
+                    }
+                    catch (TimeoutException ex)
+                    {
+                        log.Error($"[DATABASE] GetInventoryInParallel batch load timed out for parent 0x{parentId:X8}: {ex.GetFullMessage()}");
+                        return new List<Biota>(); // Return empty list on timeout
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"[DATABASE] GetInventoryInParallel failed catastrophically for parent 0x{parentId:X8}: {ex.GetFullMessage()}");
+                return new List<Biota>(); // Return empty list rather than crashing
             }
         }
 
 
         public List<Biota> GetWieldedItemsInParallel(uint parentId)
         {
-            var wieldedItems = new ConcurrentBag<Biota>();
-            List<uint> results;
-
-            using (var context = new ShardDbContext())
+            try
             {
-                context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+                using (var context = new ShardDbContext())
+                {
+                    context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                results = context.BiotaPropertiesIID
-                    .Where(r => r.Type == (ushort)PropertyInstanceId.Wielder && r.Value == parentId)
-                    .Select(r => r.ObjectId)
-                    .ToList();
+                    var results = context.BiotaPropertiesIID
+                        .Where(r => r.Type == (ushort)PropertyInstanceId.Wielder && r.Value == parentId)
+                        .Select(r => r.ObjectId)
+                        .ToList();
+
+                    if (results.Count == 0)
+                        return new List<Biota>();
+
+                    try
+                    {
+                        // FIX: Batch load all wielded items in ONE query
+                        var wieldedItems = context.Biota
+                            .Include(b => b.BiotaPropertiesAnimPart)
+                            .Include(b => b.BiotaPropertiesAttribute)
+                            .Include(b => b.BiotaPropertiesAttribute2nd)
+                            .Include(b => b.BiotaPropertiesBodyPart)
+                            .Include(b => b.BiotaPropertiesBook)
+                            .Include(b => b.BiotaPropertiesBookPageData)
+                            .Include(b => b.BiotaPropertiesBool)
+                            .Include(b => b.BiotaPropertiesCreateList)
+                            .Include(b => b.BiotaPropertiesDID)
+                            .Include(b => b.BiotaPropertiesEmote)
+                                .ThenInclude(e => e.BiotaPropertiesEmoteAction)
+                            .Include(b => b.BiotaPropertiesEnchantmentRegistry)
+                            .Include(b => b.BiotaPropertiesEventFilter)
+                            .Include(b => b.BiotaPropertiesFloat)
+                            .Include(b => b.BiotaPropertiesGenerator)
+                            .Include(b => b.BiotaPropertiesIID)
+                            .Include(b => b.BiotaPropertiesInt)
+                            .Include(b => b.BiotaPropertiesInt64)
+                            .Include(b => b.BiotaPropertiesPalette)
+                            .Include(b => b.BiotaPropertiesPosition)
+                            .Include(b => b.BiotaPropertiesSkill)
+                            .Include(b => b.BiotaPropertiesSpellBook)
+                            .Include(b => b.BiotaPropertiesString)
+                            .Include(b => b.BiotaPropertiesTextureMap)
+                            .Include(b => b.HousePermission)
+                            .Include(b => b.BiotaPropertiesAllegiance)
+                            .AsSplitQuery()
+                            .Where(b => results.Contains(b.Id))
+                            .ToList();
+
+                        return wieldedItems;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        log.Error($"[DATABASE] GetWieldedItemsInParallel batch load failed for parent 0x{parentId:X8} with InvalidOperationException: {ex.GetFullMessage()}");
+                        
+                        // Fallback to individual loading
+                        log.Warn($"[DATABASE] Falling back to individual wielded item loading for parent 0x{parentId:X8}");
+                        var fallbackItems = new List<Biota>();
+                        foreach (var result in results)
+                        {
+                            try
+                            {
+                                var biota = GetBiota(result);
+                                if (biota != null)
+                                    fallbackItems.Add(biota);
+                            }
+                            catch (Exception fallbackEx)
+                            {
+                                log.Error($"[DATABASE] Fallback load also failed for wielded biota 0x{result:X8}: {fallbackEx.GetFullMessage()}");
+                            }
+                        }
+                        return fallbackItems;
+                    }
+                    catch (TimeoutException ex)
+                    {
+                        log.Error($"[DATABASE] GetWieldedItemsInParallel batch load timed out for parent 0x{parentId:X8}: {ex.GetFullMessage()}");
+                        return new List<Biota>(); // Return empty list on timeout
+                    }
+                }
             }
-
-            Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
+            catch (Exception ex)
             {
-                var biota = GetBiota(result);
-
-                if (biota != null)
-                    wieldedItems.Add(biota);
-            });
-            
-
-            return wieldedItems.ToList();
+                log.Error($"[DATABASE] GetWieldedItemsInParallel failed catastrophically for parent 0x{parentId:X8}: {ex.GetFullMessage()}");
+                return new List<Biota>(); // Return empty list rather than crashing
+            }
         }
 
         public List<Biota> GetStaticObjectsByLandblock(ushort landblockId, int? variationId = null)

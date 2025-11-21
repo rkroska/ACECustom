@@ -174,5 +174,76 @@ namespace ACE.Server.Tests.LoadTests
                 await Task.Delay(5000);
             }
         }
+
+        [Fact(Skip = "Manual load test - run explicitly")]
+        [Trait("Category", "LoadTest")]
+        public async Task CharacterLoginLoadTest()
+        {
+            // This test focuses on character login and loading performance
+            var config = new LoadTestConfiguration
+            {
+                ServerHost = "127.0.0.1",
+                ServerPort = 9000,
+                ConcurrentClients = 25,
+                TestDuration = TimeSpan.FromMinutes(3),
+                Scenario = LoadTestScenario.IdleClients, // Focus on login/connection
+                ConnectionBatchSize = 5,
+                ConnectionBatchDelay = 800,
+                VerboseLogging = false,
+                TestName = "Character Login Performance Test"
+            };
+
+            output.WriteLine("═══════════════════════════════════════════════════════════");
+            output.WriteLine("  ACE Character Login & Loading Performance Test");
+            output.WriteLine("═══════════════════════════════════════════════════════════");
+            output.WriteLine("");
+            output.WriteLine($"Server: {config.ServerHost}:{config.ServerPort}");
+            output.WriteLine($"Clients: {config.ConcurrentClients}");
+            output.WriteLine($"Duration: {config.TestDuration.TotalMinutes} minutes");
+            output.WriteLine("");
+
+            var orchestrator = new LoadTestOrchestrator(config);
+            var results = await orchestrator.RunLoadTestAsync();
+
+            // Display results
+            output.WriteLine("");
+            output.WriteLine("═══════════════════════════════════════════════════════════");
+            output.WriteLine("                    TEST RESULTS");
+            output.WriteLine("═══════════════════════════════════════════════════════════");
+            output.WriteLine("");
+            output.WriteLine($"CONNECTION METRICS:");
+            output.WriteLine($"  Total Clients:         {results.TotalClients}");
+            output.WriteLine($"  Successful:            {results.SuccessfulConnections} ({results.ConnectionSuccessRate:P2})");
+            output.WriteLine($"  Failed:                {results.FailedConnections}");
+            output.WriteLine($"  Avg Connection Time:   {results.AverageConnectionTime.TotalMilliseconds:F2}ms");
+            output.WriteLine("");
+            output.WriteLine($"ACTION METRICS:");
+            output.WriteLine($"  Total Actions:         {results.TotalActions}");
+            output.WriteLine($"  Actions/Second:        {results.ActionsPerSecond:F2}");
+            output.WriteLine($"  Avg Action Time:       {results.AverageActionTime.TotalMilliseconds:F2}ms");
+            output.WriteLine("");
+            output.WriteLine($"NETWORK METRICS:");
+            output.WriteLine($"  Packets Sent:          {results.TotalPacketsSent}");
+            output.WriteLine($"  Packets Received:      {results.TotalPacketsReceived}");
+            output.WriteLine($"  Packets/Second:        {results.PacketsPerSecond:F2}");
+            output.WriteLine("");
+            output.WriteLine($"ERROR METRICS:");
+            output.WriteLine($"  Total Errors:          {results.TotalErrors}");
+            output.WriteLine($"  Success Rate:          {results.SuccessRate:P2}");
+            output.WriteLine("");
+
+            // Save results
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var csvFilename = $"CharacterLogin_LoadTest_{timestamp}.csv";
+            System.IO.File.WriteAllText(csvFilename, results.ToCsv());
+            output.WriteLine($"Results saved to: {csvFilename}");
+            output.WriteLine("");
+
+            // Assertions
+            Assert.True(results.ConnectionSuccessRate > 0.80, 
+                $"Connection success rate should be > 80% (was {results.ConnectionSuccessRate:P2})");
+            Assert.True(results.AverageConnectionTime.TotalMilliseconds < 2000,
+                $"Average connection time should be < 2000ms (was {results.AverageConnectionTime.TotalMilliseconds:F2}ms)");
+        }
     }
 }

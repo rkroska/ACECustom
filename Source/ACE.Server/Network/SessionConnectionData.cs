@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography;
 
 using ACE.Common.Cryptography;
 using ACE.Server.Network.Sequence;
@@ -57,23 +58,25 @@ namespace ACE.Server.Network
 
         public SessionConnectionData()
         {
-            // since the network processor is single threaded this can instantiate the .NET Core System.Random class without locking
-            Random rand = new Random();
-
-            // the client and server seeds determine where on the 32 bit wheel the stream cipher begins
-            // by picking a random initialization vector it makes it more difficult for an adversary to forge packets
+            // FIXED: Use cryptographically secure random number generator instead of System.Random
+            // Under high load at server startup, System.Random can cause thread contention
+            // and produce poor randomness when many SessionConnectionData instances are created simultaneously
+            
             ClientSeed = new byte[4];
             ServerSeed = new byte[4];
+            byte[] cookieBytes = new byte[8];
 
-            rand.NextBytes(ClientSeed);
-            rand.NextBytes(ServerSeed);
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(ClientSeed);
+                rng.GetBytes(ServerSeed);
+                rng.GetBytes(cookieBytes);
+            }
+
+            ConnectionCookie = BitConverter.ToUInt64(cookieBytes, 0);
 
             CryptoClient = new CryptoSystem(ClientSeed);
             IssacServer = new ISAAC(ServerSeed);
-
-            byte[] bytes = new byte[8];
-            rand.NextBytes(bytes);
-            ConnectionCookie = BitConverter.ToUInt64(bytes, 0);
 
             PacketSequence = new UIntSequence(false);
         }
