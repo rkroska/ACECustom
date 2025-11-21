@@ -64,6 +64,8 @@ namespace ACE.Server.Tests.LoadTests
         {
             serverEndPoint = new IPEndPoint(IPAddress.Parse(serverHost), serverPort);
             udpClient = new UdpClient();
+            // Connect the UDP client to the server endpoint to enable ReceiveAsync
+            udpClient.Connect(serverEndPoint);
             clientId = (ushort)random.Next(1, 65535);
             serverId = 0; // Will be set during handshake
             State = LoadTestClientState.Disconnected;
@@ -485,7 +487,8 @@ namespace ACE.Server.Tests.LoadTests
         {
             try
             {
-                await udpClient.SendAsync(data, data.Length, serverEndPoint);
+                // Use SendAsync without endpoint since we're connected
+                await udpClient.SendAsync(data, data.Length);
             }
             catch (Exception ex)
             {

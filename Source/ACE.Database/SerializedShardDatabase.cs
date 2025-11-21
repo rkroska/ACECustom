@@ -366,25 +366,29 @@ namespace ACE.Database
             {
                 _readOnlyQueue.Add(new Task((x) =>
                 {
+                    PossessedBiotas result = null;
+                    bool loadSucceeded = false;
+                    
                     try
                     {
-                        var c = BaseDatabase.GetPossessedBiotasInParallel(id);
-                        callback?.Invoke(c);
+                        result = BaseDatabase.GetPossessedBiotasInParallel(id);
+                        loadSucceeded = true;
                     }
                     catch (Exception ex)
                     {
                         log.Error($"[DATABASE] GetPossessedBiotasInParallel task failed for character 0x{id:X8}: {ex.Message}");
                         log.Error($"[DATABASE] Stack trace: {ex.StackTrace}");
-                        
-                        // Invoke callback with empty data rather than leaving caller hanging
-                        try
-                        {
-                            callback?.Invoke(new PossessedBiotas(new List<Biota>(), new List<Biota>()));
-                        }
-                        catch (Exception callbackEx)
-                        {
-                            log.Error($"[DATABASE] Callback invocation also failed: {callbackEx.Message}");
-                        }
+                        result = new PossessedBiotas(new List<Biota>(), new List<Biota>());
+                    }
+                    
+                    // Invoke callback exactly once with either successful result or empty fallback
+                    try
+                    {
+                        callback.Invoke(result);
+                    }
+                    catch (Exception callbackEx)
+                    {
+                        log.Error($"[DATABASE] GetPossessedBiotasInParallel callback invocation failed for character 0x{id:X8}: {callbackEx.Message}");
                     }
                 }, "GetPossessedBiotasInParallel: " + id));
             }
@@ -392,10 +396,10 @@ namespace ACE.Database
             {
                 log.Error($"[DATABASE] Failed to enqueue GetPossessedBiotasInParallel task for 0x{id:X8} (queue may be completing): {ex.Message}");
                 
-                // Try to invoke callback with empty data
+                // Try to invoke callback with empty data exactly once
                 try
                 {
-                    callback?.Invoke(new PossessedBiotas(new List<Biota>(), new List<Biota>()));
+                    callback.Invoke(new PossessedBiotas(new List<Biota>(), new List<Biota>()));
                 }
                 catch (Exception callbackEx)
                 {
@@ -416,25 +420,29 @@ namespace ACE.Database
             {
                 _readOnlyQueue.Add(new Task((x) =>
                 {
+                    List<Biota> result = null;
+                    bool loadSucceeded = false;
+                    
                     try
                     {
-                        var c = BaseDatabase.GetInventoryInParallel(parentId, includedNestedItems);
-                        callback?.Invoke(c);
+                        result = BaseDatabase.GetInventoryInParallel(parentId, includedNestedItems);
+                        loadSucceeded = true;
                     }
                     catch (Exception ex)
                     {
                         log.Error($"[DATABASE] GetInventoryInParallel task failed for parent 0x{parentId:X8}: {ex.Message}");
                         log.Error($"[DATABASE] Stack trace: {ex.StackTrace}");
-                        
-                        // Invoke callback with empty list rather than leaving caller hanging
-                        try
-                        {
-                            callback?.Invoke(new List<Biota>());
-                        }
-                        catch (Exception callbackEx)
-                        {
-                            log.Error($"[DATABASE] Callback invocation also failed: {callbackEx.Message}");
-                        }
+                        result = new List<Biota>();
+                    }
+                    
+                    // Invoke callback exactly once with either successful result or empty fallback
+                    try
+                    {
+                        callback.Invoke(result);
+                    }
+                    catch (Exception callbackEx)
+                    {
+                        log.Error($"[DATABASE] GetInventoryInParallel callback invocation failed for parent 0x{parentId:X8}: {callbackEx.Message}");
                     }
                 }, "GetInventoryInParallel: " + parentId));
             }
@@ -442,10 +450,10 @@ namespace ACE.Database
             {
                 log.Error($"[DATABASE] Failed to enqueue GetInventoryInParallel task for 0x{parentId:X8} (queue may be completing): {ex.Message}");
                 
-                // Try to invoke callback with empty list
+                // Try to invoke callback with empty list exactly once
                 try
                 {
-                    callback?.Invoke(new List<Biota>());
+                    callback.Invoke(new List<Biota>());
                 }
                 catch (Exception callbackEx)
                 {
