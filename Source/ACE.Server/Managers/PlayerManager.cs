@@ -52,10 +52,17 @@ namespace ACE.Server.Managers
 
             Parallel.ForEach(results, result =>
             {
-                var offlinePlayer = new OfflinePlayer(result);
+                try
+                {
+                    var offlinePlayer = new OfflinePlayer(result);
 
-                lock (offlinePlayers)
-                    offlinePlayers[offlinePlayer.Guid.Full] = offlinePlayer;
+                    lock (offlinePlayers)
+                        offlinePlayers[offlinePlayer.Guid.Full] = offlinePlayer;
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[PLAYERMANAGER] Failed to initialize OfflinePlayer for Biota.Id={result.Id}: {ex}");
+                }
             });
         }
 
