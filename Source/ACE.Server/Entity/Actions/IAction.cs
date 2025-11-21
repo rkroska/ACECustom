@@ -177,6 +177,7 @@ namespace ACE.Server.Entity.Actions
         PlayerXp_ItemIncreasedInPower,
         PlayerXp_RemoveVitae,
         PlayerXp_UpdateXpAndLevel,
+        PlayerXp_FlushBatchedUpdate,
         Portal_Teleport,
         RecipeManager_FinishRecipe,
         RecipeManager_HandleRecipe,

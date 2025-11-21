@@ -85,12 +85,24 @@ namespace ACE.Database
             _readOnlyQueue.CompleteAdding();
             
             // Wait for all read-only threads to complete
-            foreach (var thread in _readOnlyWorkerThreads)
+            // Null-check in case Stop() is called before Start()
+            if (_readOnlyWorkerThreads != null)
             {
-                thread?.Join();
+                foreach (var thread in _readOnlyWorkerThreads)
+                {
+                    // Null-check each thread and ensure it's alive before joining
+                    if (thread != null && thread.IsAlive)
+                    {
+                        thread.Join();
+                    }
+                }
             }
             
-            _workerThread.Join();
+            // Null-check and ensure worker thread is alive before joining
+            if (_workerThread != null && _workerThread.IsAlive)
+            {
+                _workerThread.Join();
+            }
         }
 
         public List<string> QueueReport()
