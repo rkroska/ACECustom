@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography;
 
 using ACE.Common.Cryptography;
 using ACE.Server.Network.Sequence;
@@ -57,20 +58,25 @@ namespace ACE.Server.Network
 
         public SessionConnectionData()
         {
-            // Use RandomNumberGenerator for cryptographically secure random values
-            // More efficient than System.Random for connection security
+            // FIXED: Use cryptographically secure random number generator instead of System.Random
+            // Under high load at server startup, System.Random can cause thread contention
+            // and produce poor randomness when many SessionConnectionData instances are created simultaneously
+            
             ClientSeed = new byte[4];
             ServerSeed = new byte[4];
             byte[] cookieBytes = new byte[8];
 
-            System.Security.Cryptography.RandomNumberGenerator.Fill(ClientSeed);
-            System.Security.Cryptography.RandomNumberGenerator.Fill(ServerSeed);
-            System.Security.Cryptography.RandomNumberGenerator.Fill(cookieBytes);
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(ClientSeed);
+                rng.GetBytes(ServerSeed);
+                rng.GetBytes(cookieBytes);
+            }
+
+            ConnectionCookie = BitConverter.ToUInt64(cookieBytes, 0);
 
             CryptoClient = new CryptoSystem(ClientSeed);
             IssacServer = new ISAAC(ServerSeed);
-
-            ConnectionCookie = BitConverter.ToUInt64(cookieBytes, 0);
 
             PacketSequence = new UIntSequence(false);
         }
