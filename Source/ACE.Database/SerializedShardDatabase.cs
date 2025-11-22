@@ -40,69 +40,41 @@ namespace ACE.Database
         private readonly UniqueQueue<Task, string> _uniqueQueue = new(t => GetUniqueTaskKey(t));
         private bool _workerThreadRunning = true;
 
-        // Parallel read processing
-        private readonly int _readOnlyThreadCount;
-        private Thread[] _readOnlyWorkerThreads;
-
+        private Thread _workerThreadReadOnly;
         private Thread _workerThread;
 
         internal SerializedShardDatabase(ShardDatabase shardDatabase)
         {
             BaseDatabase = shardDatabase;
-            
-            // Configure thread count based on CPU cores, capped between 4 and 16
-            // This allows read operations to scale with hardware while preventing thread explosion
-            _readOnlyThreadCount = Math.Clamp(Environment.ProcessorCount, 4, 16);
         }
 
         public void Start()
         {
-            // Start multiple read-only worker threads for parallel processing
-            _readOnlyWorkerThreads = new Thread[_readOnlyThreadCount];
-            for (int i = 0; i < _readOnlyThreadCount; i++)
-            {
-                _readOnlyWorkerThreads[i] = new Thread(DoReadOnlyWork)
-                {
-                    Name = $"Serialized Shard Database - Reading [{i + 1}/{_readOnlyThreadCount}]"
-                };
-                _readOnlyWorkerThreads[i].Start();
-            }
 
+            _workerThreadReadOnly = new Thread(DoReadOnlyWork)
+            {
+                Name = "Serialized Shard Database - Reading"
+            };
             _workerThread = new Thread(DoSaves)
             {
                 Name = "Serialized Shard Database - Character Saves"
             };
 
+            _workerThreadReadOnly.Start();
             _workerThread.Start();
             stopwatch.Start();
-            
-            log.Info($"[DATABASE] Started {_readOnlyThreadCount} parallel read-only worker threads");
         }
 
         public void Stop()
         {
             _workerThreadRunning = false;
             _readOnlyQueue.CompleteAdding();
-            
-            // Wait for all read-only threads to complete
-            // Null-check in case Stop() is called before Start()
-            if (_readOnlyWorkerThreads != null)
-            {
-                foreach (var thread in _readOnlyWorkerThreads)
-                {
-                    // Null-check each thread and ensure it's alive before joining
-                    if (thread != null && thread.IsAlive)
-                    {
-                        thread.Join();
-                    }
-                }
-            }
-            
-            // Null-check and ensure worker thread is alive before joining
-            if (_workerThread != null && _workerThread.IsAlive)
-            {
-                _workerThread.Join();
-            }
+            _workerThreadReadOnly.Join();
+            _workerThread.Join();
+
+            // Dispose collections to release sync primitives
+            _readOnlyQueue.Dispose();
+            _uniqueQueue.Dispose();
         }
 
         public List<string> QueueReport()
@@ -123,36 +95,19 @@ namespace ACE.Database
                 {
                     Task t;
 
-                    // Use blocking TryTake with timeout to avoid busy-waiting
-                    // This allows thread to sleep when no work is available
-                    if (!_readOnlyQueue.TryTake(out t, 100))
-                    {
-                        // No task available within timeout, continue to check completion status
-                        continue;
-                    }
-                    
-                    if (t == null)
-                    {
-                        log.Warn("[DATABASE] DoReadOnlyWork received null task, skipping");
-                        continue;
-                    }
-
+                    bool tasked = _readOnlyQueue.TryTake(out t);
                     try
                     {
+                        if (!tasked)
+                        {
+                            // no task to process, continue
+                            continue;
+                        }
                         t.Start();
                     }
-                    catch (ObjectDisposedException ex)
+                    catch (Exception e)
                     {
-                        log.Error($"[DATABASE] DoReadOnlyWork task failed to start (task was disposed): {ex.Message}");
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        log.Error($"[DATABASE] DoReadOnlyWork task failed to start (task may have already been started): {ex.Message}");
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] DoReadOnlyWork task failed with unexpected exception: {ex.Message}");
-                        log.Error($"[DATABASE] Stack trace: {ex.StackTrace}");
+                        log.Error($"[DATABASE] DoReadOnlyWork task failed with exception: {e}");
                     }
                 }
                 catch (ObjectDisposedException)
@@ -165,26 +120,9 @@ namespace ACE.Database
                     // _readOnlyQueue is empty and CompleteForAdding has been called -- we're done here
                     break;
                 }
-                catch (OperationCanceledException)
+                catch (NullReferenceException)
                 {
-                    // Timeout occurred, continue to check completion status
-                    continue;
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[DATABASE] DoReadOnlyWork unexpected exception in main loop: {ex.Message}");
-                    log.Error($"[DATABASE] Stack trace: {ex.StackTrace}");
-                    
-                    // Brief sleep to prevent tight error loop
-                    try
-                    {
-                        Thread.Sleep(100);
-                    }
-                    catch
-                    {
-                        // If we can't even sleep, break out
-                        break;
-                    }
+                    break;
                 }
             }
         }
@@ -211,7 +149,7 @@ namespace ACE.Database
                         t.Start();
 
                         t.Wait();
-                        
+
 
                         if (stopwatch.ElapsedMilliseconds >= 5000)
                         {
@@ -235,7 +173,7 @@ namespace ACE.Database
                 catch (InvalidOperationException)
                 {
                     // _uniqueQueue is empty and CompleteForAdding has been called -- we're done here
-                    if(!_workerThreadRunning)
+                    if (!_workerThreadRunning)
                     {
                         log.Info("[DATABASE] DoSaves: No more tasks to process, exiting.");
                         break;
@@ -327,7 +265,7 @@ namespace ACE.Database
         {
             var initialCallTime = DateTime.UtcNow;
 
-            _uniqueQueue.Enqueue(new Task( (x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var taskStartTime = DateTime.UtcNow;
                 var result = BaseDatabase.RemoveBiota(id);
@@ -356,110 +294,21 @@ namespace ACE.Database
 
         public void GetPossessedBiotasInParallel(uint id, Action<PossessedBiotas> callback)
         {
-            if (callback == null)
+            _readOnlyQueue.Add(new Task((x) =>
             {
-                log.Error($"[DATABASE] GetPossessedBiotasInParallel called with null callback for character 0x{id:X8}");
-                return;
-            }
-
-            try
-            {
-                _readOnlyQueue.Add(new Task((x) =>
-                {
-                    PossessedBiotas result = null;
-                    bool loadSucceeded = false;
-                    
-                    try
-                    {
-                        result = BaseDatabase.GetPossessedBiotasInParallel(id);
-                        loadSucceeded = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] GetPossessedBiotasInParallel task failed for character 0x{id:X8}: {ex.Message}");
-                        log.Error($"[DATABASE] Stack trace: {ex.StackTrace}");
-                        result = new PossessedBiotas(new List<Biota>(), new List<Biota>());
-                    }
-                    
-                    // Invoke callback exactly once with either successful result or empty fallback
-                    try
-                    {
-                        callback.Invoke(result);
-                    }
-                    catch (Exception callbackEx)
-                    {
-                        log.Error($"[DATABASE] GetPossessedBiotasInParallel callback invocation failed for character 0x{id:X8}: {callbackEx.Message}");
-                    }
-                }, "GetPossessedBiotasInParallel: " + id));
-            }
-            catch (InvalidOperationException ex)
-            {
-                log.Error($"[DATABASE] Failed to enqueue GetPossessedBiotasInParallel task for 0x{id:X8} (queue may be completing): {ex.Message}");
-                
-                // Try to invoke callback with empty data exactly once
-                try
-                {
-                    callback.Invoke(new PossessedBiotas(new List<Biota>(), new List<Biota>()));
-                }
-                catch (Exception callbackEx)
-                {
-                    log.Error($"[DATABASE] Fallback callback invocation failed: {callbackEx.Message}");
-                }
-            }
+                var c = BaseDatabase.GetPossessedBiotasInParallel(id);
+                callback?.Invoke(c);
+            }, "GetPossessedBiotasInParallel: " + id));
         }
 
         public void GetInventoryInParallel(uint parentId, bool includedNestedItems, Action<List<Biota>> callback)
         {
-            if (callback == null)
+            _readOnlyQueue.Add(new Task((x) =>
             {
-                log.Error($"[DATABASE] GetInventoryInParallel called with null callback for parent 0x{parentId:X8}");
-                return;
-            }
+                var c = BaseDatabase.GetInventoryInParallel(parentId, includedNestedItems);
+                callback?.Invoke(c);
+            }, "GetInventoryInParallel: " + parentId));
 
-            try
-            {
-                _readOnlyQueue.Add(new Task((x) =>
-                {
-                    List<Biota> result = null;
-                    bool loadSucceeded = false;
-                    
-                    try
-                    {
-                        result = BaseDatabase.GetInventoryInParallel(parentId, includedNestedItems);
-                        loadSucceeded = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] GetInventoryInParallel task failed for parent 0x{parentId:X8}: {ex.Message}");
-                        log.Error($"[DATABASE] Stack trace: {ex.StackTrace}");
-                        result = new List<Biota>();
-                    }
-                    
-                    // Invoke callback exactly once with either successful result or empty fallback
-                    try
-                    {
-                        callback.Invoke(result);
-                    }
-                    catch (Exception callbackEx)
-                    {
-                        log.Error($"[DATABASE] GetInventoryInParallel callback invocation failed for parent 0x{parentId:X8}: {callbackEx.Message}");
-                    }
-                }, "GetInventoryInParallel: " + parentId));
-            }
-            catch (InvalidOperationException ex)
-            {
-                log.Error($"[DATABASE] Failed to enqueue GetInventoryInParallel task for 0x{parentId:X8} (queue may be completing): {ex.Message}");
-                
-                // Try to invoke callback with empty list exactly once
-                try
-                {
-                    callback.Invoke(new List<Biota>());
-                }
-                catch (Exception callbackEx)
-                {
-                    log.Error($"[DATABASE] Fallback callback invocation failed: {callbackEx.Message}");
-                }
-            }
         }
 
 
@@ -478,7 +327,7 @@ namespace ACE.Database
             {
                 var result = BaseDatabase.GetCharacters(accountId, includeDeleted);
                 callback?.Invoke(result);
-            }, "GetCharacters: " + accountId ));
+            }, "GetCharacters: " + accountId));
         }
 
         public void GetLoginCharacters(uint accountId, bool includeDeleted, Action<List<LoginCharacter>> callback)
@@ -501,9 +350,9 @@ namespace ACE.Database
 
         public Character GetCharacterSynchronous(uint characterId)
         {
-            return BaseDatabase.GetCharacter(characterId);            
+            return BaseDatabase.GetCharacter(characterId);
         }
-        
+
         public void SaveCharacter(Character character, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
             _uniqueQueue.Enqueue(new Task((x) =>
@@ -562,13 +411,13 @@ namespace ACE.Database
                         // Call the existing SaveOfflinePlayersWithChanges method directly
                         var saveMethod = playerManagerType.GetMethod(
                             "PerformOfflinePlayerSaves",
-                            System.Reflection.BindingFlags.Public 
-                              | System.Reflection.BindingFlags.Static 
+                            System.Reflection.BindingFlags.Public
+                              | System.Reflection.BindingFlags.Static
                               | System.Reflection.BindingFlags.NonPublic,
                             null,
                             Type.EmptyTypes,
                             null);
-                        
+
                         if (saveMethod == null)
                         {
                             log.Warn("[DATABASE] PerformOfflinePlayerSaves method not found on PlayerManager; offline save skipped.");

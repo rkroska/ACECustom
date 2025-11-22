@@ -218,23 +218,6 @@ namespace ACE.Database
             }
         }
 
-        public override bool SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas)
-        {
-            var biotaList = biotas.ToList();
-            var result = base.SaveBiotasInParallel(biotaList);
-
-            if (result)
-            {
-                lock (biotaCacheMutex)
-                {
-                    foreach (var (biota, _) in biotaList)
-                        biotaCache.Remove(biota.Id);
-                }
-            }
-
-            return result;
-        }
-
         public override bool RemoveBiota(uint id)
         {
             InvalidateBiotaCache(id);
