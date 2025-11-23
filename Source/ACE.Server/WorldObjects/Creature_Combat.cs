@@ -415,28 +415,28 @@ namespace ACE.Server.WorldObjects
 
             if (isBow)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("missile_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("missile_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
 
             if (weapon?.WeaponSkill == Skill.FinesseWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("finesse_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("finesse_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.TwoHandedCombat)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("twohanded_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("twohanded_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.LightWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("light_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("light_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.HeavyWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("heavy_attribute_multiplier").Item;
+                var attributeMultiplier = PropertyManager.GetDouble("heavy_attribute_multiplier");
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
 
@@ -502,7 +502,7 @@ namespace ACE.Server.WorldObjects
         /// Returns the effective defense skill for a player or creature,
         /// ie. with Defender bonus and imbues
         /// </summary>
-        public uint GetEffectiveDefenseSkill(CombatType combatType)
+        public virtual uint GetEffectiveDefenseSkill(CombatType combatType)
         {
             var defenseSkill = combatType == CombatType.Missile ? Skill.MissileDefense : Skill.MeleeDefense;
             var defenseMod = defenseSkill == Skill.MissileDefense ? GetWeaponMissileDefenseModifier(this) : GetWeaponMeleeDefenseModifier(this);
@@ -1320,7 +1320,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public int GetDefenseImbues(ImbuedEffectType imbuedEffectType)
         {
-            return EquippedObjects.Values.Count(i => i.ImbuedEffect.HasFlag(imbuedEffectType));
+            int count = 0;
+            foreach (var item in EquippedObjects.Values)
+            {
+                if (item.ImbuedEffect.HasFlag(imbuedEffectType))
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>

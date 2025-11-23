@@ -797,7 +797,7 @@ namespace ACE.Server.WorldObjects
         /// If this is a container or a creature, all of the inventory and/or equipped objects will also be destroyed.<para />
         /// An object should only be destroyed once.
         /// </summary>
-        public void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
+        public virtual void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
             if (IsDestroyed)
             {
@@ -806,6 +806,13 @@ namespace ACE.Server.WorldObjects
             }
 
             IsDestroyed = true;
+            
+            // Clear any pending save flags to prevent stuck saves on destroyed objects
+            if (SaveInProgress)
+            {
+                log.Debug($"[DESTROY] Clearing stuck SaveInProgress flag for {Name} (0x{Guid}) - was in-flight for {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                SaveInProgress = false;
+            }
 
             ReleasedTimestamp = Time.GetUnixTime();
 
@@ -858,7 +865,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(1.0f);
-            actionChain.AddAction(this, () => Destroy(raiseNotifyOfDestructionEvent));
+            actionChain.AddAction(this, ActionType.WorldObject_Destroy, () => Destroy(raiseNotifyOfDestructionEvent));
             actionChain.EnqueueChain();
         }
 
@@ -908,7 +915,7 @@ namespace ACE.Server.WorldObjects
                 motionInterp.apply_raw_movement(true, true);
             }
 
-            if (persist && PropertyManager.GetBool("persist_movement").Item)
+            if (persist && PropertyManager.GetBool("persist_movement"))
                 motion.Persist(CurrentMotionState);
 
             // hardcoded ready?
@@ -931,7 +938,7 @@ namespace ACE.Server.WorldObjects
         {
             var motion = new Motion(stance);
 
-            if (PropertyManager.GetBool("persist_movement").Item)
+            if (PropertyManager.GetBool("persist_movement"))
                 motion.Persist(CurrentMotionState);
 
             CurrentMotionState = motion;

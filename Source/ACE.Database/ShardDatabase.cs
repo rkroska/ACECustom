@@ -82,20 +82,20 @@ namespace ACE.Database
             // https://stackoverflow.com/questions/50402015/how-to-execute-sqlquery-with-entity-framework-core-2-1
 
             // This query is ugly, but very fast.
-            var sql = "SET @available_ids=0, @rownum=0;"                                                + Environment.NewLine +
-                      "SELECT"                                                                          + Environment.NewLine +
+            var sql = "SET @available_ids=0, @rownum=0;" + Environment.NewLine +
+                      "SELECT" + Environment.NewLine +
                       " z.gap_starts_at, z.gap_ends_at_not_inclusive, @available_ids:=@available_ids+(z.gap_ends_at_not_inclusive - z.gap_starts_at) as running_total_available_ids" + Environment.NewLine +
-                      "FROM ("                                                                          + Environment.NewLine +
-                      " SELECT"                                                                         + Environment.NewLine +
-                      "  @rownum:=@rownum+1 AS gap_starts_at,"                                          + Environment.NewLine +
-                      "  @available_ids:=0,"                                                            + Environment.NewLine +
-                      "  IF(@rownum=id, 0, @rownum:=id) AS gap_ends_at_not_inclusive"                   + Environment.NewLine +
-                      " FROM"                                                                           + Environment.NewLine +
-                      "  (SELECT @rownum:=(SELECT MIN(id)-1 FROM biota WHERE id > " + min + ")) AS a"   + Environment.NewLine +
-                      "  JOIN biota"                                                                    + Environment.NewLine +
-                      "  WHERE id > " + min                                                             + Environment.NewLine +
-                      "  ORDER BY id"                                                                   + Environment.NewLine +
-                      " ) AS z"                                                                         + Environment.NewLine +
+                      "FROM (" + Environment.NewLine +
+                      " SELECT" + Environment.NewLine +
+                      "  @rownum:=@rownum+1 AS gap_starts_at," + Environment.NewLine +
+                      "  @available_ids:=0," + Environment.NewLine +
+                      "  IF(@rownum=id, 0, @rownum:=id) AS gap_ends_at_not_inclusive" + Environment.NewLine +
+                      " FROM" + Environment.NewLine +
+                      "  (SELECT @rownum:=(SELECT MIN(id)-1 FROM biota WHERE id > " + min + ")) AS a" + Environment.NewLine +
+                      "  JOIN biota" + Environment.NewLine +
+                      "  WHERE id > " + min + Environment.NewLine +
+                      "  ORDER BY id" + Environment.NewLine +
+                      " ) AS z" + Environment.NewLine +
                       "WHERE z.gap_ends_at_not_inclusive!=0 AND @available_ids<" + limitAvailableIDsReturned + "; ";
 
             using (var context = new ShardDbContext())
@@ -112,8 +112,8 @@ namespace ACE.Database
 
                 while (reader.Read())
                 {
-                    var gap_starts_at               = reader.GetFieldValue<long>(0);
-                    var gap_ends_at_not_inclusive   = reader.GetFieldValue<decimal>(1);
+                    var gap_starts_at = reader.GetFieldValue<long>(0);
+                    var gap_ends_at_not_inclusive = reader.GetFieldValue<decimal>(1);
                     //var running_total_available_ids = reader.GetFieldValue<double>(2);
 
                     gaps.Add(((uint)gap_starts_at, (uint)gap_ends_at_not_inclusive - 1));
@@ -174,31 +174,31 @@ namespace ACE.Database
         [Flags]
         enum PopulatedCollectionFlags
         {
-            BiotaPropertiesAnimPart             = 0x1,
-            BiotaPropertiesAttribute            = 0x2,
-            BiotaPropertiesAttribute2nd         = 0x4,
-            BiotaPropertiesBodyPart             = 0x8,
-            BiotaPropertiesBook                 = 0x10,
-            BiotaPropertiesBookPageData         = 0x20,
-            BiotaPropertiesBool                 = 0x40,
-            BiotaPropertiesCreateList           = 0x80,
-            BiotaPropertiesDID                  = 0x100,
-            BiotaPropertiesEmote                = 0x200,
-            BiotaPropertiesEnchantmentRegistry  = 0x400,
-            BiotaPropertiesEventFilter          = 0x800,
-            BiotaPropertiesFloat                = 0x1000,
-            BiotaPropertiesGenerator            = 0x2000,
-            BiotaPropertiesIID                  = 0x4000,
-            BiotaPropertiesInt                  = 0x8000,
-            BiotaPropertiesInt64                = 0x10000,
-            BiotaPropertiesPalette              = 0x20000,
-            BiotaPropertiesPosition             = 0x40000,
-            BiotaPropertiesSkill                = 0x80000,
-            BiotaPropertiesSpellBook            = 0x100000,
-            BiotaPropertiesString               = 0x200000,
-            BiotaPropertiesTextureMap           = 0x400000,
-            HousePermission                     = 0x800000,
-            BiotaPropertiesAllegiance           = 0x1000000,
+            BiotaPropertiesAnimPart = 0x1,
+            BiotaPropertiesAttribute = 0x2,
+            BiotaPropertiesAttribute2nd = 0x4,
+            BiotaPropertiesBodyPart = 0x8,
+            BiotaPropertiesBook = 0x10,
+            BiotaPropertiesBookPageData = 0x20,
+            BiotaPropertiesBool = 0x40,
+            BiotaPropertiesCreateList = 0x80,
+            BiotaPropertiesDID = 0x100,
+            BiotaPropertiesEmote = 0x200,
+            BiotaPropertiesEnchantmentRegistry = 0x400,
+            BiotaPropertiesEventFilter = 0x800,
+            BiotaPropertiesFloat = 0x1000,
+            BiotaPropertiesGenerator = 0x2000,
+            BiotaPropertiesIID = 0x4000,
+            BiotaPropertiesInt = 0x8000,
+            BiotaPropertiesInt64 = 0x10000,
+            BiotaPropertiesPalette = 0x20000,
+            BiotaPropertiesPosition = 0x40000,
+            BiotaPropertiesSkill = 0x80000,
+            BiotaPropertiesSpellBook = 0x100000,
+            BiotaPropertiesString = 0x200000,
+            BiotaPropertiesTextureMap = 0x400000,
+            HousePermission = 0x800000,
+            BiotaPropertiesAllegiance = 0x1000000,
         }
 
         protected static void SetBiotaPopulatedCollections(Biota biota)
@@ -234,7 +234,7 @@ namespace ACE.Database
             biota.PopulatedCollectionFlags = (uint)populatedCollectionFlags;
         }
 
-        public virtual Biota GetBiota(ShardDbContext context, uint id, bool doNotAddToCache = false)
+        public virtual Biota GetBiota(ShardDbContext context, uint id, bool skipCache = false)
         {
             var biota = context.Biota
                 .FirstOrDefault(r => r.Id == id);
@@ -273,11 +273,11 @@ namespace ACE.Database
             return biota;
         }
 
-        public virtual Biota GetBiota(uint id, bool doNotAddToCache = false)
+        public virtual Biota GetBiota(uint id, bool skipCache = false)
         {
             using (var context = new ShardDbContext())
             {
-                return GetBiota(context, id, doNotAddToCache);
+                return GetBiota(context, id, skipCache);
             }
         }
 
@@ -327,7 +327,7 @@ namespace ACE.Database
             SetBiotaPopulatedCollections(biota);
 
             Exception firstException = null;
-            retry:
+        retry:
 
             try
             {
@@ -413,7 +413,7 @@ namespace ACE.Database
                 context.Biota.Remove(existingBiota);
 
                 Exception firstException = null;
-                retry:
+            retry:
 
                 try
                 {
@@ -525,7 +525,7 @@ namespace ACE.Database
                 if (biota != null)
                     wieldedItems.Add(biota);
             });
-            
+
 
             return wieldedItems.ToList();
         }
@@ -550,7 +550,7 @@ namespace ACE.Database
                     var biota = GetBiota(result);
                     if (variationId.HasValue)
                     {
-                        if (biota.BiotaPropertiesPosition.Any(x=>x.VariationId == variationId)) //filter to only the objects that are the correct variation
+                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId)) //filter to only the objects that are the correct variation
                         {
                             staticObjects.Add(biota);
                         }
@@ -559,7 +559,7 @@ namespace ACE.Database
                     {
                         staticObjects.Add(biota);
                     }
-                    
+
                 }
             }
 
@@ -648,7 +648,7 @@ namespace ACE.Database
         public List<LoginCharacter> GetCharacterListForLogin(uint accountId, bool includeDeleted)
         {
             return GetCharacterListForLogin(accountId, includeDeleted, 0);
-        }   
+        }
 
         private static List<LoginCharacter> GetCharacterListForLogin(uint accountID, bool includeDeleted, uint characterID = 0)
         {
@@ -911,6 +911,130 @@ namespace ACE.Database
             finally
             {
                 rwLock.ExitReadLock();
+            }
+        }
+
+        public void SaveTransferLog(TransferLog transferLog)
+        {
+            using (var context = new ShardDbContext())
+            {
+                context.TransferLogs.Add(transferLog);
+                context.SaveChanges();
+            }
+        }
+
+        public List<TransferLog> GetTransferHistory(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => (t.FromPlayerName == playerName || t.ToPlayerName == playerName) && t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
+
+        public List<TransferLog> GetRecentTransfers(DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .OrderByDescending(t => t.Timestamp)
+                    .ToList();
+            }
+        }
+
+        public List<TransferParticipantStats> GetTopTransferParticipants(DateTime cutoffDate, int limit = 20)
+        {
+            using (var context = new ShardDbContext())
+            {
+                // Project both directions into unified (Player, Partner, Quantity) relation
+                var fromSide = context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .Select(t => new { Player = t.FromPlayerName, Partner = t.ToPlayerName, Quantity = (long)t.Quantity });
+
+                var toSide = context.TransferLogs
+                    .AsNoTracking()
+                    .Where(t => t.Timestamp >= cutoffDate)
+                    .Select(t => new { Player = t.ToPlayerName, Partner = t.FromPlayerName, Quantity = (long)t.Quantity });
+
+                var pairs = fromSide.Concat(toSide);
+
+                var allParticipants = pairs
+                    .GroupBy(p => p.Player)
+                    .Select(g => new TransferParticipantStats
+                    {
+                        PlayerName = g.Key,
+                        TotalTransfers = g.Count(),
+                        UniquePartners = g.Select(x => x.Partner).Distinct().Count(),
+                        TotalQuantity = g.Sum(x => x.Quantity)
+                    })
+                    .OrderByDescending(p => p.TotalTransfers)
+                    .Take(limit)
+                    .ToList();
+
+                return allParticipants;
+            }
+        }
+
+        // Transfer Summary methods
+        public List<TransferSummary> GetTransferSummaries(string playerName, DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferSummaries
+                    .AsNoTracking()
+                    .Where(s => (s.FromPlayerName == playerName || s.ToPlayerName == playerName) && s.LastTransfer >= cutoffDate)
+                    .OrderByDescending(s => s.LastTransfer)
+                    .ToList();
+            }
+        }
+
+        public List<TransferSummary> GetHighRiskSummaries(DateTime cutoffDate)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.TransferSummaries
+                    .AsNoTracking()
+                    .Where(s => s.IsSuspicious && s.LastTransfer >= cutoffDate)
+                    .OrderByDescending(s => s.SuspiciousTransfers)
+                    .ThenByDescending(s => s.TotalValue)
+                    .ToList();
+            }
+        }
+
+
+
+        // Cleanup methods
+        public void CleanupOldTransferLogs(int daysToKeep)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
+            using (var context = new ShardDbContext())
+            {
+                var count = context.TransferLogs.Count(t => t.Timestamp < cutoffDate);
+                if (count > 0)
+                {
+                    context.Database.ExecuteSqlRaw($"DELETE FROM transfer_logs WHERE Timestamp < {{0}}", cutoffDate);
+                    log.Info($"Cleaned up {count} old transfer logs older than {daysToKeep} days");
+                }
+            }
+        }
+
+        public void CleanupOldSummaries(int daysToKeep)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-daysToKeep);
+            using (var context = new ShardDbContext())
+            {
+                var count = context.TransferSummaries.Count(s => s.LastTransfer < cutoffDate);
+                if (count > 0)
+                {
+                    context.Database.ExecuteSqlRaw($"DELETE FROM transfer_summaries WHERE LastTransfer < {{0}}", cutoffDate);
+                    log.Info($"Cleaned up {count} old transfer summaries older than {daysToKeep} days");
+                }
             }
         }
     }

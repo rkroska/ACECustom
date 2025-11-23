@@ -119,7 +119,7 @@ namespace ACE.Server.WorldObjects
 
             if (player.CurrentActivePet != null && player.CurrentActivePet is CombatPet)
             {
-                if (PropertyManager.GetBool("pet_stow_replace").Item)
+                if (PropertyManager.GetBool("pet_stow_replace"))
                 {
                     // original ace
                     player.SendTransientError($"{player.CurrentActivePet.Name} is already active");
@@ -549,7 +549,7 @@ namespace ACE.Server.WorldObjects
             // perform clapping motion
             animTime += player.EnqueueMotion(actionChain, MotionCommand.ClapHands);
 
-            actionChain.AddAction(player, () =>
+            actionChain.AddAction(player, ActionType.PetDevice_Refill, () =>
             {
                 // re-verify
                 var useError = VerifyUseRequirements(player, spirit, this);

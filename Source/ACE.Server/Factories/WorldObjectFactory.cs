@@ -263,6 +263,12 @@ namespace ACE.Server.Factories
         /// </summary>
         public static WorldObject CreateWorldObject(Biota databaseBiota)
         {
+            if (databaseBiota == null)
+            {
+                log.Error("CreateWorldObject called with null databaseBiota");
+                return null;
+            }
+
             var biota = ACE.Database.Adapter.BiotaConverter.ConvertToEntityBiota(databaseBiota);
 
             return CreateWorldObject(biota);

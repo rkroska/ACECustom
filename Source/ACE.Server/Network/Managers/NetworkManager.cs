@@ -42,6 +42,12 @@ namespace ACE.Server.Network.Managers
         /// </summary>
         public static readonly ActionQueue InboundMessageQueue = new ActionQueue();
 
+        /// <summary>
+        /// Process an incoming client packet, routing it to the appropriate session or handling connection-level handshake and login rejection logic.
+        /// </summary>
+        /// <param name="connectionListener">The listener instance that received the packet (used to determine which server port handled the packet).</param>
+        /// <param name="packet">The inbound client packet to process.</param>
+        /// <param name="endPoint">The remote client's IP endpoint that sent the packet.</param>
         public static void ProcessPacket(ConnectionListener connectionListener, ClientPacket packet, IPEndPoint endPoint)
         {
             if (connectionListener.ListenerEndpoint.Port == ConfigManager.Config.Server.Network.Port + 1)
@@ -115,7 +121,12 @@ namespace ACE.Server.Network.Managers
                         log.DebugFormat("Login Request from {0}", endPoint);                        
 
                         var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(endPoint.Address.ToString());
-                        if (ipAllowsUnlimited || ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress == -1 || GetSessionEndpointTotalByAddressCount(endPoint.Address) < ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
+
+
+                        // Increasing the allowed sessions per IP address by 1 allows the player to log a third account to character selection
+                        // Player event OnTeleportComplete() handles enforcement of more than 2 characters out of exempt areas
+                        var connectedSessionsAllowedPerIPAddress = ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress + 1;
+                        if (ipAllowsUnlimited || ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress == -1 || GetSessionEndpointTotalByAddressCount(endPoint.Address) < connectedSessionsAllowedPerIPAddress)
                         {
                             var session = FindOrCreateSession(connectionListener, endPoint);
                             if (session != null)

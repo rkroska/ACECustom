@@ -252,7 +252,7 @@ namespace ACE.Server.Managers
             }
 
 
-            if (PropertyManager.GetBool("house_per_char").Item)
+            if (PropertyManager.GetBool("house_per_char"))
             {
                 var results = playerHouses.Where(i => i.Value.Count > 1).OrderByDescending(i => i.Value.Count);
 
@@ -416,7 +416,7 @@ namespace ACE.Server.Managers
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(3.0f);   // wait for slumlord inventory biotas above to save
-                actionChain.AddAction(onlinePlayer, onlinePlayer.HandleActionQueryHouse);
+                actionChain.AddAction(onlinePlayer, ActionType.PlayerHouse_HandleActionQueryHouse, onlinePlayer.HandleActionQueryHouse);
                 actionChain.EnqueueChain();
             }
         }
@@ -440,7 +440,7 @@ namespace ACE.Server.Managers
 
             var player = PlayerManager.FindByGuid(playerGuid, out bool isOnline);
 
-            if (!PropertyManager.GetBool("house_rent_enabled", true).Item && !multihouse && !force)
+            if (!PropertyManager.GetBool("house_rent_enabled", true) && !multihouse && !force)
             {
                 // rent disabled, push forward
                 var purchaseTime = (uint)(player.HousePurchaseTimestamp ?? 0);
@@ -535,7 +535,7 @@ namespace ACE.Server.Managers
             // clear house panel for online player
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(3.0f);  // wait for slumlord inventory biotas above to save
-            actionChain.AddAction(onlinePlayer, onlinePlayer.HandleActionQueryHouse);
+            actionChain.AddAction(onlinePlayer, ActionType.PlayerHouse_HandleActionQueryHouse, onlinePlayer.HandleActionQueryHouse);
             actionChain.EnqueueChain();
         }
 
@@ -562,14 +562,14 @@ namespace ACE.Server.Managers
         /// </summary>
         private static bool HasRequirements(PlayerHouse playerHouse)
         {
-            if (!PropertyManager.GetBool("house_purchase_requirements").Item)
+            if (!PropertyManager.GetBool("house_purchase_requirements"))
                 return true;
 
             var slumlord = playerHouse.House.SlumLord;
             if (slumlord.AllegianceMinLevel == null)
                 return true;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
+            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = slumlord.AllegianceMinLevel.Value;
 
@@ -604,9 +604,7 @@ namespace ACE.Server.Managers
         private static HouseData GetHouseData(House house)
         {
             var houseData = new HouseData();
-
-            houseData.SetRentItems(house.SlumLord.GetRentItems());
-            houseData.SetPaidItems(house.SlumLord);
+            houseData.Rent = house.SlumLord.GetRentItems();
 
             if (house.HouseStatus == HouseStatus.InActive)
                 houseData.MaintenanceFree = true;
@@ -618,7 +616,7 @@ namespace ACE.Server.Managers
         // We must add thread safety to prevent AllegianceManager corruption
         public static void HandlePlayerDelete(uint playerGuid)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoHandlePlayerDelete(playerGuid)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.HouseManager_HandlePlayerDelete, () => DoHandlePlayerDelete(playerGuid)));
         }
 
         /// <summary>
@@ -881,7 +879,7 @@ namespace ACE.Server.Managers
                     {
                         var actionChain = new ActionChain();
                         actionChain.AddDelaySeconds(3.0f);   // wait for slumlord inventory biotas above to save
-                        actionChain.AddAction(onlinePlayer, onlinePlayer.HandleActionQueryHouse);
+                        actionChain.AddAction(onlinePlayer, ActionType.PlayerHouse_HandleActionQueryHouse, onlinePlayer.HandleActionQueryHouse);
                         actionChain.EnqueueChain();
                     }
 

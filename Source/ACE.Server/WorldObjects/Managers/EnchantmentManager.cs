@@ -231,7 +231,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else if (caster is Player dotPlayer && (dotPlayer.AugmentationIncreasedSpellDuration > 0 || (dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration > 0)
                 {
-                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * PropertyManager.GetDouble("void_dot_duration_aug_effect", 0.1).Item);
+                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * PropertyManager.GetDouble("void_dot_duration_aug_effect", 0.1));
                 }
             }
             else
@@ -610,7 +610,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public float GetMinVitae(uint level)
         {
-            var propVitae = 1.0 - PropertyManager.GetDouble("vitae_penalty_max").Item;
+            var propVitae = 1.0 - PropertyManager.GetDouble("vitae_penalty_max");
 
             var maxPenalty = (level - 1) * 3;
             if (maxPenalty < 1)
@@ -650,7 +650,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else
                 {
-                    vitae.StatModValue = 1.0f - (float)PropertyManager.GetDouble("vitae_penalty").Item;
+                    vitae.StatModValue = 1.0f - (float)PropertyManager.GetDouble("vitae_penalty");
                 
                 }                               
                 WorldObject.Biota.PropertiesEnchantmentRegistry.AddEnchantment(vitae, WorldObject.BiotaDatabaseLock);
@@ -666,7 +666,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else
                 {
-                    vitae.StatModValue -= (float)PropertyManager.GetDouble("vitae_penalty").Item;
+                    vitae.StatModValue -= (float)PropertyManager.GetDouble("vitae_penalty");
 
                 }
                 WorldObject.ChangesDetected = true;
@@ -1400,7 +1400,7 @@ namespace ACE.Server.WorldObjects.Managers
             }
             var rating = (int)Math.Round(totalBaseDamage / 8.0f);   // thanks to Xenocide for this formula!
             //Console.WriteLine($"{WorldObject.Name}.NetherDotDamageRating: {rating}");
-            long maxVoidRating = PropertyManager.GetLong("max_nether_dot_damage_rating").Item;
+            long maxVoidRating = PropertyManager.GetLong("max_nether_dot_damage_rating");
             if (rating > maxVoidRating)
                 rating = (int)maxVoidRating;
             return rating;
@@ -1536,7 +1536,7 @@ namespace ACE.Server.WorldObjects.Managers
             creature.DamageHistory.OnHeal((uint)healAmount);
 
             if (creature is Player player)
-                player.SendMessage($"You receive {healAmount} points of periodic healing.", PropertyManager.GetBool("aetheria_heal_color").Item ? ChatMessageType.Broadcast : ChatMessageType.Combat);
+                player.SendMessage($"You receive {healAmount} points of periodic healing.", PropertyManager.GetBool("aetheria_heal_color") ? ChatMessageType.Broadcast : ChatMessageType.Combat);
         }
 
         /// <summary>
@@ -1591,7 +1591,7 @@ namespace ACE.Server.WorldObjects.Managers
                     // instead of applying it on top like direct damage
 
                     if (damageType == DamageType.Nether)
-                        resistanceMod = (float)PropertyManager.GetDouble("void_pvp_modifier").Item;
+                        resistanceMod = (float)PropertyManager.GetDouble("void_pvp_modifier");
                 }
 
                 // with the halvening, this actually seems like the fairest balance currently..
@@ -1609,11 +1609,16 @@ namespace ACE.Server.WorldObjects.Managers
                 var dotResistRatingMod = Creature.GetNegativeRatingMod(creature.GetDotResistanceRating());  // should this be here, or somewhere else?
                                                                                                             // should this affect NetherDotDamageRating?
 
+                // apply nether resist rating for nether DoTs
+                var netherResistRatingMod = 1.0f;
+                if (damageType == DamageType.Nether)
+                    netherResistRatingMod = creature.GetNetherResistRatingMod();
+
                 //Console.WriteLine("DR: " + Creature.ModToRating(damageRatingMod));
                 //Console.WriteLine("DRR: " + Creature.NegativeModToRating(damageResistRatingMod));
                 //Console.WriteLine("NRR: " + Creature.NegativeModToRating(netherResistRatingMod));
 
-                tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod;
+                tickAmount *= resistanceMod * damageResistRatingMod * dotResistRatingMod * netherResistRatingMod;
 
                 // make sure the target's current health is not exceeded
                 if (tickAmountTotal + tickAmount >= creature.Health.Current)

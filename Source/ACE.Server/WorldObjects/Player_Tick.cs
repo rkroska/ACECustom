@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -10,7 +8,6 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
-using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
@@ -89,7 +86,7 @@ namespace ACE.Server.WorldObjects
                 FellowVitalUpdate = false;
             }
 
-            if (House != null && PropertyManager.GetBool("house_rent_enabled").Item)
+            if (House != null && PropertyManager.GetBool("house_rent_enabled"))
             {
                 if (houseRentWarnTimestamp > 0 && currentUnixTime > houseRentWarnTimestamp)
                 {
@@ -189,7 +186,7 @@ namespace ACE.Server.WorldObjects
             if (!PhysicsObj.IsMovingOrAnimating)
                 PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
 
-            if (!PropertyManager.GetBool("client_movement_formula").Item || moveToState.StandingLongJump)
+            if (!PropertyManager.GetBool("client_movement_formula") || moveToState.StandingLongJump)
                 OnMoveToState_ServerMethod(moveToState);
             else
                 OnMoveToState_ClientMethod(moveToState);
@@ -700,7 +697,7 @@ namespace ACE.Server.WorldObjects
             // doing a delay here to prevent 'SpellExpired' sounds from overlapping with 'ItemManaDepleted'
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(2.0f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTick_RemoveSpellsOnItemManaDepleted, () =>
             {
                 foreach (var spellId in item.Biota.GetKnownSpellsIds(item.BiotaDatabaseLock))
                     RemoveItemSpell(item, (uint)spellId);

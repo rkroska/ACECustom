@@ -592,7 +592,7 @@ namespace ACE.Server.WorldObjects
             // unsure if spell hook was here in retail,
             // but this has the potential to take the client out of autorun mode
             // which causes them to stop if they hit a turn key afterwards
-            if (PropertyManager.GetBool("runrate_add_hooks").Item)
+            if (PropertyManager.GetBool("runrate_add_hooks"))
                 HandleRunRateUpdate(spell);
         }
 
@@ -610,7 +610,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(1.0f);      // client needs time for primary attribute updates
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerSpells_HandleMaxVitalUpdate, () =>
             {
                 foreach (var maxVital in maxVitals)
                 {

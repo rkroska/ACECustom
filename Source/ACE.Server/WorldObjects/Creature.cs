@@ -198,7 +198,7 @@ namespace ACE.Server.WorldObjects
             // Get the hair first, because we need to know if you're bald, and that's the name of that tune!
             if (sex.HairStyleList.Count > 1)
             {
-                if (PropertyManager.GetBool("npc_hairstyle_fullrange").Item)
+                if (PropertyManager.GetBool("npc_hairstyle_fullrange"))
                     appearance.HairStyle = (uint)ThreadSafeRandom.Next(0, sex.HairStyleList.Count - 1);
                 else
                     appearance.HairStyle = (uint)ThreadSafeRandom.Next(0, Math.Min(sex.HairStyleList.Count - 1, 8)); // retail range data compiled by OptimShi

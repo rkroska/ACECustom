@@ -27,6 +27,7 @@ using ACE.Server.Network.GameMessages;
 using ACE.Server.WorldObjects;
 
 using Position = ACE.Entity.Position;
+using ACE.Common;
 
 namespace ACE.Server.Entity
 {
@@ -88,6 +89,10 @@ namespace ACE.Server.Entity
         private readonly LinkedList<WorldObject> sortedWorldObjectsByNextHeartbeat = new LinkedList<WorldObject>();
         private readonly LinkedList<WorldObject> sortedGeneratorsByNextGeneratorUpdate = new LinkedList<WorldObject>();
         private readonly LinkedList<WorldObject> sortedGeneratorsByNextRegeneration = new LinkedList<WorldObject>();
+        
+        // Monster tick throttle monitoring
+        private int monsterTickThrottleWarningCount = 0;
+        private DateTime lastMonsterThrottleWarning = DateTime.MinValue;
 
         /// <summary>
         /// This is used to detect and manage cross-landblock group (which is potentially cross-thread) operations.
@@ -236,11 +241,11 @@ namespace ACE.Server.Entity
                 this.SetFogColor(EnvironChangeType.BlackFog2);
             }
 
-            if (ThaelarynIslandLandblocks.Contains(this.Id.Landblock))
+            /*if (ThaelarynIslandLandblocks.Contains(this.Id.Landblock))
             {
                 this.SendEnvironChange(EnvironChangeType.BlackFog2);
                 this.SetFogColor(EnvironChangeType.BlackFog2);
-            }
+            }*/
         }
 
         public static readonly HashSet<ushort> connectionExemptLandblocks = new()
@@ -268,13 +273,13 @@ namespace ACE.Server.Entity
             0xC1F8, 0xC2F8, 0xC3F8, 0xC4F8
         };
 
-        public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
+        /*public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
         {
             0xF66C, 0xF76C, 0xF86C, 0xF66B, 0xF76B, 0xF86B, 0xF76A, 0xF86A, 0xF96A, 0xF669, 0xF769, 0xF869, 0xF969, 0xF668, 0xF768, 0xF868, 0xF968,
             0xF467, 0xF567, 0xF667, 0xF767, 0xF867, 0xF967, 0xF666, 0xF766, 0xF866, 0xF966, 0xF565, 0xF665, 0xF765, 0xF865, 0xF965, 0xF564, 0xF664,
             0xF764, 0xF864, 0xF964, 0xF563, 0xF663, 0xF763, 0xF863, 0xF963, 0xF462, 0xF562, 0xF662, 0xF762, 0xF862, 0xF962, 0xF361, 0xF461, 0xF561,
             0xF661, 0xF761
-        };
+        };*/
 
         /// <summary>
         /// Monster Locations, Generators<para />
@@ -298,7 +303,7 @@ namespace ACE.Server.Entity
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
-            actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
             {
                 // for mansion linking
                 var houses = new List<House>();
@@ -349,7 +354,7 @@ namespace ACE.Server.Entity
             var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock, VariationId);
             var factoryShardObjects = WorldObjectFactory.CreateWorldObjects(dynamics);
 
-            actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_SpawnDynamicShardObjects, () =>
             {
                 foreach (var fso in factoryShardObjects)
                     AddWorldObject(fso, VariationId);
@@ -371,7 +376,7 @@ namespace ACE.Server.Entity
 
                 if (wo == null) continue;
 
-                actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+                actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_SpawnEncounters, () =>
                 {
                     var xPos = Math.Clamp(encounter.CellX * 24.0f, 0.5f, 191.5f);
                     var yPos = Math.Clamp(encounter.CellY * 24.0f, 0.5f, 191.5f);
@@ -393,9 +398,9 @@ namespace ACE.Server.Entity
                         return;
                     }
 
-                    if (PropertyManager.GetBool("override_encounter_spawn_rates").Item)
+                    if (PropertyManager.GetBool("override_encounter_spawn_rates"))
                     {
-                        wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval").Item;
+                        wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval");
 
                         wo.ReinitializeHeartbeats();
 
@@ -414,7 +419,7 @@ namespace ACE.Server.Entity
                             }
 
                             foreach (var profile in wo.Biota.PropertiesGenerator)
-                                profile.Delay = (float)PropertyManager.GetDouble("encounter_delay").Item;
+                                profile.Delay = (float)PropertyManager.GetDouble("encounter_delay");
                         }
                     }
 
@@ -554,22 +559,91 @@ namespace ACE.Server.Entity
             if (!IsDormant)
             {
                 stopwatch.Restart();
-                while (sortedCreaturesByNextTick.Count > 0) // Monster_Tick()
+                
+                // Throttle monster processing to prevent multi-second spikes during mass spawns
+                // Without this, 400+ creatures can cause 4+ second freezes
+                // Tuning: Lower = safer spikes (50-60), Higher = faster AI reactions (75-100)
+                // At 75: ~0.2s max spike, 447 creatures = 1.8s total delay for last creature
+                // Increased from 50 to 75 based on production saturation warnings
+                // Configurable via: /modifylong monster_tick_throttle_limit <value> (min: 50, recommended: 75-125)
+                int monstersProcessed = 0;
+                var throttleValue = (int)PropertyManager.GetLong("monster_tick_throttle_limit", 75);
+                var maxMonstersPerTick = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
+                
+                if (throttleValue < 50 && throttleValue != maxMonstersPerTick)
+                    log.Warn($"[PERFORMANCE] monster_tick_throttle_limit set to {throttleValue}, enforcing minimum of 50. This value is too low and may cause server performance issues.");
+
+                
+                while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
-                    var first = sortedCreaturesByNextTick.First.Value;
+                    var monster = sortedCreaturesByNextTick.First.Value;
 
                     // If they wanted to run before or at now
-                    if (first.NextMonsterTickTime <= currentUnixTime)
+                    if (monster.NextMonsterTickTime <= currentUnixTime)
                     {
                         sortedCreaturesByNextTick.RemoveFirst();
-                        first.Monster_Tick(currentUnixTime);
-                        sortedCreaturesByNextTick.AddLast(first); // All creatures tick at a fixed interval
+                        // If the monster is dead, remove from the sorted tick list and don't re-add it.
+                        if (monster.IsDead) continue;
+                        monster.Monster_Tick(currentUnixTime);
+                        sortedCreaturesByNextTick.AddLast(monster); // All creatures tick at a fixed interval
+                        monstersProcessed++;
                     }
                     else
                     {
                         break;
                     }
                 }
+                
+                // Check if throttle is saturated by counting remaining creatures that are overdue
+                int remainingDueCount = 0;
+                if (monstersProcessed >= maxMonstersPerTick && sortedCreaturesByNextTick.Count > 0)
+                {
+                    // Count how many remaining creatures are overdue for processing
+                    foreach (var creature in sortedCreaturesByNextTick)
+                    {
+                        if (creature.NextMonsterTickTime <= currentUnixTime)
+                            remainingDueCount++;
+                        else
+                            break; // List is sorted, so we can stop once we hit a future tick time
+                    }
+                }
+                
+                // Alert if throttle is consistently maxed out (queue saturation)
+                // Only alert after 3+ consecutive ticks of saturation to filter out temporary bursts
+                if (monstersProcessed >= maxMonstersPerTick && remainingDueCount > 0)
+                {
+                    monsterTickThrottleWarningCount++;
+                    
+                    // Only warn if saturated for 3+ consecutive ticks AND 60 seconds since last warning
+                    // This filters out expected initial dungeon load bursts (1-2 ticks) while catching sustained issues
+                    if (monsterTickThrottleWarningCount >= 3 && DateTime.UtcNow - lastMonsterThrottleWarning > TimeSpan.FromSeconds(60))
+                    {
+                        var warningMsg = $"[PERFORMANCE] Landblock {Id:X8} Monster_Tick throttle saturated for {monsterTickThrottleWarningCount} consecutive ticks! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain. Total creatures: {sortedCreaturesByNextTick.Count}. Consider increasing maxMonstersPerTick from {maxMonstersPerTick}.";
+                        log.Warn(warningMsg);
+                        
+                        // Send to Discord if configured
+                        if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                        {
+                            try
+                            {
+                                Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"Failed to send Monster_Tick throttle warning to Discord: {ex.Message}");
+                            }
+                        }
+                        
+                        lastMonsterThrottleWarning = DateTime.UtcNow;
+                        // Don't reset counter here - let it continue tracking consecutive saturations
+                    }
+                }
+                else
+                {
+                    // Reset counter when not saturated
+                    monsterTickThrottleWarningCount = 0;
+                }
+                
                 ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_Monster_Tick, stopwatch.Elapsed.TotalSeconds);
             }
 
@@ -625,7 +699,9 @@ namespace ACE.Server.Entity
                 // Decay world objects
                 if (lastHeartBeat != DateTime.MinValue)
                 {
-                    foreach (var wo in worldObjects.Values)
+                    // Make a copy since objects might get removed during decay
+                    var worldObjectsCopy = worldObjects.Values.ToList();
+                    foreach (var wo in worldObjectsCopy)
                     {
                         if (wo.IsDecayable())
                             wo.Decay(thisHeartBeat - lastHeartBeat);
@@ -692,8 +768,16 @@ namespace ACE.Server.Entity
             ProcessPendingWorldObjectAdditionsAndRemovals();
 
             stopwatch.Restart();
-            foreach (var player in players)
+            // Iterate backwards to avoid issues when players disconnect during tick
+            for (int i = players.Count - 1; i >= 0; i--)
+            {
+                // Add bounds check to prevent IndexOutOfRangeException
+                if (i >= players.Count)
+                    break;
+                    
+                var player = players[i];
                 player.Player_Tick(currentUnixTime);
+            }
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Landblock_Tick_Player_Tick, stopwatch.Elapsed.TotalSeconds);
 
             stopwatch.Restart();
@@ -734,6 +818,11 @@ namespace ACE.Server.Entity
 
         private void ProcessPendingWorldObjectAdditionsAndRemovals()
         {
+            // Early exit optimization - this method is called 11 times per tick
+            // Most calls find nothing to process, so avoid the iteration overhead
+            if (pendingAdditions.IsEmpty && pendingRemovals.Count == 0)
+                return;
+            
             if (!pendingAdditions.IsEmpty)
             {
                 foreach (var kvp in pendingAdditions)
@@ -997,20 +1086,37 @@ namespace ACE.Server.Entity
             wo.NotifyPlayers();
 
             if (wo is Player player)
-                player.SetFogColor(FogColor);
-
-            if (wo is Corpse && wo.Level.HasValue)
             {
-                var corpseLimit = PropertyManager.GetLong("corpse_spam_limit").Item;
-                var corpseList = worldObjects.Values.Union(pendingAdditions.Values).Where(w => w is Corpse && w.Level.HasValue && w.VictimId == wo.VictimId).OrderBy(w => w.CreationTimestamp);
+                player.SetFogColor(FogColor);
+            }
+            // For player corpses, we prevent a single player from spamming corpses on a single
+            // landblock. We search for and mark their oldest corpse for early decay if they have  
+            // more than corpse_spam_limit corpses on a single landblock.
+            else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
+            {
+                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit");
+                int corpsesForThisPlayer = 0;
 
-                if (corpseList.Count() > corpseLimit)
+                Corpse oldestCorpseNotDecayingSoon = null;
+                foreach (WorldObject w in worldObjects.Values.Union(pendingAdditions.Values))
                 {
-                    var corpse = GetObject(corpseList.First(w => w.TimeToRot > Corpse.EmptyDecayTime).Guid);
+                    if (w is not Corpse existingCorpse) continue; // Not a corpse.
+                    if (existingCorpse.VictimId != new_corpse.VictimId) continue; // Not this player's corpse.
+                    corpsesForThisPlayer++;
+                    if (existingCorpse.TimeToRot <= Corpse.EmptyDecayTime) continue; // Corpse already decaying soon.
+                    if (oldestCorpseNotDecayingSoon == null || oldestCorpseNotDecayingSoon.CreationTimestamp > existingCorpse.CreationTimestamp)
+                    {
+                        oldestCorpseNotDecayingSoon = existingCorpse;
+                    }
+                }
+
+                if (corpsesForThisPlayer > perPlayerCorpseLimit && oldestCorpseNotDecayingSoon != null)
+                {
+                    var corpse = GetObject(oldestCorpseNotDecayingSoon.Guid);
 
                     if (corpse != null)
                     {
-                        log.Warn($"[CORPSE] Landblock.AddWorldObjectInternal(): {wo.Name} (0x{wo.Guid}) exceeds the per player limit of {corpseLimit} corpses for 0x{Id.Landblock:X4}. Adjusting TimeToRot for oldest {corpse.Name} (0x{corpse.Guid}), CreationTimestamp: {corpse.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(corpse.CreationTimestamp ?? 0).ToLocalTime():yyyy-MM-dd HH:mm:ss}), to Corpse.EmptyDecayTime({Corpse.EmptyDecayTime}).");
+                        log.Warn($"[CORPSE] Landblock.AddWorldObjectInternal(): {wo.Name} (0x{wo.Guid}) exceeds the per player limit of {perPlayerCorpseLimit} corpses for 0x{Id.Landblock:X4}. Adjusting TimeToRot for oldest {corpse.Name} (0x{corpse.Guid}), CreationTimestamp: {corpse.CreationTimestamp} ({Common.Time.GetDateTimeFromTimestamp(corpse.CreationTimestamp ?? 0).ToLocalTime():yyyy-MM-dd HH:mm:ss}), to Corpse.EmptyDecayTime({Corpse.EmptyDecayTime}).");
                         corpse.TimeToRot = Corpse.EmptyDecayTime;
                     }
                 }
@@ -1083,8 +1189,9 @@ namespace ACE.Server.Entity
         {
             if (string.IsNullOrWhiteSpace(message)) return;
 
-            foreach (var wo in worldObjects.Values.Where(w => w.HearLocalSignals).ToList())
+            foreach (var wo in worldObjects.Values)
             {
+                if (!wo.HearLocalSignals) continue;
                 if (emitter == wo) continue;
 
                 if (emitter.IsWithinUseRadiusOf(wo, wo.HearLocalSignalsRadius))
@@ -1276,35 +1383,69 @@ namespace ACE.Server.Entity
         private void SaveDB()
         {
             var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+            var savedObjects = new List<WorldObject>();
 
+            // First pass: only process objects that have changes or are containers
+            // This avoids iterating through static objects that never change
             foreach (var wo in worldObjects.Values)
             {
-                if (wo.IsStaticThatShouldPersistToShard() || wo.IsDynamicThatShouldPersistToShard())
-                    AddWorldObjectToBiotasSaveCollection(wo, biotas);
+                // Skip objects that don't need persistence entirely
+                if (!wo.IsStaticThatShouldPersistToShard() && !wo.IsDynamicThatShouldPersistToShard())
+                    continue;
+
+                // Early exit optimization: skip objects with no changes and no inventory
+                if (!wo.ChangesDetected && wo is not Container)
+                    continue;
+
+                AddWorldObjectToBiotasSaveCollection(wo, biotas, savedObjects);
             }
 
             if (biotas.Count > 0)
             {
                 DatabaseManager.Shard.SaveBiotasInParallel(
                     biotas,
-                    result => { },
+                    result =>
+                    {
+                        // Clear SaveInProgress flags on world thread for thread safety
+                        var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                        clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.Landblock_ClearFlagsAfterSave, () =>
+                        {
+                            foreach (var wo in savedObjects)
+                            {
+                                if (!wo.IsDestroyed)
+                                    wo.SaveInProgress = false;
+                            }
+
+                            if (!result)
+                            {
+                                log.Warn($"[LANDBLOCK SAVE] Bulk save for landblock {Id.Raw}{(VariationId.HasValue ? $":v{VariationId.Value}" : string.Empty)} returned false; SaveInProgress flags cleared to avoid stuck state.");
+                            }
+                        });
+                        clearFlagsAction.EnqueueChain();
+                    },
                     $"SaveDB:Landblock:{this.Id.Raw}{(this.VariationId.HasValue ? $":v{this.VariationId.Value}" : string.Empty)}"
                 );
             }
         }
 
-        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas)
+        private static void AddWorldObjectToBiotasSaveCollection(WorldObject wo, Collection<(Biota biota, ReaderWriterLockSlim rwLock)> biotas, List<WorldObject> savedObjects)
         {
-            if (wo.ChangesDetected)
+            if (wo.ChangesDetected && !wo.SaveInProgress)
             {
                 wo.SaveBiotaToDatabase(false);
                 biotas.Add((wo.Biota, wo.BiotaDatabaseLock));
+                savedObjects.Add(wo);
             }
 
+            // Only recurse into containers - most objects don't have inventory
             if (wo is Container container)
             {
+                // Early exit if container is empty
+                if (container.Inventory.Count == 0)
+                    return;
+
                 foreach (var item in container.Inventory.Values)
-                    AddWorldObjectToBiotasSaveCollection(item, biotas);
+                    AddWorldObjectToBiotasSaveCollection(item, biotas, savedObjects);
             }
         }
 
@@ -1315,16 +1456,14 @@ namespace ACE.Server.Entity
         /// </summary>
         public void EnqueueBroadcast(ICollection<Player> excludeList, bool adjacents, Position pos = null, float? maxRangeSq = null, params GameMessage[] msgs)
         {
-            var players = worldObjects.Values.OfType<Player>();
-
-            // for landblock death broadcasts:
-            // exclude players that have already been broadcast to within range of the death
-            if (excludeList != null)
-                players = players.Except(excludeList);
-
             // broadcast messages to player in this landblock
-            foreach (var player in players)
+            foreach (var player in this.players)
             {
+                // for landblock death broadcasts:
+                // exclude players that have already been broadcast to within range of the death
+                if (excludeList != null && excludeList.Contains(player))
+                    continue;
+
                 if (pos != null && maxRangeSq != null)
                 {
                     var distSq = player.Location.SquaredDistanceTo(pos);
@@ -1337,8 +1476,11 @@ namespace ACE.Server.Entity
             // if applicable, iterate into adjacent landblocks
             if (adjacents)
             {
-                foreach (var adjacent in this.Adjacents.Where(adj => adj != null))
+                foreach (var adjacent in this.Adjacents)
+                {
+                    if (adjacent == null) continue;
                     adjacent.EnqueueBroadcast(excludeList, false, pos, maxRangeSq, msgs);
+                }
             }
         }
 

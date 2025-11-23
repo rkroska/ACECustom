@@ -58,7 +58,7 @@ namespace ACE.Server.Network.Enum
                 colorMask |= WeaponMask.MeleeDefense;
 
             // Following enchants do not apply to caster weapons
-            if (weapon.WeenieType != WeenieType.Caster && (weapon.WeenieType != WeenieType.Ammunition || PropertyManager.GetBool("show_ammo_buff").Item))
+            if (weapon.WeenieType != WeenieType.Caster && (weapon.WeenieType != WeenieType.Ammunition || PropertyManager.GetBool("show_ammo_buff")))
             {
                 // item enchantments are currently being cast on wielder
                 if (profile.Enchantment_WeaponOffense > 0)

@@ -1,16 +1,17 @@
-using System;
-using System.Collections.Generic;
-
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
+using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Server.WorldObjects
 {
@@ -105,35 +106,68 @@ namespace ACE.Server.WorldObjects
                 houseProfile.OwnerName = owner?.Name;
             }
 
-            houseProfile.SetBuyItems(GetBuyItems());
-            houseProfile.SetRentItems(GetRentItems());
-            houseProfile.SetPaidItems(this);
+            houseProfile.Buy = GetBuyItems();
+            houseProfile.Rent = GetRentItems();
 
             return houseProfile;
+        }
+
+        private List<HousePayment> CreateHousePayments(DestinationType destinationType)
+        {
+            var items = new List<HousePayment>();
+
+            foreach (var item in Biota.PropertiesCreateList.Where(x => x.DestinationType == destinationType))
+            {
+                Weenie w = DatabaseManager.World.GetCachedWeenie(item.WeenieClassId);
+                if (w == null) continue;
+
+                HousePayment housePayment = new(w, item.StackSize);
+                items.Add(housePayment);
+            }
+
+            return items;
+        }
+
+        /// <summary>
+        /// Fills in the list of items already paid against a list of required items.
+        /// </summary>
+        private void FillPaymentsMade(List<HousePayment> housePayments)
+        {
+            foreach (var item in Inventory.Values)
+            {
+                var wcid = item.WeenieClassId;
+                var value = item.StackSize ?? 1;
+                if (item.WeenieClassName.StartsWith("tradenote"))
+                {
+                    wcid = 273; // Pyreals
+                    value = item.Value.Value; // Value of note
+                }
+                var rentItem = housePayments.FirstOrDefault(i => i.WeenieID == wcid);
+                if (rentItem == null)
+                {
+                    Console.WriteLine($"HouseData.SetPaidItems({Name}): couldn't find rent item {item.WeenieClassId}");
+                    continue;
+                }
+                rentItem.Paid = Math.Min(rentItem.Num, rentItem.Paid + value);
+            }
         }
 
         /// <summary>
         /// Returns the list of items required to purchase this dwelling
         /// </summary>
-        public List<WorldObject> GetBuyItems()
+        public List<HousePayment> GetBuyItems()
         {
-            var buyList = GetCreateListForSlumLord(DestinationType.HouseBuy);
-
-            buyList.ForEach(item => item.Destroy(false));
-
-            return buyList;
+            return CreateHousePayments(DestinationType.HouseBuy);
         }
 
         /// <summary>
         /// Returns the list of items required to rent this dwelling
         /// </summary>
-        public List<WorldObject> GetRentItems()
+        public List<HousePayment> GetRentItems()
         {
-            var rentList = GetCreateListForSlumLord(DestinationType.HouseRent);
-
-            rentList.ForEach(item => item.Destroy(false));
-
-            return rentList;
+            List<HousePayment> rentPayments = CreateHousePayments(DestinationType.HouseRent);
+            FillPaymentsMade(rentPayments);
+            return rentPayments;
         }
 
         /// <summary>
@@ -141,17 +175,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsRentPaid()
         {
-            if (House != null && House.HouseStatus == HouseStatus.InActive)
-                return true;
-
-            var houseProfile = GetHouseProfile();
-
-            foreach (var rentItem in houseProfile.Rent)
-            {
-                if (rentItem.Paid < rentItem.Num)
-                    return false;
-            }
-            return true;
+            if (House?.HouseStatus == HouseStatus.InActive) return true;
+            return GetRentItems().All((hp) => hp.Paid >= hp.Num);
         }
 
         /// <summary>
@@ -159,13 +184,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool HasRequirements(Player player)
         {
-            if (!PropertyManager.GetBool("house_purchase_requirements").Item)
+            if (!PropertyManager.GetBool("house_purchase_requirements"))
                 return true;
 
             if (AllegianceMinLevel == null)
                 return true;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
+            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = AllegianceMinLevel.Value;
 
@@ -182,7 +207,7 @@ namespace ACE.Server.WorldObjects
             if (AllegianceMinLevel == null)
                 return 0;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
+            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = AllegianceMinLevel.Value;
 

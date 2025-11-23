@@ -463,23 +463,38 @@ namespace ACE.Server.WorldObjects
         {
             float resistMod = defaultModifier;
 
-            if (wielder == null || weapon == null)
+            if (wielder == null)
                 return defaultModifier;
 
             // handle quest weapon fixed resistance cleaving
-            if (weapon.ResistanceModifierType != null && weapon.ResistanceModifierType == damageType)
+            if (weapon != null && weapon.ResistanceModifierType != null && weapon.ResistanceModifierType == damageType)
                 resistMod = 1.0f + (float)(weapon.ResistanceModifier ?? defaultModifier);       // 1.0 in the data, equivalent to a level 5 vuln
 
             // handle elemental resistance rending
             var rendDamageType = GetRendDamageType(damageType);
 
             if (rendDamageType == ImbuedEffectType.Undef)
-                log.Debug($"{wielder.Name}.GetRendDamageType({damageType}) unexpected damage type for {weapon.Name} ({weapon.Guid})");
+            {
+                if (weapon != null)
+                    log.Debug($"{wielder.Name}.GetRendDamageType({damageType}) unexpected damage type for {weapon.Name} ({weapon.Guid})");
+                return resistMod;
+            }
 
-            if (rendDamageType != ImbuedEffectType.Undef && weapon.HasImbuedEffect(rendDamageType) && skill != null)
+            // Check weapon first, then check creature itself for CombatPets without weapons
+            bool hasRending = false;
+            if (weapon != null && weapon.HasImbuedEffect(rendDamageType))
+            {
+                hasRending = true;
+            }
+            else if (wielder is CombatPet && wielder.HasImbuedEffect(rendDamageType))
+            {
+                // For CombatPets without weapons, check if rending was applied to the creature itself
+                hasRending = true;
+            }
+
+            if (hasRending && skill != null)
             {
                 var rendingMod = GetRendingMod(skill);
-
                 resistMod = Math.Max(resistMod, rendingMod);
             }
 
@@ -942,6 +957,75 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
+        /// Default is FALSE
+        /// </summary>
+        public bool ProcOnCleaveTargets
+        {
+            get => GetProperty(PropertyBool.WeaponProcOnCleaveTargets) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.WeaponProcOnCleaveTargets); else SetProperty(PropertyBool.WeaponProcOnCleaveTargets, value); }
+        }
+
+        // Deprecated: Non-projectile cleave proc flag removed in favor of single toggle
+
+        /// <summary>
+        /// If TRUE, multi-strike hits each roll a proc using geometric decay
+        /// </summary>
+        public bool AllowMultiStrikeProcs
+        {
+            get => GetProperty(PropertyBool.WeaponAllowMultiStrikeProcs) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.WeaponAllowMultiStrikeProcs); else SetProperty(PropertyBool.WeaponAllowMultiStrikeProcs, value); }
+        }
+
+        /// <summary>
+        /// Geometric decay factor r for multi-strike (default 0.5)
+        /// Stored value is complement c = (1 - r). Getter returns r = (1 - c).
+        /// </summary>
+        public float MultiStrikeDecay
+        {
+            get
+            {
+                var stored = (float)(GetProperty(PropertyFloat.WeaponMultiStrikeDecay) ?? 0.5f); // default 0.5 => r = 0.5
+                if (stored < 0f) stored = 0f;
+                if (stored > 1f) stored = 1f;
+                var r = 1.0f - stored;
+                if (r < 0f) r = 0f;
+                if (r > 1f) r = 1f;
+                return r;
+            }
+            set
+            {
+                var clamped = Math.Clamp(value, 0f, 1f);
+                var stored = 1.0f - clamped;
+                SetProperty(PropertyFloat.WeaponMultiStrikeDecay, stored);
+            }
+        }
+
+        /// <summary>
+        /// Geometric decay factor r for cleave procs per strike (default 0.5)
+        /// Stored value is complement c = (1 - r). Getter returns r = (1 - c).
+        /// </summary>
+        public float CleaveStrikeDecay
+        {
+            get
+            {
+                var stored = (float)(GetProperty(PropertyFloat.WeaponCleaveStrikeDecay) ?? 0.5f);
+                if (stored < 0f) stored = 0f;
+                if (stored > 1f) stored = 1f;
+                var r = 1.0f - stored;
+                if (r < 0f) r = 0f;
+                if (r > 1f) r = 1f;
+                return r;
+            }
+            set
+            {
+                var clamped = Math.Clamp(value, 0f, 1f);
+                var stored = 1.0f - clamped;
+                SetProperty(PropertyFloat.WeaponCleaveStrikeDecay, stored);
+            }
+        }
+
+        /// <summary>
         /// Returns TRUE if this item has a proc / 'cast on strike' spell
         /// </summary>
         public bool HasProc => ProcSpell != null;
@@ -1009,6 +1093,65 @@ namespace ACE.Server.WorldObjects
             }
             else
                 attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, true, true);
+        }
+
+        /// <summary>
+        /// Try to proc with an external chance multiplier applied to the computed proc rate.
+        /// </summary>
+        public void TryProcItemWithChanceMod(WorldObject attacker, Creature target, bool selfTarget, float chanceMultiplier)
+        {
+            var baseChance = ProcSpellRate ?? 0.0f;
+
+            if (Aetheria.IsAetheria(WeenieClassId) && attacker is Creature wielder)
+                baseChance = Aetheria.CalcProcRate(this, wielder);
+
+            var chance = Math.Clamp(baseChance * Math.Max(0f, chanceMultiplier), 0f, 1f);
+
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+            if (rng >= chance)
+                return;
+
+            var spell = new Spell(ProcSpell.Value);
+
+            if (spell.NotFound)
+            {
+                if (attacker is Player player)
+                {
+                    if (spell._spellBase == null)
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"SpellId {ProcSpell.Value} Invalid.", ChatMessageType.System));
+                    else
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{spell.Name} spell not implemented, yet!", ChatMessageType.System));
+                }
+                return;
+            }
+
+            // not sure if this should go before or after the resist check
+            // after would match Player_Magic, but would require changing the signature of TryCastSpell yet again
+            // starting with the simpler check here
+            if (!selfTarget && target != null && target.NonProjectileMagicImmune && !spell.IsProjectile)
+            {
+                if (attacker is Player player)
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {target.Name} with {spell.Name}", ChatMessageType.Magic));
+
+                return;
+            }
+
+            var itemCaster = this is Creature ? null : this;
+
+            // For self-targeted spells, use the attacker as the target
+            var spellTarget = selfTarget ? attacker : target;
+
+            if (spell.NonComponentTargetType == ItemType.None)
+                attacker.TryCastSpell(spell, null, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+            else if (spell.NonComponentTargetType == ItemType.Vestements)
+            {
+                // TODO: spell.NonComponentTargetType should probably always go through TryCastSpell_WithItemRedirects,
+                // however i don't feel like testing every possible known type of item procspell in the current db to ensure there are no regressions
+                // current test case: 33990 Composite Bow casting Tattercoat
+                attacker.TryCastSpell_WithRedirects(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
+            }
+            else
+                attacker.TryCastSpell(spell, spellTarget, itemCaster, itemCaster, isWeaponSpell: true, fromProc: true);
         }
 
         private bool? isMasterable;

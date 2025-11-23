@@ -75,7 +75,7 @@ namespace ACE.Server.WorldObjects
                 Fellowship.OnDeath(this);
 
             // if the player's lifestone is in a different landblock, also broadcast their demise to that landblock
-            if (PropertyManager.GetBool("lifestone_broadcast_death").Item && Sanctuary != null && Location.Landblock != Sanctuary.Landblock)
+            if (PropertyManager.GetBool("lifestone_broadcast_death") && Sanctuary != null && Location.Landblock != Sanctuary.Landblock)
             {
                 // ActionBroadcastKill might not work if other players around lifestone aren't aware of this player yet...
                 // this existing broadcast method is also based on the current visible objects to the player,
@@ -87,7 +87,7 @@ namespace ACE.Server.WorldObjects
                 var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.Landblock << 16 | 0xFFFF), true, null);
 
                 // We enqueue the work onto the target landblock to ensure thread-safety. It's highly likely the lifestoneBlock is far away, and part of a different landblock group (and thus different thread).
-                lifestoneBlock.EnqueueAction(new ActionEventDelegate(() => lifestoneBlock.EnqueueBroadcast(excludePlayers, true, Sanctuary, LocalBroadcastRangeSq, broadcastMsg)));
+                lifestoneBlock.EnqueueAction(new ActionEventDelegate(ActionType.PlayerDeath_Broadcast, () => lifestoneBlock.EnqueueBroadcast(excludePlayers, true, Sanctuary, LocalBroadcastRangeSq, broadcastMsg)));
             }
 
             return deathMessage;
@@ -233,7 +233,7 @@ namespace ACE.Server.WorldObjects
             var animLength = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.Dead);
             dieChain.AddDelaySeconds(animLength + 1.0f);
 
-            dieChain.AddAction(this, () =>
+            dieChain.AddAction(this, ActionType.PlayerDeath_CreateCorpseAndTeleport, () =>
             {
                 CreateCorpse(topDamager, hadVitae);
 
@@ -255,7 +255,7 @@ namespace ACE.Server.WorldObjects
         public int CalculateVitaePenalty()
         {
             int lvl = Level ?? 1;
-            return (int)(lvl / PropertyManager.GetLong("vitae_per_level", 5).Item);
+            return (int)(lvl / PropertyManager.GetLong("vitae_per_level", 5));
         }
 
         /// <summary>
@@ -266,7 +266,7 @@ namespace ACE.Server.WorldObjects
             // teleport to sanctuary or best location
             var newPosition = Sanctuary ?? Instantiation ?? Location;
 
-            WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(() =>
+            WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(ActionType.PlayerDeath_EnqueueTeleport, () =>
             {
                 // Stand back up
                 SetCombatMode(CombatMode.NonCombat);
@@ -276,7 +276,7 @@ namespace ACE.Server.WorldObjects
                 var teleportChain = new ActionChain();
                 if (!IsLoggingOut) // If we're in the process of logging out, we skip the delay
                     teleportChain.AddDelaySeconds(3.0f);
-                teleportChain.AddAction(this, () =>
+                teleportChain.AddAction(this, ActionType.PlayerDeath_Teleport, () =>
                 {
                     // currently happens while in portal space
                     var newHealth = (uint)Math.Round(Health.MaxValue * 0.75f);
@@ -326,7 +326,7 @@ namespace ACE.Server.WorldObjects
 
             suicideInProgress = true;
 
-            if (PropertyManager.GetBool("suicide_instant_death").Item)
+            if (PropertyManager.GetBool("suicide_instant_death"))
                 Die(new DamageHistoryInfo(this), DamageHistory.TopDamager);
             else
                 HandleSuicide(NumDeaths);
@@ -352,7 +352,7 @@ namespace ACE.Server.WorldObjects
 
                 var suicideChain = new ActionChain();
                 suicideChain.AddDelaySeconds(3.0f);
-                suicideChain.AddAction(this, () => HandleSuicide(numDeaths, step + 1));
+                suicideChain.AddAction(this, ActionType.PlayerDeath_HandleSuicide, () => HandleSuicide(numDeaths, step + 1));
                 suicideChain.EnqueueChain();
             }
             else
@@ -581,7 +581,7 @@ namespace ACE.Server.WorldObjects
                     dropItems.Add(item);
             }
 
-            var destroyCoins = PropertyManager.GetBool("corpse_destroy_pyreals").Item;
+            var destroyCoins = PropertyManager.GetBool("corpse_destroy_pyreals");
 
             // add items to corpse
             foreach (var dropItem in dropItems)
@@ -625,7 +625,7 @@ namespace ACE.Server.WorldObjects
             var msg = $"[CORPSE] {Name} dropped items on corpse (0x{corpse.Guid}): ";
 
             foreach (var dropItem in dropItems)
-                msg += $"{(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? dropItem.StackSize.Value.ToString("N0") + " " + dropItem.GetPluralName() : dropItem.Name)} (0x{dropItem.Guid}){(dropItem.WeenieClassId == 273 && PropertyManager.GetBool("corpse_destroy_pyreals").Item ? $" which {(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? "were" : "was")} destroyed" : "")}, ";
+                msg += $"{(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? dropItem.StackSize.Value.ToString("N0") + " " + dropItem.GetPluralName() : dropItem.Name)} (0x{dropItem.Guid}){(dropItem.WeenieClassId == 273 && PropertyManager.GetBool("corpse_destroy_pyreals") ? $" which {(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? "were" : "was")} destroyed" : "")}, ";
 
             msg = msg.Substring(0, msg.Length - 2);
 
@@ -990,10 +990,10 @@ namespace ACE.Server.WorldObjects
 
         public void PK_DeathTick()
         {
-            if (MinimumTimeSincePk == null || (PropertyManager.GetBool("pk_server_safe_training_academy").Item && RecallsDisabled))
+            if (MinimumTimeSincePk == null || (PropertyManager.GetBool("pk_server_safe_training_academy") && RecallsDisabled))
                 return;
 
-            if (PkLevel == PKLevel.NPK && !PropertyManager.GetBool("pk_server").Item && !PropertyManager.GetBool("pkl_server").Item)
+            if (PkLevel == PKLevel.NPK && !PropertyManager.GetBool("pk_server") && !PropertyManager.GetBool("pkl_server"))
             {
                 MinimumTimeSincePk = null;
                 return;
@@ -1001,7 +1001,7 @@ namespace ACE.Server.WorldObjects
 
             MinimumTimeSincePk += CachedHeartbeatInterval;
 
-            if (MinimumTimeSincePk < PropertyManager.GetDouble("pk_respite_timer").Item)
+            if (MinimumTimeSincePk < PropertyManager.GetDouble("pk_respite_timer"))
                 return;
 
             MinimumTimeSincePk = null;
@@ -1009,9 +1009,9 @@ namespace ACE.Server.WorldObjects
             var werror = WeenieError.None;
             var pkLevel = PkLevel;
 
-            if (PropertyManager.GetBool("pk_server").Item)
+            if (PropertyManager.GetBool("pk_server"))
                 pkLevel = PKLevel.PK;
-            else if (PropertyManager.GetBool("pkl_server").Item)
+            else if (PropertyManager.GetBool("pkl_server"))
                 pkLevel = PKLevel.PKLite;
 
             switch (pkLevel)

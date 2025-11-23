@@ -66,7 +66,7 @@ namespace ACE.Server.Entity
 
             // Then do teleport
             player.IsBusy = true;
-            enlChain.AddAction(player, () =>
+            enlChain.AddAction(player, ActionType.Enlightenment_DoEnlighten, () =>
             {
                 player.IsBusy = false;
                 var endPos = new ACE.Entity.Position(player.Location);
@@ -194,7 +194,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 50 && targetEnlightenment <= 150)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost");
                 long reqLum = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum))
                 {
@@ -205,7 +205,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 150 && targetEnlightenment < 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost");
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum150))
                 {
@@ -227,7 +227,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 300)
             {
-                var baseLumCost = (decimal)PropertyManager.GetLong("enl_300_base_lum_cost").Item;
+                var baseLumCost = (decimal)PropertyManager.GetLong("enl_300_base_lum_cost");
 
                 // how far past 300 we’re going
                 int over = targetEnlightenment - 300;
@@ -354,7 +354,7 @@ namespace ACE.Server.Entity
         {
             if (player.Enlightenment + 1 > 50 && player.Enlightenment < 150)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost");
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum);
@@ -362,7 +362,7 @@ namespace ACE.Server.Entity
 
             else if (player.Enlightenment + 1 > 150 && player.Enlightenment < 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost");
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum150);
@@ -370,7 +370,7 @@ namespace ACE.Server.Entity
 
             else if (player.Enlightenment + 1 > 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost");
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum300 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum300);
@@ -382,7 +382,7 @@ namespace ACE.Server.Entity
         public static void RemoveSociety(Player player)
         {
             // Leave society alone if server prop is false
-            if (PropertyManager.GetBool("enl_removes_society").Item)
+            if (PropertyManager.GetBool("enl_removes_society"))
             {
                 player.QuestManager.Erase("SocietyMember");
                 player.QuestManager.Erase("CelestialHandMember");

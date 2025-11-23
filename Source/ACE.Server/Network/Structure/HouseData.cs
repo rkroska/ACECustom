@@ -24,55 +24,11 @@ namespace ACE.Server.Network.Structure
 
         public HouseData()
         {
-            Buy = new List<HousePayment>();
-            Rent = new List<HousePayment>();
+            Buy = [];
+            Rent = [];
 
-            if (!PropertyManager.GetBool("house_rent_enabled", true).Item)
+            if (!PropertyManager.GetBool("house_rent_enabled", true))
                 MaintenanceFree = true;
-        }
-
-        /// <summary>
-        /// Sets the list of items required to purchase this dwelling
-        /// </summary>
-        public void SetBuyItems(List<WorldObject> buyItems)
-        {
-            Buy = new List<HousePayment>();
-            foreach (var buyItem in buyItems)
-                Buy.Add(new HousePayment(buyItem));
-        }
-
-        /// <summary>
-        /// Sets the list of items required to pay rent for this dwelling
-        /// </summary>
-        public void SetRentItems(List<WorldObject> rentItems)
-        {
-            Rent = new List<HousePayment>();
-            foreach (var rentItem in rentItems)
-                Rent.Add(new HousePayment(rentItem));
-        }
-
-        /// <summary>
-        /// Sets the items that haven already been paid for rent
-        /// </summary>
-        public void SetPaidItems(SlumLord slumlord)
-        {
-            foreach (var item in slumlord.Inventory.Values)
-            {
-                var wcid = item.WeenieClassId;
-                var value = item.StackSize ?? 1;
-                if (item.WeenieClassName.StartsWith("tradenote"))
-                {
-                    wcid = 273;
-                    value = item.Value.Value;
-                }
-                var rentItem = Rent.FirstOrDefault(i => i.WeenieID == wcid);
-                if (rentItem == null)
-                {
-                    Console.WriteLine($"HouseData.SetPaidItems({slumlord.Name}): couldn't find rent item {item.WeenieClassId}");
-                    continue;
-                }
-                rentItem.Paid = Math.Min(rentItem.Num, rentItem.Paid + value);
-            }
         }
     }
 

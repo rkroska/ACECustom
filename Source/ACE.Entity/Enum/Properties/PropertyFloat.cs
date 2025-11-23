@@ -237,5 +237,19 @@ namespace ACE.Entity.Enum.Properties
         EnrageDamageMultiplier         = 9011,
         EnrageDamageReduction          = 9012,
         EnrageThreshold                = 9013,
+        [AssessmentProperty]
+        SplitArrowRange                 = 9032,
+        [AssessmentProperty]
+        SplitArrowDamageMultiplier     = 9033,
+        /// <summary>
+        /// Geometric decay r for multi-strike proc chance per hit (default 0.5)
+        /// </summary>
+        WeaponMultiStrikeDecay         = 9035,
+        /// <summary>
+        /// Geometric decay r for cleave proc chance per hit (default 0.5)
+        /// Applied per strike on cleaved targets, independent of multi-strike decay
+        /// </summary>
+        WeaponCleaveStrikeDecay        = 9036,
+        MaxRandomSpawnTime              = 9034,
     }
 }

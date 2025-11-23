@@ -85,7 +85,7 @@ namespace ACE.Server.WorldObjects
                 actionChain.AddDelaySeconds(attackFrames[i].time * animLength - prevTime);
                 prevTime = attackFrames[i].time * animLength;
 
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.MonsterMelee_DoAttack, () =>
                 {
                     if (AttackTarget == null || IsDead || target.IsDead) return;
 
@@ -135,6 +135,30 @@ namespace ACE.Server.WorldObjects
                         {
                             TryProcEquippedItems(this, target, false, weapon);
                             targetProc = true;
+                        }
+                        
+                        // Handle cleave damage for monsters (physical damage only, no procs)
+                        if (weapon != null && weapon.IsCleaving)
+                        {
+                            var cleave = GetCleaveTarget(target, weapon);
+                            
+                            foreach (var cleaveHit in cleave)
+                            {
+                                var cleaveDamageEvent = DamageEvent.CalculateDamage(this, cleaveHit, weapon, motionCommand, attackFrames[0].attackHook);
+                                
+                                if (cleaveDamageEvent.HasDamage)
+                                {
+                                    if (cleaveHit is Player cleavePlayer)
+                                    {
+                                        cleavePlayer.TakeDamage(this, cleaveDamageEvent);
+                                    }
+                                    else
+                                    {
+                                        cleaveHit.TakeDamage(this, cleaveDamageEvent.DamageType, cleaveDamageEvent.Damage);
+                                        EmitSplatter(cleaveHit, cleaveDamageEvent.Damage);
+                                    }
+                                }
+                            }
                         }
                     }
                     else
@@ -382,7 +406,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns base damage range for next monster attack
         /// </summary>
-        public BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
+        public virtual BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
         {
             if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
                 return GetMissileDamage();
@@ -463,7 +487,7 @@ namespace ACE.Server.WorldObjects
             if (!(this is Player))
                 return 0.0f;
 
-            var scalar = PropertyManager.GetDouble("ignore_magic_armor_pvp_scalar").Item;
+            var scalar = PropertyManager.GetDouble("ignore_magic_armor_pvp_scalar");
 
             if (scalar != 1.0)
                 return (float)(enchantments * (1.0 - scalar));
@@ -476,7 +500,7 @@ namespace ACE.Server.WorldObjects
             if (!(this is Player))
                 return 0;
 
-            var scalar = PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar").Item;
+            var scalar = PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar");
 
             if (scalar != 1.0)
                 return (int)Math.Round(enchantments * (1.0 - scalar));

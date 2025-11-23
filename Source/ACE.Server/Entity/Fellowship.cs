@@ -111,7 +111,7 @@ namespace ACE.Server.Entity
             }
             else
             {
-                if (PropertyManager.GetBool("fellow_busy_no_recruit").Item && newMember.IsBusy)
+                if (PropertyManager.GetBool("fellow_busy_no_recruit") && newMember.IsBusy)
                 {
                     inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is busy.", ChatMessageType.Broadcast));
                     return;
@@ -161,13 +161,17 @@ namespace ACE.Server.Entity
 
             var fellowshipMembers = GetFellowshipMembers();
 
-            foreach (var member in fellowshipMembers.Values.Where(i => i.Guid != player.Guid))
+            foreach (var member in fellowshipMembers.Values)
+            {
+                if (member.Guid == player.Guid) continue;
                 member.Session.Network.EnqueueSend(new GameEventFellowshipUpdateFellow(member.Session, player, ShareXP));
+            }
 
             if (ShareLoot)
             {
-                foreach (var member in fellowshipMembers.Values.Where(i => i.Guid != player.Guid))
+                foreach (var member in fellowshipMembers.Values)
                 {
+                    if (member.Guid == player.Guid) continue;
                     member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} has given you permission to loot his or her kills.", ChatMessageType.Broadcast));
                     member.Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} may now loot your kills.", ChatMessageType.Broadcast));
 
@@ -448,7 +452,7 @@ namespace ACE.Server.Entity
 
             var fellows = GetFellowshipMembers();
 
-            var allEvenShareLevel = PropertyManager.GetLong("fellowship_even_share_level").Item;
+            var allEvenShareLevel = PropertyManager.GetLong("fellowship_even_share_level");
             var allOverEvenShareLevel = !fellows.Values.Any(f => (f.Level ?? 1) < allEvenShareLevel);
 
             if (allOverEvenShareLevel)
@@ -496,7 +500,7 @@ namespace ACE.Server.Entity
             shareType &= ~ShareType.Fellowship;
 
             // quest turn-ins: flat share (retail default)
-            if (xpType == XpType.Quest && !PropertyManager.GetBool("fellow_quest_bonus").Item)
+            if (xpType == XpType.Quest && !PropertyManager.GetBool("fellow_quest_bonus"))
             {
                 var perAmount = (long)amount / fellowshipMembers.Count;
 
@@ -524,7 +528,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
                     {
                         member.GrantXP((long)amount, xpType, shareType);
                         continue;
@@ -556,7 +560,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
                     {
                         member.GrantXP((long)amount, xpType, shareType);
                         continue;
@@ -592,10 +596,9 @@ namespace ACE.Server.Entity
             else
             {
                 // pre-filter: evenly divide between luminance-eligible fellows
-                //var shareableMembers = GetFellowshipMembers().Values.Where(f => f.MaximumLuminance != null).ToList();
-                var shareableMembers = GetFellowshipMembers().Values.ToList();
+                var fellowshipMembers = GetFellowshipMembers();
 
-                if (shareableMembers.Count == 0)
+                if (fellowshipMembers.Count == 0)
                 {
                     player.GrantLuminance((long)amount, xpType, shareType);
                     return;
@@ -603,13 +606,11 @@ namespace ACE.Server.Entity
 
                 var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
 
-                // further filter to fellows in radar range
-                //var inRange = shareableMembers.Intersect(WithinRange(player, true)).ToList();
-
-                foreach (var member in shareableMembers)
+                // Iterate fellowship members directly without .ToList() allocation
+                foreach (var member in fellowshipMembers.Values)
                 {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member == player && PropertyManager.GetBool("fellowship_additive").Item)
+                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
                     {
                         player.GrantLuminance((long)amount, fellowXpType, shareType);
                         continue;
@@ -693,6 +694,47 @@ namespace ACE.Server.Entity
 
         public static readonly int MaxDistance = 600;
 
+        // Debug tracking for distance calculations
+        private static long _distanceCalcCount = 0;
+        private static long _sameLandblockSkips = 0;
+        private static long _indoorOutdoorMismatches = 0;
+        private static long _differentLandblockIndoor = 0;
+        private static DateTime _lastLogTime = DateTime.UtcNow;
+
+        /// <summary>
+        /// Logs distance calculation statistics every 10 seconds
+        /// </summary>
+        private static void LogDistanceStats()
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastLogTime).TotalSeconds >= 10.0)
+            {
+                var distCalcs = System.Threading.Interlocked.Exchange(ref _distanceCalcCount, 0);
+                var sameLB = System.Threading.Interlocked.Exchange(ref _sameLandblockSkips, 0);
+                var indoorOutdoor = System.Threading.Interlocked.Exchange(ref _indoorOutdoorMismatches, 0);
+                var diffLBIndoor = System.Threading.Interlocked.Exchange(ref _differentLandblockIndoor, 0);
+                
+                var elapsed = (now - _lastLogTime).TotalSeconds;
+                var total = distCalcs + sameLB + indoorOutdoor + diffLBIndoor;
+                
+                if (total > 0 && PropertyManager.GetBool("fellowship_xp_debug_logging", false))
+                {
+                    var optimizedChecks = sameLB + indoorOutdoor + diffLBIndoor;
+                    var optimizationPct = (optimizedChecks * 100.0 / total);
+                    
+                    log.Info($"[FELLOWSHIP XP] Stats for last {elapsed:F1}s:");
+                    log.Info($"  Total checks: {total} ({total/elapsed:F1}/sec)");
+                    log.Info($"  - Same LB (optimized): {sameLB} ({sameLB * 100.0 / total:F1}%)");
+                    log.Info($"  - Distance calcs: {distCalcs} ({distCalcs * 100.0 / total:F1}%)");
+                    log.Info($"  - Indoor/outdoor mismatch: {indoorOutdoor} ({indoorOutdoor * 100.0 / total:F1}%)");
+                    log.Info($"  - Diff LB indoor: {diffLBIndoor} ({diffLBIndoor * 100.0 / total:F1}%)");
+                    log.Info($"  Optimization effectiveness: {optimizationPct:F1}% of checks skipped expensive Distance2D()");
+                }
+                
+                _lastLogTime = now;
+            }
+        }
+
         /// <summary>
         /// Returns the amount to scale the XP for a fellow
         /// based on distance from the earner
@@ -707,13 +749,42 @@ namespace ACE.Server.Entity
 
             // https://asheron.fandom.com/wiki/Announcements_-_2004/01_-_Mirror,_Mirror#Rollout_Article
 
-            // If they are indoors while you are outdoors, or vice-versa.
-            if (earner.Location.Indoors != fellow.Location.Indoors)
-                return 0.0f;
+            // OPTIMIZATION: Check if both players are in the same landblock
+            // Landblock max distance (corner to corner) is ~271 units, well under the 600 unit XP sharing range
+            // This skips expensive Distance2D calculations for the majority of fellowship grinding
+            if (earner.Location.Landblock == fellow.Location.Landblock 
+                && (earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
+            {
+                // Same landblock but one is indoor and one is outdoor - can't share
+                if (earner.Location.Indoors != fellow.Location.Indoors)
+                {
+                    System.Threading.Interlocked.Increment(ref _indoorOutdoorMismatches);
+                    LogDistanceStats();
+                    return 0.0f;
+                }
+                
+                // Same landblock and both indoor or both outdoor - guaranteed in range
+                System.Threading.Interlocked.Increment(ref _sameLandblockSkips);
+                LogDistanceStats();
+                return 1.0f;
+            }
 
-            // If you are both indoors but in different landblocks.
-            if (earner.Location.Indoors && fellow.Location.Indoors && (earner.Location.Landblock != fellow.Location.Landblock || (earner.Location.Variation ?? 0) != (fellow.Location.Variation ?? 0)))
+            // DIFFERENT LANDBLOCKS
+            
+            // If either player is indoors, they can't share XP across landblocks
+            if (earner.Location.Indoors || fellow.Location.Indoors)
+            {
+                System.Threading.Interlocked.Increment(ref _differentLandblockIndoor);
+                LogDistanceStats();
                 return 0.0f;
+            }
+
+            // Both players are outdoor in different landblocks - need distance check
+            // This handles cases like players at adjacent landblock boundaries.
+            
+            // Track distance calculation rate (debug logging)
+            System.Threading.Interlocked.Increment(ref _distanceCalcCount);
+            LogDistanceStats();
 
             var dist = earner.Location.Distance2D(fellow.Location);
 
@@ -735,7 +806,7 @@ namespace ACE.Server.Entity
         {
             var fellows = GetFellowshipMembers();
 
-            var landblockRange = PropertyManager.GetBool("fellow_kt_landblock").Item;
+            var landblockRange = PropertyManager.GetBool("fellow_kt_landblock");
 
             var results = new List<Player>();
 

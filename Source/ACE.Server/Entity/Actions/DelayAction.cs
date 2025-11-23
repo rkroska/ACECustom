@@ -9,6 +9,7 @@ namespace ACE.Server.Entity.Actions
     /// </summary>
     public class DelayAction : ActionEventBase, IComparable<DelayAction>
     {
+        public override ActionType Type => ActionType.ControlFlowDelay;
         public double WaitTime { get; }
         public double EndTime { get; private set; }
 

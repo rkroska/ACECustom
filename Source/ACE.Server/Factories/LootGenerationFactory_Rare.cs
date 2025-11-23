@@ -44,7 +44,7 @@ namespace ACE.Server.Factories
         public static WorldObject TryCreateRare(int luck = 0)
         {
             //var t1_chance = 2500; // 1 in 2,500 chance // Old rate. Property default is 0.04 (which is 0.04%, or the same 1/2500)
-            double rare_drop_rate_percent = (float)Managers.PropertyManager.GetDouble("rare_drop_rate_percent").Item;
+            double rare_drop_rate_percent = (float)Managers.PropertyManager.GetDouble("rare_drop_rate_percent");
 
             // Check to make sure there *IS* a chance. Less than/equal to 0 would mean zero chance, so we can stop here
             if (rare_drop_rate_percent <= 0)

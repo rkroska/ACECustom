@@ -21,6 +21,11 @@ namespace ACE.Server.WorldObjects
         public const double questToBonusRation = 0.005;
         public const double enlightenmentToBonusRatio = 0.1;
 
+        // XP Batching fields
+        private long pendingXpUpdate = 0;
+        private ActionChain xpBatchChain = null;
+        private readonly object xpBatchLock = new object();
+
         /// <summary>
         /// A player earns XP through natural progression, ie. kills and quests completed
         /// </summary>
@@ -35,8 +40,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
             // apply xp modifiers.  Quest XP is multiplicative with general XP modification
-            var questModifier = PropertyManager.GetDouble("quest_xp_modifier").Item;
-            var modifier = PropertyManager.GetDouble("xp_modifier").Item;
+            var questModifier = PropertyManager.GetDouble("quest_xp_modifier");
+            var modifier = PropertyManager.GetDouble("xp_modifier");
             if (xpType == XpType.Quest)
                 modifier *= questModifier;
 
@@ -47,7 +52,7 @@ namespace ACE.Server.WorldObjects
 
             var enlightenment = GetEnglightenmentXPBonus();
 
-            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05).Item;
+            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05);
 
             long m_amount = 0;
 
@@ -95,7 +100,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Make sure UpdateXpAndLevel is done on this players thread
-            EnqueueAction(new ActionEventDelegate(() => UpdateXpAndLevel(amount, xpType)));
+            EnqueueAction(new ActionEventDelegate(ActionType.PlayerXp_UpdateXpAndLevel, () => UpdateXpAndLevel(amount, xpType)));
 
             // for passing XP up the allegiance chain,
             // this function is only called at the very beginning, to start the process.
@@ -140,10 +145,8 @@ namespace ACE.Server.WorldObjects
                 }
                 AvailableExperience += addAmount;
 
-                //var xpTotalUpdate = new GameMessagePrivateUpdatePropertyFloat(this, PropertyFloat.TotalExperienceDouble, TotalExperienceDouble ?? 0);
-                var xpAvailUpdate = new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0);
-                //Session.Network.EnqueueSend(xpTotalUpdate, xpAvailUpdate);
-                Session.Network.EnqueueSend(xpAvailUpdate); //client doesn't use TotalExperienceDouble, it's serverside only, sending this causes additional chatter
+                // Batch XP updates to reduce network traffic
+                BatchXpUpdate(addAmount, xpType);
                 CheckForLevelup();
             }
 
@@ -152,6 +155,55 @@ namespace ACE.Server.WorldObjects
 
             if (HasVitae && xpType != XpType.Allegiance)
                 UpdateXpVitae(amount);
+        }
+
+        /// <summary>
+        /// Batches XP updates to reduce network packet spam during rapid XP gains
+        /// </summary>
+        private void BatchXpUpdate(long amount, XpType xpType)
+        {
+            var batchWindow = PropertyManager.GetDouble("xp_batch_window_seconds", 3.0);
+            var immediateThreshold = PropertyManager.GetLong("xp_batch_immediate_threshold", 1000000);
+
+            // For very large XP gains (quests), send immediately
+            if (amount >= immediateThreshold)
+            {
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
+                return;
+            }
+
+            lock (xpBatchLock)
+            {
+                pendingXpUpdate += amount;
+
+                // If no batch chain exists, create one
+                if (xpBatchChain == null)
+                {
+                    xpBatchChain = new ActionChain();
+                    xpBatchChain.AddDelaySeconds(batchWindow);
+                    xpBatchChain.AddAction(this, ActionType.PlayerXp_FlushBatchedUpdate, () =>
+                    {
+                        FlushBatchedXpUpdate();
+                    });
+                    xpBatchChain.EnqueueChain();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sends the accumulated XP update to the client
+        /// </summary>
+        private void FlushBatchedXpUpdate()
+        {
+            lock (xpBatchLock)
+            {
+                if (pendingXpUpdate > 0)
+                {
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
+                    pendingXpUpdate = 0;
+                }
+                xpBatchChain = null;
+            }
         }
 
         /// <summary>
@@ -208,7 +260,7 @@ namespace ACE.Server.WorldObjects
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(2.0f);
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerXp_RemoveVitae, () =>
                 {
                     var vitae = EnchantmentManager.GetVitae();
                     if (vitae != null)
@@ -496,7 +548,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(5.0f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerXp_HandleMissingXp, () =>
             {
                 var xpType = verifyXp > 0 ? "unassigned experience" : "experience points";
 
@@ -582,7 +634,7 @@ namespace ACE.Server.WorldObjects
 
 
                 var actionChain = new ActionChain();
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerXp_ItemIncreasedInPower, () =>
                 {
                     var msg = $"Your {item.Name} has increased in power to level {newItemLevel}!";
                     Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));

@@ -55,11 +55,11 @@ namespace ACE.Server.WorldObjects
                 player.LastUseTime += stanceTime;
             }
 
-            actionChain.AddAction(this, () => player.EnqueueBroadcast(new GameMessageSound(player.Guid, Sound.LifestoneOn, 1.0f)));
+            actionChain.AddAction(this, ActionType.Lifestone_EnqueueSound, () => player.EnqueueBroadcast(new GameMessageSound(player.Guid, Sound.LifestoneOn, 1.0f)));
 
             player.LastUseTime += player.EnqueueMotion(actionChain, MotionCommand.Sanctuary);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.Lifestone_Use, () =>
             {
                 if (player.IsWithinUseRadiusOf(this))
                 {
