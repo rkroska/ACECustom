@@ -607,6 +607,16 @@ namespace ACE.Database
             }
         }
 
+        public bool ClearCachedEvent(string eventName)
+        {
+            return cachedEvents.TryRemove(eventName.ToLower(), out _);
+        }
+
+        public void ClearAllCachedEvents()
+        {
+            cachedEvents.Clear();
+        }
+
 
         // =====================================
         // HousePortal
