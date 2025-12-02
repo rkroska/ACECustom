@@ -1065,8 +1065,12 @@ namespace ACE.Server.WorldObjects
 
         public virtual bool CanDamage(Creature target)
         {
-            if (target is Player)
+            if (target is Player player)
             {
+                // Skip players with CloakStatus.Creature - monsters should not attack them
+                if (player.CloakStatus == CloakStatus.Creature)
+                    return false;
+
                 // monster attacking player
                 return true;    // other checks handled elsewhere
             }
@@ -1146,6 +1150,10 @@ namespace ACE.Server.WorldObjects
             // Player_Monster.CheckMonsters() - player movement
             // Monster_Awareness.CheckTargets_Inner() - monster spawning in
             // Monster_Awareness.FactionMob_CheckMonsters() - faction mob scanning
+
+            // If this is a player cloaked as creature, don't alert monsters
+            if (this is Player player && player.CloakStatus == CloakStatus.Creature)
+                return false;
 
             // non-attackable creatures do not get aggroed,
             // unless they have a TargetingTactic, such as the invisible archers in Oswald's Dirk Quest

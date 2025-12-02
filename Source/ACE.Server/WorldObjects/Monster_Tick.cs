@@ -114,6 +114,13 @@ namespace ACE.Server.WorldObjects
 
             var creatureTarget = AttackTarget as Creature;
 
+            // Clear AttackTarget if it's a player with CloakStatus.Creature
+            if (creatureTarget is Player playerTarget && playerTarget.CloakStatus == CloakStatus.Creature)
+            {
+                FindNextTarget();
+                return;
+            }
+
             if (creatureTarget != null && (creatureTarget.IsDead || (combatPet == null && !IsVisibleTarget(creatureTarget))))
             {
                 FindNextTarget();
