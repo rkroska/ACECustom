@@ -156,7 +156,7 @@ namespace ACE.Entity.Models
                     group e by e.SpellCategory
                     into categories
                     //select categories.OrderByDescending(c => c.LayerId).First();
-                    select categories.OrderByDescending(c => c.PowerLevel + c.AugmentationLevelWhenCast ?? 0)
+                    select categories.OrderByDescending(c => c.PowerLevel + (c.AugmentationLevelWhenCast ?? 0))
                         .ThenByDescending(c => Level8AuraSelfSpells.Contains(c.SpellId))
                         .ThenByDescending(c => setSpells.Contains(c.SpellId) ? c.SpellId : c.StartTime).First();
 
