@@ -361,6 +361,18 @@ namespace ACE.Server.WorldObjects.Managers
             else
             {
                 entry.StatModValue = spell.StatModVal;
+                
+                // If caster is not a Creature but WorldObject has a wielder (Player), get augmentation from wielder
+                // This handles cases where spells are cast on items by non-Creature casters but the item is wielded by a Player
+                // Only apply for player-cast spells (equip = false), NOT for item enchantments (equip = true, like Shadow Armor)
+                if (WorldObject.WielderId != null && spell.School == MagicSchool.ItemEnchantment && !equip)
+                {
+                    var wielder = WorldObject.CurrentLandblock?.GetObject(WorldObject.WielderId.Value) as Player;
+                    if (wielder != null)
+                    {
+                        entry.AugmentationLevelWhenCast = wielder.LuminanceAugmentItemCount ?? 0;
+                    }
+                }
             }
 
 
