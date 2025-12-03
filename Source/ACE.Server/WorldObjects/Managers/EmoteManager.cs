@@ -32,6 +32,10 @@ namespace ACE.Server.WorldObjects.Managers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // In-memory cache for server-first quest tracking to prevent race conditions
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> ServerFirstQuestCache = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>();
+        private static readonly object ServerQuestLock = new object();
+
         public WorldObject WorldObject => _proxy ?? _worldObject;
 
         private readonly WorldObject _worldObject;
@@ -743,6 +747,62 @@ namespace ACE.Server.WorldObjects.Managers
                         var questSolves = questTarget.QuestManager.HasQuestSolves(emote.Message, emote.Min, emote.Max);
 
                         ExecuteEmoteSet(questSolves ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+                    break;
+
+                case EmoteType.InqServerQuestSolves:
+
+                    log.Debug($"EmoteManager.Execute - InqServerQuestSolves called for quest: {emote.Message}");
+
+                    // Check if anyone on the server has completed this quest
+                    // Use in-memory cache + lock to ensure true atomicity and prevent race conditions
+                    if (!string.IsNullOrEmpty(emote.Message))
+                    {
+                        bool isServerFirst = false;
+
+                        lock (ServerQuestLock)
+                        {
+                            // First check in-memory cache - instant and thread-safe
+                            if (ServerFirstQuestCache.ContainsKey(emote.Message))
+                            {
+                                // Quest already claimed by someone
+                                isServerFirst = false;
+                                log.Debug($"EmoteManager.Execute - InqServerQuestSolves: quest={emote.Message} found in cache (already claimed)");
+                            }
+                            else
+                            {
+                                // Not in cache, check database
+                                var serverCompletions = ShardDatabase.GetServerQuestCompletions(emote.Message);
+
+                                log.Debug($"EmoteManager.Execute - InqServerQuestSolves: quest={emote.Message}, DB completions={serverCompletions}");
+
+                                if (serverCompletions == 0)
+                                {
+                                    // Server first! Mark it in cache immediately to block other players
+                                    ServerFirstQuestCache.TryAdd(emote.Message, true);
+                                    isServerFirst = true;
+
+                                    // Increment the quest
+                                    questTarget = GetQuestTarget(EmoteType.InqQuest, targetCreature, creature);
+                                    if (questTarget != null)
+                                    {
+                                        questTarget.QuestManager.Increment(emote.Message);
+                                        // Save to database (may be async, but cache protects us)
+                                        if (questTarget is Player questPlayer)
+                                            questPlayer.SaveBiotaToDatabase();
+                                    }
+                                }
+                                else
+                                {
+                                    // Someone already completed it before server restart/cache clear
+                                    ServerFirstQuestCache.TryAdd(emote.Message, true);
+                                    isServerFirst = false;
+                                }
+                            }
+                        }
+
+                        // Execute QuestSuccess if server first, QuestFailure if not
+                        ExecuteEmoteSet(isServerFirst ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
                     }
                     break;
 
@@ -2785,6 +2845,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
                 case EmoteType.InqQuestSolves:
+                case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
                 case EmoteType.InqIntStat:
                 case EmoteType.InqFloatStat:
