@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
+using ACE.Database.Models.Auth;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Adapter;
@@ -1424,6 +1425,60 @@ namespace ACE.Server.WorldObjects.Managers
 
 
                         questTarget.QuestManager.Stamp(emote.Message);
+                    }
+                    break;
+
+                case EmoteType.GrantRandomQuestStamp:
+
+                    if (player != null)
+                    {
+                        try
+                        {
+                            // Parse the list of available quest stamps from emote.Message (comma-separated)
+                            if (string.IsNullOrWhiteSpace(emote.Message))
+                            {
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no quest stamps specified in Message.");
+                                break;
+                            }
+
+                            var availableStamps = emote.Message.Split(',')
+                                .Select(q => q.Trim())
+                                .Where(q => !string.IsNullOrWhiteSpace(q))
+                                .ToList();
+
+                            if (availableStamps.Count == 0)
+                            {
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no valid quest stamps after parsing.");
+                                break;
+                            }
+
+                            // Get only the stamps from our available list that the player already has
+                            // This is much more efficient than loading all player stamps
+                            var playerExistingStamps = GetPlayerQuestStamps(player, availableStamps);
+
+                            // Filter out stamps the player already has
+                            var eligibleStamps = availableStamps
+                                .Except(playerExistingStamps, StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+
+                            if (eligibleStamps.Count == 0)
+                            {
+                                // Player already has all available stamps
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("You already have all available quest stamps from this source.", ChatMessageType.Broadcast));
+                                break;
+                            }
+
+                            // Randomly select one from the remaining available stamps
+                            var randomIndex = ThreadSafeRandom.Next(0, eligibleStamps.Count);
+                            var selectedQuestStamp = eligibleStamps[randomIndex];
+
+                            // Grant the selected stamp
+                            player.QuestManager.Stamp(selectedQuestStamp);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp encountered an error: {ex.Message}", ex);
+                        }
                     }
                     break;
 
@@ -3418,5 +3473,48 @@ namespace ACE.Server.WorldObjects.Managers
             return AddEmote(newEmote);
         }
 
+        /// <summary>
+        /// Gets a HashSet of quest stamp names from the provided list that the player already has (NumTimesCompleted >= 1)
+        /// This only queries for the specific stamps we care about, rather than all player stamps, for better performance.
+        /// </summary>
+        /// <param name="player">The player to query quest stamps for</param>
+        /// <param name="stampsToCheck">The list of quest stamp names to check against</param>
+        /// <returns>HashSet of quest names from stampsToCheck that the player already has as stamps</returns>
+        private HashSet<string> GetPlayerQuestStamps(Player player, List<string> stampsToCheck)
+        {
+            var existingStamps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (player?.Account == null || stampsToCheck == null || stampsToCheck.Count == 0)
+                return existingStamps;
+
+            try
+            {
+                using (var context = new AuthDbContext())
+                {
+                    // Only query for the specific stamps we're interested in, not all player stamps
+                    // This is much more efficient when players have thousands of stamps
+                    var playerStamps = context.AccountQuest
+                        .Where(x => x.AccountId == player.Account.AccountId 
+                                 && x.NumTimesCompleted >= 1 
+                                 && stampsToCheck.Contains(x.Quest))
+                        .Select(x => x.Quest)
+                        .ToList();
+
+                    foreach (var stamp in playerStamps)
+                    {
+                        if (!string.IsNullOrWhiteSpace(stamp))
+                        {
+                            existingStamps.Add(stamp);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.GetPlayerQuestStamps: Error querying player quest stamps for account {player.Account?.AccountId}: {ex.Message}", ex);
+            }
+
+            return existingStamps;
+        }
     }
 }
