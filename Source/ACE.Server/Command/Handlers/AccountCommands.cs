@@ -1,5 +1,7 @@
 using System;
 using System.Net;
+using System.Linq;
+using System.Collections.Generic;
 
 using log4net;
 
@@ -7,6 +9,7 @@ using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Entity.Enum;
 using ACE.Server.Network;
+using ACE.Server.Managers;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -222,6 +225,101 @@ namespace ACE.Server.Command.Handlers
             DatabaseManager.Authentication.UpdateAccount(account);
 
             CommandHandlerHelper.WriteOutputInfo(session, "Account password successfully changed.", ChatMessageType.Broadcast);
+        }
+
+        // Add a cooldown dictionary to track last unstuck usage per session
+        private static readonly Dictionary<uint, DateTime> UnstuckCooldowns = new Dictionary<uint, DateTime>();
+
+        [CommandHandler("unstuck", AccessLevel.Developer, CommandHandlerFlag.None, 1,
+            "Kicks all online players for the specified account if the IP matches the command issuer.",
+            "accountname")]
+        public static void HandleUnstuck(Session session, params string[] parameters)
+        {
+            // Cooldown check
+            var now = DateTime.UtcNow;
+            var sessionId = session?.Player?.Guid.Full ?? 0;
+            lock (UnstuckCooldowns)
+            {
+                if (UnstuckCooldowns.TryGetValue(sessionId, out var lastUsed))
+                {
+                    if ((now - lastUsed).TotalSeconds < 15)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, $"/unstuck is on cooldown. Please wait {15 - (int)(now - lastUsed).TotalSeconds} seconds.", ChatMessageType.Broadcast);
+                        return;
+                    }
+                }
+                UnstuckCooldowns[sessionId] = now;
+            }
+
+            string accountName = parameters[0].ToLower();
+
+            var account = DatabaseManager.Authentication.GetAccountByName(accountName);
+            if (account == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Account does not exist.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            // Only target sessions for the account that are NOT the issuer's session
+            var playersToKick = PlayerManager.GetAllOnline()
+                .Where(p => p.Account != null
+                    && p.Account.AccountId == account.AccountId
+                    && p.Session != session) // Exclude the issuer's session
+                .ToList();
+
+            if (playersToKick.Count == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Account is not online.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            // Check if the IP of the command issuer matches the IP of the target account's online session(s)
+            var issuerIP = session?.EndPoint?.Address;
+            var targetIPs = playersToKick.Select(p => p.Session?.EndPoint?.Address).Distinct().ToList();
+            if (!targetIPs.Contains(issuerIP))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "IP mismatch - failed to kick.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            foreach (var player in playersToKick)
+            {
+                player.Session.Terminate(
+                    ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
+                    new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount("! You have been kicked by /unstuck command."));
+            }
+
+            // Capture the sessions to remove
+            var sessionsToRemove = playersToKick.Select(p => p.Session).ToList();
+
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(3000);
+                foreach (var sessionToRemove in sessionsToRemove)
+                {
+                    if (sessionToRemove != null)
+                    {
+                        try
+                        {
+                            ACE.Server.Network.Managers.NetworkManager.RemoveSession(sessionToRemove);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Log error but do not freeze server
+                            log.Error($"Error removing session in /unstuck: {ex.Message}", ex);
+                        }
+                    }
+                }
+            });
+
+            // Write to Audit channel
+            if (session?.Player != null)
+            {
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has issued a stuck command for {accountName} - Verified by IP - KICKING");
+            }
+
+            var kickedNames = string.Join(", ", playersToKick.Select(p => p.Name));
+            CommandHandlerHelper.WriteOutputInfo(session, $"Unstuck: {playersToKick.Count} player(s) on account '{accountName}' have been kicked: {kickedNames}", ChatMessageType.Broadcast);
         }
     }
 }

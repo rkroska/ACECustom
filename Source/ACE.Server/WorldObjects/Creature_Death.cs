@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 
 using ACE.Database;
 using ACE.Database.Models.World;
@@ -77,6 +79,7 @@ namespace ACE.Server.WorldObjects
             if (lastDamagerInfo == null || lastDamagerInfo.Guid == Guid || lastDamager is Hotspot)
                 return Strings.General[1];
 
+
             var deathMessage = Strings.GetDeathMessage(damageType, criticalHit);
 
             // if killed by a player, send them a message
@@ -88,10 +91,11 @@ namespace ACE.Server.WorldObjects
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
                 if (lastDamager is Player playerKiller)
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg));
+                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
             }
             return deathMessage;
         }
+
 
         /// <summary>
         /// Kills a player/creature and performs the full death sequence
@@ -148,7 +152,7 @@ namespace ACE.Server.WorldObjects
             //var deathAnimLength = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId).GetAnimationLength(MotionCommand.Dead);
             dieChain.AddDelaySeconds(deathAnimLength);
 
-            dieChain.AddAction(this, () =>
+            dieChain.AddAction(this, ActionType.CreatureDeath_MakeCorpse, () =>
             {
                 CreateCorpse(topDamager);
                 Destroy();
@@ -253,14 +257,14 @@ namespace ACE.Server.WorldObjects
             // this is to prevent ordering bugs, such as a player being processed after a summon,
             // and already being at the 1 cap for players
 
-            var summon_credit_cap = (int)PropertyManager.GetLong("summoning_killtask_multicredit_cap").Item - 1;
+            var summon_credit_cap = (int)PropertyManager.GetLong("summoning_killtask_multicredit_cap") - 1;
 
             var playerCredits = new Dictionary<ObjectGuid, int>();
             var summonCredits = new Dictionary<ObjectGuid, int>();
 
             // this option isn't really needed anymore, but keeping it around for compatibility
             // it is now synonymous with summoning_killtask_multicredit_cap <= 1
-            if (!PropertyManager.GetBool("allow_summoning_killtask_multicredit").Item)
+            if (!PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
                 summon_credit_cap = 0;
 
             foreach (var kvp in DamageHistory.TotalDamage)
@@ -299,7 +303,7 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!PropertyManager.GetBool("fellow_kt_killer").Item)   
+                else if (!PropertyManager.GetBool("fellow_kt_killer"))   
                 {
                     continue;
                 }
@@ -366,7 +370,7 @@ namespace ACE.Server.WorldObjects
                     if (playerDamager != null && playerDamager.QuestManager.HasQuest(questName))
                     {
                         // only add combat pet to eligible receivers if player has quest, and allow_summoning_killtask_multicredit = true (default, retail)
-                        if (DamageHistory.HasDamager(playerDamager, true) && PropertyManager.GetBool("allow_summoning_killtask_multicredit").Item)
+                        if (DamageHistory.HasDamager(playerDamager, true) && PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
                             receivers[kvp.Value.Guid] = kvp.Value;  // add CombatPet
                         else
                             receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);   // add dummy profile for PetOwner
@@ -396,7 +400,7 @@ namespace ACE.Server.WorldObjects
                     // just add a fake DamageHistoryInfo for reference
                     receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);
                 }
-                else if (PropertyManager.GetBool("fellow_kt_killer").Item)
+                else if (PropertyManager.GetBool("fellow_kt_killer"))
                 {
                     // if this option is enabled (retail default), the killer is required to have kill task
                     // for it to share with fellowship
@@ -603,6 +607,9 @@ namespace ACE.Server.WorldObjects
             {
                 corpse.IsMonster = true;
 
+                // Copy TimeToRot from Monster to Corpse
+                corpse.TimeToRot = TimeToRot;
+
                 if (killer == null || !killer.IsOlthoiPlayer)
                     GenerateTreasure(killer, corpse);
                 else
@@ -647,10 +654,44 @@ namespace ACE.Server.WorldObjects
 
             if (saveCorpse)
             {
-                corpse.SaveBiotaToDatabase();
+                var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                var savedObjects = new List<WorldObject>();
 
+                // Save corpse
+                corpse.SaveBiotaToDatabase(false);
+                biotas.Add((corpse.Biota, corpse.BiotaDatabaseLock));
+                savedObjects.Add(corpse);
+
+                // Save all items in corpse
                 foreach (var item in corpse.Inventory.Values)
-                    item.SaveBiotaToDatabase();
+                {
+                    item.SaveBiotaToDatabase(false);
+                    biotas.Add((item.Biota, item.BiotaDatabaseLock));
+                    savedObjects.Add(item);
+                }
+
+                // Bulk save with callback to clear SaveInProgress flags
+                DatabaseManager.Shard.SaveBiotasInParallel(
+                    biotas,
+                    result =>
+                    {
+                        var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                        clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.CreatureDeath_SaveInParallelCallback, () =>
+                        {
+                            foreach (var wo in savedObjects)
+                            {
+                                if (!wo.IsDestroyed)
+                                    wo.SaveInProgress = false;
+                            }
+
+                            if (!result)
+                            {
+                                log.Warn($"[CORPSE SAVE] Bulk save for corpse {corpse.Guid} returned false; SaveInProgress flags cleared to avoid stuck state.");
+                            }
+                        });
+                        clearFlagsAction.EnqueueChain();
+                    },
+                    $"CorpseSave:{corpse.Guid}");
             }
         }
 
@@ -684,10 +725,23 @@ namespace ACE.Server.WorldObjects
 
             // move wielded treasure over, which also should include Wielded objects not marked for destroy on death.
             // allow server operators to configure this behavior due to errors in createlist post 16py data
-            var dropFlags = PropertyManager.GetBool("creatures_drop_createlist_wield").Item ? DestinationType.WieldTreasure : DestinationType.Treasure;
+            var dropFlags = PropertyManager.GetBool("creatures_drop_createlist_wield") ? DestinationType.WieldTreasure : DestinationType.Treasure;
 
-            var wieldedTreasure = Inventory.Values.Concat(EquippedObjects.Values).Where(i => (i.DestinationType & dropFlags) != 0);
-            foreach (var item in wieldedTreasure.ToList())
+            // Build list of items to move (optimized from Concat + Where + ToList)
+            var itemsToMove = new List<WorldObject>();
+            foreach (var item in Inventory.Values)
+            {
+                if ((item.DestinationType & dropFlags) != 0)
+                    itemsToMove.Add(item);
+            }
+            foreach (var item in EquippedObjects.Values)
+            {
+                if ((item.DestinationType & dropFlags) != 0)
+                    itemsToMove.Add(item);
+            }
+
+            // Now safe to modify collections during this iteration
+            foreach (var item in itemsToMove)
             {
                 if (item.Bonded == BondedStatus.Destroy)
                     continue;

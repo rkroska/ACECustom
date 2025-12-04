@@ -138,6 +138,10 @@ namespace ACE.Entity.Enum
         DecrementInt64Stat            = 129, //Custom
         IncrementInt64Stat            = 130, //Custom
         QuestCompletionCount          = 131, //Custom
+        DropFellow                    = 132, //Custom
+        GrantAttributeStat            = 133, //Custom
+        GrantVitalStat                = 134, //Custom
+        InqServerQuestSolves          = 135, //Custom - Check if quest has been completed by anyone on server
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

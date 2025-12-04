@@ -161,7 +161,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(delayTime);
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMelee_HandleTargetedAttack, () =>
                 {
                     if (!creatureTarget.IsAlive)
                     {
@@ -189,13 +189,13 @@ namespace ACE.Server.WorldObjects
             {
                 // sticky melee
                 var angle = GetAngle(target);
-                if (angle > PropertyManager.GetDouble("melee_max_angle").Item)
+                if (angle > PropertyManager.GetDouble("melee_max_angle"))
                 {
                     var rotateTime = Rotate(target);
 
                     var actionChain = new ActionChain();
                     actionChain.AddDelaySeconds(rotateTime);
-                    actionChain.AddAction(this, () => Attack(target, attackSequence));
+                    actionChain.AddAction(this, ActionType.PlayerMelee_Attack, () => Attack(target, attackSequence));
                     actionChain.EnqueueChain();
                 }
                 else
@@ -325,7 +325,8 @@ namespace ACE.Server.WorldObjects
             TryProcEquippedItems(this, this, true, weapon);
 
             var prevTime = 0.0f;
-            bool targetProc = false;
+            int strikeCounter = 0;
+            int successfulHitCounter = 0;
 
             for (var i = 0; i < numStrikes; i++)
             {
@@ -335,8 +336,9 @@ namespace ACE.Server.WorldObjects
                 actionChain.AddDelaySeconds(attackFrames[i].time * animLength - prevTime);
                 prevTime = attackFrames[i].time * animLength;
 
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerMelee_AttackInner, () =>
                 {
+                    strikeCounter++;
                     if (IsDead)
                     {
                         Attacking = false;
@@ -346,21 +348,68 @@ namespace ACE.Server.WorldObjects
 
                     var damageEvent = DamageTarget(creature, weapon);
 
-                    // handle target procs
-                    if (damageEvent != null && damageEvent.HasDamage && !targetProc)
+                    // Only increment successful hit counter when we actually deal damage
+                    // This ensures procs are based on successful hits, not swing attempts
+                    bool hitSuccessful = damageEvent != null && damageEvent.HasDamage;
+                    if (hitSuccessful)
+                        successfulHitCounter++;
+
+                    // handle target procs on primary: default only first hit, or geometric decay if weapon allows multi-strike procs
+                    float strikeMultiplier = 0f;
+                    if (hitSuccessful)
                     {
-                        TryProcEquippedItems(this, creature, false, weapon);
-                        targetProc = true;
+                        if (weapon != null && weapon.AllowMultiStrikeProcs)
+                        {
+                            var r = weapon.MultiStrikeDecay;
+                            if (r >= 1.0f)
+                            {
+                                // If r = 1.0f (stored 0.0f), no reduction
+                                strikeMultiplier = 1.0f;
+                            }
+                            else
+                            {
+                                // Use successful hit counter for decay calculation
+                                var exp = Math.Max(0, successfulHitCounter - 1);
+                                strikeMultiplier = (float)Math.Pow(r, exp);
+                            }
+                        }
+                        else
+                        {
+                            // only first successful hit rolls
+                            strikeMultiplier = successfulHitCounter == 1 ? 1.0f : 0.0f;
+                        }
+
+                        if (strikeMultiplier > 0f)
+                            TryProcEquippedItemsWithChanceMod(this, creature, false, weapon, strikeMultiplier);
                     }
 
-                    if (weapon != null && weapon.IsCleaving)
+                    if (weapon != null && weapon.IsCleaving && creature != null)
                     {
                         var cleave = GetCleaveTarget(creature, weapon);
-
+                        
+                        // Check if cleave list is null or empty
+                        if (cleave == null || cleave.Count == 0)
+                            return;
+                        
+                        // Apply cleave damage regardless of primary hit success
+                        // Procs only happen if primary hit was successful (strikeMultiplier > 0f)
+                        // strikeMultiplier is already calculated above and matches primary target behavior
                         foreach (var cleaveHit in cleave)
                         {
-                            // target procs don't happen for cleaving
-                            DamageTarget(cleaveHit, weapon);
+                            // Skip null cleave targets
+                            if (cleaveHit == null)
+                                continue;
+
+                            // Apply cast on strike effects to cleaved targets
+                            var cleaveDamageEvent = DamageTarget(cleaveHit, weapon);
+                            
+                            // Handle weapon-only procs for cleaved targets: uses strike-decayed chance then applies cleave decay
+                            // Only proc if primary hit was successful and dealt damage
+                            // strikeMultiplier will be 1.0f on first successful hit even if AllowMultiStrikeProcs is false
+                            if (cleaveDamageEvent != null && cleaveDamageEvent.HasDamage && strikeMultiplier > 0f)
+                            {
+                                TryProcWeaponOnCleaveTarget(this, cleaveHit, weapon, weapon?.CleaveTargets ?? 1, successfulHitCounter, strikeMultiplier);
+                            }
                         }
                     }
                 });
@@ -372,7 +421,7 @@ namespace ACE.Server.WorldObjects
             //actionChain.AddDelaySeconds(animLength - swingTime * numStrikes);
             actionChain.AddDelaySeconds(animLength - prevTime);
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerMelee_PowerbarRefill, () =>
             {
                 Attacking = false;
 
@@ -393,7 +442,7 @@ namespace ACE.Server.WorldObjects
 
                     var nextAttack = new ActionChain();
                     nextAttack.AddDelaySeconds(nextRefillTime);
-                    nextAttack.AddAction(this, () => Attack(target, attackSequence, true));
+                    nextAttack.AddAction(this, ActionType.PlayerMelee_Attack, () => Attack(target, attackSequence, true));
                     nextAttack.EnqueueChain();
                 }
                 else
@@ -426,7 +475,7 @@ namespace ACE.Server.WorldObjects
 
             // broadcast player swing animation to clients
             var motion = new Motion(this, swingAnimation, animSpeed);
-            if (PropertyManager.GetBool("persist_movement").Item)
+            if (PropertyManager.GetBool("persist_movement"))
             {
                 motion.Persist(CurrentMotionState);
             }

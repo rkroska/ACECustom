@@ -155,7 +155,7 @@ namespace ACE.Server.Entity
             // perform clapping motion
             animTime += player.EnqueueMotion(actionChain, MotionCommand.ClapHands);
 
-            actionChain.AddAction(player, () =>
+            actionChain.AddAction(player, ActionType.Aetheria_ActivateSigil, () =>
             {
                 // re-verify
                 var useError = VerifyUseRequirements(player, source, target);
@@ -170,7 +170,7 @@ namespace ACE.Server.Entity
 
             player.EnqueueMotion(actionChain, MotionCommand.Ready);
 
-            actionChain.AddAction(player, () => player.IsBusy = false);
+            actionChain.AddAction(player, ActionType.Player_SetNonBusy, () => player.IsBusy = false);
 
             actionChain.EnqueueChain();
 

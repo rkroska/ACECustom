@@ -263,7 +263,7 @@ namespace ACE.Server.WorldObjects
         {
             var damageResistRating = GetDamageResistRating(combatType, directDamage);
 
-            var allowBug = PropertyManager.GetBool("allow_negative_rating_curve").Item;
+            var allowBug = PropertyManager.GetBool("allow_negative_rating_curve");
 
             return GetNegativeRatingMod(damageResistRating, allowBug);
         }
@@ -305,13 +305,16 @@ namespace ACE.Server.WorldObjects
             // additive enchantments
             var enchantments = EnchantmentManager.GetRating(PropertyInt.CritRating);
 
+            // equipment ratings
+            var equipment = GetEquippedItemsRatingSum(PropertyInt.GearCrit);
+
             // augmentations
             var augBonus = 0;
 
             if (this is Player player)
                 augBonus = player.AugmentationCriticalExpertise;
 
-            return critChanceRating + enchantments + augBonus;
+            return critChanceRating + enchantments + equipment + augBonus;
         }
 
         public int GetCritDamageRating()
@@ -348,8 +351,11 @@ namespace ACE.Server.WorldObjects
             // additive enchantments
             var enchantments = EnchantmentManager.GetRating(PropertyInt.CritResistRating);
 
+            // equipment ratings
+            var equipment = GetEquippedItemsRatingSum(PropertyInt.GearCritResist);
+
             // no augs / lum augs?
-            return critResistRating + enchantments;
+            return critResistRating + enchantments + equipment;
         }
 
         public int GetCritDamageResistRating()
@@ -439,16 +445,29 @@ namespace ACE.Server.WorldObjects
 
         public int GetNetherResistRating()
         {
-            // there is a property defined for this,
-            // but does anything use this?
-
             // get from base properties (monsters)?
             var netherResistRating = NetherResistRating ?? 0;
 
             // additive enchantments
             var enchantments = EnchantmentManager.GetRating(PropertyInt.NetherResistRating);
 
-            return netherResistRating + enchantments;
+            // equipment ratings
+            var equipment = GetEquippedItemsRatingSum(PropertyInt.GearNetherResist);
+
+            return netherResistRating + equipment + enchantments;
+        }
+
+        public float GetNetherResistRatingMod()
+        {
+            var netherResistRating = GetNetherResistRating();
+
+            // Apply scalar from property manager
+            var scalar = PropertyManager.GetDouble("nether_resist_rating_scalar");
+            var scaledRating = (int)(netherResistRating * scalar);
+
+            var allowBug = PropertyManager.GetBool("allow_negative_rating_curve");
+
+            return GetNegativeRatingMod(scaledRating, allowBug);
         }
 
         public int GetGearMaxHealth()

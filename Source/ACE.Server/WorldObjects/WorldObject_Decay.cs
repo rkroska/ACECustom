@@ -75,7 +75,7 @@ namespace ACE.Server.WorldObjects
                 if (corpse.Inventory.Count == 0 && TimeToRot.Value > Corpse.EmptyDecayTime)
                 {
                     TimeToRot = Corpse.EmptyDecayTime;
-                    if (Level.HasValue && PropertyManager.GetBool("corpse_decay_tick_logging").Item)
+                    if (Level.HasValue && PropertyManager.GetBool("corpse_decay_tick_logging"))
                         log.Debug($"[CORPSE] {corpse.Name} (0x{corpse.Guid.ToString()}).Decay({elapsed.ToString()}): InventoryLoaded = {corpse.InventoryLoaded} | Inventory.Count = {corpse.Inventory.Count} | previous TimeToRot: {previousTTR} | current TimeToRot: {TimeToRot}");
                     return;
                 }
@@ -85,7 +85,7 @@ namespace ACE.Server.WorldObjects
             {
                 TimeToRot -= elapsed.TotalSeconds;
 
-                if (this is Corpse && Level.HasValue && PropertyManager.GetBool("corpse_decay_tick_logging").Item)
+                if (this is Corpse && Level.HasValue && PropertyManager.GetBool("corpse_decay_tick_logging"))
                     log.Debug($"[CORPSE] {corpse.Name} (0x{corpse.Guid.ToString()}).Decay({elapsed.ToString()}): previous TimeToRot: {previousTTR} | current TimeToRot: {TimeToRot}");
 
                 // Is there still time left?
@@ -94,7 +94,7 @@ namespace ACE.Server.WorldObjects
 
                 TimeToRot = -2; // We force it to -2 to make sure it doesn't end up at 0 or -1. 0 indicates instant rot. -1 indicates no rot. 0 and -1 can be found in weenie defaults
 
-                if (this is Corpse && Level.HasValue && PropertyManager.GetBool("corpse_decay_tick_logging").Item)
+                if (this is Corpse && Level.HasValue && PropertyManager.GetBool("corpse_decay_tick_logging"))
                     log.Debug($"[CORPSE] {corpse.Name} (0x{corpse.Guid.ToString()}).Decay({elapsed.ToString()}): previous TimeToRot: {previousTTR} | current TimeToRot: {TimeToRot}");
             }
 
@@ -140,7 +140,7 @@ namespace ACE.Server.WorldObjects
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(1.0f);
-                actionChain.AddAction(this, () => Destroy());
+                actionChain.AddAction(this, ActionType.WorldObjectDecay_Destroy, () => Destroy());
                 actionChain.EnqueueChain();
             }
             else

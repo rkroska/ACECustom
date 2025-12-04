@@ -214,7 +214,7 @@ namespace ACE.Server.WorldObjects
 
         private void AddItemToEquippedItemsRatingCache(WorldObject wo)
         {
-            if ((wo.GearDamage ?? 0) == 0 && (wo.GearDamageResist ?? 0) == 0 && (wo.GearCritDamage ?? 0) == 0 && (wo.GearCritDamageResist ?? 0) == 0 && (wo.GearHealingBoost ?? 0) == 0 && (wo.GearMaxHealth ?? 0) == 0 && (wo.GearPKDamageRating ?? 0) == 0 && (wo.GearPKDamageResistRating ?? 0) == 0)
+            if ((wo.GearDamage ?? 0) == 0 && (wo.GearDamageResist ?? 0) == 0 && (wo.GearCritDamage ?? 0) == 0 && (wo.GearCritDamageResist ?? 0) == 0 && (wo.GearHealingBoost ?? 0) == 0 && (wo.GearMaxHealth ?? 0) == 0 && (wo.GearPKDamageRating ?? 0) == 0 && (wo.GearPKDamageResistRating ?? 0) == 0 && (wo.GearCrit ?? 0) == 0 && (wo.GearCritResist ?? 0) == 0 && (wo.GearNetherResistRating ?? 0) == 0)
                 return;
 
             if (equippedItemsRatingCache == null)
@@ -229,6 +229,9 @@ namespace ACE.Server.WorldObjects
                     { PropertyInt.GearMaxHealth, 0 },
                     { PropertyInt.GearPKDamageRating, 0 },
                     { PropertyInt.GearPKDamageResistRating, 0 },
+                    { PropertyInt.GearCrit, 0 },
+                    { PropertyInt.GearCritResist, 0 },
+                    { PropertyInt.GearNetherResist, 0 }
                 };
             }
 
@@ -240,6 +243,9 @@ namespace ACE.Server.WorldObjects
             equippedItemsRatingCache[PropertyInt.GearMaxHealth] += (wo.GearMaxHealth ?? 0);
             equippedItemsRatingCache[PropertyInt.GearPKDamageRating] += (wo.GearPKDamageRating ?? 0);
             equippedItemsRatingCache[PropertyInt.GearPKDamageResistRating] += (wo.GearPKDamageResistRating ?? 0);
+            equippedItemsRatingCache[PropertyInt.GearCrit] += (wo.GearCrit ?? 0);
+            equippedItemsRatingCache[PropertyInt.GearCritResist] += (wo.GearCritResist ?? 0);
+            equippedItemsRatingCache[PropertyInt.GearNetherResist] += (wo.GearNetherResistRating ?? 0);
         }
 
         private void RemoveItemFromEquippedItemsRatingCache(WorldObject wo)
@@ -255,6 +261,9 @@ namespace ACE.Server.WorldObjects
             equippedItemsRatingCache[PropertyInt.GearMaxHealth] -= (wo.GearMaxHealth ?? 0);
             equippedItemsRatingCache[PropertyInt.GearPKDamageRating] -= (wo.GearPKDamageRating ?? 0);
             equippedItemsRatingCache[PropertyInt.GearPKDamageResistRating] -= (wo.GearPKDamageResistRating ?? 0);
+            equippedItemsRatingCache[PropertyInt.GearCrit] -= (wo.GearCrit ?? 0);
+            equippedItemsRatingCache[PropertyInt.GearCritResist] -= (wo.GearCritResist ?? 0);
+            equippedItemsRatingCache[PropertyInt.GearNetherResist] -= (wo.GearNetherResistRating ?? 0);
         }
 
         public int GetEquippedItemsRatingSum(PropertyInt rating)
@@ -283,7 +292,7 @@ namespace ACE.Server.WorldObjects
             // and spell fx are visible
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.1);
-            actionChain.AddAction(this, () => TryActivateItemSpells(worldObject));
+            actionChain.AddAction(this, ActionType.CreatureEquipment_TryActivateItemSpellsOnWield, () => TryActivateItemSpells(worldObject));
             actionChain.EnqueueChain();
 
             return true;
@@ -629,7 +638,7 @@ namespace ACE.Server.WorldObjects
 
         public static List<PropertiesCreateList> CreateListSelect(List<PropertiesCreateList> createList)
         {
-            var trophy_drop_rate = PropertyManager.GetDouble("trophy_drop_rate").Item;
+            var trophy_drop_rate = PropertyManager.GetDouble("trophy_drop_rate");
             if (trophy_drop_rate != 1.0)
                 return CreateListSelect(createList, (float)trophy_drop_rate);
 

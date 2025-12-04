@@ -93,15 +93,13 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallback property should be cached.</param>
         /// <returns>A boolean value representing the property</returns>
-        public static Property<bool> GetBool(string key, bool fallback = false, bool cacheFallback = true)
+        public static bool GetBool(string key, bool fallback = false, bool cacheFallback = true)
         {
             // first, check the cache. If the key exists in the cache, grab it regardless of its modified value
             // then, check the database. if the key exists in the database, grab it and cache it
             // finally, set it to a default of false.
             if (CachedBooleanSettings.TryGetValue(key, out ConfigurationEntry<bool> cachedBooleanSetting))
-            {
-                return new Property<bool>(cachedBooleanSetting.Item, cachedBooleanSetting.Description);
-            }
+                return cachedBooleanSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetBool(key);
 
@@ -112,7 +110,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedBooleanSettings[key] = new ConfigurationEntry<bool>(useFallback, value, dbValue?.Description);
 
-            return new Property<bool>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -149,10 +147,10 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallback property should be cached</param>
         /// <returns>An integer value representing the property</returns>
-        public static Property<long> GetLong(string key, long fallback = 0, bool cacheFallback = true)
+        public static long GetLong(string key, long fallback = 0, bool cacheFallback = true)
         {
             if (CachedLongSettings.TryGetValue(key, out ConfigurationEntry<long> cachedLongSetting))
-                return new Property<long>(cachedLongSetting.Item, cachedLongSetting.Description);
+                return cachedLongSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetLong(key);
 
@@ -163,7 +161,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedLongSettings[key] = new ConfigurationEntry<long>(useFallback, value, dbValue?.Description);
 
-            return new Property<long>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -199,10 +197,10 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallpack property should be cached</param>
         /// <returns>A float value representing the property</returns>
-        public static Property<double> GetDouble(string key, double fallback = 0.0f, bool cacheFallback = true)
+        public static double GetDouble(string key, double fallback = 0.0f, bool cacheFallback = true)
         {
             if (CachedDoubleSettings.TryGetValue(key, out ConfigurationEntry<double> cachedDoubleSetting))
-                return new Property<double>(cachedDoubleSetting.Item, cachedDoubleSetting.Description);
+                return cachedDoubleSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetDouble(key);
 
@@ -213,7 +211,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedDoubleSettings[key] = new ConfigurationEntry<double>(useFallback, value, dbValue?.Description);
 
-            return new Property<double>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -264,10 +262,10 @@ namespace ACE.Server.Managers
         /// <param name="fallback">The value to return if the property cannot be found.</param>
         /// <param name="cacheFallback">Whether or not the fallback value will be cached.</param>
         /// <returns>A string value representing the property</returns>
-        public static Property<string> GetString(string key, string fallback = "", bool cacheFallback = true)
+        public static string GetString(string key, string fallback = "", bool cacheFallback = true)
         {
             if (CachedStringSettings.TryGetValue(key, out ConfigurationEntry<string> cachedStringSetting))
-                return new Property<string>(cachedStringSetting.Item, cachedStringSetting.Description);
+                return cachedStringSetting.Item;
 
             var dbValue = DatabaseManager.ShardConfig.GetString(key);
 
@@ -278,7 +276,7 @@ namespace ACE.Server.Managers
             if (!useFallback || cacheFallback)
                 CachedStringSettings[key] = new ConfigurationEntry<string>(useFallback, value, dbValue?.Description);
 
-            return new Property<string>(value, dbValue?.Description);
+            return value;
         }
 
         /// <summary>
@@ -390,15 +388,15 @@ namespace ACE.Server.Managers
         {
             string props = "Boolean properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultBooleanProperties)
-                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetBool(item.Key).Item, item.Value.Item);
+                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetBool(item.Key), item.Value.Item);
 
             props += "\nLong properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultLongProperties)
-                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetLong(item.Key).Item, item.Value.Item);
+                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetLong(item.Key), item.Value.Item);
 
             props += "\nDouble properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultDoubleProperties)
-                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetDouble(item.Key).Item, item.Value.Item);
+                props += string.Format("\t{0}: {1} (current is {2}, default is {3})\n", item.Key, item.Value.Description, GetDouble(item.Key), item.Value.Item);
 
             props += "\nString properties:\n";
             foreach (var item in DefaultPropertyManager.DefaultStringProperties)
@@ -558,6 +556,7 @@ namespace ACE.Server.Managers
                 ("fellow_kt_killer", new Property<bool>(true, "if FALSE, fellowship kill tasks will share with the fellowship, even if the killer doesn't have the quest")),
                 ("fellow_kt_landblock", new Property<bool>(false, "if TRUE, fellowship kill tasks will share with landblock range (192 distance radius, or entire dungeon)")),
                 ("fellow_quest_bonus", new Property<bool>(false, "if TRUE, applies EvenShare formula to fellowship quest reward XP (300% max bonus, defaults to false in retail)")),
+                ("fellowship_xp_debug_logging", new Property<bool>(false, "if enabled, logs detailed fellowship XP distance check statistics every 10 seconds for performance monitoring")),
                 ("fix_chest_missing_inventory_window", new Property<bool>(false, "Very non-standard fix. This fixes an acclient bug where unlocking a chest, and then quickly opening it before the client has received the Locked=false update from server can result in the chest opening, but with the chest inventory window not displaying. Bug has a higher chance of appearing with more network latency.")),
                 ("gateway_ties_summonable", new Property<bool>(true, "if disabled, players cannot summon ties from gateways. defaults to enabled, as in retail")),
                 ("house_15day_account", new Property<bool>(true, "if disabled, houses can be purchased with accounts created less than 15 days old")),
@@ -613,7 +612,8 @@ namespace ACE.Server.Managers
                 ("version_info_enabled", new Property<bool>(false, "toggles the /aceversion player command")),
                 ("vendor_shop_uses_generator", new Property<bool>(false, "enables or disables vendors using generator system in addition to createlist to create artificial scarcity")),
                 ("world_closed", new Property<bool>(false, "enable this to startup world as a closed to players world")),
-                ("enl_removes_society", new Property<bool>(true, "if true, enlightenment will remove society flags"))
+                ("enl_removes_society", new Property<bool>(true, "if true, enlightenment will remove society flags")),
+                ("action_queue_tracking_enabled", new Property<bool>(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<long>> DefaultLongProperties =
@@ -623,6 +623,7 @@ namespace ACE.Server.Managers
                 ("chat_requires_player_age", new Property<long>(0, "the amount of time in seconds a player is required to have played for global chat privileges")),
                 ("chat_requires_player_level", new Property<long>(0, "the level a player is required to have for global chat privileges")),
                 ("corpse_spam_limit", new Property<long>(15, "the number of corpses a player is allowed to leave on a landblock at one time")),
+                ("empty_corpse_decay_seconds", new Property<long>(3, "the amount of time in seconds an empty corpse will take to decay (including corpses that have been looted empty)")),
                 ("default_subscription_level", new Property<long>(1, "retail defaults to 1, 1 = standard subscription (same as 2 and 3), 4 grants ToD pre-order bonus item Asheron's Benediction")),
                 ("fellowship_even_share_level", new Property<long>(50, "level when fellowship XP sharing is no longer restricted")),
                 ("mansion_min_rank", new Property<long>(6, "overrides the default allegiance rank required to own a mansion")),
@@ -638,7 +639,22 @@ namespace ACE.Server.Managers
                 ("enl_300_base_lum_cost", new Property<long>(2000000000, "the base luminance cost for each enlighten after 300, this will be multiplied by the target enlightenment level")),
                 ("dynamic_quest_repeat_hours", new Property<long>(20, "the number of hours before a player can do another dynamic quest")),
                 ("dynamic_quest_max_xp", new Property<long>(5000000000, "the maximum base xp rewarded from a dynamic quest")),
-                ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs"))
+                ("max_nether_dot_damage_rating", new Property<long>(50, "the maximum damage rating from Void DoTs")),
+                ("bank_command_limit", new Property<long>(5, "The number of seconds a player must wait between making a bank deposit or withdrawl")),
+                ("clap_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the clap command")),
+                ("qb_command_limit", new Property<long>(60, "The number of seconds a player must wait between using the qb list command")),
+                ("monster_tick_throttle_limit", new Property<long>(75, "Maximum number of monsters to process per tick per landblock. Higher = faster AI reactions but larger spikes during mass spawns. Adjust based on Discord alerts.")),
+                ("action_queue_throttle_limit", new Property<long>(300, "Maximum number of actions to process per tick. Higher = faster queue clearing but larger CPU spikes during heavy load. Adjust based on Discord alerts.")),
+                ("action_queue_track_threshold_ms", new Property<long>(10, "ActionQueue tracking: Only track actions taking longer than this many milliseconds. Lower = more detailed tracking but more overhead.")),
+                ("action_queue_warn_threshold_ms", new Property<long>(100, "ActionQueue tracking: Log warnings and send Discord alerts for actions exceeding this threshold in milliseconds.")),
+                ("action_queue_report_interval_minutes", new Property<long>(5, "ActionQueue tracking: Generate aggregated performance reports every N minutes.")),
+                ("action_queue_discord_max_alerts_per_minute", new Property<long>(3, "ActionQueue tracking: Maximum number of Discord alerts per minute to prevent API throttling. 0 = disable Discord alerts.")),
+                ("login_block_discord_max_alerts_per_minute", new Property<long>(3, "Item loss prevention: Max Discord alerts per minute for login blocking. Set to 0 to disable Discord alerts.")),
+                ("db_race_discord_max_alerts_per_minute", new Property<long>(1, "DB diagnostics: Max Discord alerts per minute for concurrent save detection. Sends aggregated summary. 0 = disable.")),
+                ("db_slow_discord_max_alerts_per_minute", new Property<long>(5, "DB diagnostics: Max Discord alerts per minute for slow saves. 0 = disable.")),
+                ("db_slow_threshold_ms", new Property<long>(1000, "DB diagnostics: Item saves slower than this (ms) trigger warnings and Discord alerts.")),
+                ("db_queue_alert_threshold", new Property<long>(100, "DB diagnostics: Send Discord alert when database queue count exceeds this value. 0 = disable.")),
+                ("db_queue_discord_max_alerts_per_minute", new Property<long>(2, "DB diagnostics: Max Discord alerts per minute for high database queue. 0 = disable."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<double>> DefaultDoubleProperties =
@@ -664,6 +680,7 @@ namespace ACE.Server.Managers
                 ("ignore_magic_armor_pvp_scalar", new Property<double>(1.0, "Scales the effectiveness of IgnoreMagicArmor (ie. hollow weapons) in pvp battles. 1.0 = full effectiveness / ignore all enchantments on armor (default), 0.5 = half effectiveness / use half enchantments from armor, 0.0 = no effectiveness / use full enchantments from armor")),
                 ("ignore_magic_resist_pvp_scalar", new Property<double>(1.0, "Scales the effectiveness of IgnoreMagicResist (ie. hollow weapons) in pvp battles. 1.0 = full effectiveness / ignore all resistances from life enchantments (default), 0.5 = half effectiveness / use half resistances from life enchantments, 0.0 = no effectiveness / use full resistances from life enchantments")),
                 ("luminance_modifier", new Property<double>(1.0, "Scales the amount of luminance received by players")),
+                ("nether_resist_rating_scalar", new Property<double>(0.25, "Multiplier for nether resistance rating effectiveness. 1.0 = normal effectiveness, 0.25 = 75% less effective (default), 0.5 = half as effective")),
                 ("melee_max_angle", new Property<double>(0.0, "for melee players, the maximum angle before a TurnTo is required. retail appeared to have required a TurnTo even for the smallest of angle offsets.")),
                 ("mob_awareness_range", new Property<double>(1.0, "Scales the distance the monsters become alerted and aggro the players")),
                 ("pk_new_character_grace_period", new Property<double>(300, "the number of seconds, in addition to pk_respite_timer, that a player killer is set to non-player killer status after first exiting training academy")),

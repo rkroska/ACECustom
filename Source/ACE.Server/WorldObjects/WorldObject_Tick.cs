@@ -131,7 +131,11 @@ namespace ACE.Server.WorldObjects
             SetProperty(PropertyFloat.RegenerationTimestamp, currentUnixTime);
 
             if (cachedRegenerationInterval > 0)
+            {
+                // RandomizeSpawnTime offset is applied once in StartGenerator()
+                // After that, just maintain the offset by adding regular interval
                 NextGeneratorRegenerationTime = currentUnixTime + cachedRegenerationInterval;
+            }
             else
                 NextGeneratorRegenerationTime = double.MaxValue;
 
@@ -348,7 +352,7 @@ namespace ACE.Server.WorldObjects
                         spellProjectile.DebugVelocity++;
 
                         if (spellProjectile.DebugVelocity == 30)
-                            log.Error($"Spell projectile w/ zero velocity detected @ {spellProjectile.Location.ToLOCString()}, launched by {spellProjectile.ProjectileSource?.Name} ({spellProjectile.ProjectileSource?.Guid}), spell ID {spellProjectile.Spell?.Id} - {spellProjectile.Spell?.Name}");
+                            log.Debug($"Spell projectile w/ zero velocity detected @ {spellProjectile.Location.ToLOCString()}, launched by {spellProjectile.ProjectileSource?.Name} ({spellProjectile.ProjectileSource?.Guid}), spell ID {spellProjectile.Spell?.Id} - {spellProjectile.Spell?.Name}");
                     }
 
                     if (spellProjectile.SpellType == ProjectileSpellType.Ring)

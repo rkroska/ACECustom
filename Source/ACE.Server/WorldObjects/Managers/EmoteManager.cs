@@ -32,6 +32,10 @@ namespace ACE.Server.WorldObjects.Managers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // In-memory cache for server-first quest tracking to prevent race conditions
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> ServerFirstQuestCache = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>();
+        private static readonly object ServerQuestLock = new object();
+
         public WorldObject WorldObject => _proxy ?? _worldObject;
 
         private readonly WorldObject _worldObject;
@@ -217,7 +221,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                         var castChain = new ActionChain();
                         castChain.AddDelaySeconds(preCastTime);
-                        castChain.AddAction(creature, () =>
+                        castChain.AddAction(creature, ActionType.EmoteManager_CastSpell, () =>
                         {
                             creature.TryCastSpell_WithRedirects(spell, spellTarget, creature);
                             creature.PostCastMotion();
@@ -354,6 +358,18 @@ namespace ACE.Server.WorldObjects.Managers
 
                     break;
 
+                case EmoteType.DropFellow:
+                    if (player != null)
+                    {
+                        var fellowship = player.Fellowship;
+
+                        if (fellowship != null)
+                        {
+                            fellowship.QuitFellowship(player, false);
+                        }
+                    }
+                    break;
+
                 case EmoteType.Enlightenment:
 
                     if (player != null)
@@ -409,7 +425,7 @@ namespace ACE.Server.WorldObjects.Managers
                             delay = creature.Rotate(targetCreature);
                             motionChain.AddDelaySeconds(delay);
                         }
-                        motionChain.AddAction(WorldObject, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, stackSize > 0 ? stackSize : 1, emote.Palette ?? 0, emote.Shade ?? 0));
+                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_Give, () => player.GiveFromEmote(WorldObject, emote.WeenieClassId ?? 0, stackSize > 0 ? stackSize : 1, emote.Palette ?? 0, emote.Shade ?? 0));
                         motionChain.EnqueueChain();
                     }
 
@@ -734,6 +750,62 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                case EmoteType.InqServerQuestSolves:
+
+                    log.Debug($"EmoteManager.Execute - InqServerQuestSolves called for quest: {emote.Message}");
+
+                    // Check if anyone on the server has completed this quest
+                    // Use in-memory cache + lock to ensure true atomicity and prevent race conditions
+                    if (!string.IsNullOrEmpty(emote.Message))
+                    {
+                        bool isServerFirst = false;
+
+                        lock (ServerQuestLock)
+                        {
+                            // First check in-memory cache - instant and thread-safe
+                            if (ServerFirstQuestCache.ContainsKey(emote.Message))
+                            {
+                                // Quest already claimed by someone
+                                isServerFirst = false;
+                                log.Debug($"EmoteManager.Execute - InqServerQuestSolves: quest={emote.Message} found in cache (already claimed)");
+                            }
+                            else
+                            {
+                                // Not in cache, check database
+                                var serverCompletions = ShardDatabase.GetServerQuestCompletions(emote.Message);
+
+                                log.Debug($"EmoteManager.Execute - InqServerQuestSolves: quest={emote.Message}, DB completions={serverCompletions}");
+
+                                if (serverCompletions == 0)
+                                {
+                                    // Server first! Mark it in cache immediately to block other players
+                                    ServerFirstQuestCache.TryAdd(emote.Message, true);
+                                    isServerFirst = true;
+
+                                    // Increment the quest
+                                    questTarget = GetQuestTarget(EmoteType.InqQuest, targetCreature, creature);
+                                    if (questTarget != null)
+                                    {
+                                        questTarget.QuestManager.Increment(emote.Message);
+                                        // Save to database (may be async, but cache protects us)
+                                        if (questTarget is Player questPlayer)
+                                            questPlayer.SaveBiotaToDatabase();
+                                    }
+                                }
+                                else
+                                {
+                                    // Someone already completed it before server restart/cache clear
+                                    ServerFirstQuestCache.TryAdd(emote.Message, true);
+                                    isServerFirst = false;
+                                }
+                            }
+                        }
+
+                        // Execute QuestSuccess if server first, QuestFailure if not
+                        ExecuteEmoteSet(isServerFirst ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+                    break;
+
                 case EmoteType.InqRawAttributeStat:
 
                     if (targetCreature != null)
@@ -984,6 +1056,9 @@ namespace ACE.Server.WorldObjects.Managers
                             if (WorldObject.CurrentMotionState.MotionState.ForwardCommand == startingMotion.MotionState.ForwardCommand
                                     && startingMotion.Stance == MotionStance.NonCombat)     // enforce non-combat here?
                             {
+                                if (WorldObject.MotionTableId == 0)
+                                    break;
+
                                 if (debugMotion)
                                     Console.WriteLine($"{WorldObject.Name} running motion {(MotionStance)emoteSet.Style}, {(MotionCommand)emote.Motion}");
 
@@ -998,7 +1073,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                                 var motionChain = new ActionChain();
                                 motionChain.AddDelaySeconds(animLength);
-                                motionChain.AddAction(WorldObject, () =>
+                                motionChain.AddAction(WorldObject, ActionType.EmoteManager_ExecuteMotion, () =>
                                 {
                                     // FIXME: better cycle handling
                                     var cmd = WorldObject.CurrentMotionState.MotionState.ForwardCommand;
@@ -1019,6 +1094,9 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     else
                     {
+                        if (WorldObject.MotionTableId == 0)
+                            break;
+
                         // vendor / other motions
                         var startingMotion = new Motion(MotionStance.NonCombat, MotionCommand.Ready);
                         var motionTable = DatManager.PortalDat.ReadFromDat<DatLoader.FileTypes.MotionTable>(WorldObject.MotionTableId);
@@ -1033,7 +1111,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                         var motionChain = new ActionChain();
                         motionChain.AddDelaySeconds(animLength);
-                        motionChain.AddAction(WorldObject, () => WorldObject.ExecuteMotion(startingMotion, false));
+                        motionChain.AddAction(WorldObject, ActionType.EmoteManager_ExecuteMotion, () => WorldObject.ExecuteMotion(startingMotion, false));
 
                         motionChain.EnqueueChain();
                     }
@@ -2281,9 +2359,6 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Summon50" ? 50 :
                                                    emote.Message == "Summon100" ? 100 : 0;
 
-                                    // Calculate the total damage reduction for summons (3 per aug)
-                                    double damageReduction = augCount * 3.0;
-
                                     // Base cost per augmentation
                                     double baseCost = (double)emote.Amount;
                                     double percentIncrease = (double)emote.Percent;
@@ -2297,13 +2372,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                     // Apply the cost multipliers based on the augment thresholds
                                     double additionalMultiplier = 1.0;
-                                    if (summonAugs >= 2000)
+                                    if (summonAugs >= 4000)
                                     {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 4000
                                     }
-                                    else if (summonAugs >= 1750)
+                                    else if (summonAugs >= 2750)
                                     {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
                                     }
 
                                     totalCost *= additionalMultiplier;
@@ -2340,8 +2415,8 @@ namespace ACE.Server.WorldObjects.Managers
                                             if (itemId != 0)
                                                 player.TryConsumeFromInventoryWithNetworking((uint)itemId, 1);
 
-                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your summons damage resist rating by {damageReduction}.", ChatMessageType.Broadcast));
-                                        }), $"You are about to spend {totalCost:N0} luminance to add {damageReduction} points to your summons damage resist rating. Are you sure?");
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have successfully increased your summons attributes and skills by {augCount} point(s) each.", ChatMessageType.Broadcast));
+                                        }), $"You are about to spend {totalCost:N0} luminance to add {augCount} point(s) to all of your summons attributes and skills. Are you sure?");
                                     }
                                 }
                                 break;
@@ -2391,6 +2466,52 @@ namespace ACE.Server.WorldObjects.Managers
                     if (player != null)
                     {
 
+                    }
+                    break;
+                case EmoteType.GrantAttributeStat:
+                    if (player != null && emote.Stat != null)
+                    {
+                        var amount = emote.Amount.HasValue && emote.Amount.Value > 0 ? (uint)emote.Amount.Value : 1u;
+                        if (!Enum.IsDefined(typeof(PropertyAttribute), (ushort)emote.Stat.Value))
+                        {
+                            log.Warn($"GrantAttributeStat: Unknown attribute id {emote.Stat.Value} for {WorldObject?.Name ?? "unknown"}.");
+                            break;
+                        }
+
+                        var attribute = (PropertyAttribute)emote.Stat.Value;
+                        var grantSucceeded = player.GrantFreeAttributeRanks(attribute, amount);
+                        var targetName = attribute.GetDescription();
+
+                        if (grantSucceeded)
+                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Your base {targetName} has been increased by {amount}.", ChatMessageType.Advancement));
+                        else
+                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Unable to increase {targetName}.", ChatMessageType.System));
+                    }
+                    break;
+                case EmoteType.GrantVitalStat:
+                    if (player != null && emote.Stat != null)
+                    {
+                        var amount = emote.Amount.HasValue && emote.Amount.Value > 0 ? (uint)emote.Amount.Value : 1u;
+                        if (!Enum.IsDefined(typeof(PropertyAttribute2nd), (ushort)emote.Stat.Value))
+                        {
+                            log.Warn($"GrantVitalStat: Unknown vital id {emote.Stat.Value} for {WorldObject?.Name ?? "unknown"}.");
+                            break;
+                        }
+
+                        var vital = (PropertyAttribute2nd)emote.Stat.Value;
+                        if (vital != PropertyAttribute2nd.MaxHealth && vital != PropertyAttribute2nd.MaxStamina && vital != PropertyAttribute2nd.MaxMana)
+                        {
+                            log.Warn($"GrantVitalStat: Vital {vital} is not supported for innate grants.");
+                            break;
+                        }
+
+                        var grantSucceeded = player.GrantFreeVitalRanks(vital, amount);
+                        var targetName = vital.GetDescription();
+
+                        if (grantSucceeded)
+                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Your base {targetName} has been increased by {amount}.", ChatMessageType.Advancement));
+                        else
+                            player.Session?.Network?.EnqueueSend(new GameMessageSystemChat($"Unable to increase {targetName}.", ChatMessageType.System));
                     }
                     break;
                 case EmoteType.SetEnvironment:
@@ -2645,13 +2766,13 @@ namespace ACE.Server.WorldObjects.Managers
                 var actionChain = new ActionChain();
 
                 if (Debug)
-                    actionChain.AddAction(WorldObject, () => Console.Write($"{emote.Delay} - "));
+                    actionChain.AddAction(WorldObject, ActionType.EmoteManager_DebugDelay, () => Console.Write($"{emote.Delay} - "));
 
                 // delay = post-delay from actual time of previous emote
                 // emote.Delay = pre-delay for current emote
                 actionChain.AddDelaySeconds(delay + emote.Delay);
 
-                actionChain.AddAction(WorldObject, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote));
+                actionChain.AddAction(WorldObject, ActionType.EmoteManager_DoEnqueue, () => DoEnqueue(emoteSet, targetObject, emoteIdx, emote));
                 actionChain.EnqueueChain();
             }
             else
@@ -2693,7 +2814,7 @@ namespace ACE.Server.WorldObjects.Managers
                 {
                     var delayChain = new ActionChain();
                     delayChain.AddDelaySeconds(nextDelay);
-                    delayChain.AddAction(WorldObject, () =>
+                    delayChain.AddAction(WorldObject, ActionType.EmoteManager_ReduceNested, () =>
                     {
                         Nested--;
 
@@ -2724,6 +2845,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.UpdateQuest:
                 case EmoteType.InqQuest:
                 case EmoteType.InqQuestSolves:
+                case EmoteType.InqServerQuestSolves:
                 case EmoteType.InqBoolStat:
                 case EmoteType.InqIntStat:
                 case EmoteType.InqFloatStat:
@@ -3202,9 +3324,7 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             return AddEmote(newEmote);
-
-
-
         }
+
     }
 }

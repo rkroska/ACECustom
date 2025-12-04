@@ -1,4 +1,7 @@
 using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -57,6 +60,12 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<ConfigPropertiesLong> ConfigPropertiesLong { get; set; }
         public virtual DbSet<ConfigPropertiesString> ConfigPropertiesString { get; set; }
         public virtual DbSet<HousePermission> HousePermission { get; set; }
+        public virtual DbSet<TransferLog> TransferLogs { get; set; }
+        public virtual DbSet<TransferSummary> TransferSummaries { get; set; }
+        public virtual DbSet<TrackedItem> TrackedItems { get; set; }
+        public virtual DbSet<TransferMonitoringConfigDb> TransferMonitoringConfigs { get; set; }
+        public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
+        public virtual DbSet<CharTracker> CharTracker { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -64,7 +73,7 @@ namespace ACE.Database.Models.Shard
             {
                 var config = Common.ConfigManager.Config.MySql.Shard;
 
-                var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=None;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator";
+                var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=None;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator;MaximumPoolSize=200;MinimumPoolSize=10;ConnectionLifetime=300";
 
                 optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
                 {
@@ -75,6 +84,40 @@ namespace ACE.Database.Models.Shard
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // Configure transfer logging tables
+            modelBuilder.Entity<TransferLog>(entity =>
+            {
+                entity.ToTable("transfer_logs");
+                
+                // Add indexes for common query patterns
+                entity.HasIndex(e => e.FromPlayerName, "IX_transfer_logs_FromPlayerName");
+                entity.HasIndex(e => e.ToPlayerName, "IX_transfer_logs_ToPlayerName");
+                entity.HasIndex(e => e.FromPlayerAccount, "IX_transfer_logs_FromPlayerAccount");
+                entity.HasIndex(e => e.ToPlayerAccount, "IX_transfer_logs_ToPlayerAccount");
+                entity.HasIndex(e => e.TransferType, "IX_transfer_logs_TransferType");
+                entity.HasIndex(e => e.Timestamp, "IX_transfer_logs_Timestamp");
+            });
+            modelBuilder.Entity<TransferSummary>(entity =>
+            {
+                entity.ToTable("transfer_summaries");
+                entity.HasIndex(e => new { e.FromPlayerName, e.ToPlayerName, e.TransferType }, "idx_transfer_summary_unique")
+                    .IsUnique();
+            });
+            modelBuilder.Entity<TrackedItem>().ToTable("tracked_items");
+            modelBuilder.Entity<TransferMonitoringConfigDb>().ToTable("transfer_monitoring_configs");
+            modelBuilder.Entity<BankCommandBlacklist>().ToTable("transfer_blacklist");
+            modelBuilder.Entity<CharTracker>(entity =>
+            {
+                entity.ToTable("char_tracker");
+                
+                // Add indexes for common query patterns
+                entity.HasIndex(e => e.CharacterId, "IX_char_tracker_CharacterId");
+                entity.HasIndex(e => e.AccountName, "IX_char_tracker_AccountName");
+                entity.HasIndex(e => e.CharacterName, "IX_char_tracker_CharacterName");
+                entity.HasIndex(e => e.LoginIP, "IX_char_tracker_LoginIP");
+                entity.HasIndex(e => e.LoginTimestamp, "IX_char_tracker_LoginTimestamp");
+            });
+
             modelBuilder.HasCharSet("utf8")
                 .UseCollation("utf8_general_ci");
 
@@ -1558,6 +1601,44 @@ namespace ACE.Database.Models.Shard
             });
 
             OnModelCreatingPartial(modelBuilder);
+        }
+
+        public override int SaveChanges()
+        {
+            SetTimestamps();
+            return base.SaveChanges();
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SetTimestamps();
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+
+        private void SetTimestamps()
+        {
+            var entries = ChangeTracker.Entries()
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified);
+
+            foreach (var entry in entries)
+            {
+                var now = DateTime.UtcNow;
+
+                if (entry.State == EntityState.Added)
+                {
+                    // Set CreatedDate for new entities
+                    if (entry.Entity.GetType().GetProperty("CreatedDate") != null)
+                    {
+                        entry.Property("CreatedDate").CurrentValue = now;
+                    }
+                }
+
+                // Set UpdatedDate for both new and modified entities
+                if (entry.Entity.GetType().GetProperty("UpdatedDate") != null)
+                {
+                    entry.Property("UpdatedDate").CurrentValue = now;
+                }
+            }
         }
 
         partial void OnModelCreatingPartial(ModelBuilder modelBuilder);

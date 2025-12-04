@@ -637,7 +637,7 @@ namespace ACE.Server.Factories
         {
             if (roll == null)
             {
-                if (!PropertyManager.GetBool("equipmentsetid_enabled").Item)
+                if (!PropertyManager.GetBool("equipmentsetid_enabled"))
                     return false;
 
                 if (profile.Tier < 6 || !wo.HasArmorLevel())
@@ -646,11 +646,11 @@ namespace ACE.Server.Factories
                 if (wo.ClothingPriority == null || (wo.ClothingPriority & (CoverageMask)CoverageMaskHelper.Outerwear) == 0)
                     return false;
 
-                var dropRate = PropertyManager.GetDouble("equipmentsetid_drop_rate").Item;
+                var dropRate = PropertyManager.GetDouble("equipmentsetid_drop_rate");
                 var dropRateMod = 1.0 / dropRate;
 
                 var lootQualityMod = 1.0f;
-                if (PropertyManager.GetBool("loot_quality_mod").Item)
+                if (PropertyManager.GetBool("loot_quality_mod"))
                     lootQualityMod = 1.0f - profile.LootQualityMod;
 
                 // initial base 10% chance to add a random EquipmentSet, which can be adjusted via equipmentsetid_drop_rate
@@ -664,7 +664,7 @@ namespace ACE.Server.Factories
                 wo.EquipmentSetId = EquipmentSetChance.Roll(wo, profile, roll);
             }
 
-            if (wo.EquipmentSetId != null && PropertyManager.GetBool("equipmentsetid_name_decoration").Item)
+            if (wo.EquipmentSetId != null && PropertyManager.GetBool("equipmentsetid_name_decoration"))
             {
                 var equipSetId = wo.EquipmentSetId;
 
@@ -1122,6 +1122,45 @@ namespace ACE.Server.Factories
             return true;
         }
 
+        // helper for nullable ratings
+        private static int Val(int? x) => x ?? 0;
+
+        // NEW: single place to decide T10 wield by your thresholds
+        private static void SetT10WieldByTypeThresholds(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
+        {
+            if (roll.ArmorType == TreasureArmorType.Society)
+                return;
+
+            // 💍 Jewelry: HealBoost / MaxHealth thresholds
+            if (roll.IsJewelry)
+            {
+                int heal = Val(wo.GearHealingBoost);
+                int hp = Val(wo.GearMaxHealth); // jewelry's rating-sized MaxHealth
+                SetWieldT10(wo, (heal > 50 || hp > 50) ? 725 : 650, profile.Tier);
+                return;
+            }
+
+            // 🛡️ Shields: sum of D + DR + CD + CDR
+            if (wo.IsShield)
+            {
+                int dmg = Val(wo.GearDamage);
+                int dr = Val(wo.GearDamageResist);
+                int cd = Val(wo.GearCritDamage);
+                int cdr = Val(wo.GearCritDamageResist);
+                int sum = dmg + dr + cd + cdr;
+
+                SetWieldT10(wo, (sum > 28) ? 725 : 650, profile.Tier);
+                return;
+            }
+
+            // 🎯 Armor / Clothing / Cloaks: both pairs must be <= 7 for 650
+            int dOrDr = Math.Max(Val(wo.GearDamage), Val(wo.GearDamageResist));
+            int cdOrCdr = Math.Max(Val(wo.GearCritDamage), Val(wo.GearCritDamageResist));
+            bool bothPairsAtMost7 = dOrDr <= 7 && cdOrCdr <= 7;
+
+            SetWieldT10(wo, bothPairsAtMost7 ? 650 : 725, profile.Tier);
+        }
+
         private static bool TryMutateGearRatingT10(WorldObject wo, TreasureDeath profile, TreasureRoll roll)
         {
             if (profile.Tier != 10)
@@ -1135,7 +1174,6 @@ namespace ACE.Server.Factories
             // 🛡️ Shields
             if (isShield)
             {
-                // Always try rolling each type of rating
                 void TryAssignRating(Action<int> assign)
                 {
                     var val = GearRatingChance.RollT10(wo, profile, roll);
@@ -1149,20 +1187,15 @@ namespace ACE.Server.Factories
                 TryAssignRating(v => wo.GearDamage = v);
                 TryAssignRating(v => wo.GearHealingBoost = v);
 
-                // 🛡️ Special: GearMaxHealth uses flat range instead of RollT10
-                int healthBonus = ThreadSafeRandom.Next(100, 200); // Inclusive: 100–200
+                int healthBonus = ThreadSafeRandom.Next(100, 200); // 100200 flat HP
                 wo.GearMaxHealth = healthBonus;
 
-                // 10% chance to roll Magic Absorb
+                // Note: this is 30% (condition < 30). Change to <10 if you truly want 10%.
                 if (ThreadSafeRandom.Next(0, 100) < 30)
-                {
-                    int absorb = ThreadSafeRandom.Next(1, 3); // Rolls 1 or 2
-                    wo.AbsorbMagicDamage = absorb;
-                }
+                    wo.AbsorbMagicDamage = 0.2f;
 
                 applied = true;
             }
-
             // 🎯 Armor/Underclothes/Cloaks
             else if (isArmorType)
             {
@@ -1170,7 +1203,7 @@ namespace ACE.Server.Factories
                 if (netherResist > 0)
                     wo.GearNetherResistRating = netherResist;
 
-                if (ThreadSafeRandom.Next(0, 2) == 0)
+                if (ThreadSafeRandom.Next(0, 1) == 0)
                 {
                     var dmg = GearRatingChance.RollT10(wo, profile, roll);
                     if (dmg > 0) wo.GearDamage = dmg;
@@ -1181,7 +1214,7 @@ namespace ACE.Server.Factories
                     if (dmgResist > 0) wo.GearDamageResist = dmgResist;
                 }
 
-                if (ThreadSafeRandom.Next(0, 2) == 0)
+                if (ThreadSafeRandom.Next(0, 1) == 0)
                 {
                     var crit = GearRatingChance.RollT10(wo, profile, roll);
                     if (crit > 0) wo.GearCritDamage = crit;
@@ -1194,38 +1227,35 @@ namespace ACE.Server.Factories
 
                 applied = true;
             }
-
             // 💍 Jewelry
             else if (isJewelry)
             {
                 var rating = GearRatingChance.RollT10(wo, profile, roll);
                 if (rating > 0)
                 {
-                    if (ThreadSafeRandom.Next(0, 2) == 0)
+                    if (ThreadSafeRandom.Next(0, 1) == 0)
                         wo.GearHealingBoost = rating;
                     else
                         wo.GearMaxHealth = rating;
 
                     applied = true;
-                    SetWieldT10(wo, 725, profile.Tier);
+
+                    // REMOVE the hard 725 here so the thresholds decide:
+                    // SetWieldT10(wo, 725, profile.Tier);
                 }
             }
-
             else
             {
                 log.Error($"TryMutateGearRating({wo.Name}, {profile.TreasureType}, {roll.ItemType}): unknown item type");
                 return false;
             }
 
-            if (applied && roll.ArmorType != TreasureArmorType.Society)
-            {
-                SetWieldT10(wo, 725, profile.Tier);
-            }
+            // Final wield decision (non-Society only)
+            if (applied)
+                SetT10WieldByTypeThresholds(wo, profile, roll);
 
             return applied;
         }
-
-
 
         private static void SetWieldLevelReq(WorldObject wo, int level)
         {
@@ -1261,27 +1291,40 @@ namespace ACE.Server.Factories
             if (tier < 10)
                 return;
 
-            // Use a placeholder Skill enum the client can display
             const Skill MeleeD = Skill.MeleeDefense;
+            int md = (int)MeleeD;
 
-            // Assign to primary or secondary wield requirement
+            // PRIMARY
             if (wo.WieldRequirements == WieldRequirement.Invalid)
             {
                 wo.WieldRequirements = WieldRequirement.RawSkill;
-                wo.WieldSkillType = (int)MeleeD;
+                wo.WieldSkillType = md;
                 wo.WieldDifficulty = requiredLevel;
+                return;
             }
-            else if (wo.WieldRequirements == WieldRequirement.RawSkill && wo.WieldSkillType == (int)MeleeD)
+            if (wo.WieldRequirements == WieldRequirement.RawSkill && wo.WieldSkillType == md)
             {
                 if (wo.WieldDifficulty < requiredLevel)
-                    wo.WieldDifficulty = requiredLevel;
+                    wo.WieldDifficulty = requiredLevel;   // never lower
+                return;
             }
-            else
+
+            // SECONDARY
+            if (wo.WieldRequirements2 == WieldRequirement.Invalid)
             {
                 wo.WieldRequirements2 = WieldRequirement.RawSkill;
-                wo.WieldSkillType2 = (int)MeleeD;
+                wo.WieldSkillType2 = md;
                 wo.WieldDifficulty2 = requiredLevel;
+                return;
             }
+            if (wo.WieldRequirements2 == WieldRequirement.RawSkill && wo.WieldSkillType2 == md)
+            {
+                if (wo.WieldDifficulty2 < requiredLevel)
+                    wo.WieldDifficulty2 = requiredLevel;  // never lower
+                return;
+            }
+
+            // If both slots are taken by other requirement types, leave them alone.
         }
 
         private static bool GetMutateArmorData(uint wcid, out LootTables.ArmorType? armorType)

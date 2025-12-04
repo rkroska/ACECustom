@@ -100,7 +100,7 @@ namespace ACE.Server.WorldObjects
 
             Session.Network.EnqueueSend(new GameMessageSound(Guid, Sound.PickUpItem));
 
-            if (PropertyManager.GetBool("player_receive_immediate_save").Item)
+            if (PropertyManager.GetBool("player_receive_immediate_save"))
                 RushNextPlayerSave(5);
 
             var altCurrencySpent = vendor.AlternateCurrency != null ? cost : 0;

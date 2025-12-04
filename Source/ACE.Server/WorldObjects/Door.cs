@@ -102,7 +102,7 @@ namespace ACE.Server.WorldObjects
 
                 var autoCloseTimer = new ActionChain();
                 autoCloseTimer.AddDelaySeconds(ResetInterval ?? 0);
-                autoCloseTimer.AddAction(this, () => Reset(useTimestamp));
+                autoCloseTimer.AddAction(this, ActionType.Door_Reset, () => Reset(useTimestamp));
                 autoCloseTimer.EnqueueChain();
             }
             else
@@ -138,7 +138,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(animTime);
-            actionChain.AddAction(this, () => IsBusy = false);
+            actionChain.AddAction(this, ActionType.Door_SetNotBusy, () => IsBusy = false);
             actionChain.EnqueueChain();
         }
 
@@ -166,7 +166,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(animTime);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.Door_FinalizeClose, () =>
             {
                 FinalizeClose(closeTimestamp);
                 IsBusy = false;
@@ -185,7 +185,7 @@ namespace ACE.Server.WorldObjects
             // ethereal must be set to false for ethereal_check_for_collisions
             Ethereal = false;
 
-            if (PropertyManager.GetBool("allow_door_hold").Item && PhysicsObj.ethereal_check_for_collisions())
+            if (PropertyManager.GetBool("allow_door_hold") && PhysicsObj.ethereal_check_for_collisions())
             {
                 // the source of this bug is EtherealHook for the door
                 // physics engine set_ethereal() -> ethereal_check_for_collisions() -> CheckEthereal state
@@ -199,7 +199,7 @@ namespace ACE.Server.WorldObjects
 
                 var holdChain = new ActionChain();
                 holdChain.AddDelaySeconds(1.0f);    // poll every second
-                holdChain.AddAction(this, () => FinalizeClose(closeTimestamp));
+                holdChain.AddAction(this, ActionType.Door_FinalizeClose, () => FinalizeClose(closeTimestamp));
                 holdChain.EnqueueChain();
                 return;
             }

@@ -19,6 +19,8 @@ namespace ACE.Server.Entity
     public class DamageEvent
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        private const float DefaultSplitArrowDamageMultiplier = 0.6f;
 
         // factors:
         // - lifestone protection
@@ -220,15 +222,23 @@ namespace ACE.Server.Entity
 
             if (GeneralFailure) return 0.0f;
 
-            var isBow = Weapon != null && Weapon.IsBow;
+            // Cache luminance augment count once to avoid redundant property access
+            var isMissile = Weapon != null && Weapon.IsMissileWeapon;
+            long? cachedLuminanceAugmentCount = null;
             long damageBonus = 0;
-            if (isBow && attacker.LuminanceAugmentMissileCount > 0)
+            
+            if (isMissile)
             {
-                damageBonus = attacker.LuminanceAugmentMissileCount.Value;
+                if (attacker.LuminanceAugmentMissileCount > 0)
+                {
+                    cachedLuminanceAugmentCount = attacker.LuminanceAugmentMissileCount.Value;
+                    damageBonus = cachedLuminanceAugmentCount.Value;
+                }
             }
             else if (attacker.LuminanceAugmentMeleeCount > 0)
             {
-                damageBonus = attacker.LuminanceAugmentMeleeCount.Value;
+                cachedLuminanceAugmentCount = attacker.LuminanceAugmentMeleeCount.Value;
+                damageBonus = cachedLuminanceAugmentCount.Value;
             }
 
             BaseDamage += damageBonus;
@@ -254,6 +264,7 @@ namespace ACE.Server.Entity
 
             // damage before mitigation
             DamageBeforeMitigation = BaseDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
+            
 
             //Console.WriteLine($"[DEBUG] Damage Before Mitigation: {DamageBeforeMitigation}");
 
@@ -268,21 +279,7 @@ namespace ACE.Server.Entity
             if (playerDefender != null && (playerDefender.IsLoggingOut || playerDefender.PKLogout))
                 CriticalChance = 1.0f;
 
-            // Define a configurable parameter for critical damage adjustment
-            float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier").Item;
-
-            float luminanceAugmentBonus = 0;
-            if (attacker.LuminanceAugmentMissileCount > 0)
-            {
-                luminanceAugmentBonus += attacker.LuminanceAugmentMissileCount.Value * luminanceAugmentCritDamageMultiplier;
-            }
-            if (attacker.LuminanceAugmentMeleeCount > 0)
-            {
-                luminanceAugmentBonus += attacker.LuminanceAugmentMeleeCount.Value * luminanceAugmentCritDamageMultiplier;
-            }
-
-            // Inside the critical hit check
-
+            // Inside the critical hit check - only calculate crit bonus if we actually crit
             if (CriticalChance > ThreadSafeRandom.Next(0.0f, 1.0f))
             {
                 if (playerDefender != null && playerDefender.AugmentationCriticalDefense > 0)
@@ -298,6 +295,14 @@ namespace ACE.Server.Entity
                 {
                     IsCritical = true;
 
+                    // Calculate luminance augment crit bonus using cached value (only if we have one)
+                    float luminanceAugmentBonus = 0;
+                    if (cachedLuminanceAugmentCount.HasValue && cachedLuminanceAugmentCount.Value > 0)
+                    {
+                        float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier");
+                        luminanceAugmentBonus = cachedLuminanceAugmentCount.Value * luminanceAugmentCritDamageMultiplier;
+                    }
+
                     // Update the CriticalDamageMod to include luminance augment bonus
                     CriticalDamageMod = 1.0f + WorldObject.GetWeaponCritDamageMod(Weapon, attacker, attackSkill, defender) + luminanceAugmentBonus;
 
@@ -311,7 +316,6 @@ namespace ACE.Server.Entity
                     // Calculate damage before mitigation
                     DamageBeforeMitigation = BaseDamageMod.MaxDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod * CriticalDamageMod;
 
-                    //Console.WriteLine($"[DEBUG] Damage Before Mitigation (Critical): {DamageBeforeMitigation}");
 
                     CriticalDamageRatingMod = Creature.GetPositiveRatingMod(attacker.GetCritDamageRating());
 
@@ -330,7 +334,14 @@ namespace ACE.Server.Entity
             // armor rending and cleaving
             var armorRendingMod = 1.0f;
             if (Weapon != null && Weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            {
                 armorRendingMod = WorldObject.GetArmorRendingMod(attackSkill);
+            }
+            else if (attacker is CombatPet && attacker.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            {
+                // For CombatPets without weapons, check if armor rending was applied to the creature itself
+                armorRendingMod = WorldObject.GetArmorRendingMod(attackSkill);
+            }
 
             var armorCleavingMod = attacker.GetArmorCleavingMod(Weapon);
 
@@ -402,6 +413,14 @@ namespace ACE.Server.Entity
 
             // calculate final output damage
             Damage = DamageBeforeMitigation * ArmorMod * ShieldMod * ResistanceMod * DamageResistanceRatingMod;
+
+            // Apply split arrow damage multiplier if this is a split arrow
+            if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
+            {
+                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 
+                                             DefaultSplitArrowDamageMultiplier);
+                Damage *= splitMultiplier;
+            }
 
             // NEW: Apply enrage damage reduction to the final output damage if the defender is a mob and enraged
             if (defender.IsEnraged && !(defender is Player))

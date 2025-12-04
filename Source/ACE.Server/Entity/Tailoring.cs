@@ -92,7 +92,7 @@ namespace ACE.Server.Entity
             // perform clapping motion
             animTime += player.EnqueueMotion(actionChain, MotionCommand.ClapHands);
 
-            actionChain.AddAction(player, () =>
+            actionChain.AddAction(player, ActionType.Tailoring_DoTailoring, () =>
             {
                 // re-verify
                 var useError = VerifyUseRequirements(player, source, target);
@@ -225,7 +225,7 @@ namespace ACE.Server.Entity
             // here a lot is done directly in code..
 
             target.PaletteTemplate = source.PaletteTemplate;
-            if (PropertyManager.GetBool("tailoring_intermediate_uieffects").Item)
+            if (PropertyManager.GetBool("tailoring_intermediate_uieffects"))
                 target.UiEffects = source.UiEffects;
             target.MaterialType = source.MaterialType;
 
@@ -336,7 +336,7 @@ namespace ACE.Server.Entity
                 result.Destroy();  // cleanup for guid manager
             }
 
-            if (PropertyManager.GetBool("player_receive_immediate_save").Item)
+            if (PropertyManager.GetBool("player_receive_immediate_save"))
                 player.RushNextPlayerSave(5);
 
             player.SendUseDoneEvent();

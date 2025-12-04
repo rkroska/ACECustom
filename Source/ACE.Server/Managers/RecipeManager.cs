@@ -47,7 +47,7 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            var allowCraftInCombat = PropertyManager.GetBool("allow_combat_mode_crafting").Item;
+            var allowCraftInCombat = PropertyManager.GetBool("allow_combat_mode_crafting");
 
             if (!allowCraftInCombat && player.CombatMode != CombatMode.NonCombat)
             {
@@ -118,7 +118,7 @@ namespace ACE.Server.Managers
 
             if (!confirmed)
             {
-                actionChain.AddAction(player, () => player.SendMotionAsCommands(motionCommand, currentStance));
+                actionChain.AddAction(player, ActionType.PlayerMotion_SendMotionAsCommands, () => player.SendMotionAsCommands(motionCommand, currentStance));
                 actionChain.AddDelaySeconds(clapTime);
 
                 nextUseTime += clapTime;
@@ -126,14 +126,14 @@ namespace ACE.Server.Managers
 
             if (showDialog && !confirmed)
             {
-                actionChain.AddAction(player, () => ShowDialog(player, source, target, recipe, percentSuccess.Value));
-                actionChain.AddAction(player, () => player.IsBusy = false);
+                actionChain.AddAction(player, ActionType.RecipeManager_ShowDialogue, () => ShowDialog(player, source, target, recipe, percentSuccess.Value));
+                actionChain.AddAction(player, ActionType.Player_SetNonBusy, () => player.IsBusy = false);
             }
             else
             {
-                actionChain.AddAction(player, () => HandleRecipe(player, source, target, recipe, percentSuccess.Value));
+                actionChain.AddAction(player, ActionType.RecipeManager_HandleRecipe, () => HandleRecipe(player, source, target, recipe, percentSuccess.Value));
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.RecipeManager_FinishRecipe, () =>
                 {
                     if (!showDialog)
                         player.SendUseDoneEvent();
@@ -341,7 +341,7 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            if (PropertyManager.GetBool("craft_exact_msg").Item)
+            if (PropertyManager.GetBool("craft_exact_msg"))
             {
                 var exactMsg = $"You have a {(float)percent} percent chance of using {source.NameWithMaterial} on {target.NameWithMaterial}.";
 

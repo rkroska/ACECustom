@@ -160,9 +160,9 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.001f);
-            actionChain.AddAction(target, () =>
+            actionChain.AddAction(target, ActionType.PlayerTrade_EnqueueSendAddToTrade, () =>
             {
-                target.Session.Network.EnqueueSend(new GameEventAddToTrade(target.Session, itemGuid, TradeSide.Partner));
+                    target.Session.Network.EnqueueSend(new GameEventAddToTrade(target.Session, itemGuid, TradeSide.Partner));
             });
             actionChain.EnqueueChain();
         }
@@ -249,7 +249,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.5f);
-            actionChain.AddAction(CurrentLandblock, () =>
+            actionChain.AddAction(CurrentLandblock, ActionType.PlayerTrade_FinalizeTrade, () =>
             {
                 foreach (var wo in myEscrow)
                     TryCreateInInventoryWithNetworking(wo);
@@ -262,11 +262,14 @@ namespace ACE.Server.WorldObjects
 
                 TradeTransferInProgress = false;
                 target.TradeTransferInProgress = false;
-
+                        
                 IsBusy = false;
                 target.IsBusy = false;
 
-                DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, null, "FinalizeTrade");
+                DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, null, this.Guid.ToString() + " : " + target.Guid.ToString());
+
+                // Log the trade
+                TransferLogger.LogTrade(this, target, targetEscrow, myEscrow);
 
                 HandleActionResetTrade(Guid);
                 target.HandleActionResetTrade(target.Guid);

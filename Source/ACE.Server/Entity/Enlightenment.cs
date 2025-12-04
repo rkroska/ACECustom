@@ -66,7 +66,7 @@ namespace ACE.Server.Entity
 
             // Then do teleport
             player.IsBusy = true;
-            enlChain.AddAction(player, () =>
+            enlChain.AddAction(player, ActionType.Enlightenment_DoEnlighten, () =>
             {
                 player.IsBusy = false;
                 var endPos = new ACE.Entity.Position(player.Location);
@@ -194,7 +194,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 50 && targetEnlightenment <= 150)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost");
                 long reqLum = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum))
                 {
@@ -205,7 +205,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 150 && targetEnlightenment < 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost");
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum150))
                 {
@@ -227,22 +227,42 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost").Item;
-                long reqLum300 = targetEnlightenment * baseLumCost;
+                var baseLumCost = (decimal)PropertyManager.GetLong("enl_300_base_lum_cost");
+
+                // how far past 300 we’re going
+                int over = targetEnlightenment - 300;
+
+                // step increases begin AFTER the first 50 levels
+                // 301–350 => steps = 0 (1.0×)
+                // 351–400 => steps = 1 (1.5×)
+                // 401–450 => steps = 2 (2.0×), etc.
+                int steps = (over - 1) / 50;         // integer division
+                decimal costModifier = 1.0m + (0.5m * steps);
+
+                long reqLum300 = (long)Math.Ceiling((targetEnlightenment * baseLumCost) * costModifier);
+
                 if (!VerifyLuminance(player, reqLum300))
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum300:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You must have {reqLum300:N0} luminance to enlighten to level {targetEnlightenment}.",
+                        ChatMessageType.Broadcast));
                     return false;
                 }
-                var count2 = player.GetNumInventoryItemsOfWCID(300101189); //magic number - EnlightenmentSigil
+
+                var count2 = player.GetNumInventoryItemsOfWCID(300101189); // EnlightenmentSigil
                 if (count2 < player.Enlightenment + 1 - 5)
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Sigils to continue.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Sigils to continue.",
+                        ChatMessageType.Broadcast));
                     return false;
                 }
+
                 if (!VerifyParagonArmorCompleted(player))
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have completed 50th Armor Paragon to enlighten beyond level 300.", ChatMessageType.Broadcast));
+                    player.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You must have completed 50th Armor Paragon to enlighten beyond level 300.",
+                        ChatMessageType.Broadcast));
                     return false;
                 }
             }
@@ -334,7 +354,7 @@ namespace ACE.Server.Entity
         {
             if (player.Enlightenment + 1 > 50 && player.Enlightenment < 150)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost");
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum);
@@ -342,7 +362,7 @@ namespace ACE.Server.Entity
 
             else if (player.Enlightenment + 1 > 150 && player.Enlightenment < 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost");
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum150);
@@ -350,7 +370,7 @@ namespace ACE.Server.Entity
 
             else if (player.Enlightenment + 1 > 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost").Item;
+                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost");
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum300 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum300);
@@ -362,7 +382,7 @@ namespace ACE.Server.Entity
         public static void RemoveSociety(Player player)
         {
             // Leave society alone if server prop is false
-            if (PropertyManager.GetBool("enl_removes_society").Item)
+            if (PropertyManager.GetBool("enl_removes_society"))
             {
                 player.QuestManager.Erase("SocietyMember");
                 player.QuestManager.Erase("CelestialHandMember");

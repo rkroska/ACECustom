@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum.Properties;
@@ -10,6 +7,9 @@ using ACE.Server.Factories;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
+using log4net;
+using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.Managers
 {
@@ -27,6 +27,8 @@ namespace ACE.Server.Managers
         /// A mapping of all Players on the server => their AllegianceNodes
         /// </summary>
         public static readonly Dictionary<ObjectGuid, AllegianceNode> Players = new Dictionary<ObjectGuid, AllegianceNode>();
+
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Returns the monarch for a player
@@ -48,10 +50,6 @@ namespace ACE.Server.Managers
         public static Allegiance GetAllegiance(IPlayer player)
         {
             if (player == null) return null;
-
-            // If no Monarch, no Allegiance
-            if (player.MonarchId == null)
-                return null;
 
             var monarch = GetMonarch(player);
 
@@ -78,25 +76,30 @@ namespace ACE.Server.Managers
             }
             else
             {
-                // Ignore 1-man Allegiances
-                var members = AllegianceManager.FindAllPlayers(monarch.Guid);
-                if (members.Count <= 1)
+                allegiance = new Allegiance(monarch.Guid);
+
+                if (allegiance.TotalMembers == 1)
                     return null;
 
-                allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
-                allegiance.MonarchId = monarch.Guid.Full;
-                allegiance.Init(monarch.Guid);
+                try
+                {
+                    allegiance = WorldObjectFactory.CreateNewWorldObject("allegiance") as Allegiance;
+                    allegiance.MonarchId = monarch.Guid.Full;
+                    allegiance.Init(monarch.Guid);
 
-                allegiance.SaveBiotaToDatabase();
+                    allegiance.SaveBiotaToDatabase();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"AllegianceManager.GetAllegiance({monarch.Guid.Full}): Error creating new Allegiance", ex);
+                }
             }
+                
+            
 
             if (allegiance != null)
             {
-
                 AddPlayers(allegiance);
-
-                //if (!Allegiances.ContainsKey(allegiance.Guid))
-                //Allegiances.Add(allegiance.Guid, allegiance);
                 Allegiances[allegiance.Guid] = allegiance;
             }
 
@@ -201,7 +204,7 @@ namespace ACE.Server.Managers
         // We must also protect against cross-thread operations on vassal/patron (non-concurrent collections)
         public static void PassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoPassXP(vassalNode, amount, direct, luminance)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.AllegianceManager_DoPassXP, () => DoPassXP(vassalNode, amount, direct, luminance)));
         }
 
         private static void DoPassXP(AllegianceNode vassalNode, ulong amount, bool direct, bool luminance = false)
@@ -303,7 +306,7 @@ namespace ACE.Server.Managers
 
             if (luminance)
             {
-                var lumMult = PropertyManager.GetDouble("lum_passup_mult", 0.5).Item;
+                var lumMult = PropertyManager.GetDouble("lum_passup_mult", 0.5);
                 generatedAmount = (uint)(generatedAmount * lumMult);
                 passupAmount = (uint)(passupAmount * lumMult);
             }
@@ -342,7 +345,7 @@ namespace ACE.Server.Managers
 
                 vassal.AllegianceXPGenerated += generatedAmount;
 
-                if (PropertyManager.GetBool("offline_xp_passup_limit").Item)
+                if (PropertyManager.GetBool("offline_xp_passup_limit"))
                     patron.AllegianceXPCached = Math.Min(patron.AllegianceXPCached + passupAmount, uint.MaxValue);
                 else
                     patron.AllegianceXPCached += passupAmount;
@@ -447,7 +450,7 @@ namespace ACE.Server.Managers
         // We must add thread safety to prevent AllegianceManager corruption
         public static void HandlePlayerDelete(uint playerGuid)
         {
-            WorldManager.EnqueueAction(new ActionEventDelegate(() => DoHandlePlayerDelete(playerGuid)));
+            WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.AllegianceManager_DoHandlePlayerDelete, () => DoHandlePlayerDelete(playerGuid)));
         }
 
         private static void DoHandlePlayerDelete(uint playerGuid)

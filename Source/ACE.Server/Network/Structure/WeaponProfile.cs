@@ -66,7 +66,7 @@ namespace ACE.Server.Network.Structure
         {
             var baseDamage = weapon.GetProperty(PropertyInt.Damage) ?? 0;
             var damageBonus = weapon.EnchantmentManager.GetDamageBonus();
-            var auraDamageBonus = weapon.Wielder != null && (weapon.WeenieType != WeenieType.Ammunition || PropertyManager.GetBool("show_ammo_buff").Item) ? weapon.Wielder.EnchantmentManager.GetDamageBonus() : 0;
+            var auraDamageBonus = weapon.Wielder != null && (weapon.WeenieType != WeenieType.Ammunition || PropertyManager.GetBool("show_ammo_buff")) ? weapon.Wielder.EnchantmentManager.GetDamageBonus() : 0;
             Enchantment_Damage = weapon.IsEnchantable ? damageBonus + auraDamageBonus : damageBonus;
             return (uint)Math.Max(0, baseDamage + Enchantment_Damage);
         }

@@ -97,14 +97,14 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.NonProjectileMagicImmune); else SetProperty(PropertyBool.NonProjectileMagicImmune, value); }
         }
 
-        public float GetResistanceMod(DamageType damageType, WorldObject attacker, WorldObject weapon, float weaponResistanceMod = 1.0f)
+        public virtual float GetResistanceMod(DamageType damageType, WorldObject attacker, WorldObject weapon, float weaponResistanceMod = 1.0f)
         {
             var ignoreMagicResist = (weapon?.IgnoreMagicResist ?? false) || (attacker?.IgnoreMagicResist ?? false);
 
             // hollow weapons also ignore player natural resistances
             if (ignoreMagicResist)
             {
-                if (!(attacker is Player) || !(this is Player) || PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar").Item == 1.0)
+                if (!(attacker is Player) || !(this is Player) || PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar") == 1.0)
                     return weaponResistanceMod;
             }
 
@@ -201,7 +201,7 @@ namespace ACE.Server.WorldObjects
                 case ResistanceType.Electric:
                     return (ResistElectric ?? 1.0) * GetResistanceMod(DamageType.Electric, attacker, weapon, weaponResistanceMod);
                 case ResistanceType.Nether:
-                    return (ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod);
+                    return (ResistNether ?? 1.0) * GetResistanceMod(DamageType.Nether, attacker, weapon, weaponResistanceMod) * GetNetherResistRatingMod();
                 case ResistanceType.HealthBoost:
                     return (ResistHealthBoost ?? 1.0) * GetHealingRatingMod();
                 case ResistanceType.HealthDrain:
@@ -238,7 +238,7 @@ namespace ACE.Server.WorldObjects
         public double ResistColdMod => (ResistCold ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Cold);
         public double ResistAcidMod => (ResistAcid ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Acid);
         public double ResistElectricMod => (ResistElectric ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Electric);
-        public double ResistNetherMod => (ResistNether ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Nether);
+        public double ResistNetherMod => (ResistNether ?? 1.0) * EnchantmentManager.GetResistanceMod(DamageType.Nether) * GetNetherResistRatingMod();
 
         public bool NoCorpse
         {
@@ -394,6 +394,12 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt64.LumAugMissileCount) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMissileCount); else SetProperty(PropertyInt64.LumAugMissileCount, value.Value); }
+        }
+
+        public long? LuminanceAugmentSummonCount
+        {
+            get => GetProperty(PropertyInt64.LumAugSummonCount) ?? 0;
+            set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugSummonCount); else SetProperty(PropertyInt64.LumAugSummonCount, value.Value); }
         }
 
         public long? LuminanceAugmentMeleeDefenseCount

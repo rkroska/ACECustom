@@ -25,7 +25,14 @@ namespace ACE.Server.WorldObjects
             {
                 var numTargetItems = 1;
                 if (targetPlayer != null)
-                    numTargetItems = targetPlayer.EquippedObjects.Values.Count(i => (i is Clothing || i.IsShield) && i.IsEnchantable);
+                {
+                    numTargetItems = 0;
+                    foreach (var item in targetPlayer.EquippedObjects.Values)
+                    {
+                        if ((item is Clothing || item.IsShield) && item.IsEnchantable)
+                            numTargetItems++;
+                    }
+                }
 
                 baseCost += spell.ManaMod * (uint)numTargetItems;
             }

@@ -40,17 +40,17 @@ namespace ACE.Server.WorldObjects
         public void Kill()
         {
             ActionChain killChain = new ActionChain();
-            killChain.AddAction(this, () =>
+            killChain.AddAction(this, ActionType.GamePiece_EnqueueDeadMotion, () =>
             {
                 EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Dead));
             });
             killChain.AddDelaySeconds(5);
-            killChain.AddAction(this, () =>
+            killChain.AddAction(this, ActionType.GamePiece_ApplyDeadVisuals, () =>
             {
                 ApplyVisualEffects(PlayScript.Destroy);
             });
             killChain.AddDelaySeconds(1);
-            killChain.AddAction(this, () => Destroy());
+            killChain.AddAction(this, ActionType.GamePiece_Destroy, () => Destroy());
             killChain.EnqueueChain();
         }
 

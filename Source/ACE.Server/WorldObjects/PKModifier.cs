@@ -58,7 +58,7 @@ namespace ACE.Server.WorldObjects
                 return new ActivationResult(false);
             }
 
-            if (player.PkLevel > PKLevel.PK || PropertyManager.GetBool("pk_server").Item || PropertyManager.GetBool("pkl_server").Item)
+            if (player.PkLevel > PKLevel.PK || PropertyManager.GetBool("pk_server") || PropertyManager.GetBool("pkl_server"))
             {
                 if (!string.IsNullOrWhiteSpace(GetProperty(PropertyString.UsePkServerError)))
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UsePkServerError), ChatMessageType.Broadcast));
@@ -131,7 +131,7 @@ namespace ACE.Server.WorldObjects
                     actionChain.AddDelaySeconds(useTime);
                 }
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.PKModifier_EnqueueDissonanceAndReset, () =>
                 {
                     player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouFeelAHarshDissonance));
                     player.IsBusy = false;
@@ -160,7 +160,7 @@ namespace ACE.Server.WorldObjects
 
                 actionChain.AddDelaySeconds(useTime);
 
-                actionChain.AddAction(player, () =>
+                actionChain.AddAction(player, ActionType.PKModifier_TogglePKStauts, () =>
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UseMessage), ChatMessageType.Broadcast));
                     player.PkLevelModifier += PkLevelModifier;

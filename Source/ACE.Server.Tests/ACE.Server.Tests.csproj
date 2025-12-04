@@ -32,6 +32,11 @@
     <PackageReference Include="MSTest.TestAdapter" Version="3.1.1" />
     <PackageReference Include="MSTest.TestFramework" Version="3.1.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="xunit" Version="2.6.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -44,5 +49,13 @@
         <PackagePath></PackagePath>
       </None>
     </ItemGroup>
+
+  <!-- Run banking tests after build -->
+  <Target Name="RunBankingTests"
+          AfterTargets="Build"
+          Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true' and '$(RunBankingTestsOnBuildInner)' != 'true'">
+    <Exec Command="$(DotNetExe) test &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) --no-build --nologo --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal -p:RunBankingTestsOnBuildInner=true"
+          ContinueOnError="false" />
+  </Target>
 
 </Project>

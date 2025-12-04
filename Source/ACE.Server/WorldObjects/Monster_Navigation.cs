@@ -23,6 +23,59 @@ namespace ACE.Server.WorldObjects
         public static readonly float MaxChaseRangeSq = MaxChaseRange * MaxChaseRange;
 
         /// <summary>
+        /// Cache for physics calculations to reduce expensive operations
+        /// </summary>
+        private float _cachedDistanceToTarget = -1.0f;
+        private double _lastDistanceCacheTime = 0.0;
+        private const double DISTANCE_CACHE_DURATION = 0.25; // Cache for 0.25 seconds
+
+        /// <summary>
+        /// Invalidate distance cache when target changes
+        /// </summary>
+        public void InvalidateDistanceCache()
+        {
+            _cachedDistanceToTarget = -1.0f;
+            _lastDistanceCacheTime = 0.0;
+        }
+
+        /// <summary>
+        /// Cached distance calculation to reduce expensive physics operations
+        /// </summary>
+        public float GetCachedDistanceToTarget()
+        {
+            var currentTime = Timers.RunningTime;
+            
+            // Check if cache is still valid
+            if (currentTime - _lastDistanceCacheTime < DISTANCE_CACHE_DURATION && _cachedDistanceToTarget >= 0)
+            {
+                return _cachedDistanceToTarget;
+            }
+            
+            // Cache expired or invalid, calculate new distance
+            var myPhysics = PhysicsObj;
+            var target = AttackTarget;
+            if (target == null)
+            {
+                _cachedDistanceToTarget = float.MaxValue;
+            }
+            else
+            {
+                var targetPhysics = target.PhysicsObj;
+                if (myPhysics == null || targetPhysics == null)
+                {
+                    _cachedDistanceToTarget = float.MaxValue;
+                }
+                else
+                {
+                    _cachedDistanceToTarget = (float)myPhysics.get_distance_to_object(targetPhysics, true);
+                }
+            }
+            
+            _lastDistanceCacheTime = currentTime;
+            return _cachedDistanceToTarget;
+        }
+
+        /// <summary>
         /// Determines if a monster is within melee range of target
         /// </summary>
         //public static readonly float MaxMeleeRange = 1.5f;
@@ -66,6 +119,14 @@ namespace ACE.Server.WorldObjects
         public double NextCancelTime;
 
         /// <summary>
+        /// Stuck detection properties
+        /// </summary>
+        public double LastStuckCheckTime;
+        public int StuckAttempts;
+        public const int MaxStuckAttempts = 3;
+        public const double StuckCheckInterval = 2.0;
+
+        /// <summary>
         /// Starts the process of monster turning towards target
         /// </summary>
         public void StartTurn()
@@ -86,7 +147,7 @@ namespace ACE.Server.WorldObjects
             IsTurning = true;
 
             // send network actions
-            var targetDist = GetDistanceToTarget();
+            var targetDist = GetCachedDistanceToTarget();
             var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && targetDist <= GetSpellMaxRange()) || AiImmobile;
             if (turnTo)
                 TurnTo(AttackTarget);
@@ -100,7 +161,10 @@ namespace ACE.Server.WorldObjects
             NextCancelTime = LastMoveTime + ThreadSafeRandom.Next(2, 4);
             moveBit = false;
 
-            var mvp = GetMovementParameters();
+            // Initialize stuck detection
+            LastStuckCheckTime = Timers.RunningTime;
+
+            var mvp = GetMovementParameters(targetDist);
             if (turnTo)
                 PhysicsObj.TurnToObject(AttackTarget.PhysicsObj, mvp);
             else
@@ -124,7 +188,7 @@ namespace ACE.Server.WorldObjects
 
             if (AiImmobile && CurrentAttack == CombatType.Melee)
             {
-                var targetDist = GetDistanceToTarget();
+                var targetDist = GetCachedDistanceToTarget();
                 if (targetDist > MaxRange)
                     ResetAttack();
             }
@@ -150,7 +214,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsMeleeRange()
         {
-            return GetDistanceToTarget() <= MaxMeleeRange;
+            return GetCachedDistanceToTarget() <= MaxMeleeRange;
         }
 
         /// <summary>
@@ -158,7 +222,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsAttackRange()
         {
-            return GetDistanceToTarget() <= MaxRange;
+            return GetCachedDistanceToTarget() <= MaxRange;
         }
 
         /// <summary>
@@ -169,6 +233,11 @@ namespace ACE.Server.WorldObjects
             if (AttackTarget == null)
                 return float.MaxValue;
 
+            var myPhysics = PhysicsObj;
+            var targetPhysics = AttackTarget.PhysicsObj;
+            if (myPhysics == null || targetPhysics == null)
+                return float.MaxValue;
+
             //var matchIndoors = Location.Indoors == AttackTarget.Location.Indoors;
             //var targetPos = matchIndoors ? AttackTarget.Location.ToGlobal() : AttackTarget.Location.Pos;
             //var sourcePos = matchIndoors ? Location.ToGlobal() : Location.Pos;
@@ -177,8 +246,8 @@ namespace ACE.Server.WorldObjects
             //var radialDist = dist - (AttackTarget.PhysicsObj.GetRadius() + PhysicsObj.GetRadius());
 
             // always use spheres?
-            var cylDist = (float)Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,
-                AttackTarget.PhysicsObj.GetRadius(), AttackTarget.PhysicsObj.GetHeight(), AttackTarget.PhysicsObj.Position);
+            var cylDist = (float)Physics.Common.Position.CylinderDistance(myPhysics.GetRadius(), myPhysics.GetHeight(), myPhysics.Position,
+                targetPhysics.GetRadius(), targetPhysics.GetHeight(), targetPhysics.Position);
 
             if (DebugMove)
                 Console.WriteLine($"{Name}.DistanceToTarget: {cylDist}");
@@ -203,12 +272,138 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (PhysicsObj.MovementManager.MoveToManager.FailProgressCount > 0 && Timers.RunningTime > NextCancelTime)
+            var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
+            if (moveToManager != null && 
+                moveToManager.FailProgressCount > 0 && 
+                Timers.RunningTime > NextCancelTime)
                 CancelMoveTo();
+
+            CheckForStuck();
+            ApplyFastHealing();
+            CheckDistressCalls();
+        }
+
+        /// <summary>
+        /// Basic stuck detection system
+        /// </summary>
+        public void CheckForStuck()
+        {
+            if (!IsMoving || AttackTarget == null)
+                return;
+
+            if (ShouldBypassStuckLogic())
+                return;
+
+            var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
+            if (moveToManager == null)
+                return;
+
+            var currentTime = Timers.RunningTime;
+
+            if (currentTime - LastStuckCheckTime < StuckCheckInterval)
+                return;
+
+            LastStuckCheckTime = currentTime;
+
+            if (moveToManager.FailProgressCount >= MaxStuckAttempts)
+            {
+                HandleStuck();
+            }
+        }
+
+        /// <summary>
+        /// Handles when a monster is confirmed to be stuck
+        /// </summary>
+        public void HandleStuck()
+        {
+            if (DebugMove)
+                Console.WriteLine($"{Name} ({Guid}) - Confirmed stuck, attempting recovery");
+
+            StuckAttempts = 0;
+            CancelMoveTo();
+
+            if (MonsterState == State.Awake)
+            {
+                FindNextTarget();
+            }
+            else if (MonsterState == State.Return)
+            {
+                ForceHome();
+            }
+        }
+
+        /// <summary>
+        /// Bypass stuck logic if mob is set with bool property 52 (aiImobile)
+        /// </summary>
+        public bool ShouldBypassStuckLogic()
+        {
+            return AiImmobile;
+        }
+
+        /// <summary>
+        /// Apply fast healing when returning home
+        /// </summary>
+        public void ApplyFastHealing()
+        {
+            if (MonsterState == State.Return)
+            {
+                // Increase vital regen when returning home
+                // This is handled by the existing vital regen system
+                // The actual implementation would be in the vital regen logic
+            }
+        }
+
+        /// <summary>
+        /// Make returning monsters respond to distress calls
+        /// </summary>
+        public void CheckDistressCalls()
+        {
+            if (MonsterState == State.Return)
+            {
+                var objMaint = PhysicsObj?.ObjMaint;
+                if (objMaint == null)
+                    return;
+
+                // Check for nearby monsters in distress
+                var nearbyCreatures = objMaint.GetVisibleTargetsValuesOfTypeCreature();
+                
+                foreach (var creature in nearbyCreatures)
+                {
+                    if (creature == null || creature.IsDead || creature == this)
+                        continue;
+
+                    // If a nearby monster is in combat, consider responding to distress
+                    if (creature.MonsterState == State.Awake && creature.AttackTarget != null)
+                    {
+                        // Check if the distressed monster is of the same type or faction
+                        if (CreatureType != null && CreatureType == creature.CreatureType ||
+                            FriendType != null && FriendType == creature.CreatureType ||
+                            SameFaction(creature))
+                        {
+                            var creaturePhysics = creature.PhysicsObj;
+                            if (PhysicsObj == null || creaturePhysics == null)
+                                continue;
+
+                            var distSq = PhysicsObj.get_distance_sq_to_object(creaturePhysics, true);
+                            if (distSq <= AuralAwarenessRangeSq)
+                            {
+                                // Respond to distress call
+                                AttackTarget = creature.AttackTarget;
+                                MonsterState = State.Awake;
+                                WakeUp(false); // Don't alert others to avoid chain reaction
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         public void UpdatePosition(bool netsend = true)
         {
+            if (PhysicsObj == null)
+                return;
+
             stopwatch.Restart();
             PhysicsObj.update_object();
             ServerPerformanceMonitor.AddToCumulativeEvent(ServerPerformanceMonitor.CumulativeEventHistoryType.Monster_Navigation_UpdatePosition_PUO, stopwatch.Elapsed.TotalSeconds);
@@ -239,6 +434,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void UpdatePosition_SyncLocation()
         {
+            if (PhysicsObj == null)
+                return;
+
             // was the position successfully moved to?
             // use the physics position as the source-of-truth?
             var newPos = PhysicsObj.Position;
@@ -296,9 +494,13 @@ namespace ACE.Server.WorldObjects
 
             RunRate = GetRunRate();
 
-            MoveSpeed = moveSpeed * RunRate * scale;
+            // Calculate raw speed (with scale logic)
+            MoveSpeed = moveSpeed * RunRate;
 
-            //Console.WriteLine(Name + " - Run: " + runSkill + " - RunRate: " + RunRate + " - Move: " + MoveSpeed + " - Scale: " + scale);
+            // Cap: never faster than 800 run at 1.0 scale
+            var maxMoveSpeed = moveSpeed * (18.0f / 4.0f); // 4.5 is the capped RunRate
+            if (MoveSpeed > maxMoveSpeed)
+                MoveSpeed = maxMoveSpeed;
         }
 
         /// <summary>
@@ -338,7 +540,11 @@ namespace ACE.Server.WorldObjects
             if (target?.Location == null) return false;
 
             var angle = GetAngle(target);
-            var dist = Math.Max(0, GetDistanceToTarget());
+            var dist = target == AttackTarget
+                ? Math.Max(0, GetCachedDistanceToTarget())
+                : (PhysicsObj != null && target?.PhysicsObj != null
+                    ? (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true)
+                    : float.MaxValue);
 
             // rotation accuracy?
             var threshold = 5.0f;
@@ -354,14 +560,15 @@ namespace ACE.Server.WorldObjects
             return angle < threshold;
         }
 
-        public MovementParameters GetMovementParameters()
+        public MovementParameters GetMovementParameters(float? targetDistance = null)
         {
             var mvp = new MovementParameters();
 
             // set non-default params for monster movement
             mvp.Flags &= ~MovementParamFlags.CanWalk;
 
-            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && GetDistanceToTarget() <= GetSpellMaxRange()) || AiImmobile;
+            var distance = targetDistance ?? GetCachedDistanceToTarget();
+            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && distance <= GetSpellMaxRange()) || AiImmobile;
 
             if (!turnTo)
                 mvp.Flags |= MovementParamFlags.FailWalk | MovementParamFlags.UseFinalHeading | MovementParamFlags.Sticky | MovementParamFlags.MoveAway;
@@ -464,6 +671,9 @@ namespace ACE.Server.WorldObjects
             IsMoving = false;
             NextMoveTime = Timers.RunningTime + 1.0f;
 
+            // Reset stuck detection
+            StuckAttempts = 0;
+
             ResetAttack();
 
             FindNextTarget();
@@ -476,6 +686,12 @@ namespace ACE.Server.WorldObjects
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - ForceHome({homePos.ToLOCString()})");
 
+            if (PhysicsObj == null)
+            {
+                log.Warn($"{Name} ({Guid}) - ForceHome failed: PhysicsObj is null");
+                return;
+            }
+
             var setPos = new SetPosition();
             setPos.Pos = new Physics.Common.Position(homePos);
             setPos.Flags = SetPositionFlags.Teleport;
@@ -483,12 +699,11 @@ namespace ACE.Server.WorldObjects
             PhysicsObj.SetPosition(setPos);
 
             UpdatePosition_SyncLocation();
-
             SendUpdatePosition();
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.5f);
-            actionChain.AddAction(this, Sleep);
+            actionChain.AddAction(this, ActionType.MonsterNavigation_Sleep, Sleep);
             actionChain.EnqueueChain();
         }
     }

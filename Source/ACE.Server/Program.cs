@@ -257,6 +257,12 @@ namespace ACE.Server
             log.Info("Starting DatabaseManager...");
             DatabaseManager.Start();
 
+            log.Info("Initializing Transfer Monitoring...");
+            TransferLogger.InitializeTransferMonitoring();
+
+            log.Info("Initializing Character Tracker...");
+            CharacterTracker.EnsureDatabaseMigrated();
+
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 
@@ -345,7 +351,7 @@ namespace ACE.Server
             DateTime buildDate = new FileInfo(Assembly.GetExecutingAssembly().Location).LastWriteTime;
             log.Info($"Server Build Date: {buildDate}");
 
-            if (!PropertyManager.GetBool("world_closed", false).Item)
+            if (!PropertyManager.GetBool("world_closed", false))
             {
                 WorldManager.Open(null);
             }

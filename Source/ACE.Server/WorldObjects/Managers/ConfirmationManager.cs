@@ -38,7 +38,7 @@ namespace ACE.Server.WorldObjects.Managers
                 Player.Session.Network.EnqueueSend(new GameEventConfirmationRequest(Player.Session, confirmation.ConfirmationType, confirmation.ContextId, text));
                 var timeoutConfirmation = new ActionChain();
                 timeoutConfirmation.AddDelaySeconds(confirmationTimeout);
-                timeoutConfirmation.AddAction(Player, () => EnqueueAbort(confirmation.ConfirmationType, confirmation.ContextId));
+                timeoutConfirmation.AddAction(Player, ActionType.ConfirmationManager_EnqueueAbort, () => EnqueueAbort(confirmation.ConfirmationType, confirmation.ContextId));
                 timeoutConfirmation.EnqueueChain();
             }
             else

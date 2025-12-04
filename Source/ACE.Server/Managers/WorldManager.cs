@@ -33,6 +33,10 @@ namespace ACE.Server.Managers
     public static class WorldManager
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        
+        // Discord throttling for login block alerts
+        private static DateTime lastLoginBlockAlert = DateTime.MinValue;
+        private static int loginBlockAlertsThisMinute = 0;
 
         private static readonly PhysicsEngine Physics;
 
@@ -69,7 +73,7 @@ namespace ACE.Server.Managers
             log.DebugFormat("ServerTime initialized to {0}", Timers.WorldStartLoreTime);
             log.DebugFormat($"Current maximum allowed sessions: {ConfigManager.Config.Server.Network.MaximumAllowedSessions}");
 
-            log.Info($"World started and is currently {WorldStatus.ToString()}{(PropertyManager.GetBool("world_closed", false).Item ? "" : " and will open automatically when server startup is complete.")}");
+            log.Info($"World started and is currently {WorldStatus.ToString()}{(PropertyManager.GetBool("world_closed", false) ? "" : " and will open automatically when server startup is complete.")}");
             if (WorldStatus == WorldStatusState.Closed)
                 log.Info($"To open world to players, use command: world open");
         }
@@ -93,7 +97,7 @@ namespace ACE.Server.Managers
                 PlayerManager.BootAllPlayers();
         }
 
-        public static void PlayerEnterWorld(Session session, LoginCharacter character)
+        public static void PlayerEnterWorld(Session session, LoginCharacter character, int loginRetryCount = 0)
         {
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
 
@@ -103,13 +107,52 @@ namespace ACE.Server.Managers
                 return;
             }
 
+            if (offlinePlayer.SaveInProgress)
+            {
+                const int MAX_LOGIN_RETRIES = 10;
+                if (loginRetryCount >= MAX_LOGIN_RETRIES)
+                {
+                    var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
+                    log.Error($"[LOGIN BLOCK] {character.Name} REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}");
+                    
+                    if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    {
+                        try
+                        {
+                            var msg = $"🔴 **CRITICAL**: `{character.Name}` login blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}";
+                            DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                        }
+                        catch { }
+                    }
+                    
+                    return;
+                }
+                else
+                {
+                    var timeWaiting = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalMilliseconds;
+                    log.Warn($"[LOGIN BLOCK] {character.Name} login delayed (retry {loginRetryCount + 1}/{MAX_LOGIN_RETRIES}), save in-progress {timeWaiting:N0}ms.");
+                    
+                    SendLoginBlockDiscordAlert(character.Name, timeWaiting);
+                    
+                    var retryChain = new ACE.Server.Entity.Actions.ActionChain();
+                    retryChain.AddDelaySeconds(2.0);
+                    retryChain.AddAction(WorldManager.ActionQueue, ActionType.WorldManager_PlayerEnterWorld, () =>
+                    {
+                        if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
+                            PlayerEnterWorld(session, character, loginRetryCount + 1);
+                    });
+                    retryChain.EnqueueChain();
+                    return;
+                }
+            }
+
             DatabaseManager.Shard.GetCharacter(character.Id, fullCharacter =>
             {
                 var start = DateTime.UtcNow;
                 DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
                 {
                     log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
-                    ActionQueue.EnqueueAction(new ActionEventDelegate(() => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas)));
+                    ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas)));
                 });
             });            
         }
@@ -248,7 +291,7 @@ namespace ACE.Server.Managers
 
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(5.0f);
-                actionChain.AddAction(session.Player, () =>
+                actionChain.AddAction(session.Player, ActionType.Landblock_TeleportPlayerAfterFailureToAdd, () =>
                 {
                     if (session != null && session.Player != null)
                         session.Player.Teleport(fixLoc);
@@ -257,16 +300,16 @@ namespace ACE.Server.Managers
             }
 
             // These warnings are set by DDD_InterrogationResponse
-            if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && PropertyManager.GetBool("show_dat_warning").Item)
+            if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && PropertyManager.GetBool("show_dat_warning"))
             {
-                var msg = PropertyManager.GetString("dat_older_warning_msg").Item;
+                var msg = PropertyManager.GetString("dat_older_warning_msg");
                 var chatMsg = new GameMessageSystemChat(msg, ChatMessageType.System);
                 session.Network.EnqueueSend(chatMsg);
             }
 
-            var popup_header = PropertyManager.GetString("popup_header").Item;
-            var popup_motd = PropertyManager.GetString("popup_motd").Item;
-            var popup_welcome = player.IsOlthoiPlayer ? PropertyManager.GetString("popup_welcome_olthoi").Item : PropertyManager.GetString("popup_welcome").Item;
+            var popup_header = PropertyManager.GetString("popup_header");
+            var popup_motd = PropertyManager.GetString("popup_motd");
+            var popup_welcome = player.IsOlthoiPlayer ? PropertyManager.GetString("popup_welcome_olthoi") : PropertyManager.GetString("popup_welcome");
 
             if (character.TotalLogins <= 1)
             {
@@ -283,7 +326,7 @@ namespace ACE.Server.Managers
             var info = "Welcome to Asheron's Call\n  powered by ACEmulator\n\nFor more information on commands supported by this server, type @acehelp\n";
             session.Network.EnqueueSend(new GameMessageSystemChat(info, ChatMessageType.Broadcast));
 
-            var server_motd = PropertyManager.GetString("server_motd").Item;
+            var server_motd = PropertyManager.GetString("server_motd");
             if (!string.IsNullOrEmpty(server_motd))
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{server_motd}\n", ChatMessageType.Broadcast));
 
@@ -312,13 +355,13 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void ThreadSafeTeleport(Player player, Position newPosition, IAction actionToFollowUpWith = null, bool fromPortal = false)
         {
-            EnqueueAction(new ActionEventDelegate(() =>
+            EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_ThreadSafeTeleport, () =>
             {
                 player.Teleport(newPosition, fromPortal);
 
-                if (actionToFollowUpWith != null)
-                    EnqueueAction(actionToFollowUpWith);
-            }));
+                    if (actionToFollowUpWith != null)
+                        EnqueueAction(actionToFollowUpWith);
+                }));
         }
 
         public static void EnqueueAction(IAction action)
@@ -451,5 +494,36 @@ namespace ACE.Server.Managers
         /// Function to begin ending the operations inside of an active world.
         /// </summary>
         public static void StopWorld() { pendingWorldStop = true; }
+        
+        private static void SendLoginBlockDiscordAlert(string characterName, double timeWaiting)
+        {
+            var now = DateTime.UtcNow;
+            
+            if ((now - lastLoginBlockAlert).TotalMinutes >= 1)
+                loginBlockAlertsThisMinute = 0;
+            
+            var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3);
+            if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
+                return;
+            
+            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                return;
+            
+            try
+            {
+                var msg = $"⚠️ **LOGIN DELAYED**: `{characterName}` tried to login during save (pending {timeWaiting:N0}ms). Delayed 2s to prevent item loss.";
+                
+                DiscordChatManager.SendDiscordMessage("ITEM LOSS PREVENTION", msg, 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                
+                loginBlockAlertsThisMinute++;
+                lastLoginBlockAlert = now;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to send login block alert to Discord: {ex.Message}");
+            }
+        }
     }
 }

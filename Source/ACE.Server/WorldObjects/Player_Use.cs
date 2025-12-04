@@ -238,7 +238,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(LastUseTime);
-            actionChain.AddAction(this, () => SendUseDoneEvent());
+            actionChain.AddAction(this, ActionType.PlayerUse_SendUseDoneEvent, () => SendUseDoneEvent());
             actionChain.EnqueueChain();
 
             NextUseTime = DateTime.UtcNow + TimeSpan.FromSeconds(LastUseTime);
@@ -277,7 +277,7 @@ namespace ACE.Server.WorldObjects
 
         public void ApplyConsumable(MotionCommand useMotion, Action action, float animMod = 1.0f)
         {
-            if (PropertyManager.GetBool("allow_fast_chug").Item && FastTick)
+            if (PropertyManager.GetBool("allow_fast_chug") && FastTick)
             {
                 ApplyConsumableWithAnimationCallbacks(useMotion, action);
                 return;
@@ -300,7 +300,7 @@ namespace ACE.Server.WorldObjects
             animTime += useAnimTime;
 
             // apply consumable
-            actionChain.AddAction(this, action);
+            actionChain.AddAction(this, ActionType.PlayerUse_ApplyConsumableAction, action);
 
             if (animMod == 1.0f)
             {
@@ -313,7 +313,7 @@ namespace ACE.Server.WorldObjects
             if (prevStance != MotionStance.NonCombat)
                 animTime += EnqueueMotion_Force(actionChain, prevStance, MotionCommand.Ready, MotionCommand.NonCombat);
 
-            actionChain.AddAction(this, () => { IsBusy = false; });
+            actionChain.AddAction(this, ActionType.PlayerUse_SetNonBusy, () => { IsBusy = false; });
 
             actionChain.EnqueueChain();
 
@@ -388,7 +388,7 @@ namespace ACE.Server.WorldObjects
                 if (prevStance != MotionStance.NonCombat)
                     animTime += EnqueueMotion_Force(actionChain, prevStance, MotionCommand.Ready, MotionCommand.NonCombat);
 
-                actionChain.AddAction(this, () =>
+                actionChain.AddAction(this, ActionType.PlayerUse_SendUseDoneEvent, () =>
                 {
                     SendUseDoneEvent();
                     IsBusy = false;

@@ -376,11 +376,16 @@ namespace ACE.Server.Network
             }
 
             ServerPacket reqPacket = new ServerPacket();
-            byte[] reqData = new byte[4 + (needSeq.Count * 4)];
-            MemoryStream msReqData = new MemoryStream(reqData, 0, reqData.Length, true, true);
-            msReqData.Write(BitConverter.GetBytes((uint)needSeq.Count), 0, 4);
-            needSeq.ForEach(k => msReqData.Write(BitConverter.GetBytes(k), 0, 4));
-            reqPacket.Data = msReqData;
+            int reqDataLength = 4 + (needSeq.Count * 4);
+            using (MemoryStream msReqData = new MemoryStream(reqDataLength))
+            using (BinaryWriter writer = new BinaryWriter(msReqData))
+            {
+                writer.Write((uint)needSeq.Count);
+                foreach (var seq in needSeq)
+                    writer.Write(seq);
+                
+                reqPacket.Data = new MemoryStream(msReqData.ToArray());
+            }
             reqPacket.Header.Flags = PacketHeaderFlags.RequestRetransmit;
 
             EnqueueSend(reqPacket);
@@ -467,7 +472,8 @@ namespace ACE.Server.Network
                         // The buffer is complete, so we can go ahead and handle
                         packetLog.DebugFormat("[{0}] Buffer {1} is complete", session.LoggingIdentifier, buffer.Sequence);
                         message = buffer.TryGetMessage();
-                        partialFragments.TryRemove(fragment.Header.Sequence, out _);
+                        if (partialFragments.TryRemove(fragment.Header.Sequence, out var removedBuffer))
+                            removedBuffer?.Dispose();
                     }
                 }
                 else
@@ -681,7 +687,7 @@ namespace ACE.Server.Network
             }
 
             var actionChain = new ActionChain();
-            actionChain.AddAction(session.Player, () =>
+            actionChain.AddAction(session.Player, ActionType.Player_ForceLogOff, () =>
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat(clientMessage, ChatMessageType.Broadcast));
                 session.LogOffPlayer();
@@ -953,7 +959,11 @@ namespace ACE.Server.Network
                 currentBundles[i] = null;
 
             outOfOrderPackets.Clear();
+            
+            foreach (var buffer in partialFragments.Values)
+                buffer?.Dispose();
             partialFragments.Clear();
+            
             outOfOrderFragments.Clear();
 
             cachedPackets.Clear();

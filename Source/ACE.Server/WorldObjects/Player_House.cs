@@ -73,7 +73,7 @@ namespace ACE.Server.WorldObjects
 
             if (slumlord.AllegianceMinLevel != null)
             {
-                var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1).Item;
+                var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
                 if (allegianceMinLevel == -1)
                     allegianceMinLevel = slumlord.AllegianceMinLevel.Value;
 
@@ -87,7 +87,7 @@ namespace ACE.Server.WorldObjects
 
             if (slumlord.House.HouseType != HouseType.Apartment)
             {
-                if (PropertyManager.GetBool("house_15day_account").Item && !Account15Days)
+                if (PropertyManager.GetBool("house_15day_account") && !Account15Days)
                 {
                     var accountTimeSpan = DateTime.UtcNow - Account.CreateTime;
                     if (accountTimeSpan.TotalDays < 15)
@@ -99,7 +99,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (PropertyManager.GetBool("house_30day_cooldown").Item)
+                if (PropertyManager.GetBool("house_30day_cooldown"))
                 {
                     // fix gap
                     if (!Account15Days) ManageAccount15Days_HousePurchaseTimestamp();
@@ -206,7 +206,7 @@ namespace ACE.Server.WorldObjects
                 var characterHouses = HouseManager.GetCharacterHouses(owner.Guid.Full);
                 var accountHouses = HouseManager.GetAccountHouses(owner.Account.AccountId);
 
-                var ownerHouses = PropertyManager.GetBool("house_per_char").Item ? characterHouses : accountHouses;
+                var ownerHouses = PropertyManager.GetBool("house_per_char") ? characterHouses : accountHouses;
 
                 if (ownerHouses.Count() > 1)
                 {
@@ -225,7 +225,7 @@ namespace ACE.Server.WorldObjects
             logLine += "Required items:";
             foreach (var buyItem in rentItems)
             {
-                var stackStr = buyItem.StackSize != null && buyItem.StackSize > 1 ? buyItem.StackSize.ToString() + " " : "";
+                var stackStr = buyItem.Num > 1 ? buyItem.Num.ToString() + " " : "";
                 //Console.WriteLine($"{stackStr}{buyItem.Name}");
                 logLine += $"{stackStr}{buyItem.Name}" + Environment.NewLine;
             }
@@ -374,7 +374,8 @@ namespace ACE.Server.WorldObjects
             }
 
             // remove entire item from player's inventory
-            if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.SpendItem))
+            bool deferSave = true;
+            if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.SpendItem, deferSave))
             {
                 log.Error($"[HOUSE] {Name}.TryMoveItemForRent({slumlord.Name} ({slumlord.Guid}), {item.Name} ({item.Guid}) ) - TryRemoveFromInventoryWithNetworking failed!");
                 return false;
@@ -531,7 +532,7 @@ namespace ACE.Server.WorldObjects
             {
                 var evictChain = new ActionChain();
                 evictChain.AddDelaySeconds(5.0f);   // todo: need inventory callback
-                evictChain.AddAction(this, HandleEviction);
+                evictChain.AddAction(this, ActionType.PlayerHouse_HandleEvictionOnLogin, HandleEviction);
                 evictChain.EnqueueChain();
                 return;
             }
@@ -568,16 +569,16 @@ namespace ACE.Server.WorldObjects
         {
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(5.0f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerHouse_NotificationsOnLogin, () =>
             {
                 if (House == null || House.SlumLord == null) return;
 
-                if (House.HouseStatus == HouseStatus.Active && !House.SlumLord.IsRentPaid() && PropertyManager.GetBool("house_rent_enabled", true).Item)
+                if (House.HouseStatus == HouseStatus.Active && !House.SlumLord.IsRentPaid() && PropertyManager.GetBool("house_rent_enabled", true))
                 {
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning!  You have not paid your maintenance costs for the last {(House.IsApartment ? "90" : "30")} day maintenance period.  Please pay these costs by this deadline or you will lose your house, and all your items within it.", ChatMessageType.System));
                 }
 
-                if (House.HouseOwner == Guid.Full && !House.SlumLord.HasRequirements(this) && PropertyManager.GetBool("house_purchase_requirements").Item)
+                if (House.HouseOwner == Guid.Full && !House.SlumLord.HasRequirements(this) && PropertyManager.GetBool("house_purchase_requirements"))
                 {
                     var rankStr = AllegianceNode != null ? $"{AllegianceNode.Rank}" : "";
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning!  Your allegiance rank {rankStr} is now below the requirements for owning a mansion.  Please raise your allegiance rank to {House.SlumLord.GetAllegianceMinLevel()} before the end of the maintenance period or you will lose your mansion, and all your items within it.", ChatMessageType.System));
@@ -657,7 +658,7 @@ namespace ACE.Server.WorldObjects
             // why has this changed? use callback?
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(3.0f);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerHouse_SetHouseDataOnOwnerChange, () =>
             {
                 HandleActionQueryHouse();
                 house.UpdateRestrictionDB();
@@ -727,7 +728,7 @@ namespace ACE.Server.WorldObjects
             logLine += "Required items:";
             foreach (var buyItem in buyItems)
             {
-                var stackStr = buyItem.StackSize != null && buyItem.StackSize > 1 ? buyItem.StackSize.ToString() + " " : "";
+                var stackStr = buyItem.Num > 1 ? buyItem.Num.ToString() + " " : "";
                 //Console.WriteLine($"{stackStr}{buyItem.Name}");
                 logLine += $"{stackStr}{buyItem.Name}" + Environment.NewLine;
             }
@@ -769,7 +770,7 @@ namespace ACE.Server.WorldObjects
         /// Returns TRUE if player inventory contains the required items to purchase house
         /// </summary>
         /// <param name="items">The items required to purchase a house</param>
-        public bool HasItems(List<WorldObject> sentItems, List<WorldObject> buyItems)
+        public bool HasItems(List<WorldObject> sentItems, List<HousePayment> buyItems)
         {
             // requires: no duplicate individual items in list,
             // ie. items have already been stacked
@@ -778,7 +779,7 @@ namespace ACE.Server.WorldObjects
                 // special handling for currency
                 if (buyItem.Name.Equals("Pyreal"))
                 {
-                    if (!HasCurrency(sentItems, (uint)(buyItem.StackSize ?? 1)))
+                    if (!HasCurrency(sentItems, (uint)(buyItem.Num)))
                         return false;
                 }
                 else if (!HasItem(sentItems, buyItem))
@@ -791,14 +792,14 @@ namespace ACE.Server.WorldObjects
         /// Returns TRUE if player inventory contains an item required to purchase house
         /// </summary>
         /// <param name="item">An item to search for, using stack size as the minimum amount</param>
-        public bool HasItem(List<WorldObject> sentItems, WorldObject buyItem)
+        public bool HasItem(List<WorldObject> sentItems, HousePayment buyItem)
         {
-            var stackStr = buyItem.StackSize != null && buyItem.StackSize > 1 ? buyItem.StackSize.ToString() + " " : "";
+            var stackStr =  buyItem.Num > 1 ? buyItem.Num.ToString() + " " : "";
             //Console.WriteLine($"Checking for item: {stackStr}{buyItem.Name}");
             log.Info($"[HOUSE] Checking for item: {stackStr}{buyItem.Name}");
 
             // get all items of this wcid from inventory
-            var itemMatches = sentItems.Where(i => i.WeenieClassId == buyItem.WeenieClassId).ToList();
+            var itemMatches = sentItems.Where(i => i.WeenieClassId == buyItem.WeenieID).ToList();
             var totalStack = itemMatches.Select(i => (int)(i.StackSize ?? 1)).Sum();
 
             if (itemMatches.Count == 0)
@@ -807,7 +808,7 @@ namespace ACE.Server.WorldObjects
                 log.Info($"[HOUSE] No matching items found.");
                 return false;
             }
-            var required = buyItem.StackSize ?? 1;
+            var required = buyItem.Num;
             if (totalStack < required)
             {
                 //Console.WriteLine($"Found {totalStack} items, requires {required}.");
@@ -879,7 +880,7 @@ namespace ACE.Server.WorldObjects
 
             // if server is running house_per_char mode (non-default),
             // only use the HouseInstance for the current character
-            if (PropertyManager.GetBool("house_per_char").Item)
+            if (PropertyManager.GetBool("house_per_char"))
                 return this;
 
             // else return the account house owner
@@ -1742,7 +1743,7 @@ namespace ACE.Server.WorldObjects
 
         public static List<IPlayer> GetAccountPlayers(uint accountID)
         {
-            return PlayerManager.GetAllPlayers().Where(i => i.Account != null && i.Account.AccountId == accountID).ToList();
+            return PlayerManager.FindAllPlayers(p => p.Account?.AccountId == accountID);
         }
 
         public IPlayer GetAccountHouseOwner()
@@ -1799,7 +1800,7 @@ namespace ACE.Server.WorldObjects
             //if (showMsg)
                 //Session.Network.EnqueueSend(new GameMessageSystemChat($"AccountHouses: {accountHouses.Count}, CharacterHouses: {characterHouses.Count}", ChatMessageType.Broadcast));
 
-            if (PropertyManager.GetBool("house_per_char").Item)
+            if (PropertyManager.GetBool("house_per_char"))
             {
                 // 1 house per character
                 if (characterHouses.Count > 1 && showMsg)
@@ -1819,7 +1820,7 @@ namespace ACE.Server.WorldObjects
 
         public List<House> GetMultiHouses()
         {
-            if (PropertyManager.GetBool("house_per_char").Item)
+            if (PropertyManager.GetBool("house_per_char"))
                 return HouseManager.GetCharacterHouses(Guid.Full);
             else
                 return HouseManager.GetAccountHouses(Account.AccountId);
@@ -1866,7 +1867,7 @@ namespace ACE.Server.WorldObjects
 
             if (HouseRentTimestamp != null) return;
 
-            if (PropertyManager.GetBool("house_15day_account").Item && !Account15Days)
+            if (PropertyManager.GetBool("house_15day_account") && !Account15Days)
             {
                 // this is set so the next purchase time displays properly on house tab
                 HousePurchaseTimestamp = FifteenDaysBeforeAccountCreation;

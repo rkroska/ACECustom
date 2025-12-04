@@ -63,7 +63,7 @@ namespace ACE.Server.WorldObjects
 
         public void ActOnJoin(Player player)
         {
-            if (!PropertyManager.GetBool("chess_enabled").Item)
+            if (!PropertyManager.GetBool("chess_enabled"))
             {
                 ActOnJoin_Legacy(player);
                 return;
@@ -227,7 +227,7 @@ namespace ACE.Server.WorldObjects
             // For HellsWrath...
             ActionChain gdlChain = new ActionChain();
             gdlChain.AddDelaySeconds(5);
-            gdlChain.AddAction(this, () =>
+            gdlChain.AddAction(this, ActionType.Game_GameOverCleanup, () =>
             {
                 drudgeRook1.Kill();
                 drudgeBishop1.Kill();
@@ -269,7 +269,7 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(msgGameOver);
             });
             gdlChain.AddDelaySeconds(2);
-            gdlChain.AddAction(this, () =>
+            gdlChain.AddAction(this, ActionType.Game_GameOverStats, () =>
             {
                 byte[] msg = Convert.FromBase64String("Z2FtZXNkZWFkbG9s");
                 var popupGDL = new GameEventPopupString(player.Session, System.Text.Encoding.UTF8.GetString(msg, 0, msg.Length));

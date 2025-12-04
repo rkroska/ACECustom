@@ -17,6 +17,7 @@
     <RetainVMGarbageCollection>true</RetainVMGarbageCollection>
   </PropertyGroup>
 
+
   <PropertyGroup>
     <Authors>ACEmulator Contributors</Authors>
     <RepositoryType>git</RepositoryType>
@@ -287,17 +288,6 @@
     <None Update="start_server.bat">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="..\..\Database\Archive\**" CopyToOutputDirectory="PreserveNewest" LinkBase="DatabaseSetupScripts\Archive\" />
-    <None Include="..\..\Database\Base\**" CopyToOutputDirectory="PreserveNewest" LinkBase="DatabaseSetupScripts\Base\" />
-    <None Include="..\..\Database\Updates\**" CopyToOutputDirectory="PreserveNewest" LinkBase="DatabaseSetupScripts\Updates\" />
-    <None Include="..\..\Database\Optional\**" CopyToOutputDirectory="PreserveNewest" LinkBase="DatabaseSetupScripts\Optional\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Remove="..\..\Database\Updates\Shard\ace_shard_biota_props.sql" />
   </ItemGroup>
 
   <Target Name="ChangeAliasesOfStrongNameAssemblies" BeforeTargets="FindReferenceAssembliesForReferences;ResolveReferences">

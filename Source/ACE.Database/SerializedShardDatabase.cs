@@ -18,6 +18,17 @@ namespace ACE.Database
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // Given a task, returns the string key that uniquely identifies it, or throws an exception if a string key does not exist.
+        private static string GetUniqueTaskKey(Task t)
+        {
+            string key = t.AsyncState as string;
+            if (string.IsNullOrEmpty(key))
+            {
+                throw new InvalidOperationException("UniqueQueue keying failed: Task.AsyncState must be a non-null, non-empty string.");
+            }
+            return key;
+        }
+
         /// <summary>
         /// This is the base database that SerializedShardDatabase is a wrapper for.
         /// </summary>
@@ -25,11 +36,12 @@ namespace ACE.Database
 
         protected readonly Stopwatch stopwatch = new Stopwatch();
 
-        private readonly BlockingCollection<Task> _queue = new BlockingCollection<Task>();
         private readonly BlockingCollection<Task> _readOnlyQueue = new BlockingCollection<Task>();
+        private readonly UniqueQueue<Task, string> _uniqueQueue = new(t => GetUniqueTaskKey(t));
+        private bool _workerThreadRunning = true;
 
-        private Thread _workerThread;
         private Thread _workerThreadReadOnly;
+        private Thread _workerThread;
 
         internal SerializedShardDatabase(ShardDatabase shardDatabase)
         {
@@ -38,25 +50,41 @@ namespace ACE.Database
 
         public void Start()
         {
-            _workerThread = new Thread(DoWork)
-            {
-                Name = "Serialized Shard Database - Saving"
-            };
+
             _workerThreadReadOnly = new Thread(DoReadOnlyWork)
             {
                 Name = "Serialized Shard Database - Reading"
             };
-            _workerThread.Start();
+            _workerThread = new Thread(DoSaves)
+            {
+                Name = "Serialized Shard Database - Character Saves"
+            };
+
             _workerThreadReadOnly.Start();
+            _workerThread.Start();
             stopwatch.Start();
         }
 
         public void Stop()
         {
-            _queue.CompleteAdding();
+            _workerThreadRunning = false;
             _readOnlyQueue.CompleteAdding();
-            _workerThread.Join();
             _workerThreadReadOnly.Join();
+            _workerThread.Join();
+
+            // Dispose collections to release sync primitives
+            _readOnlyQueue.Dispose();
+            _uniqueQueue.Dispose();
+        }
+
+        public List<string> QueueReport()
+        {
+            return _uniqueQueue.ToArray().Select(t => t.AsyncState as string ?? $"Task#{t.Id}").ToList();
+        }
+
+        public List<string> ReadOnlyQueueReport()
+        {
+            return _readOnlyQueue.Select(t => t.AsyncState as string ?? $"Task#{t.Id}").ToList();
         }
 
         private void DoReadOnlyWork()
@@ -74,22 +102,22 @@ namespace ACE.Database
                         {
                             // no task to process, continue
                             continue;
-                        }   
+                        }
                         t.Start();
                     }
                     catch (Exception e)
                     {
                         log.Error($"[DATABASE] DoReadOnlyWork task failed with exception: {e}");
-                    }                   
+                    }
                 }
                 catch (ObjectDisposedException)
                 {
-                    // the _queue has been disposed, we're good
+                    // the _readOnlyQueue has been disposed, we're good
                     break;
                 }
                 catch (InvalidOperationException)
                 {
-                    // _queue is empty and CompleteForAdding has been called -- we're done here
+                    // _readOnlyQueue is empty and CompleteForAdding has been called -- we're done here
                     break;
                 }
                 catch (NullReferenceException)
@@ -98,60 +126,63 @@ namespace ACE.Database
                 }
             }
         }
-        private void DoWork()
+        private void DoSaves()
         {
-            while (!_queue.IsAddingCompleted)
+            while (_workerThreadRunning || _uniqueQueue.Count > 0)
             {
                 try
                 {
-
-                    Task t;
-                    bool tasked = _queue.TryTake(out t);
+                    if (_uniqueQueue.Count == 0)
+                    {
+                        Thread.Sleep(10); //thread sleep to avoid busy waiting
+                        continue;
+                    }
+                    Task t = _uniqueQueue.Dequeue();
 
                     try
                     {
-                        if (!tasked)
+                        if (t == null)
                         {
                             continue; // no task to process, continue
                         }
                         stopwatch.Restart();
                         t.Start();
-                        if (t.AsyncState != null && (t.AsyncState.ToString().Contains("GetPossessedBiotasInParallel") ||
-                                                        t.AsyncState.ToString().Contains("GetMaxGuidFoundInRange") ||
-                                                        t.AsyncState.ToString().Contains("GetSequenceGaps") ||
-                                                        t.AsyncState.ToString().Contains("GetInventoryInParallel") ||
-                                                        t.AsyncState.ToString().Contains("GetCharacter")))
-                        {
-                            //continue on background thread
-                        }
-                        else
-                        {
-                            t.Wait();
-                        }
-                            
-                        if (stopwatch.Elapsed.Seconds >= 5)
+
+                        t.Wait();
+
+
+                        if (stopwatch.ElapsedMilliseconds >= 5000)
                         {
                             log.Error(
-                                $"Task: {t.AsyncState?.ToString()} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_queue.Count}");
+                                $"Task: {t.AsyncState as string ?? $"Task#{t.Id}"} taken {stopwatch.ElapsedMilliseconds}ms, queue: {_uniqueQueue.Count}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"[DATABASE] DoWork task failed with exception: {ex}");
+                        log.Error($"[DATABASE] DoCharacterSaves task failed with exception: {ex}");
                         // perhaps add failure callbacks?
                         // swallow for now.  can't block other db work because 1 fails.
                     }
-                    
+
                 }
                 catch (ObjectDisposedException)
                 {
-                    // the _queue has been disposed, we're good
+                    // the _uniqueQueue has been disposed, we're good
                     break;
                 }
                 catch (InvalidOperationException)
                 {
-                    // _queue is empty and CompleteForAdding has been called -- we're done here
-                    break;
+                    // _uniqueQueue is empty and CompleteForAdding has been called -- we're done here
+                    if (!_workerThreadRunning)
+                    {
+                        log.Info("[DATABASE] DoSaves: No more tasks to process, exiting.");
+                        break;
+                    }
+                    else
+                    {
+                        log.Warn("[DATABASE] DoSaves: Queue is empty but worker thread is still running.");
+                        continue; // keep waiting for more tasks
+                    }
                 }
                 catch (NullReferenceException)
                 {
@@ -161,16 +192,18 @@ namespace ACE.Database
         }
 
 
-        public int QueueCount => _queue.Count;
+        public int QueueCount => _uniqueQueue.Count;
 
         public void GetCurrentQueueWaitTime(Action<TimeSpan> callback)
         {
             var initialCallTime = DateTime.UtcNow;
+            // Use unique key per request to prevent callback dropping
+            var taskId = $"GetCurrentQueueWaitTime:{initialCallTime.Ticks}";
 
-            _queue.Add(new Task(() =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 callback?.Invoke(DateTime.UtcNow - initialCallTime);
-            }));
+            }, taskId));
         }
 
 
@@ -202,7 +235,7 @@ namespace ACE.Database
 
         public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _queue.Add(new Task((x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var result = BaseDatabase.SaveBiota(biota, rwLock);
                 callback?.Invoke(result);
@@ -212,7 +245,7 @@ namespace ACE.Database
 
         public void SaveBiotasInParallel(IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> biotas, Action<bool> callback, string sourceTrace)
         {
-            _queue.Add(new Task((x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var result = BaseDatabase.SaveBiotasInParallel(biotas);
                 callback?.Invoke(result);
@@ -221,7 +254,7 @@ namespace ACE.Database
 
         public void RemoveBiota(uint id, Action<bool> callback)
         {
-            _queue.Add(new Task((x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var result = BaseDatabase.RemoveBiota(id);
                 callback?.Invoke(result);
@@ -232,7 +265,7 @@ namespace ACE.Database
         {
             var initialCallTime = DateTime.UtcNow;
 
-            _queue.Add(new Task( (x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var taskStartTime = DateTime.UtcNow;
                 var result = BaseDatabase.RemoveBiota(id);
@@ -245,15 +278,17 @@ namespace ACE.Database
         public void RemoveBiotasInParallel(IEnumerable<uint> ids, Action<bool> callback, Action<TimeSpan, TimeSpan> performanceResults)
         {
             var initialCallTime = DateTime.UtcNow;
+            // Create a deterministic key so repeated calls for the same set coalesce
+            var idKey = "RemoveBiotasInParallel:" + string.Join(",", ids.OrderBy(i => i));
 
-            _queue.Add(new Task((x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var taskStartTime = DateTime.UtcNow;
                 var result = BaseDatabase.RemoveBiotasInParallel(ids);
                 var taskCompletedTime = DateTime.UtcNow;
                 callback?.Invoke(result);
                 performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
-            }, "RemoveBiotasInParallel: " +ids.Count()));
+            }, idKey));
         }
 
 
@@ -279,11 +314,11 @@ namespace ACE.Database
 
         public void IsCharacterNameAvailable(string name, Action<bool> callback)
         {
-            _readOnlyQueue.Add(new Task(() =>
+            _readOnlyQueue.Add(new Task((x) =>
             {
                 var result = BaseDatabase.IsCharacterNameAvailable(name);
                 callback?.Invoke(result);
-            }));
+            }, "IsCharacterNameAvailable: " + name));
         }
 
         public void GetCharacters(uint accountId, bool includeDeleted, Action<List<Character>> callback)
@@ -292,7 +327,7 @@ namespace ACE.Database
             {
                 var result = BaseDatabase.GetCharacters(accountId, includeDeleted);
                 callback?.Invoke(result);
-            }, "GetCharacters: " + accountId ));
+            }, "GetCharacters: " + accountId));
         }
 
         public void GetLoginCharacters(uint accountId, bool includeDeleted, Action<List<LoginCharacter>> callback)
@@ -315,30 +350,25 @@ namespace ACE.Database
 
         public Character GetCharacterSynchronous(uint characterId)
         {
-            return BaseDatabase.GetCharacter(characterId);            
+            return BaseDatabase.GetCharacter(characterId);
         }
-        
+
         public void SaveCharacter(Character character, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _queue.Add(new Task((x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var result = BaseDatabase.SaveCharacter(character, rwLock);
                 callback?.Invoke(result);
             }, "SaveCharacter: " + character.Id));
         }
 
-        public bool SaveCharacterSynchronous(Character character, ReaderWriterLockSlim rwLock)
-        {
-            return BaseDatabase.SaveCharacter(character, rwLock);
-        }
-
         public void RenameCharacter(Character character, string newName, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _queue.Add(new Task(() =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var result = BaseDatabase.RenameCharacter(character, newName, rwLock);
                 callback?.Invoke(result);
-            }));
+            }, "RenameCharacter: " + character.Id));
         }
 
         public void SetCharacterAccessLevelByName(string name, AccessLevel accessLevel, Action<uint> callback)
@@ -350,11 +380,73 @@ namespace ACE.Database
 
         public void AddCharacterInParallel(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock, Action<bool> callback)
         {
-            _queue.Add(new Task((x) =>
+            _uniqueQueue.Enqueue(new Task((x) =>
             {
                 var result = BaseDatabase.AddCharacterInParallel(biota, biotaLock, possessions, character, characterLock);
                 callback?.Invoke(result);
             }, "AddCharacterInParallel: " + character.Id));
         }
+
+        /// <summary>
+        /// Queues offline player saves to be processed in the background
+        /// </summary>
+        public void QueueOfflinePlayerSaves(Action<bool> callback = null)
+        {
+            // Use a stable key so multiple enqueues collapse to the most recent
+            var taskId = "OfflinePlayerSaves";
+            _uniqueQueue.Enqueue(new Task((x) =>
+            {
+                var success = false;
+                var startTime = DateTime.UtcNow;
+                try
+                {
+                    // Import the PlayerManager to avoid circular dependencies
+                    var playerManagerType = Type.GetType("ACE.Server.Managers.PlayerManager, ACE.Server");
+                    if (playerManagerType == null)
+                    {
+                        log.Warn("[DATABASE] PlayerManager type not found; offline save skipped.");
+                    }
+                    else
+                    {
+                        // Call the existing SaveOfflinePlayersWithChanges method directly
+                        var saveMethod = playerManagerType.GetMethod(
+                            "PerformOfflinePlayerSaves",
+                            System.Reflection.BindingFlags.Public
+                              | System.Reflection.BindingFlags.Static
+                              | System.Reflection.BindingFlags.NonPublic,
+                            null,
+                            Type.EmptyTypes,
+                            null);
+
+                        if (saveMethod == null)
+                        {
+                            log.Warn("[DATABASE] PerformOfflinePlayerSaves method not found on PlayerManager; offline save skipped.");
+                        }
+                        else
+                        {
+                            log.Info("[DATABASE] Calling PlayerManager.PerformOfflinePlayerSaves() via reflection");
+                            saveMethod.Invoke(null, null);
+                            success = true;
+                            log.Info("[DATABASE] Successfully called PerformOfflinePlayerSaves");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[DATABASE] Offline player save task failed with exception: {ex}");
+                }
+                finally
+                {
+                    var elapsed = DateTime.UtcNow - startTime;
+                    if (elapsed.TotalMilliseconds >= 5000)
+                    {
+                        log.Warn($"[DATABASE] OfflinePlayerSaves task took {elapsed.TotalMilliseconds:N0}ms to complete");
+                    }
+                    callback?.Invoke(success);
+                }
+            }, taskId));
+        }
+
+
     }
 }

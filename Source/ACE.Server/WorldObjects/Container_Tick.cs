@@ -13,8 +13,11 @@ namespace ACE.Server.WorldObjects
             // TODO: fix bug for landblock containers w/ no heartbeat
             Inventory_Tick(this);
 
-            foreach (var subcontainer in Inventory.Values.OfType<Container>())
-                subcontainer.Inventory_Tick(this);
+            foreach (var item in Inventory.Values)
+            {
+                if (item is Container subcontainer)
+                    subcontainer.Inventory_Tick(this);
+            }
 
             // for landblock containers
             if (IsOpen && CurrentLandblock != null)
@@ -39,9 +42,11 @@ namespace ACE.Server.WorldObjects
         {
             var expireItems = new List<WorldObject>();
 
-            // added where clause
-            foreach (var wo in Inventory.Values.Where(i => i.EnchantmentManager.HasEnchantments || i.Lifespan.HasValue))
+            foreach (var wo in Inventory.Values)
             {
+                if (!wo.EnchantmentManager.HasEnchantments && !wo.Lifespan.HasValue)
+                    continue;
+
                 // FIXME: wo.NextHeartbeatTime is double.MaxValue here
                 //if (wo.NextHeartbeatTime <= currentUnixTime)
                     //wo.Heartbeat(currentUnixTime);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 using ACE.Common;
 using ACE.Common.Extensions;
@@ -22,6 +23,64 @@ namespace ACE.Server.WorldObjects
         /// Monsters wake up when players are in visual range
         /// </summary>
         public bool IsAwake = false;
+
+        /// <summary>
+        /// Cache for visible targets to reduce expensive lookups
+        /// </summary>
+        private List<Creature> _cachedVisibleTargets = new List<Creature>();
+        private double _lastTargetCacheTime = 0.0;
+        private const double TARGET_CACHE_DURATION = 0.5; // Cache for 0.5 seconds
+
+        // Multi-target distance cache for BuildTargetDistance to avoid repeated physics calculations
+        // Thread-safe: Monster_Tick runs in single-threaded landblock groups, no concurrent access
+        // Cache lifetime: Cleared in InvalidateTargetCaches() on target change, bounded by active target count (~5-20 entries)
+        // Cache key includes distSq flag to prevent mixing squared and linear distances
+        private Dictionary<(uint TargetId, bool DistSq), float> _multiTargetDistanceCache = new Dictionary<(uint, bool), float>();
+        private double _lastMultiTargetDistanceCacheTime = 0.0;
+        private const double MULTI_TARGET_DISTANCE_CACHE_DURATION = 0.3; // Cache for 0.3 seconds (1 tick)
+        
+        // Pre-filter multiplier for fast distance check - filters out obviously out-of-range creatures
+        // Applied to squared distance: 2.25 = (1.5)^2 to provide 1.5x linear safety margin
+        // This accounts for height differences and collision radii while still filtering 90%+ of creatures
+        private const float QUICK_DISTANCE_CHECK_MULTIPLIER_SQ = 2.25f;
+
+        // Cache performance counters
+        private static long _cacheHits = 0;
+        private static long _cacheMisses = 0;
+
+        /// <summary>
+        /// Invalidates both target and distance caches
+        /// </summary>
+        private void InvalidateTargetCaches()
+        {
+            _cachedVisibleTargets.Clear();
+            _lastTargetCacheTime = 0.0;
+            _multiTargetDistanceCache.Clear();
+            _lastMultiTargetDistanceCacheTime = 0.0;
+            InvalidateDistanceCache();
+        }
+
+        /// <summary>
+        /// Sets the attack target and invalidates all caches in one operation.
+        /// Ensures consistency across all code paths.
+        /// </summary>
+        private void SetAttackTargetAndInvalidate(Creature target)
+        {
+            AttackTarget = target;
+            InvalidateTargetCaches();
+        }
+
+        /// <summary>
+        /// Gets cache performance statistics for monitoring
+        /// </summary>
+        public static (long hits, long misses, double hitRate) GetCacheStats()
+        {
+            var hits = Interlocked.Read(ref _cacheHits);
+            var misses = Interlocked.Read(ref _cacheMisses);
+            var total = hits + misses;
+            var hitRate = total > 0 ? (double)hits / total : 0.0;
+            return (hits, misses, hitRate);
+        }
 
         /// <summary>
         /// Transitions a monster from idle to awake state
@@ -55,6 +114,9 @@ namespace ACE.Server.WorldObjects
             IsAwake = false;
             IsMoving = false;
             MonsterState = State.Idle;
+
+            // Clear both target and distance caches consistently
+            InvalidateTargetCaches();
 
             PhysicsObj.CachedVelocity = Vector3.Zero;
 
@@ -140,7 +202,8 @@ namespace ACE.Server.WorldObjects
                 SelectTargetingTactic();
                 SetNextTargetTime();
 
-                var visibleTargets = GetAttackTargets();
+                // Don't use cached targets for critical target finding decisions
+                var visibleTargets = GetAttackTargetsUncached();
                 if (visibleTargets.Count == 0)
                 {
                     if (MonsterState != State.Return)
@@ -174,7 +237,7 @@ namespace ACE.Server.WorldObjects
                         // this is a very common tactic with monsters,
                         // although it is not truly random, it is weighted by distance
                         var targetDistances = BuildTargetDistance(visibleTargets);
-                        AttackTarget = SelectWeightedDistance(targetDistances);
+                        SetAttackTargetAndInvalidate(SelectWeightedDistance(targetDistances));
                         break;
 
                     case TargetingTactic.Focused:
@@ -185,14 +248,18 @@ namespace ACE.Server.WorldObjects
 
                         var lastDamager = DamageHistory.LastDamager?.TryGetAttacker() as Creature;
                         if (lastDamager != null)
-                            AttackTarget = lastDamager;
+                        {
+                            SetAttackTargetAndInvalidate(lastDamager);
+                        }
                         break;
 
                     case TargetingTactic.TopDamager:
 
                         var topDamager = DamageHistory.TopDamager?.TryGetAttacker() as Creature;
                         if (topDamager != null)
-                            AttackTarget = topDamager;
+                        {
+                            SetAttackTargetAndInvalidate(topDamager);
+                        }
                         break;
 
                     // these below don't seem to be used in PY16 yet...
@@ -203,19 +270,19 @@ namespace ACE.Server.WorldObjects
                         // in case a bunch of levels of same level are in a group,
                         // so the same player isn't always selected
                         var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
-                        AttackTarget = lowestLevel;
+                        SetAttackTargetAndInvalidate(lowestLevel);
                         break;
 
                     case TargetingTactic.Strongest:
 
                         var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
-                        AttackTarget = highestLevel;
+                        SetAttackTargetAndInvalidate(highestLevel);
                         break;
 
                     case TargetingTactic.Nearest:
 
                         var nearest = BuildTargetDistance(visibleTargets);
-                        AttackTarget = nearest[0].Target;
+                        SetAttackTargetAndInvalidate(nearest[0].Target);
                         break;
                 }
 
@@ -234,23 +301,81 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Returns a list of attackable targets currently visible to this monster
+        /// Uses caching to reduce expensive lookups
         /// </summary>
         public List<Creature> GetAttackTargets()
         {
+            var currentTime = Timers.RunningTime;
+            var last = Volatile.Read(ref _lastTargetCacheTime);
+            
+            // Check if cache is still valid
+            if (last > 0.0 && (currentTime - last) < TARGET_CACHE_DURATION)
+            {
+                Interlocked.Increment(ref _cacheHits);
+                return new List<Creature>(_cachedVisibleTargets);
+            }
+            
+            // Cache expired, refresh it
+            Interlocked.Increment(ref _cacheMisses);
+            var visibleTargets = GetAttackTargetsUncached();
+            
+            // Update cache efficiently by clearing and adding items
+            _cachedVisibleTargets.Clear();
+            _cachedVisibleTargets.AddRange(visibleTargets);
+            Volatile.Write(ref _lastTargetCacheTime, currentTime);
+
+            return visibleTargets;
+        }
+
+        /// <summary>
+        /// Returns a list of attackable targets currently visible to this monster
+        /// Always performs fresh calculation (no caching)
+        /// </summary>
+        public List<Creature> GetAttackTargetsUncached()
+        {
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
+            
+            // Pre-calculate max range for early bailout
+            var maxRangeSq = Math.Max(MaxChaseRangeSq, VisualAwarenessRangeSq);
+            
             foreach (var creature in listOfCreatures)
             {
+                // exclude dead creatures
+                if (creature.IsDead)
+                    continue;
+                    
                 // ensure attackable
-                if (!creature.Attackable && creature.TargetingTactic == TargetingTactic.None || creature.Teleporting) continue;
+                if (!creature.Attackable)
+                    continue;
+                    
+                // hidden players shouldn't be valid visible targets
+                if (creature is Player p && (p.Hidden ?? false))
+                    continue;
+                    
+                // Only apply TargetingTactic-based skip to non-players (players are excluded above)
+                if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
+                    continue;
+                    
+                if (creature.Teleporting)
+                    continue;
+
+                if (creature.PhysicsObj == null)
+                    continue;
+
+                // Optimization: Fast approximate range check before expensive physics calculation
+                // Use simple position distance check first to filter out obviously out-of-range creatures
+                // This is MUCH faster than PhysicsObj.get_distance_sq_to_object (no collision checks)
+                var quickDistSq = Location.SquaredDistanceTo(creature.Location);
+                if (quickDistSq > maxRangeSq * QUICK_DISTANCE_CHECK_MULTIPLIER_SQ)
+                    continue;
 
                 // ensure within 'detection radius' ?
                 var chaseDistSq = creature == AttackTarget ? MaxChaseRangeSq : VisualAwarenessRangeSq;
 
-                /*if (Location.SquaredDistanceTo(creature.Location) > chaseDistSq)
-                    continue;*/
-
-                if (PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true) > chaseDistSq)
+                // Now do expensive physics-based distance check only for creatures that passed quick check
+                var physicsDistSq = PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true);
+                if (physicsDistSq > chaseDistSq)
                     continue;
 
                 // if this monster belongs to a faction,
@@ -272,20 +397,45 @@ namespace ACE.Server.WorldObjects
 
                 visibleTargets.Add(creature);
             }
-
             return visibleTargets;
         }
 
         /// <summary>
         /// Returns the list of potential attack targets, sorted by closest distance 
+        /// Uses caching to avoid repeated physics calculations
         /// </summary>
         public List<TargetDistance> BuildTargetDistance(List<Creature> targets, bool distSq = false)
         {
+            var currentTime = Timers.RunningTime;
             var targetDistance = new List<TargetDistance>();
+            var cacheValid = (currentTime - _lastMultiTargetDistanceCacheTime) < MULTI_TARGET_DISTANCE_CACHE_DURATION;
 
             foreach (var target in targets)
-                //targetDistance.Add(new TargetDistance(target, distSq ? Location.SquaredDistanceTo(target.Location) : Location.DistanceTo(target.Location)));
-                targetDistance.Add(new TargetDistance(target, distSq ? (float)PhysicsObj.get_distance_sq_to_object(target.PhysicsObj, true) : (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true)));
+            {
+                var cacheKey = (target.Guid.Full, distSq);
+                float distance;
+                
+                // Try to use cached distance
+                if (cacheValid && _multiTargetDistanceCache.TryGetValue(cacheKey, out distance))
+                {
+                    targetDistance.Add(new TargetDistance(target, distance));
+                }
+                else
+                {
+                    // Defensive: Skip if target was destroyed between filtering and distance calculation
+                    // Extremely rare edge case, but prevents NullReferenceException
+                    if (PhysicsObj == null || target.PhysicsObj == null)
+                        continue;
+                    
+                    // Calculate and cache distance
+                    distance = distSq ? (float)PhysicsObj.get_distance_sq_to_object(target.PhysicsObj, true) : (float)PhysicsObj.get_distance_to_object(target.PhysicsObj, true);
+                    targetDistance.Add(new TargetDistance(target, distance));
+                    _multiTargetDistanceCache[cacheKey] = distance;
+                }
+            }
+            
+            // Update cache timestamp after successful build
+            _lastMultiTargetDistanceCacheTime = currentTime;
 
             return targetDistance.OrderBy(i => i.Distance).ToList();
         }
@@ -339,7 +489,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
             actionChain.AddDelaySeconds(0.75f);
-            actionChain.AddAction(this, CheckTargets_Inner);
+            actionChain.AddAction(this, ActionType.MonsterAwareness_CheckTargetsInner, CheckTargets_Inner);
             actionChain.EnqueueChain();
         }
 
@@ -401,7 +551,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (_visualAwarenessRangeSq == null)
                 {
-                    var visualAwarenessRange = (float)((VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range").Item);
+                    var visualAwarenessRange = (float)((VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range"));
 
                     _visualAwarenessRangeSq = visualAwarenessRange * visualAwarenessRange;
                 }
@@ -418,7 +568,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (_auralAwarenessRangeSq == null)
                 {
-                    var auralAwarenessRange = (float)((AuralAwarenessRange ?? VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range").Item);
+                    var auralAwarenessRange = (float)((AuralAwarenessRange ?? VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range"));
 
                     _auralAwarenessRangeSq = auralAwarenessRange * auralAwarenessRange;
                 }
@@ -518,8 +668,13 @@ namespace ACE.Server.WorldObjects
                 if (creature is Player || creature is CombatPet)
                     continue;
 
-                // ensure attackable
-                if (creature.IsDead || !creature.Attackable && creature.TargetingTactic == TargetingTactic.None || creature.Teleporting)
+                // ensure valid/attackable
+                if (creature.IsDead || creature.Teleporting)
+                    continue;
+                if (!creature.Attackable)
+                    continue;
+                // Don't skip players based on TargetingTactic - that's for monster behavior, not target validity
+                if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
                     continue;
 
                 // ensure another faction

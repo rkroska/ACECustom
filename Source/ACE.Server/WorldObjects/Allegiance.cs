@@ -96,6 +96,12 @@ namespace ACE.Server.WorldObjects
             Init(new ObjectGuid(MonarchId.Value));
         }
 
+        public Allegiance(ObjectGuid monarch) : base(GuidManager.NewDynamicGuid())
+        {
+            //Console.WriteLine($"Allegiance({monarch}): monarch constructor");
+            Init(monarch);
+        }
+
         private void InitializePropertyDictionaries()
         {
             if (Biota.PropertiesAllegiance == null)
@@ -113,15 +119,21 @@ namespace ACE.Server.WorldObjects
             var members = AllegianceManager.FindAllPlayers(monarch);
 
             var patronVassals = BuildPatronVassals(members);
-            
-            Monarch.BuildChain(this, members, patronVassals);
-            BuildMembers(Monarch);
-
+            try
+            {
+                Monarch.BuildChain(this, members, patronVassals);
+                BuildMembers(Monarch);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Console.WriteLine($"Crashing: {Monarch.Player.Name}");                
+            }
             //Console.WriteLine("TotalMembers: " + TotalMembers);
             BuildOfficers();
 
             ChatFilters = new Dictionary<ObjectGuid, DateTime>();
-        }
+        }        
 
         /// <summary>
         /// Build a mapping of patron guids => vassal guids

@@ -172,23 +172,23 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep1, () =>
             {
                 EnqueueBroadcast(false, new GameMessageDeleteObject(this));
             });
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep2, () =>
             {
                 NoDraw = true;
                 EnqueueBroadcastPhysicsState();
                 Visibility = false;
             });
             actionChain.AddDelaySeconds(.5);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep3, () =>
             {
                 EnqueueBroadcast(false, new GameMessageCreateObject(this));
             });
             actionChain.AddDelaySeconds(.5);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep4, () =>
             {
                 Cloaked = false;
                 Ethereal = false;
@@ -207,7 +207,7 @@ namespace ACE.Server.WorldObjects
 
             var actionChain = new ActionChain();
 
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_CloakStep1, () =>
             {
                 Cloaked = true;
                 Ethereal = true;
@@ -215,17 +215,17 @@ namespace ACE.Server.WorldObjects
                 ReportCollisions = false;
                 EnqueueBroadcastPhysicsState();
             });
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_CloakStep2, () =>
             {
                 EnqueueBroadcast(false, new GameMessageDeleteObject(this));
             });
             actionChain.AddDelaySeconds(.5);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_CloakStep3, () =>
             {
                 Visibility = true;
             });
             actionChain.AddDelaySeconds(.5);
-            actionChain.AddAction(this, () =>
+            actionChain.AddAction(this, ActionType.PlayerTracking_CloakStep4, () =>
             {
                 EnqueueBroadcast(false, new GameMessageCreateObject(this, true, true));
             });
@@ -252,7 +252,7 @@ namespace ACE.Server.WorldObjects
             // a DO and then a CO is the only thing that fixes this issue (/objsend can help with this)
             // this part probably deviates from retail a bit, but is the equivalent automated fix
 
-            var fixLevel = PropertyManager.GetLong("teleport_visibility_fix").Item;
+            var fixLevel = PropertyManager.GetLong("teleport_visibility_fix");
 
             // disabled by default
             if (fixLevel < 1) return;

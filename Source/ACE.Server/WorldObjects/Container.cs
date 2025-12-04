@@ -23,6 +23,12 @@ namespace ACE.Server.WorldObjects
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
+        /// Cache for side containers to avoid repeated LINQ scans with large inventories
+        /// </summary>
+        private List<Container> _cachedSideContainers = null;
+        private bool _sideContainersCacheDirty = true;
+
+        /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
         public Container(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
@@ -91,7 +97,7 @@ namespace ACE.Server.WorldObjects
             {
                 DatabaseManager.Shard.GetInventoryInParallel(biota.Id, false, biotas =>
                 {
-                    EnqueueAction(new ActionEventDelegate(() => SortBiotasIntoInventory(biotas)));
+                    EnqueueAction(new ActionEventDelegate(ActionType.Container_SortBiotasIntoInventory, () => SortBiotasIntoInventory(biotas)));
                 });
             }
         }
@@ -140,7 +146,33 @@ namespace ACE.Server.WorldObjects
             var worldObjects = new List<WorldObject>();
 
             foreach (var biota in biotas)
-                worldObjects.Add(WorldObjectFactory.CreateWorldObject(biota));
+            {
+                if (biota == null)
+                {
+                    log.Error($"Null biota detected in inventory loading for container {Name} (0x{Guid:X8}). Skipping null biota.");
+                    continue;
+                }
+                
+                // DEBUG: Check ContainerId in the biota BEFORE creating WorldObject
+                uint? biotaContainerId = null;
+                if (biota.BiotaPropertiesIID != null)
+                {
+                    var containerProp = biota.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container);
+                    if (containerProp != null)
+                        biotaContainerId = containerProp.Value;
+                }
+
+                var worldObject = WorldObjectFactory.CreateWorldObject(biota);
+                if (worldObject != null)
+                {
+                    // DEBUG: Check ContainerId after WorldObject creation
+                    log.Debug($"[LOAD DEBUG] Creating WorldObject from biota {biota.Id} (0x{biota.Id:X8}) in container {Name} (0x{Guid:X8}) | Biota ContainerId={biotaContainerId} (0x{(biotaContainerId ?? 0):X8}) | WorldObject ContainerId={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Match={biotaContainerId == worldObject.ContainerId}");
+                    
+                    worldObjects.Add(worldObject);
+                }
+                else
+                    log.Warn($"Failed to create WorldObject from biota {biota.Id} (WeenieClassId: {biota.WeenieClassId}, WeenieType: {biota.WeenieType}) in container {Guid}");
+            }
 
             SortWorldObjectsIntoInventory(worldObjects);
 
@@ -154,10 +186,21 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void SortWorldObjectsIntoInventory(IList<WorldObject> worldObjects)
         {
+            var player = this as Player;
+
             // This will pull out all of our main pack items and side slot items (foci & containers)
             for (int i = worldObjects.Count - 1; i >= 0; i--)
             {
-                if ((worldObjects[i].ContainerId ?? 0) == Biota.Id)
+                var itemContainerId = worldObjects[i].ContainerId ?? 0;
+                var thisContainerId = Biota.Id;
+                var matches = itemContainerId == thisContainerId;
+                
+                if (player != null)
+                {
+                    log.Debug($"[LOAD DEBUG] SortWorldObjectsIntoInventory checking {worldObjects[i].Name} (0x{worldObjects[i].Guid}) | Item ContainerId={itemContainerId} (0x{itemContainerId:X8}) | This ContainerId={thisContainerId} (0x{thisContainerId:X8}) | Matches={matches}");
+                }
+                
+                if (matches)
                 {
                     Inventory[worldObjects[i].Guid] = worldObjects[i];
                     worldObjects[i].Container = this;
@@ -184,12 +227,29 @@ namespace ACE.Server.WorldObjects
 
             // All that should be left are side pack sub contents.
 
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).ToList();
+            var sideContainers = GetCachedSideContainers();
+            if (player != null)
+            {
+                log.Debug($"[LOAD DEBUG] Player {player.Name} has {sideContainers.Count} side containers, {worldObjects.Count} remaining items to sort");
+            }
             foreach (var container in sideContainers)
             {
-                ((Container)container).SortWorldObjectsIntoInventory(worldObjects); // This will set the InventoryLoaded flag for this sideContainer
+                if (player != null)
+                {
+                    log.Debug($"[LOAD DEBUG] Processing side container {container.Name} (0x{container.Guid}) | Biota.Id={container.Biota.Id} (0x{container.Biota.Id:X8}) | Remaining items={worldObjects.Count}");
+                }
+                container.SortWorldObjectsIntoInventory(worldObjects); // This will set the InventoryLoaded flag for this sideContainer
                 EncumbranceVal += container.EncumbranceVal; // This value includes the containers burden itself + all child items
                 Value += container.Value; // This value includes the containers value itself + all child items
+            }
+            
+            if (player != null && worldObjects.Count > 0)
+            {
+                log.Warn($"[LOAD DEBUG] Player {player.Name} has {worldObjects.Count} items that couldn't be sorted into any container:");
+                foreach (var wo in worldObjects)
+                {
+                    log.Warn($"[LOAD DEBUG]   - {wo.Name} (0x{wo.Guid}) | ContainerId={wo.ContainerId} (0x{(wo.ContainerId ?? 0):X8})");
+                }
             }
 
             OnInitialInventoryLoadCompleted();
@@ -200,7 +260,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private int CountPackItems()
         {
-            return Inventory.Values.Count(wo => !wo.UseBackpackSlot);
+            int count = 0;
+            foreach (var wo in Inventory.Values)
+            {
+                if (!wo.UseBackpackSlot)
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>
@@ -208,7 +274,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private int CountContainers()
         {
-            return Inventory.Values.Count(wo => wo.UseBackpackSlot);
+            int count = 0;
+            foreach (var wo in Inventory.Values)
+            {
+                if (wo.UseBackpackSlot)
+                    count++;
+            }
+            return count;
         }
 
         public int GetFreeInventorySlots(bool includeSidePacks = true)
@@ -217,8 +289,11 @@ namespace ACE.Server.WorldObjects
 
             if (includeSidePacks)
             {
-                foreach (var sidePack in Inventory.Values.OfType<Container>())
-                    freeSlots += (sidePack.ItemCapacity ?? 0) - sidePack.CountPackItems();
+                foreach (var item in Inventory.Values)
+                {
+                    if (item is Container sidePack)
+                        freeSlots += (sidePack.ItemCapacity ?? 0) - sidePack.CountPackItems();
+                }
             }
 
             return freeSlots;
@@ -270,7 +345,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Next search all containers for item.. run function again for each container.
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).ToList();
+            var sideContainers = GetCachedSideContainers();
             foreach (var sideContainer in sideContainers)
             {
                 var containerItem = ((Container)sideContainer).GetInventoryItem(objectGuid);
@@ -287,6 +362,40 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Gets side containers from cache, rebuilding if necessary.
+        /// Avoids repeated LINQ allocations with large inventories.
+        /// </summary>
+        private List<Container> GetCachedSideContainers()
+        {
+            if (_sideContainersCacheDirty || _cachedSideContainers == null)
+            {
+                if (_cachedSideContainers == null)
+                    _cachedSideContainers = new List<Container>();
+                else
+                    _cachedSideContainers.Clear();
+
+                foreach (var item in Inventory.Values)
+                {
+                    if (item is Container container)
+                        _cachedSideContainers.Add(container);
+                }
+
+                // Sort by PlacementPosition to maintain consistent ordering
+                _cachedSideContainers.Sort((a, b) => (a.PlacementPosition ?? 0).CompareTo(b.PlacementPosition ?? 0));
+                _sideContainersCacheDirty = false;
+            }
+            return _cachedSideContainers;
+        }
+
+        /// <summary>
+        /// Invalidates the side containers cache when containers are added or removed
+        /// </summary>
+        private void InvalidateSideContainersCache()
+        {
+            _sideContainersCacheDirty = true;
+        }
+
+        /// <summary>
         /// This method is used to get all inventory items of a type in this container (example of usage get all items of coin on player)
         /// </summary>
         public List<WorldObject> GetInventoryItemsOfTypeWeenieType(WeenieType type)
@@ -294,14 +403,19 @@ namespace ACE.Server.WorldObjects
             var items = new List<WorldObject>();
 
             // first search me / add all items of type.
-            var localInventory = Inventory.Values.Where(wo => wo.WeenieType == type).OrderBy(i => i.PlacementPosition).ToList();
+            foreach (var item in Inventory.Values)
+            {
+                if (item.WeenieType == type)
+                    items.Add(item);
+            }
 
-            items.AddRange(localInventory);
+            // Sort by PlacementPosition
+            items.Sort((a, b) => (a.PlacementPosition ?? 0).CompareTo(b.PlacementPosition ?? 0));
 
             // next search all containers for type.. run function again for each container.
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).OrderBy(i => i.PlacementPosition).ToList();
+            var sideContainers = GetCachedSideContainers();
             foreach (var container in sideContainers)
-                items.AddRange(((Container)container).GetInventoryItemsOfTypeWeenieType(type));
+                items.AddRange(container.GetInventoryItemsOfTypeWeenieType(type));
 
             return items;
         }
@@ -314,12 +428,17 @@ namespace ACE.Server.WorldObjects
             var items = new List<WorldObject>();
 
             // search main pack / creature
-            var localInventory = Inventory.Values.Where(i => i.WeenieClassId == weenieClassId).OrderBy(i => i.PlacementPosition).ToList();
+            foreach (var item in Inventory.Values)
+            {
+                if (item.WeenieClassId == weenieClassId)
+                    items.Add(item);
+            }
 
-            items.AddRange(localInventory);
+            // Sort by PlacementPosition
+            items.Sort((a, b) => (a.PlacementPosition ?? 0).CompareTo(b.PlacementPosition ?? 0));
 
             // next search any side containers
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).Select(i => i as Container).OrderBy(i => i.PlacementPosition).ToList();
+            var sideContainers = GetCachedSideContainers();
             foreach (var container in sideContainers)
                 items.AddRange(container.GetInventoryItemsOfWCID(weenieClassId));
 
@@ -342,12 +461,17 @@ namespace ACE.Server.WorldObjects
             var items = new List<WorldObject>();
 
             // search main pack / creature
-            var localInventory = Inventory.Values.Where(i => i.WeenieClassName.Equals(weenieClassName, StringComparison.OrdinalIgnoreCase)).OrderBy(i => i.PlacementPosition).ToList();
+            foreach (var item in Inventory.Values)
+            {
+                if (item.WeenieClassName.Equals(weenieClassName, StringComparison.OrdinalIgnoreCase))
+                    items.Add(item);
+            }
 
-            items.AddRange(localInventory);
+            // Sort by PlacementPosition
+            items.Sort((a, b) => (a.PlacementPosition ?? 0).CompareTo(b.PlacementPosition ?? 0));
 
             // next search any side containers
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).Select(i => i as Container).OrderBy(i => i.PlacementPosition).ToList();
+            var sideContainers = GetCachedSideContainers();
             foreach (var container in sideContainers)
                 items.AddRange(container.GetInventoryItemsOfWeenieClass(weenieClassName));
 
@@ -367,16 +491,20 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetTradeNotes()
         {
-            // FIXME: search by classname performance
             var items = new List<WorldObject>();
 
             // search main pack / creature
-            var localInventory = Inventory.Values.Where(i => i.ItemType == ItemType.PromissoryNote && i.WeenieClassId != 43901).OrderBy(i => i.PlacementPosition).ToList();
+            foreach (var item in Inventory.Values)
+            {
+                if (item.ItemType == ItemType.PromissoryNote && item.WeenieClassId != 43901)
+                    items.Add(item);
+            }
 
-            items.AddRange(localInventory);
+            // Sort by PlacementPosition
+            items.Sort((a, b) => (a.PlacementPosition ?? 0).CompareTo(b.PlacementPosition ?? 0));
 
             // next search any side containers
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).Select(i => i as Container).OrderBy(i => i.PlacementPosition).ToList();
+            var sideContainers = GetCachedSideContainers();
             foreach (var container in sideContainers)
                 items.AddRange(container.GetTradeNotes());
 
@@ -498,11 +626,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
         {
+            var containerInfo = this is Player p ? $"Player {p.Name}" : $"{Name} (0x{Guid})";
+            var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
+            log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
+            
             // bug: should be root owner
             if (this is Player player && burdenCheck)
             {
                 if (!player.HasEnoughBurdenToAddToInventory(worldObject))
                 {
+                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
                     container = null;
                     return false;
                 }
@@ -516,6 +649,7 @@ namespace ACE.Server.WorldObjects
 
                 if ((ContainerCapacity ?? 0) <= containerItems.Count)
                 {
+                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - container capacity full in {containerInfo} ({containerItems.Count}/{ContainerCapacity ?? 0})");
                     container = null;
                     return false;
                 }
@@ -531,17 +665,27 @@ namespace ACE.Server.WorldObjects
                     {
                         var containers = Inventory.Values.OfType<Container>().ToList();
                         containers.Sort((a, b) => (a.Placement ?? 0).CompareTo(b.Placement ?? 0));
+                        
+                        log.Debug($"[SAVE DEBUG] TryAddToInventory main pack full for {itemInfo} in {containerInfo} ({containerItems.Count}/{ItemCapacity ?? 0}), trying {containers.Count} side packs");
 
                         foreach (var sidePack in containers)
                         {
+                            log.Debug($"[SAVE DEBUG] TryAddToInventory trying side pack {sidePack.Name} (0x{sidePack.Guid}) for {itemInfo}");
                             if (sidePack.TryAddToInventory(worldObject, out container, placementPosition, true))
                             {
                                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
                                 Value += (worldObject.Value ?? 0);
-
+                                
+                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
                                 return true;
                             }
                         }
+                        
+                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
+                    }
+                    else
+                    {
+                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - main pack full and limitToMainPackOnly=true in {containerInfo}");
                     }
 
                     container = null;
@@ -559,17 +703,49 @@ namespace ACE.Server.WorldObjects
             worldObject.Placement = ACE.Entity.Enum.Placement.Resting;
 
             worldObject.OwnerId = Guid.Full;
-            worldObject.ContainerId = Guid.Full;
+            var oldContainerId = worldObject.ContainerId;
+            // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
+            // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
+            // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
+            worldObject.ContainerId = Biota.Id;
             worldObject.Container = this;
             worldObject.PlacementPosition = placementPosition; // Server only variable that we use to remember/restore the order in which items exist in a container
+            
+            // Verify ContainerId was set correctly
+            var newContainerId = worldObject.ContainerId;
+            var containerBiotaId = Biota.Id;
+            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
+            
+            // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
+            if (worldObject.ContainerId != Biota.Id)
+            {
+                log.Warn($"[SAVE DEBUG] TryAddToInventory ContainerId mismatch detected for {itemInfo} | ContainerId property={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Container.Biota.Id={Biota.Id} (0x{Biota.Id:X8}) | Fixing...");
+                worldObject.ContainerId = Biota.Id;
+            }
 
             // Move all the existing items PlacementPosition over.
             if (!worldObject.UseBackpackSlot)
-                containerItems.Where(i => !i.UseBackpackSlot && i.PlacementPosition >= placementPosition).ToList().ForEach(i => i.PlacementPosition++);
+            {
+                foreach (var item in containerItems)
+                {
+                    if (!item.UseBackpackSlot && item.PlacementPosition >= placementPosition)
+                        item.PlacementPosition++;
+                }
+            }
             else
-                containerItems.Where(i => i.UseBackpackSlot && i.PlacementPosition >= placementPosition).ToList().ForEach(i => i.PlacementPosition++);
+            {
+                foreach (var item in containerItems)
+                {
+                    if (item.UseBackpackSlot && item.PlacementPosition >= placementPosition)
+                        item.PlacementPosition++;
+                }
+            }
 
             Inventory.Add(worldObject.Guid, worldObject);
+
+            // Invalidate side containers cache if we added a container
+            if (worldObject is Container)
+                InvalidateSideContainersCache();
 
             EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
             Value += (worldObject.Value ?? 0);
@@ -587,6 +763,8 @@ namespace ACE.Server.WorldObjects
         /// <returns>TRUE if all items were removed successfully</returns>
         public bool ClearInventory(bool forceSave = false)
         {
+            InvalidateSideContainersCache(); // Cache will be stale after clearing
+
             var success = true;
             var itemGuids = Inventory.Keys.ToList();
             foreach (var itemGuid in itemGuids)
@@ -613,7 +791,15 @@ namespace ACE.Server.WorldObjects
                 return false; // Do not clear storage, ever.
 
             var success = true;
-            var itemGuids = Inventory.Where(i => i.Value.GeneratorId == null).Select(i => i.Key).ToList();
+            // Build list of unmanaged item GUIDs (optimized from Where + Select + ToList)
+            var itemGuids = new List<ObjectGuid>();
+            foreach (var kvp in Inventory)
+            {
+                if (kvp.Value.GeneratorId == null)
+                    itemGuids.Add(kvp.Key);
+            }
+
+            // Now safe to modify inventory during this iteration
             foreach (var itemGuid in itemGuids)
             {
                 if (!TryRemoveFromInventory(itemGuid, out var item, forceSave))
@@ -653,14 +839,21 @@ namespace ACE.Server.WorldObjects
                 item.Container = null;
                 item.PlacementPosition = null;
 
-                // Move all the existing items PlacementPosition over.
-                if (!item.UseBackpackSlot)
-                    Inventory.Values.Where(i => !i.UseBackpackSlot && i.PlacementPosition > removedItemsPlacementPosition).ToList().ForEach(i => i.PlacementPosition--);
-                else
-                    Inventory.Values.Where(i => i.UseBackpackSlot && i.PlacementPosition > removedItemsPlacementPosition).ToList().ForEach(i => i.PlacementPosition--);
+                // Move all the existing items PlacementPosition over (optimized: single loop)
+                var useBackpackSlot = item.UseBackpackSlot;
+                foreach (var invItem in Inventory.Values)
+                {
+                    // Only adjust items in same category (pack items OR containers)
+                    if (invItem.UseBackpackSlot == useBackpackSlot && invItem.PlacementPosition > removedItemsPlacementPosition)
+                        invItem.PlacementPosition--;
+                }
 
                 EncumbranceVal -= (item.EncumbranceVal ?? 0);
                 Value -= (item.Value ?? 0);
+
+                // Invalidate side containers cache if we removed a container
+                if (item is Container)
+                    InvalidateSideContainersCache();
 
                 if (forceSave)
                     item.SaveBiotaToDatabase();
@@ -671,10 +864,10 @@ namespace ACE.Server.WorldObjects
             }
 
             // next search all containers for item.. run function again for each container.
-            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).ToList();
+            var sideContainers = GetCachedSideContainers();
             foreach (var container in sideContainers)
             {
-                if (((Container)container).TryRemoveFromInventory(objectGuid, out item))
+                if (container.TryRemoveFromInventory(objectGuid, out item))
                 {
                     EncumbranceVal -= (item.EncumbranceVal ?? 0);
                     Value -= (item.Value ?? 0);
@@ -731,7 +924,7 @@ namespace ACE.Server.WorldObjects
                 // verified this message was sent for corpses, instead of WeenieErrorWithString.The_IsCurrentlyInUse
                 var currentViewer = "someone else";
 
-                if (PropertyManager.GetBool("container_opener_name").Item)
+                if (PropertyManager.GetBool("container_opener_name"))
                 {
                     var name = CurrentLandblock?.GetObject(Viewer)?.Name;
                     if (name != null)
@@ -766,7 +959,7 @@ namespace ACE.Server.WorldObjects
                     actionChain.AddDelaySeconds(15);
                 else
                     actionChain.AddDelaySeconds(ResetInterval.Value);
-                actionChain.AddAction(this, Reset);
+                actionChain.AddAction(this, ActionType.Container_Reset, Reset);
                 //actionChain.AddAction(this, () =>
                 //{
                 //    Close(player);
@@ -786,7 +979,9 @@ namespace ACE.Server.WorldObjects
         {
             // send createobject for all objects in this container's inventory to player
             var itemsToSend = new List<GameMessage>();
+            var containerViews = new List<GameMessage>();
 
+            // Optimized: Single loop instead of two separate scans
             foreach (var item in Inventory.Values)
             {
                 // FIXME: only send messages for unknown objects
@@ -796,14 +991,17 @@ namespace ACE.Server.WorldObjects
                 {
                     foreach (var containerItem in container.Inventory.Values)
                         itemsToSend.Add(new GameMessageCreateObject(containerItem));
+                    
+                    // Send sub-container view (previously done in second loop)
+                    containerViews.Add(new GameEventViewContents(player.Session, container));
                 }
             }
 
             player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, this));
-
-            // send sub-containers
-            foreach (var container in Inventory.Values.Where(i => i is Container))
-                player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, (Container)container));
+            
+            // Send all container views
+            if (containerViews.Count > 0)
+                player.Session.Network.EnqueueSend(containerViews.ToArray());
 
             player.Session.Network.EnqueueSend(itemsToSend.ToArray());
         }
@@ -840,7 +1038,7 @@ namespace ACE.Server.WorldObjects
             {
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(animTime / 2.0f);
-                actionChain.AddAction(this, () => FinishClose(player));
+                actionChain.AddAction(this, ActionType.Container_FinishClose, () => FinishClose(player));
                 actionChain.EnqueueChain();
             }
         }
@@ -876,6 +1074,8 @@ namespace ACE.Server.WorldObjects
 
         public virtual void Reset()
         {
+            InvalidateSideContainersCache(); // Cache will be stale after reset
+
             var player = CurrentLandblock.GetObject(Viewer) as Player;
 
             if (IsOpen)
