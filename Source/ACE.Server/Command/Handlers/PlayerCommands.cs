@@ -20,6 +20,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Timers;
 using System.Xml.Linq;
 using static System.Net.Mime.MediaTypeNames;
 //using ACE.Server.Factories;
@@ -85,9 +86,30 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
                     bool currentPlayerOver50 = session.Player.Level >= 50;
-                    foreach (var player in session.Player.CurrentLandblock.players)
+                    // Snapshot to avoid collection modification issues while iterating
+                    var playersSnapshot = session.Player.CurrentLandblock.players.ToList();
+                    foreach (var player in playersSnapshot)
                     {
-                        if (player.Guid != session.Player.Guid && !player.IsMule && (player.CloakStatus == CloakStatus.Player || player.CloakStatus == CloakStatus.Off || player.CloakStatus == CloakStatus.Undef))
+                        // Exclude admins and cloaked players - only show regular players
+                        // Use Session.AccessLevel to avoid BiotaDatabaseLock contention
+                        var accessLevel = player.Session?.AccessLevel ?? AccessLevel.Player;
+                        bool isAdminLevel = accessLevel >= AccessLevel.Sentinel;
+                        
+                        // Safely check CloakStatus with try-catch to handle lock contention
+                        CloakStatus cloakStatus = CloakStatus.Undef;
+                        try
+                        {
+                            cloakStatus = player.CloakStatus;
+                        }
+                        catch (System.Threading.LockRecursionException)
+                        {
+                            // Skip this player if we can't safely read their cloak status
+                            continue;
+                        }
+                        
+                        if (player.Guid != session.Player.Guid && !player.IsMule 
+                            && !isAdminLevel
+                            && (cloakStatus == CloakStatus.Player || cloakStatus == CloakStatus.Undef))
                         {
                             if (!currentPlayerOver50 || player.Level >= 50) // Don't add lowbies to a fellowship of players over 50
                             {
@@ -163,11 +185,32 @@ namespace ACE.Server.Command.Handlers
                         var fellowshipsInLandblock = new Dictionary<uint, (Fellowship fellowship, Player leader, bool leaderInLandblock)>();
 
                         // Check all players in the current landblock
-                        foreach (var player in session.Player.CurrentLandblock.players)
+                        // Snapshot to avoid collection modification issues while iterating
+                        var playersSnapshot = session.Player.CurrentLandblock.players.ToList();
+                        foreach (var player in playersSnapshot)
                         {
                             try
                             {
-                                if (!player.IsMule && (player.CloakStatus == CloakStatus.Player || player.CloakStatus == CloakStatus.Off || player.CloakStatus == CloakStatus.Undef))
+                                // Exclude admins and cloaked players - only show regular players
+                                // Use Session.AccessLevel to avoid BiotaDatabaseLock contention
+                                var accessLevel = player.Session?.AccessLevel ?? AccessLevel.Player;
+                                bool isAdminLevel = accessLevel >= AccessLevel.Sentinel;
+                                
+                                // Safely check CloakStatus with try-catch to handle lock contention
+                                CloakStatus cloakStatus = CloakStatus.Undef;
+                                try
+                                {
+                                    cloakStatus = player.CloakStatus;
+                                }
+                                catch (System.Threading.LockRecursionException)
+                                {
+                                    // Skip this player if we can't safely read their cloak status
+                                    continue;
+                                }
+                                
+                                if (!player.IsMule 
+                                    && !isAdminLevel
+                                    && (cloakStatus == CloakStatus.Player || cloakStatus == CloakStatus.Undef))
                                 {
                                     // Check if player is in a fellowship
                                     if (player.Fellowship != null)
