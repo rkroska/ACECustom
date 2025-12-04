@@ -32,12 +32,12 @@ namespace ACE.Server.Command.Handlers
             {
                 case "off":
                     session.Player.UpdateProperty(session.Player, PropertyBool.Attackable, false, true);
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Monsters will only attack you if provoked by you first.", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("You can no longer be attacked.", ChatMessageType.Broadcast));
                     break;
                 case "on":
                 default:
                     session.Player.UpdateProperty(session.Player, PropertyBool.Attackable, true, true);
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Monsters will attack you normally.", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("You can now be attacked.", ChatMessageType.Broadcast));
                     break;
             }
         }

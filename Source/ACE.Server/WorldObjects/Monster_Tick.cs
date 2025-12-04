@@ -114,6 +114,22 @@ namespace ACE.Server.WorldObjects
 
             var creatureTarget = AttackTarget as Creature;
 
+            // Drop invalid target if it's a player with CloakStatus.Creature
+            if (creatureTarget is Player playerTarget && playerTarget.CloakStatus == CloakStatus.Creature)
+            {
+                // Stop considering this player as a valid target
+                AttackTarget = null;
+
+                // Try to acquire a new target
+                FindNextTarget();
+
+                // If nothing else is available, go back to idle state
+                if (AttackTarget == null && MonsterState != State.Return)
+                    Sleep();
+
+                return;
+            }
+
             if (creatureTarget != null && (creatureTarget.IsDead || (combatPet == null && !IsVisibleTarget(creatureTarget))))
             {
                 FindNextTarget();

@@ -350,8 +350,15 @@ namespace ACE.Server.WorldObjects
                     continue;
                     
                 // hidden players shouldn't be valid visible targets
-                if (creature is Player p && (p.Hidden ?? false))
-                    continue;
+                if (creature is Player p)
+                {
+                    // Skip players with CloakStatus.Creature - monsters should not attack them
+                    if (p.CloakStatus == CloakStatus.Creature)
+                        continue;
+                    
+                    if (p.Hidden ?? false)
+                        continue;
+                }
                     
                 // Only apply TargetingTactic-based skip to non-players (players are excluded above)
                 if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
@@ -500,8 +507,15 @@ namespace ACE.Server.WorldObjects
             var listOfCreature = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             foreach (var creature in listOfCreature) //has variant filter
             {
-                if (creature is Player player && (!player.Attackable || player.Teleporting || (player.Hidden ?? false)))
-                    continue;
+                if (creature is Player player)
+                {
+                    // Skip players with CloakStatus.Creature - monsters should not attack them
+                    if (player.CloakStatus == CloakStatus.Creature)
+                        continue;
+                    
+                    if (!player.Attackable || player.Teleporting || (player.Hidden ?? false))
+                        continue;
+                }
 
                 if (Tolerance.HasFlag(Tolerance.Monster) && (creature is Player || creature is CombatPet))
                     continue;

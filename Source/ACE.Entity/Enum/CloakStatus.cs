@@ -6,6 +6,7 @@ namespace ACE.Entity.Enum
         Off,
         On,
         Player,
-        Creature
+        Creature,
+        Hybrid
     }
 }
