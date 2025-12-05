@@ -704,7 +704,8 @@ namespace ACE.Server.Managers
                 ("heavy_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to strength for calculating heavy weapons attribute damage modifiers")),
                 ("twohanded_attribute_multiplier", new Property<double>(0.8, "the multiplier applied to strength for calculating two handed weapons attribute damage modifiers")),
                 ("missile_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to coordination for calculating missile weapons attribute damage modifiers")),
-                ("life_aug_prot_tuning_constant", new Property<double>(8.0, "the constant used in the EnchantmentManager for calculating life aug protection scaling"))
+                ("life_aug_prot_tuning_constant", new Property<double>(8.0, "the constant used in the EnchantmentManager for calculating life aug protection scaling")),
+                ("life_aug_prot_max_bonus", new Property<double>(0.32, "the maximum bonus that the life aug scaling can approach at infinite augs - T8 protection spells provide 68% base, so a bonus above 32% makes it possible to achieve full protection"))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<string>> DefaultStringProperties =

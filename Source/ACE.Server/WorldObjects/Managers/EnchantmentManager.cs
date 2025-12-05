@@ -400,7 +400,11 @@ namespace ACE.Server.WorldObjects.Managers
             {
                 double tuning_constant = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
                 if (tuning_constant <= 0) return 0;
-                return (float)(0.32 * LifeAugAmt / (LifeAugAmt + tuning_constant));
+
+                double max_bonus = PropertyManager.GetDouble("life_aug_prot_max_bonus");
+                if (max_bonus <= 0) return 0;
+
+                return (float)(max_bonus * LifeAugAmt / (LifeAugAmt + tuning_constant));
             }
 
             float bonus = 0;
