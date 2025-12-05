@@ -398,13 +398,17 @@ namespace ACE.Server.WorldObjects.Managers
         {
             if (PropertyManager.GetBool("use_new_life_aug_curve"))
             {
-                double tuning_constant = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
-                if (tuning_constant <= 0) return 0;
+                double T = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
+                if (T <= 0) return 0;
 
                 double max_bonus = PropertyManager.GetDouble("life_aug_prot_max_bonus");
                 if (max_bonus <= 0) return 0;
 
-                return (float)(max_bonus * LifeAugAmt / (LifeAugAmt + tuning_constant));
+                double k = PropertyManager.GetDouble("life_aug_prot_power_constant");
+                if (LifeAugAmt == 0 && k <= 0) return 0; // Math.Pow(0, k) where k <= 0 results in undefined/infinity.
+
+                double a = Math.Pow(LifeAugAmt, k);
+                return (float)(max_bonus * (a / (a + T)));
             }
 
             float bonus = 0;
