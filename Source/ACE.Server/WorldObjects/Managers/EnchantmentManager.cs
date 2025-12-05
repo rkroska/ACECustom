@@ -396,6 +396,7 @@ namespace ACE.Server.WorldObjects.Managers
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static float GetLifeAugProtectRating(long LifeAugAmt)
         {
+            // Implements diminishing returns using the formula A^k / (A^k + T)
             if (PropertyManager.GetBool("use_new_life_aug_curve"))
             {
                 double T = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
