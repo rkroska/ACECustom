@@ -1352,7 +1352,7 @@ namespace ACE.Server.WorldObjects
         /// Sends network messages to all Players who currently know about this object
         /// within a maximum range
         /// </summary>
-        public void EnqueueBroadcast(GameMessage msg, float range, ChatMessageType? squelchType = null)
+        public void EnqueueBroadcast(OutboundGameMessage msg, float range, ChatMessageType? squelchType = null)
         {
             if (PhysicsObj == null || CurrentLandblock == null) return;
 
@@ -1389,12 +1389,12 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Sends network messages to all Players who currently know about this object
         /// </summary>
-        public List<Player> EnqueueBroadcast(params GameMessage[] msgs)
+        public List<Player> EnqueueBroadcast(params OutboundGameMessage[] msgs)
         {
             return EnqueueBroadcast(true, msgs);
         }
 
-        public List<Player> EnqueueBroadcast(bool sendSelf = true, params GameMessage[] msgs)
+        public List<Player> EnqueueBroadcast(bool sendSelf = true, params OutboundGameMessage[] msgs)
         {
             if (PhysicsObj == null)
             {
@@ -1421,7 +1421,7 @@ namespace ACE.Server.WorldObjects
         }
 
 
-        public List<Player> EnqueueBroadcast(List<Player> excludePlayers, bool sendSelf = true, params GameMessage[] msgs)
+        public List<Player> EnqueueBroadcast(List<Player> excludePlayers, bool sendSelf = true, params OutboundGameMessage[] msgs)
         {
             if (PhysicsObj == null) return null;
 

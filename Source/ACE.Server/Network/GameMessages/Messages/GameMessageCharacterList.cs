@@ -7,9 +7,9 @@ using ACE.Server.Managers;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageCharacterList : GameMessage
+    public class GameMessageCharacterList : OutboundGameMessage
     {
-        public GameMessageCharacterList(List<LoginCharacter> characters, Session session) : base(GameMessageOpcode.CharacterList, GameMessageGroup.UIQueue)
+        public GameMessageCharacterList(List<LoginCharacter> characters, Session session) : base(OutboundGameMessageOpcode.CharacterList, GameMessageGroup.UIQueue)
         {
             Writer.Write(0u);
             Writer.Write(characters.Count);

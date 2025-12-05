@@ -4,10 +4,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePrivateUpdatePosition : GameMessage
+    public class GameMessagePrivateUpdatePosition : OutboundGameMessage
     {
         public GameMessagePrivateUpdatePosition(WorldObject worldObject, PositionType positionType, Position pos)
-            : base(GameMessageOpcode.PrivateUpdatePosition, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.PrivateUpdatePosition, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(Sequence.SequenceType.UpdatePosition, positionType));
             Writer.Write((uint)positionType);

@@ -4,10 +4,10 @@ using ACE.DatLoader;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageDDDBeginDDD : GameMessage
+    public class GameMessageDDDBeginDDD : OutboundGameMessage
     {
         public GameMessageDDDBeginDDD(uint totalMissingIterations, uint totalFileSize, Dictionary<DatDatabaseType, Dictionary<uint, List<uint>>> missingIterations)
-            : base(GameMessageOpcode.DDD_BeginDDD, GameMessageGroup.DatabaseQueue)
+            : base(OutboundGameMessageOpcode.DDD_BeginDDD, GameMessageGroup.DatabaseQueue)
         {
             Writer.Write(totalFileSize); // Total Size of Patches to Download
             Writer.Write(totalMissingIterations); // Number of MissingIterations

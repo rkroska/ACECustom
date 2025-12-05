@@ -978,8 +978,8 @@ namespace ACE.Server.WorldObjects
         private void SendInventory(Player player)
         {
             // send createobject for all objects in this container's inventory to player
-            var itemsToSend = new List<GameMessage>();
-            var containerViews = new List<GameMessage>();
+            var itemsToSend = new List<OutboundGameMessage>();
+            var containerViews = new List<OutboundGameMessage>();
 
             // Optimized: Single loop instead of two separate scans
             foreach (var item in Inventory.Values)
@@ -1009,7 +1009,7 @@ namespace ACE.Server.WorldObjects
         private void SendDeletesForMyInventory(Player player)
         {
             // send deleteobjects for all objects in this container's inventory to player
-            var itemsToSend = new List<GameMessage>();
+            var itemsToSend = new List<OutboundGameMessage>();
 
             foreach (var item in Inventory.Values)
             {

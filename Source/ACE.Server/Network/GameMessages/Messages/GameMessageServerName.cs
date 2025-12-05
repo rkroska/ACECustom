@@ -1,9 +1,9 @@
-﻿namespace ACE.Server.Network.GameMessages.Messages
+namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageServerName : GameMessage
+    public class GameMessageServerName : OutboundGameMessage
     {
         public GameMessageServerName(string serverName, int currentConnections = 0, int maxConnections = -1)
-            : base(GameMessageOpcode.ServerName, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.ServerName, GameMessageGroup.UIQueue)
         {
             Writer.Write(currentConnections);
             Writer.Write(maxConnections);

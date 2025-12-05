@@ -1,8 +1,8 @@
-﻿namespace ACE.Server.Network.GameMessages
+namespace ACE.Server.Network.GameMessages
 {
-    public abstract class GameMessage
+    public abstract class OutboundGameMessage
     {
-        public GameMessageOpcode Opcode { get; private set; }
+        public OutboundGameMessageOpcode Opcode { get; private set; }
 
         public System.IO.MemoryStream Data { get; private set; }
 
@@ -10,7 +10,7 @@
 
         protected System.IO.BinaryWriter Writer { get; private set; }
 
-        protected GameMessage(GameMessageOpcode opCode, GameMessageGroup group)
+        protected OutboundGameMessage(OutboundGameMessageOpcode opCode, GameMessageGroup group)
         {
             Opcode = opCode;
 
@@ -20,7 +20,7 @@
 
             Writer = new System.IO.BinaryWriter(Data);
 
-            if (Opcode != GameMessageOpcode.None)
+            if (Opcode != OutboundGameMessageOpcode.None)
                 Writer.Write((uint)Opcode);
         }
     }

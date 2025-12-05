@@ -6,7 +6,7 @@ using System;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePublicUpdatePropertyBool : GameMessage
+    public class GameMessagePublicUpdatePropertyBool : OutboundGameMessage
     {
         /// <summary>
         /// Public Update of PropertyBool
@@ -15,7 +15,7 @@ namespace ACE.Server.Network.GameMessages.Messages
         /// <param name="property"></param>
         /// <param name="value"></param>
         public GameMessagePublicUpdatePropertyBool(WorldObject worldObject, PropertyBool property, bool value)
-            : base(GameMessageOpcode.PublicUpdatePropertyBool, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.PublicUpdatePropertyBool, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(SequenceType.UpdatePropertyBool, property));
             Writer.WriteGuid(worldObject.Guid);

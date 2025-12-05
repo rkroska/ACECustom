@@ -1,8 +1,8 @@
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageCharacterLogOff : GameMessage
+    public class GameMessageCharacterLogOff : OutboundGameMessage
     {
-        public GameMessageCharacterLogOff() : base(GameMessageOpcode.CharacterLogOff, GameMessageGroup.UIQueue)
+        public GameMessageCharacterLogOff() : base(OutboundGameMessageOpcode.CharacterLogOff, GameMessageGroup.UIQueue)
         {
         }
     }

@@ -1,6 +1,27 @@
 namespace ACE.Server.Network.GameMessages
 {
-    public enum GameMessageOpcode
+    // Messages that can be received from players.
+    public enum InboundGameMessageOpcode
+    {
+        None                            = 0x0000,
+        ForceObjectDescSend             = 0xF6EA,
+        GameAction                      = 0xF7B1,
+        GetServerVersion                = 0xF7CC,
+        FriendsOld                      = 0xF7CD,
+        TurbineChat                     = 0xF7DE,
+        CharacterLogOff                 = 0xF653,
+        CharacterDelete                 = 0xF655,
+        CharacterCreate                 = 0xF656,
+        CharacterEnterWorld             = 0xF657,
+        CharacterEnterWorldRequest      = 0xF7C8,
+        CharacterRestore                = 0xF7D9,
+        DDD_InterrogationResponse       = 0xF7E6,
+        DDD_RequestDataMessage          = 0xF7E3,
+        DDD_EndDDD                      = 0xF7EA,
+
+    }
+    // Messages that can be sent to players.
+    public enum OutboundGameMessageOpcode
     {
         None                            = 0x0000,
         InventoryRemoveObject           = 0x0024,
@@ -40,13 +61,11 @@ namespace ACE.Server.Network.GameMessages
         ObjDescEvent                    = 0xF625,
         CharacterCreateResponse         = 0xF643,
         CharacterRestoreResponse        = 0xF643, // This is a duplicate...
+        TurbineChat                     = 0xF7DE,
         CharacterLogOff                 = 0xF653,
         CharacterDelete                 = 0xF655,
-        CharacterCreate                 = 0xF656,
-        CharacterEnterWorld             = 0xF657,
         CharacterList                   = 0xF658,
         CharacterError                  = 0xF659,
-        ForceObjectDescSend             = 0xF6EA,
         ObjectCreate                    = 0xF745,
         PlayerCreate                    = 0xF746,
         ObjectDelete                    = 0xF747,
@@ -63,23 +82,15 @@ namespace ACE.Server.Network.GameMessages
         PlayScriptId                    = 0xF754,
         PlayEffect                      = 0xF755,
         GameEvent                       = 0xF7B0,
-        GameAction                      = 0xF7B1,
         AccountBanned                   = 0xF7C1,
-        CharacterEnterWorldRequest      = 0xF7C8,
-        GetServerVersion                = 0xF7CC,
-        FriendsOld                      = 0xF7CD,
-        CharacterRestore                = 0xF7D9,
         AccountBoot                     = 0xF7DC,
         UpdateObject                    = 0xF7DB,
-        TurbineChat                     = 0xF7DE,
         CharacterEnterWorldServerReady  = 0xF7DF,
         ServerMessage                   = 0xF7E0,
         ServerName                      = 0xF7E1,
         DDD_DataMessage                 = 0xF7E2,
-        DDD_RequestDataMessage          = 0xF7E3,
         DDD_ErrorMessage                = 0xF7E4,
         DDD_Interrogation               = 0xF7E5,
-        DDD_InterrogationResponse       = 0xF7E6,
         DDD_BeginDDD                    = 0xF7E7,
         DDD_BeginPullDDD                = 0xF7E8,
         DDD_IterationData               = 0xF7E9,
