@@ -398,7 +398,9 @@ namespace ACE.Server.WorldObjects.Managers
         {
             if (PropertyManager.GetBool("use_new_life_aug_curve"))
             {
-                return (float)(0.32 * LifeAugAmt / (LifeAugAmt + PropertyManager.GetDouble("life_aug_prot_tuning_constant")));
+                double tuning_constant = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
+                if (tuning_constant <= 0) return 0;
+                return (float)(0.32 * LifeAugAmt / (LifeAugAmt + tuning_constant));
             }
 
             float bonus = 0;
