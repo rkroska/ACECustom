@@ -3,10 +3,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageSetState : GameMessage
+    public class GameMessageSetState : OutboundGameMessage
     {
         public GameMessageSetState(WorldObject worldObject, PhysicsState state)
-            : base(GameMessageOpcode.SetState, GameMessageGroup.SmartboxQueue)
+            : base(OutboundGameMessageOpcode.SetState, GameMessageGroup.SmartboxQueue)
         {
             Writer.WriteGuid(worldObject.Guid);
             Writer.Write((uint)state);

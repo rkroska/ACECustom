@@ -4,10 +4,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageSetStackSize : GameMessage
+    public class GameMessageSetStackSize : OutboundGameMessage
     {
         public GameMessageSetStackSize(WorldObject worldObject)
-            : base(GameMessageOpcode.SetStackSize, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.SetStackSize, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(SequenceType.UpdatePropertyInt, PropertyInt.StackSize));
             Writer.WriteGuid(worldObject.Guid);

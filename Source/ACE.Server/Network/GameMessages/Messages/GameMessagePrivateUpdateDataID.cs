@@ -3,10 +3,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePrivateUpdateDataID : GameMessage
+    public class GameMessagePrivateUpdateDataID : OutboundGameMessage
     {
         public GameMessagePrivateUpdateDataID(WorldObject worldObject, PropertyDataId property, uint value)
-            : base(GameMessageOpcode.PrivateUpdatePropertyDataID, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.PrivateUpdatePropertyDataID, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(Sequence.SequenceType.UpdatePropertyDataID, property));
             Writer.Write((uint)property);

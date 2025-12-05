@@ -6,10 +6,10 @@ using ACE.Server.Managers;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageDDDDataMessage : GameMessage
+    public class GameMessageDDDDataMessage : OutboundGameMessage
     {
         public GameMessageDDDDataMessage(uint datFileId, DatDatabaseType datDatabaseType)
-            : base(GameMessageOpcode.DDD_DataMessage, GameMessageGroup.DatabaseQueue)
+            : base(OutboundGameMessageOpcode.DDD_DataMessage, GameMessageGroup.DatabaseQueue)
         {
             var datFileType = 0;
             var datFileID = 0;
