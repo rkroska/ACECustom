@@ -396,6 +396,11 @@ namespace ACE.Server.WorldObjects.Managers
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static float GetLifeAugProtectRating(long LifeAugAmt)
         {
+            if (PropertyManager.GetBool("use_new_life_aug_curve"))
+            {
+                return (float)(0.32 * LifeAugAmt / (LifeAugAmt + PropertyManager.GetDouble("life_aug_prot_tuning_constant")));
+            }
+
             float bonus = 0;
             for (int x = 0; x < LifeAugAmt; x++)
             {
