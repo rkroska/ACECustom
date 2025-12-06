@@ -204,5 +204,6 @@ namespace ACE.Entity.Enum.Properties
         /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
         /// </summary>
         WeaponProcOnCleaveTargets        = 9036,
+        PlayerForceNewLifeAugCalc        = 9037,
     }
 }

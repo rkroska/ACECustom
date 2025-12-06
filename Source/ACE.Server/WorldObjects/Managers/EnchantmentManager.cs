@@ -328,7 +328,8 @@ namespace ACE.Server.WorldObjects.Managers
                         else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
                             || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
                         {
-                            luminanceAug -= GetLifeAugProtectRating(player.LuminanceAugmentLifeCount ?? 0);
+                            // TODO(Ruggan): once on the new calc unconditionally, remove the property here.
+                            luminanceAug -= GetLifeAugProtectRating(player.LuminanceAugmentLifeCount ?? 0, player.GetProperty(PropertyBool.PlayerForceNewLifeAugCalc) ?? false);
                         }
                         else
                         {
@@ -394,10 +395,11 @@ namespace ACE.Server.WorldObjects.Managers
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static float GetLifeAugProtectRating(long LifeAugAmt)
+        private static float GetLifeAugProtectRating(long LifeAugAmt, bool force_new_calc = false)
         {
             // Implements diminishing returns using the formula A^k / (A^k + T)
-            if (PropertyManager.GetBool("use_new_life_aug_curve"))
+            // TODO(Ruggan): once on the new calc unconditionally, remove the force_new_calc parameter.
+            if (PropertyManager.GetBool("use_new_life_aug_curve") || force_new_calc)
             {
                 double T = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
                 if (T <= 0) return 0;
