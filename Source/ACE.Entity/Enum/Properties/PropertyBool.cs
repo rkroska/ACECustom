@@ -204,6 +204,9 @@ namespace ACE.Entity.Enum.Properties
         /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
         /// </summary>
         WeaponProcOnCleaveTargets        = 9036,
-        PlayerForceNewLifeAugCalc        = 9037,
+        /// <summary>
+        /// If TRUE, the new life aug calc will be used unconditionally, even if the global setting `use_new_life_aug_curve` is FALSE.
+        /// </summary>
+        PlayerForceNewLifeAugCalc = 9037,
     }
 }

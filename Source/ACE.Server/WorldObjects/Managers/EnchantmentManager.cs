@@ -328,8 +328,7 @@ namespace ACE.Server.WorldObjects.Managers
                         else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
                             || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
                         {
-                            // TODO(Ruggan): once on the new calc unconditionally, remove the property here.
-                            luminanceAug -= GetLifeAugProtectRating(player.LuminanceAugmentLifeCount ?? 0, player.GetProperty(PropertyBool.PlayerForceNewLifeAugCalc) ?? false);
+                            luminanceAug -= GetLifeAugProtectRating(player.LuminanceAugmentLifeCount ?? 0, player);
                         }
                         else
                         {
@@ -395,19 +394,20 @@ namespace ACE.Server.WorldObjects.Managers
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static float GetLifeAugProtectRating(long LifeAugAmt, bool force_new_calc = false)
+        private static float GetLifeAugProtectRating(long LifeAugAmt, Creature creature)
         {
             // Implements diminishing returns using the formula A^k / (A^k + T)
             // TODO(Ruggan): once on the new calc unconditionally, remove the force_new_calc parameter.
+            bool force_new_calc = creature.GetProperty(PropertyBool.PlayerForceNewLifeAugCalc) ?? false;
             if (PropertyManager.GetBool("use_new_life_aug_curve") || force_new_calc)
             {
-                double T = PropertyManager.GetDouble("life_aug_prot_tuning_constant");
+                double T = creature.GetProperty(PropertyFloat.LifeAugTuningConstantOverride) ?? PropertyManager.GetDouble("life_aug_prot_tuning_constant");
                 if (T <= 0) return 0;
 
-                double max_bonus = PropertyManager.GetDouble("life_aug_prot_max_bonus");
+                double max_bonus = creature.GetProperty(PropertyFloat.LifeAugProtMaxBonusOverride) ?? PropertyManager.GetDouble("life_aug_prot_max_bonus");
                 if (max_bonus <= 0) return 0;
 
-                double k = PropertyManager.GetDouble("life_aug_prot_power_constant");
+                double k = creature.GetProperty(PropertyFloat.LifeAugPowerConstantOverride) ?? PropertyManager.GetDouble("life_aug_prot_power_constant");
                 if (LifeAugAmt == 0 && k <= 0) return 0; // Math.Pow(0, k) where k <= 0 results in undefined/infinity.
 
                 double a = Math.Pow(LifeAugAmt, k);
