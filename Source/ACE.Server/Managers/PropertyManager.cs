@@ -613,7 +613,8 @@ namespace ACE.Server.Managers
                 ("vendor_shop_uses_generator", new Property<bool>(false, "enables or disables vendors using generator system in addition to createlist to create artificial scarcity")),
                 ("world_closed", new Property<bool>(false, "enable this to startup world as a closed to players world")),
                 ("enl_removes_society", new Property<bool>(true, "if true, enlightenment will remove society flags")),
-                ("action_queue_tracking_enabled", new Property<bool>(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled."))
+                ("action_queue_tracking_enabled", new Property<bool>(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled.")),
+                ("use_new_life_aug_curve", new Property<bool>(false, "If TRUE, enables the new life aug curve in EnchantmentManager."))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<long>> DefaultLongProperties =
@@ -702,7 +703,10 @@ namespace ACE.Server.Managers
                 ("light_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to strength for calculating light weapons attribute damage modifiers")),
                 ("heavy_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to strength for calculating heavy weapons attribute damage modifiers")),
                 ("twohanded_attribute_multiplier", new Property<double>(0.8, "the multiplier applied to strength for calculating two handed weapons attribute damage modifiers")),
-                ("missile_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to coordination for calculating missile weapons attribute damage modifiers"))
+                ("missile_attribute_multiplier", new Property<double>(1.0, "the multiplier applied to coordination for calculating missile weapons attribute damage modifiers")),
+                ("life_aug_prot_tuning_constant", new Property<double>(8.0, "the tuning constant T used in the (A^k / (A^k + T)) life aug scaling formula - controls the magnitude of investment to reach endgame (higher = slower, requiring more augs to reach a given bonus)")),
+                ("life_aug_prot_power_constant", new Property<double>(1.0, "the power constant k used in the (A^k / (A^k + T)) life aug scaling formula - controls the shape of the curve (lower = more gradual, slowing rate of progression).")),
+                ("life_aug_prot_max_bonus", new Property<double>(0.32, "the maximum bonus that the life aug scaling can approach at infinite augs - T8 protection spells provide 68% base, so a bonus above 32% makes it possible to achieve full protection"))
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<string>> DefaultStringProperties =
