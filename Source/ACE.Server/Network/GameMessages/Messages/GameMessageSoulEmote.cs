@@ -1,9 +1,9 @@
-﻿namespace ACE.Server.Network.GameMessages.Messages
+namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageSoulEmote : GameMessage
+    public class GameMessageSoulEmote : OutboundGameMessage
     {
         public GameMessageSoulEmote(uint senderId, string senderName, string emoteText)
-            : base(GameMessageOpcode.SoulEmote, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.SoulEmote, GameMessageGroup.UIQueue)
         {
             Writer.Write(senderId);
             Writer.WriteString16L(senderName);

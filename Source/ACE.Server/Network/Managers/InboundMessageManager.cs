@@ -18,7 +18,7 @@ namespace ACE.Server.Network.Managers
         private class MessageHandlerInfo
         {
             public MessageHandler Handler { get; set; }
-            public GameMessageAttribute Attribute { get; set; }
+            public InboundGameMessageAttribute Attribute { get; set; }
         }
 
         private class ActionHandlerInfo
@@ -31,7 +31,7 @@ namespace ACE.Server.Network.Managers
 
         public delegate void ActionHandler(ClientMessage message, Session session);
 
-        private static Dictionary<GameMessageOpcode, MessageHandlerInfo> messageHandlers;
+        private static Dictionary<InboundGameMessageOpcode, MessageHandlerInfo> messageHandlers;
 
         private static Dictionary<GameActionType, ActionHandlerInfo> actionHandlers;
 
@@ -43,13 +43,13 @@ namespace ACE.Server.Network.Managers
 
         private static void DefineMessageHandlers()
         {
-            messageHandlers = new Dictionary<GameMessageOpcode, MessageHandlerInfo>();
+            messageHandlers = new Dictionary<InboundGameMessageOpcode, MessageHandlerInfo>();
 
             foreach (var type in Assembly.GetExecutingAssembly().GetTypes())
             {
                 foreach (var methodInfo in type.GetMethods())
                 {
-                    foreach (var messageHandlerAttribute in methodInfo.GetCustomAttributes<GameMessageAttribute>())
+                    foreach (var messageHandlerAttribute in methodInfo.GetCustomAttributes<InboundGameMessageAttribute>())
                     {
                         var messageHandler = new MessageHandlerInfo()
                         {
@@ -87,13 +87,13 @@ namespace ACE.Server.Network.Managers
 
         public static void HandleClientMessage(ClientMessage message, Session session)
         {
-            var opcode = (GameMessageOpcode)message.Opcode;
+            var opcode = (InboundGameMessageOpcode)message.Opcode;
 
             if (messageHandlers.TryGetValue(opcode, out var messageHandlerInfo))
             {
                 if (messageHandlerInfo.Attribute.State == session.State)
                 {
-                    NetworkManager.InboundMessageQueue.EnqueueAction(new ActionEventDelegate(ActionTypeConverter.FromGameMessageOpCode(opcode), () =>
+                    NetworkManager.InboundMessageQueue.EnqueueAction(new ActionEventDelegate(ActionTypeConverter.FromInboundGameMessageOpCode(opcode), () =>
                     {
                         // It's possible that before this work is executed by WorldManager, and after it was enqueued here, the session.Player was set to null
                         // To avoid null reference exceptions, we make sure that the player is valid before the message handler is invoked.

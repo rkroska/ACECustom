@@ -3,10 +3,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePickupEvent : GameMessage
+    public class GameMessagePickupEvent : OutboundGameMessage
     {
         public GameMessagePickupEvent(WorldObject targetItem)
-            : base(GameMessageOpcode.PickupEvent, GameMessageGroup.SmartboxQueue)
+            : base(OutboundGameMessageOpcode.PickupEvent, GameMessageGroup.SmartboxQueue)
         {
             Writer.Write(targetItem.Guid.Full);
             Writer.Write(targetItem.Sequences.GetCurrentSequence(SequenceType.ObjectInstance));
