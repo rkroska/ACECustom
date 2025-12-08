@@ -6,7 +6,7 @@ namespace ACE.Server.Network.GameAction
 {
     public static class GameActionPacket
     {
-        [GameMessage(GameMessageOpcode.GameAction, SessionState.WorldConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.GameAction, SessionState.WorldConnected)]
         public static void HandleGameAction(ClientMessage message, Session session)
         {
             // TODO: verify sequence

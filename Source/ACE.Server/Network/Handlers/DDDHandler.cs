@@ -21,7 +21,7 @@ namespace ACE.Server.Network.Handlers
 
         public static bool Debug = false;
 
-        [GameMessage(GameMessageOpcode.DDD_InterrogationResponse, SessionState.AuthConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.DDD_InterrogationResponse, SessionState.AuthConnected)]
         public static void DDD_InterrogationResponse(ClientMessage message, Session session)
         {
             var clientIsMissingIterations = false;
@@ -173,7 +173,7 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        [GameMessage(GameMessageOpcode.DDD_EndDDD, SessionState.AuthConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.DDD_EndDDD, SessionState.AuthConnected)]
         public static void DDD_EndDDD(ClientMessage message, Session session)
         {
             // We don't need to reply to this message unless GameMessageDDDBeginDDD was sent.
@@ -192,7 +192,7 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        [GameMessage(GameMessageOpcode.DDD_RequestDataMessage, SessionState.WorldConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.DDD_RequestDataMessage, SessionState.WorldConnected)]
         public static void DDD_RequestDataMessage(ClientMessage message, Session session)
         {
             var enableDATpatching = ConfigManager.Config.DDD.EnableDATPatching;

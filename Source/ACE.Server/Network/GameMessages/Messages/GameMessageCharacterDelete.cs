@@ -1,9 +1,9 @@
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageCharacterDelete : GameMessage
+    public class GameMessageCharacterDelete : OutboundGameMessage
     {
         public GameMessageCharacterDelete()
-            : base(GameMessageOpcode.CharacterDelete, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.CharacterDelete, GameMessageGroup.UIQueue)
         {
         }
     }

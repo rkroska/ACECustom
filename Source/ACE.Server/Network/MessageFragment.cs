@@ -11,7 +11,7 @@ namespace ACE.Server.Network
     {
         private static readonly ILog packetLog = LogManager.GetLogger(System.Reflection.Assembly.GetEntryAssembly(), "Packets");
 
-        public GameMessage Message { get; private set; }
+        public OutboundGameMessage Message { get; private set; }
 
         public uint Sequence { get; set; }
 
@@ -38,7 +38,7 @@ namespace ACE.Server.Network
 
         public bool TailSent { get; private set; }
 
-        public MessageFragment(GameMessage message, uint sequence)
+        public MessageFragment(OutboundGameMessage message, uint sequence)
         {
             Message = message;
             DataRemaining = DataLength;

@@ -723,7 +723,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Broadcasts GameMessage to all online sessions.
         /// </summary>
-        public static void BroadcastToAll(GameMessage msg)
+        public static void BroadcastToAll(OutboundGameMessage msg)
         {
             foreach (var player in GetAllOnline())
                 player.Session.Network.EnqueueSend(msg);

@@ -159,7 +159,7 @@ namespace ACE.Server.Tests.LoadTests
                 using (var writer = new BinaryWriter(message))
                 {
                     // GameAction opcode
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.AutonomousPosition);
                     
@@ -194,7 +194,7 @@ namespace ACE.Server.Tests.LoadTests
                 var messageStream = new MemoryStream();
                 using (var writer = new BinaryWriter(messageStream))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.Talk);
                     
@@ -226,7 +226,7 @@ namespace ACE.Server.Tests.LoadTests
                 var message = new MemoryStream();
                 using (var writer = new BinaryWriter(message))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.Use);
                     writer.Write(objectId);
@@ -254,7 +254,7 @@ namespace ACE.Server.Tests.LoadTests
                 var message = new MemoryStream();
                 using (var writer = new BinaryWriter(message))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.TargetedMeleeAttack);
                     writer.Write(targetId);
@@ -284,7 +284,7 @@ namespace ACE.Server.Tests.LoadTests
                 var message = new MemoryStream();
                 using (var writer = new BinaryWriter(message))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.CastTargetedSpell);
                     writer.Write(targetId);
@@ -313,7 +313,7 @@ namespace ACE.Server.Tests.LoadTests
                 var message = new MemoryStream();
                 using (var writer = new BinaryWriter(message))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.GetAndWieldItem);
                     writer.Write(objectId);
@@ -342,7 +342,7 @@ namespace ACE.Server.Tests.LoadTests
                 var message = new MemoryStream();
                 using (var writer = new BinaryWriter(message))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.DropItem);
                     writer.Write(objectId);
@@ -369,7 +369,7 @@ namespace ACE.Server.Tests.LoadTests
                 var message = new MemoryStream();
                 using (var writer = new BinaryWriter(message))
                 {
-                    writer.Write((uint)GameMessageOpcode.GameAction);
+                    writer.Write((uint)InboundGameMessageOpcode.GameAction);
                     writer.Write(nextOutgoingSequence++);
                     writer.Write((uint)GameActionType.PingRequest);
                 }
@@ -448,7 +448,7 @@ namespace ACE.Server.Tests.LoadTests
             var message = new MemoryStream();
             using (var writer = new BinaryWriter(message))
             {
-                writer.Write((uint)GameMessageOpcode.CharacterEnterWorld);
+                writer.Write((uint)InboundGameMessageOpcode.CharacterEnterWorld);
                 
                 var nameBytes = System.Text.Encoding.Unicode.GetBytes(characterName);
                 writer.Write((ushort)nameBytes.Length);

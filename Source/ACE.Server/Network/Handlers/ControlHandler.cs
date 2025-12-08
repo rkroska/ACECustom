@@ -5,7 +5,7 @@ namespace ACE.Server.Network.Handlers
 {
     public static class ControlHandler
     {
-        [GameMessage(GameMessageOpcode.ForceObjectDescSend, SessionState.WorldConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.ForceObjectDescSend, SessionState.WorldConnected)]
         public static void ControlResponse(ClientMessage message, Session session)
         {
             var itemGuid = message.Payload.ReadUInt32();

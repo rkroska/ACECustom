@@ -292,7 +292,7 @@ namespace ACE.Server.Network
             Player = null;
 
             if (!ServerManager.ShutdownInProgress)
-            {
+            { 
                 Network.EnqueueSend(new GameMessageCharacterLogOff());
 
                 CheckCharactersForDeletion();
@@ -306,7 +306,7 @@ namespace ACE.Server.Network
             State = SessionState.AuthConnected;
         }
 
-        public void Terminate(SessionTerminationReason reason, GameMessage message = null, ServerPacket packet = null, string extraReason = "")
+        public void Terminate(SessionTerminationReason reason, OutboundGameMessage message = null, ServerPacket packet = null, string extraReason = "")
         {
             // TODO: graceful SessionTerminationReason.AccountBooted handling
 

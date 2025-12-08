@@ -5,10 +5,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePublicUpdateInstanceID : GameMessage
+    public class GameMessagePublicUpdateInstanceID : OutboundGameMessage
     {
         public GameMessagePublicUpdateInstanceID(WorldObject worldObject, PropertyInstanceId property, ObjectGuid instanceGuid)
-            : base(GameMessageOpcode.PublicUpdateInstanceId, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.PublicUpdateInstanceId, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(SequenceType.UpdatePropertyInstanceID, property));
             Writer.WriteGuid(worldObject.Guid);

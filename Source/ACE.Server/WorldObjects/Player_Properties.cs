@@ -1206,7 +1206,7 @@ namespace ACE.Server.WorldObjects
             SendNetwork(msg, broadcast);
         }
 
-        public void SendNetwork(GameMessage msg, bool broadcast)
+        public void SendNetwork(OutboundGameMessage msg, bool broadcast)
         {
             if (broadcast)
                 EnqueueBroadcast(msg);

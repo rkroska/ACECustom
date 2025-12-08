@@ -3,10 +3,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageInventoryRemoveObject : GameMessage
+    public class GameMessageInventoryRemoveObject : OutboundGameMessage
     {
         public GameMessageInventoryRemoveObject(WorldObject worldObject)
-            : base(GameMessageOpcode.InventoryRemoveObject, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.InventoryRemoveObject, GameMessageGroup.UIQueue)
         {
             Writer.WriteGuid(worldObject.Guid);
         }

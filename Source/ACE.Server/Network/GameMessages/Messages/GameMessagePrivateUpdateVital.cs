@@ -3,10 +3,10 @@ using ACE.Server.WorldObjects.Entity;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePrivateUpdateVital : GameMessage
+    public class GameMessagePrivateUpdateVital : OutboundGameMessage
     {
         public GameMessagePrivateUpdateVital(WorldObject worldObject, CreatureVital creatureVital)
-            : base(GameMessageOpcode.PrivateUpdateVital, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.PrivateUpdateVital, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(Sequence.SequenceType.UpdateAttribute2ndLevel, creatureVital.Vital));
 

@@ -3,10 +3,10 @@ using ACE.Server.Network.Enum;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageCharacterCreateResponse : GameMessage
+    public class GameMessageCharacterCreateResponse : OutboundGameMessage
     {
         public GameMessageCharacterCreateResponse(CharacterGenerationVerificationResponse response, ObjectGuid guid, string charName)
-            : base(GameMessageOpcode.CharacterCreateResponse, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.CharacterCreateResponse, GameMessageGroup.UIQueue)
         {
             Writer.Write((uint)response);
 

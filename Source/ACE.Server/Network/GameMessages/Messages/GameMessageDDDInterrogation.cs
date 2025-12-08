@@ -1,9 +1,9 @@
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageDDDInterrogation : GameMessage
+    public class GameMessageDDDInterrogation : OutboundGameMessage
     {
         public GameMessageDDDInterrogation()
-            : base(GameMessageOpcode.DDD_Interrogation, GameMessageGroup.DatabaseQueue)
+            : base(OutboundGameMessageOpcode.DDD_Interrogation, GameMessageGroup.DatabaseQueue)
         {
             Writer.Write(1u); // m_dwServersRegion
             Writer.Write(1u); // m_NameRuleLanguage

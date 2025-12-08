@@ -7,7 +7,7 @@ namespace ACE.Server.Network.Handlers
 {
     public static class GetServerVersionHandler
     {
-        [GameMessage(GameMessageOpcode.GetServerVersion, SessionState.WorldConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.GetServerVersion, SessionState.WorldConnected)]
         public static void GetServerVersion(ClientMessage message, Session session)
         {
             // @version command is native to client. Client responds with the following (if using end of retail client/data):

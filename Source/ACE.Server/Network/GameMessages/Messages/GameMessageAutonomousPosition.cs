@@ -4,10 +4,10 @@ using ACE.Server.Network.Sequence;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageAutonomousPosition : GameMessage
+    public class GameMessageAutonomousPosition : OutboundGameMessage
     {
         public GameMessageAutonomousPosition(WorldObject worldObject)
-            : base(GameMessageOpcode.AutonomousPosition, GameMessageGroup.SecureWeenieQueue)
+            : base(OutboundGameMessageOpcode.AutonomousPosition, GameMessageGroup.SecureWeenieQueue)
         {
             if (worldObject is Player p)
             {

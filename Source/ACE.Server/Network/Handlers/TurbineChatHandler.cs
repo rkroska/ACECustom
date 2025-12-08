@@ -16,7 +16,7 @@ namespace ACE.Server.Network.Handlers
 {
     public static class TurbineChatHandler
     {
-        [GameMessage(GameMessageOpcode.TurbineChat, SessionState.WorldConnected)]
+        [InboundGameMessage(InboundGameMessageOpcode.TurbineChat, SessionState.WorldConnected)]
         public static void TurbineChatReceived(ClientMessage clientMessage, Session session)
         {
             if (!PropertyManager.GetBool("use_turbine_chat"))
