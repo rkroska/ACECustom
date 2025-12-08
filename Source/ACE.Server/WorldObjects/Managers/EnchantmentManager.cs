@@ -857,16 +857,13 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public PropertyFloat GetVitalRateKey(CreatureVital vital)
         {
-            switch (vital.Vital)
+            return vital.Vital switch
             {
-                case PropertyAttribute2nd.MaxHealth:
-                    return PropertyFloat.HealthRate;
-                case PropertyAttribute2nd.MaxStamina:
-                    return PropertyFloat.StaminaRate;
-                case PropertyAttribute2nd.MaxMana:
-                    return PropertyFloat.ManaRate;
-            }
-            return 0;
+                PropertyAttribute2nd.MaxHealth => PropertyFloat.HealthRate,
+                PropertyAttribute2nd.MaxStamina => PropertyFloat.StaminaRate,
+                PropertyAttribute2nd.MaxMana => PropertyFloat.ManaRate,
+                _ => 0,
+            };
         }
 
         /// <summary>
@@ -874,26 +871,18 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public PropertyFloat GetImpenBaneKey(DamageType damageType)
         {
-            switch (damageType)
+            return damageType switch
             {
-                case DamageType.Slash:
-                    return PropertyFloat.ArmorModVsSlash;
-                case DamageType.Pierce:
-                    return PropertyFloat.ArmorModVsPierce;
-                case DamageType.Bludgeon:
-                    return PropertyFloat.ArmorModVsBludgeon;
-                case DamageType.Fire:
-                    return PropertyFloat.ArmorModVsFire;
-                case DamageType.Cold:
-                    return PropertyFloat.ArmorModVsCold;
-                case DamageType.Acid:
-                    return PropertyFloat.ArmorModVsAcid;
-                case DamageType.Electric:
-                    return PropertyFloat.ArmorModVsElectric;
-                case DamageType.Nether:
-                    return PropertyFloat.ArmorModVsNether;
-            }
-            return 0;
+                DamageType.Slash => PropertyFloat.ArmorModVsSlash,
+                DamageType.Pierce => PropertyFloat.ArmorModVsPierce,
+                DamageType.Bludgeon => PropertyFloat.ArmorModVsBludgeon,
+                DamageType.Fire => PropertyFloat.ArmorModVsFire,
+                DamageType.Cold => PropertyFloat.ArmorModVsCold,
+                DamageType.Acid => PropertyFloat.ArmorModVsAcid,
+                DamageType.Electric => PropertyFloat.ArmorModVsElectric,
+                DamageType.Nether => PropertyFloat.ArmorModVsNether,
+                _ => 0,
+            };
         }
 
         /// <summary>
@@ -901,26 +890,18 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public PropertyFloat GetResistanceKey(DamageType damageType)
         {
-            switch (damageType)
+            return damageType switch
             {
-                case DamageType.Slash:
-                    return PropertyFloat.ResistSlash;
-                case DamageType.Pierce:
-                    return PropertyFloat.ResistPierce;
-                case DamageType.Bludgeon:
-                    return PropertyFloat.ResistBludgeon;
-                case DamageType.Fire:
-                    return PropertyFloat.ResistFire;
-                case DamageType.Cold:
-                    return PropertyFloat.ResistCold;
-                case DamageType.Acid:
-                    return PropertyFloat.ResistAcid;
-                case DamageType.Electric:
-                    return PropertyFloat.ResistElectric;
-                case DamageType.Nether:
-                    return PropertyFloat.ResistNether;
-            }
-            return 0;
+                DamageType.Slash => PropertyFloat.ResistSlash,
+                DamageType.Pierce => PropertyFloat.ResistPierce,
+                DamageType.Bludgeon => PropertyFloat.ResistBludgeon,
+                DamageType.Fire => PropertyFloat.ResistFire,
+                DamageType.Cold => PropertyFloat.ResistCold,
+                DamageType.Acid => PropertyFloat.ResistAcid,
+                DamageType.Electric => PropertyFloat.ResistElectric,
+                DamageType.Nether => PropertyFloat.ResistNether,
+                _ => 0,
+            };
         }
 
         // refactor me
@@ -1706,8 +1687,7 @@ namespace ACE.Server.WorldObjects.Managers
         {
             // assumed to be DoT enchantment
 
-            if (heartbeatInterval == null)
-                heartbeatInterval = WorldObject.HeartbeatInterval ?? 5.0;
+            heartbeatInterval ??= WorldObject.HeartbeatInterval ?? 5.0;
 
             // it's possible retail had a separate ticking mechanism for these,
             // that ensured ticks every 5s, instead of heartbeat intervals
@@ -1729,8 +1709,7 @@ namespace ACE.Server.WorldObjects.Managers
 
             var creatureHeartbeatInterval = WorldObject.HeartbeatInterval ?? 5.0;
 
-            if (heartbeatInterval == null)
-                heartbeatInterval = creatureHeartbeatInterval;
+            heartbeatInterval ??= creatureHeartbeatInterval;
 
             if (heartbeatInterval == creatureHeartbeatInterval)
                 return enchantment.StatModValue;

@@ -2451,8 +2451,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length > 0)
                 destinationPlayer = PlayerManager.GetOnlinePlayer(parameters[0]);
 
-            if (destinationPlayer == null)
-                destinationPlayer = session.Player;
+            destinationPlayer ??= session.Player;
 
             foreach (var player in PlayerManager.GetAllOnline())
             {
@@ -4171,8 +4170,7 @@ namespace ACE.Server.Command.Handlers
                 if (obj == null)
                     return;
 
-                if (first == null)
-                    first = obj;
+                first ??= obj;
 
                 obj.Name = named;
 

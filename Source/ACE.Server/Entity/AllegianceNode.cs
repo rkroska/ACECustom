@@ -54,8 +54,7 @@ namespace ACE.Server.Entity
 
         public void BuildChain(Allegiance allegiance, List<IPlayer> players, Dictionary<uint, List<IPlayer>> patronVassals, HashSet<uint> visited = null)
         {
-            if (visited == null)
-                visited = new HashSet<uint>();
+            visited ??= [];
 
             if (visited.Contains(PlayerGuid.Full))
             {
@@ -104,7 +103,7 @@ namespace ACE.Server.Entity
 
                         Vassals.Add(vassal.Guid.Full, node);
                     }
-                    catch (Exception ex)
+                    catch
                     {
                         Console.WriteLine($"Allegiance crashed: {allegiance.Name}, player: {vassal.Name}, monarch: {Monarch.Player.Name}");
                         return;

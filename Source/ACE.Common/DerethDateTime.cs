@@ -352,36 +352,22 @@ namespace ACE.Common
         {
             get
             {
-                switch (Month)
+                return Month switch
                 {
-                    case (int)Months.Snowreap:
-                        return Seasons.Winter;
-                    case (int)Months.Coldeve:
-                        return Seasons.Spring;
-                    case (int)Months.Wintersebb:
-                        return Seasons.Summer;
-                    case (int)Months.Morningthaw:
-                        return Seasons.Autumn;
-                    case (int)Months.Solclaim:
-                        return Seasons.Winter;
-                    case (int)Months.Seedsow:
-                        return Seasons.Spring;
-                    case (int)Months.Leafdawning:
-                        return Seasons.Summer;
-                    case (int)Months.Verdantine:
-                        return Seasons.Autumn;
-                    case (int)Months.Thistledown:
-                        return Seasons.Winter;
-                    case (int)Months.HarvestGain:
-                        return Seasons.Spring;
-                    case (int)Months.Leafcull:
-                        return Seasons.Summer;
-                    case (int)Months.Frostfell:
-                        return Seasons.Autumn;
-                    default:
-                        return Seasons.Autumn;
-                        break;
-                }
+                    (int)Months.Snowreap => Seasons.Winter,
+                    (int)Months.Coldeve => Seasons.Spring,
+                    (int)Months.Wintersebb => Seasons.Summer,
+                    (int)Months.Morningthaw => Seasons.Autumn,
+                    (int)Months.Solclaim => Seasons.Winter,
+                    (int)Months.Seedsow => Seasons.Spring,
+                    (int)Months.Leafdawning => Seasons.Summer,
+                    (int)Months.Verdantine => Seasons.Autumn,
+                    (int)Months.Thistledown => Seasons.Winter,
+                    (int)Months.HarvestGain => Seasons.Spring,
+                    (int)Months.Leafcull => Seasons.Summer,
+                    (int)Months.Frostfell => Seasons.Autumn,
+                    _ => Seasons.Autumn,
+                };
 
                 //Original:
                 //if (Month >= (int)Months.Snowreap && Month <= (int)Months.Wintersebb)
@@ -473,12 +459,12 @@ namespace ACE.Common
             if (Year == 10 && Month == (int)Months.Morningthaw && Day == 1 && Hour == (int)Hours.Midsong)
                 return hourOneTicks;
 
-            ticks = ticks + hourOneTicks;
+            ticks += hourOneTicks;
 
             if (Year == 10 && Month == (int)Months.Morningthaw && Day == 1 && Hour > (int)Hours.Midsong)
                 return ticks + ((Hour - 9) * hourTicks);
 
-            ticks = ticks + dayOneTicks;
+            ticks += dayOneTicks;
 
             double yearsToAdd = 0;
             if (Month > (int)Months.Wintersebb)

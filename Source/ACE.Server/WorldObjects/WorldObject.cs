@@ -783,8 +783,7 @@ namespace ACE.Server.WorldObjects
         {
             var baseDamage = GetBaseDamage();
 
-            if (weapon == null)
-                weapon = wielder.GetEquippedWeapon();
+            weapon ??= wielder.GetEquippedWeapon();
 
             var baseDamageMod = new BaseDamageMod(baseDamage, wielder, weapon);
 
@@ -871,12 +870,7 @@ namespace ACE.Server.WorldObjects
 
         public string GetPluralName()
         {
-            var pluralName = PluralName;
-
-            if (pluralName == null)
-                pluralName = Name.Pluralize();
-
-            return pluralName;
+            return PluralName ?? Name.Pluralize();
         }
 
         /// <summary>
