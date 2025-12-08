@@ -709,7 +709,7 @@ namespace ACE.Server.WorldObjects
             DoTeleportPhysicsStateChanges();
 
             // force out of hotspots
-            PhysicsObj.report_collision_end(true);
+            PhysicsObj?.report_collision_end(true);
 
             if (UnderLifestoneProtection)
                 LifestoneProtectionDispel();
