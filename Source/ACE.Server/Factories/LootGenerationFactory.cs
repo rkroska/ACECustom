@@ -225,7 +225,7 @@ namespace ACE.Server.Factories
 
                 return loot;
             }
-            catch (Exception ex)
+            catch
             {
                 log.Error($"Error generating loot on profile: {profile.Id}");
                 return new List<WorldObject>();
