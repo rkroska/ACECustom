@@ -290,6 +290,10 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             luminanceAug += (player.LuminanceAugmentItemCount ?? 0.0f) * 1.00f;
                         }
+                        // This is required for sorting in PropertiesEnchantmentRegistryExtensions.GetEnchantmentsTopLayerByStatModType()
+                        // Otherwise, Impenetrability will not be prioritized over spells that arent affected by luminance augs
+                        // Example: ShadowArmor from olthoi infused shadow armor has powerlevel 900 which overrides impen unless we set AugmentationLevelWhenCast
+                        entry.AugmentationLevelWhenCast = player.LuminanceAugmentItemCount ?? 0;
                     }
                     else if (spell.StatModKey == 360 && selfCastEligible) //blood drinker buffed
                     {
@@ -356,11 +360,23 @@ namespace ACE.Server.WorldObjects.Managers
                 }
 
                 entry.StatModValue = spell.StatModVal + luminanceAug;
-                
+
             }
             else
             {
                 entry.StatModValue = spell.StatModVal;
+                
+                // Handle ItemEnchantment spells on wielded items when caster is not a Creature
+                // (e.g., spells cast from scrolls, gems, or other items)
+                if (WorldObject.WielderId != null && spell.School == MagicSchool.ItemEnchantment && !equip)
+                {
+                    var wielder = WorldObject.CurrentLandblock?.GetObject(WorldObject.WielderId.Value) as Player;
+
+                    if (wielder != null)
+                    {
+                        entry.AugmentationLevelWhenCast = wielder.LuminanceAugmentItemCount ?? 0;
+                    }
+                }
             }
 
 
