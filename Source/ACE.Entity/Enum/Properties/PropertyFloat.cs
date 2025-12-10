@@ -255,7 +255,7 @@ namespace ACE.Entity.Enum.Properties
         /// The following LifeAug settings allow overriding the aug curve on a character-by-character basis
         /// </summary>
         LifeAugTuningConstantOverride  = 9037,
-        LifeAugPowerConstantOverride   = 9038,
-        LifeAugProtMaxBonusOverride    = 9039,
+        LifeAugProtMaxBonusOverride    = 9038,
+        LifeAugNewCurveAmount          = 9039,
     }
 }
