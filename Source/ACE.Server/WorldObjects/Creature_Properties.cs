@@ -1,7 +1,8 @@
-using System;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
+using System;
+using static Google.Protobuf.Compiler.CodeGeneratorResponse.Types;
 
 namespace ACE.Server.WorldObjects
 {
@@ -108,7 +109,12 @@ namespace ACE.Server.WorldObjects
                     return weaponResistanceMod;
             }
 
-            var protMod = EnchantmentManager.GetProtectionResistanceMod(damageType);
+            // TODO(Ruggan): When rolled out, use the new curve exclusively.
+            float newCurvePct = (float)Math.Clamp(GetProperty(PropertyFloat.LifeAugNewCurveAmount) ?? PropertyManager.GetDouble("new_life_aug_curve_pct"), 0.0, 1.0);
+            float protModOld = EnchantmentManager.GetProtectionResistanceMod(damageType);
+            float protModNew = EnchantmentManager.GetProtectionResistanceModNew(damageType);
+            float protMod = protModOld + ((protModNew - protModOld) * newCurvePct);
+
             var vulnMod = EnchantmentManager.GetVulnerabilityResistanceMod(damageType);
 
             var naturalResistMod = GetNaturalResistance(damageType);
