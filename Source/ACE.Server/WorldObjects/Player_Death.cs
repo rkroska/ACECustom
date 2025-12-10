@@ -361,6 +361,10 @@ namespace ACE.Server.WorldObjects
 
         public List<WorldObject> CalculateDeathItems(Corpse corpse)
         {
+            // If cloaked as a creature, do not drop player items
+            if (CloakStatus == CloakStatus.Creature)
+                return new List<WorldObject>();
+
             // https://web.archive.org/web/20140712134108/http://support.turbine.com/link/portal/24001/24001/Article/464/How-do-death-items-work-in-Asheron-s-Call-Could-you-explain-how-the-game-decides-what-you-drop-when-you-die-in-Asheron-s-Call
 
             // Original formula:
