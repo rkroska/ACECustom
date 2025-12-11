@@ -173,6 +173,51 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine($"{Name}.TargetingTactic: {CurrentTargetingTactic}");
         }
 
+        /// <summary>
+        /// Calculates total augmentation count for a player
+        /// </summary>
+        private long CalculatePlayerAugTotal(Player player)
+        {
+            if (player == null)
+                return 0;
+            
+            // Sum all augmentation types
+            long totalAugs = 0;
+            totalAugs += player.LuminanceAugmentLifeCount ?? 0;
+            totalAugs += player.LuminanceAugmentCreatureCount ?? 0;
+            totalAugs += player.LuminanceAugmentWarCount ?? 0;
+            totalAugs += player.LuminanceAugmentMeleeCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissileCount ?? 0;
+            totalAugs += player.LuminanceAugmentVoidCount ?? 0;
+            totalAugs += player.LuminanceAugmentItemCount ?? 0;
+            totalAugs += player.LuminanceAugmentSummonCount ?? 0;
+            totalAugs += player.LuminanceAugmentMeleeDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissleDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMagicDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentSpellDurationCount ?? 0;
+            totalAugs += player.LuminanceAugmentSpecializeCount ?? 0;
+            
+            return totalAugs;
+        }
+
+        /// <summary>
+        /// Calculates power score for a creature (augs for players if available, otherwise level)
+        /// </summary>
+        private long CalculateCreaturePowerScore(Creature creature)
+        {
+            if (creature is Player player)
+            {
+                // Try aug total first for players, fall back to level if no augs
+                var augTotal = CalculatePlayerAugTotal(player);
+                return augTotal > 0 ? augTotal : (player.Level ?? 0);
+            }
+            else
+            {
+                // Use level for non-player creatures
+                return creature.Level ?? 0;
+            }
+        }
+
         public double NextFindTarget;
 
         public virtual void HandleFindTarget()
@@ -266,17 +311,70 @@ namespace ACE.Server.WorldObjects
 
                     case TargetingTactic.Weakest:
 
-                        // should probably shuffle the list beforehand,
-                        // in case a bunch of levels of same level are in a group,
-                        // so the same player isn't always selected
-                        var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
-                        SetAttackTargetAndInvalidate(lowestLevel);
+                        // Target creature with lowest power (augs for players if available, otherwise level for all)
+                        // Use tie-breaker for same power to avoid always targeting the same creature
+                        Creature weakestTarget = null;
+                        long weakestScore = long.MaxValue;
+                        var weakestCandidates = new List<Creature>();
+                        
+                        foreach (var target in visibleTargets)
+                        {
+                            var score = CalculateCreaturePowerScore(target);
+                            
+                            if (score < weakestScore)
+                            {
+                                weakestScore = score;
+                                weakestCandidates.Clear();
+                                weakestCandidates.Add(target);
+                            }
+                            else if (score == weakestScore)
+                            {
+                                // Tie-breaker: collect all targets with same score
+                                weakestCandidates.Add(target);
+                            }
+                        }
+                        
+                        // Randomly select from candidates with same score to avoid always targeting the same creature
+                        if (weakestCandidates.Count > 0)
+                        {
+                            weakestTarget = weakestCandidates[ThreadSafeRandom.Next(0, weakestCandidates.Count - 1)];
+                        }
+                        
+                        SetAttackTargetAndInvalidate(weakestTarget);
                         break;
 
                     case TargetingTactic.Strongest:
 
-                        var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
-                        SetAttackTargetAndInvalidate(highestLevel);
+                        // Target creature with highest power (augs for players if available, otherwise level for all)
+                        // Use tie-breaker for same power to avoid always targeting the same creature
+                        Creature strongestTarget = null;
+                        long strongestScore = long.MinValue;
+                        var strongestCandidates = new List<Creature>();
+                        
+                        foreach (var target in visibleTargets)
+                        {
+                            var score = CalculateCreaturePowerScore(target);
+                            
+                            if (score > strongestScore)
+                            {
+                                strongestScore = score;
+                                strongestCandidates.Clear();
+                                strongestCandidates.Add(target);
+                            }
+                            else if (score == strongestScore)
+                            {
+                                // Tie-breaker: collect all targets with same score
+                                strongestCandidates.Add(target);
+                            }
+                        }
+                        
+                        // Randomly select from candidates with same score to avoid always targeting the same creature
+                        if (strongestCandidates.Count > 0)
+                        {
+                            strongestTarget = strongestCandidates[ThreadSafeRandom.Next(0, strongestCandidates.Count - 1)];
+                        }
+                        
+                        SetAttackTargetAndInvalidate(strongestTarget);
                         break;
 
                     case TargetingTactic.Nearest:
