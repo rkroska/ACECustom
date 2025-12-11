@@ -1,9 +1,9 @@
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageDDDEndDDD : GameMessage
+    public class GameMessageDDDEndDDD : OutboundGameMessage
     {
         public GameMessageDDDEndDDD()
-            : base(GameMessageOpcode.DDD_EndDDD, GameMessageGroup.DatabaseQueue)
+            : base(OutboundGameMessageOpcode.DDD_EndDDD, GameMessageGroup.DatabaseQueue)
         {
         }
     }

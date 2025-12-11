@@ -113,7 +113,7 @@ namespace ACE.Server.Network
         /// This may be called from many threads.
         /// </summary>
         /// <param name="messages">One or more GameMessages to send</param>
-        public void EnqueueSend(params GameMessage[] messages)
+        public void EnqueueSend(params OutboundGameMessage[] messages)
         {
             if (isReleased) // Session has been removed
                 return;
