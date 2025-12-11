@@ -1,9 +1,9 @@
-﻿namespace ACE.Server.Network.GameMessages.Messages
+namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageEmoteText : GameMessage
+    public class GameMessageEmoteText : OutboundGameMessage
     {
         public GameMessageEmoteText(uint senderId, string senderName, string emoteText)
-            : base(GameMessageOpcode.EmoteText, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.EmoteText, GameMessageGroup.UIQueue)
         {
             Writer.Write(senderId);
             Writer.WriteString16L(senderName);

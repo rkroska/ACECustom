@@ -172,6 +172,7 @@ namespace ACE.Server.WorldObjects.Managers
             bodyArmorModCache = null;
             resistanceModCache.Clear();
             protectionResistanceModCache.Clear();
+            protectionResistanceModCacheNew.Clear();
             vulnerabilityResistanceModCache.Clear();
             regenerationModCache.Clear();
 
@@ -336,6 +337,24 @@ namespace ACE.Server.WorldObjects.Managers
             value = base.GetProtectionResistanceMod(damageType);
 
             protectionResistanceModCache[damageType] = value;
+
+            return value;
+        }
+
+        // TODO(Ruggan): Remove when new curve is in place everywhere.
+        private readonly Dictionary<DamageType, float> protectionResistanceModCacheNew = new Dictionary<DamageType, float>();
+
+        /// <summary>
+        /// Gets the resistance modifier for a damage type
+        /// </summary>
+        public override float GetProtectionResistanceModNew(DamageType damageType)
+        {
+            if (protectionResistanceModCacheNew.TryGetValue(damageType, out var value))
+                return value;
+
+            value = base.GetProtectionResistanceModNew(damageType);
+
+            protectionResistanceModCacheNew[damageType] = value;
 
             return value;
         }

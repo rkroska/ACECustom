@@ -5,16 +5,16 @@ using ACE.Server.Network.Structure;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageUpdateMotion : GameMessage
+    public class GameMessageUpdateMotion : OutboundGameMessage
     {
         public GameMessageUpdateMotion(WorldObject wo, MovementData movementData)
-            : base(GameMessageOpcode.Motion, GameMessageGroup.SmartboxQueue)
+            : base(OutboundGameMessageOpcode.Motion, GameMessageGroup.SmartboxQueue)
         {
             Send(wo, movementData);
         }
 
         public GameMessageUpdateMotion(WorldObject wo, Motion motion)
-            : base(GameMessageOpcode.Motion, GameMessageGroup.SmartboxQueue)
+            : base(OutboundGameMessageOpcode.Motion, GameMessageGroup.SmartboxQueue)
         {
             Send(wo, new MovementData(wo, motion));
         }

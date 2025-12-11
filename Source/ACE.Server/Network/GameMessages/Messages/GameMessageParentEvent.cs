@@ -4,10 +4,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessageParentEvent : GameMessage
+    public class GameMessageParentEvent : OutboundGameMessage
     {
         public GameMessageParentEvent(WorldObject creature, WorldObject wieldedSelectableItem, ParentLocation? overriddenParentLocation = null, Placement? overriddenPlacement = null)
-            : base(GameMessageOpcode.ParentEvent, GameMessageGroup.SmartboxQueue)
+            : base(OutboundGameMessageOpcode.ParentEvent, GameMessageGroup.SmartboxQueue)
         {
             Writer.WriteGuid(creature.Guid);
             Writer.WriteGuid(wieldedSelectableItem.Guid);

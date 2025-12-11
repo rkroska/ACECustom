@@ -4,10 +4,10 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.GameMessages.Messages
 {
-    public class GameMessagePublicUpdatePosition : GameMessage
+    public class GameMessagePublicUpdatePosition : OutboundGameMessage
     {
         public GameMessagePublicUpdatePosition(WorldObject worldObject, PositionType positionType, Position pos)
-            : base(GameMessageOpcode.PublicUpdatePosition, GameMessageGroup.UIQueue)
+            : base(OutboundGameMessageOpcode.PublicUpdatePosition, GameMessageGroup.UIQueue)
         {
             Writer.Write(worldObject.Sequences.GetNextSequence(Sequence.SequenceType.UpdatePosition, positionType));
             Writer.WriteGuid(worldObject.Guid);

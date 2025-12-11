@@ -1454,7 +1454,7 @@ namespace ACE.Server.Entity
         /// This is a rarely used method to broadcast network messages to all of the players within a landblock,
         /// and possibly the adjacent landblocks.
         /// </summary>
-        public void EnqueueBroadcast(ICollection<Player> excludeList, bool adjacents, Position pos = null, float? maxRangeSq = null, params GameMessage[] msgs)
+        public void EnqueueBroadcast(ICollection<Player> excludeList, bool adjacents, Position pos = null, float? maxRangeSq = null, params OutboundGameMessage[] msgs)
         {
             // broadcast messages to player in this landblock
             foreach (var player in this.players)
