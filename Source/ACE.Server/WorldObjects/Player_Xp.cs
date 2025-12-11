@@ -26,6 +26,11 @@ namespace ACE.Server.WorldObjects
         private ActionChain xpBatchChain = null;
         private readonly object xpBatchLock = new object();
 
+        // Item XP Batching fields
+        private readonly object itemXpBatchLock = new object();
+        private readonly System.Collections.Generic.Dictionary<uint, long> pendingItemXpUpdates = new System.Collections.Generic.Dictionary<uint, long>();
+        private ActionChain itemXpBatchChain = null;
+
         /// <summary>
         /// A player earns XP through natural progression, ie. kills and quests completed
         /// </summary>
@@ -133,7 +138,6 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     TotalExperience += addAmount;
-                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.TotalExperience, TotalExperience ?? 0));
                 }
                 if (!TotalExperienceDouble.HasValue || TotalExperienceDouble == 0)
                 {
@@ -147,7 +151,7 @@ namespace ACE.Server.WorldObjects
 
                 // Batch XP updates to reduce network traffic
                 BatchXpUpdate(addAmount, xpType);
-                CheckForLevelup();
+                
             }
 
             if (xpType == XpType.Quest)
@@ -162,15 +166,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void BatchXpUpdate(long amount, XpType xpType)
         {
-            var batchWindow = PropertyManager.GetDouble("xp_batch_window_seconds", 3.0);
-            var immediateThreshold = PropertyManager.GetLong("xp_batch_immediate_threshold", 1000000);
-
-            // For very large XP gains (quests), send immediately
-            if (amount >= immediateThreshold)
-            {
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
-                return;
-            }
+            var batchWindow = PropertyManager.GetDouble("xp_batch_window_seconds", 5.0);
 
             lock (xpBatchLock)
             {
@@ -199,8 +195,10 @@ namespace ACE.Server.WorldObjects
             {
                 if (pendingXpUpdate > 0)
                 {
+                    Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.TotalExperience, TotalExperience ?? 0));
                     Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.AvailableExperience, AvailableExperience ?? 0));
                     pendingXpUpdate = 0;
+                    CheckForLevelup();
                 }
                 xpBatchChain = null;
             }
@@ -621,7 +619,7 @@ namespace ACE.Server.WorldObjects
             var addItemXP = item.AddItemXP(amount);
 
             if (addItemXP > 0)
-                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(item, PropertyInt64.ItemTotalXp, item.ItemTotalXp.Value));
+                BatchItemXpUpdate(item, addItemXP);
 
             // handle item leveling up
             var newItemLevel = item.ItemLevel.Value;
@@ -632,7 +630,6 @@ namespace ACE.Server.WorldObjects
                     OnItemLevelUp(item, prevItemLevel + i);
                 }
 
-
                 var actionChain = new ActionChain();
                 actionChain.AddAction(this, ActionType.PlayerXp_ItemIncreasedInPower, () =>
                 {
@@ -642,6 +639,57 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageScript(Guid, PlayScript.AetheriaLevelUp));
                 });
                 actionChain.EnqueueChain();
+            }
+        }
+
+        /// <summary>
+        /// Batches item XP updates to reduce network packet spam during rapid XP gains
+        /// </summary>
+        private void BatchItemXpUpdate(WorldObject item, long amount)
+        {
+            var batchWindow = PropertyManager.GetDouble("xp_batch_window_seconds", 5.0);
+
+            lock (itemXpBatchLock)
+            {
+                if (!pendingItemXpUpdates.ContainsKey(item.Guid.Full))
+                    pendingItemXpUpdates[item.Guid.Full] = 0;
+
+                pendingItemXpUpdates[item.Guid.Full] += amount;
+
+                // If no batch chain exists, create one
+                if (itemXpBatchChain == null)
+                {
+                    itemXpBatchChain = new ActionChain();
+                    itemXpBatchChain.AddDelaySeconds(batchWindow);
+                    itemXpBatchChain.AddAction(this, ActionType.PlayerXp_FlushBatchedUpdate, () =>
+                    {
+                        FlushBatchedItemXpUpdate();
+                    });
+                    itemXpBatchChain.EnqueueChain();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sends the accumulated item XP updates to the client
+        /// </summary>
+        private void FlushBatchedItemXpUpdate()
+        {
+            lock (itemXpBatchLock)
+            {
+                foreach (var kvp in pendingItemXpUpdates)
+                {
+                    var itemGuid = kvp.Key;
+                    var item = GetInventoryItem(new ACE.Entity.ObjectGuid(itemGuid)) ?? GetEquippedItem(new ACE.Entity.ObjectGuid(itemGuid));
+                    
+                    if (item != null && item.ItemTotalXp.HasValue)
+                    {
+                        Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(item, PropertyInt64.ItemTotalXp, item.ItemTotalXp.Value));
+                    }
+                }
+
+                pendingItemXpUpdates.Clear();
+                itemXpBatchChain = null;
             }
         }
 
