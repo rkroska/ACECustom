@@ -218,6 +218,40 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>
+        /// Selects a target from the list based on score comparison with tie-breaker
+        /// </summary>
+        /// <param name="targets">List of potential targets</param>
+        /// <param name="isBetter">Comparison function: (newScore, currentBestScore) => true if newScore is better</param>
+        /// <param name="initialScore">Initial score to compare against (long.MaxValue for min, long.MinValue for max)</param>
+        /// <returns>Selected target, or null if no targets</returns>
+        private Creature SelectTargetByScore(List<Creature> targets, Func<long, long, bool> isBetter, long initialScore)
+        {
+            var bestCandidates = new List<Creature>();
+            var bestScore = initialScore;
+
+            foreach (var target in targets)
+            {
+                var score = CalculateCreaturePowerScore(target);
+                if (isBetter(score, bestScore))
+                {
+                    bestScore = score;
+                    bestCandidates.Clear();
+                    bestCandidates.Add(target);
+                }
+                else if (score == bestScore)
+                {
+                    // Tie-breaker: collect all targets with same score
+                    bestCandidates.Add(target);
+                }
+            }
+
+            // Randomly select from candidates with same score to avoid always targeting the same creature
+            return bestCandidates.Count > 0
+                ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count - 1)]
+                : null;
+        }
+
         public double NextFindTarget;
 
         public virtual void HandleFindTarget()
@@ -313,33 +347,7 @@ namespace ACE.Server.WorldObjects
 
                         // Target creature with lowest power (augs for players if available, otherwise level for all)
                         // Use tie-breaker for same power to avoid always targeting the same creature
-                        Creature weakestTarget = null;
-                        long weakestScore = long.MaxValue;
-                        var weakestCandidates = new List<Creature>();
-                        
-                        foreach (var target in visibleTargets)
-                        {
-                            var score = CalculateCreaturePowerScore(target);
-                            
-                            if (score < weakestScore)
-                            {
-                                weakestScore = score;
-                                weakestCandidates.Clear();
-                                weakestCandidates.Add(target);
-                            }
-                            else if (score == weakestScore)
-                            {
-                                // Tie-breaker: collect all targets with same score
-                                weakestCandidates.Add(target);
-                            }
-                        }
-                        
-                        // Randomly select from candidates with same score to avoid always targeting the same creature
-                        if (weakestCandidates.Count > 0)
-                        {
-                            weakestTarget = weakestCandidates[ThreadSafeRandom.Next(0, weakestCandidates.Count - 1)];
-                        }
-                        
+                        var weakestTarget = SelectTargetByScore(visibleTargets, (a, b) => a < b, long.MaxValue);
                         SetAttackTargetAndInvalidate(weakestTarget);
                         break;
 
@@ -347,33 +355,7 @@ namespace ACE.Server.WorldObjects
 
                         // Target creature with highest power (augs for players if available, otherwise level for all)
                         // Use tie-breaker for same power to avoid always targeting the same creature
-                        Creature strongestTarget = null;
-                        long strongestScore = long.MinValue;
-                        var strongestCandidates = new List<Creature>();
-                        
-                        foreach (var target in visibleTargets)
-                        {
-                            var score = CalculateCreaturePowerScore(target);
-                            
-                            if (score > strongestScore)
-                            {
-                                strongestScore = score;
-                                strongestCandidates.Clear();
-                                strongestCandidates.Add(target);
-                            }
-                            else if (score == strongestScore)
-                            {
-                                // Tie-breaker: collect all targets with same score
-                                strongestCandidates.Add(target);
-                            }
-                        }
-                        
-                        // Randomly select from candidates with same score to avoid always targeting the same creature
-                        if (strongestCandidates.Count > 0)
-                        {
-                            strongestTarget = strongestCandidates[ThreadSafeRandom.Next(0, strongestCandidates.Count - 1)];
-                        }
-                        
+                        var strongestTarget = SelectTargetByScore(visibleTargets, (a, b) => a > b, long.MinValue);
                         SetAttackTargetAndInvalidate(strongestTarget);
                         break;
 
