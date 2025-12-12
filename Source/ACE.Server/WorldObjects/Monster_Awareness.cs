@@ -173,6 +173,84 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine($"{Name}.TargetingTactic: {CurrentTargetingTactic}");
         }
 
+        /// <summary>
+        /// Calculates total augmentation count for a player
+        /// </summary>
+        private long CalculatePlayerAugTotal(Player player)
+        {
+            if (player == null)
+                return 0;
+            
+            // Sum all augmentation types
+            long totalAugs = 0;
+            totalAugs += player.LuminanceAugmentLifeCount ?? 0;
+            totalAugs += player.LuminanceAugmentCreatureCount ?? 0;
+            totalAugs += player.LuminanceAugmentWarCount ?? 0;
+            totalAugs += player.LuminanceAugmentMeleeCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissileCount ?? 0;
+            totalAugs += player.LuminanceAugmentVoidCount ?? 0;
+            totalAugs += player.LuminanceAugmentItemCount ?? 0;
+            totalAugs += player.LuminanceAugmentSummonCount ?? 0;
+            totalAugs += player.LuminanceAugmentMeleeDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissileDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMagicDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentSpellDurationCount ?? 0;
+            totalAugs += player.LuminanceAugmentSpecializeCount ?? 0;
+            
+            return totalAugs;
+        }
+
+        /// <summary>
+        /// Calculates power score for a creature (augs * 10 + level, ensuring augs always win)
+        /// </summary>
+        private long CalculateCreaturePowerScore(Creature creature)
+        {
+            if (creature is Player player)
+            {
+                var totalAugs = CalculatePlayerAugTotal(player);
+                return (totalAugs * 10) + (player.Level ?? 0);
+            }
+            else
+            {
+                // Non-players don't have augs, just use level
+                return creature.Level ?? 0;
+            }
+        }
+
+        /// <summary>
+        /// Selects a target from the list based on score comparison with tie-breaker
+        /// </summary>
+        /// <param name="targets">List of potential targets</param>
+        /// <param name="isBetter">Comparison function: (newScore, currentBestScore) => true if newScore is better</param>
+        /// <param name="initialScore">Initial score to compare against (long.MaxValue for min, long.MinValue for max)</param>
+        /// <returns>Selected target, or null if no targets</returns>
+        private Creature SelectTargetByScore(List<Creature> targets, Func<long, long, bool> isBetter, long initialScore)
+        {
+            var bestCandidates = new List<Creature>();
+            var bestScore = initialScore;
+
+            foreach (var target in targets)
+            {
+                var score = CalculateCreaturePowerScore(target);
+                if (isBetter(score, bestScore))
+                {
+                    bestScore = score;
+                    bestCandidates.Clear();
+                    bestCandidates.Add(target);
+                }
+                else if (score == bestScore)
+                {
+                    // Tie-breaker: collect all targets with same score
+                    bestCandidates.Add(target);
+                }
+            }
+
+            // Randomly select from candidates with same score to avoid always targeting the same creature
+            return bestCandidates.Count > 0
+                ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count)]
+                : null;
+        }
+
         public double NextFindTarget;
 
         public virtual void HandleFindTarget()
@@ -229,7 +307,7 @@ namespace ACE.Server.WorldObjects
                 {
                     case TargetingTactic.None:
 
-                        Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
+                        //Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
                         break; // same as focused?
 
                     case TargetingTactic.Random:
@@ -266,17 +344,16 @@ namespace ACE.Server.WorldObjects
 
                     case TargetingTactic.Weakest:
 
-                        // should probably shuffle the list beforehand,
-                        // in case a bunch of levels of same level are in a group,
-                        // so the same player isn't always selected
-                        var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
-                        SetAttackTargetAndInvalidate(lowestLevel);
+                        // Target creature with lowest power (augs * 10 + level, ensuring augs always win)
+                        // Use tie-breaker for same power to avoid always targeting the same creature
+                        SetAttackTargetAndInvalidate(SelectTargetByScore(visibleTargets, (a, b) => a < b, long.MaxValue));
                         break;
 
                     case TargetingTactic.Strongest:
 
-                        var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
-                        SetAttackTargetAndInvalidate(highestLevel);
+                        // Target creature with highest power (augs * 10 + level, ensuring augs always win)
+                        // Use tie-breaker for same power to avoid always targeting the same creature
+                        SetAttackTargetAndInvalidate(SelectTargetByScore(visibleTargets, (a, b) => a > b, long.MinValue));
                         break;
 
                     case TargetingTactic.Nearest:
