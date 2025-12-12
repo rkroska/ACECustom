@@ -192,7 +192,7 @@ namespace ACE.Server.WorldObjects
             totalAugs += player.LuminanceAugmentItemCount ?? 0;
             totalAugs += player.LuminanceAugmentSummonCount ?? 0;
             totalAugs += player.LuminanceAugmentMeleeDefenseCount ?? 0;
-            totalAugs += player.LuminanceAugmentMissleDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissileDefenseCount ?? 0;
             totalAugs += player.LuminanceAugmentMagicDefenseCount ?? 0;
             totalAugs += player.LuminanceAugmentSpellDurationCount ?? 0;
             totalAugs += player.LuminanceAugmentSpecializeCount ?? 0;
@@ -247,7 +247,7 @@ namespace ACE.Server.WorldObjects
 
             // Randomly select from candidates with same score to avoid always targeting the same creature
             return bestCandidates.Count > 0
-                ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count - 1)]
+                ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count)]
                 : null;
         }
 
