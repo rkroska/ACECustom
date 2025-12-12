@@ -360,6 +360,7 @@ namespace ACE.Server.WorldObjects
                     {
                         // ALWAYS clear SaveInProgress, even if callback throws
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
             }
@@ -435,6 +436,7 @@ namespace ACE.Server.WorldObjects
                     finally
                     {
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
             }
