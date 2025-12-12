@@ -269,8 +269,9 @@ namespace ACE.Server.Managers
             var vassal = vassalNode.Player;
             var patron = patronNode.Player;
 
-            if (!vassal.ExistedBeforeAllegianceXpChanges)
-                return;
+            // Removed level requirement check - patrons can now receive passup regardless of level
+            //if (!vassal.ExistedBeforeAllegianceXpChanges)
+            //    return;
 
             if (patron.GetProperty(PropertyBool.IsMule).HasValue && patron.GetProperty(PropertyBool.IsMule).Value == true)
             {
