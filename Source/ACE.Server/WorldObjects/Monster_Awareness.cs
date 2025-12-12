@@ -201,52 +201,97 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Calculates power score for a creature (augs for players if available, otherwise level)
+        /// Represents a creature's power metrics for targeting comparison
         /// </summary>
-        private long CalculateCreaturePowerScore(Creature creature)
+        private struct CreaturePowerMetrics
         {
-            if (creature is Player player)
+            public int Level;
+            public long TotalAugs;
+            
+            public CreaturePowerMetrics(int level, long totalAugs)
             {
-                // Try aug total first for players, fall back to level if no augs
-                var augTotal = CalculatePlayerAugTotal(player);
-                return augTotal > 0 ? augTotal : (player.Level ?? 0);
-            }
-            else
-            {
-                // Use level for non-player creatures
-                return creature.Level ?? 0;
+                Level = level;
+                TotalAugs = totalAugs;
             }
         }
 
         /// <summary>
-        /// Selects a target from the list based on score comparison with tie-breaker
+        /// Calculates power metrics for a creature
+        /// </summary>
+        private CreaturePowerMetrics CalculateCreaturePowerMetrics(Creature creature)
+        {
+            if (creature is Player player)
+            {
+                var totalAugs = CalculatePlayerAugTotal(player);
+                return new CreaturePowerMetrics(
+                    player.Level ?? 0,
+                    totalAugs
+                );
+            }
+            else
+            {
+                return new CreaturePowerMetrics(
+                    creature.Level ?? 0,
+                    0 // Non-players don't have augs
+                );
+            }
+        }
+
+        /// <summary>
+        /// Selects a target from the list based on direct creature comparison with tie-breaker
         /// </summary>
         /// <param name="targets">List of potential targets</param>
-        /// <param name="isBetter">Comparison function: (newScore, currentBestScore) => true if newScore is better</param>
-        /// <param name="initialScore">Initial score to compare against (long.MaxValue for min, long.MinValue for max)</param>
+        /// <param name="compare">Comparison function: (metrics1, metrics2) => true if metrics1 is better</param>
         /// <returns>Selected target, or null if no targets</returns>
-        private Creature SelectTargetByScore(List<Creature> targets, Func<long, long, bool> isBetter, long initialScore)
+        private Creature SelectTargetByComparison(List<Creature> targets, Func<CreaturePowerMetrics, CreaturePowerMetrics, bool> compare)
         {
+            // Check if any player has augs - if so, use augs for all players; otherwise use level for all
+            bool useAugsForPlayers = false;
+            foreach (var target in targets)
+            {
+                if (target is Player player)
+                {
+                    var augTotal = CalculatePlayerAugTotal(player);
+                    if (augTotal > 0)
+                    {
+                        useAugsForPlayers = true;
+                        break;
+                    }
+                }
+            }
+
+            CreaturePowerMetrics? bestMetrics = null;
             var bestCandidates = new List<Creature>();
-            var bestScore = initialScore;
 
             foreach (var target in targets)
             {
-                var score = CalculateCreaturePowerScore(target);
-                if (isBetter(score, bestScore))
+                var metrics = CalculateCreaturePowerMetrics(target);
+                
+                // Adjust metrics based on whether we're using augs or levels
+                if (!useAugsForPlayers && target is Player)
                 {
-                    bestScore = score;
+                    // Scale level down so augs always win when present
+                    metrics = new CreaturePowerMetrics(
+                        (int)(metrics.Level * 0.0001), // Scale level to be much smaller than augs
+                        0 // No augs in this mode
+                    );
+                }
+
+                if (bestMetrics == null || compare(metrics, bestMetrics.Value))
+                {
+                    bestMetrics = metrics;
                     bestCandidates.Clear();
                     bestCandidates.Add(target);
                 }
-                else if (score == bestScore)
+                else if (metrics.Level == bestMetrics.Value.Level && 
+                         metrics.TotalAugs == bestMetrics.Value.TotalAugs)
                 {
-                    // Tie-breaker: collect all targets with same score
+                    // Tie-breaker: collect all targets with same metrics
                     bestCandidates.Add(target);
                 }
             }
 
-            // Randomly select from candidates with same score to avoid always targeting the same creature
+            // Randomly select from candidates with same metrics to avoid always targeting the same creature
             return bestCandidates.Count > 0
                 ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count - 1)]
                 : null;
@@ -308,7 +353,7 @@ namespace ACE.Server.WorldObjects
                 {
                     case TargetingTactic.None:
 
-                        Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
+                        //Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
                         break; // same as focused?
 
                     case TargetingTactic.Random:
@@ -347,16 +392,25 @@ namespace ACE.Server.WorldObjects
 
                         // Target creature with lowest power (augs for players if available, otherwise level for all)
                         // Use tie-breaker for same power to avoid always targeting the same creature
-                        var weakestTarget = SelectTargetByScore(visibleTargets, (a, b) => a < b, long.MaxValue);
-                        SetAttackTargetAndInvalidate(weakestTarget);
+                        SetAttackTargetAndInvalidate(SelectTargetByComparison(visibleTargets, 
+                            (m1, m2) => {
+                                // If using augs, compare by augs; otherwise compare by scaled level
+                                if (m1.TotalAugs > 0 || m2.TotalAugs > 0)
+                                    return m1.TotalAugs < m2.TotalAugs;
+                                return m1.Level < m2.Level;
+                            }));
                         break;
 
                     case TargetingTactic.Strongest:
 
                         // Target creature with highest power (augs for players if available, otherwise level for all)
                         // Use tie-breaker for same power to avoid always targeting the same creature
-                        var strongestTarget = SelectTargetByScore(visibleTargets, (a, b) => a > b, long.MinValue);
-                        SetAttackTargetAndInvalidate(strongestTarget);
+                        SetAttackTargetAndInvalidate(SelectTargetByComparison(visibleTargets,
+                            (m1, m2) => {
+                                if (m1.TotalAugs > 0 || m2.TotalAugs > 0)
+                                    return m1.TotalAugs > m2.TotalAugs;
+                                return m1.Level > m2.Level;
+                            }));
                         break;
 
                     case TargetingTactic.Nearest:
