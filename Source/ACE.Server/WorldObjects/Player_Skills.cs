@@ -59,7 +59,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(sound, msg);
 
                 // retail was missing the 'raise skill' runrate hook here
-                if (skill == Skill.Run && PropertyManager.GetBool("runrate_add_hooks"))
+                if (skill == Skill.Run && ServerConfig.runrate_add_hooks.Value)
                     HandleRunRateUpdate();
             }
 
@@ -648,7 +648,7 @@ namespace ACE.Server.WorldObjects
             if (weapon == null || !weapon.IsMasterable)
                 return false;
 
-            if (PropertyManager.GetBool("universal_masteries"))
+            if (ServerConfig.universal_masteries.Value)
             {
                 // https://asheron.fandom.com/wiki/Spring_2014_Update
                 // end of retail - universal masteries

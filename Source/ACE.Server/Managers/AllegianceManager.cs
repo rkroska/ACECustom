@@ -306,7 +306,7 @@ namespace ACE.Server.Managers
 
             if (luminance)
             {
-                var lumMult = PropertyManager.GetDouble("lum_passup_mult", 0.5);
+                var lumMult = ServerConfig.lum_passup_mult.Value;
                 generatedAmount = (uint)(generatedAmount * lumMult);
                 passupAmount = (uint)(passupAmount * lumMult);
             }
@@ -345,7 +345,7 @@ namespace ACE.Server.Managers
 
                 vassal.AllegianceXPGenerated += generatedAmount;
 
-                if (PropertyManager.GetBool("offline_xp_passup_limit"))
+                if (ServerConfig.offline_xp_passup_limit.Value)
                     patron.AllegianceXPCached = Math.Min(patron.AllegianceXPCached + passupAmount, uint.MaxValue);
                 else
                     patron.AllegianceXPCached += passupAmount;

@@ -257,14 +257,14 @@ namespace ACE.Server.WorldObjects
             // this is to prevent ordering bugs, such as a player being processed after a summon,
             // and already being at the 1 cap for players
 
-            var summon_credit_cap = (int)PropertyManager.GetLong("summoning_killtask_multicredit_cap") - 1;
+            var summon_credit_cap = (int)ServerConfig.summoning_killtask_multicredit_cap.Value - 1;
 
             var playerCredits = new Dictionary<ObjectGuid, int>();
             var summonCredits = new Dictionary<ObjectGuid, int>();
 
             // this option isn't really needed anymore, but keeping it around for compatibility
             // it is now synonymous with summoning_killtask_multicredit_cap <= 1
-            if (!PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
+            if (!ServerConfig.allow_summoning_killtask_multicredit.Value)
                 summon_credit_cap = 0;
 
             foreach (var kvp in DamageHistory.TotalDamage)
@@ -303,7 +303,7 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!PropertyManager.GetBool("fellow_kt_killer"))   
+                else if (!ServerConfig.fellow_kt_killer.Value)   
                 {
                     continue;
                 }
@@ -370,7 +370,7 @@ namespace ACE.Server.WorldObjects
                     if (playerDamager != null && playerDamager.QuestManager.HasQuest(questName))
                     {
                         // only add combat pet to eligible receivers if player has quest, and allow_summoning_killtask_multicredit = true (default, retail)
-                        if (DamageHistory.HasDamager(playerDamager, true) && PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
+                        if (DamageHistory.HasDamager(playerDamager, true) && ServerConfig.allow_summoning_killtask_multicredit.Value)
                             receivers[kvp.Value.Guid] = kvp.Value;  // add CombatPet
                         else
                             receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);   // add dummy profile for PetOwner
@@ -400,7 +400,7 @@ namespace ACE.Server.WorldObjects
                     // just add a fake DamageHistoryInfo for reference
                     receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);
                 }
-                else if (PropertyManager.GetBool("fellow_kt_killer"))
+                else if (ServerConfig.fellow_kt_killer.Value)
                 {
                     // if this option is enabled (retail default), the killer is required to have kill task
                     // for it to share with fellowship
@@ -725,7 +725,7 @@ namespace ACE.Server.WorldObjects
 
             // move wielded treasure over, which also should include Wielded objects not marked for destroy on death.
             // allow server operators to configure this behavior due to errors in createlist post 16py data
-            var dropFlags = PropertyManager.GetBool("creatures_drop_createlist_wield") ? DestinationType.WieldTreasure : DestinationType.Treasure;
+            var dropFlags = ServerConfig.creatures_drop_createlist_wield.Value ? DestinationType.WieldTreasure : DestinationType.Treasure;
 
             // Build list of items to move (optimized from Concat + Where + ToList)
             var itemsToMove = new List<WorldObject>();

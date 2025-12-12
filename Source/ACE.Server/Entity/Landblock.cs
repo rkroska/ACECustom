@@ -398,9 +398,9 @@ namespace ACE.Server.Entity
                         return;
                     }
 
-                    if (PropertyManager.GetBool("override_encounter_spawn_rates"))
+                    if (ServerConfig.override_encounter_spawn_rates.Value)
                     {
-                        wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval");
+                        wo.RegenerationInterval = ServerConfig.encounter_regen_interval.Value;
 
                         wo.ReinitializeHeartbeats();
 
@@ -419,7 +419,7 @@ namespace ACE.Server.Entity
                             }
 
                             foreach (var profile in wo.Biota.PropertiesGenerator)
-                                profile.Delay = (float)PropertyManager.GetDouble("encounter_delay");
+                                profile.Delay = (float)ServerConfig.encounter_delay.Value;
                         }
                     }
 
@@ -567,7 +567,7 @@ namespace ACE.Server.Entity
                 // Increased from 50 to 75 based on production saturation warnings
                 // Configurable via: /modifylong monster_tick_throttle_limit <value> (min: 50, recommended: 75-125)
                 int monstersProcessed = 0;
-                var throttleValue = (int)PropertyManager.GetLong("monster_tick_throttle_limit", 75);
+                var throttleValue = (int)ServerConfig.monster_tick_throttle_limit.Value;
                 var maxMonstersPerTick = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
                 
                 if (throttleValue < 50 && throttleValue != maxMonstersPerTick)
@@ -1094,7 +1094,7 @@ namespace ACE.Server.Entity
             // more than corpse_spam_limit corpses on a single landblock.
             else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
             {
-                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit");
+                long perPlayerCorpseLimit = ServerConfig.corpse_spam_limit.Value;
                 int corpsesForThisPlayer = 0;
 
                 Corpse oldestCorpseNotDecayingSoon = null;

@@ -104,7 +104,7 @@ namespace ACE.Server.WorldObjects
 
             if (IsLocked)
             {
-                if (PropertyManager.GetBool("fix_chest_missing_inventory_window"))
+                if (ServerConfig.fix_chest_missing_inventory_window.Value)
                     player.SendTransientError($"The {Name} is locked");
 
                 EnqueueBroadcast(new GameMessageSound(Guid, Sound.OpenFailDueToLock, 1.0f));
@@ -116,7 +116,7 @@ namespace ACE.Server.WorldObjects
                 var currentTime = Time.GetUnixTime();
 
                 // prevent ninja looting
-                if (UseLockTimestamp.Value + PropertyManager.GetDouble("unlocker_window") > currentTime)
+                if (UseLockTimestamp.Value + ServerConfig.unlocker_window.Value > currentTime)
                 {
                     player.SendTransientError(InUseMessage);
                     return new ActivationResult(false);
@@ -247,7 +247,7 @@ namespace ACE.Server.WorldObjects
             if (DefaultLocked && !IsLocked)
             {
                 IsLocked = true;
-                if (!PropertyManager.GetBool("fix_chest_missing_inventory_window"))
+                if (!ServerConfig.fix_chest_missing_inventory_window.Value)
                     EnqueueBroadcast(new GameMessagePublicUpdatePropertyBool(this, PropertyBool.Locked, IsLocked));
             }
 

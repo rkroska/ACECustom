@@ -73,7 +73,7 @@ namespace ACE.Server.Managers
             log.DebugFormat("ServerTime initialized to {0}", Timers.WorldStartLoreTime);
             log.DebugFormat($"Current maximum allowed sessions: {ConfigManager.Config.Server.Network.MaximumAllowedSessions}");
 
-            log.Info($"World started and is currently {WorldStatus.ToString()}{(PropertyManager.GetBool("world_closed", false) ? "" : " and will open automatically when server startup is complete.")}");
+            log.Info($"World started and is currently {WorldStatus.ToString()}{(ServerConfig.world_closed.Value ? "" : " and will open automatically when server startup is complete.")}");
             if (WorldStatus == WorldStatusState.Closed)
                 log.Info($"To open world to players, use command: world open");
         }
@@ -300,16 +300,16 @@ namespace ACE.Server.Managers
             }
 
             // These warnings are set by DDD_InterrogationResponse
-            if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && PropertyManager.GetBool("show_dat_warning"))
+            if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && ServerConfig.show_dat_warning.Value)
             {
-                var msg = PropertyManager.GetString("dat_older_warning_msg");
+                var msg = ServerConfig.dat_older_warning_msg.Value;
                 var chatMsg = new GameMessageSystemChat(msg, ChatMessageType.System);
                 session.Network.EnqueueSend(chatMsg);
             }
 
-            var popup_header = PropertyManager.GetString("popup_header");
-            var popup_motd = PropertyManager.GetString("popup_motd");
-            var popup_welcome = player.IsOlthoiPlayer ? PropertyManager.GetString("popup_welcome_olthoi") : PropertyManager.GetString("popup_welcome");
+            var popup_header = ServerConfig.popup_header.Value;
+            var popup_motd = ServerConfig.popup_motd.Value;
+            var popup_welcome = player.IsOlthoiPlayer ? ServerConfig.popup_welcome_olthoi.Value : ServerConfig.popup_welcome.Value;
 
             if (character.TotalLogins <= 1)
             {
@@ -326,7 +326,7 @@ namespace ACE.Server.Managers
             var info = "Welcome to Asheron's Call\n  powered by ACEmulator\n\nFor more information on commands supported by this server, type @acehelp\n";
             session.Network.EnqueueSend(new GameMessageSystemChat(info, ChatMessageType.Broadcast));
 
-            var server_motd = PropertyManager.GetString("server_motd");
+            var server_motd = ServerConfig.server_motd.Value;
             if (!string.IsNullOrEmpty(server_motd))
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{server_motd}\n", ChatMessageType.Broadcast));
 
@@ -502,7 +502,7 @@ namespace ACE.Server.Managers
             if ((now - lastLoginBlockAlert).TotalMinutes >= 1)
                 loginBlockAlertsThisMinute = 0;
             
-            var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3);
+            var maxAlerts = ServerConfig.login_block_discord_max_alerts_per_minute.Value;
             if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
                 return;
             

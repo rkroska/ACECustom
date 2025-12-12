@@ -45,8 +45,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
             // apply xp modifiers.  Quest XP is multiplicative with general XP modification
-            var questModifier = PropertyManager.GetDouble("quest_xp_modifier");
-            var modifier = PropertyManager.GetDouble("xp_modifier");
+            var questModifier = ServerConfig.quest_xp_modifier.Value;
+            var modifier = ServerConfig.xp_modifier.Value;
             if (xpType == XpType.Quest)
                 modifier *= questModifier;
 
@@ -57,7 +57,7 @@ namespace ACE.Server.WorldObjects
 
             var enlightenment = GetEnglightenmentXPBonus();
 
-            var hardCoreMult = 1 + PropertyManager.GetDouble("hardcore_xp_multiplier", 0.05);
+            var hardCoreMult = 1 + 0.05;
 
             long m_amount = 0;
 
@@ -166,7 +166,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void BatchXpUpdate(long amount, XpType xpType)
         {
-            var batchWindow = PropertyManager.GetDouble("xp_batch_window_seconds", 5.0);
+            var batchWindow = ServerConfig.xp_batch_window_seconds.Value;
 
             lock (xpBatchLock)
             {
@@ -647,7 +647,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void BatchItemXpUpdate(WorldObject item, long amount)
         {
-            var batchWindow = PropertyManager.GetDouble("xp_batch_window_seconds", 5.0);
+            var batchWindow = ServerConfig.xp_batch_window_seconds.Value;
 
             lock (itemXpBatchLock)
             {

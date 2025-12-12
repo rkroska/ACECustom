@@ -263,7 +263,7 @@ namespace ACE.Server.WorldObjects
         {
             var damageResistRating = GetDamageResistRating(combatType, directDamage);
 
-            var allowBug = PropertyManager.GetBool("allow_negative_rating_curve");
+            var allowBug = ServerConfig.allow_negative_rating_curve.Value;
 
             return GetNegativeRatingMod(damageResistRating, allowBug);
         }
@@ -462,10 +462,10 @@ namespace ACE.Server.WorldObjects
             var netherResistRating = GetNetherResistRating();
 
             // Apply scalar from property manager
-            var scalar = PropertyManager.GetDouble("nether_resist_rating_scalar");
+            var scalar = ServerConfig.nether_resist_rating_scalar.Value;
             var scaledRating = (int)(netherResistRating * scalar);
 
-            var allowBug = PropertyManager.GetBool("allow_negative_rating_curve");
+            var allowBug = ServerConfig.allow_negative_rating_curve.Value;
 
             return GetNegativeRatingMod(scaledRating, allowBug);
         }

@@ -432,7 +432,7 @@ namespace ACE.Server.WorldObjects
                 //Fellowship.OnVitalUpdate(this);
 
             // send damage text message
-            //if (PropertyManager.GetBool("show_dot_messages").Item)
+            //if (ServerConfig.show_dot_messages.Value.Item)
             //{
                 var nether = damageType == DamageType.Nether ? "nether " : "";
                 var chatMessageType = damageType == DamageType.Nether ? ChatMessageType.Magic : ChatMessageType.Combat;
@@ -1009,7 +1009,7 @@ namespace ACE.Server.WorldObjects
             defender.UpdatePKTimer();
         }
 
-        public bool PKTimerActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PropertyManager.GetLong("pk_timer");
+        public bool PKTimerActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < ServerConfig.pk_timer.Value;
 
         public bool PKLogoutActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PKLogoffTimer.TotalSeconds;
 

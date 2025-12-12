@@ -1,3 +1,4 @@
+using ACE.Server.Managers;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -38,13 +39,13 @@ namespace ACE.Server.Entity.Actions
             if (Queue.IsEmpty) return;
 
             // CONFIGURABLE: Enable/disable performance tracking
-            var enableTracking = ACE.Server.Managers.PropertyManager.GetBool("action_queue_tracking_enabled", false);
-            
+            var enableTracking = ServerConfig.action_queue_tracking_enabled.Value;
+
             // CONFIGURABLE: Performance thresholds (in milliseconds) - validated to prevent invalid values
-            var trackThresholdMs = Math.Max(1, ACE.Server.Managers.PropertyManager.GetLong("action_queue_track_threshold_ms", 10));
-            var warnThresholdMs = Math.Max(trackThresholdMs, ACE.Server.Managers.PropertyManager.GetLong("action_queue_warn_threshold_ms", 100));
-            var reportIntervalMinutes = Math.Max(1, ACE.Server.Managers.PropertyManager.GetLong("action_queue_report_interval_minutes", 5));
-            var discordMaxAlertsPerMinute = Math.Max(0, ACE.Server.Managers.PropertyManager.GetLong("action_queue_discord_max_alerts_per_minute", 3));
+            var trackThresholdMs = Math.Max(1, ServerConfig.action_queue_track_threshold_ms.Value);
+            var warnThresholdMs = Math.Max(trackThresholdMs, ServerConfig.action_queue_warn_threshold_ms.Value);
+            var reportIntervalMinutes = Math.Max(1, ServerConfig.action_queue_report_interval_minutes.Value);
+            var discordMaxAlertsPerMinute = Math.Max(0, ServerConfig.action_queue_discord_max_alerts_per_minute.Value);
 
             // Throttle action processing to prevent cascade failures during high load
             // During mass spawns or combat, 500+ actions can queue and cause multi-second freezes
@@ -52,7 +53,7 @@ namespace ACE.Server.Entity.Actions
             // Tuning: Lower = safer (200-250), Higher = faster queue clearing (300-400)
             // Increased from 250 to 300 based on production queue spikes during events
             // Configurable via: /modifylong action_queue_throttle_limit <value> (min: 50, recommended: 250-400)
-            var throttleValue = (int)ACE.Server.Managers.PropertyManager.GetLong("action_queue_throttle_limit", 300);
+            var throttleValue = ServerConfig.action_queue_throttle_limit.Value;
             var actionThrottleLimit = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
             var originalQueueSize = Queue.Count;
             var count = Math.Min(originalQueueSize, actionThrottleLimit);

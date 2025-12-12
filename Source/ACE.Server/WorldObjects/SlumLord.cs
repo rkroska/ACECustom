@@ -184,13 +184,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool HasRequirements(Player player)
         {
-            if (!PropertyManager.GetBool("house_purchase_requirements"))
+            if (!ServerConfig.house_purchase_requirements.Value)
                 return true;
 
             if (AllegianceMinLevel == null)
                 return true;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+            var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = AllegianceMinLevel.Value;
 
@@ -207,7 +207,7 @@ namespace ACE.Server.WorldObjects
             if (AllegianceMinLevel == null)
                 return 0;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+            var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = AllegianceMinLevel.Value;
 

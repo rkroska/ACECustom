@@ -14,7 +14,7 @@ namespace ACE.Server.Entity
         /// Opt out of the standarad ACE formula and proc at a custom rate
         /// This setting will affect cloaks with any proc, including -200
         /// </summary>
-        private static bool UseCustomMath => PropertyManager.GetBool("use_cloak_proc_custom_scale", false);
+        private static bool UseCustomMath => ServerConfig.use_cloak_proc_custom_scale.Value;
 
         /// <summary>
         /// The maximum frequency of cloak procs, in seconds
@@ -27,7 +27,7 @@ namespace ACE.Server.Entity
                 {
                     return 5.0;
                 }
-                return PropertyManager.GetDouble("cloak_cooldown_seconds");
+                return ServerConfig.cloak_cooldown_seconds.Value;
             }
         }
 
@@ -42,7 +42,7 @@ namespace ACE.Server.Entity
                 {
                     return 0.25f;
                 }
-                return Convert.ToSingle(PropertyManager.GetDouble("cloak_max_proc_base"));
+                return Convert.ToSingle(ServerConfig.cloak_max_proc_base.Value);
             }
         }
 
@@ -57,7 +57,7 @@ namespace ACE.Server.Entity
                 {
                     return 0f;
                 }
-                return Convert.ToSingle(PropertyManager.GetDouble("cloak_min_proc_base", 0f));
+                return Convert.ToSingle(ServerConfig.cloak_min_proc_base.Value);
             }
         }
 
@@ -73,7 +73,7 @@ namespace ACE.Server.Entity
                 {
                     return 0.15f;
                 }
-                return Convert.ToSingle(PropertyManager.GetDouble("cloak_max_proc_base"));
+                return Convert.ToSingle(ServerConfig.cloak_max_proc_base.Value);
             }
         }
 
@@ -124,7 +124,7 @@ namespace ACE.Server.Entity
             if (UseCustomMath)
             {
                 // The proc chance should only plateau for damage above a certain configured percentage
-                var maxProcAtDamagePercent = Convert.ToSingle(PropertyManager.GetDouble("cloak_max_proc_damage_percentage", 30.0));
+                var maxProcAtDamagePercent = (float)ServerConfig.cloak_max_proc_damage_percentage.Value;
                 // Reduce the damage percent for the calculation if necessary to a fraction of the percentage based on the configuration
                 damage_percent = maxProcRate * (damage_percent / maxProcAtDamagePercent);
             }
