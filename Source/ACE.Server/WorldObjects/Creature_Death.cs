@@ -681,7 +681,10 @@ namespace ACE.Server.WorldObjects
                             foreach (var wo in savedObjects)
                             {
                                 if (!wo.IsDestroyed)
+                                {
                                     wo.SaveInProgress = false;
+                                    wo.SaveStartTime = DateTime.MinValue; // Reset for next save
+                                }
                             }
 
                             if (!result)

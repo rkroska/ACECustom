@@ -35,7 +35,7 @@ namespace ACE.Server.WorldObjects
             get => _saveInProgress;
             set => _saveInProgress = value;
         }
-        private DateTime SaveStartTime { get; set; }
+        internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
         /// <summary>
@@ -360,6 +360,7 @@ namespace ACE.Server.WorldObjects
                     {
                         // ALWAYS clear SaveInProgress, even if callback throws
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
             }
@@ -435,6 +436,7 @@ namespace ACE.Server.WorldObjects
                     finally
                     {
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
             }
