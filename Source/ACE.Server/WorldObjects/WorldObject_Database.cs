@@ -35,7 +35,7 @@ namespace ACE.Server.WorldObjects
             get => _saveInProgress;
             set => _saveInProgress = value;
         }
-        private DateTime SaveStartTime { get; set; }
+        internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
         /// <summary>
