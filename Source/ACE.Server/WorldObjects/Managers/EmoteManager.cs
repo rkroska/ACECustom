@@ -1693,24 +1693,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent; // Scaling factor per augmentation
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost for the specified number of augmentations
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((creatureAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = creatureAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply cost multipliers based on the augmentation threshold
-                                    double additionalMultiplier = 1.0;
-                                    if (creatureAugs >= 4000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (creatureAugs >= 2750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 5250)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 5250
+                                        }
+                                        else if (currentAugCount >= 4750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 4750
+                                        }
+                                        else if (currentAugCount >= 4000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 4000
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 2750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance to proceed
                                     if (player.BankedLuminance < totalCost)
@@ -1769,24 +1778,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((itemAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = itemAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (itemAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (itemAugs >= 1250)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1250
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3500)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1250)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1250
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -1844,24 +1862,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((lifeAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = lifeAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (lifeAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (lifeAugs >= 1000)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1000
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3250)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1000)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1000
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -1919,24 +1946,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((warAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = warAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (warAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (warAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3500)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -1993,23 +2029,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((voidAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (voidAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (voidAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        long currentAugCount = voidAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    totalCost *= additionalMultiplier;
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3500)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
+
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2066,24 +2112,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((meleeAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = meleeAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (meleeAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (meleeAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3500)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2140,24 +2195,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((missileAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = missileAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (missileAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (missileAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3500)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2217,23 +2281,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((durationAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (durationAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (durationAugs >= 1000)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1000
-                                    }
+                                        long currentAugCount = durationAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    totalCost *= additionalMultiplier;
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1000)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1000
+                                        }
+
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2290,24 +2364,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((specAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = specAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (specAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (specAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2250)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2250
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2364,24 +2447,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((summonAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = summonAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (summonAugs >= 4000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 4000
-                                    }
-                                    else if (summonAugs >= 2750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 5250)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 5250
+                                        }
+                                        else if (currentAugCount >= 4750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 4750
+                                        }
+                                        else if (currentAugCount >= 4000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 4000
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 2750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
