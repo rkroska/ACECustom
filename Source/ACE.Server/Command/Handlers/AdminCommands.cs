@@ -2451,8 +2451,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length > 0)
                 destinationPlayer = PlayerManager.GetOnlinePlayer(parameters[0]);
 
-            if (destinationPlayer == null)
-                destinationPlayer = session.Player;
+            destinationPlayer ??= session.Player;
 
             foreach (var player in PlayerManager.GetAllOnline())
             {
@@ -3842,6 +3841,23 @@ namespace ACE.Server.Command.Handlers
             DatabaseManager.World.ClearAllCachedQuests();
         }
 
+        [CommandHandler("clearevent", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Clears a cached event by name", "<eventname>")]
+        public static void HandleEventClear(Session session, params string[] parameters)
+        {
+            var cleared = DatabaseManager.World.ClearCachedEvent(parameters[0]);
+            if (cleared)
+                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' cleared from cache");
+            else
+                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' was not in cache");
+        }
+
+        [CommandHandler("clearallevents", AccessLevel.Admin, CommandHandlerFlag.None, 0, "Clears all cached events")]
+        public static void HandleEventClearAll(Session session, params string[] parameters)
+        {
+            DatabaseManager.World.ClearAllCachedEvents();
+            CommandHandlerHelper.WriteOutputInfo(session, "All events cleared from cache");
+        }
+
         [CommandHandler("clearspellcache", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
         public static void HandleClearSpellCache(Session session, params string[] parameters)
         {
@@ -4154,8 +4170,7 @@ namespace ACE.Server.Command.Handlers
                 if (obj == null)
                     return;
 
-                if (first == null)
-                    first = obj;
+                first ??= obj;
 
                 obj.Name = named;
 

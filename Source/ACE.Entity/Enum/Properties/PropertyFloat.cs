@@ -250,6 +250,12 @@ namespace ACE.Entity.Enum.Properties
         /// Applied per strike on cleaved targets, independent of multi-strike decay
         /// </summary>
         WeaponCleaveStrikeDecay        = 9036,
-        MaxRandomSpawnTime              = 9034,
+        MaxRandomSpawnTime             = 9034,
+        /// <summary>
+        /// The following LifeAug settings allow overriding the aug curve on a character-by-character basis
+        /// </summary>
+        LifeAugTuningConstantOverride  = 9037,
+        LifeAugProtMaxBonusOverride    = 9038,
+        LifeAugNewCurveAmount          = 9039,
     }
 }
