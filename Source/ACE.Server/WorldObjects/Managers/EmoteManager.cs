@@ -1956,7 +1956,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         double multiplier = 1.0;
                                         if (currentAugCount >= 3500)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
                                         }
                                         else if (currentAugCount >= 2750)
                                         {
@@ -2039,7 +2039,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         double multiplier = 1.0;
                                         if (currentAugCount >= 3500)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
                                         }
                                         else if (currentAugCount >= 2750)
                                         {
@@ -2122,7 +2122,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         double multiplier = 1.0;
                                         if (currentAugCount >= 3500)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
                                         }
                                         else if (currentAugCount >= 2750)
                                         {
@@ -2205,7 +2205,7 @@ namespace ACE.Server.WorldObjects.Managers
                                         double multiplier = 1.0;
                                         if (currentAugCount >= 3500)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
                                         }
                                         else if (currentAugCount >= 2750)
                                         {
