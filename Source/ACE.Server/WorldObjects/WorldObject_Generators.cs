@@ -688,6 +688,23 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name}.Generator_Generate({RegenerationInterval})");
 
+            // FALLBACK: If RandomizeSpawnTime wasn't applied in StartGenerator() (e.g., properties not loaded yet on server boot),
+            // apply it now on first generation during power-up phase
+            // Only apply if NextGeneratorRegenerationTime is 0, which indicates StartGenerator() didn't set it (because initialDelay was 0)
+            if (CurrentlyPoweringUp && RandomizeSpawnTime && GeneratorInitialDelay == 0 && RegenerationInterval > 0 && NextGeneratorRegenerationTime == 0)
+            {
+                var currentTime = Time.GetUnixTime();
+                var guidHash = Guid.Full.GetHashCode();
+                var random = new Random(guidHash);
+                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
+                var offset = random.NextDouble() * maxOffset;
+                
+                NextGeneratorRegenerationTime = currentTime + offset;
+                CurrentLandblock?.ResortWorldObjectIntoSortedGeneratorRegenerationList(this);
+                
+                log.Debug($"[GENERATOR][RANDOMIZE][FALLBACK] {Name} (0x{Guid}): Applied RandomizeSpawnTime offset = {offset:F2}s on first generation (properties loaded late on server boot)");
+            }
+
             if (!GeneratorDisabled)
             {
                 if (CurrentlyPoweringUp)
