@@ -169,7 +169,7 @@ namespace ACE.Server.Network.Managers
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"Received GameAction packet that threw an exception from account: {session.AccountId}:{session.Account}, player: {session.Player?.Name}, opcode: 0x{((int)gameActionType):X4}:{gameActionType}");
+                    log.Error($"Received GameAction packet that threw an exception from account: {session.AccountId}:{session.Account}, player: {session.Player?.Name}, actionType: 0x{((int)gameActionType):X4}:{gameActionType}");
                     log.Error(ex);
                 }
             }
