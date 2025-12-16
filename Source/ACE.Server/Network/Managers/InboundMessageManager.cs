@@ -69,7 +69,7 @@ namespace ACE.Server.Network.Managers
 
                 case InboundGameMessageOpcode.GameAction:
                     // We can derive a more specific ActionType for logging from the nested GameActionType.
-                    uint sequence = message.Payload.ReadUInt32();
+                    _ = message.Payload.ReadUInt32(); // sequence number - consumed but not used
                     GameActionType gameActionType = (GameActionType)message.Payload.ReadUInt32();
                     EnqueueAction(ActionTypeConverter.FromGameActionType(gameActionType), session, SessionState.WorldConnected, () => HandleGameAction(gameActionType, message, session));
                     break;

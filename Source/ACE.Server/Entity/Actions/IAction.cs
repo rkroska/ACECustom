@@ -1,13 +1,6 @@
-using ACE.Entity.Enum;
-using ACE.Server.Entity.Chess;
 using ACE.Server.Network.GameAction;
 using ACE.Server.Network.GameMessages;
-using ACE.Server.Network.Structure;
-using Org.BouncyCastle.Tls;
 using System;
-using System.Linq;
-using System.Reflection.Emit;
-using System.Security.Policy;
 
 namespace ACE.Server.Entity.Actions
 {
