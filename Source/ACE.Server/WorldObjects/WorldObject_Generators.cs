@@ -469,6 +469,21 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Calculates a deterministic random spawn offset based on generator GUID
+        /// The offset is capped at the minimum of MaxRandomSpawnTime and RegenerationInterval
+        /// </summary>
+        private double CalculateRandomSpawnOffset()
+        {
+            // Use hash to get better distribution for sequential GUIDs
+            var guidHash = Guid.Full.GetHashCode();
+            var random = new Random(guidHash);
+            // Cap the randomization at either MaxRandomSpawnTime or RegenerationInterval, whichever is lower
+            var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
+            // NextDouble() returns [0.0, 1.0), so offset will be in range [0, maxOffset)
+            return random.NextDouble() * maxOffset;
+        }
+
+        /// <summary>
         /// Called when a generator is first created
         /// </summary>
         public void StartGenerator()
@@ -488,16 +503,11 @@ namespace ACE.Server.WorldObjects
             // This preserves existing generator behavior
             if (RandomizeSpawnTime && GeneratorInitialDelay == 0 && RegenerationInterval > 0)
             {
-                // Calculate deterministic random offset based on generator GUID
-                // Use hash to get better distribution for sequential GUIDs
-                var guidHash = Guid.Full.GetHashCode();
-                var random = new Random(guidHash);
-                // Cap the randomization at either MaxRandomSpawnTime or RegenerationInterval, whichever is lower
-                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
-                // NextDouble() returns [0.0, 1.0), so offset will be in range [0, maxOffset)
-                initialDelay = random.NextDouble() * maxOffset;
+                initialDelay = CalculateRandomSpawnOffset();
                 isRandomized = true;
                 
+                var guidHash = Guid.Full.GetHashCode();
+                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
                 var nextSpawnTime = Time.GetUnixTime() + initialDelay;
                 log.Debug($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, maxOffset={maxOffset:F2}s, hash={guidHash})");
             }
@@ -694,10 +704,7 @@ namespace ACE.Server.WorldObjects
             if (CurrentlyPoweringUp && RandomizeSpawnTime && GeneratorInitialDelay == 0 && RegenerationInterval > 0 && NextGeneratorRegenerationTime == 0)
             {
                 var currentTime = Time.GetUnixTime();
-                var guidHash = Guid.Full.GetHashCode();
-                var random = new Random(guidHash);
-                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
-                var offset = random.NextDouble() * maxOffset;
+                var offset = CalculateRandomSpawnOffset();
                 
                 NextGeneratorRegenerationTime = currentTime + offset;
                 CurrentLandblock?.ResortWorldObjectIntoSortedGeneratorRegenerationList(this);
