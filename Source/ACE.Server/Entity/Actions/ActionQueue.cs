@@ -110,12 +110,12 @@ namespace ACE.Server.Entity.Actions
                     var actionsProcessed = processedActionsThisTick
                         .OrderByDescending(kvp => kvp.Value)
                         .Select(kvp => $" - {kvp.Value}x {kvp.Key}");
-                    warningMsg += "\nActions just processed:\n" + string.Join("\n", actionsProcessed);
+                    warningMsg += "\n\nActions just processed:\n" + string.Join("\n", actionsProcessed);
                     var actionsRemaining = CountByQueueItemType
                         .Where(kvp => kvp.Value > 0)
                         .OrderByDescending(kvp => kvp.Value)
                         .Select(kvp => $" - {kvp.Value}x {kvp.Key}");
-                    warningMsg += "\nActions remaining:\n" + string.Join("\n", actionsRemaining);
+                    warningMsg += "\n\nActions remaining:\n" + string.Join("\n", actionsRemaining);
 
                     log.Warn(warningMsg);
                     

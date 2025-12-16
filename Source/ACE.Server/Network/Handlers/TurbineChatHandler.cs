@@ -5,9 +5,7 @@ using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
-using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
-using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 
 using log4net;
@@ -16,7 +14,6 @@ namespace ACE.Server.Network.Handlers
 {
     public static class TurbineChatHandler
     {
-        [InboundGameMessage(InboundGameMessageOpcode.TurbineChat, SessionState.WorldConnected)]
         public static void TurbineChatReceived(ClientMessage clientMessage, Session session)
         {
             if (!PropertyManager.GetBool("use_turbine_chat"))
