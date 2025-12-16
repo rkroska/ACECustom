@@ -121,11 +121,20 @@ namespace ACE.Server.WorldObjects
             }
 
             // copy all augmentation counts from player (for damage scaling)
-            LuminanceAugmentMeleeCount = player.LuminanceAugmentMeleeCount;
-            LuminanceAugmentMissileCount = player.LuminanceAugmentMissileCount;
-            LuminanceAugmentWarCount = player.LuminanceAugmentWarCount;
-            LuminanceAugmentVoidCount = player.LuminanceAugmentVoidCount;
-            LuminanceAugmentSummonCount = player.LuminanceAugmentSummonCount;
+            // NOTE: Combat pets should NOT benefit from any luminance augmentations
+            // (melee/missile/war/void/item/life) until the player has at least 1
+            // Summoning luminance augmentation.
+            var summonAugCount = (long)(player.LuminanceAugmentSummonCount ?? 0);
+            var hasSummonAug = summonAugCount > 0;
+
+            LuminanceAugmentSummonCount = summonAugCount;
+
+            // Only propagate other luminance augmentation counts if the player has
+            // at least 1 Summoning augmentation. Otherwise, keep them at 0 on the pet.
+            LuminanceAugmentMeleeCount = hasSummonAug ? player.LuminanceAugmentMeleeCount : 0;
+            LuminanceAugmentMissileCount = hasSummonAug ? player.LuminanceAugmentMissileCount : 0;
+            LuminanceAugmentWarCount = hasSummonAug ? player.LuminanceAugmentWarCount : 0;
+            LuminanceAugmentVoidCount = hasSummonAug ? player.LuminanceAugmentVoidCount : 0;
 
             // Apply summoning augmentation bonuses: +1 to all attributes and +1 to all skills per augmentation level
             var augCount = (int)(player.LuminanceAugmentSummonCount ?? 0);
@@ -161,8 +170,9 @@ namespace ACE.Server.WorldObjects
             }
 
             // Store item augmentation bonuses directly (not as enchantments)
+            // These only apply if the player has at least 1 Summoning augmentation.
             var itemAugCount = (long)(player.LuminanceAugmentItemCount ?? 0);
-            if (itemAugCount > 0)
+            if (hasSummonAug && itemAugCount > 0)
             {
                 // Calculate weapon attack/defense mod: +0.20 base + (I × scaling factor)
                 var itemAugPercentage = GetItemAugPercentageRating(itemAugCount);
@@ -179,8 +189,9 @@ namespace ACE.Server.WorldObjects
             // Note: If itemAugCount is 0, _itemAug* fields remain at 0 (already reset above)
 
             // Store life augmentation protection rating directly (not as enchantments)
+            // This only applies if the player has at least 1 Summoning augmentation.
             var lifeAugCount = (long)(player.LuminanceAugmentLifeCount ?? 0);
-            if (lifeAugCount > 0)
+            if (hasSummonAug && lifeAugCount > 0)
             {
                 // Calculate protection rating using diminishing returns formula
                 _lifeAugProtectionRating = GetLifeAugProtectRating(lifeAugCount);
