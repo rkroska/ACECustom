@@ -137,7 +137,7 @@ namespace ACE.Server.WorldObjects
             LuminanceAugmentVoidCount = hasSummonAug ? player.LuminanceAugmentVoidCount : 0;
 
             // Apply summoning augmentation bonuses: +1 to all attributes and +1 to all skills per augmentation level
-            var augCount = (int)(player.LuminanceAugmentSummonCount ?? 0);
+            var augCount = (int)summonAugCount;
             if (augCount > 0)
             {
                 // Apply +1 to all 6 attributes per augmentation level (Base and Current)
