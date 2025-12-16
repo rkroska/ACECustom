@@ -612,7 +612,7 @@ namespace ACE.Server.Entity
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
                     if (member == player && ServerConfig.fellowship_additive.Value)
                     {
-                        member.GrantXP((long)amount, xpType, shareType);
+                        player.GrantLuminance((long)amount, fellowXpType, shareType);
                         continue;
                     }
 

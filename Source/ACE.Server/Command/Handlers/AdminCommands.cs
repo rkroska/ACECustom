@@ -6494,8 +6494,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a bool", "fetchbool (string)")]
         public static void HandleFetchServerBoolProperty(Session session, params string[] parameters)
         {
-            var boolVal = ServerConfig.GetConfigProperty<bool>(parameters[0])?.Value ?? false;
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {boolVal}");
+            ConfigProperty<bool>? boolProp = ServerConfig.GetConfigProperty<bool>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                boolProp != null ?
+                    $"{parameters[0]}: {boolProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifylong", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a long", "modifylong (string) (long)")]
@@ -6521,8 +6525,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a long", "fetchlong (string)")]
         public static void HandleFetchServerLongProperty(Session session, params string[] parameters)
         {
-            var intVal = ServerConfig.GetConfigProperty<long>(parameters[0])?.Value ?? 0;
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {intVal}");
+            ConfigProperty<long>? intProp = ServerConfig.GetConfigProperty<long>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                intProp != null ?
+                    $"{parameters[0]}: {intProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifydouble", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a double", "modifyfloat (string) (double)")]
@@ -6561,8 +6569,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a double", "fetchdouble (string)")]
         public static void HandleFetchServerFloatProperty(Session session, params string[] parameters)
         {
-            var floatVal = ServerConfig.GetConfigProperty<double>(parameters[0])?.Value ?? 0;
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {floatVal}");
+            ConfigProperty<double>? floatProp = ServerConfig.GetConfigProperty<double>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                floatProp != null ?
+                    $"{parameters[0]}: {floatProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifystring", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a string", "modifystring (string) (string)")]
@@ -6580,8 +6592,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a string", "fetchstring (string)")]
         public static void HandleFetchServerStringProperty(Session session, params string[] parameters)
         {
-            var stringVal = ServerConfig.GetConfigProperty<string>(parameters[0])?.Value ?? "";
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {stringVal}");
+            ConfigProperty<string>? stringProp = ServerConfig.GetConfigProperty<string>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                stringProp != null ?
+                    $"{parameters[0]}: {stringProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("resyncproperties", AccessLevel.Admin, CommandHandlerFlag.None, "Resync the properties database")]

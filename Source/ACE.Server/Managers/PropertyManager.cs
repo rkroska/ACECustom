@@ -351,7 +351,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> empty_corpse_decay_seconds { get; private set; } = new(3, "the amount of time in seconds an empty corpse will take to decay (including corpses that have been looted empty)");
         public static ConfigProperty<long> default_subscription_level { get; private set; } = new(1, "retail defaults to 1, 1 = standard subscription (same as 2 and 3), 4 grants ToD pre-order bonus item Asheron's Benediction");
         public static ConfigProperty<long> fellowship_even_share_level { get; private set; } = new(50, "level when fellowship XP sharing is no longer restricted");
-        public static ConfigProperty<long> mansion_min_rank { get; private set; } = new(6, "overrides the default allegiance rank required to own a mansion");
+        public static ConfigProperty<long> mansion_min_rank { get; private set; } = new(-1, "overrides the default allegiance rank required to own a mansion");
         public static ConfigProperty<long> max_chars_per_account { get; private set; } = new(11, "retail defaults to 11, client supports up to 20");
         public static ConfigProperty<long> pk_timer { get; private set; } = new(20, "the number of seconds where a player cannot perform certain actions (ie. teleporting) after becoming involved in a PK battle");
         public static ConfigProperty<long> player_save_interval { get; private set; } = new(300, "the number of seconds between automatic player saves");

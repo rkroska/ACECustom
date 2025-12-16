@@ -440,7 +440,7 @@ namespace ACE.Server.Managers
 
             var player = PlayerManager.FindByGuid(playerGuid, out bool isOnline);
 
-            if (ServerConfig.house_rent_enabled.Value && !multihouse && !force)
+            if (!ServerConfig.house_rent_enabled.Value && !multihouse && !force)
             {
                 // rent disabled, push forward
                 var purchaseTime = (uint)(player.HousePurchaseTimestamp ?? 0);

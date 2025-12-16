@@ -255,6 +255,7 @@ namespace ACE.Server.WorldObjects
         public int CalculateVitaePenalty()
         {
             int lvl = Level ?? 1;
+            long perLevel = Math.Max(1, ServerConfig.vitae_per_level.Value);
             return (int)(lvl / ServerConfig.vitae_per_level.Value);
         }
 

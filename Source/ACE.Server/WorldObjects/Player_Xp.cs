@@ -57,7 +57,7 @@ namespace ACE.Server.WorldObjects
 
             var enlightenment = GetEnglightenmentXPBonus();
 
-            var hardCoreMult = 1 + 0.05;
+            var hardCoreMult = 1.0 + ServerConfig.hardcore_xp_multiplier.Value;
 
             long m_amount = 0;
 

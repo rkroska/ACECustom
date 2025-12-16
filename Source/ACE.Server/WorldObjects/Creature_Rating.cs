@@ -460,13 +460,9 @@ namespace ACE.Server.WorldObjects
         public float GetNetherResistRatingMod()
         {
             var netherResistRating = GetNetherResistRating();
-
-            // Apply scalar from property manager
             var scalar = ServerConfig.nether_resist_rating_scalar.Value;
             var scaledRating = (int)(netherResistRating * scalar);
-
             var allowBug = ServerConfig.allow_negative_rating_curve.Value;
-
             return GetNegativeRatingMod(scaledRating, allowBug);
         }
 
