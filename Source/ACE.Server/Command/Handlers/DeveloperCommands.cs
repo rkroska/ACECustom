@@ -3097,10 +3097,34 @@ namespace ACE.Server.Command.Handlers
             wo.EnqueueBroadcast(new GameMessageScript(wo.Guid, (PlayScript)pscript));
         }
 
-        [CommandHandler("getinfo", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows basic info for the last appraised object.")]
+        [CommandHandler("getinfo", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows basic info for the last appraised object, or a weenie by class ID if provided.")]
         public static void HandleGetInfo(Session session, params string[] parameters)
         {
-            var wo = CommandHandlerHelper.GetLastAppraisedObject(session);
+            WorldObject wo = null;
+
+            if (parameters.Length > 0 && !string.IsNullOrWhiteSpace(parameters[0]))
+            {
+                // Try to parse as weenieclassid
+                if (uint.TryParse(parameters[0], out uint weenieClassId))
+                {
+                    wo = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+                    if (wo == null)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"WeenieClassId {weenieClassId} not found.", ChatMessageType.Broadcast));
+                        return;
+                    }
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid weenieclassid: {parameters[0]}", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+            else
+            {
+                // Use last appraised object
+                wo = CommandHandlerHelper.GetLastAppraisedObject(session);
+            }
 
             if (wo != null)
             {
@@ -3114,7 +3138,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Position: {wo.PhysicsObj.Position}", ChatMessageType.Broadcast));
                 }
-            }            
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("No object found. Appraise an object first or provide a valid weenieclassid.", ChatMessageType.Broadcast));
+            }
         }
 
         public static WorldObject LastTestAim;
@@ -3897,7 +3925,7 @@ namespace ACE.Server.Command.Handlers
                             msg += $"StackSize: {shopItem.StackSize ?? 1} | PaletteTemplate: {(PaletteTemplate)shopItem.PaletteTemplate} ({shopItem.PaletteTemplate}) | Shade: {shopItem.Shade:F3}\n";
                             var soldTimestamp = Time.GetDateTimeFromTimestamp(shopItem.SoldTimestamp ?? 0);
                             msg += $"SoldTimestamp: {soldTimestamp.ToLocalTime()} ({(shopItem.SoldTimestamp.HasValue ? $"{shopItem.SoldTimestamp}" : "NULL")})\n";
-                            var rotTime = soldTimestamp.AddSeconds(PropertyManager.GetDouble("vendor_unique_rot_time"));
+                            var rotTime = soldTimestamp.AddSeconds(ServerConfig.vendor_unique_rot_time.Value);
                             msg += $"RotTimestamp: {rotTime.ToLocalTime()}\n";
                             var payout = vendor.GetBuyCost(shopItem);
                             msg += $"Paid: {payout:N0} {(payout == 1 ? currencyWeenie.GetName() : currencyWeenie.GetPluralName())}\n";

@@ -473,7 +473,7 @@ namespace ACE.Server.Command.Handlers.Processors
         /// </summary>
         private static DirectoryInfo VerifyContentFolder(Session session, bool showError = true)
         {
-            var content_folder = PropertyManager.GetString("content_folder");
+            var content_folder = ServerConfig.content_folder.Value;
 
             var sep = Path.DirectorySeparatorChar;
 
@@ -1818,9 +1818,9 @@ namespace ACE.Server.Command.Handlers.Processors
                 return null;
             }
 
-            if (PropertyManager.GetBool("override_encounter_spawn_rates"))
+            if (ServerConfig.override_encounter_spawn_rates.Value)
             {
-                wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval");
+                wo.RegenerationInterval = ServerConfig.encounter_regen_interval.Value;
 
                 wo.ReinitializeHeartbeats();
 

@@ -185,7 +185,7 @@ namespace ACE.Server.WorldObjects
             // ethereal must be set to false for ethereal_check_for_collisions
             Ethereal = false;
 
-            if (PropertyManager.GetBool("allow_door_hold") && PhysicsObj.ethereal_check_for_collisions())
+            if (ServerConfig.allow_door_hold.Value && PhysicsObj.ethereal_check_for_collisions())
             {
                 // the source of this bug is EtherealHook for the door
                 // physics engine set_ethereal() -> ethereal_check_for_collisions() -> CheckEthereal state

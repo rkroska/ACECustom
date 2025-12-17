@@ -158,7 +158,7 @@ namespace ACE.Server.Command.Handlers
             var sb = new StringBuilder();
             
             sb.Append($"Action Queue Status:{'\n'}");
-            var actionThrottle = PropertyManager.GetLong("action_queue_throttle_limit", 300);
+            var actionThrottle = ServerConfig.action_queue_throttle_limit.Value;
             sb.Append($"WorldManager ActionQueue: {WorldManager.ActionQueue.Count():N0} actions queued (Throttle: {actionThrottle}/tick){'\n'}");
             sb.Append($"NetworkManager InboundMessageQueue: {Network.Managers.NetworkManager.InboundMessageQueue.Count():N0} actions queued (Throttle: {actionThrottle}/tick){'\n'}");
             
@@ -175,7 +175,7 @@ namespace ACE.Server.Command.Handlers
                 .OrderByDescending(x => x.CreatureCount)
                 .Take(5);
             
-            var monsterThrottle = PropertyManager.GetLong("monster_tick_throttle_limit", 75);
+            var monsterThrottle = ServerConfig.monster_tick_throttle_limit.Value;
             sb.Append($"{'\n'}Top 5 Landblocks by Creature Count (Monster_Tick throttle: {monsterThrottle}/tick):{'\n'}");
             foreach (var item in busiestByCreatures)
             {

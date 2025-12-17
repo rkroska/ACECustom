@@ -811,6 +811,7 @@ namespace ACE.Server.WorldObjects
             {
                 log.Debug($"[DESTROY] Clearing stuck SaveInProgress flag for {Name} (0x{Guid}) - was in-flight for {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                 SaveInProgress = false;
+                SaveStartTime = DateTime.MinValue; // Reset for next save
             }
 
             ReleasedTimestamp = Time.GetUnixTime();
@@ -909,7 +910,7 @@ namespace ACE.Server.WorldObjects
                 motionInterp.apply_raw_movement(true, true);
             }
 
-            if (persist && PropertyManager.GetBool("persist_movement"))
+            if (persist && ServerConfig.persist_movement.Value)
                 motion.Persist(CurrentMotionState);
 
             // hardcoded ready?
@@ -932,7 +933,7 @@ namespace ACE.Server.WorldObjects
         {
             var motion = new Motion(stance);
 
-            if (PropertyManager.GetBool("persist_movement"))
+            if (ServerConfig.persist_movement.Value)
                 motion.Persist(CurrentMotionState);
 
             CurrentMotionState = motion;

@@ -20,6 +20,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Timers;
 using System.Xml.Linq;
 using static System.Net.Mime.MediaTypeNames;
 //using ACE.Server.Factories;
@@ -32,6 +33,30 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static readonly ConcurrentDictionary<uint, DateTime> lastFshipListUsage = new ConcurrentDictionary<uint, DateTime>();
+
+        public static readonly int MaxFellows = 29;
+
+        static PlayerCommands()
+        {
+            // Run cleanup every minute
+            var cleanupTimer = new Timer(180_000);
+            cleanupTimer.Elapsed += (_, _) => CleanupOldCooldowns();
+            cleanupTimer.Start();
+        }
+
+        private static void CleanupOldCooldowns()
+        {
+            var cutoff = DateTime.UtcNow.AddSeconds(-10);
+            foreach (var kvp in lastFshipListUsage)
+            {
+                if (kvp.Value < cutoff)
+                {
+                    lastFshipListUsage.TryRemove(kvp.Key, out _);
+                }
+            }
+        }
+
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
         {
@@ -43,6 +68,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship create <name> to create a fellowship", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship leave", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship disband", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship list to show fellows and leaders in your landblock", ChatMessageType.Broadcast));
             }
 
             if (parameters.Count() == 1)
@@ -60,9 +86,30 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
                     bool currentPlayerOver50 = session.Player.Level >= 50;
-                    foreach (var player in session.Player.CurrentLandblock.players)
+                    // Snapshot to avoid collection modification issues while iterating
+                    var playersSnapshot = session.Player.CurrentLandblock.players.ToList();
+                    foreach (var player in playersSnapshot)
                     {
-                        if (player.Guid != session.Player.Guid && !player.IsMule && (player.CloakStatus == CloakStatus.Player || player.CloakStatus == CloakStatus.Off || player.CloakStatus == CloakStatus.Undef))
+                        // Exclude admins and cloaked players - only show regular players
+                        // Use Session.AccessLevel to avoid BiotaDatabaseLock contention
+                        var accessLevel = player.Session?.AccessLevel ?? AccessLevel.Player;
+                        bool isAdminLevel = accessLevel >= AccessLevel.Sentinel;
+                        
+                        // Safely check CloakStatus with try-catch to handle lock contention
+                        CloakStatus cloakStatus = CloakStatus.Undef;
+                        try
+                        {
+                            cloakStatus = player.CloakStatus;
+                        }
+                        catch (System.Threading.LockRecursionException)
+                        {
+                            // Skip this player if we can't safely read their cloak status
+                            continue;
+                        }
+                        
+                        if (player.Guid != session.Player.Guid && !player.IsMule 
+                            && !isAdminLevel
+                            && (cloakStatus == CloakStatus.Player || cloakStatus == CloakStatus.Undef))
                         {
                             if (!currentPlayerOver50 || player.Level >= 50) // Don't add lowbies to a fellowship of players over 50
                             {
@@ -106,6 +153,141 @@ namespace ACE.Server.Command.Handlers
                     if (tPGuid != null)
                     {
                         session.Player.FellowshipDismissPlayer(tPGuid.Value);
+                    }
+                    return;
+                }
+                if (parameters[0] == "list")
+                {
+                    try
+                    {
+                        // Check cooldown timer
+                        var playerGuid = session.Player.Guid.Full;
+                        if (lastFshipListUsage.TryGetValue(playerGuid, out DateTime lastUsage))
+                        {
+                            var timeSinceLastUse = DateTime.UtcNow - lastUsage;
+                            if (timeSinceLastUse.TotalSeconds < 10)
+                            {
+                                var remainingTime = 10 - (int)timeSinceLastUse.TotalSeconds;
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Please wait {remainingTime} seconds before using this command again.", ChatMessageType.Broadcast));
+                                return;
+                            }
+                        }
+                        
+                        // Update last usage time
+                        lastFshipListUsage.AddOrUpdate(playerGuid, DateTime.UtcNow, (key, oldValue) => DateTime.UtcNow);
+
+                        if (session.Player.CurrentLandblock == null)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Your current landblock is not found, for some reason (logged)", ChatMessageType.Broadcast));
+                            return;
+                        }
+
+                        var fellowshipsInLandblock = new Dictionary<uint, (Fellowship fellowship, Player leader, bool leaderInLandblock)>();
+
+                        // Check all players in the current landblock
+                        // Snapshot to avoid collection modification issues while iterating
+                        var playersSnapshot = session.Player.CurrentLandblock.players.ToList();
+                        foreach (var player in playersSnapshot)
+                        {
+                            try
+                            {
+                                // Exclude admins and cloaked players - only show regular players
+                                // Use Session.AccessLevel to avoid BiotaDatabaseLock contention
+                                var accessLevel = player.Session?.AccessLevel ?? AccessLevel.Player;
+                                bool isAdminLevel = accessLevel >= AccessLevel.Sentinel;
+                                
+                                // Safely check CloakStatus with try-catch to handle lock contention
+                                CloakStatus cloakStatus = CloakStatus.Undef;
+                                try
+                                {
+                                    cloakStatus = player.CloakStatus;
+                                }
+                                catch (System.Threading.LockRecursionException)
+                                {
+                                    // Skip this player if we can't safely read their cloak status
+                                    continue;
+                                }
+                                
+                                if (!player.IsMule 
+                                    && !isAdminLevel
+                                    && (cloakStatus == CloakStatus.Player || cloakStatus == CloakStatus.Undef))
+                                {
+                                    // Check if player is in a fellowship
+                                    if (player.Fellowship != null)
+                                    {
+                                        var fellowship = player.Fellowship;
+                                        var fellowshipGuid = fellowship.FellowshipLeaderGuid;
+                                        
+                                        // Check if this player is the leader
+                                        bool isLeader = fellowship.FellowshipLeaderGuid == player.Guid.Full;
+                                        
+                                        if (!fellowshipsInLandblock.ContainsKey(fellowshipGuid))
+                                        {
+                                            // Find the leader (might not be in this landblock)
+                                            var leader = PlayerManager.FindByGuid(fellowshipGuid) as Player;
+                                            if (leader == null)
+                                            {
+                                                log.Warn($"Fellowship leader with GUID {fellowshipGuid} not found");
+                                                continue;
+                                            }
+                                            fellowshipsInLandblock[fellowshipGuid] = (fellowship, leader, isLeader);
+                                        }
+                                        else if (isLeader)
+                                        {
+                                            // Update to show leader is in landblock
+                                            var current = fellowshipsInLandblock[fellowshipGuid];
+                                            fellowshipsInLandblock[fellowshipGuid] = (current.fellowship, current.leader, true);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Warn($"Error processing player in fship list command: {ex.Message}");
+                                continue; // Skip this player and continue with others
+                            }
+                        }
+
+                        // Display results
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Fellowships in your landblock:", ChatMessageType.Broadcast));
+                        
+                        if (fellowshipsInLandblock.Count > 0)
+                        {
+                            foreach (var kvp in fellowshipsInLandblock)
+                            {
+                                try
+                                {
+                                    var (fellowship, leader, leaderInLandblock) = kvp.Value;
+                                    var memberCount = fellowship.GetFellowshipMembers().Count;
+                                    var isFull = memberCount >= MaxFellows;
+                                    var statusText = isFull ? " (FULL)" : "";
+                                    var leaderStatus = leaderInLandblock ? "" : " (Leader not in LB)";
+                                    
+                                    var leaderName = leader?.Name ?? "Unknown";
+                                    session.Network.EnqueueSend(new GameMessageSystemChat($"  '{fellowship.FellowshipName}' led by {leaderName}{statusText}{leaderStatus}", ChatMessageType.Broadcast));
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.Warn($"Error displaying fellowship in fship list command: {ex.Message}");
+                                    continue; // Skip this fellowship and continue with others
+                                }
+                            }
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"No fellowships found in your landblock.", ChatMessageType.Broadcast));
+                        }
+                        
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
+                        
+                        // Update last usage time
+                        lastFshipListUsage[playerGuid] = DateTime.UtcNow;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error in fship list command: {ex.Message}");
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: An error occurred while processing the command. Please try again.", ChatMessageType.Broadcast));
                     }
                     return;
                 }
@@ -342,7 +524,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
-                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit");
+                var commandSecondsLimit = ServerConfig.bank_command_limit.Value;
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
@@ -429,7 +611,7 @@ namespace ACE.Server.Command.Handlers
 
             if (parameters[0] == "withdraw" || parameters[0] == "w")
             {
-                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit");
+                var commandSecondsLimit = ServerConfig.bank_command_limit.Value;
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
@@ -498,7 +680,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 
                 // Rate limiting for transfer commands
-                var commandSecondsLimit = PropertyManager.GetLong("bank_command_limit");
+                var commandSecondsLimit = ServerConfig.bank_command_limit.Value;
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastBankCommandTime).TotalSeconds;
@@ -628,7 +810,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var commandSecondsLimit = PropertyManager.GetLong("clap_command_limit");
+            var commandSecondsLimit = ServerConfig.clap_command_limit.Value;
             var currentTime = DateTime.UtcNow;
 
             var lastCommandTimeSeconds = (currentTime - session.LastClapCommandTime).TotalSeconds;
@@ -1120,7 +1302,7 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                var commandSecondsLimit = PropertyManager.GetLong("qb_command_limit");
+                var commandSecondsLimit = ServerConfig.qb_command_limit.Value;
                 var currentTime = DateTime.UtcNow;
 
                 var lastCommandTimeSeconds = (currentTime - session.LastQBCommandTime).TotalSeconds;
@@ -1270,7 +1452,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("myquests", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows your quest log")]
         public static void HandleQuests(Session session, params string[] parameters)
         {
-            if (PropertyManager.GetBool("myquest_throttle_enabled"))
+            if (ServerConfig.myquest_throttle_enabled.Value)
             {
                 var currentTime = DateTime.UtcNow;
 
@@ -1283,7 +1465,7 @@ namespace ACE.Server.Command.Handlers
 
             session.LastMyQuestsCommandTime = DateTime.UtcNow;
 
-            if (!PropertyManager.GetBool("quest_info_enabled"))
+            if (!ServerConfig.quest_info_enabled.Value)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"myquests\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1309,7 +1491,7 @@ namespace ACE.Server.Command.Handlers
 
                 var minDelta = quest.MinDelta;
                 if (QuestManager.CanScaleQuestMinDelta(quest))
-                    minDelta = (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate"));
+                    minDelta = (uint)(quest.MinDelta * ServerConfig.quest_mindelta_rate.Value);
 
                 var text = $"{playerQuest.QuestName.ToLower()} - {playerQuest.NumTimesCompleted} solves ({playerQuest.LastTimeCompleted}) \"{quest.Message}\" {quest.MaxSolves} {minDelta}";
                 questMessages.Add(text);
@@ -1566,7 +1748,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("config", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Manually sets a character option on the server.\nUse /config list to see a list of settings.", "<setting> <on/off>")]
         public static void HandleConfig(Session session, params string[] parameters)
         {
-            if (!PropertyManager.GetBool("player_config_command"))
+            if (!ServerConfig.player_config_command.Value)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"config\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1657,7 +1839,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("aceversion", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows this server's version data")]
         public static void HandleACEversion(Session session, params string[] parameters)
         {
-            if (!PropertyManager.GetBool("version_info_enabled"))
+            if (!ServerConfig.version_info_enabled.Value)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"aceversion\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1694,7 +1876,7 @@ namespace ACE.Server.Command.Handlers
             )]
         public static void HandleReportbug(Session session, params string[] parameters)
         {
-            if (!PropertyManager.GetBool("reportbug_enabled"))
+            if (!ServerConfig.reportbug_enabled.Value)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("The command \"reportbug\" is not currently enabled on this server.", ChatMessageType.Broadcast));
                 return;
@@ -1735,7 +1917,7 @@ namespace ACE.Server.Command.Handlers
             var sv = ServerBuildInfo.FullVersion;
             var pv = databaseVersion.PatchVersion;
 
-            //var ct = PropertyManager.GetString("reportbug_content_type");
+            //var ct = ServerConfig.reportbug_content_type.Value;
             var cg = category.ToLower();
 
             var w = "";

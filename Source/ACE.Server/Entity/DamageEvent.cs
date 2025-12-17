@@ -299,7 +299,7 @@ namespace ACE.Server.Entity
                     float luminanceAugmentBonus = 0;
                     if (cachedLuminanceAugmentCount.HasValue && cachedLuminanceAugmentCount.Value > 0)
                     {
-                        float luminanceAugmentCritDamageMultiplier = (float)PropertyManager.GetDouble("melee/missile_aug_crit_modifier");
+                        float luminanceAugmentCritDamageMultiplier = (float)ServerConfig.melee_missile_aug_crit_modifier.Value;
                         luminanceAugmentBonus = cachedLuminanceAugmentCount.Value * luminanceAugmentCritDamageMultiplier;
                     }
 
