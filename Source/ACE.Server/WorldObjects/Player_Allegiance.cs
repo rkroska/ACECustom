@@ -122,7 +122,8 @@ namespace ACE.Server.WorldObjects
 
                 UpdateProperty(PropertyInstanceId.Monarch, monarchGuid, true);
 
-                ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
+                // Removed level requirement - ExistedBeforeAllegianceXpChanges now defaults to true
+                //ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
 
                 // handle special case: monarch swearing into another allegiance
                 if (Allegiance != null && Allegiance.MonarchId == Guid.Full)
