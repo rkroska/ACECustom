@@ -414,7 +414,7 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMeleeDefenseCount); else SetProperty(PropertyInt64.LumAugMeleeDefenseCount, value.Value); }
         }
 
-        public long? LuminanceAugmentMissleDefenseCount
+        public long? LuminanceAugmentMissileDefenseCount
         {
             get => GetProperty(PropertyInt64.LumAugMissileDefenseCount) ?? 0;
             set { if (!value.HasValue) RemoveProperty(PropertyInt64.LumAugMissileDefenseCount); else SetProperty(PropertyInt64.LumAugMissileDefenseCount, value.Value); }
