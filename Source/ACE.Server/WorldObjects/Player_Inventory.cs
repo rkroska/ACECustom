@@ -193,11 +193,13 @@ namespace ACE.Server.WorldObjects
             {
                 // Clear save flags
                 item.SaveInProgress = false;
+                item.SaveStartTime = DateTime.MinValue; // Reset for next save
                 if (item is Container container)
                 {
                     foreach (var subItem in container.Inventory.Values)
                     {
                         subItem.SaveInProgress = false;
+                        subItem.SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 }
             }, this.Guid.ToString());

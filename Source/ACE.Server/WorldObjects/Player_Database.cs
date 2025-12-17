@@ -131,6 +131,7 @@ namespace ACE.Server.WorldObjects
                     clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_SaveBiotasInParallelCallback, () =>
                     {
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                         // Re-fetch possessions to avoid stale references, but only process items in batch
                         var currentPossessions = GetAllPossessions();
                         
@@ -140,6 +141,7 @@ namespace ACE.Server.WorldObjects
                             if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             {
                                 possession.SaveInProgress = false;
+                                possession.SaveStartTime = DateTime.MinValue; // Reset for next save
                                 if (result)
                                     possession.ChangesDetected = false;
                                 else
@@ -184,6 +186,7 @@ namespace ACE.Server.WorldObjects
                 clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_SaveBiotasInParallelCallback, () =>
                 {
                     SaveInProgress = false;
+                    SaveStartTime = DateTime.MinValue; // Reset for next save
                     // Re-fetch possessions to avoid stale references, but only process items in batch
                     var currentPossessions = GetAllPossessions();
                     
@@ -193,6 +196,7 @@ namespace ACE.Server.WorldObjects
                         if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                         {
                             possession.SaveInProgress = false;
+                            possession.SaveStartTime = DateTime.MinValue; // Reset for next save
                             if (result)
                                 // Item was in the batch - clear ChangesDetected since it was successfully saved
                                 // Items that weren't in the batch but have ChangesDetected=true are newer changes that should be preserved

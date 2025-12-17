@@ -811,6 +811,7 @@ namespace ACE.Server.WorldObjects
             {
                 log.Debug($"[DESTROY] Clearing stuck SaveInProgress flag for {Name} (0x{Guid}) - was in-flight for {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
                 SaveInProgress = false;
+                SaveStartTime = DateTime.MinValue; // Reset for next save
             }
 
             ReleasedTimestamp = Time.GetUnixTime();
