@@ -520,7 +520,7 @@ namespace ACE.Server.WorldObjects
             }
             else if (combatType == CombatType.Missile)
             {
-                lumAugDefense = this.LuminanceAugmentMissleDefenseCount ?? 0;
+                lumAugDefense = this.LuminanceAugmentMissileDefenseCount ?? 0;
             }
 
             //if (this is Player)
