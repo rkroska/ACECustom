@@ -245,10 +245,22 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // Randomly select from candidates with same score to avoid always targeting the same creature
-            return bestCandidates.Count > 0
-                ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count)]
-                : null;
+            if (bestCandidates.Count == 0)
+                return null;
+            
+            int index;
+            if (bestCandidates.Count == 1)
+                index = 0;
+            else
+                index = ThreadSafeRandom.Next(0, bestCandidates.Count - 1);
+            
+            if (index < 0 || index >= bestCandidates.Count)
+            {
+                log.Warn($"[SelectTargetByScore] Invalid index {index} for Count={bestCandidates.Count} on {Name} (0x{Guid:X8}), using 0");
+                index = 0;
+            }
+            
+            return bestCandidates[index];
         }
 
         public double NextFindTarget;
