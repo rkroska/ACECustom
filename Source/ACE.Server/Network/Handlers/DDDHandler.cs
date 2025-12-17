@@ -7,7 +7,6 @@ using ACE.Entity.Enum;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
-using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 
@@ -20,8 +19,7 @@ namespace ACE.Server.Network.Handlers
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static bool Debug = false;
-
-        [InboundGameMessage(InboundGameMessageOpcode.DDD_InterrogationResponse, SessionState.AuthConnected)]
+        
         public static void DDD_InterrogationResponse(ClientMessage message, Session session)
         {
             var clientIsMissingIterations = false;
@@ -173,7 +171,6 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        [InboundGameMessage(InboundGameMessageOpcode.DDD_EndDDD, SessionState.AuthConnected)]
         public static void DDD_EndDDD(ClientMessage message, Session session)
         {
             // We don't need to reply to this message unless GameMessageDDDBeginDDD was sent.
@@ -192,7 +189,6 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        [InboundGameMessage(InboundGameMessageOpcode.DDD_RequestDataMessage, SessionState.WorldConnected)]
         public static void DDD_RequestDataMessage(ClientMessage message, Session session)
         {
             var enableDATpatching = ConfigManager.Config.DDD.EnableDATPatching;

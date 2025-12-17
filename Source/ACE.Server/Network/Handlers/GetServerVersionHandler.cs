@@ -1,13 +1,10 @@
 using ACE.Entity.Enum;
-using ACE.Server.Network.Enum;
-using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 
 namespace ACE.Server.Network.Handlers
 {
     public static class GetServerVersionHandler
     {
-        [InboundGameMessage(InboundGameMessageOpcode.GetServerVersion, SessionState.WorldConnected)]
         public static void GetServerVersion(ClientMessage message, Session session)
         {
             // @version command is native to client. Client responds with the following (if using end of retail client/data):

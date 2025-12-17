@@ -24,8 +24,6 @@ namespace ACE.Server.Network.Handlers
     public static class CharacterHandler
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterCreate, SessionState.AuthConnected)]
         public static void CharacterCreate(ClientMessage message, Session session)
         {
             string clientString = message.Payload.ReadString16L();
@@ -182,7 +180,6 @@ namespace ACE.Server.Network.Handlers
         }
 
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterEnterWorldRequest, SessionState.AuthConnected)]
         public static void CharacterEnterWorldRequest(ClientMessage message, Session session)
         {
             if (ServerManager.ShutdownInProgress)
@@ -196,8 +193,7 @@ namespace ACE.Server.Network.Handlers
             else
                 session.SendCharacterError(CharacterError.LogonServerFull);
         }
-
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterEnterWorld, SessionState.AuthConnected)]
+        
         public static void CharacterEnterWorld(ClientMessage message, Session session)
         {
             var guid = message.Payload.ReadUInt32();
@@ -265,14 +261,12 @@ namespace ACE.Server.Network.Handlers
         }
 
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterLogOff, SessionState.WorldConnected)]
         public static void CharacterLogOff(ClientMessage message, Session session)
         {
             session.LogOffPlayer();
         }
 
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterDelete, SessionState.AuthConnected)]
         public static void CharacterDelete(ClientMessage message, Session session)
         {
             string clientString = message.Payload.ReadString16L();
@@ -340,7 +334,6 @@ namespace ACE.Server.Network.Handlers
             
         }
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterRestore, SessionState.AuthConnected)]
         public static void CharacterRestore(ClientMessage message, Session session)
         {
             var guid = message.Payload.ReadUInt32();
