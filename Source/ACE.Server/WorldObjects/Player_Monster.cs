@@ -16,6 +16,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void CheckMonsters()
         {
+            // If cloaked as creature, don't alert monsters
+            if (CloakStatus == CloakStatus.Creature)
+                return;
+
             if (!Attackable || Teleporting) return;
 
             var visibleObjs = PhysicsObj.ObjMaint.GetVisibleObjectsValuesOfTypeCreature();

@@ -25,15 +25,16 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        // cloak < on / off / player / creature >
+        // cloak < on / off / player / creature / hybrid >
         [CommandHandler("cloak", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
             "Sets your cloaking state.",
-            "< on / off / player / creature >\n" +
+            "< on / off / player / creature / hybrid >\n" +
             "This command sets your current cloaking state\n" +
             "< on > You will be completely invisible to players.\n" +
             "< off > You will show up as a normal.\n" +
             "< player > You will appear as a player. (No + and a white radar dot.)\n" +
-            "< creature > You will appear as a creature. (No + and an orange radar dot.)")]
+            "< creature > You will appear as a creature. Monsters will not attack you.\n" +
+            "< hybrid > You will appear as a creature. Monsters and players can attack you.")]
         public static void HandleCloak(Session session, params string[] parameters)
         {
             // Please specify if you want cloaking on or off.usage: @cloak < on / off / player / creature >
@@ -82,6 +83,21 @@ namespace ACE.Server.Command.Handlers
                     else
                         CommandHandlerHelper.WriteOutputInfo(session, $"You do not have permission to do that state", ChatMessageType.Broadcast);
                     break;
+                case "hybrid":
+                    if (session.AccessLevel > AccessLevel.Envoy)
+                    {
+                        if (session.Player.CloakStatus == CloakStatus.Hybrid)
+                            return;
+
+                        session.Player.SetProperty(PropertyInt.CloakStatus, (int)CloakStatus.Hybrid);
+                        session.Player.Attackable = true;
+
+                        session.Player.DeCloak();
+                        CommandHandlerHelper.WriteOutputInfo(session, $"You will now appear as a creature.\nUse @pk free to be allowed to attack all living things.", ChatMessageType.Broadcast);
+                    }
+                    else
+                        CommandHandlerHelper.WriteOutputInfo(session, $"You do not have permission to do that state", ChatMessageType.Broadcast);
+                    break;
                 case "creature":
                     if (session.AccessLevel > AccessLevel.Envoy)
                     {
@@ -92,7 +108,7 @@ namespace ACE.Server.Command.Handlers
                         session.Player.Attackable = true;
 
                         session.Player.DeCloak();
-                        CommandHandlerHelper.WriteOutputInfo(session, $"You will now appear as a creature.\nUse @pk free to be allowed to attack all living things.", ChatMessageType.Broadcast);
+                        CommandHandlerHelper.WriteOutputInfo(session, $"You will now appear as a creature and other creatures will not attack you. To attack players, use @pk free", ChatMessageType.Broadcast);
                     }
                     else
                         CommandHandlerHelper.WriteOutputInfo(session, $"You do not have permission to do that state", ChatMessageType.Broadcast);
