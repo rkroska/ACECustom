@@ -261,7 +261,6 @@ namespace ACE.Server.WorldObjects.Managers
 
             //calculate luminance aug additions for statmod
             entry.StatModValue = spell.StatModVal;
-            entry.StatModValueNew = spell.StatModVal;
 
             if (caster != null && caster is Creature)
             {
@@ -333,9 +332,7 @@ namespace ACE.Server.WorldObjects.Managers
                         else if (spell.StatModKey == 64 || spell.StatModKey == 65 || spell.StatModKey == 66 //slash, pierce, bludge
                             || spell.StatModKey == 67 || spell.StatModKey == 68 || spell.StatModKey == 69 || spell.StatModKey == 70) //fire, cold, acid, electric
                         {
-                            entry.StatModValueNew = entry.StatModValue;
                             entry.StatModValue -= GetLifeAugProtectRating(player.LuminanceAugmentLifeCount ?? 0);
-                            entry.StatModValueNew -= GetLifeAugProtectRatingNew(player.LuminanceAugmentLifeCount ?? 0, player);
                         }
                         else
                         {
@@ -414,12 +411,12 @@ namespace ACE.Server.WorldObjects.Managers
         private static float GetLifeAugProtectRatingNew(long LifeAugAmt, Creature creature)
         {
             double r = Math.Clamp(
-                creature.GetProperty(PropertyFloat.LifeAugTuningConstantOverride) ?? ServerConfig.life_aug_prot_tuning_constant.Value,
+                creature?.GetProperty(PropertyFloat.LifeAugTuningConstantOverride) ?? ServerConfig.life_aug_prot_tuning_constant.Value,
                 0.0,
                 1.0);
 
             double max_bonus = Math.Clamp(
-                creature.GetProperty(PropertyFloat.LifeAugProtMaxBonusOverride) ?? ServerConfig.life_aug_prot_max_bonus.Value,
+                creature?.GetProperty(PropertyFloat.LifeAugProtMaxBonusOverride) ?? ServerConfig.life_aug_prot_max_bonus.Value,
                 0.0,
                 1.0);
 
@@ -1189,8 +1186,18 @@ namespace ACE.Server.WorldObjects.Managers
             var modifier = 1.0f;
             foreach (var enchantment in enchantments)
             {
-                if (enchantment.StatModValueNew < 1.0f)
-                    modifier *= enchantment.StatModValueNew;
+                // TODO(Ruggan): Remove and merge into the normal calc once rolled out.
+                // For now, we just calculate the new value by backing out the old bonus and adding back in the new one.
+                // This is a little hacky, but it avoids the need to save a new field to the database, prevents devs/players
+                // from needing to rebuff to see the changes, and still gives us hot-swapping. Eventually, this should get
+                // cleaned up by getting rid of the "StatModValueNew" variable and setting "StatModValue" directly using
+                // the new life curve. Since a caching layer wraps this layer in all prod use, this calculation is only
+                // done once at the time of first need - future reads are pulled from the cache.
+                var StatModValueNew = enchantment.StatModValue
+                    + GetLifeAugProtectRating(enchantment.AugmentationLevelWhenCast ?? 0)
+                    - GetLifeAugProtectRatingNew(enchantment.AugmentationLevelWhenCast ?? 0, WorldObject as Creature);
+                if (StatModValueNew < 1.0f)
+                    modifier *= StatModValueNew;
             }
 
             // Don't allow a negative modifier (this will flip the damage sign, causing unintended behavior).
