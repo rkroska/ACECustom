@@ -642,7 +642,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (_visualAwarenessRangeSq == null)
                 {
-                    var visualAwarenessRange = (float)((VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range"));
+                    var visualAwarenessRange = (float)((VisualAwarenessRange ?? VisualAwarenessRange_Default) * ServerConfig.mob_awareness_range.Value);
 
                     _visualAwarenessRangeSq = visualAwarenessRange * visualAwarenessRange;
                 }
@@ -659,7 +659,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (_auralAwarenessRangeSq == null)
                 {
-                    var auralAwarenessRange = (float)((AuralAwarenessRange ?? VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range"));
+                    var auralAwarenessRange = (float)((AuralAwarenessRange ?? VisualAwarenessRange ?? VisualAwarenessRange_Default) * ServerConfig.mob_awareness_range.Value);
 
                     _auralAwarenessRangeSq = auralAwarenessRange * auralAwarenessRange;
                 }

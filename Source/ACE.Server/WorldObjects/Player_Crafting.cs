@@ -262,7 +262,7 @@ namespace ACE.Server.WorldObjects
 
             if (item.ItemType == ItemType.TinkeringMaterial)
             {
-                if (!PropertyManager.GetBool("salvage_handle_overages"))
+                if (!ServerConfig.salvage_handle_overages.Value)
                     return tryAmount;
                 else
                     return amount;

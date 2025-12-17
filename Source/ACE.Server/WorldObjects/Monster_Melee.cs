@@ -487,7 +487,7 @@ namespace ACE.Server.WorldObjects
             if (!(this is Player))
                 return 0.0f;
 
-            var scalar = PropertyManager.GetDouble("ignore_magic_armor_pvp_scalar");
+            var scalar = ServerConfig.ignore_magic_armor_pvp_scalar.Value;
 
             if (scalar != 1.0)
                 return (float)(enchantments * (1.0 - scalar));
@@ -500,7 +500,7 @@ namespace ACE.Server.WorldObjects
             if (!(this is Player))
                 return 0;
 
-            var scalar = PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar");
+            var scalar = ServerConfig.ignore_magic_resist_pvp_scalar.Value;
 
             if (scalar != 1.0)
                 return (int)Math.Round(enchantments * (1.0 - scalar));

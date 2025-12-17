@@ -16,8 +16,6 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
-        public static readonly long DefaultPlayerSaveIntervalSecs = 300; // default to 5 minutes
-
         public DateTime CharacterLastRequestedDatabaseSave { get; protected set; }
 
         /// <summary>
@@ -41,7 +39,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public long PlayerSaveIntervalSecs
         {
-            get => PropertyManager.GetLong("player_save_interval", DefaultPlayerSaveIntervalSecs);
+            get => ServerConfig.player_save_interval.Value;
         }
 
         /// <summary>
