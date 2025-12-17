@@ -178,11 +178,11 @@ namespace ACE.Server.Entity.Chess
 
             if (Sides[(int)Chess.InverseColor(color)] == null)
             {
-                var ai_enabled = PropertyManager.GetDouble("chess_ai_start_time");
-                if (ai_enabled > 0)
+                var ai_start_delay_seconds = ServerConfig.chess_ai_start_time.Value;
+                if (ai_start_delay_seconds > 0)
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"If another player doesn't join within {ai_enabled} seconds, the game will automatically start with AI", ChatMessageType.Broadcast));
-                    StartAiTime = DateTime.UtcNow.AddSeconds(ai_enabled);
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"If another player doesn't join within {ai_start_delay_seconds} seconds, the game will automatically start with AI", ChatMessageType.Broadcast));
+                    StartAiTime = DateTime.UtcNow.AddSeconds(ai_start_delay_seconds);
                 }
             }
             else

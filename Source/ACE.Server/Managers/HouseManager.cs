@@ -252,7 +252,7 @@ namespace ACE.Server.Managers
             }
 
 
-            if (PropertyManager.GetBool("house_per_char"))
+            if (ServerConfig.house_per_char.Value)
             {
                 var results = playerHouses.Where(i => i.Value.Count > 1).OrderByDescending(i => i.Value.Count);
 
@@ -440,7 +440,7 @@ namespace ACE.Server.Managers
 
             var player = PlayerManager.FindByGuid(playerGuid, out bool isOnline);
 
-            if (!PropertyManager.GetBool("house_rent_enabled", true) && !multihouse && !force)
+            if (!ServerConfig.house_rent_enabled.Value && !multihouse && !force)
             {
                 // rent disabled, push forward
                 var purchaseTime = (uint)(player.HousePurchaseTimestamp ?? 0);
@@ -562,14 +562,14 @@ namespace ACE.Server.Managers
         /// </summary>
         private static bool HasRequirements(PlayerHouse playerHouse)
         {
-            if (!PropertyManager.GetBool("house_purchase_requirements"))
+            if (!ServerConfig.house_purchase_requirements.Value)
                 return true;
 
             var slumlord = playerHouse.House.SlumLord;
             if (slumlord.AllegianceMinLevel == null)
                 return true;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+            var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = slumlord.AllegianceMinLevel.Value;
 

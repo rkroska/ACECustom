@@ -231,7 +231,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else if (caster is Player dotPlayer && (dotPlayer.AugmentationIncreasedSpellDuration > 0 || (dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) > 0) && spell.DotDuration > 0)
                 {
-                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * PropertyManager.GetDouble("void_dot_duration_aug_effect", 0.1));
+                    entry.Duration *= 1.0f + (dotPlayer.AugmentationIncreasedSpellDuration * 0.2f) + ((dotPlayer.LuminanceAugmentSpellDurationCount ?? 0) * ServerConfig.void_dot_duration_aug_effect.Value);
                 }
             }
             else
@@ -414,12 +414,12 @@ namespace ACE.Server.WorldObjects.Managers
         private static float GetLifeAugProtectRatingNew(long LifeAugAmt, Creature creature)
         {
             double r = Math.Clamp(
-                creature.GetProperty(PropertyFloat.LifeAugTuningConstantOverride) ?? PropertyManager.GetDouble("life_aug_prot_tuning_constant"),
+                creature.GetProperty(PropertyFloat.LifeAugTuningConstantOverride) ?? ServerConfig.life_aug_prot_tuning_constant.Value,
                 0.0,
                 1.0);
 
             double max_bonus = Math.Clamp(
-                creature.GetProperty(PropertyFloat.LifeAugProtMaxBonusOverride) ?? PropertyManager.GetDouble("life_aug_prot_max_bonus"),
+                creature.GetProperty(PropertyFloat.LifeAugProtMaxBonusOverride) ?? ServerConfig.life_aug_prot_max_bonus.Value,
                 0.0,
                 1.0);
 
@@ -647,7 +647,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public float GetMinVitae(uint level)
         {
-            var propVitae = 1.0 - PropertyManager.GetDouble("vitae_penalty_max");
+            var propVitae = 1.0 - ServerConfig.vitae_penalty_max.Value;
 
             var maxPenalty = (level - 1) * 3;
             if (maxPenalty < 1)
@@ -687,7 +687,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else
                 {
-                    vitae.StatModValue = 1.0f - (float)PropertyManager.GetDouble("vitae_penalty");
+                    vitae.StatModValue = 1.0f - (float)ServerConfig.vitae_penalty.Value;
                 
                 }                               
                 WorldObject.Biota.PropertiesEnchantmentRegistry.AddEnchantment(vitae, WorldObject.BiotaDatabaseLock);
@@ -703,7 +703,7 @@ namespace ACE.Server.WorldObjects.Managers
                 }
                 else
                 {
-                    vitae.StatModValue -= (float)PropertyManager.GetDouble("vitae_penalty");
+                    vitae.StatModValue -= (float)ServerConfig.vitae_penalty.Value;
 
                 }
                 WorldObject.ChangesDetected = true;
@@ -1442,7 +1442,7 @@ namespace ACE.Server.WorldObjects.Managers
             }
             var rating = (int)Math.Round(totalBaseDamage / 8.0f);   // thanks to Xenocide for this formula!
             //Console.WriteLine($"{WorldObject.Name}.NetherDotDamageRating: {rating}");
-            long maxVoidRating = PropertyManager.GetLong("max_nether_dot_damage_rating");
+            long maxVoidRating = ServerConfig.max_nether_dot_damage_rating.Value;
             if (rating > maxVoidRating)
                 rating = (int)maxVoidRating;
             return rating;
@@ -1578,7 +1578,7 @@ namespace ACE.Server.WorldObjects.Managers
             creature.DamageHistory.OnHeal((uint)healAmount);
 
             if (creature is Player player)
-                player.SendMessage($"You receive {healAmount} points of periodic healing.", PropertyManager.GetBool("aetheria_heal_color") ? ChatMessageType.Broadcast : ChatMessageType.Combat);
+                player.SendMessage($"You receive {healAmount} points of periodic healing.", ServerConfig.aetheria_heal_color.Value ? ChatMessageType.Broadcast : ChatMessageType.Combat);
         }
 
         /// <summary>
@@ -1633,7 +1633,7 @@ namespace ACE.Server.WorldObjects.Managers
                     // instead of applying it on top like direct damage
 
                     if (damageType == DamageType.Nether)
-                        resistanceMod = (float)PropertyManager.GetDouble("void_pvp_modifier");
+                        resistanceMod = (float)ServerConfig.void_pvp_modifier.Value;
                 }
 
                 // with the halvening, this actually seems like the fairest balance currently..

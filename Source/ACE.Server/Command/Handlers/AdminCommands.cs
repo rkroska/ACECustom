@@ -2309,7 +2309,7 @@ namespace ACE.Server.Command.Handlers
                         if (wo is Player) // I don't recall if @smite all would kill players in range, assuming it didn't
                             continue;
 
-                        var useTakeDamage = PropertyManager.GetBool("smite_uses_takedamage");
+                        var useTakeDamage = ServerConfig.smite_uses_takedamage.Value;
 
                         if (wo is Creature creature && creature.Attackable)
                             creature.Smite(session.Player, useTakeDamage);
@@ -2343,7 +2343,7 @@ namespace ACE.Server.Command.Handlers
                     // playerSession will be null when the character is not found
                     if (player != null)
                     {
-                        player.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage"));
+                        player.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
                         PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {player.Name}");
                         return;
@@ -2365,7 +2365,7 @@ namespace ACE.Server.Command.Handlers
 
                     if (wo != null)
                     {
-                        wo.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage"));
+                        wo.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
                         PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
                     }
@@ -3485,7 +3485,7 @@ namespace ACE.Server.Command.Handlers
                 DoCopyChar(session, existingCharName, existingPlayer.Guid.Full, false, newCharName, account.AccountId);
                 return;
             }
-            else if ( session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account"))
+            else if ( session.Characters.Count >= ServerConfig.max_chars_per_account.Value)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Account is out of free character slots.", ChatMessageType.Broadcast);
                 return;
@@ -6463,7 +6463,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("showprops", AccessLevel.Admin, CommandHandlerFlag.None, 0, "Displays the name of all properties configurable via the modify commands")]
         public static void HandleDisplayProps(Session session, params string[] parameters)
         {
-            CommandHandlerHelper.WriteOutputInfo(session, PropertyManager.ListProperties());
+            CommandHandlerHelper.WriteOutputInfo(session, ServerConfig.DebugString());
         }
 
         [CommandHandler("modifybool", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a bool", "modifybool (string) (bool)")]
@@ -6472,7 +6472,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 var boolVal = bool.Parse(parameters[1]);
-                if (PropertyManager.ModifyBool(parameters[0], boolVal))
+                if (ServerConfig.SetValue(parameters[0], boolVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Bool property successfully updated!");
                     PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server bool property {parameters[0]} to {boolVal}");
@@ -6494,8 +6494,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a bool", "fetchbool (string)")]
         public static void HandleFetchServerBoolProperty(Session session, params string[] parameters)
         {
-            var boolVal = PropertyManager.GetBool(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {boolVal}");
+            ConfigProperty<bool>? boolProp = ServerConfig.GetConfigProperty<bool>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                boolProp != null ?
+                    $"{parameters[0]}: {boolProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifylong", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a long", "modifylong (string) (long)")]
@@ -6504,7 +6508,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 var longVal = long.Parse(paramters[1]);
-                if (PropertyManager.ModifyLong(paramters[0], longVal))
+                if (ServerConfig.SetValue(paramters[0], longVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Long property successfully updated!");
                     PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server long property {paramters[0]} to {longVal}");
@@ -6521,8 +6525,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a long", "fetchlong (string)")]
         public static void HandleFetchServerLongProperty(Session session, params string[] parameters)
         {
-            var intVal = PropertyManager.GetLong(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {intVal}");
+            ConfigProperty<long>? intProp = ServerConfig.GetConfigProperty<long>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                intProp != null ?
+                    $"{parameters[0]}: {intProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifydouble", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a double", "modifyfloat (string) (double)")]
@@ -6530,9 +6538,22 @@ namespace ACE.Server.Command.Handlers
         {
             try
             {
+                string key = parameters[0];
                 var doubleVal = double.Parse(parameters[1]);
-                if (PropertyManager.ModifyDouble(parameters[0], doubleVal))
+                if (ServerConfig.SetValue(key, doubleVal))
                 {
+                    switch (key)
+                    {
+                        case "cantrip_drop_rate":
+                            Factories.Tables.CantripChance.ApplyNumCantripsMod();
+                            break;
+                        case "minor_cantrip_drop_rate":
+                        case "major_cantrip_drop_rate":
+                        case "epic_cantrip_drop_rate":
+                        case "legendary_cantrip_drop_rate":
+                            Factories.Tables.CantripChance.ApplyCantripLevelsMod();
+                            break;
+                    }
                     CommandHandlerHelper.WriteOutputInfo(session, "Double property successfully updated!");
                     PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server double property {parameters[0]} to {doubleVal}");
                 }
@@ -6548,14 +6569,18 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a double", "fetchdouble (string)")]
         public static void HandleFetchServerFloatProperty(Session session, params string[] parameters)
         {
-            var floatVal = PropertyManager.GetDouble(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {floatVal}");
+            ConfigProperty<double>? floatProp = ServerConfig.GetConfigProperty<double>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                floatProp != null ?
+                    $"{parameters[0]}: {floatProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifystring", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a string", "modifystring (string) (string)")]
         public static void HandleModifyServerStringProperty(Session session, params string[] parameters)
         {
-            if (PropertyManager.ModifyString(parameters[0], parameters[1]))
+            if (ServerConfig.SetValue(parameters[0], parameters[1]))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "String property successfully updated!");
                 PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server string property {parameters[0]} to {parameters[1]}");
@@ -6567,34 +6592,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fetchstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a string", "fetchstring (string)")]
         public static void HandleFetchServerStringProperty(Session session, params string[] parameters)
         {
-            var stringVal = PropertyManager.GetString(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {stringVal}");
-        }
-
-        [CommandHandler("modifypropertydesc", AccessLevel.Admin, CommandHandlerFlag.None, 3, "Modifies a server property's description", "modifypropertydesc <STRING|BOOL|DOUBLE|LONG> (string) (string)")]
-        public static void HandleModifyPropertyDescription(Session session, params string[] parameters)
-        {
-            var isSession = session != null;
-            switch (parameters[0])
-            {
-                case "STRING":
-                    PropertyManager.ModifyStringDescription(parameters[1], parameters[2]);
-                    break;
-                case "BOOL":
-                    PropertyManager.ModifyBoolDescription(parameters[1], parameters[2]);
-                    break;
-                case "DOUBLE":
-                    PropertyManager.ModifyDoubleDescription(parameters[1], parameters[2]);
-                    break;
-                case "LONG":
-                    PropertyManager.ModifyLongDescription(parameters[1], parameters[2]);
-                    break;
-                default:
-                    CommandHandlerHelper.WriteOutputInfo(session, "Please pick from STRING, BOOL, DOUBLE, or LONG", ChatMessageType.Help);
-                    return;
-            }
-
-            CommandHandlerHelper.WriteOutputInfo(session, "Successfully updated property description!", ChatMessageType.Help);
+            ConfigProperty<string>? stringProp = ServerConfig.GetConfigProperty<string>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                stringProp != null ?
+                    $"{parameters[0]}: {stringProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("resyncproperties", AccessLevel.Admin, CommandHandlerFlag.None, "Resync the properties database")]

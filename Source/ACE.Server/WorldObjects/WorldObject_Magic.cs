@@ -123,7 +123,7 @@ namespace ACE.Server.WorldObjects
             //if (!spell.IsResistable || spell.IsSelfTargeted)
                 return false;
 
-            if (spell.MetaSpellType == SpellType.Dispel && spell.Align == DispelType.Negative && !PropertyManager.GetBool("allow_negative_dispel_resist"))
+            if (spell.MetaSpellType == SpellType.Dispel && spell.Align == DispelType.Negative && !ServerConfig.allow_negative_dispel_resist.Value)
                 return false;
 
             if (spell.NumProjectiles > 0 && !projectileHit)
@@ -1250,7 +1250,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 var summonPortal = GetPortal(portalId);
-                if (summonPortal == null || summonPortal.NoSummon || (linkSummoned && !PropertyManager.GetBool("gateway_ties_summonable")))
+                if (summonPortal == null || summonPortal.NoSummon || (linkSummoned && !ServerConfig.gateway_ties_summonable.Value))
                 {
                     // You cannot summon that portal!
                     player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouCannotSummonPortal));
@@ -1761,7 +1761,7 @@ namespace ACE.Server.WorldObjects
             {
                 var gravity = useGravity ? PhysicsGlobals.Gravity : 0.0f;
 
-                if (!PropertyManager.GetBool("trajectory_alt_solver"))
+                if (!ServerConfig.trajectory_alt_solver.Value)
                     Trajectory.solve_ballistic_arc_lateral(startPos, speed, endPos, targetVelocity, gravity, out velocity, out var time, out var impactPoint);
                 else
                     velocity = Trajectory2.CalculateTrajectory(startPos, endPos, targetVelocity, speed, useGravity);
@@ -1770,7 +1770,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // intractable?
                     // try to solve w/ zero velocity
-                    if (!PropertyManager.GetBool("trajectory_alt_solver"))
+                    if (!ServerConfig.trajectory_alt_solver.Value)
                         Trajectory.solve_ballistic_arc_lateral(startPos, speed, endPos, Vector3.Zero, gravity, out velocity, out var time, out var impactPoint);
                     else
                         velocity = Trajectory2.CalculateTrajectory(startPos, endPos, Vector3.Zero, speed, useGravity);

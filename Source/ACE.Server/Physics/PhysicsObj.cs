@@ -994,7 +994,7 @@ namespace ACE.Server.Physics
 
             // custom:
             // test for non-ethereal spell projectile collision on world entry
-            var spellCollide = WeenieObj.WorldObject is SpellProjectile && transition.CollisionInfo.CollideObject.Count > 0 && !PropertyManager.GetBool("spell_projectile_ethereal");
+            var spellCollide = WeenieObj.WorldObject is SpellProjectile && transition.CollisionInfo.CollideObject.Count > 0 && !ServerConfig.spell_projectile_ethereal.Value;
 
             if (spellCollide)
             {

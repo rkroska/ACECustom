@@ -59,7 +59,7 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("You may not leave Olthoi Island until your account and this character have been active on this game world for 15 days.", ChatMessageType.Broadcast));
             }
 
-            if (PlayerKillerStatus == PlayerKillerStatus.PKLite && !PropertyManager.GetBool("pkl_server"))
+            if (PlayerKillerStatus == PlayerKillerStatus.PKLite && !ServerConfig.pkl_server.Value)
             {
                 PlayerKillerStatus = PlayerKillerStatus.NPK;
 
@@ -84,7 +84,7 @@ namespace ACE.Server.WorldObjects
 
             //SendPropertyUpdatesAndOverrides();
 
-            if (PropertyManager.GetBool("use_turbine_chat"))
+            if (ServerConfig.use_turbine_chat.Value)
             {
                 // Init the client with the chat channel ID's, and then notify the player that they've joined the associated channels.
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TurbineChatIsEnabled));
@@ -247,7 +247,7 @@ namespace ACE.Server.WorldObjects
 
         public void SendPropertyUpdatesAndOverrides()
         {
-            if (!PropertyManager.GetBool("require_spell_comps"))
+            if (!ServerConfig.require_spell_comps.Value)
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyBool(this, PropertyBool.SpellComponentsRequired, false));
         }
 
@@ -474,7 +474,7 @@ namespace ACE.Server.WorldObjects
 
         public void HandlePreOrderItems()
         {
-            var subscriptionStatus = (SubscriptionStatus)PropertyManager.GetLong("default_subscription_level");
+            var subscriptionStatus = (SubscriptionStatus)ServerConfig.default_subscription_level.Value;
 
             string status;
             bool success;
@@ -493,7 +493,7 @@ namespace ACE.Server.WorldObjects
 
             var msg = $"Thank you for {status} the Throne of Destiny expansion! A special gift has been placed in your backpack.";
 
-            if (PropertyManager.GetBool("show_first_login_gift") && success)
+            if (ServerConfig.show_first_login_gift.Value && success)
                 Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Magic));
 
             AccountRequirements = subscriptionStatus;

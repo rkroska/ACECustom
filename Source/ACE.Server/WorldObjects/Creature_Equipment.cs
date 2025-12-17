@@ -638,7 +638,7 @@ namespace ACE.Server.WorldObjects
 
         public static List<PropertiesCreateList> CreateListSelect(List<PropertiesCreateList> createList)
         {
-            var trophy_drop_rate = PropertyManager.GetDouble("trophy_drop_rate");
+            var trophy_drop_rate = ServerConfig.trophy_drop_rate.Value;
             if (trophy_drop_rate != 1.0)
                 return CreateListSelect(createList, (float)trophy_drop_rate);
 

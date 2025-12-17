@@ -157,7 +157,7 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            if (!PropertyManager.GetBool("account_login_boots_in_use"))
+            if (!ServerConfig.account_login_boots_in_use.Value)
             {
                 if (NetworkManager.Find(account.AccountName) != null)
                 {
@@ -183,7 +183,7 @@ namespace ACE.Server.Network.Handlers
                     return;
                 }
 
-                if (PropertyManager.GetBool("account_login_boots_in_use"))
+                if (ServerConfig.account_login_boots_in_use.Value)
                 {
                     var previouslyConnectedAccount = NetworkManager.Find(account.AccountName);
 

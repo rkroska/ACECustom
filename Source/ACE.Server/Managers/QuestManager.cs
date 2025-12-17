@@ -421,7 +421,7 @@ namespace ACE.Server.Managers
             uint nextSolveTime;
 
             if (CanScaleQuestMinDelta(quest))
-                nextSolveTime = playerQuest.LastTimeCompleted + (uint)(quest.MinDelta * PropertyManager.GetDouble("quest_mindelta_rate", 1));
+                nextSolveTime = playerQuest.LastTimeCompleted + (uint)(quest.MinDelta * ServerConfig.quest_mindelta_rate.Value);
             else
                 nextSolveTime = playerQuest.LastTimeCompleted + quest.MinDelta;
 
@@ -1108,7 +1108,7 @@ namespace ACE.Server.Managers
 
             };
 
-            var dynamicQuestMaxXP = PropertyManager.GetLong("dynamic_quest_max_xp");
+            var dynamicQuestMaxXP = ServerConfig.dynamic_quest_max_xp.Value;
 
             Database.Models.World.WeeniePropertiesEmoteAction responseAction3 = new Database.Models.World.WeeniePropertiesEmoteAction
             {
@@ -1413,7 +1413,7 @@ namespace ACE.Server.Managers
             using (var db = new Database.Models.Shard.ShardDbContext())
             {
                 db.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
-                var dynamicQuestRepeatHours = PropertyManager.GetLong("dynamic_quest_repeat_hours");
+                var dynamicQuestRepeatHours = ServerConfig.dynamic_quest_repeat_hours.Value;
                 var quests = db.CharacterPropertiesQuestRegistry.Where(x => x.CharacterId == player.Character.Id && x.QuestName.StartsWith("Dynamic"));
                 foreach (var q in quests)
                 {

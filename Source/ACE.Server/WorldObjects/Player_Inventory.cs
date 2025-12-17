@@ -686,7 +686,7 @@ namespace ACE.Server.WorldObjects
             // this crouch down motion exited the animation queue immediately
 
             // here we are just skipping the animation if the player is jumping
-            if (IsJumping && PropertyManager.GetBool("allow_jump_loot"))
+            if (IsJumping && ServerConfig.allow_jump_loot.Value)
                 return MotionCommand.Invalid;
 
             MotionCommand pickupMotion;
@@ -907,7 +907,7 @@ namespace ACE.Server.WorldObjects
 
             if (container is Hook hook)
             {
-                if (PropertyManager.GetBool("house_hook_limit"))
+                if (ServerConfig.house_hook_limit.Value)
                 {
                     if (hook.House.HouseMaxHooksUsable != -1 && hook.House.HouseCurrentHooksUsable <= 0)
                     {
@@ -916,7 +916,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (PropertyManager.GetBool("house_hookgroup_limit"))
+                if (ServerConfig.house_hookgroup_limit.Value)
                 {
                     var itemHookGroup = item.HookGroup ?? HookGroupType.Undef;
                     var houseHookGroupMax = hook.House.GetHookGroupMaxCount(itemHookGroup);
@@ -1371,7 +1371,7 @@ namespace ACE.Server.WorldObjects
                                 }
                             }
 
-                            if (PropertyManager.GetBool("house_hook_limit"))
+                            if (ServerConfig.house_hook_limit.Value)
                             {
                                 if (container is Hook toHook && toHook.House.HouseMaxHooksUsable != -1 && toHook.House.HouseCurrentHooksUsable <= 0)
                                 {
@@ -1383,7 +1383,7 @@ namespace ACE.Server.WorldObjects
                                 }
                             }
 
-                            if (PropertyManager.GetBool("house_hookgroup_limit"))
+                            if (ServerConfig.house_hookgroup_limit.Value)
                             {
                                 if (container is Hook toHook)
                                 {
@@ -2292,7 +2292,7 @@ namespace ACE.Server.WorldObjects
 
         private WeenieError CheckWieldRequirements(WorldObject item)
         {
-            if (!PropertyManager.GetBool("use_wield_requirements"))
+            if (!ServerConfig.use_wield_requirements.Value)
                 return WeenieError.None;
 
             var heritageSpecificArmor = item.GetProperty(PropertyInt.HeritageSpecificArmor);
@@ -3841,7 +3841,7 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {iouToTurnIn.NameWithMaterial}.", ChatMessageType.Broadcast));
             Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, iouToTurnIn.Guid.Full, WeenieError.TradeAiRefuseEmote));
 
-            if (!PropertyManager.GetBool("iou_trades"))
+            if (!ServerConfig.iou_trades.Value)
             {
                 Session.Network.EnqueueSend(new GameEventTell(target, "Sorry! I'm not taking IOUs right now, but if you do wish to discard them, drop them in to the garbage barrels found at the Mana Forges in Hebian-To, Zaikhal, and Cragstone.", this, ChatMessageType.Tell));
                 //Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, (WeenieErrorWithString)WeenieError.TradeAiDoesntWant, target.Name));
@@ -3891,7 +3891,7 @@ namespace ACE.Server.WorldObjects
                                     Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} gives you {item.Name}.", ChatMessageType.Broadcast));
                                     target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
-                                    if (PropertyManager.GetBool("player_receive_immediate_save"))
+                                    if (ServerConfig.player_receive_immediate_save.Value)
                                         RushNextPlayerSave(5);
 
                                     log.Debug($"[IOU] {Name} (0x{Guid}) traded in a IOU (0x{iouToTurnIn.Guid}) for {wcid} which became {item.Name} (0x{item.Guid}).");
@@ -4149,7 +4149,7 @@ namespace ACE.Server.WorldObjects
             {
                 log.Warn($"Player.GiveFromEmote: itemStacks <= 0: emoter: {emoter.Name} (0x{emoter.Guid}) - {emoter.WeenieClassId} | weenieClassId: {weenieClassId} | amount: {amount}");
 
-                if (PropertyManager.GetBool("iou_trades"))
+                if (ServerConfig.iou_trades.Value)
                 {
                     var item = PlayerFactory.CreateIOU(weenieClassId);
                     TryCreateForGive(emoter, item);
@@ -4177,7 +4177,7 @@ namespace ACE.Server.WorldObjects
                 EnqueueBroadcast(new GameMessageSound(Guid, Sound.ReceiveItem));
             }
 
-            if (PropertyManager.GetBool("player_receive_immediate_save"))
+            if (ServerConfig.player_receive_immediate_save.Value)
                 RushNextPlayerSave(5);
 
             return true;

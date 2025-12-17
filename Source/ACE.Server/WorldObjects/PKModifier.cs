@@ -58,7 +58,7 @@ namespace ACE.Server.WorldObjects
                 return new ActivationResult(false);
             }
 
-            if (player.PkLevel > PKLevel.PK || PropertyManager.GetBool("pk_server") || PropertyManager.GetBool("pkl_server"))
+            if (player.PkLevel > PKLevel.PK || ServerConfig.pk_server.Value || ServerConfig.pkl_server.Value)
             {
                 if (!string.IsNullOrWhiteSpace(GetProperty(PropertyString.UsePkServerError)))
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UsePkServerError), ChatMessageType.Broadcast));

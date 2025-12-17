@@ -105,12 +105,12 @@ namespace ACE.Server.WorldObjects
             // hollow weapons also ignore player natural resistances
             if (ignoreMagicResist)
             {
-                if (!(attacker is Player) || !(this is Player) || PropertyManager.GetDouble("ignore_magic_resist_pvp_scalar") == 1.0)
+                if (!(attacker is Player) || !(this is Player) || ServerConfig.ignore_magic_resist_pvp_scalar.Value == 1.0)
                     return weaponResistanceMod;
             }
 
             // TODO(Ruggan): When rolled out, use the new curve exclusively.
-            float newCurvePct = (float)Math.Clamp(GetProperty(PropertyFloat.LifeAugNewCurveAmount) ?? PropertyManager.GetDouble("new_life_aug_curve_pct"), 0.0, 1.0);
+            float newCurvePct = (float)Math.Clamp(GetProperty(PropertyFloat.LifeAugNewCurveAmount) ?? ServerConfig.new_life_aug_curve_pct.Value, 0.0, 1.0);
             float protModOld = EnchantmentManager.GetProtectionResistanceMod(damageType);
             float protModNew = EnchantmentManager.GetProtectionResistanceModNew(damageType);
             float protMod = protModOld + ((protModNew - protModOld) * newCurvePct);

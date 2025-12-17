@@ -72,7 +72,7 @@ namespace ACE.Server.Command.Handlers
                     //    return;
                     //}
 
-                    if (player.IsPK || PropertyManager.GetBool("pk_server"))
+                    if (player.IsPK || ServerConfig.pk_server.Value)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat($"{playerToFind.Name} in a Player Killer and cannot be an Advocate.", ChatMessageType.Broadcast));
                         return;

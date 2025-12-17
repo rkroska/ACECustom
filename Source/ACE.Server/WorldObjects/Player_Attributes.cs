@@ -76,7 +76,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // retail was missing the 'raise attribute' runrate hook here
-                if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
+                if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && ServerConfig.runrate_add_hooks.Value)
                     HandleRunRateUpdate();
             }
 
@@ -154,7 +154,7 @@ namespace ACE.Server.WorldObjects
                 Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, Mana));
             }
 
-            if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
+            if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && ServerConfig.runrate_add_hooks.Value)
                 HandleRunRateUpdate();
 
             return true;
@@ -216,7 +216,7 @@ namespace ACE.Server.WorldObjects
                 Session?.Network?.EnqueueSend(new GameMessagePrivateUpdateVital(this, Mana));
             }
 
-            if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && PropertyManager.GetBool("runrate_add_hooks"))
+            if ((attribute == PropertyAttribute.Strength || attribute == PropertyAttribute.Quickness) && ServerConfig.runrate_add_hooks.Value)
                 HandleRunRateUpdate();
 
             return true;

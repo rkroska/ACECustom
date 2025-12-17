@@ -17,7 +17,7 @@ namespace ACE.Server.WorldObjects
         /// Indicates that the server should enforce logic to prevent players
         /// from augmenting a given attribute's innate value over 100
         /// </summary>
-        public static bool AttributeAugmentationSafetyCapEnabled => PropertyManager.GetBool("attribute_augmentation_safety_cap");
+        public static bool AttributeAugmentationSafetyCapEnabled => ServerConfig.attribute_augmentation_safety_cap.Value;
 
         public long? AugmentationCost
         {

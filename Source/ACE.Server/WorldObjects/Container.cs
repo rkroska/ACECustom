@@ -924,7 +924,7 @@ namespace ACE.Server.WorldObjects
                 // verified this message was sent for corpses, instead of WeenieErrorWithString.The_IsCurrentlyInUse
                 var currentViewer = "someone else";
 
-                if (PropertyManager.GetBool("container_opener_name"))
+                if (ServerConfig.container_opener_name.Value)
                 {
                     var name = CurrentLandblock?.GetObject(Viewer)?.Name;
                     if (name != null)
