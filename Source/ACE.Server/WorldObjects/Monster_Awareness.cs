@@ -226,29 +226,29 @@ namespace ACE.Server.WorldObjects
         /// <returns>Selected target, or null if no targets</returns>
         private Creature SelectTargetByScore(List<Creature> targets, Func<long, long, bool> isBetter, long initialScore)
         {
-            var bestCandidates = new List<Creature>();
-            var bestScore = initialScore;
+            Creature bestCandidate = null;
+            long bestScore = initialScore;
+            int count = 0;
 
             foreach (var target in targets)
             {
                 var score = CalculateCreaturePowerScore(target);
+
                 if (isBetter(score, bestScore))
                 {
                     bestScore = score;
-                    bestCandidates.Clear();
-                    bestCandidates.Add(target);
+                    bestCandidate = target;
+                    count = 1; // Reset count for the new high score
                 }
                 else if (score == bestScore)
                 {
-                    // Tie-breaker: collect all targets with same score
-                    bestCandidates.Add(target);
+                    count++;
+                    // Reservoir Sampling: 1/count chance to replace current best
+                    // ThreadSafeRandom.Next is an inclusive range, so with a count of 2, we want to choose 0 or 1.
+                    if (ThreadSafeRandom.Next(0, count - 1) == 0) bestCandidate = target;
                 }
             }
-
-            // Randomly select from candidates with same score to avoid always targeting the same creature
-            return bestCandidates.Count > 0
-                ? bestCandidates[ThreadSafeRandom.Next(0, bestCandidates.Count)]
-                : null;
+            return bestCandidate;
         }
 
         public double NextFindTarget;
