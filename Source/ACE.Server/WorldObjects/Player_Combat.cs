@@ -1136,9 +1136,21 @@ namespace ACE.Server.WorldObjects
                     return DamageType.Slash;
             }
 
-            var powerLevel = combatType == CombatType.Melee ? (float?)PowerLevel : null;
+            float? powerLevel = combatType == CombatType.Melee ? PowerLevel : null;
 
-            return damageType.SelectDamageType(powerLevel);
+            var filteredTypes = damageType;
+            if (powerLevel.HasValue)
+            {
+                filteredTypes = powerLevel < 0.33f
+                    ? damageType & DamageType.Physical   // Prefer physical damage types under 33% power
+                    : damageType & ~DamageType.Physical; // Prefer elemental damage types over 33% power
+
+                // If we filtered everything out, restore the old value.
+                if (filteredTypes == DamageType.Undef) filteredTypes = damageType;
+            }
+
+            // Choose one of the remaining damage types at random.
+            return EnumFlagRandom.SelectRandomFlag(filteredTypes, DamageType.Physical);
         }
 
         public WorldObject HandArmor => EquippedObjects.Values.FirstOrDefault(i => (i.ClothingPriority & CoverageMask.Hands) > 0);

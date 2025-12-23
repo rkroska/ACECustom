@@ -139,41 +139,6 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// The current targeting tactic for this monster
-        /// </summary>
-        public TargetingTactic CurrentTargetingTactic;
-
-        public void SelectTargetingTactic()
-        {
-            // monsters have multiple targeting tactics, ex. Focused | Random
-
-            // when should this function be called?
-            // when a monster spawns in, does it choose 1 TargetingTactic?
-
-            // or do they randomly select a TargetingTactic from their list of possible tactics,
-            // each time they go to find a new target?
-
-            //Console.WriteLine($"{Name}.TargetingTactics: {TargetingTactic}");
-
-            // if targeting tactic is none,
-            // use the most common targeting tactic
-            // TODO: ensure all monsters in the db have a targeting tactic
-            var targetingTactic = TargetingTactic;
-            if (targetingTactic == TargetingTactic.None)
-                targetingTactic = TargetingTactic.Random | TargetingTactic.TopDamager;
-
-            var possibleTactics = EnumHelper.GetFlags(targetingTactic);
-            var rng = ThreadSafeRandom.Next(1, possibleTactics.Count - 1);
-
-            if (targetingTactic == 0)
-                rng = 0;
-
-            CurrentTargetingTactic = (TargetingTactic)possibleTactics[rng];
-
-            //Console.WriteLine($"{Name}.TargetingTactic: {CurrentTargetingTactic}");
-        }
-
-        /// <summary>
         /// Calculates total augmentation count for a player
         /// </summary>
         private long CalculatePlayerAugTotal(Player player)
@@ -277,7 +242,6 @@ namespace ACE.Server.WorldObjects
 
             try
             {
-                SelectTargetingTactic();
                 SetNextTargetTime();
 
                 // Don't use cached targets for critical target finding decisions
@@ -303,7 +267,13 @@ namespace ACE.Server.WorldObjects
 
                 var prevAttackTarget = AttackTarget;
 
-                switch (CurrentTargetingTactic)
+                // Monsters may have multiple targeting tactics (e.g. Focused | Random) - choose one randomly.
+                // If the monster has no targeting tactics, fall back to using the most common setting.
+                TargetingTactic currentTargetingTactic = EnumFlagRandom.SelectRandomFlag(
+                    currentFlags: TargetingTactic,
+                    defaultFlags: TargetingTactic.Random | TargetingTactic.TopDamager);
+
+                switch (currentTargetingTactic)
                 {
                     case TargetingTactic.None:
 

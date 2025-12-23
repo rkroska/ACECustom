@@ -301,19 +301,12 @@ namespace ACE.Server.WorldObjects
 
         public DamageType GetDamageType(PropertiesBodyPart attackPart, CombatType? combatType = null)
         {
+            // If there is a weapon equipped, get the damage type from that weapon.
             var weapon = GetEquippedWeapon();
+            if (weapon != null) return GetDamageType(false, combatType);
 
-            if (weapon != null)
-                return GetDamageType(false, combatType);
-            else
-            {
-                var damageType = attackPart.DType;
-
-                if (damageType.IsMultiDamage())
-                    damageType = damageType.SelectDamageType();
-
-                return damageType;
-            }
+            // Otherwise, choose a random damage type from the bodypart, falling back to one of the physical options if none is set.
+            return EnumFlagRandom.SelectRandomFlag(attackPart.DType, DamageType.Physical);
         }
 
         /// <summary>
