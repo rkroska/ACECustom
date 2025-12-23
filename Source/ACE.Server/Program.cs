@@ -230,6 +230,28 @@ namespace ACE.Server
                 Environment.Exit(0);
             }
 
+            // Check if metrics are enabled in Config.js
+            if (ConfigManager.Config.Metrics.Enabled)
+            {
+                try
+                {
+                    MetricsManager.StartMetricsPipeline(
+                        ConfigManager.Config.Metrics.Endpoint,
+                        ConfigManager.Config.Metrics.InstanceId,
+                        ConfigManager.Config.Metrics.ApiToken
+                    );
+                    log.Info($"MetricsManager initialized successfully, pushing to {ConfigManager.Config.Metrics.Endpoint}");
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to initialize MetricsManager: {ex.Message}");
+                }
+            }
+            else
+            {
+                log.Info("Metrics are disabled in Config.js.");
+            }
+
             log.Info("Initializing ServerManager...");
             ServerManager.Initialize();
 
@@ -268,7 +290,6 @@ namespace ACE.Server
 
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
-
             
             if (!string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
             {
@@ -369,9 +390,11 @@ namespace ACE.Server
                 if (!ServerManager.ShutdownInitiated)
                     log.Warn("Unsafe server shutdown detected! Data loss is possible!");
 
+
                 PropertyManager.StopUpdating();
                 //ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                MetricsManager.Shutdown();
 
                 // Do system specific cleanup here
                 try
@@ -390,6 +413,7 @@ namespace ACE.Server
             {
                 ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                MetricsManager.Shutdown();
             }
         }
     }
