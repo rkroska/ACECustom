@@ -1679,10 +1679,11 @@ namespace ACE.Server.Command.Handlers
         }
 
         // delete
-        [CommandHandler("delete", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Deletes the selected object.", "Players may not be deleted this way.")]
+        [CommandHandler("delete", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Deletes the selected object.", "Players and their corpses may not be deleted this way.")]
         public static void HandleDeleteSelected(Session session, params string[] parameters)
         {
-            // @delete - Deletes the selected object. Players may not be deleted this way.
+
+            // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
 
             var objectId = ObjectGuid.Invalid;
 
@@ -1707,6 +1708,12 @@ namespace ACE.Server.Command.Handlers
             if (wo == null)
             {
                 ChatPacket.SendServerMessage(session, "Delete failed. Object not found.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            if (wo is Corpse corpse && !corpse.IsMonster)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
                 return;
             }
 
