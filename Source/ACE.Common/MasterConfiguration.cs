@@ -6,6 +6,8 @@ namespace ACE.Common
 
         public DatabaseConfiguration MySql { get; set; }
 
+        public MetricsConfiguration Metrics { get; set; } = new MetricsConfiguration();
+
         public OfflineConfiguration Offline { get; set; } = new OfflineConfiguration();
 
         public ChatConfiguration Chat { get; set; }

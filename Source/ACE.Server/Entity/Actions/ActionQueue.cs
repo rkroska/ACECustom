@@ -78,7 +78,13 @@ namespace ACE.Server.Entity.Actions
                     {
                         sw.Stop();
                         var elapsedMs = sw.Elapsed.TotalMilliseconds;
-                        
+
+                        var tags = new TagList
+                        {
+                            { "ActionType", result.Type.ToString() }
+                        };
+                        MetricsManager.actionLatencies.Record(elapsedMs * 1000.0, tags);
+
                         if (elapsedMs >= trackThresholdMs)
                         {
                             TrackActionPerformance(result, elapsedMs, trackThresholdMs, warnThresholdMs, discordMaxAlertsPerMinute);

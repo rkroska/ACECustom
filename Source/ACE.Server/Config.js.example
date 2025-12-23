@@ -219,5 +219,15 @@
      // When retrieving a file list of .sql files in the AutoApplyWorldCustomizations process
      // this will cause the file search to retrieve all files recursively from each directory
      "RecurseWorldCustomizationPaths": true
+  },
+  // Configuration for an OpenTelemetry OLTP provider (e.g. Grafana, Honeycomb, Datadog, etc).
+  "Metrics": {
+    "Enabled": true,
+    // The Endpoint URL to send OLTP signals.
+    "Endpoint": "https://otlp-gateway-prod-us-east-2.grafana.net/otlp/v1/metrics",
+    // The Instance ID for the API.
+    "InstanceId": "your-id",
+    // An access token that can write metrics.
+    "ApiToken": "your-token="
   }
 }
