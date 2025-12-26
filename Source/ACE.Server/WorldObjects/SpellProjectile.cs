@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -40,6 +42,13 @@ namespace ACE.Server.WorldObjects
 
         public int DebugVelocity;
 
+        private bool _hasHitCreature;
+
+        private Vector3 _spawnPos;
+        private Vector3 _endPos;
+        private bool _hasEnded;
+        private bool _endPosLocked;
+
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
@@ -61,6 +70,19 @@ namespace ACE.Server.WorldObjects
             // Override weenie description defaults
             ValidLocations = null;
             DefaultScriptId = null;
+        }
+
+        public override bool EnterWorld()
+        {
+            if (base.EnterWorld())
+            {
+                _spawnPos = Location.Pos;
+                _endPos = _spawnPos;
+                _hasEnded = false;
+                _endPosLocked = false;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -230,6 +252,24 @@ namespace ACE.Server.WorldObjects
             EnqueueBroadcast(new GameMessageSetState(this, PhysicsObj.State));
             EnqueueBroadcast(new GameMessageScript(Guid, PlayScript.Explode, GetProjectileScriptIntensity(SpellType)));
 
+            if (!_endPosLocked && PhysicsObj.Velocity.LengthSquared() > 0.0001f)
+            {
+                _endPos = Location.Pos;
+            }
+            else if (!_endPosLocked)
+            {
+                _endPos = Location.Pos;
+                _endPosLocked = true;
+                _hasEnded = true;
+            }
+
+            // GDLE-style forgiving hit detection for ring spells
+            // Must run BEFORE velocity is zeroed
+            if (!_hasHitCreature && Spell != null && Spell.SpreadAngle == 360)
+            {
+                TryForgivingRingHit();
+            }
+
             // this should only be needed for spell_projectile_ethereal = true,
             // however it can also fix a display issue on client in default mode,
             // where GameMessageSetState updates projectile to ethereal before it has actually collided on client,
@@ -276,12 +316,26 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(Info.ToString(), ChatMessageType.Broadcast));
             }
 
+            if (!_endPosLocked && PhysicsObj.Velocity.LengthSquared() > 0.0001f)
+            {
+                _endPos = Location.Pos;
+            }
+            else if (!_endPosLocked)
+            {
+                _endPos = Location.Pos;
+                _endPosLocked = true;
+                _hasEnded = true;
+            }
+
             ProjectileImpact();
 
             // ensure valid creature target
             var creatureTarget = target as Creature;
             if (creatureTarget == null || target == ProjectileSource)
                 return;
+
+            // mark physics hit so fallback does not fire
+            _hasHitCreature = true;
 
             if (player != null)
                 player.LastHitSpellProjectile = Spell;
@@ -1063,6 +1117,336 @@ namespace ACE.Server.WorldObjects
             observer.Session.Network.EnqueueSend(new GameMessageSystemChat(observer.DebugDamageBuffer + info, ChatMessageType.Broadcast));
 
             observer.DebugDamageBuffer = null;
+        }
+
+        private const float RingPadding = 0.4f;
+        private const float RingHalfHeight = 0.4f; // midsection slab thickness
+
+        // LOS check from an arbitrary world point to a target
+        private bool HasLineOfSightFromPoint(Vector3 from, WorldObject target)
+        {
+            if (PhysicsObj == null || target.PhysicsObj == null)
+                return false;
+
+            // Build a start position at the provided point
+            var startPos = new Physics.Common.Position(PhysicsObj.Position);
+            startPos.Frame.Origin.X = from.X;
+            startPos.Frame.Origin.Y = from.Y;
+            startPos.Frame.Origin.Z = from.Z;
+
+            var targetPos = new Physics.Common.Position(target.PhysicsObj.Position);
+
+            if (ACE.Server.Physics.PhysicsObj.GetBlockDist(startPos, targetPos) > 1)
+                return false;
+
+            var prev = PhysicsObj.ProjectileTarget;
+            PhysicsObj.ProjectileTarget = target.PhysicsObj;
+            ACE.Server.Physics.Animation.Transition transition;
+            try
+            {
+                transition = PhysicsObj.transition(startPos, targetPos, false);
+            }
+            finally
+            {
+                PhysicsObj.ProjectileTarget = prev;
+            }
+
+            if (transition == null)
+                return false;
+
+            if (transition.CollisionInfo.CollidedWithEnvironment)
+                return false;
+
+            return transition.CollisionInfo.CollideObject.FirstOrDefault(c => c.ID == target.PhysicsObj.ID) != null;
+        }
+
+        private void TryForgivingRingHit()
+        {
+            if (PhysicsObj == null)
+                return;
+
+            // Point-blank misfire: projectile failed to travel
+            if (PhysicsObj.Velocity.LengthSquared() < 0.0001f)
+            {
+                TryPointBlankRingExplosion();
+                return;
+            }
+
+            var caster = ProjectileSource as Creature;
+            if (caster == null)
+                return;
+
+            // Segment from spawn to end position (actual projectile path)
+            Vector2 segStart = new Vector2(_spawnPos.X, _spawnPos.Y);
+            Vector2 segEnd = new Vector2(_endPos.X, _endPos.Y);
+
+            Vector2 segDir = segEnd - segStart;
+            float segLenSq = segDir.LengthSquared();
+
+            if (segLenSq < 0.0001f)
+                return; // projectile did not meaningfully travel
+
+            var landblock = caster.CurrentLandblock;
+            if (landblock == null)
+                return;
+
+            var allObjects = landblock.GetWorldObjectsForPhysicsHandling();
+            if (allObjects == null)
+                return;
+
+            float projR = PhysicsObj.GetPhysicsRadius();
+
+            // AC uses ~1.0f world units per yard, spell range is already in yards
+            float spellRange = Spell != null ? Spell.BaseRangeConstant : 4.9f;
+            float maxRange2D = spellRange - 0.1f; // Match retail edge behavior
+
+            // Ring vertical band anchored to the projectile path end (impact or expire point)
+            float ringCenterZ = _endPos.Z;
+            float ringMinZ = ringCenterZ - (RingHalfHeight + projR);
+            float ringMaxZ = ringCenterZ + (RingHalfHeight + projR);
+
+            foreach (var wo in allObjects)
+            {
+                if (!(wo is Creature validTarget))
+                    continue;
+
+                if (validTarget == ProjectileSource)
+                    continue;
+
+                if (!caster.CanDamage(validTarget))
+                    continue;
+
+                // Early range gate: filter targets too far from spawn position
+                float targetDistFromCaster2D = Vector2.Distance(
+                    new Vector2(_spawnPos.X, _spawnPos.Y),
+                    new Vector2(
+                        validTarget.Location.Pos.X,
+                        validTarget.Location.Pos.Y
+                    )
+                );
+
+                if (targetDistFromCaster2D > maxRange2D)
+                    continue;
+
+                // Target vertical span
+                if (validTarget.PhysicsObj == null)
+                    continue;
+
+                float targetMinZ = validTarget.Location.Pos.Z;
+                float targetMaxZ =
+                    validTarget.Location.Pos.Z + validTarget.PhysicsObj.GetHeight();
+
+                bool verticalOverlap =
+                    targetMaxZ >= ringMinZ &&
+                    targetMinZ <= ringMaxZ;
+
+                if (!verticalOverlap)
+                    continue;
+
+                // Spawn overlap check (tied to start position only)
+                float spawnDist2D = Vector2.Distance(
+                    new Vector2(_spawnPos.X, _spawnPos.Y),
+                    new Vector2(
+                        validTarget.Location.Pos.X,
+                        validTarget.Location.Pos.Y
+                    )
+                );
+
+                float spawnRadius =
+                    validTarget.PhysicsObj.GetPhysicsRadius() + RingPadding;
+
+                if (spawnDist2D <= spawnRadius)
+                {
+                    var losFrom = new Vector3(_spawnPos.X, _spawnPos.Y, _spawnPos.Z);
+                    if (!HasLineOfSightFromPoint(losFrom, validTarget))
+                        continue;
+
+                    _hasHitCreature = true;
+                    ResolveSpellHit(validTarget);
+                    break;
+                }
+
+                // Closest-approach segment test (swept sphere approximation in 2D)
+                var c2 = new Vector2(
+                    validTarget.PhysicsObj.Position.Frame.Origin.X,
+                    validTarget.PhysicsObj.Position.Frame.Origin.Y
+                );
+
+                float t = Vector2.Dot(c2 - segStart, segDir) / segLenSq;
+
+                // clamp to segment
+                if (t < 0.0f || t > 1.0f)
+                    continue;
+
+                Vector2 closest = segStart + segDir * t;
+                
+                // Check if target itself is within spell's range from spawn (ring geometry)
+                float targetDistFromSpawn2D = Vector2.Distance(segStart, c2);
+                
+                if (targetDistFromSpawn2D > maxRange2D)
+                    continue;
+
+                // Check if segment passes close enough to target (swept sphere intersection)
+                float distSq = Vector2.DistanceSquared(c2, closest);
+
+                float effectiveRadius =
+                    validTarget.PhysicsObj.GetPhysicsRadius() + projR + RingPadding;
+
+                if (distSq <= effectiveRadius * effectiveRadius)
+                {
+                    // LOS from the closest point on the segment, not from projectile end
+                    var losFrom = new Vector3(closest.X, closest.Y, ringCenterZ);
+                    if (!HasLineOfSightFromPoint(losFrom, validTarget))
+                        continue;
+
+                    _hasHitCreature = true;
+                    ResolveSpellHit(validTarget);
+                    break;
+                }
+            }
+        }
+
+        private void TryPointBlankRingExplosion()
+        {
+            if (PhysicsObj == null)
+                return;
+
+            var caster = ProjectileSource as Creature;
+            if (caster == null)
+                return;
+
+            var landblock = caster.CurrentLandblock;
+            if (landblock == null)
+                return;
+
+            var o = Location.Pos;
+
+            // Ring vertical band anchored to projectile origin
+            float ringCenterZ = o.Z;
+            float projR = PhysicsObj.GetPhysicsRadius();
+
+            float ringMinZ = ringCenterZ - (RingHalfHeight + projR);
+            float ringMaxZ = ringCenterZ + (RingHalfHeight + projR);
+
+            var allObjects = landblock.GetWorldObjectsForPhysicsHandling();
+            if (allObjects == null)
+                return;
+
+            foreach (var wo in allObjects)
+            {
+                if (!(wo is Creature target))
+                    continue;
+
+                if (target == ProjectileSource)
+                    continue;
+
+                if (!caster.CanDamage(target))
+                    continue;
+
+                if (target.PhysicsObj == null)
+                    continue;
+
+                // LOS check from the projectile point blank origin to target
+                var losFrom = new Vector3(o.X, o.Y, o.Z);
+                if (!HasLineOfSightFromPoint(losFrom, target))
+                    continue;
+
+                // Vertical overlap
+                float targetMinZ = target.Location.Pos.Z;
+                float targetMaxZ =
+                    target.Location.Pos.Z + target.PhysicsObj.GetHeight();
+
+                if (targetMaxZ < ringMinZ || targetMinZ > ringMaxZ)
+                    continue;
+
+                // Horizontal proximity
+                float dist2D = Vector2.Distance(
+                    new Vector2(o.X, o.Y),
+                    new Vector2(
+                        target.Location.Pos.X,
+                        target.Location.Pos.Y
+                    )
+                );
+
+                float radius =
+                    target.PhysicsObj.GetPhysicsRadius()
+                    + RingPadding
+                    + projR;
+
+                if (dist2D <= radius)
+                {
+                    _hasHitCreature = true;
+                    ResolveSpellHit(target);
+                    break;
+                }
+            }
+        }
+
+        private void ResolveSpellHit(Creature creatureTarget)
+        {
+            var player = ProjectileSource as Player;
+            var sourceCreature = ProjectileSource as Creature;
+
+            if (sourceCreature != null && !sourceCreature.CanDamage(creatureTarget))
+                return;
+
+            var pkError = ProjectileSource?.CheckPKStatusVsTarget(creatureTarget, Spell);
+            if (pkError != null)
+                return;
+
+            bool critical = false;
+            bool critDefended = false;
+            bool overpower = false;
+
+            float? damage = CalculateDamage(
+                ProjectileSource,
+                creatureTarget,
+                ref critical,
+                ref critDefended,
+                ref overpower
+            );
+
+            if (damage == null)
+                return;
+
+            if (Spell.MetaSpellType ==
+                ACE.Entity.Enum.SpellType.EnchantmentProjectile)
+            {
+                ProjectileSource.CreateEnchantment(
+                    creatureTarget,
+                    ProjectileSource,
+                    ProjectileLauncher,
+                    Spell,
+                    false,
+                    FromProc
+                );
+            }
+            else
+            {
+                DamageTarget(
+                    creatureTarget,
+                    damage.Value,
+                    critical,
+                    critDefended,
+                    overpower
+                );
+            }
+
+            DoSpellEffects(
+                Spell,
+                ProjectileSource,
+                creatureTarget,
+                true
+            );
+
+            if (player != null)
+            {
+                Proficiency.OnSuccessUse(
+                    player,
+                    player.GetCreatureSkill(Spell.School),
+                    Spell.PowerMod
+                );
+            }
         }
     }
 }
