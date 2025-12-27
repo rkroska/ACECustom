@@ -3495,7 +3495,8 @@ namespace ACE.Server.WorldObjects.Managers
                     // This is much more efficient when players have thousands of stamps
                     var playerStamps = context.AccountQuest
                         .Where(x => x.AccountId == player.Account.AccountId 
-                                 && x.NumTimesCompleted >= 1 
+                                 && x.NumTimesCompleted >= 1
+                                 && x.Quest != null
                                  && stampsToCheck.Contains(x.Quest))
                         .Select(x => x.Quest)
                         .ToList();
