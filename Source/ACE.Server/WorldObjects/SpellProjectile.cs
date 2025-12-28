@@ -1298,12 +1298,6 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 Vector2 closest = segStart + segDir * t;
-                
-                // Check if target itself is within spell's range from spawn (ring geometry)
-                float targetDistFromSpawn2D = Vector2.Distance(segStart, c2);
-                
-                if (targetDistFromSpawn2D > maxRange2D)
-                    continue;
 
                 // Check if segment passes close enough to target (swept sphere intersection)
                 float distSq = Vector2.DistanceSquared(c2, closest);
