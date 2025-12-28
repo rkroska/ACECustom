@@ -308,6 +308,22 @@ namespace ACE.Server.WorldObjects
             {
                 return;
             }
+
+            var creatureTarget = target as Creature;
+
+            if (creatureTarget != null &&
+                Spell != null &&
+                Spell.SpreadAngle == 360 &&
+                creatureTarget != ProjectileSource &&
+                !_hasHitCreature)
+            {
+                if ((ProjectileSource as Creature)?.CanDamage(creatureTarget) == true)
+                {
+                    _hasHitCreature = true;
+                    ResolveSpellHit(creatureTarget);
+                }
+            }
+
             var player = ProjectileSource as Player;
 
             if (Info != null && player != null && player.DebugSpell)
@@ -330,8 +346,11 @@ namespace ACE.Server.WorldObjects
             ProjectileImpact();
 
             // ensure valid creature target
-            var creatureTarget = target as Creature;
             if (creatureTarget == null || target == ProjectileSource)
+                return;
+
+            // Skip hit resolution if already resolved (ring spells resolve early)
+            if (_hasHitCreature)
                 return;
 
             // mark physics hit so fallback does not fire
@@ -1119,7 +1138,7 @@ namespace ACE.Server.WorldObjects
             observer.DebugDamageBuffer = null;
         }
 
-        private const float RingPadding = 0.4f;
+        private const float RingPadding = 0.5f;
         private const float RingHalfHeight = 0.4f; // midsection slab thickness
 
         // LOS check from an arbitrary world point to a target
