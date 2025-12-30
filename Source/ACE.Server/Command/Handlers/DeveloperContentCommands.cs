@@ -3277,16 +3277,20 @@ namespace ACE.Server.Command.Handlers.Processors
                     mode = CacheType.DeathTreasure;
             }
 
+            var clearedCaches = new List<string>();
+
             if (mode.HasFlag(CacheType.Landblock))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing landblock instance cache");
                 DatabaseManager.World.ClearCachedLandblockInstances();
+                clearedCaches.Add("Landblock");
             }
 
             if (mode.HasFlag(CacheType.Recipe))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing recipe cache");
                 DatabaseManager.World.ClearCookbookCache();
+                clearedCaches.Add("Recipe");
             }
 
             if (mode.HasFlag(CacheType.Spell))
@@ -3294,30 +3298,42 @@ namespace ACE.Server.Command.Handlers.Processors
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing spell cache");
                 DatabaseManager.World.ClearSpellCache();
                 WorldObject.ClearSpellCache();
+                clearedCaches.Add("Spell");
             }
 
             if (mode.HasFlag(CacheType.Weenie))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing weenie cache");
                 DatabaseManager.World.ClearWeenieCache();
+                clearedCaches.Add("Weenie");
             }
 
             if (mode.HasFlag(CacheType.DeathTreasure))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing treasure death cache");
                 DatabaseManager.World.ClearDeathTreasureCache();
+                clearedCaches.Add("DeathTreasure");
             }
 
             if (mode.HasFlag(CacheType.WieldedTreasure))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing wielded treasure cache");
                 DatabaseManager.World.ClearWieldedTreasureCache();
+                clearedCaches.Add("WieldedTreasure");
             }
 
             if (mode.HasFlag(CacheType.Quests))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing quest cache");
                 DatabaseManager.World.ClearAllCachedQuests();
+                clearedCaches.Add("Quests");
+            }
+
+            // Log to audit channel
+            if (clearedCaches.Count > 0 && session?.Player != null)
+            {
+                var cacheList = string.Join(", ", clearedCaches);
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /clearcache to clear: {cacheList}");
             }
         }
 
