@@ -734,7 +734,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            this.SavePlayerToDatabase();
+            this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
         }
 
         public void DepositWeaklyEnlightenedCoins(bool suppressChat = false)
@@ -774,7 +774,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            this.SavePlayerToDatabase();
+            this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
         }
 
 
@@ -1929,14 +1929,14 @@ namespace ACE.Server.WorldObjects
                     // Persist to database for significant transfers (performance optimization)
                     if (Amount > 1)
                     {
-                        onlinePlayer.SavePlayerToDatabase();
+                        onlinePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                     }
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedMythicalKeys, this.BankedMythicalKeys ?? 0));
                 // Persist to database for significant transfers (performance optimization)
                 if (Amount > 1)
                 {
-                    this.SavePlayerToDatabase();
+                    this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
 
                 // Log the transfer
@@ -2033,7 +2033,7 @@ namespace ACE.Server.WorldObjects
                     // Persist to database for significant transfers (performance optimization)
                     if (Amount > 100000)
                     {
-                        onlinePlayer.SavePlayerToDatabase();
+                        onlinePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                     }
                 }
                 
@@ -2041,7 +2041,7 @@ namespace ACE.Server.WorldObjects
                 // Persist to database for significant transfers (performance optimization)
                 if (Amount > 100000)
                 {
-                    this.SavePlayerToDatabase();
+                    this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
             
             // Log the transfer
@@ -2123,14 +2123,14 @@ namespace ACE.Server.WorldObjects
                     // Persist to database for significant transfers (performance optimization)
                     if (Amount > 10)
                     {
-                        onlinePlayer.SavePlayerToDatabase();
+                        onlinePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                     }
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedEnlightenedCoins, this.BankedEnlightenedCoins ?? 0));
                 // Persist to database for significant transfers (performance optimization)
                 if (Amount > 10)
                 {
-                    this.SavePlayerToDatabase();
+                    this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
                 
                 // Log the transfer
@@ -2213,14 +2213,14 @@ namespace ACE.Server.WorldObjects
                     // Persist to database for significant transfers (performance optimization)
                     if (Amount > 10)
                     {
-                        onlinePlayer.SavePlayerToDatabase();
+                        onlinePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                     }
                 }
                 //Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(this, PropertyInt64.BankedWeaklyEnlightenedCoins, this.BankedWeaklyEnlightenedCoins ?? 0));
                 // Persist to database for significant transfers (performance optimization)
                 if (Amount > 10)
                 {
-                    this.SavePlayerToDatabase();
+                    this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
                 
                 // Log the transfer

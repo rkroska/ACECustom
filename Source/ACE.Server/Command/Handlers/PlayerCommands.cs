@@ -1012,7 +1012,7 @@ namespace ACE.Server.Command.Handlers
             // OPTIMIZATION: Save to database only once at the end if we processed any items
             if (needsSave)
             {
-                session.Player.SavePlayerToDatabase();
+                session.Player.SavePlayerToDatabase(reason: Player.SaveReason.ForcedShortWindow);
             }
         }
 

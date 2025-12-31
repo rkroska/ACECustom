@@ -40,6 +40,21 @@ namespace ACE.Database
         private readonly UniqueQueue<Task, string> _uniqueQueue = new(t => GetUniqueTaskKey(t));
         private bool _workerThreadRunning = true;
 
+        private enum CoalesceState
+        {
+            Idle = 0,
+            Queued = 1,
+            Saving = 2,
+            Dirty = 3
+        }
+
+        private sealed class CoalesceTracker
+        {
+            public int State = (int)CoalesceState.Idle;
+        }
+
+        private readonly ConcurrentDictionary<string, CoalesceTracker> _coalesce = new();
+
         private Thread _workerThreadReadOnly;
         private Thread _workerThread;
 
@@ -194,6 +209,75 @@ namespace ACE.Database
 
         public int QueueCount => _uniqueQueue.Count;
 
+        /// <summary>
+        /// Attempts to enqueue a task with coalescing support.
+        /// Returns true if the task was enqueued, false if it was marked dirty instead.
+        /// </summary>
+        private bool TryEnqueueCoalesced(string coalesceKey, Func<Task> taskFactory)
+        {
+            var tracker = _coalesce.GetOrAdd(coalesceKey, _ => new CoalesceTracker());
+
+            while (true)
+            {
+                var state = (CoalesceState)Volatile.Read(ref tracker.State);
+
+                if (state == CoalesceState.Idle)
+                {
+                    if (Interlocked.CompareExchange(ref tracker.State, (int)CoalesceState.Queued, (int)CoalesceState.Idle)
+                        == (int)CoalesceState.Idle)
+                    {
+                        var task = taskFactory?.Invoke();
+                        if (task == null)
+                        {
+                            Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Idle);
+                            return false;
+                        }
+
+                        _uniqueQueue.Enqueue(task);
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                if (state == CoalesceState.Queued || state == CoalesceState.Saving)
+                {
+                    Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Dirty);
+                    return false;
+                }
+
+                if (state == CoalesceState.Dirty)
+                    return false;
+            }
+        }
+
+        private void OnCoalescedSaveStarted(string coalesceKey)
+        {
+            if (_coalesce.TryGetValue(coalesceKey, out var tracker))
+                Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Saving);
+        }
+
+        private void OnCoalescedSaveFinished(string coalesceKey, Func<Task> enqueueFollowup)
+        {
+            if (!_coalesce.TryGetValue(coalesceKey, out var tracker))
+                return;
+
+            var prev = (CoalesceState)Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Idle);
+
+            if (prev == CoalesceState.Dirty)
+            {
+                var next = enqueueFollowup?.Invoke();
+                if (next == null)
+                {
+                    // No follow-up task, stay in Idle state
+                    return;
+                }
+
+                Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Queued);
+                _uniqueQueue.Enqueue(next);
+            }
+        }
+
         public void GetCurrentQueueWaitTime(Action<TimeSpan> callback)
         {
             var initialCallTime = DateTime.UtcNow;
@@ -250,6 +334,99 @@ namespace ACE.Database
                 var result = BaseDatabase.SaveBiotasInParallel(biotas);
                 callback?.Invoke(result);
             }, "SaveBiotasInParallel " + sourceTrace));
+        }
+
+        /// <summary>
+        /// Saves player biotas with coalescing support. Callback runs on DB worker thread and must not touch world state directly.
+        /// </summary>
+        public void SavePlayerBiotasCoalesced(
+            uint playerId,
+            Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas,
+            Action<bool> callback, // WARNING: Runs on DB worker thread - must not touch world state directly
+            string sourceTrace)
+        {
+            var coalesceKey = "player:" + playerId;
+
+            // Create follow-up task factory
+            Func<Task> createFollowupTask = () => new Task((y) =>
+            {
+                OnCoalescedSaveStarted(coalesceKey);
+                bool r2 = false;
+                try
+                {
+                    var biotas = getBiotas();
+                    r2 = BaseDatabase.SaveBiotasInParallel(biotas);
+                    callback?.Invoke(r2);
+                }
+                finally
+                {
+                    OnCoalescedSaveFinished(coalesceKey, () => null);
+                }
+            }, "SavePlayerBiotasCoalesced followup:" + playerId);
+
+            TryEnqueueCoalesced(coalesceKey, () =>
+                new Task((x) =>
+                {
+                    OnCoalescedSaveStarted(coalesceKey);
+
+                    bool result = false;
+                    try
+                    {
+                        var biotas = getBiotas();
+                        result = BaseDatabase.SaveBiotasInParallel(biotas);
+                        callback?.Invoke(result);
+                    }
+                    finally
+                    {
+                        OnCoalescedSaveFinished(coalesceKey, createFollowupTask);
+                    }
+                }, "SavePlayerBiotasCoalesced:" + playerId));
+        }
+
+        /// <summary>
+        /// Saves character with coalescing support. Callback runs on DB worker thread and must not touch world state directly.
+        /// </summary>
+        public void SaveCharacterCoalesced(
+            uint characterId,
+            Func<(Character character, ReaderWriterLockSlim rwLock)> getCharacter,
+            Action<bool> callback) // WARNING: Runs on DB worker thread - must not touch world state directly
+        {
+            var coalesceKey = "character:" + characterId;
+
+            // Create follow-up task factory
+            Func<Task> createFollowupTask = () => new Task((y) =>
+            {
+                OnCoalescedSaveStarted(coalesceKey);
+                bool r2 = false;
+                try
+                {
+                    var (character, rwLock) = getCharacter();
+                    r2 = BaseDatabase.SaveCharacter(character, rwLock);
+                    callback?.Invoke(r2);
+                }
+                finally
+                {
+                    OnCoalescedSaveFinished(coalesceKey, () => null);
+                }
+            }, "SaveCharacterCoalesced followup:" + characterId);
+
+            TryEnqueueCoalesced(coalesceKey, () =>
+                new Task((x) =>
+                {
+                    OnCoalescedSaveStarted(coalesceKey);
+
+                    bool result = false;
+                    try
+                    {
+                        var (character, rwLock) = getCharacter();
+                        result = BaseDatabase.SaveCharacter(character, rwLock);
+                        callback?.Invoke(result);
+                    }
+                    finally
+                    {
+                        OnCoalescedSaveFinished(coalesceKey, createFollowupTask);
+                    }
+                }, "SaveCharacterCoalesced:" + characterId));
         }
 
         public void RemoveBiota(uint id, Action<bool> callback)

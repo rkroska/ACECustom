@@ -1369,6 +1369,9 @@ namespace ACE.Server.WorldObjects
                                     log.Debug($"[CORPSE] {Name} (0x{Guid}) picked up {item.Name} (0x{item.Guid}) from {itemRootOwner.Name} (0x{itemRootOwner.Guid})");
                                     item.SaveBiotaToDatabase();
                                 }
+
+                                // Save player after pickup to persist inventory changes
+                                SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                             }
 
                             if (ServerConfig.house_hook_limit.Value)
@@ -1736,6 +1739,9 @@ namespace ACE.Server.WorldObjects
                     {
                         log.Error($"Error logging ground drop: {ex.Message}");
                     }
+
+                    // Save player after drop to persist inventory changes
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
                 else
                 {
@@ -1899,6 +1905,9 @@ namespace ACE.Server.WorldObjects
 
                             item.EmoteManager.OnPickup(this);
                             item.NotifyOfEvent(RegenerationType.PickUp);
+
+                            // Save player after pickup to persist inventory changes
+                            SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                         }
                         EnqueuePickupDone(pickupMotion);
                     });
@@ -1909,7 +1918,11 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                DoHandleActionGetAndWieldItem(item, fromContainer, rootOwner, wasEquipped, wieldedLocation);
+                if (DoHandleActionGetAndWieldItem(item, fromContainer, rootOwner, wasEquipped, wieldedLocation))
+                {
+                    // Save player after pickup to persist inventory changes
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
+                }
             }
         }
 

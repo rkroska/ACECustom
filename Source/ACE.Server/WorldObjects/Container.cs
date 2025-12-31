@@ -704,12 +704,29 @@ namespace ACE.Server.WorldObjects
 
             worldObject.OwnerId = Guid.Full;
             var oldContainerId = worldObject.ContainerId;
-            // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
-            // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
-            // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
-            worldObject.ContainerId = Biota.Id;
-            worldObject.Container = this;
-            worldObject.PlacementPosition = placementPosition; // Server only variable that we use to remember/restore the order in which items exist in a container
+            
+            // Wrap container mutation if item is being moved from another container
+            // Note: TryRemoveFromInventory may have already incremented the depth if it detected a move
+            // (when item had ContainerId but depth was 0). If depth > 0, TryRemoveFromInventory already handled it.
+            // If oldContainerId is null but depth > 0, TryRemoveFromInventory incremented it and we need to decrement in finally.
+            // If oldContainerId is not null and different from Biota.Id, it's a move and we need to handle depth.
+            bool isMoveOperation = oldContainerId.HasValue && oldContainerId.Value != Biota.Id;
+            bool depthWasIncrementedByRemove = !oldContainerId.HasValue && worldObject.ContainerMutationDepth > 0;
+            bool shouldIncrementDepth = isMoveOperation && worldObject.ContainerMutationDepth == 0;
+            
+            if (shouldIncrementDepth)
+            {
+                worldObject.ContainerMutationDepth++;
+            }
+            
+            try
+            {
+                // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
+                // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
+                // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
+                worldObject.ContainerId = Biota.Id;
+                worldObject.Container = this;
+                worldObject.PlacementPosition = placementPosition; // Server only variable that we use to remember/restore the order in which items exist in a container
             
             // Verify ContainerId was set correctly
             var newContainerId = worldObject.ContainerId;
@@ -741,20 +758,29 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            Inventory.Add(worldObject.Guid, worldObject);
+                Inventory.Add(worldObject.Guid, worldObject);
 
-            // Invalidate side containers cache if we added a container
-            if (worldObject is Container)
-                InvalidateSideContainersCache();
+                // Invalidate side containers cache if we added a container
+                if (worldObject is Container)
+                    InvalidateSideContainersCache();
 
-            EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
-            Value += (worldObject.Value ?? 0);
+                EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
+                Value += (worldObject.Value ?? 0);
 
-            container = this;
+                container = this;
 
-            OnAddItem();
+                OnAddItem();
 
-            return true;
+                return true;
+            }
+            finally
+            {
+                // Decrement depth if we incremented it, or if it was incremented by TryRemoveFromInventory
+                if (shouldIncrementDepth || depthWasIncrementedByRemove)
+                {
+                    worldObject.ContainerMutationDepth--;
+                }
+            }
         }
 
         /// <summary>
@@ -833,6 +859,15 @@ namespace ACE.Server.WorldObjects
             if (Inventory.Remove(objectGuid, out item))
             {
                 int removedItemsPlacementPosition = item.PlacementPosition ?? 0;
+
+                // If item has a ContainerId, it might be part of a move operation
+                // Check if mutation depth is already set (by TryAddToInventory detecting a move)
+                // If not set and item has ContainerId, this might be a move - increment depth to protect against enchant invalidation
+                bool mightBeMove = item.ContainerId.HasValue && item.ContainerMutationDepth == 0;
+                if (mightBeMove)
+                {
+                    item.ContainerMutationDepth++;
+                }
 
                 item.OwnerId = null;
                 item.ContainerId = null;
@@ -1175,6 +1210,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected virtual void OnRemoveItem(WorldObject worldObject)
         {
+            // Suppress enchant invalidation during container churn
+            if (worldObject.IsInContainerMutation)
+                return;
+
             // empty base
         }
 

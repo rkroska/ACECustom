@@ -44,6 +44,12 @@ namespace ACE.Server.Managers
         private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
         /// <summary>
+        /// Timestamp of the last EnsureSaveIfOwed check for online players.
+        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
+        /// </summary>
+        private static DateTime lastEnsureSaveCheckUtc = DateTime.MinValue;
+
+        /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
         /// </summary>
         public static void Initialize()
@@ -96,6 +102,25 @@ namespace ACE.Server.Managers
             }
 
             var currentUnixTime = Time.GetUnixTime();
+
+            // Ensure any owed saves don't get stuck if activity stops (rate limited to every 3 seconds)
+            if (lastEnsureSaveCheckUtc == DateTime.MinValue || DateTime.UtcNow >= lastEnsureSaveCheckUtc.AddSeconds(3))
+            {
+                lastEnsureSaveCheckUtc = DateTime.UtcNow;
+                
+                playersLock.EnterReadLock();
+                try
+                {
+                    foreach (var player in onlinePlayers.Values)
+                    {
+                        player.EnsureSaveIfOwed();
+                    }
+                }
+                finally
+                {
+                    playersLock.ExitReadLock();
+                }
+            }
 
             while (playersPendingLogoff.Count > 0)
             {

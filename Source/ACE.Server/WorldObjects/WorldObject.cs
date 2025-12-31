@@ -97,6 +97,13 @@ namespace ACE.Server.WorldObjects
 
         public WorldObject Wielder;
 
+        // Container mutation guard
+        // Used to suppress side effects (enchant invalidation, etc)
+        // while an item is temporarily between containers
+        internal int ContainerMutationDepth;
+
+        internal bool IsInContainerMutation => ContainerMutationDepth > 0;
+
         public WorldObject() { }
         public WorldObject(ObjectGuid guid)
         {
