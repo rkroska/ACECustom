@@ -355,6 +355,46 @@ namespace ACE.Server.WorldObjects
                             log.Debug($"Spell projectile w/ zero velocity detected @ {spellProjectile.Location.ToLOCString()}, launched by {spellProjectile.ProjectileSource?.Name} ({spellProjectile.ProjectileSource?.Guid}), spell ID {spellProjectile.Spell?.Id} - {spellProjectile.Spell?.Name}");
                     }
 
+                    var isRing = spellProjectile.Spell != null && spellProjectile.Spell.SpreadAngle == 360;
+
+                    if (isRing && isMoved && spellProjectile.PreviousPosition.HasValue)
+                    {
+                        // Swept collision detection for ring spells to catch tunneling
+                        var ringPrevPos = spellProjectile.PreviousPosition.Value;
+                        var ringCurrPos = newPos;
+
+                        if (CurrentLandblock != null)
+                        {
+                            var sourceCreature = spellProjectile.ProjectileSource as Creature;
+                            if (sourceCreature != null)
+                            {
+                                foreach (var wo in CurrentLandblock.GetWorldObjectsForPhysicsHandling())
+                                {
+                                    if (wo is not Creature targetCreature)
+                                        continue;
+
+                                    if (targetCreature == sourceCreature)
+                                        continue;
+
+                                    if (!sourceCreature.CanDamage(targetCreature))
+                                        continue;
+
+                                    // Check if movement segment intersects creature
+                                    if (spellProjectile.SegmentIntersectsCreature(ringPrevPos, ringCurrPos, targetCreature))
+                                    {
+                                        // Process hit directly without going through OnCollideObject
+                                        spellProjectile.ProcessSpellHit(targetCreature, spellProjectile.ProjectileSource as Player);
+                                        // Don't destroy here, let normal collision handling continue
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Update previous position for next tick
+                    if (isRing)
+                        spellProjectile.PreviousPosition = newPos;
+
                     if (spellProjectile.SpellType == ProjectileSpellType.Ring)
                     {
                         var dist = spellProjectile.SpawnPos.DistanceTo(Location);
@@ -366,6 +406,7 @@ namespace ACE.Server.WorldObjects
                             spellProjectile.ProjectileImpact();
                             return false;
                         }
+
                     }
                 }
 
