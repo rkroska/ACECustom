@@ -142,6 +142,7 @@ namespace ACE.Entity.Enum
         GrantAttributeStat            = 133, //Custom
         GrantVitalStat                = 134, //Custom
         InqServerQuestSolves          = 135, //Custom - Check if quest has been completed by anyone on server
+        GrantRandomQuestStamp         = 136, //Custom
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001
