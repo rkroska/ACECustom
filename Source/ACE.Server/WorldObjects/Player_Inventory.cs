@@ -1593,6 +1593,25 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Error($"Error logging chest deposit: {ex.Message}");
                 }
+
+                // Log admin placing item into container
+                if (IsAbovePlayerLevel)
+                {
+                    var stackSize = item.StackSize ?? 1;
+                    var stackMsg = stackSize != 1 ? $"{stackSize:N0} " : "";
+                    var itemName = item.GetNameWithMaterial(stackSize);
+                    string containerLocation;
+                    if (container.Location != null)
+                    {
+                        var mapCoords = container.Location.GetMapCoordStr();
+                        containerLocation = mapCoords ?? container.Location.ToLOCString();
+                    }
+                    else
+                    {
+                        containerLocation = "unknown location";
+                    }
+                    PlayerManager.BroadcastToAuditChannel(this, $"{Name} placed {stackMsg}{itemName} (0x{item.Guid:X8}) into container {container.Name} (0x{container.Guid:X8}) at {containerLocation}");
+                }
             }
 
             return true;
@@ -1674,6 +1693,39 @@ namespace ACE.Server.WorldObjects
                     EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
 
                     item.EmoteManager.OnDrop(this);
+
+                    // Log admin dropping item
+                    if (IsAbovePlayerLevel)
+                    {
+                        var stackSize = item.StackSize ?? 1;
+                        var stackMsg = stackSize != 1 ? $"{stackSize:N0} " : "";
+                        var itemName = item.GetNameWithMaterial(stackSize);
+                        string locationStr = item.Location.GetMapCoordStr() ?? item.Location.ToLOCString();
+                        var message = $"{Name} dropped {stackMsg}{itemName} (0x{item.Guid:X8}) at location {locationStr}";
+                        
+                        // If item is a container, list items inside
+                        if (item is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                        {
+                            var itemsInside = new Dictionary<string, int>();
+                            foreach (var innerItem in container.Inventory.Values)
+                            {
+                                var innerStackSize = innerItem.StackSize ?? 1;
+                                var innerItemName = innerItem.GetNameWithMaterial(innerStackSize);
+                                if (itemsInside.ContainsKey(innerItemName))
+                                    itemsInside[innerItemName] += (int)innerStackSize;
+                                else
+                                    itemsInside[innerItemName] = (int)innerStackSize;
+                            }
+                            
+                            var itemsList = itemsInside.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                            if (itemsList.Count > 0)
+                            {
+                                message += $" (contains: {string.Join(", ", itemsList)})";
+                            }
+                        }
+                        
+                        PlayerManager.BroadcastToAuditChannel(this, message);
+                    }
 
                     // Log ground drop for transfer monitoring (after successful drop and client notification)
                     try
@@ -3728,6 +3780,64 @@ namespace ACE.Server.WorldObjects
                 target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} gives you {stackMsg}{itemName}.", ChatMessageType.Broadcast));
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
+
+                // Log admin giving item to non-admin player
+                if (IsAbovePlayerLevel && !target.IsAbovePlayerLevel)
+                {
+                    var message = $"{Name} gave {stackMsg}{itemName} (0x{itemToGive.Guid:X8}) to non-admin player {target.Name} (0x{target.Guid:X8})";
+                    
+                    // If item is a container, list items inside
+                    if (itemToGive is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                    {
+                        var itemsInside = new Dictionary<string, int>();
+                        foreach (var innerItem in container.Inventory.Values)
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var innerItemName = innerItem.GetNameWithMaterial(innerStackSize);
+                            if (itemsInside.ContainsKey(innerItemName))
+                                itemsInside[innerItemName] += (int)innerStackSize;
+                            else
+                                itemsInside[innerItemName] = (int)innerStackSize;
+                        }
+                        
+                        var itemsList = itemsInside.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                        if (itemsList.Count > 0)
+                        {
+                            message += $" (contains: {string.Join(", ", itemsList)})";
+                        }
+                    }
+                    
+                    PlayerManager.BroadcastToAuditChannel(this, message);
+                }
+
+                // Log item given to admin
+                if (target.IsAbovePlayerLevel)
+                {
+                    var message = $"{Name} (0x{Guid:X8}) gave {stackMsg}{itemName} (0x{itemToGive.Guid:X8}) to admin {target.Name}";
+                    
+                    // If item is a container, list items inside
+                    if (itemToGive is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                    {
+                        var itemsInside = new Dictionary<string, int>();
+                        foreach (var innerItem in container.Inventory.Values)
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var innerItemName = innerItem.GetNameWithMaterial(innerStackSize);
+                            if (itemsInside.ContainsKey(innerItemName))
+                                itemsInside[innerItemName] += (int)innerStackSize;
+                            else
+                                itemsInside[innerItemName] = (int)innerStackSize;
+                        }
+                        
+                        var itemsList = itemsInside.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                        if (itemsList.Count > 0)
+                        {
+                            message += $" (contains: {string.Join(", ", itemsList)})";
+                        }
+                    }
+                    
+                    PlayerManager.BroadcastToAuditChannel(target, message);
+                }
 
                 // Log the direct give for transfer monitoring
                 try

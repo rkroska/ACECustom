@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -266,7 +267,118 @@ namespace ACE.Server.WorldObjects
                 IsBusy = false;
                 target.IsBusy = false;
 
-                DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, null, this.Guid.ToString() + " : " + target.Guid.ToString());
+                // Cache values for audit logging - check if either party is admin
+                bool isAdminTrade = IsAbovePlayerLevel || target.IsAbovePlayerLevel;
+                Player adminPlayer = IsAbovePlayerLevel ? this : (target.IsAbovePlayerLevel ? target : null);
+                Player otherPlayer = IsAbovePlayerLevel ? target : (target.IsAbovePlayerLevel ? this : null);
+
+                DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, (result) =>
+                {
+                    // Log audit after saves complete to avoid lock issues
+                    if (isAdminTrade && adminPlayer != null && otherPlayer != null)
+                    {
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                        {
+                            try
+                            {
+                                // Build item lists for logging - coalesce duplicates
+                                var adminGaveItems = new Dictionary<string, int>();
+                                var adminReceivedItems = new Dictionary<string, int>();
+
+                                if (IsAbovePlayerLevel)
+                                {
+                                    // Admin is giving targetEscrow, receiving myEscrow
+                                    foreach (var wo in targetEscrow)
+                                    {
+                                        var stackSize = wo.StackSize ?? 1;
+                                        var itemName = wo.GetNameWithMaterial(stackSize);
+                                        if (adminGaveItems.ContainsKey(itemName))
+                                            adminGaveItems[itemName] += (int)stackSize;
+                                        else
+                                            adminGaveItems[itemName] = (int)stackSize;
+                                    }
+                                    foreach (var wo in myEscrow)
+                                    {
+                                        var stackSize = wo.StackSize ?? 1;
+                                        var itemName = wo.GetNameWithMaterial(stackSize);
+                                        if (adminReceivedItems.ContainsKey(itemName))
+                                            adminReceivedItems[itemName] += (int)stackSize;
+                                        else
+                                            adminReceivedItems[itemName] = (int)stackSize;
+                                    }
+                                }
+                                else
+                                {
+                                    // Target is admin, giving myEscrow, receiving targetEscrow
+                                    foreach (var wo in myEscrow)
+                                    {
+                                        var stackSize = wo.StackSize ?? 1;
+                                        var itemName = wo.GetNameWithMaterial(stackSize);
+                                        if (adminGaveItems.ContainsKey(itemName))
+                                            adminGaveItems[itemName] += (int)stackSize;
+                                        else
+                                            adminGaveItems[itemName] = (int)stackSize;
+                                    }
+                                    foreach (var wo in targetEscrow)
+                                    {
+                                        var stackSize = wo.StackSize ?? 1;
+                                        var itemName = wo.GetNameWithMaterial(stackSize);
+                                        if (adminReceivedItems.ContainsKey(itemName))
+                                            adminReceivedItems[itemName] += (int)stackSize;
+                                        else
+                                            adminReceivedItems[itemName] = (int)stackSize;
+                                    }
+                                }
+
+                                // Convert dictionaries to formatted string lists
+                                var adminGaveItemsList = adminGaveItems.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                                var adminReceivedItemsList = adminReceivedItems.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+
+                                // Build audit log messages - split into multiple if needed
+                                var adminName = adminPlayer.Name;
+                                var otherName = otherPlayer.Name;
+                                const int maxItemsPerMessage = 5; // Limit items per message to avoid overly long messages
+
+                                // Log what admin gave
+                                if (adminGaveItemsList.Count > 0)
+                                {
+                                    for (int i = 0; i < adminGaveItemsList.Count; i += maxItemsPerMessage)
+                                    {
+                                        var itemsChunk = adminGaveItemsList.Skip(i).Take(maxItemsPerMessage).ToList();
+                                        var itemsList = string.Join(", ", itemsChunk);
+                                        var message = adminGaveItemsList.Count > maxItemsPerMessage && i > 0
+                                            ? $"{adminName} completed trade with {otherName} (0x{otherPlayer.Guid:X8}) - gave (cont.): {itemsList}"
+                                            : $"{adminName} completed trade with {otherName} (0x{otherPlayer.Guid:X8}) - gave: {itemsList}";
+                                        PlayerManager.BroadcastToAuditChannel(adminPlayer, message);
+                                    }
+                                }
+
+                                // Log what admin received
+                                if (adminReceivedItemsList.Count > 0)
+                                {
+                                    for (int i = 0; i < adminReceivedItemsList.Count; i += maxItemsPerMessage)
+                                    {
+                                        var itemsChunk = adminReceivedItemsList.Skip(i).Take(maxItemsPerMessage).ToList();
+                                        var itemsList = string.Join(", ", itemsChunk);
+                                        var message = adminReceivedItemsList.Count > maxItemsPerMessage && i > 0
+                                            ? $"{adminName} completed trade with {otherName} (0x{otherPlayer.Guid:X8}) - received (cont.): {itemsList}"
+                                            : $"{adminName} completed trade with {otherName} (0x{otherPlayer.Guid:X8}) - received: {itemsList}";
+                                        PlayerManager.BroadcastToAuditChannel(adminPlayer, message);
+                                    }
+                                }
+                                else if (adminGaveItemsList.Count == 0)
+                                {
+                                    // Trade with no items (shouldn't happen, but log it)
+                                    PlayerManager.BroadcastToAuditChannel(adminPlayer, $"{adminName} completed trade with {otherName} (0x{otherPlayer.Guid:X8}) - no items exchanged");
+                                }
+                            }
+                            catch (Exception logEx)
+                            {
+                                log.Error($"[TRADE] Error logging admin trade: {logEx.Message}");
+                            }
+                        }));
+                    }
+                }, this.Guid.ToString() + " : " + target.Guid.ToString());
 
                 // Log the trade
                 TransferLogger.LogTrade(this, target, targetEscrow, myEscrow);

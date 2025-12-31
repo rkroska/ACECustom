@@ -362,6 +362,14 @@ namespace ACE.Server.WorldObjects
 
         public List<WorldObject> CalculateDeathItems(Corpse corpse)
         {
+            // Admins don't drop player items on death (even when cloaked as creature)
+            // When cloaked as creature, only creature treasure will be generated in Creature_Death.cs
+            if (IsAbovePlayerLevel)
+            {
+                PlayerManager.BroadcastToAuditChannel(this, $"{Name} died but dropped no player items (admin protection)");
+                return new List<WorldObject>();
+            }
+
             // If cloaked as a creature, do not drop player items
             if (CloakStatus == CloakStatus.Creature)
                 return new List<WorldObject>();
