@@ -293,42 +293,32 @@ namespace ACE.Server.WorldObjects
             }
             // If Container is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
             
-            // Set ContainerId property directly (like Vendor does) - this updates biota and sets ChangesDetected
+            // Set ContainerId directly in biota (lock-pure, no property getters)
             // Since we're already saving, we'll clear ChangesDetected after if needed
             var hadChangesBeforeContainerId = ChangesDetected;
-            if (ContainerId != expectedContainerId)
+            if (containerIdFromBiota != expectedContainerId)
             {
-                ContainerId = expectedContainerId;
-#if DEBUG
-                // Get container name for logging (avoid property getters - use raw lookup)
-                string containerNameForLog = null;
-                if (containerIdFromBiota.HasValue)
+                BiotaDatabaseLock.EnterWriteLock();
+                try
                 {
-                    var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
-                    WorldObject containerObj = null;
-                    if (containerGuid.IsPlayer())
+                    if (expectedContainerId.HasValue)
                     {
-                        containerObj = PlayerManager.GetOnlinePlayer(containerGuid.Full) as WorldObject;
+                        Biota.PropertiesIID[PropertyInstanceId.Container] = expectedContainerId.Value;
                     }
-                    // For non-player objects, we can't easily find them from save context
-                    if (containerObj != null)
+                    else
                     {
-                        // Get name from biota directly (avoid property getter)
-                        BiotaDatabaseLock.EnterReadLock();
-                        try
-                        {
-                            if (containerObj.Biota.PropertiesString != null && containerObj.Biota.PropertiesString.TryGetValue(PropertyString.Name, out var cn))
-                                containerNameForLog = cn;
-                        }
-                        finally
-                        {
-                            BiotaDatabaseLock.ExitReadLock();
-                        }
+                        Biota.PropertiesIID?.Remove(PropertyInstanceId.Container);
                     }
                 }
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={containerNameForLog ?? (wielderId.HasValue ? $"Equipped (Wielder={wielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
+                finally
+                {
+                    BiotaDatabaseLock.ExitWriteLock();
+                }
+
+#if DEBUG
+                log.Debug($"[SAVE DEBUG] {itemName ?? "item"} (0x{itemGuid:X8}) Set raw biota ContainerId -> {(expectedContainerId.HasValue ? $"0x{expectedContainerId:X8}" : "null")}");
 #endif
-                // Clear ChangesDetected if we just set it (we're already saving)
+
                 if (!hadChangesBeforeContainerId)
                     ChangesDetected = false;
             }

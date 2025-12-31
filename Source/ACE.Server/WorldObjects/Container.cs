@@ -630,16 +630,37 @@ namespace ACE.Server.WorldObjects
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
-            // bug: should be root owner
-            if (this is Player player && burdenCheck)
+            // Step 1: Capture mutation state at the very top (before any checks)
+            var oldContainerId = worldObject.ContainerId;
+            
+            // If TryRemoveFromInventory already incremented depth, we must ensure cleanup
+            bool depthWasIncrementedByRemove =
+                oldContainerId.HasValue && worldObject.ContainerMutationDepth > 0;
+            
+            // If this is a move and depth is not yet incremented, we own it
+            bool shouldIncrementDepth =
+                oldContainerId.HasValue &&
+                oldContainerId.Value != Biota.Id &&
+                worldObject.ContainerMutationDepth == 0;
+            
+            if (shouldIncrementDepth)
             {
-                if (!player.HasEnoughBurdenToAddToInventory(worldObject))
-                {
-                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
-                    container = null;
-                    return false;
-                }
+                worldObject.ContainerMutationDepth++;
             }
+            
+            // Step 2: Wrap the entire body in try/finally
+            try
+            {
+                // bug: should be root owner
+                if (this is Player player && burdenCheck)
+                {
+                    if (!player.HasEnoughBurdenToAddToInventory(worldObject))
+                    {
+                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
+                        container = null;
+                        return false;
+                    }
+                }
 
             IList<WorldObject> containerItems;
 
@@ -703,24 +724,6 @@ namespace ACE.Server.WorldObjects
             worldObject.Placement = ACE.Entity.Enum.Placement.Resting;
 
             worldObject.OwnerId = Guid.Full;
-            var oldContainerId = worldObject.ContainerId;
-            
-            // Wrap container mutation if item is being moved from another container
-            // Note: TryRemoveFromInventory may have already incremented the depth if it detected a move
-            // (when item had ContainerId but depth was 0). If depth > 0, TryRemoveFromInventory already handled it.
-            // If oldContainerId is null but depth > 0, TryRemoveFromInventory incremented it and we need to decrement in finally.
-            // If oldContainerId is not null and different from Biota.Id, it's a move and we need to handle depth.
-            bool isMoveOperation = oldContainerId.HasValue && oldContainerId.Value != Biota.Id;
-            bool depthWasIncrementedByRemove = !oldContainerId.HasValue && worldObject.ContainerMutationDepth > 0;
-            bool shouldIncrementDepth = isMoveOperation && worldObject.ContainerMutationDepth == 0;
-            
-            if (shouldIncrementDepth)
-            {
-                worldObject.ContainerMutationDepth++;
-            }
-            
-            try
-            {
                 // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
                 // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
                 // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
