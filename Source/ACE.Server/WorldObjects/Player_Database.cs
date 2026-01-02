@@ -105,6 +105,7 @@ namespace ACE.Server.WorldObjects
         /// Ensures a save happens if one is owed, even if the player stops generating events.
         /// This prevents blocked save requests from getting stuck forever.
         /// Rate limited to prevent thrashing if called too frequently.
+        /// Preserves pacing by setting a reasonable next allowed time instead of resetting to MinValue.
         /// </summary>
         public void EnsureSaveIfOwed()
         {
@@ -120,8 +121,9 @@ namespace ACE.Server.WorldObjects
 
                 _lastEnsureSaveCheckUtc = now;
 
-                // Allow a save now by resetting gate
-                _nextAllowedSaveUtc = DateTime.MinValue;
+                // Allow a save now, but preserve pacing by setting next allowed time
+                // This prevents subsystems from bypassing the trickle mechanism
+                _nextAllowedSaveUtc = now.AddSeconds(PlayerSaveIntervalSecs);
                 _saveOwed = false;
             }
 
@@ -181,6 +183,35 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Saves the character to the persistent database. Includes Stats, Position, Skills, etc.<para />
         /// Will also save any possessions that are marked with ChangesDetected.
+        /// 
+        /// ARCHITECTURAL LIMITATIONS (not bugs, but inherent constraints):
+        /// 
+        /// A. Save overlap is still possible in principle:
+        ///    - SaveInProgress is advisory, not a hard lock
+        ///    - Overlap is tolerated but tracked (wasAlreadyInProgress check)
+        ///    - SerializedShardDatabase prevents overlap at DB level, but Player-level cannot
+        /// 
+        /// B. Dirty during execution is probabilistic:
+        ///    - If a possession mutates after getBiotas runs but before save finishes,
+        ///      correctness depends on ChangesDetected being set later and another save being generated
+        ///    - Recovery is improved but not guaranteed at Player level
+        ///    - DB coalescer can handle this better
+        /// 
+        /// C. Correctness depends on getBiotas being called exactly once:
+        ///    - getBiotas has side effects (SaveInProgress, ChangesDetected)
+        ///    - If refactored/retried/called multiple times, double side effects occur
+        ///    - Player code cannot enforce this contract, only document it
+        /// 
+        /// D. Character and biota are coordinated manually:
+        ///    - Character save requested separately from biota save
+        ///    - Ordering relies on call sequencing, not structural guarantees
+        ///    - Fixes reduce divergence risk but don't eliminate it structurally
+        ///    - Only unified DB execution path could fully solve this
+        /// 
+        /// E. Gameplay thread participates in correctness:
+        ///    - Relies on ActionChain execution, WorldManager.ActionQueue, player tick recovery
+        ///    - If those stall, saves stall
+        ///    - Not fully fixable at Player level
         /// </summary>
         public void SavePlayerToDatabase(bool duringLogout = false, SaveReason reason = SaveReason.Normal)
         {
@@ -199,12 +230,33 @@ namespace ACE.Server.WorldObjects
 
             var requestedTimeUtc = requestedTime;
 
+            // Track which possessions were actually prepared for this batch save
+            // This prevents clearing flags for items that were already SaveInProgress from another save
+            // IMPORTANT: This must be captured by reference, not cloned, so getBiotas can populate it
+            var preparedGuidsForCallback = new HashSet<uint>();
+            
             // Func that builds the biotas list at execution time to avoid stale snapshots
+            // 
+            // CRITICAL ARCHITECTURAL CONSTRAINT:
+            // This function has side effects - it calls SaveBiotaToDatabase(false) which:
+            // - Sets SaveInProgress = true
+            // - Clears ChangesDetected = false
+            // - Modifies biota state
+            // 
+            // This function MUST only be called exactly once per execution by the coalescer.
+            // If called multiple times (due to refactoring, retries, metrics, etc.), you get:
+            // - SaveInProgress set multiple times
+            // - ChangesDetected cleared prematurely
+            // - Double side effects
+            // 
+            // Player code cannot enforce this contract - it relies on SerializedShardDatabase
+            // calling it exactly once. If the DB layer changes, this assumption may break.
             Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas = () =>
             {
                 var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
 
                 // Save player biota - this sets SaveInProgress for the player
+                // Track that player was prepared (always true since we're calling it)
                 SaveBiotaToDatabase(false);
                 biotas.Add((Biota, BiotaDatabaseLock));
 
@@ -212,26 +264,35 @@ namespace ACE.Server.WorldObjects
                 var allPossessions = GetAllPossessions();
                 
                 // For possessions, prepare them for batch save
-                // We call SaveBiotaToDatabase(false) to sync position cache and prepare the biota,
-                // but we don't want to block individual saves with newer changes, so we'll handle
-                // SaveInProgress differently - the individual save logic will check for stale data
+                // Only track items that were actually prepared (SaveInProgress was set by this call)
                 foreach (var possession in allPossessions)
                 {
                     if (possession.ChangesDetected)
                     {
+                        // Check if SaveInProgress is already true (from another save)
+                        // NOTE: SaveInProgress is advisory, not a hard lock. Overlap is tolerated
+                        // but tracked. SerializedShardDatabase prevents overlap at DB level, but
+                        // Player-level cannot prevent concurrent save requests from different sources.
+                        bool wasAlreadyInProgress = possession.SaveInProgress;
+                        
                         // Sync position cache and prepare biota for save
                         // This sets SaveInProgress = true and clears ChangesDetected = false
+                        // But it may return early if SaveInProgress was already true
                         possession.SaveBiotaToDatabase(false);
-                        biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
-                        // Note: SaveInProgress remains true, which will block individual saves
-                        // But the individual save logic in SaveBiotaToDatabase will check for stale data
-                        // and allow saves with newer changes (ChangesDetected = true) to proceed
+                        
+                        // Only add to batch and track if SaveInProgress was set by this call
+                        // If it was already true, SaveBiotaToDatabase returned early and didn't prepare it
+                        if (possession.SaveInProgress && !wasAlreadyInProgress)
+                        {
+                            biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                            preparedGuidsForCallback.Add(possession.Guid.Full);
+                        }
                     }
                 }
 
                 return biotas;
             };
-
+            
             // Common callback logic for both logout and non-logout saves
             Action<bool> saveCallback = (result) =>
             {
@@ -243,11 +304,13 @@ namespace ACE.Server.WorldObjects
                     // Re-fetch possessions to avoid stale references
                     var currentPossessions = GetAllPossessions();
                     
-                    // Process all possessions that have SaveInProgress=true (they were in the batch)
+                    // Only process possessions that were actually prepared for THIS batch save
+                    // This prevents clearing flags for items that were SaveInProgress from another save
                     foreach (var possession in currentPossessions)
                     {
-                        if (!possession.IsDestroyed && possession.SaveInProgress)
+                        if (!possession.IsDestroyed && preparedGuidsForCallback.Contains(possession.Guid.Full))
                         {
+                            // This possession was prepared for this batch, clear its flags
                             possession.SaveInProgress = false;
                             possession.SaveStartTime = DateTime.MinValue; // Reset for next save
                             if (result)
@@ -271,6 +334,9 @@ namespace ACE.Server.WorldObjects
                         {
                             // Don't set the player offline until they have been successfully saved
                             // This prevents login until save completes
+                            // NOTE: Due to coalescing, logout saves are asynchronous. Login attempts
+                            // may block until the coalesced save completes, which could add latency
+                            // under high save churn. This is intentional to ensure data consistency.
                             PlayerManager.SwitchPlayerFromOnlineToOffline(this);
                         }
                         log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTimeUtc).TotalMilliseconds:N0} ms to process the request.");
@@ -281,6 +347,25 @@ namespace ACE.Server.WorldObjects
                         ChangesDetected = true;
                         // This will trigger a boot on next player tick
                         BiotaSaveFailed = true;
+                        
+                        // If character save succeeded but biota save failed, restore character dirty state
+                        // so character changes can be retried as part of the same logical operation
+                        // This prevents character and biota from diverging on partial failure.
+                        // NOTE: This is manual coordination - character and biota saves are separate
+                        // and ordering relies on call sequencing, not structural guarantees.
+                        if (!CharacterChangesDetected)
+                        {
+                            CharacterChangesDetected = true;
+                            log.Warn($"[SAVE] Biota save failed for {Name} - restored CharacterChangesDetected to prevent desync");
+                        }
+                        
+                        // ARCHITECTURAL LIMITATION: If a possession mutates after getBiotas runs
+                        // but before this failure callback, correctness depends on:
+                        // - ChangesDetected being set later by the mutation
+                        // - Another save request being generated
+                        // - EnsureSaveIfOwed eventually running
+                        // Recovery is improved but not guaranteed at Player level.
+                        // The DB coalescer can handle this better.
                         
                         if (duringLogout)
                         {
@@ -307,6 +392,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void SaveCharacterToDatabaseInternal(bool duringLogout)
         {
+            // Update timestamp when we request the save (after gate check passes)
+            // The coalescer will eventually enqueue this (either immediately or as a followup),
+            // so this timestamp represents when a save was requested, not necessarily when it completed.
+            // Note: If coalescing delays the enqueue, the timestamp may be slightly ahead of actual execution.
             CharacterLastRequestedDatabaseSave = DateTime.UtcNow;
             CharacterChangesDetected = false;
 
@@ -318,11 +407,14 @@ namespace ACE.Server.WorldObjects
             {
                 if (!result)
                 {
-                    if (this is Player player)
+                    // Marshal CharacterSaveFailed to world thread (same pattern as BiotaSaveFailed)
+                    var setFailedAction = new ACE.Server.Entity.Actions.ActionChain();
+                    setFailedAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_CharacterSaveFailed, () =>
                     {
                         // This will trigger a boot on next player tick
                         CharacterSaveFailed = true;
-                    }
+                    });
+                    setFailedAction.EnqueueChain();
                 }
             };
 

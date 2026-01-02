@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
@@ -145,6 +146,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void SaveBiotaInternal(bool enqueueSave, Action<bool> onCompleted)
         {
+            // ARCHITECTURAL BOUNDARY:
+            // WorldObject save logic is best-effort. It provides advisory flags (SaveInProgress, ChangesDetected)
+            // and attempts to prevent obvious race conditions, but cannot provide strong correctness guarantees.
+            // Strong correctness guarantees (coalescing, deduplication, serialization) are enforced by
+            // SerializedShardDatabase at the database layer. This division allows WorldObject to remain
+            // lightweight while the DB layer handles complex concurrency and batching logic.
+            
             // SAVE INVARIANT:
             // - No property getters (Name, WielderId, Container, GetProperty, StackSize, Location)
             // - All biota reads captured once under a single read lock
@@ -200,7 +208,22 @@ namespace ACE.Server.WorldObjects
             // For individual saves, check if this item belongs to a player with a batch save in progress
             // If the item has newer changes (ChangesDetected = true), we want to allow the save to proceed
             // even if SaveInProgress is true (set by the batch save)
+            // 
+            // ARCHITECTURAL LIMITATION: There is a narrow race window where:
+            // - Player batch save sets SaveInProgress = true
+            // - Item has ChangesDetected = true
+            // - allowSaveDespiteInProgress lets it through
+            // - Multiple rapid calls can enqueue multiple individual saves
+            // 
+            // For player items, the coalescer downstream (SavePlayerBiotasCoalesced) will collapse these duplicates.
+            // For non-player items, this can still enqueue duplicates if rapid calls occur.
+            // 
+            // This code assumes coalescing downstream handles deduplication. Without a per-object
+            // "dirty since batch started" flag, we cannot fully prevent duplicate enqueues at this level.
+            // The coalescer's TryEnqueueCoalesced logic will handle most cases, but non-player items
+            // that use SaveBiota (non-coalesced) can still enqueue duplicates under rapid calls.
             bool allowSaveDespiteInProgress = false;
+            
             // Use raw biota ContainerId to look up container (avoid property getter)
             if (enqueueSave && ChangesDetected && containerIdFromBiota.HasValue)
             {
@@ -219,6 +242,8 @@ namespace ACE.Server.WorldObjects
                         // Item has newer changes and ContainerId matches player
                         // Allow the save to proceed even if SaveInProgress is true
                         // It will queue after the batch save and save the newer state
+                        // NOTE: Multiple rapid calls can still enqueue duplicates here.
+                        // The coalescer will handle player items, but non-player items may enqueue duplicates.
                         allowSaveDespiteInProgress = true;
 #if DEBUG
                         log.Debug($"[SAVE] Allowing individual save for {itemName ?? "item"} (0x{itemGuid:X8}) during player batch save - has newer changes (Biota ContainerId={staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}))");
@@ -303,6 +328,9 @@ namespace ACE.Server.WorldObjects
                 {
                     if (expectedContainerId.HasValue)
                     {
+                        // Ensure PropertiesIID dictionary exists before indexing
+                        if (Biota.PropertiesIID == null)
+                            Biota.PropertiesIID = new Dictionary<PropertyInstanceId, uint>();
                         Biota.PropertiesIID[PropertyInstanceId.Container] = expectedContainerId.Value;
                     }
                     else
@@ -314,6 +342,9 @@ namespace ACE.Server.WorldObjects
                 {
                     BiotaDatabaseLock.ExitWriteLock();
                 }
+
+                // Update local variable to keep it in sync with biota (for logging and diagnostics)
+                containerIdFromBiota = expectedContainerId;
 
 #if DEBUG
                 log.Debug($"[SAVE DEBUG] {itemName ?? "item"} (0x{itemGuid:X8}) Set raw biota ContainerId -> {(expectedContainerId.HasValue ? $"0x{expectedContainerId:X8}" : "null")}");
@@ -329,7 +360,8 @@ namespace ACE.Server.WorldObjects
             // Setting them here would be redundant and they're already correct from their respective operations
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
-            SaveInProgress = true;
+            // SaveStartTime represents when the save was requested (before enqueue)
+            // This is used for timing diagnostics and race detection
             SaveStartTime = DateTime.UtcNow;
             LastSavedStackSize = stackSize;
             
@@ -364,6 +396,16 @@ namespace ACE.Server.WorldObjects
 #endif
                 
                 CheckpointTimestamp = Time.GetUnixTime();
+                
+                // Set SaveInProgress = true just before enqueuing (represents "queued or in progress")
+                // NOTE: This is set before the save is actually executed, so it includes queue time.
+                // This means SaveInProgress = true while the save is queued, not just executing.
+                // For race detection purposes, this is acceptable as it prevents concurrent saves
+                // from being enqueued, but it may inflate "in flight" detection times during queue delays.
+                // A long DB queue will trigger false-positive "in flight" detections, but this prevents
+                // legitimate race conditions better than setting it only after execution starts.
+                SaveInProgress = true;
+                
                 //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
                 DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {

@@ -22,6 +22,16 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // NOTE:
+        // Container inventory mutation logic is NOT responsible for persistence guarantees.
+        // It ensures in-memory consistency only.
+        // Persistence correctness is enforced by higher-level save orchestration
+        // (Player saves, Bank saves, SerializedShardDatabase).
+        // 
+        // This prevents future devs from "fixing" this by adding forced saves everywhere
+        // and breaking performance. Container mutations should set ChangesDetected = true
+        // and let the save orchestration layer handle when and how to persist.
+
         /// <summary>
         /// Cache for side containers to avoid repeated LINQ scans with large inventories
         /// </summary>
@@ -319,6 +329,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject GetInventoryItem(ObjectGuid objectGuid)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return null;
+
             return GetInventoryItem(objectGuid, out _);
         }
 
@@ -328,6 +342,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject GetInventoryItem(uint objectGuid)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return null;
+
             return GetInventoryItem(new ObjectGuid(objectGuid), out _); // todo remove this so it doesnt' create a new ObjectGuid
         }
 
@@ -337,6 +355,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject GetInventoryItem(ObjectGuid objectGuid, out Container container)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            // In practice, ACE already assumes this, but now that logic is more complex,
+            // we add this guard to prevent issues during async load.
+            if (!InventoryLoaded)
+            {
+                container = null;
+                return null;
+            }
+
             // First search my main pack for this item..
             if (Inventory.TryGetValue(objectGuid, out var value))
             {
@@ -367,6 +394,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private List<Container> GetCachedSideContainers()
         {
+            // Defensive guard: fail safe if inventory not loaded
+            // Return empty list to avoid null reference issues
+            if (!InventoryLoaded)
+                return new List<Container>();
+
             if (_sideContainersCacheDirty || _cachedSideContainers == null)
             {
                 if (_cachedSideContainers == null)
@@ -425,6 +457,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetInventoryItemsOfWCID(uint weenieClassId)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return new List<WorldObject>();
+
             var items = new List<WorldObject>();
 
             // search main pack / creature
@@ -458,6 +494,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetInventoryItemsOfWeenieClass(string weenieClassName)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return new List<WorldObject>();
+
             var items = new List<WorldObject>();
 
             // search main pack / creature
@@ -491,6 +531,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetTradeNotes()
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return new List<WorldObject>();
+
             var items = new List<WorldObject>();
 
             // search main pack / creature
@@ -633,11 +677,13 @@ namespace ACE.Server.WorldObjects
             // Step 1: Capture mutation state at the very top (before any checks)
             var oldContainerId = worldObject.ContainerId;
             
-            // If TryRemoveFromInventory already incremented depth, we must ensure cleanup
-            bool depthWasIncrementedByRemove =
-                oldContainerId.HasValue && worldObject.ContainerMutationDepth > 0;
+            // Check if depth was already incremented (by a previous remove or another operation)
+            // We check depth at entry, not oldContainerId, because TryRemoveFromInventory sets ContainerId = null
+            // so oldContainerId will be null even if depth was incremented
+            bool depthWasIncrementedByRemove = worldObject.ContainerMutationDepth > 0;
             
-            // If this is a move and depth is not yet incremented, we own it
+            // If this is a move (oldContainerId != new container) and depth is not yet incremented, we own it
+            // Only increment for actual moves, not for initial adds (where oldContainerId is null)
             bool shouldIncrementDepth =
                 oldContainerId.HasValue &&
                 oldContainerId.Value != Biota.Id &&
@@ -863,14 +909,13 @@ namespace ACE.Server.WorldObjects
             {
                 int removedItemsPlacementPosition = item.PlacementPosition ?? 0;
 
-                // If item has a ContainerId, it might be part of a move operation
-                // Check if mutation depth is already set (by TryAddToInventory detecting a move)
-                // If not set and item has ContainerId, this might be a move - increment depth to protect against enchant invalidation
-                bool mightBeMove = item.ContainerId.HasValue && item.ContainerMutationDepth == 0;
-                if (mightBeMove)
-                {
-                    item.ContainerMutationDepth++;
-                }
+                // Do NOT increment mutation depth here - we cannot distinguish between:
+                // 1. A move operation (remove then add to different container) - should suppress side effects
+                // 2. A final removal (drop, unequip, etc.) - should NOT suppress side effects
+                // 
+                // Mutation depth should only be incremented in TryAddToInventory when we detect
+                // an actual move (oldContainerId != new container). This ensures we only suppress
+                // side effects during moves, not during legitimate final removals.
 
                 item.OwnerId = null;
                 item.ContainerId = null;
@@ -893,7 +938,12 @@ namespace ACE.Server.WorldObjects
                 if (item is Container)
                     InvalidateSideContainersCache();
 
-                if (forceSave)
+                // Guard forceSave during mutation to prevent saves with ContainerId = null during moves
+                // During a move sequence (TryRemoveFromInventory -> TryAddToInventory), if forceSave == true,
+                // we could enqueue a save with ContainerId = null followed by a save with the new container.
+                // This is usually coalesced away, but it's a real ordering risk.
+                // Only allow forceSave for final removals, not during moves.
+                if (forceSave && !item.IsInContainerMutation)
                     item.SaveBiotaToDatabase();
 
                 OnRemoveItem(item);

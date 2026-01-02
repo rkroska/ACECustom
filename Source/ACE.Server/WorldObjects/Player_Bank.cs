@@ -1146,6 +1146,12 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>
+        /// Creates a legendary key and decrements the banked balance.
+        /// WARNING: This method modifies BankedLegendaryKeys directly.
+        /// Must be called from within balanceLock to ensure thread safety.
+        /// The caller is responsible for saving after balance changes.
+        /// </summary>
         private bool CreateLegendaryKey(uint weenieClassId, byte uses)
         {
             WorldObject key = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
@@ -1154,6 +1160,7 @@ namespace ACE.Server.WorldObjects
             var itemCreated = this.TryCreateInInventoryWithNetworking(key);
             if (itemCreated)
             {
+                // Balance change: caller must ensure save happens
                 BankedLegendaryKeys -= uses;
                 return true;
             }
@@ -1253,6 +1260,12 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>
+        /// Creates a mythical key and decrements the banked balance.
+        /// WARNING: This method modifies BankedMythicalKeys directly.
+        /// Must be called from within balanceLock to ensure thread safety.
+        /// The caller is responsible for saving after balance changes.
+        /// </summary>
         private bool CreateMythicalKey(uint weenieClassId, byte uses)
         {
             WorldObject key = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
@@ -1261,6 +1274,7 @@ namespace ACE.Server.WorldObjects
             var itemCreated = this.TryCreateInInventoryWithNetworking(key);
             if (itemCreated)
             {
+                // Balance change: caller must ensure save happens
                 BankedMythicalKeys -= uses;
                 return true;
             }
