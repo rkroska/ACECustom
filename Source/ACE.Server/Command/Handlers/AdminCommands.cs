@@ -4760,11 +4760,11 @@ namespace ACE.Server.Command.Handlers
                         items.Add(worldObject);
                 }
 
-                player.SavePlayerToDatabase();
-                
                 // Log to audit channel
                 string location = player.Location != null ? (player.Location.GetMapCoordStr() ?? player.Location.ToLOCString()) : "unknown location";
                 PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /fumble on player {player.Name} (0x{player.Guid:X8}) at {location}, dropped {items.Count} items");
+
+                player.SavePlayerToDatabase(reason: Player.SaveReason.ForcedImmediate);
 
                 foreach (var item in items)
                 {
@@ -6420,7 +6420,7 @@ namespace ACE.Server.Command.Handlers
                     onlinePlayer.Character.Name = newName;
                     onlinePlayer.CharacterChangesDetected = true;
                     onlinePlayer.Name = newName;
-                    onlinePlayer.SavePlayerToDatabase();
+                    onlinePlayer.SavePlayerToDatabase(reason: Player.SaveReason.ForcedImmediate);
 
                     CommandHandlerHelper.WriteOutputInfo(session, $"Player named \"{oldName}\" renamed to \"{newName}\" successfully!", ChatMessageType.Broadcast);
                     

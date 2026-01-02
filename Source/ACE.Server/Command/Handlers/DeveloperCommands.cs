@@ -470,7 +470,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("save-now", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Saves your session.")]
         public static void HandleSaveNow(Session session, params string[] parameters)
         {
-            session.Player.SavePlayerToDatabase();
+            session.Player.SavePlayerToDatabase(reason: Player.SaveReason.ForcedImmediate);
         }
 
         /// <summary>
