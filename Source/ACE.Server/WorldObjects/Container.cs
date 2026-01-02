@@ -749,6 +749,9 @@ namespace ACE.Server.WorldObjects
                                 Value += (worldObject.Value ?? 0);
                                 
                                 log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
+                                
+                                var newContainerBiotaId = sidePack.Biota.Id;
+                                worldObject.EndContainerMutation(oldContainerBiotaId, newContainerBiotaId);
                                 return true;
                             }
                         }

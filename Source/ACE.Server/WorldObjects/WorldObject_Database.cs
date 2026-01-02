@@ -399,40 +399,46 @@ namespace ACE.Server.WorldObjects
                 ChangesDetected = false;
             }
 
-            if (enqueueSave)
+            // For bulk and coalesced paths, mark as included in the batch
+            // Caller must clear this after SavePlayerBiotasCoalesced completes
+            if (!enqueueSave)
             {
-#if DEBUG
-                // Log final ContainerId before queuing save
-                BiotaDatabaseLock.EnterReadLock();
-                try
-                {
-                    uint? finalBiotaContainerId = null;
-                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var finalValue))
-                    {
-                        finalBiotaContainerId = finalValue;
-                    }
-                    string containerInfo = finalBiotaContainerId.HasValue ? (new ObjectGuid(finalBiotaContainerId.Value).IsPlayer() ? $"Player (0x{finalBiotaContainerId.Value:X8})" : $"Object (0x{finalBiotaContainerId.Value:X8})") : (wielderId.HasValue ? $"Equipped (Wielder={wielderId} (0x{wielderId:X8}))" : "null");
-                    log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
-                }
-                finally
-                {
-                    BiotaDatabaseLock.ExitReadLock();
-                }
-#endif
-                
-                CheckpointTimestamp = Time.GetUnixTime();
-                
-                // Set SaveInProgress = true just before enqueuing (represents "queued or in progress")
-                // NOTE: This is set before the save is actually executed, so it includes queue time.
-                // This means SaveInProgress = true while the save is queued, not just executing.
-                // For race detection purposes, this is acceptable as it prevents concurrent saves
-                // from being enqueued, but it may inflate "in flight" detection times during queue delays.
-                // A long DB queue will trigger false-positive "in flight" detections, but this prevents
-                // legitimate race conditions better than setting it only after execution starts.
                 SaveInProgress = true;
-                
-                //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
+
+                // If a mutation happened during batch prep (between top guard and here),
+                // ensure a follow-up save is generated to capture the newer changes
+                if (ChangesDetected)
+                    LastRequestedDatabaseSave = DateTime.UtcNow;
+
+                return;
+            }
+
+            CheckpointTimestamp = Time.GetUnixTime();
+            
+            // For individual saves, set just before enqueuing
+            SaveInProgress = true;
+            
+#if DEBUG
+            // Log final ContainerId before queuing save
+            BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                uint? finalBiotaContainerId = null;
+                if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var finalValue))
+                {
+                    finalBiotaContainerId = finalValue;
+                }
+                string containerInfo = finalBiotaContainerId.HasValue ? (new ObjectGuid(finalBiotaContainerId.Value).IsPlayer() ? $"Player (0x{finalBiotaContainerId.Value:X8})" : $"Object (0x{finalBiotaContainerId.Value:X8})") : (wielderId.HasValue ? $"Equipped (Wielder={wielderId} (0x{wielderId:X8}))" : "null");
+                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
+            }
+            finally
+            {
+                BiotaDatabaseLock.ExitReadLock();
+            }
+#endif
+            
+            //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
+            DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
                     try
                     {
@@ -531,7 +537,6 @@ namespace ACE.Server.WorldObjects
                         SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
-            }
             // For bulk saves, SaveInProgress cleared by caller after bulk completes
         }
 
