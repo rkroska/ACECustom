@@ -105,7 +105,8 @@ namespace ACE.Server.WorldObjects
         /// Ensures a save happens if one is owed, even if the player stops generating events.
         /// This prevents blocked save requests from getting stuck forever.
         /// Rate limited to prevent thrashing if called too frequently.
-        /// Preserves pacing by setting a reasonable next allowed time instead of resetting to MinValue.
+        /// Sets next allowed time to now so the next Normal save can pass immediately,
+        /// and ShouldEnqueueSave will then re-arm the interval correctly.
         /// </summary>
         public void EnsureSaveIfOwed()
         {
@@ -121,9 +122,10 @@ namespace ACE.Server.WorldObjects
 
                 _lastEnsureSaveCheckUtc = now;
 
-                // Allow a save now, but preserve pacing by setting next allowed time
-                // This prevents subsystems from bypassing the trickle mechanism
-                _nextAllowedSaveUtc = now.AddSeconds(PlayerSaveIntervalSecs);
+                // Allow a save now by setting next allowed time to current time
+                // The next Normal save will pass immediately, and ShouldEnqueueSave will
+                // then re-arm the interval correctly (setting it to now + PlayerSaveIntervalSecs)
+                _nextAllowedSaveUtc = now;
                 _saveOwed = false;
             }
 

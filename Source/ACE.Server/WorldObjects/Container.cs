@@ -674,27 +674,28 @@ namespace ACE.Server.WorldObjects
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
-            // Step 1: Capture mutation state at the very top (before any checks)
-            var oldContainerId = worldObject.ContainerId;
-            
-            // Check if depth was already incremented (by a previous remove or another operation)
-            // We check depth at entry, not oldContainerId, because TryRemoveFromInventory sets ContainerId = null
-            // so oldContainerId will be null even if depth was incremented
-            bool depthWasIncrementedByRemove = worldObject.ContainerMutationDepth > 0;
-            
-            // If this is a move (oldContainerId != new container) and depth is not yet incremented, we own it
-            // Only increment for actual moves, not for initial adds (where oldContainerId is null)
-            bool shouldIncrementDepth =
-                oldContainerId.HasValue &&
-                oldContainerId.Value != Biota.Id &&
-                worldObject.ContainerMutationDepth == 0;
-            
-            if (shouldIncrementDepth)
+            // Step 1: Capture container identity from biota (not live object state)
+            // This value is stable across the whole move
+            uint? oldContainerBiotaId = null;
+            worldObject.BiotaDatabaseLock.EnterReadLock();
+            try
             {
-                worldObject.ContainerMutationDepth++;
+                if (worldObject.Biota.PropertiesIID != null &&
+                    worldObject.Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var cid))
+                    oldContainerBiotaId = cid;
+            }
+            finally
+            {
+                worldObject.BiotaDatabaseLock.ExitReadLock();
             }
             
-            // Step 2: Wrap the entire body in try/finally
+            // Step 2: Begin mutation before any removal
+            // Always begin mutation tracking for all adds (ground→container, newly spawned→container,
+            // loot→inventory, split created stacks, moves, etc.) to ensure atomicity
+            // The oldContainerBiotaId is used for logging/diagnostics, not for gating
+            worldObject.BeginContainerMutation(oldContainerBiotaId);
+            
+            // Step 3: Wrap the entire body in try/finally for proper cleanup
             try
             {
                 // bug: should be root owner
@@ -704,6 +705,8 @@ namespace ACE.Server.WorldObjects
                     {
                         log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
                         container = null;
+                        // End mutation on failure
+                        worldObject.EndContainerMutation(oldContainerBiotaId, null);
                         return false;
                     }
                 }
@@ -718,6 +721,8 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - container capacity full in {containerInfo} ({containerItems.Count}/{ContainerCapacity ?? 0})");
                     container = null;
+                    // End mutation on failure
+                    worldObject.EndContainerMutation(oldContainerBiotaId, null);
                     return false;
                 }
             }
@@ -756,6 +761,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     container = null;
+                    // End mutation on failure
+                    worldObject.EndContainerMutation(oldContainerBiotaId, null);
                     return false;
                 }
             }
@@ -763,6 +770,8 @@ namespace ACE.Server.WorldObjects
             if (Inventory.ContainsKey(worldObject.Guid))
             {
                 container = null;
+                // End mutation on failure
+                worldObject.EndContainerMutation(oldContainerBiotaId, null);
                 return false;
             }
 
@@ -780,7 +789,7 @@ namespace ACE.Server.WorldObjects
             // Verify ContainerId was set correctly
             var newContainerId = worldObject.ContainerId;
             var containerBiotaId = Biota.Id;
-            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
+            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerBiotaId={oldContainerBiotaId} (0x{(oldContainerBiotaId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
             
             // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
             if (worldObject.ContainerId != Biota.Id)
@@ -820,15 +829,16 @@ namespace ACE.Server.WorldObjects
 
                 OnAddItem();
 
+                // Step 4: End mutation after successful add
+                worldObject.EndContainerMutation(oldContainerBiotaId, Biota.Id);
+
                 return true;
             }
-            finally
+            catch
             {
-                // Decrement depth if we incremented it, or if it was incremented by TryRemoveFromInventory
-                if (shouldIncrementDepth || depthWasIncrementedByRemove)
-                {
-                    worldObject.ContainerMutationDepth--;
-                }
+                // Step 5: On failure, end mutation (rollback already handled by caller)
+                worldObject.EndContainerMutation(oldContainerBiotaId, null);
+                throw;
             }
         }
 

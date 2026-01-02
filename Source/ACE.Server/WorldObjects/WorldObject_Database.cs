@@ -159,6 +159,14 @@ namespace ACE.Server.WorldObjects
             // - Operate on local variables only after lock is released
             // This prevents LockRecursionException and ensures lock-pure save paths.
             
+            // Suppress saves during container mutations to prevent saving with ContainerId = null
+            // This is advisory, not a lock. The DB coalescer guarantees eventual persistence.
+            if (IsInContainerMutation)
+            {
+                ChangesDetected = true; // Ensure changes are preserved for later save
+                return; // Skip save during mutation
+            }
+            
 #if DEBUG
             // Assert that we're not entering with a lock already held (catches regressions)
             if (BiotaDatabaseLock.IsReadLockHeld || BiotaDatabaseLock.IsWriteLockHeld)
@@ -254,6 +262,14 @@ namespace ACE.Server.WorldObjects
             
             // Detect concurrent saves at item level
             // But allow saves with newer changes during player batch saves
+            // Also check for container mutations that may have started after initial check
+            // (defensive guard against race window between top-of-method check and here)
+            if (IsInContainerMutation)
+            {
+                ChangesDetected = true; // Ensure changes are preserved for later save
+                return; // Abort save attempt - mutation in progress
+            }
+            
             if (SaveInProgress && !allowSaveDespiteInProgress)
             {
                 DetectAndLogConcurrentSave(itemName, itemGuid, stackSize);
@@ -294,21 +310,30 @@ namespace ACE.Server.WorldObjects
             // Use raw biota ContainerId we already have (avoid property getters)
             // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must be Biota.Id
             // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID
-            uint? expectedContainerId = null;
-            // Use containerIdFromBiota to look up container (avoid Container property getter)
+            // 
+            // CRITICAL: Initialize with existing ContainerId to trust it by default.
+            // Only rewrite ContainerId when we can positively identify a live player container
+            // and know the authoritative Biota.Id. For non-player containers or offline players,
+            // we must preserve the existing ContainerId to avoid orphaning items.
+            uint? expectedContainerId = containerIdFromBiota;
+            
             if (containerIdFromBiota.HasValue)
             {
                 var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
-                WorldObject containerObj = null;
+                
                 if (containerGuid.IsPlayer())
                 {
-                    containerObj = PlayerManager.GetOnlinePlayer(containerGuid.Full) as WorldObject;
+                    // For player containers, we can look up the online player and get authoritative Biota.Id
+                    var player = PlayerManager.GetOnlinePlayer(containerGuid.Full);
+                    if (player != null)
+                    {
+                        // Player is online - use authoritative Biota.Id (fixes Guid.Full -> Biota.Id mismatch)
+                        expectedContainerId = player.Biota.Id;
+                    }
+                    // else: Player is offline - keep existing containerIdFromBiota to avoid data loss
                 }
-                // For non-player objects, we can't easily find them from save context, but we can still use the ContainerId
-                if (containerObj != null)
-                {
-                    expectedContainerId = containerObj.Biota.Id;
-                }
+                // else: Non-player container (housing storage, hooks, vendors, chests) - keep existing containerIdFromBiota
+                // We cannot look up non-player containers from save context, so we must trust the stored value
             }
             else if (wielderId.HasValue)
             {
@@ -316,7 +341,7 @@ namespace ACE.Server.WorldObjects
                 // Equipped items use Wielder, not ContainerId
                 expectedContainerId = null;
             }
-            // If Container is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
+            // If ContainerId is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
             
             // Set ContainerId directly in biota (lock-pure, no property getters)
             // Since we're already saving, we'll clear ChangesDetected after if needed
