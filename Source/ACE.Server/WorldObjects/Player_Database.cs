@@ -23,7 +23,15 @@ namespace ACE.Server.WorldObjects
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
         /// The primary use for this is to trigger save on add/modify/remove of properties.
         /// </summary>
-        public bool CharacterChangesDetected { get; set; }
+        private bool _characterChangesDetected;
+        public bool CharacterChangesDetected 
+        { 
+            get => _characterChangesDetected;
+            set
+            {
+                _characterChangesDetected = value;
+            }
+        }
 
         /// <summary>
         /// Set to true when SaveCharacter() returns a failure
@@ -81,6 +89,38 @@ namespace ACE.Server.WorldObjects
 
         // Last time EnsureSaveIfOwed was called (for rate limiting)
         private DateTime _lastEnsureSaveCheckUtc = DateTime.MinValue;
+
+        // Debounced save for player-to-player gives
+        private int _giveSaveChainCounter = 0;
+        private int _lastCompletedGiveSave = 0;
+
+        /// <summary>
+        /// Schedules a debounced save for player-to-player gives.
+        /// If another give happens within 4 seconds, the timer resets.
+        /// Save happens 4 seconds after the last give.
+        /// </summary>
+        private void ScheduleDebouncedGiveSave()
+        {
+            // Increment counter to cancel any pending save
+            var thisSaveChainNumber = Interlocked.Increment(ref _giveSaveChainCounter);
+            
+            // Mark player as dirty
+            CharacterChangesDetected = true;
+            
+            // Schedule save 4 seconds later
+            var saveChain = new ActionChain();
+            saveChain.AddDelaySeconds(ForcedShortWindowSeconds);
+            saveChain.AddAction(WorldManager.ActionQueue, ActionType.ControlFlowDelay, () =>
+            {
+                // Only execute if this is still the latest save request
+                if (thisSaveChainNumber > _lastCompletedGiveSave)
+                {
+                    _lastCompletedGiveSave = thisSaveChainNumber;
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
+                }
+            });
+            saveChain.EnqueueChain();
+        }
 
         private void SetPropertiesAtLogOut()
         {

@@ -44,7 +44,15 @@ namespace ACE.Server.WorldObjects
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
         /// The primary use for this is to trigger save on add/modify/remove of properties.
         /// </summary>
-        public bool ChangesDetected { get; set; }
+        private bool _changesDetected;
+        public bool ChangesDetected 
+        { 
+            get => _changesDetected;
+            set
+            {
+                _changesDetected = value;
+            }
+        }
         
         private void DetectAndLogConcurrentSave(string itemName, ObjectGuid itemGuid, int? capturedStackSize)
         {
@@ -449,7 +457,16 @@ namespace ACE.Server.WorldObjects
                             return;
                         }
                         
-                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                        // Calculate save time, but guard against overflow if SaveStartTime is invalid
+                        double saveTime = 0;
+                        if (SaveStartTime != DateTime.MinValue && SaveStartTime != default(DateTime))
+                        {
+                            var timeSpan = DateTime.UtcNow - SaveStartTime;
+                            // Guard against negative time (shouldn't happen, but be defensive)
+                            if (timeSpan.TotalMilliseconds >= 0 && timeSpan.TotalMilliseconds < double.MaxValue)
+                                saveTime = timeSpan.TotalMilliseconds;
+                        }
+                        
                         var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
                         if (saveTime > slowThreshold && this is not Player)
                         {
