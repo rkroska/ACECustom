@@ -383,7 +383,9 @@ namespace ACE.Database
                     rwLock.ExitReadLock();
                 }
 
-                return DoSaveBiota(context, existingBiota);
+                var result = DoSaveBiota(context, existingBiota);
+                
+                return result;
             }
         }
 
@@ -728,45 +730,50 @@ namespace ACE.Database
 
         public bool SaveCharacter(Character character, ReaderWriterLockSlim rwLock)
         {
+            bool result = false;
             if (CharacterContexts.TryGetValue(character, out var cachedContext))
             {
                 rwLock.EnterReadLock();
                 try
                 {
                     cachedContext.SaveChanges();
-                    return true;
+                    result = true;
                 }
                 catch (Exception ex)
                 {
                     log.Error($"[DATABASE] SaveCharacter-1 0x{character.Id:X8}:{character.Name} failed with exception: {ex.GetFullMessage()}");
-                    return false;
+                    result = false;
                 }
                 finally
                 {
                     rwLock.ExitReadLock();
                 }
             }
-
-            var context = new ShardDbContext();
-
-            CharacterContexts.Add(character, context);
-
-            rwLock.EnterReadLock();
-            try
+            else
             {
-                context.Character.Add(character);
-                context.SaveChanges();
-                return true;
+                var context = new ShardDbContext();
+
+                CharacterContexts.Add(character, context);
+
+                rwLock.EnterReadLock();
+                try
+                {
+                    context.Character.Add(character);
+                    context.SaveChanges();
+                    result = true;
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"[DATABASE] SaveCharacter-2 0x{character.Id:X8}:{character.Name} failed with exception: {ex.GetFullMessage()}");
+                    result = false;
+                }
+                finally
+                {
+                    rwLock.ExitReadLock();
+                }
             }
-            catch (Exception ex)
-            {
-                log.Error($"[DATABASE] SaveCharacter-2 0x{character.Id:X8}:{character.Name} failed with exception: {ex.GetFullMessage()}");
-                return false;
-            }
-            finally
-            {
-                rwLock.ExitReadLock();
-            }
+                       
+            return result;
         }
 
 

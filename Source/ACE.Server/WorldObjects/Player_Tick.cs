@@ -129,7 +129,9 @@ namespace ACE.Server.WorldObjects
                 LastRequestedDatabaseSave = DateTime.UtcNow;
 
             if (LastRequestedDatabaseSave.AddSeconds(PlayerSaveIntervalSecs + ThreadSafeRandom.Next(15, 120)) <= DateTime.UtcNow) //vary the save duration to prevent DB slamming
-                SavePlayerToDatabase();
+            {
+                SavePlayerToDatabase(reason: SaveReason.Normal);
+            }
 
             if (Teleporting && DateTime.UtcNow > Time.GetDateTimeFromTimestamp(LastTeleportStartTimestamp ?? 0).Add(MaximumTeleportTime))
             {

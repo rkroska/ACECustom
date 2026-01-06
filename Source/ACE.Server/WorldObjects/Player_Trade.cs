@@ -258,6 +258,10 @@ namespace ACE.Server.WorldObjects
                 foreach (var wo in targetEscrow)
                     target.TryCreateInInventoryWithNetworking(wo);
 
+                // Save both players after trade completes
+                this.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
+                target.SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
+
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TradeComplete));
                 target.Session.Network.EnqueueSend(new GameEventWeenieError(target.Session, WeenieError.TradeComplete));
 

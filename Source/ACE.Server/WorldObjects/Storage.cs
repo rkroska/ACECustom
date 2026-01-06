@@ -85,7 +85,17 @@ namespace ACE.Server.WorldObjects
             {
                 // Here we explicitly save the storage to the database to prevent item loss.
                 // If the player adds an item to the storage, and the server crashes before the storage has been saved, the item will be lost.
-                SaveBiotaToDatabase();
+                // Ensure ChangesDetected is set and force save even if SaveInProgress is set
+                // (Storage saves are critical for preventing item loss)
+                ChangesDetected = true;
+                // Clear SaveInProgress if set to allow immediate save
+                // This is safe because we're saving after a mutation completes
+                if (SaveInProgress)
+                {
+                    SaveInProgress = false;
+                }
+                // Use enqueueSave=true to ensure the save is queued and logged
+                SaveBiotaToDatabase(enqueueSave: true);
             }
         }
 
@@ -97,7 +107,17 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine("Storage.OnRemoveItem()");
 
             // Here we explicitly save the storage to the database to prevent property desync.
-            SaveBiotaToDatabase();
+            // Ensure ChangesDetected is set and force save even if SaveInProgress is set
+            // (Storage saves are critical for preventing item loss)
+            ChangesDetected = true;
+            // Clear SaveInProgress if set to allow immediate save
+            // This is safe because we're saving after a mutation completes
+            if (SaveInProgress)
+            {
+                SaveInProgress = false;
+            }
+            // Use enqueueSave=true to ensure the save is queued and logged
+            SaveBiotaToDatabase(enqueueSave: true);
         }
     }
 }

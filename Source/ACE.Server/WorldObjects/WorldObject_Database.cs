@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
 using ACE.Common;
 using ACE.Database;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -42,16 +44,20 @@ namespace ACE.Server.WorldObjects
         /// This variable is set to true when a change is made, and set to false before a save is requested.<para />
         /// The primary use for this is to trigger save on add/modify/remove of properties.
         /// </summary>
-        public bool ChangesDetected { get; set; }
+        private bool _changesDetected;
+        public bool ChangesDetected 
+        { 
+            get => _changesDetected;
+            set
+            {
+                _changesDetected = value;
+            }
+        }
         
-        private void DetectAndLogConcurrentSave()
+        private void DetectAndLogConcurrentSave(string itemName, ObjectGuid itemGuid, int? capturedStackSize)
         {
             if (!SaveInProgress)
                 return;
-
-            // Capture Name and Guid early to avoid potential lock recursion
-            var itemName = Name;
-            var itemGuid = Guid;
 
             if (SaveStartTime == DateTime.MinValue)
             {
@@ -62,9 +68,11 @@ namespace ACE.Server.WorldObjects
             }
             
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-            var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{itemGuid}";
+            // Avoid property getters - use passed itemGuid and itemName
+            var playerInfo = this is Player ? $"{itemName ?? "player"} (0x{itemGuid})" : $"Object 0x{itemGuid}";
             
-            var currentStack = StackSize;
+            // Use captured stack size from save snapshot (preserves save invariant)
+            var currentStack = capturedStackSize;
             var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
             var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
             
@@ -73,8 +81,25 @@ namespace ACE.Server.WorldObjects
             
             if (stackChanged || timeInFlight > 50)
             {
-                var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                  (this.Container is Player owner ? $"[{owner.Name}] " : "");
+                // Avoid Container property getter - use raw biota ContainerId if needed
+                string ownerContext = "";
+                if (this is Player p)
+                {
+                    // Player name from biota (avoid property getter)
+                    string playerName = null;
+                    p.BiotaDatabaseLock.EnterReadLock();
+                    try
+                    {
+                        if (p.Biota.PropertiesString != null && p.Biota.PropertiesString.TryGetValue(PropertyString.Name, out var pn))
+                            playerName = pn;
+                    }
+                    finally
+                    {
+                        p.BiotaDatabaseLock.ExitReadLock();
+                    }
+                    ownerContext = $"[{playerName ?? "player"}] ";
+                }
+                // Note: Container lookup removed to avoid property getter - owner context is optional for logging
                 var raceInfo = stackChanged 
                     ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
                     : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
@@ -108,72 +133,154 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void SaveBiotaToDatabase(bool enqueueSave = true)
         {
-            // Capture name and guid early to avoid lock recursion when logging
-            // The Name property getter calls GetProperty which tries to enter a read lock
-            // If we're already in a read lock (like when checking biota properties below),
-            // this would cause a LockRecursionException
-            var itemName = Name;
-            var itemGuid = Guid;
+            SaveBiotaInternal(enqueueSave, null);
+        }
+
+        /// <summary>
+        /// If enqueueSave is set to true, DatabaseManager.Shard.SaveBiota() will be called for the biota.<para />
+        /// Set enqueueSave to false if you want to perform all the normal routines for a save but not the actual save. This is useful if you're going to collect biotas in bulk for bulk saving.
+        /// </summary>
+        /// <param name="enqueueSave">Whether to enqueue the save operation</param>
+        /// <param name="onCompleted">Optional callback to invoke when the save operation completes</param>
+        public virtual void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
+        {
+            SaveBiotaInternal(enqueueSave, onCompleted);
+        }
+
+        /// <summary>
+        /// Internal implementation that contains all save logic in one place.
+        /// This ensures consistency and prevents divergence between overloads.
+        /// All raw biota state is captured here, SaveInProgress is set here, and ChangesDetected is cleared here.
+        /// </summary>
+        private void SaveBiotaInternal(bool enqueueSave, Action<bool> onCompleted)
+        {
+            // ARCHITECTURAL BOUNDARY:
+            // WorldObject save logic is best-effort. It provides advisory flags (SaveInProgress, ChangesDetected)
+            // and attempts to prevent obvious race conditions, but cannot provide strong correctness guarantees.
+            // Strong correctness guarantees (coalescing, deduplication, serialization) are enforced by
+            // SerializedShardDatabase at the database layer. This division allows WorldObject to remain
+            // lightweight while the DB layer handles complex concurrency and batching logic.
+            
+            // SAVE INVARIANT:
+            // - No property getters (Name, WielderId, Container, GetProperty, StackSize, Location)
+            // - All biota reads captured once under a single read lock
+            // - Operate on local variables only after lock is released
+            // This prevents LockRecursionException and ensures lock-pure save paths.
+            
+            // Suppress saves during container mutations to prevent saving with ContainerId = null
+            // This is advisory, not a lock. The DB coalescer guarantees eventual persistence.
+            if (IsInContainerMutation)
+            {
+                ChangesDetected = true; // Ensure changes are preserved for later save
+                return; // Skip save during mutation
+            }
+            
+#if DEBUG
+            // Assert that we're not entering with a lock already held (catches regressions)
+            if (BiotaDatabaseLock.IsReadLockHeld || BiotaDatabaseLock.IsWriteLockHeld)
+            {
+                log.Error("[SAVE] SaveBiotaToDatabase entered with BiotaDatabaseLock already held! This violates the save invariant.");
+            }
+#endif
+            
+            var itemGuid = Guid; // safe, not locked
+            
+            // Read ALL needed raw biota state in a single lock block to avoid recursion risk
+            string itemName = null;
+            uint? wielderId = null;
+            uint? containerIdFromBiota = null;
+            int? stackSize = null;
+            BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                // Read all needed properties in one lock acquisition
+                if (Biota.PropertiesString != null && Biota.PropertiesString.TryGetValue(PropertyString.Name, out var name))
+                    itemName = name;
+                
+                if (Biota.PropertiesIID != null)
+                {
+                    if (Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Wielder, out var w))
+                        wielderId = w;
+                    if (Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var c))
+                        containerIdFromBiota = c;
+                }
+                
+                if (Biota.PropertiesInt != null && Biota.PropertiesInt.TryGetValue(PropertyInt.StackSize, out var s))
+                    stackSize = s;
+            }
+            finally
+            {
+                BiotaDatabaseLock.ExitReadLock();
+            }
+            
+            // Now operate on local variables only - no more lock acquisitions
 
 #if DEBUG
-            string GetItemInfo() => this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
+            // GetItemInfo uses itemName and itemGuid (already captured safely) - never use property getters
+            string GetItemInfo() => $"{itemName ?? "item"} (0x{itemGuid})";
             log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
 #endif
             
             // For individual saves, check if this item belongs to a player with a batch save in progress
             // If the item has newer changes (ChangesDetected = true), we want to allow the save to proceed
             // even if SaveInProgress is true (set by the batch save)
+            // 
+            // ARCHITECTURAL LIMITATION: There is a narrow race window where:
+            // - Player batch save sets SaveInProgress = true
+            // - Item has ChangesDetected = true
+            // - allowSaveDespiteInProgress lets it through
+            // - Multiple rapid calls can enqueue multiple individual saves
+            // 
+            // For player items, the coalescer downstream (SavePlayerBiotasCoalesced) will collapse these duplicates.
+            // For non-player items, this can still enqueue duplicates if rapid calls occur.
+            // 
+            // This code assumes coalescing downstream handles deduplication. Without a per-object
+            // "dirty since batch started" flag, we cannot fully prevent duplicate enqueues at this level.
+            // The coalescer's TryEnqueueCoalesced logic will handle most cases, but non-player items
+            // that use SaveBiota (non-coalesced) can still enqueue duplicates under rapid calls.
             bool allowSaveDespiteInProgress = false;
-            if (enqueueSave && ChangesDetected && this.Container is Player player && player.SaveInProgress)
+            
+            // Use raw biota ContainerId to look up container (avoid property getter)
+            if (enqueueSave && ChangesDetected && containerIdFromBiota.HasValue)
             {
-                // Get the current ContainerId from the property (in-memory state)
-                var staleCheckPropertyContainerId = ContainerId;
-                
-                // Get the ContainerId from the biota (what's currently in the database)
-                uint? staleCheckBiotaContainerId = null;
-                BiotaDatabaseLock.EnterReadLock();
-                try
+                // Look up container by ContainerId (raw access, no property getter)
+                var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
+                var containerObj = containerGuid.IsPlayer() ? PlayerManager.GetOnlinePlayer(containerGuid.Full) as WorldObject : null;
+                if (containerObj is Player player && player.SaveInProgress)
                 {
-                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var value))
-                        staleCheckBiotaContainerId = value;
-                }
-                finally
-                {
-                    BiotaDatabaseLock.ExitReadLock();
-                }
-                
-                // If property says player GUID but biota says side pack GUID, this is stale data
-                // The batch save will have the correct side pack GUID, so skip this individual save
-                // to avoid overwriting correct data with stale data
-                // BUT: If property says side pack GUID and biota says player GUID, this is a legitimate move
-                // from player inventory to side pack - allow it to proceed
-                if (staleCheckPropertyContainerId.HasValue && staleCheckPropertyContainerId.Value == player.Guid.Full &&
-                    staleCheckBiotaContainerId.HasValue && staleCheckBiotaContainerId.Value != player.Guid.Full)
-                {
-                    // This individual save would overwrite correct side pack ContainerId with stale player GUID
-                    // Skip it - the batch save will save the correct state
+                    // Use the raw biota ContainerId we already have (no property getter)
+                    var staleCheckBiotaContainerId = containerIdFromBiota;
+                    
+                    // If biota says player GUID, this is a legitimate save
+                    // The batch save will handle it correctly
+                    if (staleCheckBiotaContainerId.HasValue && staleCheckBiotaContainerId.Value == player.Guid.Full)
+                    {
+                        // Item has newer changes and ContainerId matches player
+                        // Allow the save to proceed even if SaveInProgress is true
+                        // It will queue after the batch save and save the newer state
+                        // NOTE: Multiple rapid calls can still enqueue duplicates here.
+                        // The coalescer will handle player items, but non-player items may enqueue duplicates.
+                        allowSaveDespiteInProgress = true;
 #if DEBUG
-                    log.Debug($"[SAVE] Skipping individual save for {Name} (0x{Guid}) - would overwrite correct ContainerId {staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}) with stale player GUID");
+                        log.Debug($"[SAVE] Allowing individual save for {itemName ?? "item"} (0x{itemGuid:X8}) during player batch save - has newer changes (Biota ContainerId={staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}))");
 #endif
-                    return;
+                    }
                 }
-                // If property says side pack GUID and biota says player GUID, this is a legitimate move
-                // from player inventory to side pack - allow it to proceed (don't skip)
-                
-                // Item has newer changes and doesn't have stale ContainerId data
-                // Allow the save to proceed even if SaveInProgress is true
-                // It will queue after the batch save and save the newer state
-                allowSaveDespiteInProgress = true;
-#if DEBUG
-                log.Debug($"[SAVE] Allowing individual save for {Name} (0x{Guid}) during player batch save - has newer changes (Property ContainerId={staleCheckPropertyContainerId}, Biota ContainerId={staleCheckBiotaContainerId})");
-#endif
             }
             
             // Detect concurrent saves at item level
             // But allow saves with newer changes during player batch saves
+            // Also check for container mutations that may have started after initial check
+            // (defensive guard against race window between top-of-method check and here)
+            if (IsInContainerMutation)
+            {
+                ChangesDetected = true; // Ensure changes are preserved for later save
+                return; // Abort save attempt - mutation in progress
+            }
+            
             if (SaveInProgress && !allowSaveDespiteInProgress)
             {
-                DetectAndLogConcurrentSave();
+                DetectAndLogConcurrentSave(itemName, itemGuid, stackSize);
                 return; // Abort save attempt - already in progress
             }
             
@@ -181,20 +288,16 @@ namespace ACE.Server.WorldObjects
             // Log position cache contents for debugging (especially for players)
             if (this is Player playerObj)
             {
-                var locationPos = positionCache.TryGetValue(PositionType.Location, out var loc) ? loc : null;
-                var locationProperty = Location; // Read through property getter
+                // Only use position cache - never use Location property getter (can cause lock recursion)
+                positionCache.TryGetValue(PositionType.Location, out var locationPos);
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
-#endif
-                
-                // If Location property exists but isn't in cache, add it
-                if (locationProperty != null && locationPos == null)
+                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Cache count={positionCache.Count}");
+                // If Location is missing from cache, that's a logic error elsewhere, not fixed here
+                if (locationPos == null)
                 {
-#if DEBUG
-                    log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location property exists but not in cache! Adding to cache...");
-#endif
-                    positionCache[PositionType.Location] = locationProperty;
+                    log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location missing from position cache - this indicates a logic error elsewhere");
                 }
+#endif
             }
             
             foreach (var kvp in positionCache)
@@ -212,32 +315,74 @@ namespace ACE.Server.WorldObjects
             }
 
             // Ensure ContainerId is set correctly before save (following Vendor's approach)
-            // Container property is the most authoritative - use Biota.Id (not Guid.Full)
+            // Use raw biota ContainerId we already have (avoid property getters)
             // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must be Biota.Id
             // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID
-            uint? expectedContainerId = null;
-            if (Container != null)
+            // 
+            // CRITICAL: Initialize with existing ContainerId to trust it by default.
+            // Only rewrite ContainerId when we can positively identify a live player container
+            // and know the authoritative Biota.Id. For non-player containers or offline players,
+            // we must preserve the existing ContainerId to avoid orphaning items.
+            uint? expectedContainerId = containerIdFromBiota;
+            
+            if (containerIdFromBiota.HasValue)
             {
-                expectedContainerId = Container.Biota.Id;
+                var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
+                
+                if (containerGuid.IsPlayer())
+                {
+                    // For player containers, we can look up the online player and get authoritative Biota.Id
+                    var player = PlayerManager.GetOnlinePlayer(containerGuid.Full);
+                    if (player != null)
+                    {
+                        // Player is online - use authoritative Biota.Id (fixes Guid.Full -> Biota.Id mismatch)
+                        expectedContainerId = player.Biota.Id;
+                    }
+                    // else: Player is offline - keep existing containerIdFromBiota to avoid data loss
+                }
+                // else: Non-player container (housing storage, hooks, vendors, chests) - keep existing containerIdFromBiota
+                // We cannot look up non-player containers from save context, so we must trust the stored value
             }
-            else if (WielderId.HasValue)
+            else if (wielderId.HasValue)
             {
                 // Item is equipped - ContainerId should be null/cleared
                 // Equipped items use Wielder, not ContainerId
                 expectedContainerId = null;
             }
-            // If Container is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
+            // If ContainerId is null and no Wielder, keep current ContainerId (might be on ground or orphaned)
             
-            // Set ContainerId property directly (like Vendor does) - this updates biota and sets ChangesDetected
+            // Set ContainerId directly in biota (lock-pure, no property getters)
             // Since we're already saving, we'll clear ChangesDetected after if needed
             var hadChangesBeforeContainerId = ChangesDetected;
-            if (ContainerId != expectedContainerId)
+            if (containerIdFromBiota != expectedContainerId)
             {
-                ContainerId = expectedContainerId;
+                BiotaDatabaseLock.EnterWriteLock();
+                try
+                {
+                    if (expectedContainerId.HasValue)
+                    {
+                        // Ensure PropertiesIID dictionary exists before indexing
+                        if (Biota.PropertiesIID == null)
+                            Biota.PropertiesIID = new Dictionary<PropertyInstanceId, uint>();
+                        Biota.PropertiesIID[PropertyInstanceId.Container] = expectedContainerId.Value;
+                    }
+                    else
+                    {
+                        Biota.PropertiesIID?.Remove(PropertyInstanceId.Container);
+                    }
+                }
+                finally
+                {
+                    BiotaDatabaseLock.ExitWriteLock();
+                }
+
+                // Update local variable to keep it in sync with biota (for logging and diagnostics)
+                containerIdFromBiota = expectedContainerId;
+
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
+                log.Debug($"[SAVE DEBUG] {itemName ?? "item"} (0x{itemGuid:X8}) Set raw biota ContainerId -> {(expectedContainerId.HasValue ? $"0x{expectedContainerId:X8}" : "null")}");
 #endif
-                // Clear ChangesDetected if we just set it (we're already saving)
+
                 if (!hadChangesBeforeContainerId)
                     ChangesDetected = false;
             }
@@ -248,9 +393,10 @@ namespace ACE.Server.WorldObjects
             // Setting them here would be redundant and they're already correct from their respective operations
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
-            SaveInProgress = true;
+            // SaveStartTime represents when the save was requested (before enqueue)
+            // This is used for timing diagnostics and race detection
             SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;
+            LastSavedStackSize = stackSize;
             
             // For batch saves (enqueueSave=false), don't clear ChangesDetected here
             // The caller will handle clearing it after the batch completes successfully
@@ -261,67 +407,107 @@ namespace ACE.Server.WorldObjects
                 ChangesDetected = false;
             }
 
-            if (enqueueSave)
+            // For bulk and coalesced paths, mark as included in the batch
+            // Caller must clear this after SavePlayerBiotasCoalesced completes
+            if (!enqueueSave)
             {
+                SaveInProgress = true;
+
+                // If a mutation happened during batch prep (between top guard and here),
+                // ensure a follow-up save is generated to capture the newer changes
+                if (ChangesDetected)
+                    LastRequestedDatabaseSave = DateTime.UtcNow;
+
+                return;
+            }
+
+            CheckpointTimestamp = Time.GetUnixTime();
+            
+            // For individual saves, set just before enqueuing
+            SaveInProgress = true;
+            
 #if DEBUG
-                // Log final ContainerId before queuing save
-                BiotaDatabaseLock.EnterReadLock();
-                try
+            // Log final ContainerId before queuing save
+            BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                uint? finalBiotaContainerId = null;
+                if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var finalValue))
                 {
-                    uint? finalBiotaContainerId = null;
-                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var finalValue))
-                    {
-                        finalBiotaContainerId = finalValue;
-                    }
-                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
-                    log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
+                    finalBiotaContainerId = finalValue;
                 }
-                finally
-                {
-                    BiotaDatabaseLock.ExitReadLock();
-                }
+                string containerInfo = finalBiotaContainerId.HasValue ? (new ObjectGuid(finalBiotaContainerId.Value).IsPlayer() ? $"Player (0x{finalBiotaContainerId.Value:X8})" : $"Object (0x{finalBiotaContainerId.Value:X8})") : (wielderId.HasValue ? $"Equipped (Wielder={wielderId} (0x{wielderId:X8}))" : "null");
+                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
+            }
+            finally
+            {
+                BiotaDatabaseLock.ExitReadLock();
+            }
 #endif
-                
-                CheckpointTimestamp = Time.GetUnixTime();
-                //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
+            
+            //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
+            DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                 {
                     try
                     {
                         if (IsDestroyed)
                         {
                             log.Debug($"[DB CALLBACK] Callback fired for destroyed {itemName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            onCompleted?.Invoke(false);
                             return;
                         }
                         
-                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+                        // Calculate save time, but guard against overflow if SaveStartTime is invalid
+                        double saveTime = 0;
+                        if (SaveStartTime != DateTime.MinValue && SaveStartTime != default(DateTime))
+                        {
+                            var timeSpan = DateTime.UtcNow - SaveStartTime;
+                            // Guard against negative time (shouldn't happen, but be defensive)
+                            if (timeSpan.TotalMilliseconds >= 0 && timeSpan.TotalMilliseconds < double.MaxValue)
+                                saveTime = timeSpan.TotalMilliseconds;
+                        }
+                        
                         var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
                         if (saveTime > slowThreshold && this is not Player)
                         {
-                            var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
-                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {itemName} (Stack: {StackSize}){ownerInfo}");
-                            SendDbSlowDiscordAlert(itemName, saveTime, StackSize ?? 0, ownerInfo);
+                            // Get owner info using raw biota access (avoid property getters)
+                            string ownerInfo = "";
+                            if (containerIdFromBiota.HasValue)
+                            {
+                                var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
+                                if (containerGuid.IsPlayer())
+                                {
+                                    var owner = PlayerManager.GetOnlinePlayer(containerGuid.Full);
+                                    if (owner != null)
+                                    {
+                                        // Get name from biota directly (avoid property getter)
+                                        string ownerName = null;
+                                        owner.BiotaDatabaseLock.EnterReadLock();
+                                        try
+                                        {
+                                            if (owner.Biota.PropertiesString != null && owner.Biota.PropertiesString.TryGetValue(PropertyString.Name, out var on))
+                                                ownerName = on;
+                                        }
+                                        finally
+                                        {
+                                            owner.BiotaDatabaseLock.ExitReadLock();
+                                        }
+                                        ownerInfo = $" | Owner: {ownerName ?? "player"}";
+                                    }
+                                }
+                            }
+                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {itemName} (Stack: {stackSize}){ownerInfo}");
+                            SendDbSlowDiscordAlert(itemName, saveTime, stackSize ?? 0, ownerInfo);
                         }
                         
                         CheckDatabaseQueueSize();
                         
 #if DEBUG
-                        // Log save result with ContainerId
-                        BiotaDatabaseLock.EnterReadLock();
-                        try
-                        {
-                            uint? savedBiotaContainerId = null;
-                            if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var savedValue))
-                            {
-                                savedBiotaContainerId = savedValue;
-                            }
-                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                            log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
-                        }
-                        finally
-                        {
-                            BiotaDatabaseLock.ExitReadLock();
-                        }
+                        // Log save result with ContainerId (use containerIdFromBiota we already have)
+                        uint? savedBiotaContainerId = containerIdFromBiota;
+                        // Use itemName and itemGuid (already captured safely) - never use property getters
+                        var callbackItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
+                        log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
 #endif
                         
                         if (!result)
@@ -331,8 +517,9 @@ namespace ACE.Server.WorldObjects
                             {
                                 ChangesDetected = true;
 #if DEBUG
-                                var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                                log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+                                // Use itemName and itemGuid (already captured safely) - never use property getters
+                                var failedSaveItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
+                                log.Warn($"[SAVE DEBUG] {failedSaveItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
 #endif
                             }
                             
@@ -342,6 +529,8 @@ namespace ACE.Server.WorldObjects
                                 player.BiotaSaveFailed = true;
                             }
                         }
+                        
+                        onCompleted?.Invoke(result);
                     }
                     catch (Exception ex)
                     {
@@ -350,11 +539,13 @@ namespace ACE.Server.WorldObjects
                         {
                             ChangesDetected = true;
 #if DEBUG
-                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
+                            // Use itemName and itemGuid (already captured safely) - never use property getters
+                            var callbackItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
                             log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
 #endif
                         }
                         log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");
+                        onCompleted?.Invoke(false);
                     }
                     finally
                     {
@@ -363,88 +554,7 @@ namespace ACE.Server.WorldObjects
                         SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
-            }
             // For bulk saves, SaveInProgress cleared by caller after bulk completes
-        }
-
-        /// <summary>
-        /// If enqueueSave is set to true, DatabaseManager.Shard.SaveBiota() will be called for the biota.<para />
-        /// Set enqueueSave to false if you want to perform all the normal routines for a save but not the actual save. This is useful if you're going to collect biotas in bulk for bulk saving.
-        /// </summary>
-        /// <param name="enqueueSave">Whether to enqueue the save operation</param>
-        /// <param name="onCompleted">Optional callback to invoke when the save operation completes</param>
-        public virtual void SaveBiotaToDatabase(bool enqueueSave, Action<bool> onCompleted)
-        {
-            // Capture name and guid early to avoid lock recursion in callbacks
-            var itemName = Name;
-            var itemGuid = Guid;
-            
-            // Detect concurrent saves
-            if (SaveInProgress)
-            {
-                DetectAndLogConcurrentSave();
-                onCompleted?.Invoke(false); // Notify caller that save was rejected
-                return; // Abort save attempt - already in progress
-            }
-            
-            foreach (var kvp in positionCache)
-            {
-                if (kvp.Value != null)
-                    Biota.SetPosition(kvp.Key, kvp.Value, BiotaDatabaseLock);
-            }
-
-            LastRequestedDatabaseSave = DateTime.UtcNow;
-            SaveInProgress = true;
-            SaveStartTime = DateTime.UtcNow;
-            LastSavedStackSize = StackSize;
-            ChangesDetected = false;
-
-            if (enqueueSave)
-            {
-                CheckpointTimestamp = Time.GetUnixTime();
-                //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
-                {
-                    try
-                    {
-                        if (IsDestroyed)
-                        {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {itemName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
-                            return;
-                        }
-                        
-                        var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                        var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
-                        if (saveTime > slowThreshold && this is not Player)
-                        {
-                            var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
-                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {itemName} (Stack: {StackSize}){ownerInfo}");
-                            SendDbSlowDiscordAlert(itemName, saveTime, StackSize ?? 0, ownerInfo);
-                        }
-                        
-                        CheckDatabaseQueueSize();
-                        
-                        if (!result && this is Player player)
-                            player.BiotaSaveFailed = true;
-                        
-                        onCompleted?.Invoke(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");
-                    }
-                    finally
-                    {
-                        SaveInProgress = false;
-                        SaveStartTime = DateTime.MinValue; // Reset for next save
-                    }
-                });
-            }
-            else
-            {
-                // Note: For bulk saves (enqueueSave=false), SaveInProgress remains true
-                // It will be cleared by the caller when the bulk save completes
-            }
         }
 
         /// <summary>

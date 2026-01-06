@@ -1369,6 +1369,9 @@ namespace ACE.Server.WorldObjects
                                     log.Debug($"[CORPSE] {Name} (0x{Guid}) picked up {item.Name} (0x{item.Guid}) from {itemRootOwner.Name} (0x{itemRootOwner.Guid})");
                                     item.SaveBiotaToDatabase();
                                 }
+
+                                // Save player after pickup to persist inventory changes
+                                SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                             }
 
                             if (ServerConfig.house_hook_limit.Value)
@@ -1564,12 +1567,38 @@ namespace ACE.Server.WorldObjects
 
             // when moving from a non-stuck container to a different container,
             // the database must be synced immediately
-            if (prevContainer != null && !prevContainer.Stuck && container != prevContainer)
+            // Exclude corpses - they have their own save path (see line 1370)
+            if (prevContainer != null && !prevContainer.Stuck && container != prevContainer && !(prevContainer is Corpse))
             {
 #if DEBUG
                 log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer triggering save for {item.Name} (0x{item.Guid}) | Moving from {(prevContainer is Player prevPlayer2 ? $"Player {prevPlayer2.Name}" : $"{prevContainer.Name} (0x{prevContainer.Guid})")} to {(container is Player newPlayer ? $"Player {newPlayer.Name}" : $"{container.Name} (0x{container.Guid})")} | Item ContainerId={item.ContainerId} (0x{(item.ContainerId ?? 0):X8}) | Item Container={item.Container?.Name ?? "null"} (0x{(item.Container?.Guid.Full ?? 0):X8})");
 #endif
                 item.SaveBiotaToDatabase();
+                
+                // CRITICAL: Save the container immediately to prevent duplication race conditions
+                // If the item is saved but the container isn't, a crash/race can cause duplication
+                // This ensures both item and container state are persisted
+                if (container is Container worldContainer && !(container is Player))
+                {
+                    worldContainer.SaveBiotaToDatabase();
+                }
+                
+                // Save container owners if they are players (immediate save for player-to-world-container operations)
+                // Only save for cross-boundary moves (player-to-world-container, player-to-player)
+                // Skip saves for same-player moves (main pack to side pack, reordering) - those use periodic saves
+                // Source container owner: inventory changed (item removed)
+                // Destination container owner: inventory changed (item added)
+                // Use ForcedImmediate to ensure saves happen immediately and console logs are visible
+                if (itemRootOwner is Player sourcePlayer && containerRootOwner != itemRootOwner)
+                {
+                    // Only save if moving to/from a world container (not same-player inventory move)
+                    sourcePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+                }
+                if (containerRootOwner is Player destPlayer && destPlayer != itemRootOwner)
+                {
+                    // Only save if moving to/from a world container (not same-player inventory move)
+                    destPlayer.SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+                }
             }
 
             Session.Network.EnqueueSend(
@@ -1736,6 +1765,9 @@ namespace ACE.Server.WorldObjects
                     {
                         log.Error($"Error logging ground drop: {ex.Message}");
                     }
+
+                    // Save player after drop to persist inventory changes
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
                 else
                 {
@@ -1899,6 +1931,9 @@ namespace ACE.Server.WorldObjects
 
                             item.EmoteManager.OnPickup(this);
                             item.NotifyOfEvent(RegenerationType.PickUp);
+
+                            // Save player after pickup to persist inventory changes
+                            SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                         }
                         EnqueuePickupDone(pickupMotion);
                     });
@@ -1909,7 +1944,11 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                DoHandleActionGetAndWieldItem(item, fromContainer, rootOwner, wasEquipped, wieldedLocation);
+                if (DoHandleActionGetAndWieldItem(item, fromContainer, rootOwner, wasEquipped, wieldedLocation))
+                {
+                    // Save player after pickup to persist inventory changes
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
+                }
             }
         }
 
@@ -2621,7 +2660,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // We make sure the stack is still valid. It could have changed during our movement
-                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                    // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                     {
                         log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                         Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -2637,7 +2677,8 @@ namespace ACE.Server.WorldObjects
                     pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToContainer, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
-                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                        // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                         {
                             log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -3051,7 +3092,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // We make sure the stack is still valid. It could have changed during our movement
-                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                    // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                     {
                         log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                         Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -3067,7 +3109,8 @@ namespace ACE.Server.WorldObjects
                     pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToWield, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
-                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                        // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                         {
                             log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -3780,6 +3823,13 @@ namespace ACE.Server.WorldObjects
                 target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} gives you {stackMsg}{itemName}.", ChatMessageType.Broadcast));
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
+
+                // Schedule debounced saves for both players (4 second window, resets on each give)
+                // Giver: inventory changed (item removed)
+                // Receiver: inventory changed (item added, ContainerId changed)
+                // Item: ContainerId changed, will save automatically via ChangesDetected
+                this.ScheduleDebouncedGiveSave();
+                target.ScheduleDebouncedGiveSave();
 
                 // Log admin giving item to non-admin player
                 if (IsAbovePlayerLevel && !target.IsAbovePlayerLevel)
