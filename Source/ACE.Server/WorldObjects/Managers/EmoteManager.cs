@@ -2025,13 +2025,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3250)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2000)
                                         {
@@ -2109,13 +2109,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2192,13 +2192,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2275,13 +2275,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2358,13 +2358,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
