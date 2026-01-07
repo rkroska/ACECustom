@@ -74,6 +74,19 @@ namespace ACE.Server.WorldObjects
             get => (Character != null && Character.IsPlussed) || (Session != null && ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions && Session.AccessLevel > AccessLevel.Advocate);
         }
 
+        /// <summary>
+        /// Returns true if the player has admin-level access (Sentinel, Envoy, Developer, or Admin)
+        /// </summary>
+        public bool IsAbovePlayerLevel
+        {
+            get
+            {
+                if (Session != null && Session.AccessLevel >= AccessLevel.Sentinel)
+                    return true;
+                return IsAdmin || IsSentinel || IsEnvoy || IsArch;
+            }
+        }
+
         public bool IsOlthoiPlayer { get; set; }
 
 

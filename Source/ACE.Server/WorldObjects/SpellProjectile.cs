@@ -40,6 +40,11 @@ namespace ACE.Server.WorldObjects
 
         public int DebugVelocity;
 
+        private const float RingHorizontalMultiplier = 1.35f;
+
+        // Track previous position for swept collision detection on ring spells
+        internal Vector3? PreviousPosition = null;
+
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
@@ -218,7 +223,17 @@ namespace ACE.Server.WorldObjects
             Cloaked = true;
             LightsStatus = false;
 
-            PhysicsObj.set_active(false);
+            if (Spell == null || Spell.SpreadAngle != 360)
+            {
+                PhysicsObj.set_active(false);
+            }
+            else
+            {
+                ActionChain delay = new ActionChain();
+                delay.AddDelayForOneTick();
+                delay.AddAction(this, ActionType.SpellProjectile_Destroy, () => PhysicsObj.set_active(false));
+                delay.EnqueueChain();
+            }
 
             if (PhysicsObj.entering_world)
             {
@@ -263,11 +278,16 @@ namespace ACE.Server.WorldObjects
 
         public override void OnCollideObject(WorldObject target)
         {
-            //Console.WriteLine($"{Name}.OnCollideObject({target.Name})");
             if (ProjectileSource == null)
-            {
                 return;
-            }
+
+            if (target == ProjectileSource)
+                return;
+
+            var creatureTarget = target as Creature;
+            if (creatureTarget == null)
+                return;
+
             var player = ProjectileSource as Player;
 
             if (Info != null && player != null && player.DebugSpell)
@@ -276,16 +296,116 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(Info.ToString(), ChatMessageType.Broadcast));
             }
 
-            ProjectileImpact();
-
-            // ensure valid creature target
-            var creatureTarget = target as Creature;
-            if (creatureTarget == null || target == ProjectileSource)
+            if (Spell == null || Spell.SpreadAngle != 360)
+            {
+                // existing non ring logic continues unchanged
+                ProcessSpellHit(creatureTarget, player);
                 return;
+            }
+
+            // Ensure caster can damage target before applying ring forgiveness
+            var sourceCreature = ProjectileSource as Creature;
+            if (sourceCreature != null && !sourceCreature.CanDamage(creatureTarget))
+                return;
+
+            // ----- RING ONLY HORIZONTAL FORGIVENESS START -----
+
+            var projPos = PhysicsObj.Position.Frame.Origin;
+            var targetPos = creatureTarget.PhysicsObj.Position.Frame.Origin;
+            // Use target center mass for horizontal plane stability
+            targetPos.Z += creatureTarget.Height * 0.5f;
+
+            var dx = projPos.X - targetPos.X;
+            var dy = projPos.Y - targetPos.Y;
+
+            var baseRadius = PhysicsObj.GetPhysicsRadius() + creatureTarget.PhysicsObj.GetPhysicsRadius();
+            var horizontalRadius = baseRadius * RingHorizontalMultiplier;
+
+            // Diamond-aware horizontal acceptance for ring projectiles
+            // Rings travel in 8 directions (cardinal + diagonal), so diamond check accounts for diagonal collision extents
+            var absDx = Math.Abs(dx);
+            var absDy = Math.Abs(dy);
+
+            // Expanded diamond-aware horizontal acceptance
+            if (absDx > horizontalRadius && absDy > horizontalRadius)
+                return;
+
+            // ----- RING ONLY HORIZONTAL FORGIVENESS END -----
+
+            ProcessSpellHit(creatureTarget, player);
+        }
+
+        /// <summary>
+        /// Checks if a line segment intersects with a creature cylinder for swept collision detection
+        /// </summary>
+        internal bool SegmentIntersectsCreature(Vector3 segmentStart, Vector3 segmentEnd, Creature creature)
+        {
+            var creaturePos = creature.PhysicsObj.Position.Frame.Origin;
+            var creatureRadius = creature.PhysicsObj.GetPhysicsRadius();
+            var projRadius = PhysicsObj.GetPhysicsRadius();
+            var totalRadius = creatureRadius + projRadius;
+
+            // Get the segment vector
+            var segment = segmentEnd - segmentStart;
+            var segmentLengthSq = segment.LengthSquared();
+
+            // If segment is zero length, check point distance
+            if (segmentLengthSq < 0.0001f)
+            {
+                var segDx = segmentStart.X - creaturePos.X;
+                var segDy = segmentStart.Y - creaturePos.Y;
+                var segHorizontalDistSq = segDx * segDx + segDy * segDy;
+                return segHorizontalDistSq <= totalRadius * totalRadius;
+            }
+
+            // Vector from segment start to creature center
+            var toCreature = creaturePos - segmentStart;
+
+            // Project creature center onto segment line
+            var t = Vector3.Dot(toCreature, segment) / segmentLengthSq;
+
+            // Clamp to segment endpoints
+            t = Math.Max(0.0f, Math.Min(1.0f, t));
+
+            // Closest point on segment to creature center
+            var closestPoint = segmentStart + segment * t;
+
+            // Check horizontal distance from creature center to closest point on segment
+            var closestDx = closestPoint.X - creaturePos.X;
+            var closestDy = closestPoint.Y - creaturePos.Y;
+            var closestHorizontalDistSq = closestDx * closestDx + closestDy * closestDy;
+
+            if (closestHorizontalDistSq > totalRadius * totalRadius)
+                return false;
+
+            // Check vertical overlap (creature cylinder)
+            var projZMin = Math.Min(segmentStart.Z, segmentEnd.Z) - Height * 0.5f;
+            var projZMax = Math.Max(segmentStart.Z, segmentEnd.Z) + Height * 0.5f;
+
+            var creatureZMin = creaturePos.Z;
+            var creatureZMax = creaturePos.Z + creature.Height;
+
+            return projZMax >= creatureZMin && projZMin <= creatureZMax;
+        }
+
+        internal void ProcessSpellHit(Creature creatureTarget, Player player)
+        {
+            // GDLE ring handling notes
+            // Rings are not AoE volumes and do not do proximity based damage
+            // Rings are many independent projectiles and only deal damage on actual physics collision
+            // No per cast "hit once per target" suppression
+            //
+            // ACE identifies rings as SpreadAngle == 360
+            var isRing = Spell != null && Spell.SpreadAngle == 360;
 
             if (player != null)
                 player.LastHitSpellProjectile = Spell;
             
+            // IMPORTANT
+            // Do not add any "already hit this target this cast" gating here.
+            // Retail and GDLE allow multiple ring segments to hit the same target.
+            //
+            // Still respect CanDamage, but only at the moment of collision.
             // ensure caster can damage target
             var sourceCreature = ProjectileSource as Creature;
             if (sourceCreature != null && !sourceCreature.CanDamage(creatureTarget))
@@ -297,6 +417,8 @@ namespace ACE.Server.WorldObjects
             var pkError = ProjectileSource?.CheckPKStatusVsTarget(creatureTarget, Spell);
             if (pkError != null)
             {
+                ProjectileImpact();
+
                 if (player != null)
                     player.Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(player.Session, pkError[0], creatureTarget.Name));
 
@@ -323,6 +445,8 @@ namespace ACE.Server.WorldObjects
 
             if (damage != null)
             {
+                ProjectileImpact();
+
                 if (Spell.MetaSpellType == ACE.Entity.Enum.SpellType.EnchantmentProjectile)
                 {
                     // handle EnchantmentProjectile successfully landing on target
@@ -945,6 +1069,10 @@ namespace ACE.Server.WorldObjects
             var rotation = Location.Rotation;
             PhysicsObj.Position.Frame.Origin = pos;
             PhysicsObj.Position.Frame.Orientation = rotation;
+
+            // Initialize previous position for swept collision detection on ring spells
+            if (Spell != null && Spell.SpreadAngle == 360)
+                PreviousPosition = pos;
 
             var velocity = Velocity;
             //velocity = Vector3.Transform(velocity, Matrix4x4.Transpose(Matrix4x4.CreateFromQuaternion(rotation)));

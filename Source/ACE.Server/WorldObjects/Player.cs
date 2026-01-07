@@ -643,7 +643,7 @@ namespace ACE.Server.WorldObjects
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
-            SavePlayerToDatabase(true);
+            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
             // Don't set the player offline until they have successfully saved
             //PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 

@@ -470,7 +470,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("save-now", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Saves your session.")]
         public static void HandleSaveNow(Session session, params string[] parameters)
         {
-            session.Player.SavePlayerToDatabase();
+            session.Player.SavePlayerToDatabase(reason: Player.SaveReason.ForcedImmediate);
         }
 
         /// <summary>
@@ -1115,6 +1115,10 @@ namespace ACE.Server.Command.Handlers
 
             if (stuck.Count != 0)
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You cannot spawn {string.Join(", ", stuck.Select(i => i.WeenieClassName))} in your inventory because it cannot be picked up", ChatMessageType.Broadcast));
+
+            // Audit log
+            var itemsCreated = items.Count - stuck.Count;
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /cirand to create {itemsCreated} random {weenieType} items");
         }
 
 

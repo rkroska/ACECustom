@@ -1750,27 +1750,129 @@ namespace ACE.Server.Command.Handlers
             // TODO: output
         }
 
-        // finger [ [-a] character] [-m account]
+        // finger [ [-a] character] [-m account] [-ip ipaddress]
         [CommandHandler("finger", AccessLevel.Sentinel, CommandHandlerFlag.None, 1,
             "Show the given character's account name or vice-versa.",
-            "[ [-a] character] [-m account]\n"
-            + "Given a character name, this command displays the name of the owning account.\nIf the -m option is specified, the argument is considered an account name and the characters owned by that account are displayed.\nIf the -a option is specified, then the character name is fingered but their account is implicitly fingered as well.")]
+            "[ [-a] character] [-m account] [-ip ipaddress]\n"
+            + "Given a character name, this command displays the name of the owning account.\nIf the -m option is specified, the argument is considered an account name and the characters owned by that account are displayed.\nIf the -a option is specified, then the character name is fingered but their account is implicitly fingered as well.\nIf the -ip option is specified, the argument is considered an IP address and all accounts that have used that IP are displayed.")]
         public static void HandleFinger(Session session, params string[] parameters)
         {
-            // usage: @finger[ [-a] character] [-m account]
-            // Given a character name, this command displays the name of the owning account.If the -m option is specified, the argument is considered an account name and the characters owned by that account are displayed.If the -a option is specified, then the character name is fingered but their account is implicitly fingered as well.
+            // usage: @finger[ [-a] character] [-m account] [-ip ipaddress]
+            // Given a character name, this command displays the name of the owning account.If the -m option is specified, the argument is considered an account name and the characters owned by that account are displayed.If the -a option is specified, then the character name is fingered but their account is implicitly fingered as well.If the -ip option is specified, the argument is considered an IP address and all accounts that have used that IP are displayed.
             // @finger - Show the given character's account name or vice-versa.
 
             var lookupCharAndAccount = parameters.Contains("-a");
             var lookupByAccount = parameters.Contains("-m");
+            var lookupByIP = parameters.Contains("-ip");
 
             var charName = "";
-            if (lookupByAccount || lookupCharAndAccount)
+            if (lookupByAccount || lookupCharAndAccount || lookupByIP)
                 charName = string.Join(" ", parameters.Skip(1));
             else
                 charName = string.Join(" ", parameters);
 
             var message = "";
+            
+            // Handle IP lookup
+            if (lookupByIP)
+            {
+                if (string.IsNullOrWhiteSpace(charName))
+                {
+                    message = "Please provide an IP address after -ip flag.\n";
+                    CommandHandlerHelper.WriteOutputInfo(session, message, ChatMessageType.WorldBroadcast);
+                    return;
+                }
+
+                var searchIP = charName.Trim();
+                
+                // Validate IP address format
+                if (!IPAddress.TryParse(searchIP, out var ipAddress))
+                {
+                    message = $"'{searchIP}' is not a valid IP address.\n";
+                    CommandHandlerHelper.WriteOutputInfo(session, message, ChatMessageType.WorldBroadcast);
+                    return;
+                }
+
+                message = $"Accounts associated with IP address: {searchIP}\n";
+                message += "-------------------\n";
+
+                using (var shardContext = new ShardModels.ShardDbContext())
+                using (var authContext = new AuthDbContext())
+                {
+                    // Find accounts from char_tracker table
+                    var accountsFromTracker = shardContext.CharTracker
+                        .Where(ct => ct.LoginIP == searchIP && !string.IsNullOrEmpty(ct.AccountName))
+                        .Select(ct => ct.AccountName)
+                        .Distinct()
+                        .ToList();
+
+                    // Find accounts from Account table (CreateIP and LastLoginIP)
+                    var ipBytes = ipAddress.GetAddressBytes();
+                    var accountsFromAuth = authContext.Account
+                        .Where(a => (a.CreateIP != null && a.CreateIP.SequenceEqual(ipBytes)) ||
+                                   (a.LastLoginIP != null && a.LastLoginIP.SequenceEqual(ipBytes)))
+                        .Select(a => a.AccountName)
+                        .Distinct()
+                        .ToList();
+
+                    // Combine and deduplicate
+                    var allAccountNames = accountsFromTracker.Union(accountsFromAuth).Distinct().OrderBy(a => a).ToList();
+
+                    if (allAccountNames.Count == 0)
+                    {
+                        message += $"No accounts found associated with IP address {searchIP}.\n";
+                    }
+                    else
+                    {
+                        message += $"Found {allAccountNames.Count} account(s):\n";
+                        message += "-------------------\n";
+
+                        foreach (var accountName in allAccountNames)
+                        {
+                            var account = DatabaseManager.Authentication.GetAccountByName(accountName);
+                            if (account != null)
+                            {
+                                var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(account.AccountId, true);
+                                var activeCharCount = characters.Count(c => !c.IsDeleted && c.DeleteTime == 0);
+                                
+                                message += $"Account: {accountName}";
+                                if (account.AccessLevel > (int)AccessLevel.Player)
+                                    message += $" (AccessLevel: {((AccessLevel)account.AccessLevel).ToString()})";
+                                message += $"\n";
+                                var createLocal = account.CreateTime.ToLocalTime();
+                                message += $"  Created: {createLocal:MMM dd yyyy h:mm tt} {createLocal:zzz}\n";
+                                if (account.LastLoginTime.HasValue)
+                                {
+                                    var lastLoginLocal = account.LastLoginTime.Value.ToLocalTime();
+                                    message += $"  Last Login: {lastLoginLocal:MMM dd yyyy h:mm tt} {lastLoginLocal:zzz}\n";
+                                }
+                                else
+                                {
+                                    message += $"  Last Login: Never\n";
+                                }
+                                message += $"  Characters: {activeCharCount} active, {characters.Count} total\n";
+                                
+                                // Show active characters
+                                if (activeCharCount > 0)
+                                {
+                                    message += "  Active Characters:\n";
+                                    foreach (var character in characters.Where(c => !c.IsDeleted && c.DeleteTime == 0).Take(10))
+                                    {
+                                        message += $"    \"{(character.IsPlussed ? "+" : "")}{character.Name}\" (0x{character.Id:X8})\n";
+                                    }
+                                    if (activeCharCount > 10)
+                                        message += $"    ... and {activeCharCount - 10} more\n";
+                                }
+                                message += "-------------------\n";
+                            }
+                        }
+                    }
+                }
+
+                CommandHandlerHelper.WriteOutputInfo(session, message, ChatMessageType.WorldBroadcast);
+                return;
+            }
+
             if (!lookupByAccount && !lookupCharAndAccount)
             {
                 var character = PlayerManager.FindByName(charName);
@@ -1823,14 +1925,117 @@ namespace ACE.Server.Command.Handlers
                         message = $"Account '{account.AccountName}' is not banned.\n";
                     if (account.AccessLevel > (int)AccessLevel.Player)
                         message += $"Account '{account.AccountName}' has been granted AccessLevel.{((AccessLevel)account.AccessLevel).ToString()} rights.\n";
-                    message += $"Account created on {account.CreateTime.ToLocalTime()} by IP: {(account.CreateIP != null ? new IPAddress(account.CreateIP).ToString() : "N/A")} \n";
-                    message += $"Account last logged on at {(account.LastLoginTime.HasValue ? account.LastLoginTime.Value.ToLocalTime().ToString() : "N/A")} by IP: {(account.LastLoginIP != null ? new IPAddress(account.LastLoginIP).ToString() : "N/A")}\n";
+                    var localTime = account.CreateTime.ToLocalTime();
+                    message += $"Account created on {localTime:MMM dd yyyy h:mm tt} {localTime:zzz} by IP: {(account.CreateIP != null ? new IPAddress(account.CreateIP).ToString() : "N/A")} \n";
+                    if (account.LastLoginTime.HasValue)
+                    {
+                        var lastLoginLocal = account.LastLoginTime.Value.ToLocalTime();
+                        message += $"Account last logged on at {lastLoginLocal:MMM dd yyyy h:mm tt} {lastLoginLocal:zzz} by IP: {(account.LastLoginIP != null ? new IPAddress(account.LastLoginIP).ToString() : "N/A")}\n";
+                    }
+                    else
+                    {
+                        message += $"Account last logged on at N/A by IP: {(account.LastLoginIP != null ? new IPAddress(account.LastLoginIP).ToString() : "N/A")}\n";
+                    }
                     message += $"Account total times logged on {account.TotalTimesLoggedIn}\n";
                     var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(account.AccountId, true);
                     message += $"{characters.Count} Character(s) owned by: {account.AccountName}\n";
                     message += "-------------------\n";
-                    foreach (var character in characters.Where(x => !x.IsDeleted && x.DeleteTime == 0))
-                        message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id.ToString("X8")}\n";
+                    
+                    // Get character data (birth dates, played times, IPs) in one query
+                    using (var context = new ShardModels.ShardDbContext())
+                    {
+                        var characterIds = characters.Select(c => c.Id).ToList();
+                        
+                        // Get birth dates for all characters
+                        var birthDates = context.BiotaPropertiesString
+                            .Where(bps => characterIds.Contains(bps.ObjectId) && bps.Type == (ushort)PropertyString.DateOfBirth)
+                            .ToDictionary(bps => bps.ObjectId, bps => bps.Value);
+                        
+                        // Get total played time for all characters (sum of ConnectionDuration)
+                        var playedTimes = context.CharTracker
+                            .Where(ct => characterIds.Contains(ct.CharacterId) && ct.ConnectionDuration > 0)
+                            .GroupBy(ct => ct.CharacterId)
+                            .ToDictionary(g => g.Key, g => g.Sum(ct => ct.ConnectionDuration));
+                        
+                        // Get unique IP addresses for the account
+                        var accountIPs = context.CharTracker
+                            .Where(ct => ct.AccountName == account.AccountName && !string.IsNullOrEmpty(ct.LoginIP))
+                            .Select(ct => ct.LoginIP)
+                            .Distinct()
+                            .OrderBy(ip => ip)
+                            .ToList();
+                        
+                        // Add account IPs from account table
+                        var accountIPList = new List<string>();
+                        if (account.CreateIP != null)
+                        {
+                            try
+                            {
+                                accountIPList.Add(new IPAddress(account.CreateIP).ToString());
+                            }
+                            catch { }
+                        }
+                        if (account.LastLoginIP != null)
+                        {
+                            try
+                            {
+                                accountIPList.Add(new IPAddress(account.LastLoginIP).ToString());
+                            }
+                            catch { }
+                        }
+                        
+                        // Combine and deduplicate IPs
+                        var allIPs = accountIPs.Union(accountIPList).Distinct().OrderBy(ip => ip).ToList();
+                        
+                        // Display seen IPs for account
+                        if (allIPs.Count > 0)
+                        {
+                            message += $"Seen IPs for account: {string.Join(", ", allIPs)}\n";
+                            message += "-------------------\n";
+                        }
+                        
+                        // Display characters with birth date and played time
+                        foreach (var character in characters.Where(x => !x.IsDeleted && x.DeleteTime == 0))
+                        {
+                            var charDisplayName = $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\"";
+                            var charId = $"ID 0x{character.Id.ToString("X8")}";
+                            
+                            // Get birth date and format to match account creation date format
+                            string birthDateStr = "N/A";
+                            if (birthDates.TryGetValue(character.Id, out var birthDate))
+                            {
+                                // Try to parse the birth date string and reformat it
+                                // Birth date is stored as "dd MMMM yyyy" (e.g., "04 December 2025")
+                                // We want to format it as "MMM dd yyyy" (e.g., "Dec 04 2025") to match account creation format
+                                if (DateTime.TryParse(birthDate, out var parsedBirthDate))
+                                {
+                                    birthDateStr = parsedBirthDate.ToString("MMM dd yyyy");
+                                }
+                                else
+                                {
+                                    // If parsing fails, use the original string
+                                    birthDateStr = birthDate;
+                                }
+                            }
+                            
+                            // Get total played time
+                            string playedTimeStr = "0s";
+                            if (playedTimes.TryGetValue(character.Id, out var totalSeconds))
+                            {
+                                var ts = TimeSpan.FromSeconds(totalSeconds);
+                                if (ts.TotalDays >= 1)
+                                    playedTimeStr = $"{(int)ts.TotalDays}d {ts.Hours}h {ts.Minutes}m";
+                                else if (ts.TotalHours >= 1)
+                                    playedTimeStr = $"{ts.Hours}h {ts.Minutes}m";
+                                else if (ts.TotalMinutes >= 1)
+                                    playedTimeStr = $"{ts.Minutes}m {ts.Seconds}s";
+                                else
+                                    playedTimeStr = $"{ts.Seconds}s";
+                            }
+                            
+                            message += $"{charDisplayName}, {charId} - Birth: {birthDateStr}, Played: {playedTimeStr}\n";
+                        }
+                    }
                     var pendingDeletedCharacters = characters.Where(x => !x.IsDeleted && x.DeleteTime > 0).ToList();
                     if (pendingDeletedCharacters.Count > 0)
                     {
@@ -4282,12 +4487,20 @@ namespace ACE.Server.Command.Handlers
                     {
                         res = @lock.Unlock(session.Player.Guid.Full, null, lockCode);
                         ChatPacket.SendServerMessage(session, $"Crack {wo.WeenieType} via {lockCode} result: {res}.{opening}", ChatMessageType.Broadcast);
+                        
+                        // Log to audit channel
+                        string location = wo.Location != null ? (wo.Location.GetMapCoordStr() ?? wo.Location.ToLOCString()) : "unknown location";
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /crack on {wo.WeenieType} {wo.Name} (0x{wo.Guid:X8}) via lock code {lockCode} at {location}");
                     }
                     else if (resistLockpick.HasValue && resistLockpick > 0)
                     {
                         var difficulty = 0;
                         res = @lock.Unlock(session.Player.Guid.Full, (uint)(resistLockpick * 2), ref difficulty);
                         ChatPacket.SendServerMessage(session, $"Crack {wo.WeenieType} with skill {resistLockpick}*2 result: {res}.{opening}", ChatMessageType.Broadcast);
+                        
+                        // Log to audit channel
+                        string location = wo.Location != null ? (wo.Location.GetMapCoordStr() ?? wo.Location.ToLOCString()) : "unknown location";
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /crack on {wo.WeenieType} {wo.Name} (0x{wo.Guid:X8}) with skill {resistLockpick}*2 at {location}");
                     }
                     else
                         ChatPacket.SendServerMessage(session, $"The {wo.WeenieType} has no key code or lockpick difficulty.  Unable to crack it.{opening}", ChatMessageType.Broadcast);
@@ -4420,10 +4633,16 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length > 0)
             {
                 var player = PlayerManager.GetOnlinePlayer(parameters[0]);
-                player.EnchantmentManager.DispelAllEnchantments();
-                // remove all enchantments from equipped items for now
-                foreach (var item in player.EquippedObjects.Values)
-                    item.EnchantmentManager.DispelAllEnchantments();
+                if (player != null)
+                {
+                    player.EnchantmentManager.DispelAllEnchantments();
+                    // remove all enchantments from equipped items for now
+                    foreach (var item in player.EquippedObjects.Values)
+                        item.EnchantmentManager.DispelAllEnchantments();
+                    
+                    // Log to audit channel
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /dispel on player {player.Name} (0x{player.Guid:X8})");
+                }
             }
             else
             {
@@ -4431,6 +4650,9 @@ namespace ACE.Server.Command.Handlers
                 // remove all enchantments from equipped items for now
                 foreach (var item in session.Player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
+                
+                // Log to audit channel
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /dispel on themselves");
             }
 
 
@@ -4538,7 +4760,11 @@ namespace ACE.Server.Command.Handlers
                         items.Add(worldObject);
                 }
 
-                player.SavePlayerToDatabase();
+                // Log to audit channel
+                string location = player.Location != null ? (player.Location.GetMapCoordStr() ?? player.Location.ToLOCString()) : "unknown location";
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /fumble on player {player.Name} (0x{player.Guid:X8}) at {location}, dropped {items.Count} items");
+
+                player.SavePlayerToDatabase(reason: Player.SaveReason.ForcedImmediate);
 
                 foreach (var item in items)
                 {
@@ -6194,9 +6420,12 @@ namespace ACE.Server.Command.Handlers
                     onlinePlayer.Character.Name = newName;
                     onlinePlayer.CharacterChangesDetected = true;
                     onlinePlayer.Name = newName;
-                    onlinePlayer.SavePlayerToDatabase();
+                    onlinePlayer.SavePlayerToDatabase(reason: Player.SaveReason.ForcedImmediate);
 
                     CommandHandlerHelper.WriteOutputInfo(session, $"Player named \"{oldName}\" renamed to \"{newName}\" successfully!", ChatMessageType.Broadcast);
+                    
+                    // Log to audit channel
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /rename to rename player \"{oldName}\" to \"{newName}\" (0x{onlinePlayer.Guid:X8})");
 
                     onlinePlayer.Session.LogOffPlayer();
                 });
@@ -6229,6 +6458,9 @@ namespace ACE.Server.Command.Handlers
                     offlinePlayer.SaveBiotaToDatabase();
 
                     CommandHandlerHelper.WriteOutputInfo(session, $"Player named \"{oldName}\" renamed to \"{newName}\" successfully!", ChatMessageType.Broadcast);
+                    
+                    // Log to audit channel
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /rename to rename offline player \"{oldName}\" to \"{newName}\" (0x{offlinePlayer.Guid:X8})");
                 });
             }
             else
@@ -6783,7 +7015,11 @@ namespace ACE.Server.Command.Handlers
             salvageBag.ItemWorkmanship = itemWorkmanship;
             salvageBag.NumItemsInMaterial = numItemsInMaterial;
 
-            session.Player.TryCreateInInventoryWithNetworking(salvageBag);
+            if (session.Player.TryCreateInInventoryWithNetworking(salvageBag))
+            {
+                // Log to audit channel
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used /cisalvage to create {salvageBag.Name} (MaterialType: {materialType}, Structure: {structure}, Workmanship: {workmanship}, NumItems: {numItemsInMaterial}) (0x{salvageBag.Guid:X8})");
+            }
         }
 
         [CommandHandler("setlbenviron", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,

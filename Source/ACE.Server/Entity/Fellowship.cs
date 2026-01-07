@@ -6,6 +6,7 @@ using System.Linq;
 using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -157,6 +158,12 @@ namespace ACE.Server.Entity
             FellowshipMembers.TryAdd(player.Guid.Full, new WeakReference<Player>(player));
             player.Fellowship = inviter.Fellowship;
 
+            // Log admin joining fellowship
+            if (player.IsAbovePlayerLevel)
+            {
+                PlayerManager.BroadcastToAuditChannel(player, $"{player.Name} joined fellowship '{FellowshipName}' (Leader: {inviter.Name}, 0x{inviter.Guid:X8})");
+            }
+
             CalculateXPSharing();
 
             var fellowshipMembers = GetFellowshipMembers();
@@ -282,6 +289,18 @@ namespace ACE.Server.Entity
             {
                 if (disband)
                 {
+                    // Cache values for audit logging - only cache non-lock-sensitive values
+                    // Defer all name access to ActionQueue to avoid lock recursion
+                    bool isAdminLevel = player.IsAbovePlayerLevel;
+                    AccessLevel? accessLevel = null;
+                    string fellowshipName = FellowshipName;
+                    uint playerGuid = player.Guid.Full;
+                    
+                    if (isAdminLevel)
+                    {
+                        accessLevel = player.Session?.AccessLevel;
+                    }
+
                     var fellowshipMembers = GetFellowshipMembers();
 
                     foreach (var member in fellowshipMembers.Values)
@@ -299,9 +318,43 @@ namespace ACE.Server.Entity
 
                         member.Fellowship = null;
                     }
+
+                    // Log admin disbanding fellowship - defer to ActionQueue to avoid lock recursion
+                    // Get names in the deferred action after all locks are released
+                    if (isAdminLevel)
+                    {
+                        var playerRef = player;
+                        var cachedAccessLevel = accessLevel;
+                        var cachedFellowshipName = fellowshipName;
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                        {
+                            try
+                            {
+                                // Get name in deferred action when no locks are held
+                                var adminName = playerRef.Name;
+                                var message = $"{adminName} disbanded fellowship '{cachedFellowshipName}'";
+                                PlayerManager.BroadcastToAuditChannel(playerRef, message);
+                            }
+                            catch (Exception logEx)
+                            {
+                                log.Error($"[FELLOWSHIP] Error logging admin disband fellowship: {logEx.Message}");
+                            }
+                        }));
+                    }
                 }
                 else
                 {
+                    // Cache values for audit logging - only cache non-lock-sensitive values
+                    // Defer all name access to ActionQueue to avoid lock recursion
+                    bool isAdminLevel = player.IsAbovePlayerLevel;
+                    AccessLevel? accessLevel = null;
+                    string fellowshipName = FellowshipName;
+                    
+                    if (isAdminLevel)
+                    {
+                        accessLevel = player.Session?.AccessLevel;
+                    }
+
                     FellowshipMembers.Remove(player.Guid.Full);
 
                     if (IsLocked)
@@ -331,10 +384,44 @@ namespace ACE.Server.Entity
                     AssignNewLeader(null, null);
 
                     CalculateXPSharing();
+
+                    // Log admin leaving fellowship (as leader) - defer to ActionQueue to avoid lock recursion
+                    // Get names in the deferred action after all locks are released
+                    if (isAdminLevel)
+                    {
+                        var playerRef = player;
+                        var cachedAccessLevel = accessLevel;
+                        var cachedFellowshipName = fellowshipName;
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                        {
+                            try
+                            {
+                                // Get name in deferred action when no locks are held
+                                var adminName = playerRef.Name;
+                                var message = $"{adminName} left fellowship '{cachedFellowshipName}' (as leader)";
+                                PlayerManager.BroadcastToAuditChannel(playerRef, message);
+                            }
+                            catch (Exception logEx)
+                            {
+                                log.Error($"[FELLOWSHIP] Error logging admin leave fellowship: {logEx.Message}");
+                            }
+                        }));
+                    }
                 }
             }
             else if (!disband)
             {
+                // Cache values for audit logging - only cache non-lock-sensitive values
+                // Defer all name access to ActionQueue to avoid lock recursion
+                bool isAdminLevel = player.IsAbovePlayerLevel;
+                AccessLevel? accessLevel = null;
+                string fellowshipName = FellowshipName;
+                
+                if (isAdminLevel)
+                {
+                    accessLevel = player.Session?.AccessLevel;
+                }
+
                 FellowshipMembers.Remove(player.Guid.Full);
 
                 if (IsLocked)
@@ -363,6 +450,29 @@ namespace ACE.Server.Entity
                 player.Fellowship = null;
 
                 CalculateXPSharing();
+
+                // Log admin leaving fellowship (as member) - defer to ActionQueue to avoid lock recursion
+                // Get names in the deferred action after all locks are released
+                if (isAdminLevel)
+                {
+                    var playerRef = player;
+                    var cachedAccessLevel = accessLevel;
+                    var cachedFellowshipName = fellowshipName;
+                    WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                    {
+                        try
+                        {
+                            // Get name in deferred action when no locks are held
+                            var adminName = playerRef.Name;
+                            var message = $"{adminName} left fellowship '{cachedFellowshipName}'";
+                            PlayerManager.BroadcastToAuditChannel(playerRef, message);
+                        }
+                        catch (Exception logEx)
+                        {
+                            log.Error($"[FELLOWSHIP] Error logging admin leave fellowship: {logEx.Message}");
+                        }
+                    }));
+                }
             }
         }
 
