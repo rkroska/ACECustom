@@ -85,6 +85,7 @@ namespace ACE.Server.Entity.Actions
         PlayerAllegiance_HandleLogin,
         PlayerDatabase_SaveBiotasInParallelCallback,
         PlayerDatabase_CharacterSaveFailed,
+        PlayerTrade_ClearFlagsAfterSave,
         PlayerCombat_ChangeCombatMode,
         PlayerCombat_ChangeCombatModeCallback,
         PlayerCombat_SetActionType,
