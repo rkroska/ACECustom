@@ -107,6 +107,15 @@ namespace ACE.Server.Managers
                 return;
             }
 
+            // Clear abandoned SaveInProgress from previous server boots before checking
+            if (offlinePlayer.SaveInProgress &&
+                offlinePlayer.SaveServerBootId != ServerRuntime.BootId)
+            {
+                log.Warn($"[LOGIN] Clearing abandoned SaveInProgress for {character.Name}");
+                offlinePlayer.SaveInProgress = false;
+                offlinePlayer.SaveServerBootId = null;
+            }
+
             if (offlinePlayer.SaveInProgress)
             {
                 const int MAX_LOGIN_RETRIES = 10;
@@ -205,6 +214,16 @@ namespace ACE.Server.Managers
                 player = new Player(playerBiota, possessedBiotas.Inventory, possessedBiotas.WieldedItems, character, session);
 
             session.SetPlayer(player);
+
+            // Clear abandoned SaveInProgress from previous server boots before world entry
+            if (player.SaveInProgress &&
+                player.SaveServerBootId != ServerRuntime.BootId)
+            {
+                log.Warn($"[LOGIN] Clearing abandoned SaveInProgress for {player.Name}");
+                player.SaveInProgress = false;
+                player.SaveStartTime = DateTime.MinValue;
+                player.SaveServerBootId = null;
+            }
 
             if (stripAdminProperties) // continue stripping properties
             {
