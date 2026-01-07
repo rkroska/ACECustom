@@ -1430,21 +1430,65 @@ namespace ACE.Server.WorldObjects.Managers
 
                 case EmoteType.GrantRandomQuestStamp:
 
+                    log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp triggered. Player: {(player != null ? player.Name : "null")}");
+                    
                     if (player != null)
                     {
                         try
                         {
-                            // Parse the list of available quest stamps from emote.Message (comma-separated)
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: GrantRandomQuestStamp emote triggered for player {player.Name}.");
+                            
+                            // Parse the list of available quest stamps from emote.Message
+                            // Format: "stamp1,stamp2,..." or "REFUND:itemid|stamp1,stamp2,..."
                             if (string.IsNullOrWhiteSpace(emote.Message))
                             {
                                 log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no quest stamps specified in Message.");
                                 break;
                             }
 
-                            var availableStamps = emote.Message.Split(',')
+                            // Parse optional refund item ID from Message field
+                            uint? refundItemId = null;
+                            string stampList = emote.Message;
+                            
+                            if (emote.Message.StartsWith("REFUND:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var parts = emote.Message.Split('|', 2); // Limit to 2 parts to handle stamps with pipes
+                                if (parts.Length == 2)
+                                {
+                                    var refundPart = parts[0].Substring(7).Trim(); // Remove "REFUND:" prefix
+                                    if (!string.IsNullOrWhiteSpace(refundPart) && uint.TryParse(refundPart, out uint parsedRefundId) && parsedRefundId > 0)
+                                    {
+                                        refundItemId = parsedRefundId;
+                                        stampList = parts[1];
+                                        log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found refund item ID: {refundItemId}");
+                                    }
+                                    else
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Invalid refund item ID format: {refundPart}");
+                                    }
+                                    
+                                    // Validate that stamp list is not empty after parsing
+                                    if (string.IsNullOrWhiteSpace(stampList))
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: REFUND format found but stamp list is empty.");
+                                    }
+                                }
+                                else
+                                {
+                                    log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Invalid REFUND format. Expected 'REFUND:itemid|stamps'");
+                                }
+                            }
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Parsing quest stamps from Message: {stampList}");
+
+                            // Parse and deduplicate stamps (case-insensitive)
+                            var availableStamps = stampList.Split(',')
                                 .Select(q => q.Trim())
                                 .Where(q => !string.IsNullOrWhiteSpace(q))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
                                 .ToList();
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
 
                             if (availableStamps.Count == 0)
                             {
@@ -1454,31 +1498,87 @@ namespace ACE.Server.WorldObjects.Managers
 
                             // Get only the stamps from our available list that the player already has
                             // This is much more efficient than loading all player stamps
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Checking player's existing quest stamps...");
+                            
                             var playerExistingStamps = GetPlayerQuestStamps(player, availableStamps);
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Player has {playerExistingStamps.Count} existing stamps from available list: {string.Join(", ", playerExistingStamps)}");
 
                             // Filter out stamps the player already has
                             var eligibleStamps = availableStamps
                                 .Except(playerExistingStamps, StringComparer.OrdinalIgnoreCase)
                                 .ToList();
 
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: {eligibleStamps.Count} eligible stamps after filtering: {string.Join(", ", eligibleStamps)}");
+
                             if (eligibleStamps.Count == 0)
                             {
                                 // Player already has all available stamps
-                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("You already have all available quest stamps from this source.", ChatMessageType.Broadcast));
+                                log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Player already has all available stamps.");
+                                if (player.Session?.Network != null)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("You already have all available quest stamps from this source.", ChatMessageType.Broadcast));
+                                }
+                                
+                                // Optional: Refund item if specified in Message field (format: "REFUND:itemid|stamps")
+                                if (refundItemId.HasValue && refundItemId.Value > 0)
+                                {
+                                    log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Attempting to refund token {refundItemId.Value} to player.");
+                                    var refundItem = WorldObjectFactory.CreateNewWorldObject(refundItemId.Value);
+                                    if (refundItem != null)
+                                    {
+                                        if (player.TryCreateInInventoryWithNetworking(refundItem))
+                                        {
+                                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Successfully refunded token {refundItemId.Value} to player.");
+                                            if (player.Session?.Network != null)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your token has been returned to you.", ChatMessageType.Broadcast));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Clean up the item if we couldn't add it to inventory
+                                            refundItem.Destroy();
+                                            log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Failed to refund token {refundItemId.Value} to player - inventory may be full or item doesn't exist.");
+                                            if (player.Session?.Network != null)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Warning: Could not return your token (inventory full?). Contact an admin.", ChatMessageType.Broadcast));
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Failed to create refund item {refundItemId.Value} - item does not exist.");
+                                        if (player.Session?.Network != null)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat("Warning: Could not return your token (invalid item). Contact an admin.", ChatMessageType.Broadcast));
+                                        }
+                                    }
+                                }
                                 break;
                             }
 
                             // Randomly select one from the remaining available stamps
-                            var randomIndex = ThreadSafeRandom.Next(0, eligibleStamps.Count);
+                            // ThreadSafeRandom.Next is inclusive on both ends, so we need Count - 1 for the max
+                            // When Count == 1, this evaluates to Next(0, 0) which correctly returns 0
+                            var randomIndex = eligibleStamps.Count == 1 ? 0 : ThreadSafeRandom.Next(0, eligibleStamps.Count - 1);
                             var selectedQuestStamp = eligibleStamps[randomIndex];
 
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Selected quest stamp: {selectedQuestStamp} (index {randomIndex})");
+
                             // Grant the selected stamp
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Granting quest stamp: {selectedQuestStamp}");
                             player.QuestManager.Stamp(selectedQuestStamp);
+                            
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Successfully granted quest stamp: {selectedQuestStamp}");
                         }
                         catch (Exception ex)
                         {
                             log.Error($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp encountered an error: {ex.Message}", ex);
                         }
+                    }
+                    else
+                    {
+                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp called but player is null.");
                     }
                     break;
 
@@ -1925,13 +2025,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3250)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2000)
                                         {
@@ -2009,13 +2109,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2092,13 +2192,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2175,13 +2275,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2258,13 +2358,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
