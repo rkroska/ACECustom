@@ -262,6 +262,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void Movement()
         {
+            if (IsDead || PhysicsObj == null)
+                return;
+
             //if (!IsRanged)
                 UpdatePosition();
 
@@ -401,7 +404,7 @@ namespace ACE.Server.WorldObjects
 
         public void UpdatePosition(bool netsend = true)
         {
-            if (PhysicsObj == null)
+            if (IsDead || PhysicsObj == null)
                 return;
 
             stopwatch.Restart();
@@ -416,11 +419,14 @@ namespace ACE.Server.WorldObjects
                 //Console.WriteLine($"{Name} ({Guid}) - UpdatePosition (velocity: {PhysicsObj.CachedVelocity.Length()})");
                 Console.WriteLine($"{Name} ({Guid}) - UpdatePosition: {Location.ToLOCString()}");
 
-            if (MonsterState == State.Return && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
-                Sleep();
+            if (PhysicsObj?.MovementManager?.MoveToManager != null)
+            {
+                if (MonsterState == State.Return && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
+                    Sleep();
 
-            if (MonsterState == State.Awake && IsMoving && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
-                IsMoving = false;
+                if (MonsterState == State.Awake && IsMoving && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
+                    IsMoving = false;
+            }
 
             if (stopwatch.Elapsed.TotalSeconds > 1)
             {
@@ -660,8 +666,19 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name}.CancelMoveTo()");
 
-            PhysicsObj.MovementManager.MoveToManager.CancelMoveTo(WeenieError.ActionCancelled);
-            PhysicsObj.MovementManager.MoveToManager.FailProgressCount = 0;
+            if (IsDead || PhysicsObj == null)
+            {
+                IsMoving = false;
+                NextMoveTime = Timers.RunningTime + 1.0f;
+                StuckAttempts = 0;
+                return;
+            }
+
+            if (PhysicsObj?.MovementManager?.MoveToManager != null)
+            {
+                PhysicsObj.MovementManager.MoveToManager.CancelMoveTo(WeenieError.ActionCancelled);
+                PhysicsObj.MovementManager.MoveToManager.FailProgressCount = 0;
+            }
 
             if (MonsterState == State.Return)
                 ForceHome();
@@ -681,16 +698,17 @@ namespace ACE.Server.WorldObjects
 
         public void ForceHome()
         {
+            if (IsDead || PhysicsObj == null)
+            {
+                if (PhysicsObj == null)
+                    log.Warn($"{Name} ({Guid}) - ForceHome failed: PhysicsObj is null");
+                return;
+            }
+
             var homePos = GetPosition(PositionType.Home);
 
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - ForceHome({homePos.ToLOCString()})");
-
-            if (PhysicsObj == null)
-            {
-                log.Warn($"{Name} ({Guid}) - ForceHome failed: PhysicsObj is null");
-                return;
-            }
 
             var setPos = new SetPosition();
             setPos.Pos = new Physics.Common.Position(homePos);

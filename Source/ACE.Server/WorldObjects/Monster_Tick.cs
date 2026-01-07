@@ -182,7 +182,7 @@ namespace ACE.Server.WorldObjects
                 //MaxRange = MaxMeleeRange;   // FIXME: server position sync
             }
 
-            if (PhysicsObj.IsSticky)
+            if (PhysicsObj?.IsSticky == true)
                 UpdatePosition(false);
 
             // get distance to target
