@@ -297,6 +297,9 @@ namespace ACE.Server
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 
+            // Configure SaveScheduler stuck threshold from ServerConfig
+            SaveScheduler.Instance.SetStuckThreshold(TimeSpan.FromSeconds(ServerConfig.save_scheduler_stuck_seconds.Value));
+
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
             

@@ -668,7 +668,7 @@ namespace ACE.Server.WorldObjects
         /// If enough burden is available, this will try to add an item to the main pack. If the main pack is full, it will try to add it to the first side pack with room.<para />
         /// It will also increase the EncumbranceVal and Value.
         /// </summary>
-        public bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
+        public virtual bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
         {
             var containerInfo = this is Player p ? $"Player {p.Name}" : $"{Name} (0x{Guid})";
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
@@ -749,9 +749,6 @@ namespace ACE.Server.WorldObjects
                                 Value += (worldObject.Value ?? 0);
                                 
                                 log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
-                                
-                                var newContainerBiotaId = sidePack.Biota.Id;
-                                worldObject.EndContainerMutation(oldContainerBiotaId, newContainerBiotaId);
                                 return true;
                             }
                         }
@@ -1280,6 +1277,14 @@ namespace ACE.Server.WorldObjects
             if (worldObject.IsInContainerMutation)
                 return;
 
+            // empty base
+        }
+
+        /// <summary>
+        /// This event is raised when a stackable item's size changes within this container (merge or split)
+        /// </summary>
+        public virtual void OnStackSizeChanged(WorldObject stack, int amount)
+        {
             // empty base
         }
 

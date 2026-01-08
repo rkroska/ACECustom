@@ -324,7 +324,7 @@ namespace ACE.Server.Managers
 						}
 						else
 						{
-							log.Warn($"Could not find login record to update for character ID {characterId}");
+							log.Debug($"Could not find login record to update for character ID {characterId}");
 						}
 					}
 				}

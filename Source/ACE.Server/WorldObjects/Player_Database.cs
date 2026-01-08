@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 using ACE.Common;
 using ACE.Database;
@@ -93,33 +94,41 @@ namespace ACE.Server.WorldObjects
         // Debounced save for player-to-player gives
         private int _giveSaveChainCounter = 0;
         private int _lastCompletedGiveSave = 0;
+        
+        // Flag to prevent delayed saves from executing on destroyed/logged-out players
+        private volatile bool _isShuttingDownOrOffline = false;
 
         /// <summary>
         /// Schedules a debounced save for player-to-player gives.
         /// If another give happens within 4 seconds, the timer resets.
         /// Save happens 4 seconds after the last give.
+        /// Uses SaveScheduler instead of ActionChain.
         /// </summary>
         private void ScheduleDebouncedGiveSave()
         {
-            // Increment counter to cancel any pending save
+            // Increment counter to track save requests
             var thisSaveChainNumber = Interlocked.Increment(ref _giveSaveChainCounter);
             
             // Mark player as dirty
             CharacterChangesDetected = true;
             
-            // Schedule save 4 seconds later
-            var saveChain = new ActionChain();
-            saveChain.AddDelaySeconds(ForcedShortWindowSeconds);
-            saveChain.AddAction(WorldManager.ActionQueue, ActionType.ControlFlowDelay, () =>
+            // Use SaveScheduler with a unique key per player for coalescing
+            // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+            var saveKey = $"give:{Guid}";
+            
+            // Schedule the save with delay using Task
+            Task.Delay(TimeSpan.FromSeconds(ForcedShortWindowSeconds)).ContinueWith(_ =>
             {
+                if (_isShuttingDownOrOffline || ACE.Server.Managers.ServerManager.ShutdownInProgress)
+                    return;
+
                 // Only execute if this is still the latest save request
                 if (thisSaveChainNumber > _lastCompletedGiveSave)
                 {
                     _lastCompletedGiveSave = thisSaveChainNumber;
                     SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
-            });
-            saveChain.EnqueueChain();
+            }, TaskScheduler.Default);
         }
 
         private void SetPropertiesAtLogOut()
@@ -338,94 +347,62 @@ namespace ACE.Server.WorldObjects
             // Common callback logic for both logout and non-logout saves
             Action<bool> saveCallback = (result) =>
             {
-                var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
-                clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_SaveBiotasInParallelCallback, () =>
+                SaveInProgress = false;
+                SaveStartTime = DateTime.MinValue;
+
+                var currentPossessions = GetAllPossessions();
+
+                foreach (var possession in currentPossessions)
                 {
-                    SaveInProgress = false;
-                    SaveStartTime = DateTime.MinValue; // Reset for next save
-                    // Re-fetch possessions to avoid stale references
-                    var currentPossessions = GetAllPossessions();
-                    
-                    // Only process possessions that were actually prepared for THIS batch save
-                    // This prevents clearing flags for items that were SaveInProgress from another save
-                    foreach (var possession in currentPossessions)
+                    if (!possession.IsDestroyed && preparedGuidsForCallback.Contains(possession.Guid.Full))
                     {
-                        if (!possession.IsDestroyed && preparedGuidsForCallback.Contains(possession.Guid.Full))
-                        {
-                            // This possession was prepared for this batch, clear its flags
-                            possession.SaveInProgress = false;
-                            possession.SaveStartTime = DateTime.MinValue; // Reset for next save
-                            if (result)
-                                possession.ChangesDetected = false;
-                            else
-                            {
-                                possession.ChangesDetected = true;
-                                log.Warn($"[SAVE] Batch save failed for {Name} - restored ChangesDetected for {possession.Name} (0x{possession.Guid}) to prevent data loss");
-                            }
-                        }
+                        possession.SaveInProgress = false;
+                        possession.SaveStartTime = DateTime.MinValue;
+
+                        if (result)
+                            possession.ChangesDetected = false;
+                        else
+                            possession.ChangesDetected = true;
                     }
-                    
-                    if (result)
+                }
+
+                if (result)
+                {
+                    ChangesDetected = false;
+
+                    if (duringLogout)
                     {
-                        // Clear ChangesDetected if it was set (we saved those changes)
-                        // If new changes occurred, they'll set it back to true
-                        if (ChangesDetected)
-                            ChangesDetected = false;
-                        
-                        if (duringLogout)
-                        {
-                            // Don't set the player offline until they have been successfully saved
-                            // This prevents login until save completes
-                            // NOTE: Due to coalescing, logout saves are asynchronous. Login attempts
-                            // may block until the coalesced save completes, which could add latency
-                            // under high save churn. This is intentional to ensure data consistency.
-                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
-                        }
-                        log.Debug($"{Name} has been saved. It took {(DateTime.UtcNow - requestedTimeUtc).TotalMilliseconds:N0} ms to process the request.");
+                        // SAFE: does not enqueue gameplay, only mutates dictionaries
+                        PlayerManager.SwitchPlayerFromOnlineToOffline(this);
                     }
-                    else
-                    {
-                        // Restore ChangesDetected so it can be retried
-                        ChangesDetected = true;
-                        // This will trigger a boot on next player tick
-                        BiotaSaveFailed = true;
-                        
-                        // If character save succeeded but biota save failed, restore character dirty state
-                        // so character changes can be retried as part of the same logical operation
-                        // This prevents character and biota from diverging on partial failure.
-                        // NOTE: This is manual coordination - character and biota saves are separate
-                        // and ordering relies on call sequencing, not structural guarantees.
-                        if (!CharacterChangesDetected)
-                        {
-                            CharacterChangesDetected = true;
-                            log.Warn($"[SAVE] Biota save failed for {Name} - restored CharacterChangesDetected to prevent desync");
-                        }
-                        
-                        // ARCHITECTURAL LIMITATION: If a possession mutates after getBiotas runs
-                        // but before this failure callback, correctness depends on:
-                        // - ChangesDetected being set later by the mutation
-                        // - Another save request being generated
-                        // - EnsureSaveIfOwed eventually running
-                        // Recovery is improved but not guaranteed at Player level.
-                        // The DB coalescer can handle this better.
-                        
-                        if (duringLogout)
-                        {
-                            // Still set player offline even on failure, but mark as failed
-                            // This will trigger a boot on next player tick if they log back in
-                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
-                        }
-                    }
-                });
-                clearFlagsAction.EnqueueChain();
+                }
+                else
+                {
+                    ChangesDetected = true;
+                    BiotaSaveFailed = true;
+
+                    if (!CharacterChangesDetected)
+                        CharacterChangesDetected = true;
+
+                    if (duringLogout)
+                        PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                }
             };
 
-            // Use coalesced save for both logout and non-logout saves
-            DatabaseManager.Shard.SavePlayerBiotasCoalesced(
-                Guid.Full,
-                getBiotas,
-                saveCallback,
-                duringLogout ? $"logout:{Guid}" : Guid.ToString());
+            // Use SaveScheduler to schedule the database save
+            // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+            var saveKey = duringLogout ? $"logout:{Guid}" : $"player:{Guid}";
+            SaveScheduler.Instance.RequestSave(saveKey, ACE.Database.SaveScheduler.SaveType.Periodic, () =>
+            {
+                // This runs on SaveScheduler worker thread
+                // Call SerializedShardDatabase method which enqueues to _uniqueQueue
+                DatabaseManager.Shard.SavePlayerBiotasCoalesced(
+                    Guid.Full,
+                    getBiotas,
+                    saveCallback,
+                    duringLogout ? $"logout:{Guid}" : Guid.ToString());
+                return true; // Indicates successful enqueue to _uniqueQueue
+            });
         }
 
         /// <summary>
@@ -448,22 +425,22 @@ namespace ACE.Server.WorldObjects
             Action<bool> saveCallback = (result) =>
             {
                 if (!result)
-                {
-                    // Marshal CharacterSaveFailed to world thread (same pattern as BiotaSaveFailed)
-                    var setFailedAction = new ACE.Server.Entity.Actions.ActionChain();
-                    setFailedAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_CharacterSaveFailed, () =>
-                    {
-                        // This will trigger a boot on next player tick
-                        CharacterSaveFailed = true;
-                    });
-                    setFailedAction.EnqueueChain();
-                }
+                    CharacterSaveFailed = true;
             };
 
-            DatabaseManager.Shard.SaveCharacterCoalesced(
-                Character.Id,
-                getCharacter,
-                duringLogout ? null : saveCallback);
+            // Use SaveScheduler to schedule the database save
+            // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+            var saveKey = $"character:{Character.Id}";
+            SaveScheduler.Instance.RequestSave(saveKey, ACE.Database.SaveScheduler.SaveType.Periodic, () =>
+            {
+                // This runs on SaveScheduler worker thread
+                // Call SerializedShardDatabase method which enqueues to _uniqueQueue
+                DatabaseManager.Shard.SaveCharacterCoalesced(
+                    Character.Id,
+                    getCharacter,
+                    duringLogout ? null : saveCallback);
+                return true; // Indicates successful enqueue to _uniqueQueue
+            });
         }
 
         /// <summary>
@@ -480,6 +457,15 @@ namespace ACE.Server.WorldObjects
                 return;
 
             SaveCharacterToDatabaseInternal(duringLogout);
+        }
+
+        /// <summary>
+        /// Override Destroy to set shutdown flag before destruction
+        /// </summary>
+        public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
+        {
+            _isShuttingDownOrOffline = true;
+            base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
         }
     }
 }

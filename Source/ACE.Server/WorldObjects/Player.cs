@@ -525,6 +525,7 @@ namespace ACE.Server.WorldObjects
         {
             IsBusy = true;
             IsLoggingOut = true;
+            _isShuttingDownOrOffline = true;
 
             if (Fellowship != null)
                 FellowshipQuit(false);
