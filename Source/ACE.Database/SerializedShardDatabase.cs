@@ -981,9 +981,28 @@ namespace ACE.Database
         }
 
         /// <summary>
-        /// Queues offline player saves to be processed in the background
+        /// Queues offline player saves to be processed in the background.
+        /// This is a legacy convenience method that enqueues directly to _uniqueQueue.
+        /// 
+        /// For new code, use SaveScheduler.RequestSave() with a work delegate that calls QueueOfflinePlayerSavesInternal().
+        /// Architecture: Gameplay → SaveScheduler.RequestSave() → (work delegate) → QueueOfflinePlayerSavesInternal() → _uniqueQueue → DB
+        /// 
+        /// NOTE: Inner layer (SerializedShardDatabase) does not call outer layer (SaveScheduler).
+        /// This method is for backward compatibility only.
         /// </summary>
         public void QueueOfflinePlayerSaves(Action<bool> callback = null)
+        {
+            // Direct enqueue to _uniqueQueue (bypasses SaveScheduler for backward compatibility)
+            // Inner layer does not call outer layer - this method is for legacy code only
+            QueueOfflinePlayerSavesInternal(callback);
+        }
+
+        /// <summary>
+        /// Internal method that performs the actual offline player save work.
+        /// Called by SaveScheduler's work delegate.
+        /// Enqueues work to _uniqueQueue which is processed by DB worker thread.
+        /// </summary>
+        public void QueueOfflinePlayerSavesInternal(Action<bool> callback = null)
         {
             // Use a stable key so multiple enqueues collapse to the most recent
             var workItemKey = "OfflinePlayerSaves";
@@ -1001,7 +1020,7 @@ namespace ACE.Database
                     }
                     else
                     {
-                        // Call the existing SaveOfflinePlayersWithChanges method directly
+                        // Call the existing PerformOfflinePlayerSaves method directly
                         var saveMethod = playerManagerType.GetMethod(
                             "PerformOfflinePlayerSaves",
                             System.Reflection.BindingFlags.Public
