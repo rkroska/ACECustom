@@ -469,6 +469,70 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* increments self's PropertyInt stat by some amount */
+                case EmoteType.IncrementMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var current = WorldObject.GetProperty(intProperty) ?? 0;
+                        current += emote.Amount ?? 1;
+                        WorldObject.SetProperty(intProperty, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, current));
+                    }
+                    break;
+
+                /* decrements self's PropertyInt stat by some amount */
+                case EmoteType.DecrementMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var current = WorldObject.GetProperty(intProperty) ?? 0;
+                        current -= emote.Amount ?? 1;
+                        WorldObject.SetProperty(intProperty, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, current));
+                    }
+                    break;
+
+                /* increments self's PropertyInt64 stat by some amount */
+                case EmoteType.IncrementMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var current = WorldObject.GetProperty(int64Property) ?? 0;
+                        current += emote.Amount64 ?? 1;
+                        WorldObject.SetProperty(int64Property, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(selfPlayer, int64Property, current));
+                    }
+                    break;
+
+                /* decrements self's PropertyInt64 stat by some amount */
+                case EmoteType.DecrementMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var current = WorldObject.GetProperty(int64Property) ?? 0;
+                        current -= emote.Amount64 ?? 1;
+                        WorldObject.SetProperty(int64Property, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(selfPlayer, int64Property, current));
+                    }
+                    break;
+
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 
