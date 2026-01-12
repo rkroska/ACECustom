@@ -449,8 +449,37 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    // Track character saves: save is finishing execution
-                    // Decrement active count first, then check if callbacks should be drained
+                    // CRITICAL ORDERING: Check for dirty work BEFORE draining callbacks
+                    // This ensures CharacterSaveState reflects all pending work (including requeues)
+                    // before we decide if callbacks should fire. Callbacks must only fire when
+                    // it's impossible for more work to exist.
+
+                    // Clear executing flag
+                    Volatile.Write(ref state.Executing, 0);
+
+                    // Check if dirty flag was set (new request arrived while executing)
+                    // Dirty is only set when Executing == 1, preventing double requeue from Queued + Dirty
+                    var wasDirty = Interlocked.Exchange(ref state.Dirty, 0) == 1;
+
+                    // Clear Queued flag for this execution (always clear, regardless of current value)
+                    // This ensures we don't get stuck in an infinite requeue loop
+                    Interlocked.Exchange(ref state.Queued, 0);
+
+                    // Check if new work arrived during execution
+                    // wasDirty indicates a new request arrived while Executing == 1
+                    // Generation check catches any new requests that incremented Generation
+                    var currentGen = Volatile.Read(ref state.Generation);
+                    var hasNewWork = wasDirty || (currentGen != processingGen);
+
+                    // If new work arrived, reflect it in CharacterSaveState BEFORE finishing execution
+                    // This ensures pendingCount is incremented before we check if callbacks should drain
+                    if (hasNewWork && characterId.HasValue && charState != null)
+                    {
+                        charState.Requeue(); // pending++ - reflects the requeue in CharacterSaveState
+                    }
+
+                    // Now finish execution and check if callbacks should drain
+                    // At this point, CharacterSaveState accurately reflects all pending work
                     if (charState != null)
                     {
                         charState.FinishExecution(); // Decrements _activeCount
@@ -496,23 +525,7 @@ namespace ACE.Database
                         }
                     }
 
-                    // Clear executing flag
-                    Volatile.Write(ref state.Executing, 0);
-
-                    // Check if dirty flag was set (new request arrived while executing)
-                    // Dirty is only set when Executing == 1, preventing double requeue from Queued + Dirty
-                    var wasDirty = Interlocked.Exchange(ref state.Dirty, 0) == 1;
-
-                    // Clear Queued flag for this execution (always clear, regardless of current value)
-                    // This ensures we don't get stuck in an infinite requeue loop
-                    Interlocked.Exchange(ref state.Queued, 0);
-
-                    // Check if new work arrived during execution
-                    // wasDirty indicates a new request arrived while Executing == 1
-                    // Generation check catches any new requests that incremented Generation
-                    var currentGen = Volatile.Read(ref state.Generation);
-                    var hasNewWork = wasDirty || (currentGen != processingGen);
-
+                    // Handle actual queue re-enqueue (after CharacterSaveState is updated)
                     // Requeue only if new work arrived during execution
                     // If new work arrives after we clear Executing, RequestSaveInternal will handle it
                     if (hasNewWork)
@@ -523,12 +536,6 @@ namespace ACE.Database
                         EnqueueByPriority(key, state.Priority);
                         if (wasDirty)
                             Interlocked.Increment(ref _requeued);
-
-                        // Track character saves: new save was requeued
-                        if (characterId.HasValue && charState != null)
-                        {
-                            charState.Requeue();
-                        }
                     }
                     else
                     {
