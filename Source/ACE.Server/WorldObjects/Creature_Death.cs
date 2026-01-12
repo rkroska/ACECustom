@@ -257,14 +257,14 @@ namespace ACE.Server.WorldObjects
             // this is to prevent ordering bugs, such as a player being processed after a summon,
             // and already being at the 1 cap for players
 
-            var summon_credit_cap = (int)PropertyManager.GetLong("summoning_killtask_multicredit_cap") - 1;
+            var summon_credit_cap = (int)ServerConfig.summoning_killtask_multicredit_cap.Value - 1;
 
             var playerCredits = new Dictionary<ObjectGuid, int>();
             var summonCredits = new Dictionary<ObjectGuid, int>();
 
             // this option isn't really needed anymore, but keeping it around for compatibility
             // it is now synonymous with summoning_killtask_multicredit_cap <= 1
-            if (!PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
+            if (!ServerConfig.allow_summoning_killtask_multicredit.Value)
                 summon_credit_cap = 0;
 
             foreach (var kvp in DamageHistory.TotalDamage)
@@ -303,7 +303,7 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!PropertyManager.GetBool("fellow_kt_killer"))   
+                else if (!ServerConfig.fellow_kt_killer.Value)   
                 {
                     continue;
                 }
@@ -370,7 +370,7 @@ namespace ACE.Server.WorldObjects
                     if (playerDamager != null && playerDamager.QuestManager.HasQuest(questName))
                     {
                         // only add combat pet to eligible receivers if player has quest, and allow_summoning_killtask_multicredit = true (default, retail)
-                        if (DamageHistory.HasDamager(playerDamager, true) && PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
+                        if (DamageHistory.HasDamager(playerDamager, true) && ServerConfig.allow_summoning_killtask_multicredit.Value)
                             receivers[kvp.Value.Guid] = kvp.Value;  // add CombatPet
                         else
                             receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);   // add dummy profile for PetOwner
@@ -400,7 +400,7 @@ namespace ACE.Server.WorldObjects
                     // just add a fake DamageHistoryInfo for reference
                     receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);
                 }
-                else if (PropertyManager.GetBool("fellow_kt_killer"))
+                else if (ServerConfig.fellow_kt_killer.Value)
                 {
                     // if this option is enabled (retail default), the killer is required to have kill task
                     // for it to share with fellowship
@@ -570,37 +570,87 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var dropped = player.CalculateDeathItems(corpse);
-
-                    corpse.RecalculateDecayTime(player);
-
-                    if (dropped.Count > 0)
-                        saveCorpse = true;
-
-                    if ((player.Location.Cell & 0xFFFF) < 0x100)
+                    // If player is cloaked as creature, handle creature death mechanics
+                    if (player.CloakStatus == CloakStatus.Creature)
                     {
-                        player.SetPosition(PositionType.LastOutsideDeath, new Position(corpse.Location));
-                        player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePosition(player, PositionType.LastOutsideDeath, corpse.Location));
+                        // Mark corpse as monster for creature rot timer
+                        corpse.IsMonster = true;
+
+                        // Try to get the creature weenie from WeenieClassId (if morphed)
+                        var creatureWeenie = DatabaseManager.World.GetCachedWeenie(player.WeenieClassId);
+                        if (creatureWeenie != null)
+                        {
+                            // Check if this is a creature weenie
+                            var isCreatureWeenie = creatureWeenie.WeenieType == WeenieType.Creature ||
+                                                  creatureWeenie.WeenieType == WeenieType.Cow ||
+                                                  creatureWeenie.WeenieType == WeenieType.Pet ||
+                                                  creatureWeenie.WeenieType == WeenieType.CombatPet;
+
+                            if (isCreatureWeenie)
+                            {
+                                // Set TimeToRot from creature weenie (use creature rot timer, not player rot timer)
+                                var creatureTimeToRot = creatureWeenie.GetProperty(PropertyFloat.TimeToRot);
+                                if (creatureTimeToRot.HasValue)
+                                    corpse.TimeToRot = creatureTimeToRot.Value;
+                                else
+                                    // Default creature rot time if not specified (5 minutes)
+                                    corpse.TimeToRot = 300;
+
+                                // Get DeathTreasureType from the creature weenie
+                                var deathTreasureType = creatureWeenie.GetProperty(PropertyDataId.DeathTreasureType);
+                                if (deathTreasureType.HasValue)
+                                {
+                                    var deathTreasure = DatabaseManager.World.GetCachedDeathTreasure(deathTreasureType.Value);
+                                    if (deathTreasure != null)
+                                    {
+                                        // Generate creature loot
+                                        var lootItems = LootGenerationFactory.CreateRandomLootObjects(deathTreasure);
+                                        foreach (var item in lootItems)
+                                        {
+                                            corpse.TryAddToInventory(item);
+                                            DoCantripLogging(killer, item);
+                                        }
+                                    }
+                                }
+                                // Even if no loot, corpse is still created (empty)
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Normal player death handling
+                        var dropped = player.CalculateDeathItems(corpse);
+
+                        corpse.RecalculateDecayTime(player);
 
                         if (dropped.Count > 0)
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your corpse is located at ({corpse.Location.GetMapCoordStr()}).", ChatMessageType.Broadcast));
+                            saveCorpse = true;
+
+                        if ((player.Location.Cell & 0xFFFF) < 0x100)
+                        {
+                            player.SetPosition(PositionType.LastOutsideDeath, new Position(corpse.Location));
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePosition(player, PositionType.LastOutsideDeath, corpse.Location));
+
+                            if (dropped.Count > 0)
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your corpse is located at ({corpse.Location.GetMapCoordStr()}).", ChatMessageType.Broadcast));
+                        }
+
+                        var isPKdeath = player.IsPKDeath(killer);
+                        var isPKLdeath = player.IsPKLiteDeath(killer);
+
+                        if (isPKdeath)
+                            corpse.PkLevel = PKLevel.PK;
+
+                        if (!isPKdeath && !isPKLdeath)
+                        {
+                            var miserAug = player.AugmentationLessDeathItemLoss * 5;
+                            if (miserAug > 0)
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your augmentation has reduced the number of items you can lose by {miserAug}!", ChatMessageType.Broadcast));
+                        }
+
+                        if (dropped.Count == 0 && !isPKLdeath)
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have retained all your items. You do not need to recover your corpse!", ChatMessageType.Broadcast));
                     }
-
-                    var isPKdeath = player.IsPKDeath(killer);
-                    var isPKLdeath = player.IsPKLiteDeath(killer);
-
-                    if (isPKdeath)
-                        corpse.PkLevel = PKLevel.PK;
-
-                    if (!isPKdeath && !isPKLdeath)
-                    {
-                        var miserAug = player.AugmentationLessDeathItemLoss * 5;
-                        if (miserAug > 0)
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your augmentation has reduced the number of items you can lose by {miserAug}!", ChatMessageType.Broadcast));
-                    }
-
-                    if (dropped.Count == 0 && !isPKLdeath)
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have retained all your items. You do not need to recover your corpse!", ChatMessageType.Broadcast));
                 }
             }
             else
@@ -681,7 +731,10 @@ namespace ACE.Server.WorldObjects
                             foreach (var wo in savedObjects)
                             {
                                 if (!wo.IsDestroyed)
+                                {
                                     wo.SaveInProgress = false;
+                                    wo.SaveStartTime = DateTime.MinValue; // Reset for next save
+                                }
                             }
 
                             if (!result)
@@ -725,7 +778,7 @@ namespace ACE.Server.WorldObjects
 
             // move wielded treasure over, which also should include Wielded objects not marked for destroy on death.
             // allow server operators to configure this behavior due to errors in createlist post 16py data
-            var dropFlags = PropertyManager.GetBool("creatures_drop_createlist_wield") ? DestinationType.WieldTreasure : DestinationType.Treasure;
+            var dropFlags = ServerConfig.creatures_drop_createlist_wield.Value ? DestinationType.WieldTreasure : DestinationType.Treasure;
 
             // Build list of items to move (optimized from Concat + Where + ToList)
             var itemsToMove = new List<WorldObject>();

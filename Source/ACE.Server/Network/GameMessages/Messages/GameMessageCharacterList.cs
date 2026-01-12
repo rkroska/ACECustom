@@ -29,10 +29,10 @@ namespace ACE.Server.Network.GameMessages.Messages
             }
 
             Writer.Write(0u);
-            var slotCount = (uint)PropertyManager.GetLong("max_chars_per_account");
+            var slotCount = (uint)ServerConfig.max_chars_per_account.Value;
             Writer.Write(slotCount);
             Writer.WriteString16L(session.Account);
-            var useTurbineChat = Convert.ToUInt32(PropertyManager.GetBool("use_turbine_chat"));
+            var useTurbineChat = Convert.ToUInt32(ServerConfig.use_turbine_chat.Value);
             Writer.Write(useTurbineChat);
             Writer.Write(1u /*hasThroneOfDestiny*/);
         }

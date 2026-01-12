@@ -7,14 +7,6 @@ namespace ACE.Common.Extensions
     public static class EnumHelper
     {
         /// <summary>
-        /// Returns a list of flags for enum
-        /// </summary>
-        public static List<Enum> GetFlags(this Enum e)
-        {
-            return Enum.GetValues(e.GetType()).Cast<Enum>().Where(e.HasFlag).ToList();
-        }
-
-        /// <summary>
         /// Returns the # of bits set in a Flags enum
         /// </summary>
         /// <param name="enumVal">The enum uint value</param>

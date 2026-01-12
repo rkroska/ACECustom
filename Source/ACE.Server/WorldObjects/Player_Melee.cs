@@ -189,7 +189,7 @@ namespace ACE.Server.WorldObjects
             {
                 // sticky melee
                 var angle = GetAngle(target);
-                if (angle > PropertyManager.GetDouble("melee_max_angle"))
+                if (angle > ServerConfig.melee_max_angle.Value)
                 {
                     var rotateTime = Rotate(target);
 
@@ -475,7 +475,7 @@ namespace ACE.Server.WorldObjects
 
             // broadcast player swing animation to clients
             var motion = new Motion(this, swingAnimation, animSpeed);
-            if (PropertyManager.GetBool("persist_movement"))
+            if (ServerConfig.persist_movement.Value)
             {
                 motion.Persist(CurrentMotionState);
             }

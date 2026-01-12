@@ -5,9 +5,7 @@ using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
-using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
-using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 
 using log4net;
@@ -16,10 +14,9 @@ namespace ACE.Server.Network.Handlers
 {
     public static class TurbineChatHandler
     {
-        [InboundGameMessage(InboundGameMessageOpcode.TurbineChat, SessionState.WorldConnected)]
         public static void TurbineChatReceived(ClientMessage clientMessage, Session session)
         {
-            if (!PropertyManager.GetBool("use_turbine_chat"))
+            if (!ServerConfig.use_turbine_chat.Value)
                 return;
 
             clientMessage.Payload.ReadUInt32(); // Bytes to follow
@@ -156,40 +153,40 @@ namespace ACE.Server.Network.Handlers
                 {
                     if (!session.Player.IsOlthoiPlayer) return;
 
-                    if (PropertyManager.GetBool("chat_disable_olthoi"))
+                    if (ServerConfig.chat_disable_olthoi.Value)
                     {
                         HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, string.Empty);
                         return;
                     }
 
-                    if (PropertyManager.GetBool("chat_echo_only"))
+                    if (ServerConfig.chat_echo_only.Value)
                     {
                         session.Network.EnqueueSend(gameMessageTurbineChat);
                         session.Network.EnqueueSend(new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_RESPONSE_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, contextId, null, null, 0, adjustedchatType));
                         return;
                     }
 
-                    //if (PropertyManager.GetBool("chat_requires_account_15days") && !session.Player.Account15Days)
+                    //if (ServerConfig.chat_requires_account_15days.Value && !session.Player.Account15Days)
                     //{
                     //    HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, "because this account is not 15 days old");
                     //    return;
                     //}
 
-                    //var chat_requires_account_time_seconds = PropertyManager.GetLong("chat_requires_account_time_seconds");
+                    //var chat_requires_account_time_seconds = ServerConfig.chat_requires_account_time_seconds.Value;
                     //if (chat_requires_account_time_seconds > 0 && (DateTime.UtcNow - session.Player.Account.CreateTime).TotalSeconds < chat_requires_account_time_seconds)
                     //{
                     //    HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, "because this account is not old enough");
                     //    return;
                     //}
 
-                    //var chat_requires_player_age = PropertyManager.GetLong("chat_requires_player_age");
+                    //var chat_requires_player_age = ServerConfig.chat_requires_player_age.Value;
                     //if (chat_requires_player_age > 0 && session.Player.Age < chat_requires_player_age)
                     //{
                     //    HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, "because this character has not been played enough");
                     //    return;
                     //}
 
-                    //var chat_requires_player_level = PropertyManager.GetLong("chat_requires_player_level");
+                    //var chat_requires_player_level = ServerConfig.chat_requires_player_level.Value;
                     //if (chat_requires_player_level > 0 && session.Player.Level < chat_requires_player_level)
                     //{
                     //    HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, $"because this character has reached level {chat_requires_player_level}");
@@ -202,9 +199,9 @@ namespace ACE.Server.Network.Handlers
                         if (!recipient.IsOlthoiPlayer && !recipient.IsAdmin)
                             continue;
 
-                        if (PropertyManager.GetBool("chat_disable_olthoi"))
+                        if (ServerConfig.chat_disable_olthoi.Value)
                         {
-                            if (PropertyManager.GetBool("chat_echo_reject"))
+                            if (ServerConfig.chat_echo_reject.Value)
                                 session.Network.EnqueueSend(gameMessageTurbineChat);
 
                             session.Network.EnqueueSend(new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_RESPONSE_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, contextId, null, null, 0, adjustedchatType));
@@ -264,34 +261,34 @@ namespace ACE.Server.Network.Handlers
                         return;
                     }
 
-                    if (PropertyManager.GetBool("chat_echo_only"))
+                    if (ServerConfig.chat_echo_only.Value)
                     {
                         session.Network.EnqueueSend(gameMessageTurbineChat);
                         session.Network.EnqueueSend(new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_RESPONSE_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, contextId, null, null, 0, adjustedchatType));
                         return;
                     }
 
-                    if (PropertyManager.GetBool("chat_requires_account_15days") && !session.Player.Account15Days)
+                    if (ServerConfig.chat_requires_account_15days.Value && !session.Player.Account15Days)
                     {
                         HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, "because this account is not 15 days old");
                         return;
                     }
 
-                    var chat_requires_account_time_seconds = PropertyManager.GetLong("chat_requires_account_time_seconds");
+                    var chat_requires_account_time_seconds = ServerConfig.chat_requires_account_time_seconds.Value;
                     if (chat_requires_account_time_seconds > 0 && (DateTime.UtcNow - session.Player.Account.CreateTime).TotalSeconds < chat_requires_account_time_seconds)
                     {
                         HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, "because this account is not old enough");
                         return;
                     }
 
-                    var chat_requires_player_age = PropertyManager.GetLong("chat_requires_player_age");
+                    var chat_requires_player_age = ServerConfig.chat_requires_player_age.Value;
                     if (chat_requires_player_age > 0 && session.Player.Age < chat_requires_player_age)
                     {
                         HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, "because this character has not been played enough");
                         return;
                     }
 
-                    var chat_requires_player_level = PropertyManager.GetLong("chat_requires_player_level");
+                    var chat_requires_player_level = ServerConfig.chat_requires_player_level.Value;
                     if (chat_requires_player_level > 0 && session.Player.Level < chat_requires_player_level)
                     {
                         HandleChatReject(session, contextId, chatType, gameMessageTurbineChat, $"because this character has reached level {chat_requires_player_level}");
@@ -307,12 +304,12 @@ namespace ACE.Server.Network.Handlers
                             channelID == TurbineChatChannel.Roleplay && !recipient.GetCharacterOption(CharacterOption.ListenToRoleplayChat))
                             continue;
 
-                        if ((channelID == TurbineChatChannel.General && PropertyManager.GetBool("chat_disable_general"))
-                            || (channelID == TurbineChatChannel.Trade && PropertyManager.GetBool("chat_disable_trade"))
-                            || (channelID == TurbineChatChannel.LFG && PropertyManager.GetBool("chat_disable_lfg"))
-                            || (channelID == TurbineChatChannel.Roleplay && PropertyManager.GetBool("chat_disable_roleplay")))
+                        if ((channelID == TurbineChatChannel.General && ServerConfig.chat_disable_general.Value)
+                            || (channelID == TurbineChatChannel.Trade && ServerConfig.chat_disable_trade.Value)
+                            || (channelID == TurbineChatChannel.LFG && ServerConfig.chat_disable_lfg.Value)
+                            || (channelID == TurbineChatChannel.Roleplay && ServerConfig.chat_disable_roleplay.Value))
                         {
-                            if (PropertyManager.GetBool("chat_echo_reject"))
+                            if (ServerConfig.chat_echo_reject.Value)
                                 session.Network.EnqueueSend(gameMessageTurbineChat);
 
                             session.Network.EnqueueSend(new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_RESPONSE_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, contextId, null, null, 0, adjustedchatType));
@@ -339,10 +336,10 @@ namespace ACE.Server.Network.Handlers
 
         private static void HandleChatReject(Session session, uint contextId, ChatType chatType, GameMessageTurbineChat gameMessageTurbineChat, string rejectReason)
         {
-            if (PropertyManager.GetBool("chat_echo_reject"))
+            if (ServerConfig.chat_echo_reject.Value)
                 session.Network.EnqueueSend(gameMessageTurbineChat);
 
-            if (PropertyManager.GetBool("chat_inform_reject"))
+            if (ServerConfig.chat_inform_reject.Value)
             {
                 session.Network.EnqueueSend(new GameEventCommunicationTransientString(session, $"{chatType} is currently disabled{(string.IsNullOrEmpty(rejectReason) ? "" : $" for you {rejectReason}")}."));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{chatType} is currently disabled{(string.IsNullOrEmpty(rejectReason) ? "" : $" for you {rejectReason}")}.", ChatMessageType.Broadcast));
@@ -358,34 +355,34 @@ namespace ACE.Server.Network.Handlers
             switch (chatType)
             {
                 case ChatType.Allegiance:
-                    if (!PropertyManager.GetBool("chat_log_allegiance"))
+                    if (!ServerConfig.chat_log_allegiance.Value)
                         return;
                     break;
                 case ChatType.General:
-                    if (!PropertyManager.GetBool("chat_log_general"))
+                    if (!ServerConfig.chat_log_general.Value)
                         return;
                     break;
                 case ChatType.LFG:
-                    if (!PropertyManager.GetBool("chat_log_lfg"))
+                    if (!ServerConfig.chat_log_lfg.Value)
                         return;
                     break;
                 case ChatType.Olthoi:
-                    if (!PropertyManager.GetBool("chat_log_olthoi"))
+                    if (!ServerConfig.chat_log_olthoi.Value)
                         return;
                     break;
                 case ChatType.Roleplay:
-                    if (!PropertyManager.GetBool("chat_log_roleplay"))
+                    if (!ServerConfig.chat_log_roleplay.Value)
                         return;
                     break;
                 case ChatType.Society:
                 case ChatType.SocietyCelHan:
                 case ChatType.SocietyEldWeb:
                 case ChatType.SocietyRadBlo:
-                    if (!PropertyManager.GetBool("chat_log_society"))
+                    if (!ServerConfig.chat_log_society.Value)
                         return;
                     break;
                 case ChatType.Trade:
-                    if (!PropertyManager.GetBool("chat_log_trade"))
+                    if (!ServerConfig.chat_log_trade.Value)
                         return;
                     break;
                 default:

@@ -200,7 +200,7 @@ namespace ACE.Server.Network.Structure
                 {
                     if (slumLord.HouseOwner.HasValue && slumLord.HouseOwner.Value > 0)
                     {
-                        longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !PropertyManager.GetBool("house_rent_enabled") ? "" : "not ")}been paid.\n";
+                        longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !ServerConfig.house_rent_enabled.Value ? "" : "not ")}been paid.\n";
 
                         PropertiesInt.Clear();
                     }
@@ -219,7 +219,7 @@ namespace ACE.Server.Network.Structure
 
                     if (slumLord.AllegianceMinLevel.HasValue)
                     {
-                        var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+                        var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
                         if (allegianceMinLevel == -1)
                             allegianceMinLevel = slumLord.AllegianceMinLevel.Value;
 
@@ -434,7 +434,7 @@ namespace ACE.Server.Network.Structure
                         ResistColor = ResistMaskHelper.GetColorMask(wo);
                     }
                 }
-                else if (!PropertyManager.GetBool("show_mana_conv_bonus_0"))
+                else if (!ServerConfig.show_mana_conv_bonus_0.Value)
                 {
                     PropertiesFloat.Remove(PropertyFloat.ManaConversionMod);
                 }
@@ -504,7 +504,7 @@ namespace ACE.Server.Network.Structure
 
             // this technically wasn't a feature in retail
 
-            if (wo.Wielder != null && wo.IsEnchantable && wo.WeenieType != WeenieType.Clothing && !wo.IsShield && PropertyManager.GetBool("show_aura_buff"))
+            if (wo.Wielder != null && wo.IsEnchantable && wo.WeenieType != WeenieType.Clothing && !wo.IsShield && ServerConfig.show_aura_buff.Value)
             {
                 // get all currently active item enchantment auras on the player
                 var wielderEnchantments = wo.Wielder.EnchantmentManager.GetEnchantments(MagicSchool.ItemEnchantment);

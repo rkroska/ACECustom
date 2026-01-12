@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Entity;
@@ -105,6 +106,20 @@ namespace ACE.Server.WorldObjects
 
                 if (!IsPledgable(patron)) return;
 
+                // Cache values for audit logging - only cache non-lock-sensitive values
+                // Defer ALL name access to ActionQueue to avoid lock recursion
+                bool isAdminLevel = Session != null && Session.AccessLevel >= AccessLevel.Sentinel;
+                AccessLevel? accessLevel = null;
+                uint patronGuid = 0;
+                ObjectGuid playerGuid = Guid;
+                
+                if (isAdminLevel)
+                {
+                    // Only cache values that don't require locks
+                    accessLevel = Session.AccessLevel;
+                    patronGuid = patron.Guid.Full;
+                }
+
                 if (!confirmed)
                 {
                     if (!patron.ConfirmationManager.EnqueueSend(new Confirmation_SwearAllegiance(patron.Guid, Guid), Name))
@@ -122,16 +137,46 @@ namespace ACE.Server.WorldObjects
 
                 UpdateProperty(PropertyInstanceId.Monarch, monarchGuid, true);
 
-                ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
+                // Removed level requirement - ExistedBeforeAllegianceXpChanges now defaults to true
+                //ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
 
                 // handle special case: monarch swearing into another allegiance
                 if (Allegiance != null && Allegiance.MonarchId == Guid.Full)
                     HandleMonarchSwear();
 
-                SaveBiotaToDatabase();
-
-                //Console.WriteLine("Patron: " + PlayerManager.GetOfflinePlayerByGuidId(Patron.Value).Name);
-                //Console.WriteLine("Monarch: " + PlayerManager.GetOfflinePlayerByGuidId(Monarch.Value).Name);
+                // Save once per path - admins use callback version for audit logging, non-admins use simple version
+                if (isAdminLevel)
+                {
+                    var playerRef = this;
+                    var patronRef = patron;
+                    var cachedPatronGuid = patronGuid;
+                    
+                    // Save with callback to defer audit logging after save completes (avoids lock issues)
+                    SaveBiotaToDatabase(true, (saveResult) =>
+                    {
+                        // Only defer audit logging to avoid lock issues
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                        {
+                            try
+                            {
+                                // Get names in deferred action when no locks are held
+                                var playerName = playerRef.Name;
+                                var patronName = patronRef.Name;
+                                var message = $"{playerName} swore allegiance to {patronName} (0x{cachedPatronGuid:X8})";
+                                PlayerManager.BroadcastToAuditChannel(playerRef, message);
+                            }
+                            catch (Exception logEx)
+                            {
+                                log.Error($"[ALLEGIANCE] Error logging admin swear allegiance: {logEx.Message}");
+                            }
+                        }));
+                    });
+                }
+                else
+                {
+                    // Non-admin: simple save without callback
+                    SaveBiotaToDatabase();
+                }
 
                 // send message to patron:
                 // %vassal% has sworn Allegiance to you.
@@ -204,6 +249,19 @@ namespace ACE.Server.WorldObjects
 
             log.Debug($"[ALLEGIANCE] {Name} breaking allegiance to {target.Name}");
 
+            // Cache values for audit logging - only cache non-lock-sensitive values
+            // Only defer audit logging to ActionQueue to avoid lock recursion
+            bool isAdminLevel = IsAbovePlayerLevel;
+            AccessLevel? accessLevel = null;
+            uint targetGuidFull = 0;
+            
+            if (isAdminLevel)
+            {
+                // Only cache values that don't require locks
+                accessLevel = Session?.AccessLevel;
+                targetGuidFull = target.Guid.Full;
+            }
+
             // target can be either patron or vassal
             var isPatron = PatronId == target.Guid.Full;
             var isVassal = target.PatronId == Guid.Full;
@@ -221,15 +279,83 @@ namespace ACE.Server.WorldObjects
                 target.UpdateProperty(PropertyInstanceId.Monarch, monarchId, true);
 
                 // walk the allegiance tree from this node, update monarch ids
+                var playersToSave = new List<Player>();
                 targetNode.Walk((node) =>
                 {
                     node.Player.UpdateProperty(PropertyInstanceId.Monarch, target.Guid.Full, true);
-
-                    node.Player.SaveBiotaToDatabase();
-
+                    // Only add online players (Player, not OfflinePlayer)
+                    if (node.Player is Player onlinePlayer)
+                        playersToSave.Add(onlinePlayer);
                 }, false);
 
-                target.SaveBiotaToDatabase();
+                // Defer saves to ActionQueue to avoid lock recursion, then log after saves complete
+                var targetRef = target;
+                var targetPlayerRef = target as Player; // Only online players can use callback version
+                var isAdminLevelForLogging = isAdminLevel;
+                var cachedAccessLevelForLogging = accessLevel;
+                var cachedTargetGuidForLogging = targetGuidFull;
+                var selfRefForLogging = this;
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                {
+                    try
+                    {
+                        int savesRemaining = playersToSave.Count + (targetPlayerRef != null ? 1 : 0); // Only count target if it's a Player
+                        Action onAllSavesComplete = () =>
+                        {
+                            // Log after all saves complete to avoid lock issues
+                            if (isAdminLevelForLogging)
+                            {
+                                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                                {
+                                    try
+                                    {
+                                        // Get names in deferred action when no locks are held
+                                        var adminName = selfRefForLogging.Name;
+                                        var targetName = targetRef.Name;
+                                        var message = $"{adminName} broke allegiance to {targetName} (0x{cachedTargetGuidForLogging:X8})";
+                                        PlayerManager.BroadcastToAuditChannel(selfRefForLogging, message);
+                                    }
+                                    catch (Exception logEx)
+                                    {
+                                        log.Error($"[ALLEGIANCE] Error logging admin break allegiance: {logEx.Message}");
+                                    }
+                                }));
+                            }
+                        };
+
+                        foreach (var playerToSave in playersToSave)
+                        {
+                            playerToSave.SaveBiotaToDatabase(true, (result) =>
+                            {
+                                savesRemaining--;
+                                if (savesRemaining == 0)
+                                    onAllSavesComplete();
+                            });
+                        }
+                        // Only use callback version if target is an online Player
+                        if (targetPlayerRef != null)
+                        {
+                            targetPlayerRef.SaveBiotaToDatabase(true, (result) =>
+                            {
+                                savesRemaining--;
+                                if (savesRemaining == 0)
+                                    onAllSavesComplete();
+                            });
+                        }
+                        else
+                        {
+                            // Offline player - use single-parameter version and count as complete
+                            targetRef.SaveBiotaToDatabase(true);
+                            savesRemaining--;
+                            if (savesRemaining == 0)
+                                onAllSavesComplete();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[ALLEGIANCE] Error saving biota after break allegiance: {ex.Message}");
+                    }
+                }));
             }
             else
             {
@@ -245,15 +371,70 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // walk the allegiance tree from this node, update monarch ids
+                var playersToSave = new List<Player>();
                 AllegianceNode.Walk((node) =>
                 {
                     node.Player.UpdateProperty(PropertyInstanceId.Monarch, Guid.Full, true);
-
-                    node.Player.SaveBiotaToDatabase();
-
+                    // Only add online players (Player, not OfflinePlayer)
+                    if (node.Player is Player onlinePlayer)
+                        playersToSave.Add(onlinePlayer);
                 }, false);
 
-                SaveBiotaToDatabase();
+                // Defer saves to ActionQueue to avoid lock recursion, then log after saves complete
+                var selfRef = this;
+                var isAdminLevelForLogging = isAdminLevel;
+                var cachedAccessLevelForLogging = accessLevel;
+                var cachedTargetGuidForLogging = targetGuidFull;
+                var targetRefForLogging = target;
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                {
+                    try
+                    {
+                        int savesRemaining = playersToSave.Count + 1; // +1 for self
+                        Action onAllSavesComplete = () =>
+                        {
+                            // Log after all saves complete to avoid lock issues
+                            if (isAdminLevelForLogging)
+                            {
+                                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.ControlFlowDelay, () =>
+                                {
+                                    try
+                                    {
+                                        // Get names in deferred action when no locks are held
+                                        var adminName = selfRef.Name;
+                                        var targetName = targetRefForLogging.Name;
+                                        var message = $"{adminName} broke allegiance to {targetName} (0x{cachedTargetGuidForLogging:X8})";
+                                        PlayerManager.BroadcastToAuditChannel(selfRef, message);
+                                    }
+                                    catch (Exception logEx)
+                                    {
+                                        log.Error($"[ALLEGIANCE] Error logging admin break allegiance: {logEx.Message}");
+                                    }
+                                }));
+                            }
+                        };
+
+                        foreach (var playerToSave in playersToSave)
+                        {
+                            playerToSave.SaveBiotaToDatabase(true, (result) =>
+                            {
+                                savesRemaining--;
+                                if (savesRemaining == 0)
+                                    onAllSavesComplete();
+                            });
+                        }
+                        selfRef.SaveBiotaToDatabase(true, (result) =>
+                        {
+                            savesRemaining--;
+                            if (savesRemaining == 0)
+                                onAllSavesComplete();
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[ALLEGIANCE] Error saving biota after break allegiance: {ex.Message}");
+                    }
+                }));
             }
 
             // send message to target if online
@@ -287,6 +468,8 @@ namespace ACE.Server.WorldObjects
                 if (AllegianceNode != null)
                     AllegianceNode.Walk((node) => CheckAllegianceHouse(node.PlayerGuid), false);
             }
+
+            // Audit logging is now handled in the save callbacks above
 
             // refresh ui panel
 

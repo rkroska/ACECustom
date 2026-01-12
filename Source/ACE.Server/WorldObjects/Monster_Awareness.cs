@@ -139,38 +139,81 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// The current targeting tactic for this monster
+        /// Calculates total augmentation count for a player
         /// </summary>
-        public TargetingTactic CurrentTargetingTactic;
-
-        public void SelectTargetingTactic()
+        private long CalculatePlayerAugTotal(Player player)
         {
-            // monsters have multiple targeting tactics, ex. Focused | Random
+            if (player == null)
+                return 0;
+            
+            // Sum all augmentation types
+            long totalAugs = 0;
+            totalAugs += player.LuminanceAugmentLifeCount ?? 0;
+            totalAugs += player.LuminanceAugmentCreatureCount ?? 0;
+            totalAugs += player.LuminanceAugmentWarCount ?? 0;
+            totalAugs += player.LuminanceAugmentMeleeCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissileCount ?? 0;
+            totalAugs += player.LuminanceAugmentVoidCount ?? 0;
+            totalAugs += player.LuminanceAugmentItemCount ?? 0;
+            totalAugs += player.LuminanceAugmentSummonCount ?? 0;
+            totalAugs += player.LuminanceAugmentMeleeDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMissileDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentMagicDefenseCount ?? 0;
+            totalAugs += player.LuminanceAugmentSpellDurationCount ?? 0;
+            totalAugs += player.LuminanceAugmentSpecializeCount ?? 0;
+            
+            return totalAugs;
+        }
 
-            // when should this function be called?
-            // when a monster spawns in, does it choose 1 TargetingTactic?
+        /// <summary>
+        /// Calculates power score for a creature (augs * 10 + level, ensuring augs always win)
+        /// </summary>
+        private long CalculateCreaturePowerScore(Creature creature)
+        {
+            if (creature is Player player)
+            {
+                var totalAugs = CalculatePlayerAugTotal(player);
+                return (totalAugs * 10) + (player.Level ?? 0);
+            }
+            else
+            {
+                // Non-players don't have augs, just use level
+                return creature.Level ?? 0;
+            }
+        }
 
-            // or do they randomly select a TargetingTactic from their list of possible tactics,
-            // each time they go to find a new target?
+        /// <summary>
+        /// Selects a target from the list based on score comparison with tie-breaker
+        /// </summary>
+        /// <param name="targets">List of potential targets</param>
+        /// <param name="isBetter">Comparison function: (newScore, currentBestScore) => true if newScore is better</param>
+        /// <param name="initialScore">Initial score to compare against (long.MaxValue for min, long.MinValue for max)</param>
+        /// <returns>Selected target, or null if no targets</returns>
+        private Creature SelectTargetByScore(List<Creature> targets, Func<long, long, bool> isBetter, long initialScore)
+        {
+            Creature bestCandidate = null;
+            long bestScore = initialScore;
+            int count = 0;
 
-            //Console.WriteLine($"{Name}.TargetingTactics: {TargetingTactic}");
+            foreach (var target in targets)
+            {
+                var score = CalculateCreaturePowerScore(target);
 
-            // if targeting tactic is none,
-            // use the most common targeting tactic
-            // TODO: ensure all monsters in the db have a targeting tactic
-            var targetingTactic = TargetingTactic;
-            if (targetingTactic == TargetingTactic.None)
-                targetingTactic = TargetingTactic.Random | TargetingTactic.TopDamager;
-
-            var possibleTactics = EnumHelper.GetFlags(targetingTactic);
-            var rng = ThreadSafeRandom.Next(1, possibleTactics.Count - 1);
-
-            if (targetingTactic == 0)
-                rng = 0;
-
-            CurrentTargetingTactic = (TargetingTactic)possibleTactics[rng];
-
-            //Console.WriteLine($"{Name}.TargetingTactic: {CurrentTargetingTactic}");
+                if (isBetter(score, bestScore))
+                {
+                    bestScore = score;
+                    bestCandidate = target;
+                    count = 1; // Reset count for the new high score
+                }
+                else if (score == bestScore)
+                {
+                    count++;
+                    // Reservoir Sampling: 1/count chance to replace current best
+                    // ThreadSafeRandom.Next is an inclusive range, so with a count of 2, we want to choose 0 or 1.
+                    if (ThreadSafeRandom.Next(0, count - 1) == 0) bestCandidate = target;
+                }
+            }
+            return bestCandidate;
         }
 
         public double NextFindTarget;
@@ -199,7 +242,6 @@ namespace ACE.Server.WorldObjects
 
             try
             {
-                SelectTargetingTactic();
                 SetNextTargetTime();
 
                 // Don't use cached targets for critical target finding decisions
@@ -225,11 +267,17 @@ namespace ACE.Server.WorldObjects
 
                 var prevAttackTarget = AttackTarget;
 
-                switch (CurrentTargetingTactic)
+                // Monsters may have multiple targeting tactics (e.g. Focused | Random) - choose one randomly.
+                // If the monster has no targeting tactics, fall back to using the most common setting.
+                TargetingTactic currentTargetingTactic = EnumFlagRandom.SelectRandomFlag(
+                    currentFlags: TargetingTactic,
+                    defaultFlags: TargetingTactic.Random | TargetingTactic.TopDamager);
+
+                switch (currentTargetingTactic)
                 {
                     case TargetingTactic.None:
 
-                        Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
+                        //Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
                         break; // same as focused?
 
                     case TargetingTactic.Random:
@@ -266,17 +314,16 @@ namespace ACE.Server.WorldObjects
 
                     case TargetingTactic.Weakest:
 
-                        // should probably shuffle the list beforehand,
-                        // in case a bunch of levels of same level are in a group,
-                        // so the same player isn't always selected
-                        var lowestLevel = visibleTargets.OrderBy(p => p.Level).FirstOrDefault();
-                        SetAttackTargetAndInvalidate(lowestLevel);
+                        // Target creature with lowest power (augs * 10 + level, ensuring augs always win)
+                        // Use tie-breaker for same power to avoid always targeting the same creature
+                        SetAttackTargetAndInvalidate(SelectTargetByScore(visibleTargets, (a, b) => a < b, long.MaxValue));
                         break;
 
                     case TargetingTactic.Strongest:
 
-                        var highestLevel = visibleTargets.OrderByDescending(p => p.Level).FirstOrDefault();
-                        SetAttackTargetAndInvalidate(highestLevel);
+                        // Target creature with highest power (augs * 10 + level, ensuring augs always win)
+                        // Use tie-breaker for same power to avoid always targeting the same creature
+                        SetAttackTargetAndInvalidate(SelectTargetByScore(visibleTargets, (a, b) => a > b, long.MinValue));
                         break;
 
                     case TargetingTactic.Nearest:
@@ -333,6 +380,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<Creature> GetAttackTargetsUncached()
         {
+            if (PhysicsObj == null)
+                return new List<Creature>();
+
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             
@@ -350,8 +400,15 @@ namespace ACE.Server.WorldObjects
                     continue;
                     
                 // hidden players shouldn't be valid visible targets
-                if (creature is Player p && (p.Hidden ?? false))
-                    continue;
+                if (creature is Player p)
+                {
+                    // Skip players with CloakStatus.Creature - monsters should not attack them
+                    if (p.CloakStatus == CloakStatus.Creature)
+                        continue;
+                    
+                    if (p.Hidden ?? false)
+                        continue;
+                }
                     
                 // Only apply TargetingTactic-based skip to non-players (players are excluded above)
                 if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
@@ -500,8 +557,15 @@ namespace ACE.Server.WorldObjects
             var listOfCreature = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             foreach (var creature in listOfCreature) //has variant filter
             {
-                if (creature is Player player && (!player.Attackable || player.Teleporting || (player.Hidden ?? false)))
-                    continue;
+                if (creature is Player player)
+                {
+                    // Skip players with CloakStatus.Creature - monsters should not attack them
+                    if (player.CloakStatus == CloakStatus.Creature)
+                        continue;
+                    
+                    if (!player.Attackable || player.Teleporting || (player.Hidden ?? false))
+                        continue;
+                }
 
                 if (Tolerance.HasFlag(Tolerance.Monster) && (creature is Player || creature is CombatPet))
                     continue;
@@ -551,7 +615,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (_visualAwarenessRangeSq == null)
                 {
-                    var visualAwarenessRange = (float)((VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range"));
+                    var visualAwarenessRange = (float)((VisualAwarenessRange ?? VisualAwarenessRange_Default) * ServerConfig.mob_awareness_range.Value);
 
                     _visualAwarenessRangeSq = visualAwarenessRange * visualAwarenessRange;
                 }
@@ -568,7 +632,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (_auralAwarenessRangeSq == null)
                 {
-                    var auralAwarenessRange = (float)((AuralAwarenessRange ?? VisualAwarenessRange ?? VisualAwarenessRange_Default) * PropertyManager.GetDouble("mob_awareness_range"));
+                    var auralAwarenessRange = (float)((AuralAwarenessRange ?? VisualAwarenessRange ?? VisualAwarenessRange_Default) * ServerConfig.mob_awareness_range.Value);
 
                     _auralAwarenessRangeSq = auralAwarenessRange * auralAwarenessRange;
                 }

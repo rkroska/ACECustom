@@ -193,11 +193,13 @@ namespace ACE.Server.WorldObjects
             {
                 // Clear save flags
                 item.SaveInProgress = false;
+                item.SaveStartTime = DateTime.MinValue; // Reset for next save
                 if (item is Container container)
                 {
                     foreach (var subItem in container.Inventory.Values)
                     {
                         subItem.SaveInProgress = false;
+                        subItem.SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 }
             }, this.Guid.ToString());
@@ -684,7 +686,7 @@ namespace ACE.Server.WorldObjects
             // this crouch down motion exited the animation queue immediately
 
             // here we are just skipping the animation if the player is jumping
-            if (IsJumping && PropertyManager.GetBool("allow_jump_loot"))
+            if (IsJumping && ServerConfig.allow_jump_loot.Value)
                 return MotionCommand.Invalid;
 
             MotionCommand pickupMotion;
@@ -754,12 +756,24 @@ namespace ACE.Server.WorldObjects
                 // We add to these values because amount will be negative if we're subtracting from a stack, so we want to add a negative number.
                 container.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 container.Value += (stack.StackUnitValue ?? 0) * amount;
+                
+                // Notify container that a stack size changed (for non-Player containers to schedule saves)
+                if (!(container is Player))
+                {
+                    container.OnStackSizeChanged(stack, amount);
+                }
             }
 
             if (rootContainer != null && rootContainer != container)
             {
                 rootContainer.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 rootContainer.Value += (stack.StackUnitValue ?? 0) * amount;
+                
+                // Notify root container that a stack size changed (for non-Player containers to schedule saves)
+                if (!(rootContainer is Player))
+                {
+                    rootContainer.OnStackSizeChanged(stack, amount);
+                }
             }
 
             return true;
@@ -905,7 +919,7 @@ namespace ACE.Server.WorldObjects
 
             if (container is Hook hook)
             {
-                if (PropertyManager.GetBool("house_hook_limit"))
+                if (ServerConfig.house_hook_limit.Value)
                 {
                     if (hook.House.HouseMaxHooksUsable != -1 && hook.House.HouseCurrentHooksUsable <= 0)
                     {
@@ -914,7 +928,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (PropertyManager.GetBool("house_hookgroup_limit"))
+                if (ServerConfig.house_hookgroup_limit.Value)
                 {
                     var itemHookGroup = item.HookGroup ?? HookGroupType.Undef;
                     var houseHookGroupMax = hook.House.GetHookGroupMaxCount(itemHookGroup);
@@ -1367,9 +1381,12 @@ namespace ACE.Server.WorldObjects
                                     log.Debug($"[CORPSE] {Name} (0x{Guid}) picked up {item.Name} (0x{item.Guid}) from {itemRootOwner.Name} (0x{itemRootOwner.Guid})");
                                     item.SaveBiotaToDatabase();
                                 }
+
+                                // Save player after pickup to persist inventory changes
+                                SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                             }
 
-                            if (PropertyManager.GetBool("house_hook_limit"))
+                            if (ServerConfig.house_hook_limit.Value)
                             {
                                 if (container is Hook toHook && toHook.House.HouseMaxHooksUsable != -1 && toHook.House.HouseCurrentHooksUsable <= 0)
                                 {
@@ -1381,7 +1398,7 @@ namespace ACE.Server.WorldObjects
                                 }
                             }
 
-                            if (PropertyManager.GetBool("house_hookgroup_limit"))
+                            if (ServerConfig.house_hookgroup_limit.Value)
                             {
                                 if (container is Hook toHook)
                                 {
@@ -1562,12 +1579,70 @@ namespace ACE.Server.WorldObjects
 
             // when moving from a non-stuck container to a different container,
             // the database must be synced immediately
-            if (prevContainer != null && !prevContainer.Stuck && container != prevContainer)
+            // Exclude corpses - they have their own save path (see line 1370)
+            if (prevContainer != null && !prevContainer.Stuck && container != prevContainer && !(prevContainer is Corpse))
             {
 #if DEBUG
                 log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer triggering save for {item.Name} (0x{item.Guid}) | Moving from {(prevContainer is Player prevPlayer2 ? $"Player {prevPlayer2.Name}" : $"{prevContainer.Name} (0x{prevContainer.Guid})")} to {(container is Player newPlayer ? $"Player {newPlayer.Name}" : $"{container.Name} (0x{container.Guid})")} | Item ContainerId={item.ContainerId} (0x{(item.ContainerId ?? 0):X8}) | Item Container={item.Container?.Name ?? "null"} (0x{(item.Container?.Guid.Full ?? 0):X8})");
 #endif
-                item.SaveBiotaToDatabase();
+                // Use SaveScheduler to offload saves from gameplay thread
+                // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+                SaveScheduler.Instance.RequestSave($"item:{item.Guid}", ACE.Database.SaveScheduler.SaveType.Critical, () =>
+                {
+                    item.SaveBiotaToDatabase();
+                    return true;
+                });
+                
+                // CRITICAL: Save the container immediately to prevent duplication race conditions
+                // If the item is saved but the container isn't, a crash/race can cause duplication
+                // This ensures both item and container state are persisted
+                if (container is Container worldContainer && !(container is Player))
+                {
+                    // Determine appropriate save key based on container type
+                    string containerKey;
+                    ACE.Database.SaveScheduler.SaveType containerType;
+                    if (worldContainer is Hook hook)
+                    {
+                        containerKey = $"hook_tx:{hook.Guid}";
+                        containerType = ACE.Database.SaveScheduler.SaveType.Atomic;
+                    }
+                    else if (worldContainer is Storage storage)
+                    {
+                        containerKey = $"storage_tx:{storage.Guid}";
+                        containerType = ACE.Database.SaveScheduler.SaveType.Atomic;
+                    }
+                    else
+                    {
+                        containerKey = $"container:{worldContainer.Guid}";
+                        containerType = ACE.Database.SaveScheduler.SaveType.Critical;
+                    }
+                    
+                    SaveScheduler.Instance.RequestSave(containerKey, containerType, () =>
+                    {
+                        worldContainer.SaveBiotaToDatabase();
+                        return true;
+                    });
+                }
+                
+                // Save container owners if they are players (immediate save for player-to-world-container operations)
+                // Only save for cross-boundary moves (player-to-world-container, player-to-player)
+                // Skip saves for same-player moves (main pack to side pack, reordering) - those use periodic saves
+                // Source container owner: inventory changed (item removed)
+                // Destination container owner: inventory changed (item added)
+                // Use ForcedImmediate to ensure saves happen immediately and console logs are visible
+                // Special handling for hooks: player save is critical to capture inventory delta
+                if (itemRootOwner is Player sourcePlayer && containerRootOwner != itemRootOwner)
+                {
+                    // Only save if moving to/from a world container (not same-player inventory move)
+                    // For hooks, this captures the player inventory delta when placing item on hook
+                    sourcePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+                }
+                if (containerRootOwner is Player destPlayer && destPlayer != itemRootOwner)
+                {
+                    // Only save if moving to/from a world container (not same-player inventory move)
+                    // For hooks, this captures the player inventory delta when removing item from hook
+                    destPlayer.SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+                }
             }
 
             Session.Network.EnqueueSend(
@@ -1590,6 +1665,25 @@ namespace ACE.Server.WorldObjects
                 catch (Exception ex)
                 {
                     log.Error($"Error logging chest deposit: {ex.Message}");
+                }
+
+                // Log admin placing item into container
+                if (IsAbovePlayerLevel)
+                {
+                    var stackSize = item.StackSize ?? 1;
+                    var stackMsg = stackSize != 1 ? $"{stackSize:N0} " : "";
+                    var itemName = item.GetNameWithMaterial(stackSize);
+                    string containerLocation;
+                    if (container.Location != null)
+                    {
+                        var mapCoords = container.Location.GetMapCoordStr();
+                        containerLocation = mapCoords ?? container.Location.ToLOCString();
+                    }
+                    else
+                    {
+                        containerLocation = "unknown location";
+                    }
+                    PlayerManager.BroadcastToAuditChannel(this, $"{Name} placed {stackMsg}{itemName} (0x{item.Guid:X8}) into container {container.Name} (0x{container.Guid:X8}) at {containerLocation}");
                 }
             }
 
@@ -1673,6 +1767,39 @@ namespace ACE.Server.WorldObjects
 
                     item.EmoteManager.OnDrop(this);
 
+                    // Log admin dropping item
+                    if (IsAbovePlayerLevel)
+                    {
+                        var stackSize = item.StackSize ?? 1;
+                        var stackMsg = stackSize != 1 ? $"{stackSize:N0} " : "";
+                        var itemName = item.GetNameWithMaterial(stackSize);
+                        string locationStr = item.Location.GetMapCoordStr() ?? item.Location.ToLOCString();
+                        var message = $"{Name} dropped {stackMsg}{itemName} (0x{item.Guid:X8}) at location {locationStr}";
+                        
+                        // If item is a container, list items inside
+                        if (item is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                        {
+                            var itemsInside = new Dictionary<string, int>();
+                            foreach (var innerItem in container.Inventory.Values)
+                            {
+                                var innerStackSize = innerItem.StackSize ?? 1;
+                                var innerItemName = innerItem.GetNameWithMaterial(innerStackSize);
+                                if (itemsInside.ContainsKey(innerItemName))
+                                    itemsInside[innerItemName] += (int)innerStackSize;
+                                else
+                                    itemsInside[innerItemName] = (int)innerStackSize;
+                            }
+                            
+                            var itemsList = itemsInside.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                            if (itemsList.Count > 0)
+                            {
+                                message += $" (contains: {string.Join(", ", itemsList)})";
+                            }
+                        }
+                        
+                        PlayerManager.BroadcastToAuditChannel(this, message);
+                    }
+
                     // Log ground drop for transfer monitoring (after successful drop and client notification)
                     try
                     {
@@ -1682,6 +1809,9 @@ namespace ACE.Server.WorldObjects
                     {
                         log.Error($"Error logging ground drop: {ex.Message}");
                     }
+
+                    // Save player after drop to persist inventory changes
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
                 else
                 {
@@ -1845,6 +1975,9 @@ namespace ACE.Server.WorldObjects
 
                             item.EmoteManager.OnPickup(this);
                             item.NotifyOfEvent(RegenerationType.PickUp);
+
+                            // Save player after pickup to persist inventory changes
+                            SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                         }
                         EnqueuePickupDone(pickupMotion);
                     });
@@ -1855,7 +1988,11 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                DoHandleActionGetAndWieldItem(item, fromContainer, rootOwner, wasEquipped, wieldedLocation);
+                if (DoHandleActionGetAndWieldItem(item, fromContainer, rootOwner, wasEquipped, wieldedLocation))
+                {
+                    // Save player after pickup to persist inventory changes
+                    SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
+                }
             }
         }
 
@@ -2290,7 +2427,7 @@ namespace ACE.Server.WorldObjects
 
         private WeenieError CheckWieldRequirements(WorldObject item)
         {
-            if (!PropertyManager.GetBool("use_wield_requirements"))
+            if (!ServerConfig.use_wield_requirements.Value)
                 return WeenieError.None;
 
             var heritageSpecificArmor = item.GetProperty(PropertyInt.HeritageSpecificArmor);
@@ -2567,7 +2704,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // We make sure the stack is still valid. It could have changed during our movement
-                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                    // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                     {
                         log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                         Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -2583,7 +2721,8 @@ namespace ACE.Server.WorldObjects
                     pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToContainer, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
-                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                        // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                         {
                             log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -2997,7 +3136,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // We make sure the stack is still valid. It could have changed during our movement
-                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                    // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                    if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                     {
                         log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                         Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -3013,7 +3153,8 @@ namespace ACE.Server.WorldObjects
                     pickupChain.AddAction(this, ActionType.PlayerInventory_StackableSplitToWield, () =>
                     {
                         // We make sure the stack is still valid. It could have changed during our pickup animation
-                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize < amount)
+                        // Must check <= amount (not <) to prevent splitting entire stack, which would leave 0 items
+                        if (stackOriginalContainer != stack.ContainerId || stack.StackSize <= amount)
                         {
                             log.DebugFormat("Player 0x{0:X8}:{1} tried to split an item that's no longer valid 0x{2:X8}:{3}.", Guid.Full, Name, stack.Guid.Full, stack.Name);
                             Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "Split failed!")); // Custom error message
@@ -3517,6 +3658,74 @@ namespace ACE.Server.WorldObjects
                     targetStack.EnqueueBroadcast(new GameMessageSetStackSize(targetStack));
                 else
                     Session.Network.EnqueueSend(new GameMessageSetStackSize(targetStack));
+                
+                // When merge occurs in a container (not player), schedule container save
+                // This ensures stack size changes are persisted for Storage, Hook, etc.
+                if (targetStackRootOwner is Container containerOwner && !(containerOwner is Player))
+                {
+                    // Mark container as dirty (already happens via AdjustStack updating EncumbranceVal/Value)
+                    containerOwner.ChangesDetected = true;
+                    
+                    // Schedule SaveScheduler save for the container
+                    // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+                    string containerKey;
+                    if (containerOwner is Hook hook)
+                        containerKey = $"hook_tx:{hook.Guid}";
+                    else if (containerOwner is Storage storage)
+                        containerKey = $"storage_tx:{storage.Guid}";
+                    else
+                        containerKey = $"container_tx:{containerOwner.Guid}";
+                    
+                    ACE.Database.SaveScheduler.Instance.RequestSave(containerKey, ACE.Database.SaveScheduler.SaveType.Atomic, () =>
+                    {
+                        // Prepare container and merged item for atomic save
+                        var biotas = new System.Collections.Generic.List<(ACE.Entity.Models.Biota biota, System.Threading.ReaderWriterLockSlim rwLock)>();
+                        var objectsToClear = new System.Collections.Generic.List<WorldObject>();
+                        
+                        // Prep container biota
+                        bool containerWasAlreadyInProgress = containerOwner.SaveInProgress;
+                        containerOwner.SaveBiotaToDatabase(enqueueSave: false);
+                        if (containerOwner.SaveInProgress && !containerWasAlreadyInProgress)
+                        {
+                            objectsToClear.Add(containerOwner);
+                        }
+                        biotas.Add((containerOwner.Biota, containerOwner.BiotaDatabaseLock));
+                        
+                        // Prep merged item biota (stack size changed)
+                        bool itemWasAlreadyInProgress = targetStack.SaveInProgress;
+                        targetStack.SaveBiotaToDatabase(enqueueSave: false);
+                        if (targetStack.SaveInProgress && !itemWasAlreadyInProgress)
+                        {
+                            objectsToClear.Add(targetStack);
+                        }
+                        biotas.Add((targetStack.Biota, targetStack.BiotaDatabaseLock));
+                        
+                        // Enqueue DB work with callback to clear flags after save completes
+                        ACE.Database.DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
+                        {
+                            // Enqueue flag clearing to gameplay thread
+                            containerOwner.EnqueueAction(new ACE.Server.Entity.Actions.ActionEventDelegate(
+                                ACE.Server.Entity.Actions.ActionType.Landblock_ClearFlagsAfterSave, () =>
+                            {
+                                foreach (var obj in objectsToClear)
+                                {
+                                    if (obj.IsDestroyed)
+                                        continue;
+                                        
+                                    obj.SaveInProgress = false;
+                                    obj.SaveStartTime = DateTime.MinValue;
+                                    
+                                    // Only clear ChangesDetected if save succeeded
+                                    if (result)
+                                        obj.ChangesDetected = false;
+                                    else
+                                        obj.ChangesDetected = true;
+                                }
+                            }));
+                        }, $"Player:StackableMerge:Container:{containerOwner.Guid}");
+                        return true;
+                    });
+                }
             }
 
             var itemFoundOnCorpse = sourceStackRootOwner is Corpse;
@@ -3727,6 +3936,71 @@ namespace ACE.Server.WorldObjects
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
+                // Schedule debounced saves for both players (4 second window, resets on each give)
+                // Giver: inventory changed (item removed)
+                // Receiver: inventory changed (item added, ContainerId changed)
+                // Item: ContainerId changed, will save automatically via ChangesDetected
+                this.ScheduleDebouncedGiveSave();
+                target.ScheduleDebouncedGiveSave();
+
+                // Log admin giving item to non-admin player
+                if (IsAbovePlayerLevel && !target.IsAbovePlayerLevel)
+                {
+                    var message = $"{Name} gave {stackMsg}{itemName} (0x{itemToGive.Guid:X8}) to non-admin player {target.Name} (0x{target.Guid:X8})";
+                    
+                    // If item is a container, list items inside
+                    if (itemToGive is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                    {
+                        var itemsInside = new Dictionary<string, int>();
+                        foreach (var innerItem in container.Inventory.Values)
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var innerItemName = innerItem.GetNameWithMaterial(innerStackSize);
+                            if (itemsInside.ContainsKey(innerItemName))
+                                itemsInside[innerItemName] += (int)innerStackSize;
+                            else
+                                itemsInside[innerItemName] = (int)innerStackSize;
+                        }
+                        
+                        var itemsList = itemsInside.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                        if (itemsList.Count > 0)
+                        {
+                            message += $" (contains: {string.Join(", ", itemsList)})";
+                        }
+                    }
+                    
+                    PlayerManager.BroadcastToAuditChannel(this, message);
+                }
+
+                // Log item given to admin
+                if (target.IsAbovePlayerLevel)
+                {
+                    var message = $"{Name} (0x{Guid:X8}) gave {stackMsg}{itemName} (0x{itemToGive.Guid:X8}) to admin {target.Name}";
+                    
+                    // If item is a container, list items inside
+                    if (itemToGive is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                    {
+                        var itemsInside = new Dictionary<string, int>();
+                        foreach (var innerItem in container.Inventory.Values)
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var innerItemName = innerItem.GetNameWithMaterial(innerStackSize);
+                            if (itemsInside.ContainsKey(innerItemName))
+                                itemsInside[innerItemName] += (int)innerStackSize;
+                            else
+                                itemsInside[innerItemName] = (int)innerStackSize;
+                        }
+                        
+                        var itemsList = itemsInside.Select(kvp => kvp.Value > 1 ? $"{kvp.Key} X {kvp.Value:N0}" : kvp.Key).ToList();
+                        if (itemsList.Count > 0)
+                        {
+                            message += $" (contains: {string.Join(", ", itemsList)})";
+                        }
+                    }
+                    
+                    PlayerManager.BroadcastToAuditChannel(target, message);
+                }
+
                 // Log the direct give for transfer monitoring
                 try
                 {
@@ -3839,7 +4113,7 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {iouToTurnIn.NameWithMaterial}.", ChatMessageType.Broadcast));
             Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, iouToTurnIn.Guid.Full, WeenieError.TradeAiRefuseEmote));
 
-            if (!PropertyManager.GetBool("iou_trades"))
+            if (!ServerConfig.iou_trades.Value)
             {
                 Session.Network.EnqueueSend(new GameEventTell(target, "Sorry! I'm not taking IOUs right now, but if you do wish to discard them, drop them in to the garbage barrels found at the Mana Forges in Hebian-To, Zaikhal, and Cragstone.", this, ChatMessageType.Tell));
                 //Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, (WeenieErrorWithString)WeenieError.TradeAiDoesntWant, target.Name));
@@ -3889,7 +4163,7 @@ namespace ACE.Server.WorldObjects
                                     Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} gives you {item.Name}.", ChatMessageType.Broadcast));
                                     target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
-                                    if (PropertyManager.GetBool("player_receive_immediate_save"))
+                                    if (ServerConfig.player_receive_immediate_save.Value)
                                         RushNextPlayerSave(5);
 
                                     log.Debug($"[IOU] {Name} (0x{Guid}) traded in a IOU (0x{iouToTurnIn.Guid}) for {wcid} which became {item.Name} (0x{item.Guid}).");
@@ -4147,7 +4421,7 @@ namespace ACE.Server.WorldObjects
             {
                 log.Warn($"Player.GiveFromEmote: itemStacks <= 0: emoter: {emoter.Name} (0x{emoter.Guid}) - {emoter.WeenieClassId} | weenieClassId: {weenieClassId} | amount: {amount}");
 
-                if (PropertyManager.GetBool("iou_trades"))
+                if (ServerConfig.iou_trades.Value)
                 {
                     var item = PlayerFactory.CreateIOU(weenieClassId);
                     TryCreateForGive(emoter, item);
@@ -4175,7 +4449,7 @@ namespace ACE.Server.WorldObjects
                 EnqueueBroadcast(new GameMessageSound(Guid, Sound.ReceiveItem));
             }
 
-            if (PropertyManager.GetBool("player_receive_immediate_save"))
+            if (ServerConfig.player_receive_immediate_save.Value)
                 RushNextPlayerSave(5);
 
             return true;

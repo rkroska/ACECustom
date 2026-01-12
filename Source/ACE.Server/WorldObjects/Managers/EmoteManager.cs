@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
+using ACE.Database.Models.Auth;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Adapter;
@@ -1491,6 +1492,160 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                case EmoteType.GrantRandomQuestStamp:
+
+                    log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp triggered. Player: {(player != null ? player.Name : "null")}");
+                    
+                    if (player != null)
+                    {
+                        try
+                        {
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: GrantRandomQuestStamp emote triggered for player {player.Name}.");
+                            
+                            // Parse the list of available quest stamps from emote.Message
+                            // Format: "stamp1,stamp2,..." or "REFUND:itemid|stamp1,stamp2,..."
+                            if (string.IsNullOrWhiteSpace(emote.Message))
+                            {
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no quest stamps specified in Message.");
+                                break;
+                            }
+
+                            // Parse optional refund item ID from Message field
+                            uint? refundItemId = null;
+                            string stampList = emote.Message;
+                            
+                            if (emote.Message.StartsWith("REFUND:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var parts = emote.Message.Split('|', 2); // Limit to 2 parts to handle stamps with pipes
+                                if (parts.Length == 2)
+                                {
+                                    var refundPart = parts[0].Substring(7).Trim(); // Remove "REFUND:" prefix
+                                    if (!string.IsNullOrWhiteSpace(refundPart) && uint.TryParse(refundPart, out uint parsedRefundId) && parsedRefundId > 0)
+                                    {
+                                        refundItemId = parsedRefundId;
+                                        stampList = parts[1];
+                                        log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found refund item ID: {refundItemId}");
+                                    }
+                                    else
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Invalid refund item ID format: {refundPart}");
+                                    }
+                                    
+                                    // Validate that stamp list is not empty after parsing
+                                    if (string.IsNullOrWhiteSpace(stampList))
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: REFUND format found but stamp list is empty.");
+                                    }
+                                }
+                                else
+                                {
+                                    log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Invalid REFUND format. Expected 'REFUND:itemid|stamps'");
+                                }
+                            }
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Parsing quest stamps from Message: {stampList}");
+
+                            // Parse and deduplicate stamps (case-insensitive)
+                            var availableStamps = stampList.Split(',')
+                                .Select(q => q.Trim())
+                                .Where(q => !string.IsNullOrWhiteSpace(q))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
+
+                            if (availableStamps.Count == 0)
+                            {
+                                log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no valid quest stamps after parsing.");
+                                break;
+                            }
+
+                            // Get only the stamps from our available list that the player already has
+                            // This is much more efficient than loading all player stamps
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Checking player's existing quest stamps...");
+                            
+                            var playerExistingStamps = GetPlayerQuestStamps(player, availableStamps);
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Player has {playerExistingStamps.Count} existing stamps from available list: {string.Join(", ", playerExistingStamps)}");
+
+                            // Filter out stamps the player already has
+                            var eligibleStamps = availableStamps
+                                .Except(playerExistingStamps, StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: {eligibleStamps.Count} eligible stamps after filtering: {string.Join(", ", eligibleStamps)}");
+
+                            if (eligibleStamps.Count == 0)
+                            {
+                                // Player already has all available stamps
+                                log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Player already has all available stamps.");
+                                if (player.Session?.Network != null)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("You already have all available quest stamps from this source.", ChatMessageType.Broadcast));
+                                }
+                                
+                                // Optional: Refund item if specified in Message field (format: "REFUND:itemid|stamps")
+                                if (refundItemId.HasValue && refundItemId.Value > 0)
+                                {
+                                    log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Attempting to refund token {refundItemId.Value} to player.");
+                                    var refundItem = WorldObjectFactory.CreateNewWorldObject(refundItemId.Value);
+                                    if (refundItem != null)
+                                    {
+                                        if (player.TryCreateInInventoryWithNetworking(refundItem))
+                                        {
+                                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Successfully refunded token {refundItemId.Value} to player.");
+                                            if (player.Session?.Network != null)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your token has been returned to you.", ChatMessageType.Broadcast));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Clean up the item if we couldn't add it to inventory
+                                            refundItem.Destroy();
+                                            log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Failed to refund token {refundItemId.Value} to player - inventory may be full or item doesn't exist.");
+                                            if (player.Session?.Network != null)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Warning: Could not return your token (inventory full?). Contact an admin.", ChatMessageType.Broadcast));
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Failed to create refund item {refundItemId.Value} - item does not exist.");
+                                        if (player.Session?.Network != null)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat("Warning: Could not return your token (invalid item). Contact an admin.", ChatMessageType.Broadcast));
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+
+                            // Randomly select one from the remaining available stamps
+                            // ThreadSafeRandom.Next is inclusive on both ends, so we need Count - 1 for the max
+                            // When Count == 1, this evaluates to Next(0, 0) which correctly returns 0
+                            var randomIndex = eligibleStamps.Count == 1 ? 0 : ThreadSafeRandom.Next(0, eligibleStamps.Count - 1);
+                            var selectedQuestStamp = eligibleStamps[randomIndex];
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Selected quest stamp: {selectedQuestStamp} (index {randomIndex})");
+
+                            // Grant the selected stamp
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Granting quest stamp: {selectedQuestStamp}");
+                            player.QuestManager.Stamp(selectedQuestStamp);
+                            
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Successfully granted quest stamp: {selectedQuestStamp}");
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp encountered an error: {ex.Message}", ex);
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp called but player is null.");
+                    }
+                    break;
+
                 case EmoteType.StartBarber:
 
                     if (player != null)
@@ -1757,24 +1912,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent; // Scaling factor per augmentation
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost for the specified number of augmentations
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((creatureAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = creatureAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply cost multipliers based on the augmentation threshold
-                                    double additionalMultiplier = 1.0;
-                                    if (creatureAugs >= 4000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (creatureAugs >= 2750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 5250)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 5250
+                                        }
+                                        else if (currentAugCount >= 4750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 4750
+                                        }
+                                        else if (currentAugCount >= 4000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 4000
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 2750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance to proceed
                                     if (player.BankedLuminance < totalCost)
@@ -1833,24 +1997,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((itemAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = itemAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (itemAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (itemAugs >= 1250)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1250
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3500)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1250)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1250
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -1908,24 +2081,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((lifeAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = lifeAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (lifeAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (lifeAugs >= 1000)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1000
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1000)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1000
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -1983,24 +2165,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((warAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = warAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (warAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (warAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2057,23 +2248,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((voidAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (voidAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (voidAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        long currentAugCount = voidAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    totalCost *= additionalMultiplier;
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
+
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2130,24 +2331,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((meleeAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = meleeAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (meleeAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (meleeAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2204,24 +2414,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((missileAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = missileAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (missileAugs >= 2500)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (missileAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
+                                        }
+                                        else if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2281,23 +2500,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((durationAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (durationAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (durationAugs >= 1000)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1000
-                                    }
+                                        long currentAugCount = durationAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    totalCost *= additionalMultiplier;
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 3000)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3000
+                                        }
+                                        else if (currentAugCount >= 2500)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2500
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1000)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1000
+                                        }
+
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2354,24 +2583,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((specAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = specAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (specAugs >= 2000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 2500
-                                    }
-                                    else if (specAugs >= 1750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 1750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 2750
+                                        }
+                                        else if (currentAugCount >= 2250)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 2250
+                                        }
+                                        else if (currentAugCount >= 2000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
+                                        }
+                                        else if (currentAugCount >= 1750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -2428,24 +2666,33 @@ namespace ACE.Server.WorldObjects.Managers
                                     double percentIncrease = (double)emote.Percent;
                                     double totalCost = 0;
 
-                                    // Calculate cumulative cost dynamically using a loop
+                                    // Calculate cumulative cost with per-augmentation multipliers
                                     for (int i = 0; i < augCount; i++)
                                     {
-                                        totalCost += baseCost + ((summonAugs + i) * (baseCost * (1 + percentIncrease)));
-                                    }
+                                        long currentAugCount = summonAugs + i;
+                                        double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                    // Apply the cost multipliers based on the augment thresholds
-                                    double additionalMultiplier = 1.0;
-                                    if (summonAugs >= 4000)
-                                    {
-                                        additionalMultiplier = 8; // Apply 8x multiplier for augments >= 4000
-                                    }
-                                    else if (summonAugs >= 2750)
-                                    {
-                                        additionalMultiplier = 4; // Apply 4x multiplier for augments >= 2750
-                                    }
+                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        double multiplier = 1.0;
+                                        if (currentAugCount >= 5250)
+                                        {
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 5250
+                                        }
+                                        else if (currentAugCount >= 4750)
+                                        {
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 4750
+                                        }
+                                        else if (currentAugCount >= 4000)
+                                        {
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 4000
+                                        }
+                                        else if (currentAugCount >= 2750)
+                                        {
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 2750
+                                        }
 
-                                    totalCost *= additionalMultiplier;
+                                        totalCost += augCost * multiplier;
+                                    }
 
                                     // Check if the player has enough Luminance
                                     if (player.BankedLuminance < totalCost)
@@ -3390,5 +3637,49 @@ namespace ACE.Server.WorldObjects.Managers
             return AddEmote(newEmote);
         }
 
+        /// <summary>
+        /// Gets a HashSet of quest stamp names from the provided list that the player already has (NumTimesCompleted >= 1)
+        /// This only queries for the specific stamps we care about, rather than all player stamps, for better performance.
+        /// </summary>
+        /// <param name="player">The player to query quest stamps for</param>
+        /// <param name="stampsToCheck">The list of quest stamp names to check against</param>
+        /// <returns>HashSet of quest names from stampsToCheck that the player already has as stamps</returns>
+        private HashSet<string> GetPlayerQuestStamps(Player player, List<string> stampsToCheck)
+        {
+            var existingStamps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (player?.Account == null || stampsToCheck == null || stampsToCheck.Count == 0)
+                return existingStamps;
+
+            try
+            {
+                using (var context = new AuthDbContext())
+                {
+                    // Only query for the specific stamps we're interested in, not all player stamps
+                    // This is much more efficient when players have thousands of stamps
+                    var playerStamps = context.AccountQuest
+                        .Where(x => x.AccountId == player.Account.AccountId 
+                                 && x.NumTimesCompleted >= 1
+                                 && x.Quest != null
+                                 && stampsToCheck.Contains(x.Quest))
+                        .Select(x => x.Quest)
+                        .ToList();
+
+                    foreach (var stamp in playerStamps)
+                    {
+                        if (!string.IsNullOrWhiteSpace(stamp))
+                        {
+                            existingStamps.Add(stamp);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.GetPlayerQuestStamps: Error querying player quest stamps for account {player.Account?.AccountId}: {ex.Message}", ex);
+            }
+
+            return existingStamps;
+        }
     }
 }

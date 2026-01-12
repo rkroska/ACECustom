@@ -319,7 +319,7 @@ namespace ACE.Server.WorldObjects
                 var currentSkill = (int)GetCreatureSkill(skill).Current;
                 int difficulty = (int)creature.GetCreatureSkill(Skill.Deception).Current;
 
-                if (PropertyManager.GetBool("assess_creature_mod") && skill == Skill.AssessCreature
+                if (ServerConfig.assess_creature_mod.Value && skill == Skill.AssessCreature
                         && Skills[Skill.AssessCreature].AdvancementClass < SkillAdvancementClass.Trained)
                     currentSkill = (int)((Focus.Current + Self.Current) / 2);
 
@@ -510,7 +510,7 @@ namespace ACE.Server.WorldObjects
                     IsFrozen = true;
                     EnqueueBroadcastPhysicsState();
 
-                    LogoffTimestamp = Time.GetFutureUnixTime(PropertyManager.GetLong("pk_timer"));
+                    LogoffTimestamp = Time.GetFutureUnixTime(ServerConfig.pk_timer.Value);
                     PlayerManager.AddPlayerToLogoffQueue(this);
                 }
                 return false;
@@ -525,6 +525,7 @@ namespace ACE.Server.WorldObjects
         {
             IsBusy = true;
             IsLoggingOut = true;
+            _isShuttingDownOrOffline = true;
 
             if (Fellowship != null)
                 FellowshipQuit(false);
@@ -539,7 +540,7 @@ namespace ACE.Server.WorldObjects
 
             if (!clientSessionTerminatedAbruptly)
             {
-                if (PropertyManager.GetBool("use_turbine_chat"))
+                if (ServerConfig.use_turbine_chat.Value)
                 {
                     if (IsOlthoiPlayer)
                     {
@@ -643,7 +644,7 @@ namespace ACE.Server.WorldObjects
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
-            SavePlayerToDatabase(true);
+            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
             // Don't set the player offline until they have successfully saved
             //PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
@@ -1176,7 +1177,7 @@ namespace ACE.Server.WorldObjects
                 {
                     IsBusy = false;
 
-                    if (PropertyManager.GetBool("allow_pkl_bump"))
+                    if (ServerConfig.allow_pkl_bump.Value)
                     {
                         // check for collisions
                         PlayerKillerStatus = PlayerKillerStatus.PKLite;

@@ -18,6 +18,11 @@ using ACE.Server.Mods;
 
 namespace ACE.Server
 {
+    public static class ServerRuntime
+    {
+        public static Guid BootId { get; internal set; }
+    }
+
     partial class Program
     {
         /// <summary>
@@ -41,6 +46,10 @@ namespace ACE.Server
 
         public static void Main(string[] args)
         {
+            // Set BootId very early - before any database or manager initialization
+            ServerRuntime.BootId = Guid.NewGuid();
+            log.Info($"Server BootId: {ServerRuntime.BootId}");
+
             var consoleTitle = $"ACEmulator - v{ServerBuildInfo.FullVersion}";
 
             Console.Title = consoleTitle;
@@ -230,6 +239,28 @@ namespace ACE.Server
                 Environment.Exit(0);
             }
 
+            // Check if metrics are enabled in Config.js
+            if (ConfigManager.Config.Metrics.Enabled)
+            {
+                try
+                {
+                    MetricsManager.StartMetricsPipeline(
+                        ConfigManager.Config.Metrics.Endpoint,
+                        ConfigManager.Config.Metrics.InstanceId,
+                        ConfigManager.Config.Metrics.ApiToken
+                    );
+                    log.Info($"MetricsManager initialized successfully, pushing to {ConfigManager.Config.Metrics.Endpoint}");
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to initialize MetricsManager: {ex.Message}");
+                }
+            }
+            else
+            {
+                log.Info("Metrics are disabled in Config.js.");
+            }
+
             log.Info("Initializing ServerManager...");
             ServerManager.Initialize();
 
@@ -266,9 +297,11 @@ namespace ACE.Server
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 
+            // Configure SaveScheduler stuck threshold from ServerConfig
+            SaveScheduler.Instance.SetStuckThreshold(TimeSpan.FromSeconds(ServerConfig.save_scheduler_stuck_seconds.Value));
+
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
-
             
             if (!string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
             {
@@ -351,7 +384,7 @@ namespace ACE.Server
             DateTime buildDate = new FileInfo(Assembly.GetExecutingAssembly().Location).LastWriteTime;
             log.Info($"Server Build Date: {buildDate}");
 
-            if (!PropertyManager.GetBool("world_closed", false))
+            if (!ServerConfig.world_closed.Value)
             {
                 WorldManager.Open(null);
             }
@@ -369,9 +402,11 @@ namespace ACE.Server
                 if (!ServerManager.ShutdownInitiated)
                     log.Warn("Unsafe server shutdown detected! Data loss is possible!");
 
+
                 PropertyManager.StopUpdating();
                 //ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                MetricsManager.Shutdown();
 
                 // Do system specific cleanup here
                 try
@@ -390,6 +425,7 @@ namespace ACE.Server
             {
                 ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                MetricsManager.Shutdown();
             }
         }
     }

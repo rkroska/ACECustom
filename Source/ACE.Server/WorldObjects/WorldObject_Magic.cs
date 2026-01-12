@@ -123,7 +123,7 @@ namespace ACE.Server.WorldObjects
             //if (!spell.IsResistable || spell.IsSelfTargeted)
                 return false;
 
-            if (spell.MetaSpellType == SpellType.Dispel && spell.Align == DispelType.Negative && !PropertyManager.GetBool("allow_negative_dispel_resist"))
+            if (spell.MetaSpellType == SpellType.Dispel && spell.Align == DispelType.Negative && !ServerConfig.allow_negative_dispel_resist.Value)
                 return false;
 
             if (spell.NumProjectiles > 0 && !projectileHit)
@@ -1250,7 +1250,7 @@ namespace ACE.Server.WorldObjects
                 }
 
                 var summonPortal = GetPortal(portalId);
-                if (summonPortal == null || summonPortal.NoSummon || (linkSummoned && !PropertyManager.GetBool("gateway_ties_summonable")))
+                if (summonPortal == null || summonPortal.NoSummon || (linkSummoned && !ServerConfig.gateway_ties_summonable.Value))
                 {
                     // You cannot summon that portal!
                     player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouCannotSummonPortal));
@@ -1555,6 +1555,13 @@ namespace ACE.Server.WorldObjects
         {
             var startFactor = spellType == ProjectileSpellType.Arc ? 1.0f : ProjHeight;
 
+            // GDLE ring behavior: vertical aim is higher (z multiplied by 1.5) for self-targeted rings
+            var isRing = spell != null && spell.SpreadAngle == 360;
+            if (isRing && target == null)
+            {
+                startFactor *= 1.5f;
+            }
+
             var preOffset = new Vector3(0, 0, Height * startFactor);
 
             if (target == null)
@@ -1615,8 +1622,14 @@ namespace ACE.Server.WorldObjects
                     radsum = PhysicsObj.GetPhysicsRadius() + radius;
             }
 
-            if (spell.SpreadAngle == 360)
+            // GDLE ring behavior: push outward a bit more (extra 0.5f distance)
+            // Extra distance forward to avoid spawn overlap and better match GDLE.
+            var isRing = spell.SpreadAngle == 360;
+            if (isRing)
+            {
                 radsum *= 0.8f;
+                radsum += 0.5f; // RingExtraSpawnDist
+            }
 
             baseOffset.Y += radsum;
 
@@ -1751,7 +1764,10 @@ namespace ACE.Server.WorldObjects
 
             var dir = Vector3.Normalize(endPos - startPos);
 
-            var targetVelocity = spell.IsTracking ? target.PhysicsObj.CachedVelocity : Vector3.Zero;
+            // GDLE ring behavior: rings are not target locked and do not track
+            var isRing = spell != null && spell.SpreadAngle == 360;
+            var tracked = !isRing && spell.IsTracking;
+            var targetVelocity = tracked ? target.PhysicsObj.CachedVelocity : Vector3.Zero;
 
             var useGravity = spellType == ProjectileSpellType.Arc;
 
@@ -1761,7 +1777,7 @@ namespace ACE.Server.WorldObjects
             {
                 var gravity = useGravity ? PhysicsGlobals.Gravity : 0.0f;
 
-                if (!PropertyManager.GetBool("trajectory_alt_solver"))
+                if (!ServerConfig.trajectory_alt_solver.Value)
                     Trajectory.solve_ballistic_arc_lateral(startPos, speed, endPos, targetVelocity, gravity, out velocity, out var time, out var impactPoint);
                 else
                     velocity = Trajectory2.CalculateTrajectory(startPos, endPos, targetVelocity, speed, useGravity);
@@ -1770,7 +1786,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // intractable?
                     // try to solve w/ zero velocity
-                    if (!PropertyManager.GetBool("trajectory_alt_solver"))
+                    if (!ServerConfig.trajectory_alt_solver.Value)
                         Trajectory.solve_ballistic_arc_lateral(startPos, speed, endPos, Vector3.Zero, gravity, out velocity, out var time, out var impactPoint);
                     else
                         velocity = Trajectory2.CalculateTrajectory(startPos, endPos, Vector3.Zero, speed, useGravity);
@@ -1787,6 +1803,10 @@ namespace ACE.Server.WorldObjects
             var useGravity = spellType == ProjectileSpellType.Arc;
 
             var strikeSpell = target != null && spellType == ProjectileSpellType.Strike;
+
+            // GDLE ring detection
+            // Rings are identified by SpreadAngle == 360
+            var isRing = spell != null && spell.SpreadAngle == 360;
 
             var spellProjectiles = new List<SpellProjectile>();
 
@@ -1817,14 +1837,40 @@ namespace ACE.Server.WorldObjects
                 sp.Location = strikeSpell ? new Position(targetLoc) : new Position(casterLoc);
                 sp.Location.Pos += Vector3.Transform(origin, strikeSpell ? rotate * OneEighty : rotate);
 
-                sp.PhysicsObj.Velocity = velocity;
-
-                if (spell.SpreadAngle > 0)
+                // GDLE applies a small local offset to the spawn position for ring projectiles (0, 0.1, 0) in source local space.
+                if (isRing)
                 {
+                    var ringLocalOffset = new Vector3(0f, 0.1f, -Height * 0.33f);
+                    var rotatedOffset = Vector3.Transform(ringLocalOffset, rotate);
+                    sp.Location.Pos += rotatedOffset;
+                }
+
+                var speed = velocity.Length();
+
+                if (isRing)
+                {
+                    // Rings travel radially outward from the caster
+                    var radial = new Vector3(origin.X, origin.Y, 0f);
+                    if (radial != Vector3.Zero)
+                        radial = Vector3.Normalize(radial);
+
+                    // rotate radial direction into world space
+                    radial = Vector3.Transform(radial, rotate);
+
+                    sp.PhysicsObj.Velocity = radial * speed;
+                }
+                else if (spell.SpreadAngle > 0)
+                {
+                    // Non ring spread spells
                     var n = Vector3.Normalize(origin);
                     var angle = Math.Atan2(-n.X, n.Y);
                     var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)angle);
                     sp.PhysicsObj.Velocity = Vector3.Transform(velocity, q);
+                }
+                else
+                {
+                    // Normal single projectile
+                    sp.PhysicsObj.Velocity = velocity;
                 }
 
                 // set orientation
@@ -1835,14 +1881,19 @@ namespace ACE.Server.WorldObjects
                 sp.ProjectileSource = this;
                 sp.FromProc = fromProc;
 
-                // side projectiles always untargeted?
-                if (i == 0)
-                    sp.ProjectileTarget = target;
+                // GDLE behavior:
+                // Rings never have a target
+                // Non-ring projectiles use normal targeting
+                sp.ProjectileTarget = isRing ? null : target;
 
                 sp.ProjectileLauncher = weapon;
                 sp.IsWeaponSpell = isWeaponSpell;
 
-                sp.SetProjectilePhysicsState(sp.ProjectileTarget, useGravity);
+                // GDLE behavior: rings are never tracking projectiles
+                if (isRing)
+                    sp.SetProjectilePhysicsState(null, useGravity);
+                else
+                    sp.SetProjectilePhysicsState(sp.ProjectileTarget, useGravity);
                 sp.SpawnPos = new Position(sp.Location);
 
                 sp.LifeProjectileDamage = lifeProjectileDamage;
@@ -1854,6 +1905,68 @@ namespace ACE.Server.WorldObjects
                 }
 
                 if (sp.WorldEntryCollision)
+                    continue;
+
+                // Ring spawn overlap handling
+                // If a ring segment spawns already overlapping a creature, force an immediate collision style hit,
+                // and still show the misfire message to the caster.
+                if (isRing)
+                {
+                    var sourceCreature = sp.ProjectileSource as Creature;
+                    var landblock = sp.CurrentLandblock;
+
+                    if (sourceCreature != null && landblock != null)
+                    {
+                        foreach (var wo in landblock.GetWorldObjectsForPhysicsHandling())
+                        {
+                            if (wo is not Creature creature)
+                                continue;
+
+                            if (creature == sourceCreature)
+                                continue;
+
+                            if (!sourceCreature.CanDamage(creature))
+                                continue;
+
+                            var projPos = sp.PhysicsObj.Position.Frame.Origin;
+                            var tgtPos = creature.PhysicsObj.Position.Frame.Origin;
+
+                            var dx = projPos.X - tgtPos.X;
+                            var dy = projPos.Y - tgtPos.Y;
+
+                            var baseRadius =
+                                sp.PhysicsObj.GetPhysicsRadius() +
+                                creature.PhysicsObj.GetPhysicsRadius();
+
+                            if (dx * dx + dy * dy > baseRadius * baseRadius)
+                                continue;
+
+                            // Center based Z overlap
+                            var projHalfHeight = sp.Height * 0.5f;
+                            var projZMin = projPos.Z - projHalfHeight;
+                            var projZMax = projPos.Z + projHalfHeight;
+
+                            var tgtZMin = tgtPos.Z;
+                            var tgtZMax = tgtPos.Z + creature.Height;
+
+                            if (projZMax < tgtZMin || projZMin > tgtZMax)
+                                continue;
+
+                            // Misfire message (damage still applies)
+                            if (sp.ProjectileSource is Player p)
+                            {
+                                p.SendWeenieError(WeenieError.YourAttackMisfired);
+                            }
+
+                            sp.ProcessSpellHit(creature, sp.ProjectileSource as Player);
+                            sp.Destroy();
+                            goto SkipLaunchFlow;
+                        }
+                    }
+                }
+
+                SkipLaunchFlow:;
+                if (sp.IsDestroyed)
                     continue;
 
                 sp.EnqueueBroadcast(new GameMessageScript(sp.Guid, PlayScript.Launch, sp.GetProjectileScriptIntensity(spellType)));

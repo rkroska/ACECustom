@@ -22,6 +22,16 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // NOTE:
+        // Container inventory mutation logic is NOT responsible for persistence guarantees.
+        // It ensures in-memory consistency only.
+        // Persistence correctness is enforced by higher-level save orchestration
+        // (Player saves, Bank saves, SerializedShardDatabase).
+        // 
+        // This prevents future devs from "fixing" this by adding forced saves everywhere
+        // and breaking performance. Container mutations should set ChangesDetected = true
+        // and let the save orchestration layer handle when and how to persist.
+
         /// <summary>
         /// Cache for side containers to avoid repeated LINQ scans with large inventories
         /// </summary>
@@ -319,6 +329,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject GetInventoryItem(ObjectGuid objectGuid)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return null;
+
             return GetInventoryItem(objectGuid, out _);
         }
 
@@ -328,6 +342,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject GetInventoryItem(uint objectGuid)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return null;
+
             return GetInventoryItem(new ObjectGuid(objectGuid), out _); // todo remove this so it doesnt' create a new ObjectGuid
         }
 
@@ -337,6 +355,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject GetInventoryItem(ObjectGuid objectGuid, out Container container)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            // In practice, ACE already assumes this, but now that logic is more complex,
+            // we add this guard to prevent issues during async load.
+            if (!InventoryLoaded)
+            {
+                container = null;
+                return null;
+            }
+
             // First search my main pack for this item..
             if (Inventory.TryGetValue(objectGuid, out var value))
             {
@@ -367,6 +394,11 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private List<Container> GetCachedSideContainers()
         {
+            // Defensive guard: fail safe if inventory not loaded
+            // Return empty list to avoid null reference issues
+            if (!InventoryLoaded)
+                return new List<Container>();
+
             if (_sideContainersCacheDirty || _cachedSideContainers == null)
             {
                 if (_cachedSideContainers == null)
@@ -425,6 +457,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetInventoryItemsOfWCID(uint weenieClassId)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return new List<WorldObject>();
+
             var items = new List<WorldObject>();
 
             // search main pack / creature
@@ -458,6 +494,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetInventoryItemsOfWeenieClass(string weenieClassName)
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return new List<WorldObject>();
+
             var items = new List<WorldObject>();
 
             // search main pack / creature
@@ -491,6 +531,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<WorldObject> GetTradeNotes()
         {
+            // Defensive guard: fail safe if inventory not loaded
+            if (!InventoryLoaded)
+                return new List<WorldObject>();
+
             var items = new List<WorldObject>();
 
             // search main pack / creature
@@ -624,22 +668,48 @@ namespace ACE.Server.WorldObjects
         /// If enough burden is available, this will try to add an item to the main pack. If the main pack is full, it will try to add it to the first side pack with room.<para />
         /// It will also increase the EncumbranceVal and Value.
         /// </summary>
-        public bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
+        public virtual bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
         {
             var containerInfo = this is Player p ? $"Player {p.Name}" : $"{Name} (0x{Guid})";
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
-            // bug: should be root owner
-            if (this is Player player && burdenCheck)
+            // Step 1: Capture container identity from biota (not live object state)
+            // This value is stable across the whole move
+            uint? oldContainerBiotaId = null;
+            worldObject.BiotaDatabaseLock.EnterReadLock();
+            try
             {
-                if (!player.HasEnoughBurdenToAddToInventory(worldObject))
-                {
-                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
-                    container = null;
-                    return false;
-                }
+                if (worldObject.Biota.PropertiesIID != null &&
+                    worldObject.Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Container, out var cid))
+                    oldContainerBiotaId = cid;
             }
+            finally
+            {
+                worldObject.BiotaDatabaseLock.ExitReadLock();
+            }
+            
+            // Step 2: Begin mutation before any removal
+            // Always begin mutation tracking for all adds (ground→container, newly spawned→container,
+            // loot→inventory, split created stacks, moves, etc.) to ensure atomicity
+            // The oldContainerBiotaId is used for logging/diagnostics, not for gating
+            worldObject.BeginContainerMutation(oldContainerBiotaId);
+            
+            // Step 3: Wrap the entire body in try/finally for proper cleanup
+            try
+            {
+                // bug: should be root owner
+                if (this is Player player && burdenCheck)
+                {
+                    if (!player.HasEnoughBurdenToAddToInventory(worldObject))
+                    {
+                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
+                        container = null;
+                        // End mutation on failure
+                        worldObject.EndContainerMutation(oldContainerBiotaId, null);
+                        return false;
+                    }
+                }
 
             IList<WorldObject> containerItems;
 
@@ -651,6 +721,8 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - container capacity full in {containerInfo} ({containerItems.Count}/{ContainerCapacity ?? 0})");
                     container = null;
+                    // End mutation on failure
+                    worldObject.EndContainerMutation(oldContainerBiotaId, null);
                     return false;
                 }
             }
@@ -689,6 +761,8 @@ namespace ACE.Server.WorldObjects
                     }
 
                     container = null;
+                    // End mutation on failure
+                    worldObject.EndContainerMutation(oldContainerBiotaId, null);
                     return false;
                 }
             }
@@ -696,6 +770,8 @@ namespace ACE.Server.WorldObjects
             if (Inventory.ContainsKey(worldObject.Guid))
             {
                 container = null;
+                // End mutation on failure
+                worldObject.EndContainerMutation(oldContainerBiotaId, null);
                 return false;
             }
 
@@ -703,18 +779,17 @@ namespace ACE.Server.WorldObjects
             worldObject.Placement = ACE.Entity.Enum.Placement.Resting;
 
             worldObject.OwnerId = Guid.Full;
-            var oldContainerId = worldObject.ContainerId;
-            // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
-            // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
-            // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
-            worldObject.ContainerId = Biota.Id;
-            worldObject.Container = this;
-            worldObject.PlacementPosition = placementPosition; // Server only variable that we use to remember/restore the order in which items exist in a container
+                // CRITICAL FIX: Use Biota.Id instead of Guid.Full for ContainerId
+                // SortWorldObjectsIntoInventory compares against Biota.Id, so ContainerId must match Biota.Id
+                // For players, Biota.Id == Guid.Full, but for side packs, Biota.Id is the database ID (not the GUID)
+                worldObject.ContainerId = Biota.Id;
+                worldObject.Container = this;
+                worldObject.PlacementPosition = placementPosition; // Server only variable that we use to remember/restore the order in which items exist in a container
             
             // Verify ContainerId was set correctly
             var newContainerId = worldObject.ContainerId;
             var containerBiotaId = Biota.Id;
-            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
+            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerBiotaId={oldContainerBiotaId} (0x{(oldContainerBiotaId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
             
             // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
             if (worldObject.ContainerId != Biota.Id)
@@ -741,20 +816,30 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            Inventory.Add(worldObject.Guid, worldObject);
+                Inventory.Add(worldObject.Guid, worldObject);
 
-            // Invalidate side containers cache if we added a container
-            if (worldObject is Container)
-                InvalidateSideContainersCache();
+                // Invalidate side containers cache if we added a container
+                if (worldObject is Container)
+                    InvalidateSideContainersCache();
 
-            EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
-            Value += (worldObject.Value ?? 0);
+                EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
+                Value += (worldObject.Value ?? 0);
 
-            container = this;
+                container = this;
 
-            OnAddItem();
+                OnAddItem();
 
-            return true;
+                // Step 4: End mutation after successful add
+                worldObject.EndContainerMutation(oldContainerBiotaId, Biota.Id);
+
+                return true;
+            }
+            catch
+            {
+                // Step 5: On failure, end mutation (rollback already handled by caller)
+                worldObject.EndContainerMutation(oldContainerBiotaId, null);
+                throw;
+            }
         }
 
         /// <summary>
@@ -834,6 +919,14 @@ namespace ACE.Server.WorldObjects
             {
                 int removedItemsPlacementPosition = item.PlacementPosition ?? 0;
 
+                // Do NOT increment mutation depth here - we cannot distinguish between:
+                // 1. A move operation (remove then add to different container) - should suppress side effects
+                // 2. A final removal (drop, unequip, etc.) - should NOT suppress side effects
+                // 
+                // Mutation depth should only be incremented in TryAddToInventory when we detect
+                // an actual move (oldContainerId != new container). This ensures we only suppress
+                // side effects during moves, not during legitimate final removals.
+
                 item.OwnerId = null;
                 item.ContainerId = null;
                 item.Container = null;
@@ -855,7 +948,12 @@ namespace ACE.Server.WorldObjects
                 if (item is Container)
                     InvalidateSideContainersCache();
 
-                if (forceSave)
+                // Guard forceSave during mutation to prevent saves with ContainerId = null during moves
+                // During a move sequence (TryRemoveFromInventory -> TryAddToInventory), if forceSave == true,
+                // we could enqueue a save with ContainerId = null followed by a save with the new container.
+                // This is usually coalesced away, but it's a real ordering risk.
+                // Only allow forceSave for final removals, not during moves.
+                if (forceSave && !item.IsInContainerMutation)
                     item.SaveBiotaToDatabase();
 
                 OnRemoveItem(item);
@@ -924,7 +1022,7 @@ namespace ACE.Server.WorldObjects
                 // verified this message was sent for corpses, instead of WeenieErrorWithString.The_IsCurrentlyInUse
                 var currentViewer = "someone else";
 
-                if (PropertyManager.GetBool("container_opener_name"))
+                if (ServerConfig.container_opener_name.Value)
                 {
                     var name = CurrentLandblock?.GetObject(Viewer)?.Name;
                     if (name != null)
@@ -1174,6 +1272,18 @@ namespace ACE.Server.WorldObjects
         /// This event is raised when player removes item from container
         /// </summary>
         protected virtual void OnRemoveItem(WorldObject worldObject)
+        {
+            // Suppress enchant invalidation during container churn
+            if (worldObject.IsInContainerMutation)
+                return;
+
+            // empty base
+        }
+
+        /// <summary>
+        /// This event is raised when a stackable item's size changes within this container (merge or split)
+        /// </summary>
+        public virtual void OnStackSizeChanged(WorldObject stack, int amount)
         {
             // empty base
         }

@@ -301,19 +301,12 @@ namespace ACE.Server.WorldObjects
 
         public DamageType GetDamageType(PropertiesBodyPart attackPart, CombatType? combatType = null)
         {
+            // If there is a weapon equipped, get the damage type from that weapon.
             var weapon = GetEquippedWeapon();
+            if (weapon != null) return GetDamageType(false, combatType);
 
-            if (weapon != null)
-                return GetDamageType(false, combatType);
-            else
-            {
-                var damageType = attackPart.DType;
-
-                if (damageType.IsMultiDamage())
-                    damageType = damageType.SelectDamageType();
-
-                return damageType;
-            }
+            // Otherwise, choose a random damage type from the bodypart, falling back to one of the physical options if none is set.
+            return EnumFlagRandom.SelectRandomFlag(attackPart.DType, DamageType.Physical);
         }
 
         /// <summary>
@@ -345,7 +338,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void TakeDamageOverTime_NotifySource(Player source, DamageType damageType, float amount, bool aetheria = false)
         {
-            if (!PropertyManager.GetBool("show_dot_messages"))
+            if (!ServerConfig.show_dot_messages.Value)
                 return;
 
             var iAmount = (uint)Math.Round(amount);

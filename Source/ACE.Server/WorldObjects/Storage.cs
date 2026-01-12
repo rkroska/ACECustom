@@ -83,8 +83,9 @@ namespace ACE.Server.WorldObjects
 
             if (Inventory.Count > 0)
             {
-                // Here we explicitly save the storage to the database to prevent item loss.
-                // If the player adds an item to the storage, and the server crashes before the storage has been saved, the item will be lost.
+                // Use existing save path - SaveBiotaToDatabase() already has internal coalescing,
+                // serialization key, and correct dirty flag semantics
+                // Do not wrap in SaveScheduler as it would create duplicate save identities
                 SaveBiotaToDatabase();
             }
         }
@@ -96,7 +97,9 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine("Storage.OnRemoveItem()");
 
-            // Here we explicitly save the storage to the database to prevent property desync.
+            // Use existing save path - SaveBiotaToDatabase() already has internal coalescing,
+            // serialization key, and correct dirty flag semantics
+            // Do not wrap in SaveScheduler as it would create duplicate save identities
             SaveBiotaToDatabase();
         }
     }

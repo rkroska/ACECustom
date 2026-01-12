@@ -28,6 +28,12 @@ namespace ACE.Server.WorldObjects
             Fellowship = new Fellowship(this, fellowshipName, shareXP);
             Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(Session));
             Session.Network.EnqueueSend(new GameEventFellowshipFellowUpdateDone(Session));
+
+            // Log admin creating fellowship
+            if (IsAbovePlayerLevel)
+            {
+                PlayerManager.BroadcastToAuditChannel(this, $"{Name} created fellowship '{fellowshipName}' (ShareXP: {shareXP})");
+            }
         }
 
         public void HandleActionFellowshipChangeOpenness(bool openness)

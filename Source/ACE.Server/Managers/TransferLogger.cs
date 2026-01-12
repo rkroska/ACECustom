@@ -612,34 +612,86 @@ namespace ACE.Server.Managers
                 // Ensure database is migrated before logging
                 EnsureDatabaseMigrated();
 
-                // Only log if item tracking is enabled and this item should be tracked
-                if (!Config.EnableItemTracking || !ShouldTrackItem(item.Name))
+                // Log the container itself if it's tracked
+                if (Config.EnableItemTracking && ShouldTrackItem(item.Name))
                 {
-                    log.Debug($"Skipping logging for untracked item: {item.Name}");
-                    return;
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeDirectGive,
+                        FromPlayerName = fromPlayer.Name,
+                        FromPlayerAccount = fromPlayer.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = toPlayer.Name,
+                        ToPlayerAccount = toPlayer.Account?.AccountName ?? "Unknown",
+                        ItemName = item.Name,
+                        Quantity = quantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
+                        ToAccountCreatedDate = toPlayer.Account?.CreateTime,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(fromPlayer),
+                        ToCharacterCreatedDate = GetCharacterCreationDate(toPlayer),
+                        AdditionalData = $"Item GUID: {item.Guid}",
+                        FromPlayerIP = GetPlayerIP(fromPlayer),
+                        ToPlayerIP = GetPlayerIP(toPlayer)
+                    };
+
+                    // Process in background thread to prevent blocking the game thread
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
                 }
 
-                var transferLog = new TransferLog
+                // If item is a container, also log tracked items inside
+                if (item is Container container && container.Inventory != null && container.Inventory.Count > 0)
                 {
-                    TransferType = TransferTypeDirectGive,
-                    FromPlayerName = fromPlayer.Name,
-                    FromPlayerAccount = fromPlayer.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = toPlayer.Name,
-                    ToPlayerAccount = toPlayer.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = quantity,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
-                    ToAccountCreatedDate = toPlayer.Account?.CreateTime,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(fromPlayer),
-                    ToCharacterCreatedDate = GetCharacterCreationDate(toPlayer),
-                    AdditionalData = $"Item GUID: {item.Guid}",
-                    FromPlayerIP = GetPlayerIP(fromPlayer),
-                    ToPlayerIP = GetPlayerIP(toPlayer)
-                };
+                    // Coalesce tracked items by name to sum quantities
+                    var trackedItemsDict = new Dictionary<string, int>();
+                    var firstItemGuid = new Dictionary<string, string>(); // Store first GUID for each item name
+                    
+                    foreach (var innerItem in container.Inventory.Values)
+                    {
+                        // Only log if item tracking is enabled and this inner item should be tracked
+                        if (Config.EnableItemTracking && ShouldTrackItem(innerItem.Name))
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var itemName = innerItem.Name;
+                            
+                            // Sum quantities for items with the same name
+                            if (trackedItemsDict.ContainsKey(itemName))
+                            {
+                                trackedItemsDict[itemName] += (int)innerStackSize;
+                            }
+                            else
+                            {
+                                trackedItemsDict[itemName] = (int)innerStackSize;
+                                firstItemGuid[itemName] = innerItem.Guid.ToString();
+                            }
+                        }
+                    }
+                    
+                    // Log each unique tracked item with coalesced quantity
+                    foreach (var kvp in trackedItemsDict)
+                    {
+                        var innerTransferLog = new TransferLog
+                        {
+                            TransferType = TransferTypeDirectGive,
+                            FromPlayerName = fromPlayer.Name,
+                            FromPlayerAccount = fromPlayer.Account?.AccountName ?? "Unknown",
+                            ToPlayerName = toPlayer.Name,
+                            ToPlayerAccount = toPlayer.Account?.AccountName ?? "Unknown",
+                            ItemName = kvp.Key,
+                            Quantity = kvp.Value,
+                            Timestamp = DateTime.UtcNow,
+                            FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
+                            ToAccountCreatedDate = toPlayer.Account?.CreateTime,
+                            FromCharacterCreatedDate = GetCharacterCreationDate(fromPlayer),
+                            ToCharacterCreatedDate = GetCharacterCreationDate(toPlayer),
+                            AdditionalData = $"Item GUID: {firstItemGuid[kvp.Key]}",
+                            FromPlayerIP = GetPlayerIP(fromPlayer),
+                            ToPlayerIP = GetPlayerIP(toPlayer)
+                        };
 
-                // Process in background thread to prevent blocking the game thread
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                        // Process in background thread to prevent blocking the game thread
+                        Task.Run(() => ProcessTransferLogBackground(innerTransferLog));
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -675,7 +727,9 @@ namespace ACE.Server.Managers
                 return;
             }
 
-            // Log each tracked item from player1 to player2
+            // Coalesce tracked items by name for player1 -> player2
+            // Note: When a container is traded, the items inside are already in the escrow list separately
+            var player1ItemsDict = new Dictionary<string, (int quantity, long totalValue)>();
             foreach (var item in player1Escrow)
             {
                 // Only log if this specific item should be tracked
@@ -684,21 +738,39 @@ namespace ACE.Server.Managers
                     log.Debug($"Skipping untracked item in trade: {item.Name}");
                     continue;
                 }
-            var transferLog = new TransferLog
+                
+                var stackSize = item.StackSize ?? 1;
+                var itemValue = CalculateItemValue(item, (int)stackSize);
+                
+                if (player1ItemsDict.ContainsKey(item.Name))
+                {
+                    var existing = player1ItemsDict[item.Name];
+                    player1ItemsDict[item.Name] = (existing.quantity + (int)stackSize, existing.totalValue + itemValue);
+                }
+                else
+                {
+                    player1ItemsDict[item.Name] = ((int)stackSize, itemValue);
+                }
+            }
+            
+            // Log each unique tracked item from player1 to player2 with coalesced quantity
+            foreach (var kvp in player1ItemsDict)
             {
+                var transferLog = new TransferLog
+                {
                     TransferType = TransferTypeTrade,
-                FromPlayerName = player1.Name,
-                FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                ToPlayerName = player2.Name,
-                ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                Timestamp = DateTime.UtcNow,
+                    FromPlayerName = player1.Name,
+                    FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                    ToPlayerName = player2.Name,
+                    ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                    ItemName = kvp.Key,
+                    Quantity = kvp.Value.quantity,
+                    Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = player1.Account?.CreateTime,
                     ToAccountCreatedDate = player2.Account?.CreateTime,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player1),
                     ToCharacterCreatedDate = GetCharacterCreationDate(player2),
-                    AdditionalData = $"Trade Value: {CalculateItemValue(item, item.StackSize ?? 1)}",
+                    AdditionalData = $"Trade Value: {kvp.Value.totalValue}",
                     FromPlayerIP = GetPlayerIP(player1),
                     ToPlayerIP = GetPlayerIP(player2)
                 };
@@ -707,7 +779,9 @@ namespace ACE.Server.Managers
                 Task.Run(() => ProcessTransferLogBackground(transferLog));
             }
 
-            // Log each tracked item from player2 to player1
+            // Coalesce tracked items by name for player2 -> player1
+            // Note: When a container is traded, the items inside are already in the escrow list separately
+            var player2ItemsDict = new Dictionary<string, (int quantity, long totalValue)>();
             foreach (var item in player2Escrow)
             {
                 // Only log if this specific item should be tracked
@@ -716,21 +790,39 @@ namespace ACE.Server.Managers
                     log.Debug($"Skipping untracked item in trade: {item.Name}");
                     continue;
                 }
-            var reverseTransferLog = new TransferLog
+                
+                var stackSize = item.StackSize ?? 1;
+                var itemValue = CalculateItemValue(item, (int)stackSize);
+                
+                if (player2ItemsDict.ContainsKey(item.Name))
+                {
+                    var existing = player2ItemsDict[item.Name];
+                    player2ItemsDict[item.Name] = (existing.quantity + (int)stackSize, existing.totalValue + itemValue);
+                }
+                else
+                {
+                    player2ItemsDict[item.Name] = ((int)stackSize, itemValue);
+                }
+            }
+            
+            // Log each unique tracked item from player2 to player1 with coalesced quantity
+            foreach (var kvp in player2ItemsDict)
             {
+                var reverseTransferLog = new TransferLog
+                {
                     TransferType = TransferTypeTrade,
-                FromPlayerName = player2.Name,
-                FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                ToPlayerName = player1.Name,
-                ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                Timestamp = DateTime.UtcNow,
+                    FromPlayerName = player2.Name,
+                    FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                    ToPlayerName = player1.Name,
+                    ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                    ItemName = kvp.Key,
+                    Quantity = kvp.Value.quantity,
+                    Timestamp = DateTime.UtcNow,
                     FromAccountCreatedDate = player2.Account?.CreateTime,
                     ToAccountCreatedDate = player1.Account?.CreateTime,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player2),
                     ToCharacterCreatedDate = GetCharacterCreationDate(player1),
-                    AdditionalData = $"Trade Value: {CalculateItemValue(item, item.StackSize ?? 1)}",
+                    AdditionalData = $"Trade Value: {kvp.Value.totalValue}",
                     FromPlayerIP = GetPlayerIP(player2),
                     ToPlayerIP = GetPlayerIP(player1)
                 };
@@ -762,43 +854,96 @@ namespace ACE.Server.Managers
                     return;
                 }
                 
-                // Only log if item tracking is enabled and this item should be tracked
+                // Only log if item tracking is enabled
                 if (!Config.EnableItemTracking)
                 {
                     log.Info("Skipping ground pickup logging - item tracking disabled");
                     return;
                 }
 
-                if (!ShouldTrackItem(item.Name))
-                {
-                    log.Debug($"Skipping ground pickup logging for untracked item: {item.Name}");
-                    return;
-                }
-
                 // Ensure database is migrated before logging
                 EnsureDatabaseMigrated();
 
-                var transferLog = new TransferLog
+                // Log the container itself if it's tracked
+                if (ShouldTrackItem(item.Name))
                 {
-                    TransferType = TransferTypeGroundPickup,
-                    FromPlayerName = "Ground",
-                    FromPlayerAccount = "Ground",
-                    ToPlayerName = player.Name,
-                    ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = quantity,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = null, // Ground doesn't have account creation date
-                    ToAccountCreatedDate = player.Account?.CreateTime,
-                    FromCharacterCreatedDate = null, // Ground doesn't have character creation date
-                    ToCharacterCreatedDate = GetCharacterCreationDate(player),
-                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
-                    FromPlayerIP = null, // Ground doesn't have IP
-                    ToPlayerIP = GetPlayerIP(player)
-                };
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeGroundPickup,
+                        FromPlayerName = "Ground",
+                        FromPlayerAccount = "Ground",
+                        ToPlayerName = player.Name,
+                        ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                        ItemName = item.Name,
+                        Quantity = quantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = null, // Ground doesn't have account creation date
+                        ToAccountCreatedDate = player.Account?.CreateTime,
+                        FromCharacterCreatedDate = null, // Ground doesn't have character creation date
+                        ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                        AdditionalData = $"Location: {player.Location?.ToLOCString()}",
+                        FromPlayerIP = null, // Ground doesn't have IP
+                        ToPlayerIP = GetPlayerIP(player)
+                    };
 
-                // Process in background to avoid blocking the main thread
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                    // Process in background to avoid blocking the main thread
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
+
+                // If item is a container, also log tracked items inside (even if container itself is not tracked)
+                if (item is Container container && container.Inventory != null && container.Inventory.Count > 0)
+                {
+                    // Coalesce tracked items by name to sum quantities
+                    var trackedItemsDict = new Dictionary<string, int>();
+                    var firstItemGuid = new Dictionary<string, string>(); // Store first GUID for each item name
+                    var locationStr = player.Location?.ToLOCString() ?? "Unknown";
+                    
+                    foreach (var innerItem in container.Inventory.Values)
+                    {
+                        // Only log if this inner item should be tracked
+                        if (ShouldTrackItem(innerItem.Name))
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var itemName = innerItem.Name;
+                            
+                            // Sum quantities for items with the same name
+                            if (trackedItemsDict.ContainsKey(itemName))
+                            {
+                                trackedItemsDict[itemName] += (int)innerStackSize;
+                            }
+                            else
+                            {
+                                trackedItemsDict[itemName] = (int)innerStackSize;
+                                firstItemGuid[itemName] = innerItem.Guid.ToString();
+                            }
+                        }
+                    }
+                    
+                    // Log each unique tracked item with coalesced quantity
+                    foreach (var kvp in trackedItemsDict)
+                    {
+                        var innerTransferLog = new TransferLog
+                        {
+                            TransferType = TransferTypeGroundPickup,
+                            FromPlayerName = "Ground",
+                            FromPlayerAccount = "Ground",
+                            ToPlayerName = player.Name,
+                            ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                            ItemName = kvp.Key,
+                            Quantity = kvp.Value,
+                            Timestamp = DateTime.UtcNow,
+                            FromAccountCreatedDate = null,
+                            ToAccountCreatedDate = player.Account?.CreateTime,
+                            FromCharacterCreatedDate = null,
+                            ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                            AdditionalData = $"Location: {locationStr}",
+                            FromPlayerIP = null,
+                            ToPlayerIP = GetPlayerIP(player)
+                        };
+
+                        Task.Run(() => ProcessTransferLogBackground(innerTransferLog));
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -876,34 +1021,89 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                if (!ShouldTrackItem(item.Name))
+                // Log the container itself if it's tracked
+                if (ShouldTrackItem(item.Name))
                 {
-                    log.Debug($"Skipping ground drop logging for untracked item: {item.Name}");
-                    return;
+                    EnsureDatabaseMigrated();
+
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeGroundDrop,
+                        FromPlayerName = player.Name,
+                        FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = "Ground",
+                        ToPlayerAccount = "Ground",
+                        ItemName = item.Name,
+                        Quantity = item.StackSize ?? 1,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = player.Account?.CreateTime,
+                        ToAccountCreatedDate = null,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(player),
+                        ToCharacterCreatedDate = null,
+                        AdditionalData = $"Location: {player.Location?.ToLOCString()}",
+                        FromPlayerIP = GetPlayerIP(player),
+                        ToPlayerIP = null
+                    };
+
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
                 }
 
-                EnsureDatabaseMigrated();
-
-                var transferLog = new TransferLog
+                // If item is a container, also log tracked items inside
+                if (item is Container container && container.Inventory != null && container.Inventory.Count > 0)
                 {
-                    TransferType = TransferTypeGroundDrop,
-                    FromPlayerName = player.Name,
-                    FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = "Ground",
-                    ToPlayerAccount = "Ground",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = player.Account?.CreateTime,
-                    ToAccountCreatedDate = null,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(player),
-                    ToCharacterCreatedDate = null,
-                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
-                    FromPlayerIP = GetPlayerIP(player),
-                    ToPlayerIP = null
-                };
+                    EnsureDatabaseMigrated();
 
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                    // Coalesce tracked items by name to sum quantities
+                    var trackedItemsDict = new Dictionary<string, int>();
+                    var firstItemGuid = new Dictionary<string, string>(); // Store first GUID for each item name
+                    var locationStr = player.Location?.ToLOCString() ?? "Unknown";
+                    
+                    foreach (var innerItem in container.Inventory.Values)
+                    {
+                        // Only log if this inner item should be tracked
+                        if (ShouldTrackItem(innerItem.Name))
+                        {
+                            var innerStackSize = innerItem.StackSize ?? 1;
+                            var itemName = innerItem.Name;
+                            
+                            // Sum quantities for items with the same name
+                            if (trackedItemsDict.ContainsKey(itemName))
+                            {
+                                trackedItemsDict[itemName] += (int)innerStackSize;
+                            }
+                            else
+                            {
+                                trackedItemsDict[itemName] = (int)innerStackSize;
+                                firstItemGuid[itemName] = innerItem.Guid.ToString();
+                            }
+                        }
+                    }
+                    
+                    // Log each unique tracked item with coalesced quantity
+                    foreach (var kvp in trackedItemsDict)
+                    {
+                        var innerTransferLog = new TransferLog
+                        {
+                            TransferType = TransferTypeGroundDrop,
+                            FromPlayerName = player.Name,
+                            FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                            ToPlayerName = "Ground",
+                            ToPlayerAccount = "Ground",
+                            ItemName = kvp.Key,
+                            Quantity = kvp.Value,
+                            Timestamp = DateTime.UtcNow,
+                            FromAccountCreatedDate = player.Account?.CreateTime,
+                            ToAccountCreatedDate = null,
+                            FromCharacterCreatedDate = GetCharacterCreationDate(player),
+                            ToCharacterCreatedDate = null,
+                            AdditionalData = $"Location: {locationStr}",
+                            FromPlayerIP = GetPlayerIP(player),
+                            ToPlayerIP = null
+                        };
+
+                        Task.Run(() => ProcessTransferLogBackground(innerTransferLog));
+                    }
+                }
             }
             catch (Exception ex)
             {

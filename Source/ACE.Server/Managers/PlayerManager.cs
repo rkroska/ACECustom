@@ -44,6 +44,12 @@ namespace ACE.Server.Managers
         private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
         /// <summary>
+        /// Timestamp of the last EnsureSaveIfOwed check for online players.
+        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
+        /// </summary>
+        private static DateTime lastEnsureSaveCheckUtc = DateTime.MinValue;
+
+        /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
         /// </summary>
         public static void Initialize()
@@ -97,6 +103,25 @@ namespace ACE.Server.Managers
 
             var currentUnixTime = Time.GetUnixTime();
 
+            // Ensure any owed saves don't get stuck if activity stops (rate limited to every 3 seconds)
+            if (lastEnsureSaveCheckUtc == DateTime.MinValue || DateTime.UtcNow >= lastEnsureSaveCheckUtc.AddSeconds(3))
+            {
+                lastEnsureSaveCheckUtc = DateTime.UtcNow;
+                
+                playersLock.EnterReadLock();
+                try
+                {
+                    foreach (var player in onlinePlayers.Values)
+                    {
+                        player.EnsureSaveIfOwed();
+                    }
+                }
+                finally
+                {
+                    playersLock.ExitReadLock();
+                }
+            }
+
             while (playersPendingLogoff.Count > 0)
             {
                 var first = playersPendingLogoff.First.Value;
@@ -138,13 +163,26 @@ namespace ACE.Server.Managers
             if (playersWithChanges > 0)
             {
                 log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
-                DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
-                {
-                    if (success)
-                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
-                    else
-                        log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
-                });
+                // Use SaveScheduler which sits above SerializedShardDatabase
+                // NOTE: "OfflinePlayerSaves" is intentionally a global, singleton key.
+                // This is correct because there is exactly one offline save concept (all offline players),
+                // it is periodic, and it is global (not per-account or per-shard).
+                // If per-account or per-shard offline saves are added later, they must use different keys
+                // (e.g., "OfflinePlayerSaves:Account:{accountId}") to avoid incorrect coalescing.
+                ACE.Database.SaveScheduler.Instance.RequestSave(
+                    "OfflinePlayerSaves",
+                    ACE.Database.SaveScheduler.SaveType.Periodic,
+                    () =>
+                    {
+                        DatabaseManager.Shard.QueueOfflinePlayerSavesInternal(success =>
+                        {
+                            if (success)
+                                log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
+                            else
+                                log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
+                        });
+                        return true;
+                    });
             }
             else
             {
@@ -772,58 +810,58 @@ namespace ACE.Server.Managers
             switch (channel)
             {
                 case Channel.Abuse:
-                    if (!PropertyManager.GetBool("chat_log_abuse"))
+                    if (!ServerConfig.chat_log_abuse.Value)
                         return;
                     break;
                 case Channel.Admin:
-                    if (!PropertyManager.GetBool("chat_log_admin"))
+                    if (!ServerConfig.chat_log_admin.Value)
                         return;
                     break;
                 case Channel.AllBroadcast: // using this to sub in for a WorldBroadcast channel which isn't technically a channel
-                    if (!PropertyManager.GetBool("chat_log_global"))
+                    if (!ServerConfig.chat_log_global.Value)
                         return;
                     break;
                 case Channel.Audit:
-                    if (!PropertyManager.GetBool("chat_log_audit"))
+                    if (!ServerConfig.chat_log_audit.Value)
                         return;
                     break;
                 case Channel.Advocate1:
                 case Channel.Advocate2:
                 case Channel.Advocate3:
-                    if (!PropertyManager.GetBool("chat_log_advocate"))
+                    if (!ServerConfig.chat_log_advocate.Value)
                         return;
                     break;
                 case Channel.Debug:
-                    if (!PropertyManager.GetBool("chat_log_debug"))
+                    if (!ServerConfig.chat_log_debug.Value)
                         return;
                     break;
                 case Channel.Fellow:
                 case Channel.FellowBroadcast:
-                    if (!PropertyManager.GetBool("chat_log_fellow"))
+                    if (!ServerConfig.chat_log_fellow.Value)
                         return;
                     break;
                 case Channel.Help:
-                    if (!PropertyManager.GetBool("chat_log_help"))
+                    if (!ServerConfig.chat_log_help.Value)
                         return;
                     break;
                 case Channel.Olthoi:
-                    if (!PropertyManager.GetBool("chat_log_olthoi"))
+                    if (!ServerConfig.chat_log_olthoi.Value)
                         return;
                     break;
                 case Channel.QA1:
                 case Channel.QA2:
-                    if (!PropertyManager.GetBool("chat_log_qa"))
+                    if (!ServerConfig.chat_log_qa.Value)
                         return;
                     break;
                 case Channel.Sentinel:
-                    if (!PropertyManager.GetBool("chat_log_sentinel"))
+                    if (!ServerConfig.chat_log_sentinel.Value)
                         return;
                     break;
 
                 case Channel.SocietyCelHanBroadcast:
                 case Channel.SocietyEldWebBroadcast:
                 case Channel.SocietyRadBloBroadcast:
-                    if (!PropertyManager.GetBool("chat_log_society"))
+                    if (!ServerConfig.chat_log_society.Value)
                         return;
                     break;
 
@@ -832,7 +870,7 @@ namespace ACE.Server.Managers
                 case Channel.Monarch:
                 case Channel.Patron:
                 case Channel.Vassals:
-                    if (!PropertyManager.GetBool("chat_log_allegiance"))
+                    if (!ServerConfig.chat_log_allegiance.Value)
                         return;
                     break;
 
@@ -845,7 +883,7 @@ namespace ACE.Server.Managers
                 case Channel.Shoushi:
                 case Channel.Yanshi:
                 case Channel.Yaraq:
-                    if (!PropertyManager.GetBool("chat_log_townchans"))
+                    if (!ServerConfig.chat_log_townchans.Value)
                         return;
                     break;
 
@@ -939,7 +977,7 @@ namespace ACE.Server.Managers
                             player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
                         }
 
-                        var msg = $"This world has been changed to a Player Killer world. All players will become Player Killers in {PropertyManager.GetDouble("pk_respite_timer")} seconds.";
+                        var msg = $"This world has been changed to a Player Killer world. All players will become Player Killers in {ServerConfig.pk_respite_timer.Value} seconds.";
                         BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
                         LogBroadcastChat(Channel.AllBroadcast, null, msg);
                     }
@@ -960,7 +998,7 @@ namespace ACE.Server.Managers
                     }
                     break;
                 case "pkl_server":
-                    if (PropertyManager.GetBool("pk_server"))
+                    if (ServerConfig.pk_server.Value)
                         return;
                     if (enabled)
                     {
@@ -973,7 +1011,7 @@ namespace ACE.Server.Managers
                             player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
                         }
 
-                        var msg = $"This world has been changed to a Player Killer Lite world. All players will become Player Killer Lites in {PropertyManager.GetDouble("pk_respite_timer")} seconds.";
+                        var msg = $"This world has been changed to a Player Killer Lite world. All players will become Player Killer Lites in {ServerConfig.pk_respite_timer.Value} seconds.";
                         BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
                         LogBroadcastChat(Channel.AllBroadcast, null, msg);
                     }
@@ -998,7 +1036,7 @@ namespace ACE.Server.Managers
 
         public static bool IsAccountAtMaxCharacterSlots(string accountName)
         {
-            var slotsAvailable = (int)PropertyManager.GetLong("max_chars_per_account");
+            var slotsAvailable = (int)ServerConfig.max_chars_per_account.Value;
             var onlinePlayersTotal = 0;
             var offlinePlayersTotal = 0;
 

@@ -86,7 +86,7 @@ namespace ACE.Server.WorldObjects
                 FellowVitalUpdate = false;
             }
 
-            if (House != null && PropertyManager.GetBool("house_rent_enabled"))
+            if (House != null && ServerConfig.house_rent_enabled.Value)
             {
                 if (houseRentWarnTimestamp > 0 && currentUnixTime > houseRentWarnTimestamp)
                 {
@@ -129,7 +129,9 @@ namespace ACE.Server.WorldObjects
                 LastRequestedDatabaseSave = DateTime.UtcNow;
 
             if (LastRequestedDatabaseSave.AddSeconds(PlayerSaveIntervalSecs + ThreadSafeRandom.Next(15, 120)) <= DateTime.UtcNow) //vary the save duration to prevent DB slamming
-                SavePlayerToDatabase();
+            {
+                SavePlayerToDatabase(reason: SaveReason.Normal);
+            }
 
             if (Teleporting && DateTime.UtcNow > Time.GetDateTimeFromTimestamp(LastTeleportStartTimestamp ?? 0).Add(MaximumTeleportTime))
             {
@@ -186,7 +188,7 @@ namespace ACE.Server.WorldObjects
             if (!PhysicsObj.IsMovingOrAnimating)
                 PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
 
-            if (!PropertyManager.GetBool("client_movement_formula") || moveToState.StandingLongJump)
+            if (!ServerConfig.client_movement_formula.Value || moveToState.StandingLongJump)
                 OnMoveToState_ServerMethod(moveToState);
             else
                 OnMoveToState_ClientMethod(moveToState);
