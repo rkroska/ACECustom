@@ -18,6 +18,11 @@ using ACE.Server.Mods;
 
 namespace ACE.Server
 {
+    public static class ServerRuntime
+    {
+        public static Guid BootId { get; internal set; }
+    }
+
     partial class Program
     {
         /// <summary>
@@ -41,6 +46,10 @@ namespace ACE.Server
 
         public static void Main(string[] args)
         {
+            // Set BootId very early - before any database or manager initialization
+            ServerRuntime.BootId = Guid.NewGuid();
+            log.Info($"Server BootId: {ServerRuntime.BootId}");
+
             var consoleTitle = $"ACEmulator - v{ServerBuildInfo.FullVersion}";
 
             Console.Title = consoleTitle;
@@ -287,6 +296,9 @@ namespace ACE.Server
 
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
+
+            // Configure SaveScheduler stuck threshold from ServerConfig
+            SaveScheduler.Instance.SetStuckThreshold(TimeSpan.FromSeconds(ServerConfig.save_scheduler_stuck_seconds.Value));
 
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();

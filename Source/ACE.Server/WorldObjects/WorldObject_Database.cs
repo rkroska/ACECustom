@@ -37,6 +37,7 @@ namespace ACE.Server.WorldObjects
             get => _saveInProgress;
             set => _saveInProgress = value;
         }
+        internal Guid? SaveServerBootId { get; set; }
         internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
@@ -412,6 +413,7 @@ namespace ACE.Server.WorldObjects
             if (!enqueueSave)
             {
                 SaveInProgress = true;
+                SaveServerBootId = ServerRuntime.BootId;
 
                 // If a mutation happened during batch prep (between top guard and here),
                 // ensure a follow-up save is generated to capture the newer changes
@@ -425,6 +427,7 @@ namespace ACE.Server.WorldObjects
             
             // For individual saves, set just before enqueuing
             SaveInProgress = true;
+            SaveServerBootId = ServerRuntime.BootId;
             
 #if DEBUG
             // Log final ContainerId before queuing save

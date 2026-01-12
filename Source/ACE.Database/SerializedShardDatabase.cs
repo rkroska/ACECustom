@@ -549,14 +549,20 @@ namespace ACE.Database
         {
             _uniqueQueue.Enqueue(new WorkItem(() =>
             {
+                bool result = false;
                 try
                 {
-                    var result = BaseDatabase.SaveBiota(biota, rwLock);
-                    callback?.Invoke(result);
+                    result = BaseDatabase.SaveBiota(biota, rwLock);
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id}", ex);
+                    log.Error($"[DATABASE] SaveBiota failed for biota {biota.Id}", ex);
+                    result = false;
+                }
+                finally
+                {
+                    try { callback?.Invoke(result); }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id}", cbEx); }
                 }
             }, "SaveBiota: " + biota.Id));
         }
@@ -566,14 +572,20 @@ namespace ACE.Database
         {
             _uniqueQueue.Enqueue(new WorkItem(() =>
             {
+                bool result = false;
                 try
                 {
-                    var result = BaseDatabase.SaveBiotasInParallel(biotas);
-                    callback?.Invoke(result);
+                    result = BaseDatabase.SaveBiotasInParallel(biotas);
                 }
                 catch (Exception ex)
                 {
-                    log.Error("[DATABASE] SaveBiotasInParallel callback threw exception", ex);
+                    log.Error("[DATABASE] SaveBiotasInParallel failed", ex);
+                    result = false;
+                }
+                finally
+                {
+                    try { callback?.Invoke(result); }
+                    catch (Exception cbEx) { log.Error("[DATABASE] SaveBiotasInParallel callback threw exception", cbEx); }
                 }
             }, "SaveBiotasInParallel " + sourceTrace));
         }
@@ -717,14 +729,20 @@ namespace ACE.Database
         {
             _uniqueQueue.Enqueue(new WorkItem(() =>
             {
+                bool result = false;
                 try
                 {
-                    var result = BaseDatabase.RemoveBiota(id);
-                    callback?.Invoke(result);
+                    result = BaseDatabase.RemoveBiota(id);
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] RemoveBiota callback threw exception for id {id}", ex);
+                    log.Error($"[DATABASE] RemoveBiota failed for id {id}", ex);
+                    result = false;
+                }
+                finally
+                {
+                    try { callback?.Invoke(result); }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] RemoveBiota callback threw exception for id {id}", cbEx); }
                 }
             }, "RemoveBiota: " + id));
         }
@@ -735,17 +753,29 @@ namespace ACE.Database
 
             _uniqueQueue.Enqueue(new WorkItem(() =>
             {
+                bool result = false;
+                DateTime taskStartTime = DateTime.UtcNow;
+                DateTime taskCompletedTime = DateTime.UtcNow;
                 try
                 {
-                    var taskStartTime = DateTime.UtcNow;
-                    var result = BaseDatabase.RemoveBiota(id);
-                    var taskCompletedTime = DateTime.UtcNow;
-                    callback?.Invoke(result);
-                    performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
+                    taskStartTime = DateTime.UtcNow;
+                    result = BaseDatabase.RemoveBiota(id);
+                    taskCompletedTime = DateTime.UtcNow;
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] RemoveBiota callback threw exception for id {id}", ex);
+                    log.Error($"[DATABASE] RemoveBiota failed for id {id}", ex);
+                    result = false;
+                    taskCompletedTime = DateTime.UtcNow;
+                }
+                finally
+                {
+                    try
+                    {
+                        callback?.Invoke(result);
+                        performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
+                    }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] RemoveBiota callback threw exception for id {id}", cbEx); }
                 }
             }, "RemoveBiota2:" + id));
         }
@@ -758,17 +788,29 @@ namespace ACE.Database
 
             _uniqueQueue.Enqueue(new WorkItem(() =>
             {
+                bool result = false;
+                DateTime taskStartTime = DateTime.UtcNow;
+                DateTime taskCompletedTime = DateTime.UtcNow;
                 try
                 {
-                    var taskStartTime = DateTime.UtcNow;
-                    var result = BaseDatabase.RemoveBiotasInParallel(ids);
-                    var taskCompletedTime = DateTime.UtcNow;
-                    callback?.Invoke(result);
-                    performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
+                    taskStartTime = DateTime.UtcNow;
+                    result = BaseDatabase.RemoveBiotasInParallel(ids);
+                    taskCompletedTime = DateTime.UtcNow;
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] RemoveBiotasInParallel callback threw exception: {ex}", ex);
+                    log.Error($"[DATABASE] RemoveBiotasInParallel failed: {ex}", ex);
+                    result = false;
+                    taskCompletedTime = DateTime.UtcNow;
+                }
+                finally
+                {
+                    try
+                    {
+                        callback?.Invoke(result);
+                        performanceResults?.Invoke(taskStartTime - initialCallTime, taskCompletedTime - taskStartTime);
+                    }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] RemoveBiotasInParallel callback threw exception: {cbEx}", cbEx); }
                 }
             }, idKey));
         }
@@ -881,14 +923,20 @@ namespace ACE.Database
         {
             _uniqueQueue.Enqueue(new WorkItem(() =>
             {
+                bool result = false;
                 try
                 {
-                    var result = BaseDatabase.SaveCharacter(character, rwLock);
-                    callback?.Invoke(result);
+                    result = BaseDatabase.SaveCharacter(character, rwLock);
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] SaveCharacter callback threw exception for character {character.Id}", ex);
+                    log.Error($"[DATABASE] SaveCharacter failed for character {character.Id}", ex);
+                    result = false;
+                }
+                finally
+                {
+                    try { callback?.Invoke(result); }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] SaveCharacter callback threw exception for character {character.Id}", cbEx); }
                 }
             }, "SaveCharacter: " + character.Id));
         }
@@ -933,9 +981,28 @@ namespace ACE.Database
         }
 
         /// <summary>
-        /// Queues offline player saves to be processed in the background
+        /// Queues offline player saves to be processed in the background.
+        /// This is a legacy convenience method that enqueues directly to _uniqueQueue.
+        /// 
+        /// For new code, use SaveScheduler.RequestSave() with a work delegate that calls QueueOfflinePlayerSavesInternal().
+        /// Architecture: Gameplay → SaveScheduler.RequestSave() → (work delegate) → QueueOfflinePlayerSavesInternal() → _uniqueQueue → DB
+        /// 
+        /// NOTE: Inner layer (SerializedShardDatabase) does not call outer layer (SaveScheduler).
+        /// This method is for backward compatibility only.
         /// </summary>
         public void QueueOfflinePlayerSaves(Action<bool> callback = null)
+        {
+            // Direct enqueue to _uniqueQueue (bypasses SaveScheduler for backward compatibility)
+            // Inner layer does not call outer layer - this method is for legacy code only
+            QueueOfflinePlayerSavesInternal(callback);
+        }
+
+        /// <summary>
+        /// Internal method that performs the actual offline player save work.
+        /// Called by SaveScheduler's work delegate.
+        /// Enqueues work to _uniqueQueue which is processed by DB worker thread.
+        /// </summary>
+        public void QueueOfflinePlayerSavesInternal(Action<bool> callback = null)
         {
             // Use a stable key so multiple enqueues collapse to the most recent
             var workItemKey = "OfflinePlayerSaves";
@@ -953,7 +1020,7 @@ namespace ACE.Database
                     }
                     else
                     {
-                        // Call the existing SaveOfflinePlayersWithChanges method directly
+                        // Call the existing PerformOfflinePlayerSaves method directly
                         var saveMethod = playerManagerType.GetMethod(
                             "PerformOfflinePlayerSaves",
                             System.Reflection.BindingFlags.Public

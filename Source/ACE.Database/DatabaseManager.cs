@@ -2,6 +2,8 @@ using System;
 
 using log4net;
 
+using ACE.Database.Models.Shard;
+
 namespace ACE.Database
 {
     public static class DatabaseManager

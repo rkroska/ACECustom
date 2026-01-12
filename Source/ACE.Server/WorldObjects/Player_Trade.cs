@@ -278,6 +278,47 @@ namespace ACE.Server.WorldObjects
 
                 DatabaseManager.Shard.SaveBiotasInParallel(tradedItems, (result) =>
                 {
+                    // Clear SaveInProgress flags for all traded items on both success and failure
+                    // This prevents stuck SaveInProgress flags if the save fails or server restarts
+                    var clearFlagsAction = new ACE.Server.Entity.Actions.ActionChain();
+                    clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerTrade_ClearFlagsAfterSave, () =>
+                    {
+                        foreach (var wo in myEscrow)
+                        {
+                            if (!wo.IsDestroyed)
+                            {
+                                wo.SaveInProgress = false;
+                                wo.SaveStartTime = DateTime.MinValue;
+                                wo.SaveServerBootId = null;
+                                
+                                if (!result)
+                                {
+                                    wo.ChangesDetected = true;
+                                }
+                            }
+                        }
+                        foreach (var wo in targetEscrow)
+                        {
+                            if (!wo.IsDestroyed)
+                            {
+                                wo.SaveInProgress = false;
+                                wo.SaveStartTime = DateTime.MinValue;
+                                wo.SaveServerBootId = null;
+                                
+                                if (!result)
+                                {
+                                    wo.ChangesDetected = true;
+                                }
+                            }
+                        }
+
+                        if (!result)
+                        {
+                            log.Warn($"[TRADE SAVE] Bulk save for trade between {Name} and {target.Name} returned false; SaveInProgress flags cleared to avoid stuck state.");
+                        }
+                    });
+                    clearFlagsAction.EnqueueChain();
+
                     // Log audit after saves complete to avoid lock issues
                     if (isAdminTrade && adminPlayer != null && otherPlayer != null)
                     {
