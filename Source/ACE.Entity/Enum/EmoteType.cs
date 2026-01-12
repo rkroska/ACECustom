@@ -142,10 +142,11 @@ namespace ACE.Entity.Enum
         GrantAttributeStat            = 133, //Custom
         GrantVitalStat                = 134, //Custom
         InqServerQuestSolves          = 135, //Custom - Check if quest has been completed by anyone on server
-        IncrementMyIntStat            = 136, //Custom - Increment self's PropertyInt stat
-        DecrementMyIntStat            = 137, //Custom - Decrement self's PropertyInt stat
-        IncrementMyInt64Stat          = 138, //Custom - Increment self's PropertyInt64 stat
-        DecrementMyInt64Stat          = 139, //Custom - Decrement self's PropertyInt64 stat
+        GrantRandomQuestStamp         = 136, //Custom
+        IncrementMyIntStat            = 137, //Custom - Increment self's PropertyInt stat
+        DecrementMyIntStat            = 138, //Custom - Decrement self's PropertyInt stat
+        IncrementMyInt64Stat          = 139, //Custom - Increment self's PropertyInt64 stat
+        DecrementMyInt64Stat          = 140, //Custom - Decrement self's PropertyInt64 stat
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001
