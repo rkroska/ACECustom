@@ -288,7 +288,9 @@ namespace ACE.Server.WorldObjects
             
             // Track if preparation failed - if true, callback should treat result as false
             // This prevents clearing ChangesDetected when nothing was actually saved
-            bool preparationFailed = false;
+            // Using array to enable Volatile operations for thread-safe cross-thread visibility
+            // (Cannot use ref on captured local, so array element provides ref-able location)
+            bool[] preparationFailed = new bool[1] { false };
             
             // Func that builds the biotas list at execution time to avoid stale snapshots
             // 
@@ -380,7 +382,8 @@ namespace ACE.Server.WorldObjects
                     log.Error($"[SAVE] getBiotas threw exception for {Name} (0x{Guid}), cleaning up flags", ex);
                     
                     // Mark preparation as failed so callback treats result as false
-                    preparationFailed = true;
+                    // Use Volatile.Write for thread-safe cross-thread visibility
+                    Volatile.Write(ref preparationFailed[0], true);
                     
                     // Clear player flags if we set them
                     if (playerPrepared)
@@ -425,7 +428,8 @@ namespace ACE.Server.WorldObjects
                 {
                     // If preparation failed, treat result as false to prevent clearing ChangesDetected
                     // when nothing was actually saved
-                    if (preparationFailed)
+                    // Use Volatile.Read for thread-safe cross-thread visibility
+                    if (Volatile.Read(ref preparationFailed[0]))
                         result = false;
                     
                     var currentPossessions = GetAllPossessions();

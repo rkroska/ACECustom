@@ -450,9 +450,10 @@ namespace ACE.Database
                 finally
                 {
                     // Track character saves: save is finishing execution
-                    // Check if callbacks should be drained (atomic with decrement)
+                    // Decrement active count first, then check if callbacks should be drained
                     if (charState != null)
                     {
+                        charState.FinishExecution(); // Decrements _activeCount
                         var callbacksToInvoke = charState.CheckAndDrainCallbacks();
                         if (callbacksToInvoke != null)
                         {
@@ -477,8 +478,9 @@ namespace ACE.Database
                             }
                             else
                             {
-                                // Fallback: invoke directly if EnqueueToWorldThread not set (shouldn't happen in production)
-                                log.Warn("[SAVESCHEDULER] EnqueueToWorldThread not set, invoking callbacks directly");
+                                // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                                // This fallback is unsafe and should never occur in production
+                                log.Error("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Invoking callbacks directly (unsafe - may cause thread safety issues). This indicates WorldManager.Initialize() was not called or failed.");
                                 foreach (var callback in callbacksToInvoke)
                                 {
                                     try
@@ -947,8 +949,9 @@ namespace ACE.Database
                 }
                 else
                 {
-                    // Fallback: invoke directly if EnqueueToWorldThread not set (shouldn't happen in production)
-                    log.Warn("[SAVESCHEDULER] EnqueueToWorldThread not set, invoking callback directly");
+                    // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                    // This fallback is unsafe and should never occur in production
+                    log.Error("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Invoking callback directly (unsafe - may cause thread safety issues). This indicates WorldManager.Initialize() was not called or failed.");
                     callback();
                 }
             }
