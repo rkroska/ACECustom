@@ -762,6 +762,19 @@ namespace ACE.Database
             }
 
             /// <summary>
+            /// Atomically checks if there are any pending or active saves.
+            /// Returns true if either count is greater than zero.
+            /// This method ensures the check is atomic, preventing TOCTOU race conditions.
+            /// </summary>
+            public bool HasPendingOrActive()
+            {
+                lock (_lock)
+                {
+                    return _pendingCount > 0 || _activeCount > 0;
+                }
+            }
+
+            /// <summary>
             /// Increments pending count. Must be called when a save is enqueued.
             /// Returns true if callbacks should be checked (both counts might be zero after increment).
             /// </summary>
@@ -920,10 +933,8 @@ namespace ACE.Database
             if (!_characterSaves.TryGetValue(characterId, out var state))
                 return false;
 
-            // Use property getters which are thread-safe
-            var pending = state.PendingCount;
-            var active = state.ActiveCount;
-            return pending > 0 || active > 0;
+            // Use atomic method to check both counts under a single lock, preventing TOCTOU race conditions
+            return state.HasPendingOrActive();
         }
 
         /// <summary>
