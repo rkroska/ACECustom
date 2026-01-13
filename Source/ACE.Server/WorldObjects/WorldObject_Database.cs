@@ -70,7 +70,6 @@ namespace ACE.Server.WorldObjects
             
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
             // Avoid property getters - use passed itemGuid and itemName
-            var playerInfo = this is Player ? $"{itemName ?? "player"} (0x{itemGuid})" : $"Object 0x{itemGuid}";
             
             // Use captured stack size from save snapshot (preserves save invariant)
             var currentStack = capturedStackSize;
@@ -78,7 +77,7 @@ namespace ACE.Server.WorldObjects
             var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
             
             var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-            log.Warn($"[DB RACE] {severityMarker} {playerInfo} {itemName} | In-flight: {timeInFlight:N0}ms{stackInfo}");
+            log.Warn($"[DB RACE] {severityMarker} {itemName ?? "item"} (0x{itemGuid:X8}) | In-flight: {timeInFlight:N0}ms{stackInfo}");
             
             if (stackChanged || timeInFlight > 50)
             {
@@ -102,8 +101,8 @@ namespace ACE.Server.WorldObjects
                 }
                 // Note: Container lookup removed to avoid property getter - owner context is optional for logging
                 var raceInfo = stackChanged 
-                    ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
+                    ? $"{ownerContext}{itemName} (0x{itemGuid:X8}) Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                    : $"{ownerContext}{itemName} (0x{itemGuid:X8}) ({timeInFlight:N0}ms)";
                 SendAggregatedDbRaceAlert(raceInfo);
             }
         }
