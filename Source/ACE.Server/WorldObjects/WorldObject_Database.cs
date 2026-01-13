@@ -38,6 +38,11 @@ namespace ACE.Server.WorldObjects
             set => _saveInProgress = value;
         }
         internal Guid? SaveServerBootId { get; set; }
+        /// <summary>
+        /// Timestamp when save was requested (before enqueue).
+        /// Includes queue wait time - not execution start time.
+        /// Used for diagnostics, race detection, and slow save alerts.
+        /// </summary>
         internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
@@ -60,16 +65,20 @@ namespace ACE.Server.WorldObjects
             if (!SaveInProgress)
                 return;
 
+            // Create display name for consistent null handling in all log messages
+            var displayName = itemName ?? "item";
+
             if (SaveStartTime == DateTime.MinValue)
             {
-                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {itemName} (0x{itemGuid})");
+                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {displayName} (0x{itemGuid})");
                 SaveInProgress = false;
                 SaveStartTime = DateTime.UtcNow;
                 return;
             }
             
+            // Calculate time since save was requested (includes queue wait time)
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-            // Avoid property getters - use passed itemGuid and itemName
+            // Avoid property getters - use passed itemGuid and displayName
             
             // Use captured stack size from save snapshot (preserves save invariant)
             var currentStack = capturedStackSize;
@@ -77,7 +86,7 @@ namespace ACE.Server.WorldObjects
             var severityMarker = stackChanged ? "🔴 DATA CHANGED" : "";
             
             var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
-            log.Warn($"[DB RACE] {severityMarker} {itemName ?? "item"} (0x{itemGuid:X8}) | In-flight: {timeInFlight:N0}ms{stackInfo}");
+            log.Warn($"[DB RACE] {severityMarker} {displayName} (0x{itemGuid:X8}) | Time since request (includes queue): {timeInFlight:N0}ms{stackInfo}");
             
             if (stackChanged || timeInFlight > 50)
             {
@@ -100,9 +109,10 @@ namespace ACE.Server.WorldObjects
                     ownerContext = $"[{playerName ?? "player"}] ";
                 }
                 // Note: Container lookup removed to avoid property getter - owner context is optional for logging
+                // timeInFlight includes queue wait time, not just execution time
                 var raceInfo = stackChanged 
-                    ? $"{ownerContext}{itemName} (0x{itemGuid:X8}) Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{itemName} (0x{itemGuid:X8}) ({timeInFlight:N0}ms)";
+                    ? $"{ownerContext}{displayName} (0x{itemGuid:X8}) Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                    : $"{ownerContext}{displayName} (0x{itemGuid:X8}) ({timeInFlight:N0}ms incl queue)";
                 SendAggregatedDbRaceAlert(raceInfo);
             }
         }
@@ -246,9 +256,12 @@ namespace ACE.Server.WorldObjects
             
             // Now operate on local variables only - no more lock acquisitions
 
+            // Create display name for consistent null handling in all log messages
+            var displayName = itemName ?? "item";
+
 #if DEBUG
-            // GetItemInfo uses itemName and itemGuid (already captured safely) - never use property getters
-            string GetItemInfo() => $"{itemName ?? "item"} (0x{itemGuid})";
+            // GetItemInfo uses displayName and itemGuid (already captured safely) - never use property getters
+            string GetItemInfo() => $"{displayName} (0x{itemGuid})";
             log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
 #endif
             
@@ -293,7 +306,7 @@ namespace ACE.Server.WorldObjects
                         // The coalescer will handle player items, but non-player items may enqueue duplicates.
                         allowSaveDespiteInProgress = true;
 #if DEBUG
-                        log.Debug($"[SAVE] Allowing individual save for {itemName ?? "item"} (0x{itemGuid:X8}) during player batch save - has newer changes (Biota ContainerId={staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}))");
+                        log.Debug($"[SAVE] Allowing individual save for {displayName} (0x{itemGuid:X8}) during player batch save - has newer changes (Biota ContainerId={staleCheckBiotaContainerId} (0x{staleCheckBiotaContainerId:X8}))");
 #endif
                     }
                 }
@@ -310,7 +323,7 @@ namespace ACE.Server.WorldObjects
                 if (timeSinceLastMutation.TotalSeconds > MUTATION_LEAK_TIMEOUT_SECONDS)
                 {
                     var currentDepth = Volatile.Read(ref _containerMutationDepth);
-                    log.Warn($"[CONTAINER MUTATION LEAK] Mutation depth stuck at {currentDepth} for {itemName ?? "item"} (0x{itemGuid:X8}) for {timeSinceLastMutation.TotalSeconds:F1}s - forcing reset");
+                    log.Warn($"[CONTAINER MUTATION LEAK] Mutation depth stuck at {currentDepth} for {displayName} (0x{itemGuid:X8}) for {timeSinceLastMutation.TotalSeconds:F1}s - forcing reset");
                     Interlocked.Exchange(ref _containerMutationDepth, 0);
                     _lastContainerMutationUtc = DateTime.UtcNow; // Make leak breaker idempotent per incident
                     ChangesDetected = true;
@@ -426,7 +439,7 @@ namespace ACE.Server.WorldObjects
                 containerIdFromBiota = expectedContainerId;
 
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {itemName ?? "item"} (0x{itemGuid:X8}) Set raw biota ContainerId -> {(expectedContainerId.HasValue ? $"0x{expectedContainerId:X8}" : "null")}");
+                log.Debug($"[SAVE DEBUG] {displayName} (0x{itemGuid:X8}) Set raw biota ContainerId -> {(expectedContainerId.HasValue ? $"0x{expectedContainerId:X8}" : "null")}");
 #endif
 
                 if (!hadChangesBeforeContainerId)
@@ -440,7 +453,8 @@ namespace ACE.Server.WorldObjects
 
             LastRequestedDatabaseSave = DateTime.UtcNow;
             // SaveStartTime represents when the save was requested (before enqueue)
-            // This is used for timing diagnostics and race detection
+            // NOTE: This includes queue wait time, not just execution time
+            // Large durations may indicate queue delays, not slow database operations
             SaveStartTime = DateTime.UtcNow;
             LastSavedStackSize = stackSize;
             
@@ -500,12 +514,14 @@ namespace ACE.Server.WorldObjects
                     {
                         if (IsDestroyed)
                         {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {itemName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms");
+                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {displayName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms (includes queue time)");
                             onCompleted?.Invoke(false);
                             return;
                         }
                         
-                        // Calculate save time, but guard against overflow if SaveStartTime is invalid
+                        // Calculate total time (request to completion, includes queue wait time)
+                        // NOTE: This includes queue delays, not just database execution time
+                        // Large values may indicate queue backup, not slow database operations
                         double saveTime = 0;
                         if (SaveStartTime != DateTime.MinValue && SaveStartTime != default(DateTime))
                         {
@@ -544,8 +560,8 @@ namespace ACE.Server.WorldObjects
                                     }
                                 }
                             }
-                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {itemName} (Stack: {stackSize}){ownerInfo}");
-                            SendDbSlowDiscordAlert(itemName, saveTime, stackSize ?? 0, ownerInfo);
+                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {displayName} (Stack: {stackSize}){ownerInfo}");
+                            SendDbSlowDiscordAlert(displayName, saveTime, stackSize ?? 0, ownerInfo);
                         }
                         
                         CheckDatabaseQueueSize();
@@ -553,8 +569,8 @@ namespace ACE.Server.WorldObjects
 #if DEBUG
                         // Log save result with ContainerId (use containerIdFromBiota we already have)
                         uint? savedBiotaContainerId = containerIdFromBiota;
-                        // Use itemName and itemGuid (already captured safely) - never use property getters
-                        var callbackItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
+                        // Use displayName and itemGuid (already captured safely) - never use property getters
+                        var callbackItemInfo = $"{displayName} (0x{itemGuid})";
                         log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
 #endif
                         
@@ -592,7 +608,7 @@ namespace ACE.Server.WorldObjects
                             log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
 #endif
                         }
-                        log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");
+                        log.Error($"Exception in save callback for {displayName} (0x{itemGuid}): {ex.Message}");
                         onCompleted?.Invoke(false);
                     }
                     finally
@@ -743,6 +759,9 @@ namespace ACE.Server.WorldObjects
         
         private static void SendDbSlowDiscordAlert(string itemName, double saveTime, int stackSize, string ownerInfo)
         {
+            // Create display name for consistent null handling
+            var displayName = itemName ?? "item";
+
             lock (dbAlertLock)
             {
                 var now = DateTime.UtcNow;
@@ -765,7 +784,7 @@ namespace ACE.Server.WorldObjects
                 
                 try
                 {
-                    var msg = $"🔴 **DB SLOW**: `{itemName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
+                    var msg = $"🔴 **DB SLOW**: `{displayName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
                     
                     DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
                         ConfigManager.Config.Chat.PerformanceAlertsChannelId);

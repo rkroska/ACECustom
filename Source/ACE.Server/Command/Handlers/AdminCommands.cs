@@ -7167,7 +7167,7 @@ namespace ACE.Server.Command.Handlers
             var onlinePlayer = PlayerManager.GetOnlinePlayer(characterName);
             if (onlinePlayer != null)
             {
-                characterId = (uint)(onlinePlayer.Guid.Full & 0xFFFFFFFF);
+                characterId = onlinePlayer.Guid.Full;
             }
             else
             {
@@ -7217,7 +7217,7 @@ namespace ACE.Server.Command.Handlers
             
             if (canClear)
             {
-                message += $"  ✓ Safe to clear: All criteria met for ghost state.\n";
+                message += $"  Safe to clear: All criteria met for ghost state.\n";
                 if (timeSinceActivity.HasValue)
                 {
                     if (timeSinceActivity.Value < 10)
@@ -7227,13 +7227,13 @@ namespace ACE.Server.Command.Handlers
                     else if (timeSinceActivity.Value < 300)
                         message += $"  Warning: Stale activity ({timeSinceActivity.Value:F0}s) - likely real issue.\n";
                     else
-                        message += $"  ⚠️ CRITICAL: Very stale activity ({timeSinceActivity.Value:F0}s) - deadlock or long-running incident.\n";
+                        message += $"  CRITICAL: Very stale activity ({timeSinceActivity.Value:F0}s) - deadlock or long-running incident.\n";
                 }
                 message += $"  Use /clearsaves {characterName} to clear.";
             }
             else
             {
-                message += $"  ✗ Not safe to clear:\n";
+                message += $"  Not safe to clear:\n";
                 if (!hasPendingOrActive)
                     message += $"    - CharacterSaveState does not report pending/active\n";
                 if (hasRealWork)
@@ -7259,7 +7259,7 @@ namespace ACE.Server.Command.Handlers
             var onlinePlayer = PlayerManager.GetOnlinePlayer(characterName);
             if (onlinePlayer != null)
             {
-                characterId = (uint)(onlinePlayer.Guid.Full & 0xFFFFFFFF);
+                characterId = onlinePlayer.Guid.Full;
             }
             else
             {

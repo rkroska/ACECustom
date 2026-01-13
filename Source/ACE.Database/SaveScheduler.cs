@@ -1181,14 +1181,11 @@ namespace ACE.Database
                 var executing = Volatile.Read(ref s.Executing);
                 var queued = Volatile.Read(ref s.Queued);
                 
-                // Executing or Queued always indicate real work
+                // Executing or Queued always indicate real work.
+                // Dirty is only meaningful while one of these is set, so we intentionally ignore Dirty
+                // unless work is executing or queued to avoid theoretical edge cases.
                 if (executing == 1) return true;
                 if (queued == 1) return true;
-                
-                // Dirty is only meaningful when Executing or Queued is set
-                // This avoids theoretical edge cases where Dirty is observed as 1 with neither Queued nor Executing
-                if (Volatile.Read(ref s.Dirty) == 1 && (executing == 1 || queued == 1))
-                    return true;
             }
             return false;
         }
