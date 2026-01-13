@@ -486,7 +486,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void MarkPlayerDirty(uint playerId)
         {
-            playersLock.EnterReadLock();
+            playersLock.EnterWriteLock();
             try
             {
                 if (onlinePlayers.TryGetValue(playerId, out var player))
@@ -498,7 +498,7 @@ namespace ACE.Server.Managers
             }
             finally
             {
-                playersLock.ExitReadLock();
+                playersLock.ExitWriteLock();
             }
         }
 
