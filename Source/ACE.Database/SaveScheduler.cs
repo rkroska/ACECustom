@@ -434,10 +434,23 @@ namespace ACE.Database
                     }
                     else
                     {
-                        log.Error($"[SAVESCHEDULER] Failed to requeue upgraded key={key}, restoring queued flag");
-                        Interlocked.Exchange(ref state.Queued, 1);
-                        // Clear Executing since requeue failed - RequestSave will retry when it detects the state
+                        // We attempted to reroute this key to a higher priority queue and failed.
+                        // At this point the key is not in any queue, so Queued must be 0 or the invariant breaks.
+                        // Leaving Queued as 1 would cause RequestSave to think it is already queued and never re-enqueue it.
+
+                        log.Fatal($"[SAVESCHEDULER] CRITICAL: EnqueueByPriority failed while rerouting upgraded key={key} " +
+                                  $"from myPriority={myPriority} to newPriority={currentPriority}. Clearing Queued so RequestSave can retry.");
+
+                        // Not in any queue, so must not be marked queued
+                        Interlocked.Exchange(ref state.Queued, 0);
+
+                        // Not executing, so RequestSave can set Dirty or enqueue normally
                         Volatile.Write(ref state.Executing, 0);
+
+                        // Optional, if you want: mark Dirty so the next worker pass prefers requeue logic,
+                        // but it is not required. The main requirement is Queued=0.
+                        // Interlocked.Exchange(ref state.Dirty, 1);
+
                         continue;
                     }
                 }
