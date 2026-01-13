@@ -343,139 +343,36 @@ namespace ACE.Server.WorldObjects
             // IMPORTANT: This must be captured by reference, not cloned, so getBiotas can populate it
             var preparedGuidsForCallback = new HashSet<uint>();
             
-            // Track if preparation failed - if true, callback should treat result as false
-            // This prevents clearing ChangesDetected when nothing was actually saved
-            // Using array to enable Volatile operations for thread-safe cross-thread visibility
-            // (Cannot use ref on captured local, so array element provides ref-able location)
-            bool[] preparationFailed = new bool[1] { false };
-            
             // Func that builds the biotas list at execution time to avoid stale snapshots
-            // 
-            // CRITICAL ARCHITECTURAL CONSTRAINT:
-            // This function has side effects - it calls SaveBiotaToDatabase(false) which:
-            // - Sets SaveInProgress = true
-            // - Clears ChangesDetected = false
-            // - Modifies biota state
-            // 
-            // This function MUST only be called exactly once per execution by the coalescer.
-            // If called multiple times (due to refactoring, retries, metrics, etc.), you get:
-            // - SaveInProgress set multiple times
-            // - ChangesDetected cleared prematurely
-            // - Double side effects
-            // 
-            // Player code cannot enforce this contract - it relies on SerializedShardDatabase
-            // calling it exactly once. If the DB layer changes, this assumption may break.
-            //
-            // EXCEPTION SAFETY: If this function throws, it will clean up all flags it set
-            // to prevent stranded SaveInProgress flags and lost ChangesDetected signals.
             Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas = () =>
             {
                 var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
-                bool playerPrepared = false;
 
-                try
+                SaveBiotaToDatabase(false);
+                biotas.Add((Biota, BiotaDatabaseLock));
+
+                var allPossessions = GetAllPossessions();
+
+                foreach (var possession in allPossessions)
                 {
-                    // Save player biota - this sets SaveInProgress for the player
-                    SaveBiotaToDatabase(false);
-                    playerPrepared = true;
-                    biotas.Add((Biota, BiotaDatabaseLock));
+                    if (!possession.ChangesDetected)
+                        continue;
 
-                    // Get all possessions and prepare them for batch save
-                    var allPossessions = GetAllPossessions();
-                    
-                    // For possessions, prepare them for batch save
-                    // Track items BEFORE calling SaveBiotaToDatabase to ensure cleanup on exception
-                    foreach (var possession in allPossessions)
-                    {
-                        if (possession.ChangesDetected)
-                        {
-                            // Track this item BEFORE calling SaveBiotaToDatabase
-                            // If SaveBiotaToDatabase throws after setting flags, we still have it tracked
-                            var possessionGuid = possession.Guid.Full;
-                            bool wasAlreadyInProgress = possession.SaveInProgress;
-                            
-                            // Add to tracking set BEFORE the call that might throw
-                            // If SaveInProgress was already true, SaveBiotaToDatabase will return early
-                            // and we'll remove it from tracking below
-                            preparedGuidsForCallback.Add(possessionGuid);
-                            
-                            try
-                            {
-                                // Sync position cache and prepare biota for save
-                                // This sets SaveInProgress = true (but doesn't clear ChangesDetected when enqueueSave=false)
-                                // But it may return early if SaveInProgress was already true
-                                possession.SaveBiotaToDatabase(false);
-                                
-                                // Check if SaveInProgress was actually set by this call
-                                if (possession.SaveInProgress && !wasAlreadyInProgress)
-                                {
-                                    // Successfully prepared - add to biotas list
-                                    biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
-                                }
-                                else if (wasAlreadyInProgress)
-                                {
-                                    // Was already in progress, SaveBiotaToDatabase returned early
-                                    // Remove from tracking since we didn't actually prepare it
-                                    preparedGuidsForCallback.Remove(possessionGuid);
-                                }
-                            }
-                            catch
-                            {
-                                // Keep it tracked so outer cleanup can clear flags if they were partially set
-                                // If SaveBiotaToDatabase threw after setting SaveInProgress=true, we need
-                                // the guid in preparedGuidsForCallback so the outer catch can clear it
-                                throw; // Re-throw to trigger outer cleanup
-                            }
-                        }
-                    }
+                    bool wasAlreadyInProgress = possession.SaveInProgress;
+                    var possessionGuid = possession.Guid.Full;
 
-                    return biotas;
+                    if (!wasAlreadyInProgress)
+                        preparedGuidsForCallback.Add(possessionGuid);
+
+                    possession.SaveBiotaToDatabase(false);
+
+                    if (!wasAlreadyInProgress && possession.SaveInProgress)
+                        biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                    else if (wasAlreadyInProgress)
+                        preparedGuidsForCallback.Remove(possessionGuid);
                 }
-                catch (Exception ex)
-                {
-                    // CRITICAL: Clean up all flags set during preparation
-                    // If we don't do this, SaveInProgress will be stuck and items will appear to be saving forever
-                    // Note: SaveBiotaToDatabase(false) doesn't clear ChangesDetected, so that's preserved automatically
-                    log.Error($"[SAVE] getBiotas threw exception for {Name} (0x{Guid}), cleaning up flags", ex);
-                    
-                    // Mark preparation as failed so callback treats result as false
-                    // Use Volatile.Write for thread-safe cross-thread visibility
-                    Volatile.Write(ref preparationFailed[0], true);
-                    
-                    // Clear player flags if we set them
-                    if (playerPrepared)
-                    {
-                        SaveInProgress = false;
-                        SaveStartTime = DateTime.MinValue;
-                        // Note: SaveBiotaToDatabase(false) doesn't clear ChangesDetected, so no need to restore
-                    }
-                    
-                    // Clear possession flags for all items we prepared
-                    try
-                    {
-                        var currentPossessions = GetAllPossessions();
-                        foreach (var possession in currentPossessions)
-                        {
-                            if (!possession.IsDestroyed && preparedGuidsForCallback.Contains(possession.Guid.Full))
-                            {
-                                possession.SaveInProgress = false;
-                                possession.SaveStartTime = DateTime.MinValue;
-                                // Note: SaveBiotaToDatabase(false) doesn't clear ChangesDetected, so no need to restore
-                            }
-                        }
-                    }
-                    catch (Exception cleanupEx)
-                    {
-                        // Log but don't throw - we're in exception handler
-                        log.Error($"[SAVE] Exception during getBiotas cleanup for {Name} (0x{Guid})", cleanupEx);
-                    }
-                    
-                    // Clear tracking set
-                    preparedGuidsForCallback.Clear();
-                    
-                    // Return empty collection - DB layer will handle the failure
-                    return new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
-                }
+
+                return biotas;
             };
             
             // Common callback logic for both logout and non-logout saves
@@ -483,12 +380,6 @@ namespace ACE.Server.WorldObjects
             {
                 try
                 {
-                    // If preparation failed, treat result as false to prevent clearing ChangesDetected
-                    // when nothing was actually saved
-                    // Use Volatile.Read for thread-safe cross-thread visibility
-                    if (Volatile.Read(ref preparationFailed[0]))
-                        result = false;
-                    
                     SaveInProgress = false;
                     SaveStartTime = DateTime.MinValue;
 
@@ -661,45 +552,6 @@ namespace ACE.Server.WorldObjects
                 return;
 
             SaveCharacterToDatabaseInternal(duringLogout);
-        }
-
-        /// <summary>
-        /// Begins the logout save process. Marks player immutable and fires immediate save.
-        /// This must be called at the start of logout/disconnect to prevent item loss.
-        /// Thread-safe: Uses Interlocked to prevent double-firing.
-        /// </summary>
-        private readonly ManualResetEventSlim _logoutSaveCompleted = new ManualResetEventSlim(false);
-        private int _logoutSaveStarted; // 0 or 1
-
-        public void BeginLogoutSave()
-        {
-            // Prevent double-firing - only one thread can start the logout save
-            if (Interlocked.Exchange(ref _logoutSaveStarted, 1) != 0)
-                return;
-
-            // Mark the player immutable - blocks delayed give saves, mutation chains, deferred inventory operations
-            _isShuttingDownOrOffline = true;
-            
-            // Reset completion signal - will be set when save callback completes
-            _logoutSaveCompleted.Reset();
-            
-            // Fire the save immediately - must happen before session cleanup, world removal, offline transfer
-            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
-        }
-
-        /// <summary>
-        /// Returns true if the logout save has completed.
-        /// Used to gate character select screen until save is complete.
-        /// </summary>
-        public bool IsLogoutSaveComplete => _logoutSaveCompleted.IsSet;
-
-        /// <summary>
-        /// Signals that the logout save has completed.
-        /// Called from the save callback to unblock character select screen.
-        /// </summary>
-        internal void SignalLogoutSaveComplete()
-        {
-            _logoutSaveCompleted.Set();
         }
 
         /// <summary>
