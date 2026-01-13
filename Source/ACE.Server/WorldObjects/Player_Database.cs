@@ -98,6 +98,46 @@ namespace ACE.Server.WorldObjects
         // Flag to prevent delayed saves from executing on destroyed/logged-out players
         private volatile bool _isShuttingDownOrOffline = false;
 
+        // Logout save completion tracking
+        private readonly ManualResetEventSlim _logoutSaveCompleted = new ManualResetEventSlim(false);
+        private int _logoutSaveStarted; // 0 or 1
+
+        /// <summary>
+        /// Returns true if the logout save has completed.
+        /// Used to gate character select screen until save is complete.
+        /// </summary>
+        public bool IsLogoutSaveComplete => _logoutSaveCompleted.IsSet;
+
+        /// <summary>
+        /// Signals that the logout save has completed.
+        /// Called from the save callback to unblock character select screen.
+        /// </summary>
+        internal void SignalLogoutSaveComplete()
+        {
+            _logoutSaveCompleted.Set();
+        }
+
+        /// <summary>
+        /// Begins the logout save process. Marks player immutable and fires immediate save.
+        /// This must be called at the start of logout/disconnect to prevent item loss.
+        /// Thread-safe: Uses Interlocked to prevent double-firing.
+        /// </summary>
+        public void BeginLogoutSave()
+        {
+            // Prevent double-firing - only one thread can start the logout save
+            if (Interlocked.Exchange(ref _logoutSaveStarted, 1) != 0)
+                return;
+
+            // Mark the player immutable - blocks delayed give saves, mutation chains, deferred inventory operations
+            _isShuttingDownOrOffline = true;
+            
+            // Reset completion signal - will be set when save callback completes
+            _logoutSaveCompleted.Reset();
+            
+            // Fire the save immediately - must happen before session cleanup, world removal, offline transfer
+            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
+        }
+
         /// <summary>
         /// Schedules a debounced save for player-to-player gives.
         /// If another give happens within 4 seconds, the timer resets.
@@ -123,9 +163,15 @@ namespace ACE.Server.WorldObjects
                     return;
 
                 // Only execute if this is still the latest save request
-                if (thisSaveChainNumber > _lastCompletedGiveSave)
+                // Use Interlocked.CompareExchange to prevent race condition where two delayed tasks
+                // both pass the check before either assigns _lastCompletedGiveSave, causing double fires
+                var observed = Volatile.Read(ref _lastCompletedGiveSave);
+                if (thisSaveChainNumber > observed &&
+                    Interlocked.CompareExchange(
+                        ref _lastCompletedGiveSave,
+                        thisSaveChainNumber,
+                        observed) == observed)
                 {
-                    _lastCompletedGiveSave = thisSaveChainNumber;
                     SavePlayerToDatabase(reason: SaveReason.ForcedShortWindow);
                 }
             }, TaskScheduler.Default);
@@ -269,6 +315,17 @@ namespace ACE.Server.WorldObjects
             // Logout always forces immediate
             if (duringLogout)
                 reason = SaveReason.ForcedImmediate;
+
+            // CRITICAL: Do not allow "clean" periodic saves to run getBiotas
+            // getBiotas has side effects (clears flags, sets SaveInProgress) and running it when clean
+            // can mask later correctness and make a real change look like it never saved.
+            // 
+            // IMPORTANT: Check this BEFORE ShouldEnqueueSave to avoid consuming the gate state
+            // when we're going to no-op. If we check after, we advance _nextAllowedSaveUtc without
+            // actually enqueuing, which blocks later real changes from saving.
+            // Logout saves must always run (even if clean) to ensure final snapshot is captured.
+            if (!duringLogout && !ChangesDetected && !CharacterChangesDetected)
+                return;
 
             if (!ShouldEnqueueSave(reason, out var requestedTime))
             {
@@ -432,6 +489,9 @@ namespace ACE.Server.WorldObjects
                     if (Volatile.Read(ref preparationFailed[0]))
                         result = false;
                     
+                    SaveInProgress = false;
+                    SaveStartTime = DateTime.MinValue;
+
                     var currentPossessions = GetAllPossessions();
 
                     foreach (var possession in currentPossessions)
@@ -454,8 +514,20 @@ namespace ACE.Server.WorldObjects
 
                         if (duringLogout)
                         {
-                            // SAFE: does not enqueue gameplay, only mutates dictionaries
-                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                            // CRITICAL: Route to world thread to avoid race conditions
+                            // PlayerManager.SwitchPlayerFromOnlineToOffline mutates shared dictionaries
+                            // that may expect world thread ordering. Using the hook from WorldManager.Initialize()
+                            // ensures thread-safe execution.
+                            if (SaveScheduler.EnqueueToWorldThread != null)
+                            {
+                                SaveScheduler.EnqueueToWorldThread(() => PlayerManager.SwitchPlayerFromOnlineToOffline(this));
+                            }
+                            else
+                            {
+                                // World thread hook should always be initialized before saves run.
+                                // If it isn't, this is a fatal ordering bug and should be visible.
+                                log.Error("[SAVE] EnqueueToWorldThread was not initialized during logout save callback");
+                            }
                         }
                     }
                     else
@@ -467,7 +539,22 @@ namespace ACE.Server.WorldObjects
                             CharacterChangesDetected = true;
 
                         if (duringLogout)
-                            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+                        {
+                            // CRITICAL: Route to world thread to avoid race conditions
+                            // PlayerManager.SwitchPlayerFromOnlineToOffline mutates shared dictionaries
+                            // that may expect world thread ordering. Using the hook from WorldManager.Initialize()
+                            // ensures thread-safe execution.
+                            if (SaveScheduler.EnqueueToWorldThread != null)
+                            {
+                                SaveScheduler.EnqueueToWorldThread(() => PlayerManager.SwitchPlayerFromOnlineToOffline(this));
+                            }
+                            else
+                            {
+                                // World thread hook should always be initialized before saves run.
+                                // If it isn't, this is a fatal ordering bug and should be visible.
+                                log.Error("[SAVE] EnqueueToWorldThread was not initialized during logout save callback");
+                            }
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -476,10 +563,12 @@ namespace ACE.Server.WorldObjects
                 }
                 finally
                 {
+                    // Always signal completion, even if callback logic throws
+                    // This unblocks character select screen even on save failure
+                    if (duringLogout)
+                        SignalLogoutSaveComplete();
+                    
                     // ALWAYS clear SaveInProgress, even if callback throws
-                    SaveInProgress = false;
-                    SaveStartTime = DateTime.MinValue;
-
                     // Clear possessions' SaveInProgress flags safely
                     try
                     {
@@ -501,20 +590,14 @@ namespace ACE.Server.WorldObjects
                 }
             };
 
-            // Use SaveScheduler to schedule the database save
-            // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+            // Use Critical save type during logout to ensure final snapshot is persisted
             var saveKey = duringLogout ? SaveKeys.Logout(Character.Id) : SaveKeys.Player(Character.Id);
-            SaveScheduler.Instance.RequestSave(saveKey, ACE.Database.SaveScheduler.SaveType.Periodic, () =>
-            {
-                // This runs on SaveScheduler worker thread
-                // Call SerializedShardDatabase method which enqueues to _uniqueQueue
-                DatabaseManager.Shard.SavePlayerBiotasCoalesced(
-                    Guid.Full,
-                    getBiotas,
-                    saveCallback,
-                    duringLogout ? $"logout:{Guid}" : Guid.ToString());
-                return true; // Indicates successful enqueue to _uniqueQueue
-            });
+            var saveType = duringLogout ? ACE.Database.SaveScheduler.SaveType.Critical : ACE.Database.SaveScheduler.SaveType.Periodic;
+            
+            // Create save job that handles forced dirty marking for aging saves
+            // This keeps SaveScheduler generic - it doesn't know about players or PlayerManager
+            var saveJob = new PlayerSaveJob(this, getBiotas, saveCallback, duringLogout);
+            SaveScheduler.Instance.RequestSave(saveKey, saveType, saveJob);
         }
 
         /// <summary>
@@ -528,7 +611,10 @@ namespace ACE.Server.WorldObjects
             // so this timestamp represents when a save was requested, not necessarily when it completed.
             // Note: If coalescing delays the enqueue, the timestamp may be slightly ahead of actual execution.
             CharacterLastRequestedDatabaseSave = DateTime.UtcNow;
-            CharacterChangesDetected = false;
+            // Note: CharacterChangesDetected is cleared in the callback on success, not here.
+            // This matches biota handling and prevents clearing the flag if the save fails early
+            // (before DB enqueue, SaveScheduler delay, or exception). If save fails, CharacterSaveFailed
+            // will be set and aging saves will eventually retry.
 
             // Func that gets the current Character state at execution time
             Func<(ACE.Database.Models.Shard.Character character, ReaderWriterLockSlim rwLock)> getCharacter = () =>
@@ -536,14 +622,20 @@ namespace ACE.Server.WorldObjects
 
             Action<bool> saveCallback = (result) =>
             {
-                if (!result)
+                if (result)
+                {
+                    CharacterChangesDetected = false;
+                }
+                else
+                {
                     CharacterSaveFailed = true;
+                }
             };
 
-            // Use SaveScheduler to schedule the database save
-            // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+            // Use Critical save type during logout to ensure final snapshot is persisted
             var saveKey = SaveKeys.Character(Character.Id);
-            SaveScheduler.Instance.RequestSave(saveKey, ACE.Database.SaveScheduler.SaveType.Periodic, () =>
+            var saveType = duringLogout ? ACE.Database.SaveScheduler.SaveType.Critical : ACE.Database.SaveScheduler.SaveType.Periodic;
+            SaveScheduler.Instance.RequestSave(saveKey, saveType, () =>
             {
                 // This runs on SaveScheduler worker thread
                 // Call SerializedShardDatabase method which enqueues to _uniqueQueue
@@ -572,12 +664,113 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Begins the logout save process. Marks player immutable and fires immediate save.
+        /// This must be called at the start of logout/disconnect to prevent item loss.
+        /// Thread-safe: Uses Interlocked to prevent double-firing.
+        /// </summary>
+        private readonly ManualResetEventSlim _logoutSaveCompleted = new ManualResetEventSlim(false);
+        private int _logoutSaveStarted; // 0 or 1
+
+        public void BeginLogoutSave()
+        {
+            // Prevent double-firing - only one thread can start the logout save
+            if (Interlocked.Exchange(ref _logoutSaveStarted, 1) != 0)
+                return;
+
+            // Mark the player immutable - blocks delayed give saves, mutation chains, deferred inventory operations
+            _isShuttingDownOrOffline = true;
+            
+            // Reset completion signal - will be set when save callback completes
+            _logoutSaveCompleted.Reset();
+            
+            // Fire the save immediately - must happen before session cleanup, world removal, offline transfer
+            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
+        }
+
+        /// <summary>
+        /// Returns true if the logout save has completed.
+        /// Used to gate character select screen until save is complete.
+        /// </summary>
+        public bool IsLogoutSaveComplete => _logoutSaveCompleted.IsSet;
+
+        /// <summary>
+        /// Signals that the logout save has completed.
+        /// Called from the save callback to unblock character select screen.
+        /// </summary>
+        internal void SignalLogoutSaveComplete()
+        {
+            _logoutSaveCompleted.Set();
+        }
+
+        /// <summary>
         /// Override Destroy to set shutdown flag before destruction
         /// </summary>
         public override void Destroy(bool raiseNotifyOfDestructionEvent = true, bool fromLandblockUnload = false)
         {
             _isShuttingDownOrOffline = true;
             base.Destroy(raiseNotifyOfDestructionEvent, fromLandblockUnload);
+        }
+    }
+
+    /// <summary>
+    /// Save job for player biotas that handles forced dirty marking for aging saves.
+    /// This keeps SaveScheduler generic - it doesn't know about players or PlayerManager.
+    /// The dirty marking logic stays in ACE.Server where Player knowledge belongs.
+    /// </summary>
+    internal sealed class PlayerSaveJob : ACE.Database.IForcedPeriodicSaveJob
+    {
+        private readonly Player _player;
+        private readonly Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> _getBiotas;
+        private readonly Action<bool> _saveCallback;
+        private readonly bool _duringLogout;
+        private bool _forceDirty;
+
+        public PlayerSaveJob(
+            Player player,
+            Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas,
+            Action<bool> saveCallback,
+            bool duringLogout)
+        {
+            _player = player ?? throw new ArgumentNullException(nameof(player));
+            _getBiotas = getBiotas ?? throw new ArgumentNullException(nameof(getBiotas));
+            _saveCallback = saveCallback ?? throw new ArgumentNullException(nameof(saveCallback));
+            _duringLogout = duringLogout;
+        }
+
+        /// <summary>
+        /// Forces the player to be marked as dirty before save execution.
+        /// Called by ForcedPeriodicSaveJob when aging requires a save even if the player thinks it's clean.
+        /// </summary>
+        public void ForceDirty()
+        {
+            _forceDirty = true;
+        }
+
+        /// <summary>
+        /// Executes the save operation.
+        /// If ForceDirty() was called, marks the player as dirty before checking dirty flags.
+        /// </summary>
+        public bool Execute()
+        {
+            // If forced dirty (aging save), mark player as dirty to ensure save executes
+            // This prevents aging saves from becoming no-ops when dirty flags were cleared prematurely
+            // or changes were masked by mutation logic
+            if (_forceDirty)
+            {
+                _player.ChangesDetected = true;
+                _player.CharacterChangesDetected = true;
+                _forceDirty = false; // Clear flag to prevent accidental reuse if job instance is ever reused
+            }
+
+            // This runs on SaveScheduler worker thread
+            // Call SerializedShardDatabase method which enqueues to _uniqueQueue
+            DatabaseManager.Shard.SavePlayerBiotasCoalesced(
+                _player.Guid.Full,
+                _getBiotas,
+                _saveCallback,
+                _duringLogout ? $"logout:{_player.Guid}" : _player.Guid.ToString());
+            
+            return true; // Indicates successful enqueue to _uniqueQueue
         }
     }
 }

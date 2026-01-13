@@ -480,6 +480,29 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Marks a player as dirty for forced periodic saves.
+        /// This ensures aging saves bypass "I'm clean" logic and actually perform persistence work.
+        /// Thread-safe: Uses read lock to access player, then marks dirty flags.
+        /// </summary>
+        public static void MarkPlayerDirty(uint playerId)
+        {
+            playersLock.EnterReadLock();
+            try
+            {
+                if (onlinePlayers.TryGetValue(playerId, out var player))
+                {
+                    // Mark both biota and character as dirty to ensure save executes
+                    player.ChangesDetected = true;
+                    player.CharacterChangesDetected = true;
+                }
+            }
+            finally
+            {
+                playersLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
         /// This will return null of the name was not found.
         /// </summary>
         public static Player GetOnlinePlayer(string name)

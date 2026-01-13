@@ -62,14 +62,22 @@ namespace ACE.Server.Managers
 
         public static void Initialize()
         {
-            // Register callback factory with SaveScheduler to avoid circular dependency
-            // This allows SaveScheduler to enqueue callbacks to the world thread
+            // CRITICAL: Register callback factory with SaveScheduler as the FIRST thing in initialization
+            // This must be set before any saves can be requested, as SaveScheduler relies on it for
+            // thread-safe callback execution on the world thread (e.g., login drain callbacks)
+            if (SaveScheduler.EnqueueToWorldThread != null)
+            {
+                log.Warn("[WORLDMANAGER] SaveScheduler.EnqueueToWorldThread was already set - this should not happen");
+            }
+            
             SaveScheduler.EnqueueToWorldThread = (action) =>
             {
                 ActionQueue.EnqueueAction(new ActionEventDelegate(
-                    ActionType.SaveScheduler_OnSavesDrained,
+                    ActionType.ControlFlowDelay,
                     action));
             };
+            
+            log.Debug("[WORLDMANAGER] SaveScheduler.EnqueueToWorldThread initialized");
 
             var thread = new Thread(() =>
             {
