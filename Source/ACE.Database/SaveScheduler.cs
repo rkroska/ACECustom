@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using log4net;
-using ACE.Server.Managers;
 
 namespace ACE.Database
 {
@@ -91,6 +90,12 @@ namespace ACE.Database
 
         public static SaveScheduler Instance => _instance.Value;
 
+        /// <summary>
+        /// Callback factory for enqueueing actions to the world thread.
+        /// Set by WorldManager during initialization to avoid circular dependency.
+        /// </summary>
+        public static Action<Action> EnqueueToWorldThread { get; set; }
+
         private readonly ConcurrentDictionary<string, SaveState> _states =
             new ConcurrentDictionary<string, SaveState>();
 
@@ -133,6 +138,11 @@ namespace ACE.Database
 
         private readonly ConcurrentQueue<uint> _agingQueue =
             new ConcurrentQueue<uint>();
+
+        // Per-character save tracking for login blocking
+        // Tracks pending and active saves per character to provide authoritative answers
+        private readonly ConcurrentDictionary<uint, CharacterSaveState> _characterSaves =
+            new ConcurrentDictionary<uint, CharacterSaveState>();
 
         private const int SaveWindowSeconds = 180;
         private const int TickIntervalSeconds = 3;
@@ -281,6 +291,14 @@ namespace ACE.Database
                 state.EnqueuedAt = now;
                 EnqueueByPriority(key, state.Priority);
                 Interlocked.Increment(ref _enqueued);
+
+                // Track character saves for login blocking
+                var characterId = ExtractCharacterIdFromKey(key);
+                if (characterId.HasValue)
+                {
+                    var charState = GetOrCreateCharacterSaveState(characterId.Value);
+                    charState.IncrementPending();
+                }
             }
             else
             {
@@ -355,6 +373,15 @@ namespace ACE.Database
                     continue;
                 }
 
+                // Track character saves: save is starting execution
+                var characterId = ExtractCharacterIdFromKey(key);
+                CharacterSaveState charState = null;
+                if (characterId.HasValue)
+                {
+                    charState = GetOrCreateCharacterSaveState(characterId.Value);
+                    charState.StartExecution(); // pending--, active++
+                }
+
                 // Capture the generation we are processing to detect if state was updated during execution
                 var processingGen = Volatile.Read(ref state.Generation);
 
@@ -422,6 +449,11 @@ namespace ACE.Database
                 }
                 finally
                 {
+                    // CRITICAL ORDERING: Check for dirty work BEFORE draining callbacks
+                    // This ensures CharacterSaveState reflects all pending work (including requeues)
+                    // before we decide if callbacks should fire. Callbacks must only fire when
+                    // it's impossible for more work to exist.
+
                     // Clear executing flag
                     Volatile.Write(ref state.Executing, 0);
 
@@ -439,6 +471,61 @@ namespace ACE.Database
                     var currentGen = Volatile.Read(ref state.Generation);
                     var hasNewWork = wasDirty || (currentGen != processingGen);
 
+                    // If new work arrived, reflect it in CharacterSaveState BEFORE finishing execution
+                    // This ensures pendingCount is incremented before we check if callbacks should drain
+                    if (hasNewWork && characterId.HasValue && charState != null)
+                    {
+                        charState.Requeue(); // pending++ - reflects the requeue in CharacterSaveState
+                    }
+
+                    // Now finish execution and check if callbacks should drain
+                    // At this point, CharacterSaveState accurately reflects all pending work
+                    if (charState != null)
+                    {
+                        charState.FinishExecution(); // Decrements _activeCount
+                        var callbacksToInvoke = charState.CheckAndDrainCallbacks();
+                        if (callbacksToInvoke != null)
+                        {
+                            // All saves complete, invoke callbacks on world thread for thread safety
+                            if (EnqueueToWorldThread != null)
+                            {
+                                EnqueueToWorldThread(() =>
+                                {
+                                    foreach (var callback in callbacksToInvoke)
+                                    {
+                                        try
+                                        {
+                                            callback();
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            log.Error($"[SAVESCHEDULER] Callback invocation failed for character {charState.CharacterId}", ex);
+                                        }
+                                    }
+                                }
+                                );
+                            }
+                            else
+                            {
+                                // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                                // This fallback is unsafe and should never occur in production
+                                log.Error("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Invoking callbacks directly (unsafe - may cause thread safety issues). This indicates WorldManager.Initialize() was not called or failed.");
+                                foreach (var callback in callbacksToInvoke)
+                                {
+                                    try
+                                    {
+                                        callback();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"[SAVESCHEDULER] Callback invocation failed for character {charState.CharacterId}", ex);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle actual queue re-enqueue (after CharacterSaveState is updated)
                     // Requeue only if new work arrived during execution
                     // If new work arrives after we clear Executing, RequestSaveInternal will handle it
                     if (hasNewWork)
@@ -655,6 +742,238 @@ namespace ACE.Database
             public uint PlayerId;
             public DateTime LastSavedUtc;
             public int Enqueued; // 0 or 1
+        }
+
+        /// <summary>
+        /// Tracks pending and active saves for a character.
+        /// Used to provide authoritative answers about save state for login blocking.
+        /// All operations that touch PendingCount, ActiveCount, or callbacks must occur under the same lock
+        /// to guarantee atomicity and prevent race conditions.
+        /// </summary>
+        private sealed class CharacterSaveState
+        {
+            public uint CharacterId;
+            private int _pendingCount;  // Number of saves queued but not yet executing
+            private int _activeCount;   // Number of saves currently executing
+            private readonly object _lock = new object();
+            private readonly List<Action> _callbacks = new List<Action>();
+
+            public int PendingCount
+            {
+                get { lock (_lock) { return _pendingCount; } }
+            }
+
+            public int ActiveCount
+            {
+                get { lock (_lock) { return _activeCount; } }
+            }
+
+            /// <summary>
+            /// Atomically checks if there are any pending or active saves.
+            /// Returns true if either count is greater than zero.
+            /// This method ensures the check is atomic, preventing TOCTOU race conditions.
+            /// </summary>
+            public bool HasPendingOrActive()
+            {
+                lock (_lock)
+                {
+                    return _pendingCount > 0 || _activeCount > 0;
+                }
+            }
+
+            /// <summary>
+            /// Increments pending count. Must be called when a save is enqueued.
+            /// Returns true if callbacks should be checked (both counts might be zero after increment).
+            /// </summary>
+            public bool IncrementPending()
+            {
+                lock (_lock)
+                {
+                    _pendingCount++;
+                    // After increment, check if we should drain callbacks (shouldn't happen, but defensive)
+                    return _pendingCount == 0 && _activeCount == 0;
+                }
+            }
+
+            /// <summary>
+            /// Decrements pending count and increments active count. Must be called when a save starts executing.
+            /// Returns true if callbacks should be drained (both counts are zero after transition).
+            /// </summary>
+            public bool StartExecution()
+            {
+                lock (_lock)
+                {
+                    _pendingCount--;
+                    _activeCount++;
+                    return _pendingCount == 0 && _activeCount == 0;
+                }
+            }
+
+            /// <summary>
+            /// Decrements active count. Must be called when a save finishes executing.
+            /// Returns true if callbacks should be drained (both counts are zero after decrement).
+            /// </summary>
+            public bool FinishExecution()
+            {
+                lock (_lock)
+                {
+                    _activeCount--;
+                    return _pendingCount == 0 && _activeCount == 0;
+                }
+            }
+
+            /// <summary>
+            /// Increments pending count for requeue. Must be called when a save is requeued.
+            /// </summary>
+            public void Requeue()
+            {
+                lock (_lock)
+                {
+                    _pendingCount++;
+                }
+            }
+
+            /// <summary>
+            /// Adds a callback to be invoked when all saves are complete.
+            /// If saves are already complete (both counts zero), returns true to indicate immediate invocation.
+            /// Otherwise returns false and registers the callback for later.
+            /// </summary>
+            public bool AddCallbackIfNotComplete(Action callback)
+            {
+                if (callback == null) return false;
+                lock (_lock)
+                {
+                    if (_pendingCount == 0 && _activeCount == 0)
+                    {
+                        // Already complete, signal immediate invocation
+                        return true;
+                    }
+                    // Not complete, register callback
+                    _callbacks.Add(callback);
+                    return false;
+                }
+            }
+
+            /// <summary>
+            /// Drains and returns all registered callbacks. Must be called under lock.
+            /// </summary>
+            private List<Action> DrainCallbacksLocked()
+            {
+                if (_callbacks.Count == 0)
+                    return null;
+                var toInvoke = new List<Action>(_callbacks);
+                _callbacks.Clear();
+                return toInvoke;
+            }
+
+            /// <summary>
+            /// Checks if both counts are zero and drains callbacks if so.
+            /// Returns list of callbacks to invoke, or null if not ready.
+            /// </summary>
+            public List<Action> CheckAndDrainCallbacks()
+            {
+                lock (_lock)
+                {
+                    if (_pendingCount == 0 && _activeCount == 0)
+                        return DrainCallbacksLocked();
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Extracts character ID from a save key if it's a character-related save.
+        /// Returns null if the key is not character-related.
+        /// All character-affecting saves now use the format: character:<id>:<type>[:<suffix>]
+        /// </summary>
+        private uint? ExtractCharacterIdFromKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                return null;
+
+            // All character-affecting saves use format: character:<id>:<type>[:<suffix>]
+            // Examples:
+            //   character:123:player
+            //   character:123:character
+            //   character:123:item:456
+            //   character:123:storage_tx:guid
+            //   character:123:vendor_tx:guid
+            //   character:123:bank_tx:guid
+            //   character:123:logout
+            if (key.StartsWith("character:", StringComparison.OrdinalIgnoreCase))
+            {
+                var afterPrefix = key.Substring("character:".Length);
+                var colonIndex = afterPrefix.IndexOf(':');
+                if (colonIndex > 0)
+                {
+                    // Format: character:<id>:<type>[:<suffix>]
+                    var idStr = afterPrefix.Substring(0, colonIndex);
+                    if (uint.TryParse(idStr, out var characterId))
+                        return characterId;
+                }
+                else
+                {
+                    // Legacy format: character:<id> (no type suffix)
+                    // Try to parse the entire remainder as character ID
+                    if (uint.TryParse(afterPrefix, out var characterId))
+                        return characterId;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Gets or creates the CharacterSaveState for a character.
+        /// </summary>
+        private CharacterSaveState GetOrCreateCharacterSaveState(uint characterId)
+        {
+            return _characterSaves.GetOrAdd(characterId, id => new CharacterSaveState { CharacterId = id });
+        }
+
+        /// <summary>
+        /// Checks if there are any pending or active saves for a character.
+        /// Returns true if there are saves queued or currently executing.
+        /// </summary>
+        public bool HasPendingOrActiveSave(uint characterId)
+        {
+            if (!_characterSaves.TryGetValue(characterId, out var state))
+                return false;
+
+            // Use atomic method to check both counts under a single lock, preventing TOCTOU race conditions
+            return state.HasPendingOrActive();
+        }
+
+        /// <summary>
+        /// Registers a callback to be invoked when all pending and active saves for a character are complete.
+        /// The callback will be invoked on the ActionQueue thread for thread safety.
+        /// If there are no pending or active saves, the callback is invoked immediately.
+        /// This operation is atomic with respect to save enqueue/start/finish operations.
+        /// </summary>
+        public void OnSavesDrained(uint characterId, Action callback)
+        {
+            if (callback == null)
+                return;
+
+            var state = GetOrCreateCharacterSaveState(characterId);
+            
+            // Atomic check-and-register: if complete, invoke immediately; otherwise register
+            if (state.AddCallbackIfNotComplete(callback))
+            {
+                // No saves in flight, invoke immediately on world thread
+                if (EnqueueToWorldThread != null)
+                {
+                    EnqueueToWorldThread(callback);
+                }
+                else
+                {
+                    // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                    // This fallback is unsafe and should never occur in production
+                    log.Error("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Invoking callback directly (unsafe - may cause thread safety issues). This indicates WorldManager.Initialize() was not called or failed.");
+                    callback();
+                }
+            }
+            // Otherwise callback is registered and will be invoked when saves complete
         }
 
         /// <summary>

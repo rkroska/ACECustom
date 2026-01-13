@@ -1587,7 +1587,9 @@ namespace ACE.Server.WorldObjects
 #endif
                 // Use SaveScheduler to offload saves from gameplay thread
                 // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
-                SaveScheduler.Instance.RequestSave($"item:{item.Guid}", ACE.Database.SaveScheduler.SaveType.Critical, () =>
+                // Item saves use character:<id>:item:<guid> format to track character-affecting saves
+                var itemSaveKey = SaveKeys.Item(Character.Id, item.Guid.Full);
+                SaveScheduler.Instance.RequestSave(itemSaveKey, ACE.Database.SaveScheduler.SaveType.Critical, () =>
                 {
                     item.SaveBiotaToDatabase();
                     return true;
@@ -1608,7 +1610,8 @@ namespace ACE.Server.WorldObjects
                     }
                     else if (worldContainer is Storage storage)
                     {
-                        containerKey = $"storage_tx:{storage.Guid}";
+                        // Storage transactions use character:<id>:storage_tx:<guid> format
+                        containerKey = SaveKeys.StorageTx(Character.Id, storage.Guid.Full);
                         containerType = ACE.Database.SaveScheduler.SaveType.Atomic;
                     }
                     else

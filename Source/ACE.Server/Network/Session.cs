@@ -47,6 +47,12 @@ namespace ACE.Server.Network
 
         public Player Player { get; private set; }
 
+        /// <summary>
+        /// Indicates that this session is waiting for saves to drain before proceeding with login.
+        /// Prevents multiple callbacks from being registered for the same login attempt.
+        /// </summary>
+        public bool WaitingForLoginDrain { get; set; }
+
 
         public DateTime logOffRequestTime;
 

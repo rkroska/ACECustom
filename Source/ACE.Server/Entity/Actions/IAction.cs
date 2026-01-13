@@ -195,6 +195,7 @@ namespace ACE.Server.Entity.Actions
         WorldManager_LogOffAllPlayers,
         WorldManager_PlayerEnterWorld,
         WorldManager_ThreadSafeTeleport,
+        SaveScheduler_OnSavesDrained,
         WorldObject_Destroy,
         WorldObjectDecay_Destroy,
         WorldObjectMagic_AdjustDungeonAndTeleportPlayer,
