@@ -168,12 +168,27 @@ namespace ACE.Server.WorldObjects
             // - Operate on local variables only after lock is released
             // This prevents LockRecursionException and ensures lock-pure save paths.
             
-            // Suppress saves during container mutations to prevent saving with ContainerId = null
-            // This is advisory, not a lock. The DB coalescer guarantees eventual persistence.
+            // Check for mutation depth leaks (safety valve)
+            // If depth has been >0 for too long, force reset to prevent permanent save suppression
             if (IsInContainerMutation)
             {
-                ChangesDetected = true; // Ensure changes are preserved for later save
-                return; // Skip save during mutation
+                var timeSinceLastMutation = DateTime.UtcNow - _lastContainerMutationUtc;
+                if (timeSinceLastMutation.TotalSeconds > MUTATION_LEAK_TIMEOUT_SECONDS)
+                {
+                    var currentDepth = Volatile.Read(ref _containerMutationDepth);
+                    log.Warn($"[CONTAINER MUTATION LEAK] Mutation depth stuck at {currentDepth} for {Name} (0x{Guid}) for {timeSinceLastMutation.TotalSeconds:F1}s - forcing reset");
+                    Interlocked.Exchange(ref _containerMutationDepth, 0);
+                    _lastContainerMutationUtc = DateTime.UtcNow; // Make leak breaker idempotent per incident
+                    ChangesDetected = true;
+                    // Continue with save now that depth is reset
+                }
+                else
+                {
+                    // Delay save during active mutation, but don't drop it
+                    // ChangesDetected is already set, so save will be retried later
+                    ChangesDetected = true; // Ensure changes are preserved for later save
+                    return; // Skip save during mutation (will be retried when mutation completes)
+                }
             }
             
 #if DEBUG
@@ -275,8 +290,23 @@ namespace ACE.Server.WorldObjects
             // (defensive guard against race window between top-of-method check and here)
             if (IsInContainerMutation)
             {
-                ChangesDetected = true; // Ensure changes are preserved for later save
-                return; // Abort save attempt - mutation in progress
+                // Check for mutation depth leaks (safety valve)
+                var timeSinceLastMutation = DateTime.UtcNow - _lastContainerMutationUtc;
+                if (timeSinceLastMutation.TotalSeconds > MUTATION_LEAK_TIMEOUT_SECONDS)
+                {
+                    var currentDepth = Volatile.Read(ref _containerMutationDepth);
+                    log.Warn($"[CONTAINER MUTATION LEAK] Mutation depth stuck at {currentDepth} for {itemName ?? "item"} (0x{itemGuid:X8}) for {timeSinceLastMutation.TotalSeconds:F1}s - forcing reset");
+                    Interlocked.Exchange(ref _containerMutationDepth, 0);
+                    _lastContainerMutationUtc = DateTime.UtcNow; // Make leak breaker idempotent per incident
+                    ChangesDetected = true;
+                    // Continue with save now that depth is reset
+                }
+                else
+                {
+                    // Delay save during active mutation, but don't drop it
+                    ChangesDetected = true; // Ensure changes are preserved for later save
+                    return; // Abort save attempt - mutation in progress (will be retried when mutation completes)
+                }
             }
             
             if (SaveInProgress && !allowSaveDespiteInProgress)

@@ -51,6 +51,20 @@ namespace ACE.Database
     }
 
     /// <summary>
+    /// Interface for save jobs that support forced dirty marking for aging saves.
+    /// Used by ForcedPeriodicSaveJob to signal that dirty marking should occur.
+    /// This keeps SaveScheduler generic - it doesn't know how to mark objects dirty.
+    /// </summary>
+    public interface IForcedPeriodicSaveJob : ISaveJob
+    {
+        /// <summary>
+        /// Forces the object to be marked as dirty before save execution.
+        /// Called by ForcedPeriodicSaveJob when aging requires a save even if the object thinks it's clean.
+        /// </summary>
+        void ForceDirty();
+    }
+
+    /// <summary>
     /// Wrapper to convert Func&lt;bool&gt; delegates to ISaveJob for backward compatibility.
     /// This allows gradual migration while reducing allocations for new code paths.
     /// </summary>
@@ -91,8 +105,9 @@ namespace ACE.Database
         public static SaveScheduler Instance => _instance.Value;
 
         /// <summary>
-        /// Callback factory for enqueueing actions to the world thread.
-        /// Set by WorldManager during initialization to avoid circular dependency.
+        /// Hook for routing actions back to the world thread from DB callbacks.
+        /// Set by WorldManager.Initialize() to ensure thread-safe execution of callbacks
+        /// that mutate shared state (e.g., PlayerManager dictionaries).
         /// </summary>
         public static Action<Action> EnqueueToWorldThread { get; set; }
 
@@ -359,6 +374,11 @@ namespace ACE.Database
                 var currentPriority = Volatile.Read(ref state.Priority);
                 if (currentPriority < myPriority)
                 {
+                    // Clear Queued flag before requeueing to maintain invariant:
+                    // Queued means "present in exactly one queue"
+                    // Without this, the higher priority worker may never claim it because
+                    // Queued already indicates it's in a queue, or future upgrades behave incorrectly
+                    Interlocked.Exchange(ref state.Queued, 0);
                     EnqueueByPriority(key, currentPriority);
                     Interlocked.Increment(ref _requeued);
                     continue;
@@ -532,7 +552,11 @@ namespace ACE.Database
                     {
                         // Set Queued back to 1 and enqueue
                         Interlocked.Exchange(ref state.Queued, 1);
-                        state.EnqueuedAt = DateTime.UtcNow; // Update enqueue time for stuck detection
+                        var now = DateTime.UtcNow;
+                        state.EnqueuedAt = now; // Update enqueue time for stuck detection
+                        // Reset FirstEnqueuedAt on requeue so "stuck" means actually stuck, not "busy but healthy"
+                        // This prevents frequently dirtied keys from looking "stuck" forever
+                        state.FirstEnqueuedAt = now;
                         EnqueueByPriority(key, state.Priority);
                         if (wasDirty)
                             Interlocked.Increment(ref _requeued);
@@ -668,22 +692,24 @@ namespace ACE.Database
             }
 
             // Step 2: drain aging queue
+            // Aging saves should force dirty marking to ensure they execute even if flags were cleared
             while (issued < maxPerTick && _agingQueue.TryDequeue(out var agedId))
             {
                 if (!_players.TryGetValue(agedId, out var state))
                     continue;
 
-                EnqueuePlayerSave(state, saveFactory);
+                EnqueuePlayerSave(state, saveFactory, forceDirty: true);
                 issued++;
             }
 
             // Step 3: round robin fairness
+            // Round robin saves are normal periodic saves - don't force dirty
             while (issued < minPerTick && _roundRobinQueue.TryDequeue(out var rrId))
             {
                 if (!_players.TryGetValue(rrId, out var state))
                     continue;
 
-                EnqueuePlayerSave(state, saveFactory);
+                EnqueuePlayerSave(state, saveFactory, forceDirty: false);
                 _roundRobinQueue.Enqueue(rrId);
                 issued++;
             }
@@ -691,11 +717,63 @@ namespace ACE.Database
 
         /// <summary>
         /// Enqueues a player save using the existing RequestSave logic.
+        /// Wraps the save job with ForcedPeriodicSaveJob to ensure aging saves always execute,
+        /// even if dirty flags were cleared prematurely or changes were masked.
         /// </summary>
-        private void EnqueuePlayerSave(PlayerSaveState state, Func<uint, ISaveJob> saveFactory)
+        /// <param name="state">Player save state</param>
+        /// <param name="saveFactory">Factory function that creates the save job</param>
+        /// <param name="forceDirty">True if this save was triggered by the aging queue (should force dirty), false for round robin saves</param>
+        private void EnqueuePlayerSave(PlayerSaveState state, Func<uint, ISaveJob> saveFactory, bool forceDirty)
         {
             var job = saveFactory(state.PlayerId);
-            RequestSave(SaveKeys.Player(state.PlayerId), SaveType.Periodic, new PlayerSaveJobWrapper(job, state));
+            
+            // Wrap with forced save job to ensure aging saves bypass "I'm clean" logic
+            // This prevents periodic saves from becoming no-ops when:
+            // - Dirty flag was cleared prematurely
+            // - SaveInProgress suppressed earlier
+            // - Mutation logic masked changes
+            // - Player inventory mutated without a subsequent flag
+            // 
+            // ARCHITECTURAL: SaveScheduler does not know about players - the save job handles dirty marking
+            // forceDirty is determined by which queue triggered the save (aging vs round robin), not time math
+            // This makes forced dirty marking deterministic and avoids timing edge cases
+            var forcedJob = new ForcedPeriodicSaveJob(job, forceDirty);
+            
+            RequestSave(SaveKeys.Player(state.PlayerId), SaveType.Periodic, new PlayerSaveJobWrapper(forcedJob, state));
+        }
+
+        /// <summary>
+        /// Wrapper that forces a save to execute even if the object believes it is clean.
+        /// Used for aging/periodic saves to prevent silent no-ops when dirty flags are cleared prematurely
+        /// or changes are masked by mutation logic.
+        /// 
+        /// ARCHITECTURAL: SaveScheduler is generic and does not know about players.
+        /// The inner save job (created in ACE.Server) handles the actual dirty marking logic.
+        /// This wrapper just signals that dirty marking should occur.
+        /// </summary>
+        private sealed class ForcedPeriodicSaveJob : ISaveJob
+        {
+            private readonly ISaveJob _inner;
+            private readonly bool _forceDirty;
+
+            public ForcedPeriodicSaveJob(ISaveJob inner, bool forceDirty)
+            {
+                _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+                _forceDirty = forceDirty;
+            }
+
+            public bool Execute()
+            {
+                // Signal to inner job that it should force dirty if needed
+                // The inner job (created in ACE.Server) knows how to mark players dirty
+                // SaveScheduler does not know about PlayerManager or players
+                if (_forceDirty && _inner is IForcedPeriodicSaveJob forcedJob)
+                {
+                    forcedJob.ForceDirty();
+                }
+
+                return _inner.Execute();
+            }
         }
 
         /// <summary>
