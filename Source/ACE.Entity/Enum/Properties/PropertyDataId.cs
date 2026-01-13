@@ -100,7 +100,20 @@ namespace ACE.Entity.Enum.Properties
         PCAPRecordedTimestamp9 = 8029,
         PCAPRecordedMaxVelocityEstimated = 8030,
         PCAPPhysicsDIDDataTemplatedFrom = 8044,
-        CreatedByAccountId               = 9027
+        CreatedByAccountId               = 9027,
+
+        // Monster Capture System - POC
+        CapturedSetup                    = 9028,
+        CapturedMotionTable              = 9029,
+        CapturedSoundTable               = 9030,
+        CapturedPaletteBase              = 9031,
+        CapturedClothingBase             = 9032,
+        VisualOverrideSetup              = 9033,
+        VisualOverrideMotionTable        = 9034,
+        VisualOverrideSoundTable         = 9035,
+        VisualOverridePaletteBase        = 9036,
+        VisualOverrideClothingBase       = 9037,
+        VisualOverrideIcon               = 9038
 
         //[ServerOnly]
         //HairTexture                = 9001,

@@ -40,6 +40,7 @@ namespace ACE.Entity.Enum.Properties
         UseMessage                      = 18,
         ItemHeritageGroupRestriction    = 19,
         PluralName                      = 20,
+
         [AssessmentProperty]
         MonarchsTitle                   = 21,
         ActivationFailure               = 22,
@@ -95,5 +96,10 @@ namespace ACE.Entity.Enum.Properties
         AllegianceCastellanTitle = 9005,
         GodState = 9006,
         TinkerLog = 9007,
+
+        // Monster Capture System - POC
+        CapturedCreatures = 9008,
+        CapturedCreatureName = 9009,
+        CapturedItems = 9010,
     }
 }

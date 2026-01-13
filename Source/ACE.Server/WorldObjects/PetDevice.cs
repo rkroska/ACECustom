@@ -30,6 +30,73 @@ namespace ACE.Server.WorldObjects
             set { if (value.HasValue) SetProperty(PropertyInt.PetClass, value.Value); else RemoveProperty(PropertyInt.PetClass); }
         }
 
+        // Monster Capture System - Visual Override Properties
+        public uint? VisualOverrideSetup
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideSetup);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideSetup); else SetProperty(PropertyDataId.VisualOverrideSetup, value.Value); }
+        }
+
+        public uint? VisualOverrideMotionTable
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideMotionTable);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideMotionTable); else SetProperty(PropertyDataId.VisualOverrideMotionTable, value.Value); }
+        }
+
+        public uint? VisualOverrideSoundTable
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideSoundTable);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideSoundTable); else SetProperty(PropertyDataId.VisualOverrideSoundTable, value.Value); }
+        }
+
+        public uint? VisualOverridePaletteBase
+        {
+            get => GetProperty(PropertyDataId.VisualOverridePaletteBase);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverridePaletteBase); else SetProperty(PropertyDataId.VisualOverridePaletteBase, value.Value); }
+        }
+
+        public uint? VisualOverrideClothingBase
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideClothingBase);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideClothingBase); else SetProperty(PropertyDataId.VisualOverrideClothingBase, value.Value); }
+        }
+
+        public uint? VisualOverrideIcon
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideIcon);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideIcon); else SetProperty(PropertyDataId.VisualOverrideIcon, value.Value); }
+        }
+
+        public int? VisualOverridePaletteTemplate
+        {
+            get => GetProperty(PropertyInt.VisualOverridePaletteTemplate);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.VisualOverridePaletteTemplate); else SetProperty(PropertyInt.VisualOverridePaletteTemplate, value.Value); }
+        }
+
+        public double? VisualOverrideShade
+        {
+            get => GetProperty(PropertyFloat.VisualOverrideShade);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.VisualOverrideShade); else SetProperty(PropertyFloat.VisualOverrideShade, value.Value); }
+        }
+
+        public double? VisualOverrideScale
+        {
+            get => GetProperty(PropertyFloat.VisualOverrideScale);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.VisualOverrideScale); else SetProperty(PropertyFloat.VisualOverrideScale, value.Value); }
+        }
+
+        public string VisualOverrideName
+        {
+            get => GetProperty(PropertyString.CapturedCreatureName);
+            set { if (value == null) RemoveProperty(PropertyString.CapturedCreatureName); else SetProperty(PropertyString.CapturedCreatureName, value); }
+        }
+
+        public string VisualOverrideCapturedItems
+        {
+            get => GetProperty(PropertyString.CapturedItems);
+            set { if (value == null) RemoveProperty(PropertyString.CapturedItems); else SetProperty(PropertyString.CapturedItems, value); }
+        }
+
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
@@ -51,6 +118,21 @@ namespace ACE.Server.WorldObjects
 
         private void SetEphemeralValues()
         {
+        }
+
+        // Monster Capture System - Handle captured appearance application
+        public override void HandleActionUseOnTarget(Player player, WorldObject target)
+        {
+            player.SendMessage($"DEBUG: PetDevice.HandleActionUseOnTarget called! Source: {target?.Name}, Target: {Name}");
+            
+            if (MonsterCapture.IsCapturedAppearance(target))
+            {
+                player.SendMessage("DEBUG: Routing to MonsterCapture.ApplyAppearanceToCrate");
+                MonsterCapture.ApplyAppearanceToCrate(player, this, target);
+                return;
+            }
+
+            base.HandleActionUseOnTarget(player, target);
         }
 
         public override void ActOnUse(WorldObject activator)
@@ -157,6 +239,95 @@ namespace ACE.Server.WorldObjects
                 log.Error($"{player.Name}.SummonCreature({wcid}) - PetDevice {WeenieClassId} - {WeenieClassName} tried to summon {wo.WeenieClassId} - {wo.WeenieClassName} of unknown type {wo.WeenieType}");
                 return false;
             }
+
+            // Monster Capture System - Apply visual overrides if set
+            if (VisualOverrideSetup.HasValue)
+            {
+                pet.SetupTableId = VisualOverrideSetup.Value;
+
+                if (VisualOverrideMotionTable.HasValue)
+                    pet.MotionTableId = VisualOverrideMotionTable.Value;
+
+                if (VisualOverrideSoundTable.HasValue)
+                    pet.SoundTableId = VisualOverrideSoundTable.Value;
+
+                if (VisualOverridePaletteBase.HasValue)
+                    pet.PaletteBaseId = VisualOverridePaletteBase.Value;
+
+                if (VisualOverrideClothingBase.HasValue)
+                    pet.ClothingBase = VisualOverrideClothingBase.Value;
+
+                if (VisualOverrideIcon.HasValue)
+                    pet.IconId = VisualOverrideIcon.Value;
+
+                if (VisualOverridePaletteTemplate.HasValue)
+                    pet.PaletteTemplate = VisualOverridePaletteTemplate.Value;
+
+                if (VisualOverrideShade.HasValue)
+                    pet.Shade = (float)VisualOverrideShade.Value;
+
+                if (VisualOverrideScale.HasValue)
+                    pet.ObjScale = (float)VisualOverrideScale.Value;
+                
+                // Apply creature name override
+                if (!string.IsNullOrEmpty(VisualOverrideName))
+                {
+                    // Keep the player's name prefix, replace the pet type
+                    // e.g., "Admin's Punk Healing Idol" -> "Admin's Monouga"
+                    var ownerName = player.Name;
+                    pet.Name = $"{ownerName}'s {VisualOverrideName}";
+                }
+
+                // Equip Captured Items (Armor, Weapons, Shield)
+                if (!string.IsNullOrEmpty(VisualOverrideCapturedItems))
+                {
+                    var itemEntries = VisualOverrideCapturedItems.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var entry in itemEntries)
+                    {
+                        // Format: WCID;Scale;Palette;Shade
+                        var parts = entry.Split(';');
+                        if (uint.TryParse(parts[0], out var itemWcid))
+                        {
+                            var item = WorldObjectFactory.CreateNewWorldObject(itemWcid);
+                            if (item != null)
+                            {
+                                // Apply Visual Properties
+                                if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemScale))
+                                {
+                                    if (System.Math.Abs(itemScale - 1.0f) > 0.001f)
+                                        item.ObjScale = itemScale;
+                                }
+
+                                if (parts.Length > 2 && int.TryParse(parts[2], out var itemPalette) && itemPalette != 0)
+                                {
+                                    item.PaletteTemplate = itemPalette;
+                                }
+
+                                if (parts.Length > 3 && float.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemShade) && itemShade != 0.0f)
+                                {
+                                    item.Shade = itemShade;
+                                }
+
+                                // Add to pet's inventory first
+                                if (pet.TryAddToInventory(item))
+                                {
+                                    // Make item effectively worthless/bonded so it's not exploited
+                                    item.Value = 0; 
+                                    
+                                    // Try to wield/equip it
+                                    // We use TryWieldObject which handles slot logic
+                                    pet.TryWieldObject(item, (EquipMask)(item.ValidLocations ?? 0));
+                                }
+                                else
+                                {
+                                    item.Destroy();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             var success = pet.Init(player, this);
 
             if (success != true) wo.Destroy();
