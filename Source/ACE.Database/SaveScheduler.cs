@@ -1088,14 +1088,20 @@ namespace ACE.Database
             /// <summary>
             /// Force clears all counters and callbacks. Used for self-healing when ghost state is detected.
             /// </summary>
-            public void ForceClearIfNoWork()
+            public List<Action> ForceClearIfNoWorkAndDrainCallbacks()
             {
                 lock (_lock)
                 {
                     _pendingCount = 0;
                     _activeCount = 0;
                     _lastActivityUtc = DateTime.UtcNow;
+
+                    if (_callbacks.Count == 0)
+                        return null;
+
+                    var callbacks = new List<Action>(_callbacks);
                     _callbacks.Clear();
+                    return callbacks;
                 }
             }
         }
@@ -1168,8 +1174,14 @@ namespace ACE.Database
             if (idleTime > _stuckThreshold && !CharacterHasRealWork(characterId))
             {
                 log.Warn($"[SAVESCHEDULER] Clearing ghost save state for character {characterId}");
-                state.ForceClearIfNoWork();
+                var callbacks = state.ForceClearIfNoWorkAndDrainCallbacks();
                 TryRemoveIdleCharacterSaveState(characterId);
+
+                if (callbacks != null)
+                {
+                    InvokeCallbacks(characterId, callbacks);
+                }
+
                 return false;
             }
 
@@ -1264,14 +1276,20 @@ namespace ACE.Database
 
             // All conditions met - safe to clear
             log.Warn($"[SAVESCHEDULER] Admin command clearing ghost save state for character {characterId}");
-            state.ForceClearIfNoWork();
+            var callbacks = state.ForceClearIfNoWorkAndDrainCallbacks();
             TryRemoveIdleCharacterSaveState(characterId);
+
+            if (callbacks != null)
+            {
+                InvokeCallbacks(characterId, callbacks);
+            }
+
             return true;
         }
 
         /// <summary>
         /// Attempts to remove a CharacterSaveState if it's idle and has no real work.
-        /// Safe to call after ForceClearIfNoWork or after callbacks drain.
+        /// Safe to call after ForceClearIfNoWorkAndDrainCallbacks or after callbacks drain.
         /// </summary>
         private void TryRemoveIdleCharacterSaveState(uint characterId)
         {
@@ -1315,6 +1333,48 @@ namespace ACE.Database
                 }
             }
             // Otherwise callback is registered and will be invoked when saves complete
+        }
+
+        /// <summary>
+        /// Centralized callback invocation with world-thread-safe execution.
+        /// </summary>
+        private void InvokeCallbacks(uint characterId, List<Action> callbacks)
+        {
+            if (callbacks == null || callbacks.Count == 0)
+                return;
+
+            if (EnqueueToWorldThread != null)
+            {
+                EnqueueToWorldThread(() =>
+                {
+                    foreach (var cb in callbacks)
+                    {
+                        try
+                        {
+                            cb();
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"[SAVESCHEDULER] Callback failed after force clear for character {characterId}", ex);
+                        }
+                    }
+                });
+            }
+            else
+            {
+                log.Error("[SAVESCHEDULER] EnqueueToWorldThread not set during force clear; invoking directly (unsafe)");
+                foreach (var cb in callbacks)
+                {
+                    try
+                    {
+                        cb();
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[SAVESCHEDULER] Callback failed after force clear for character {characterId}", ex);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1382,8 +1442,13 @@ namespace ACE.Database
                         if (!CharacterHasRealWork(charId))
                         {
                             log.Warn($"[SAVESCHEDULER] Watchdog clearing ghost character save state for {charId}");
-                            cs.ForceClearIfNoWork();
+                            var callbacks = cs.ForceClearIfNoWorkAndDrainCallbacks();
                             TryRemoveIdleCharacterSaveState(charId);
+
+                            if (callbacks != null)
+                            {
+                                InvokeCallbacks(charId, callbacks);
+                            }
                         }
                     }
                 }
