@@ -176,7 +176,23 @@ namespace ACE.Server.WorldObjects
                 if (timeSinceLastMutation.TotalSeconds > MUTATION_LEAK_TIMEOUT_SECONDS)
                 {
                     var currentDepth = Volatile.Read(ref _containerMutationDepth);
-                    log.Warn($"[CONTAINER MUTATION LEAK] Mutation depth stuck at {currentDepth} for {Name} (0x{Guid}) for {timeSinceLastMutation.TotalSeconds:F1}s - forcing reset");
+                    // Capture item name under biota lock before logging (Name getter is not safe without lock)
+                    string leakItemName;
+                    var leakItemGuid = Guid.Full; // safe, not locked
+                    BiotaDatabaseLock.EnterReadLock();
+                    try
+                    {
+                        if (Biota.PropertiesString != null && Biota.PropertiesString.TryGetValue(PropertyString.Name, out var name))
+                            leakItemName = name;
+                        else
+                            leakItemName = $"0x{leakItemGuid:X8}";
+                    }
+                    finally
+                    {
+                        BiotaDatabaseLock.ExitReadLock();
+                    }
+                    // Now safe to log leakItemName because it is a plain local string
+                    log.Warn($"[CONTAINER MUTATION LEAK] Mutation depth stuck at {currentDepth} for {leakItemName} (0x{Guid}) for {timeSinceLastMutation.TotalSeconds:F1}s - forcing reset");
                     Interlocked.Exchange(ref _containerMutationDepth, 0);
                     _lastContainerMutationUtc = DateTime.UtcNow; // Make leak breaker idempotent per incident
                     ChangesDetected = true;
