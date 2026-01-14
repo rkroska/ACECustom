@@ -1491,7 +1491,7 @@ namespace ACE.Database
         /// </summary>
         private void WatchdogLoop()
         {
-            while (!IsShutdownRequested)
+            while (!_disposed)
             {
                 try
                 {
