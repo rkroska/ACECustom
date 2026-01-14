@@ -768,7 +768,12 @@ namespace ACE.Database
                 thread.Join();
             }
 
-            // Wait for watchdog thread to finish
+            // Signal watchdog thread to exit and then wait for it to finish.
+            // IMPORTANT: _disposed is what controls the watchdog loop condition:
+            //   while (!_disposed) { ... }
+            // If we waited for the watchdog before setting _disposed, we would
+            // deadlock here because the watchdog would never see the exit signal.
+            _disposed = true;
             _watchdogThread?.Join();
 
             // Capture queue counts before disposal (QueueCount returns 0 after _disposed is set)
@@ -778,9 +783,6 @@ namespace ACE.Database
             _atomicQueue.Dispose();
             _criticalQueue.Dispose();
             _periodicQueue.Dispose();
-
-            // Set disposed flag after queues are disposed to prevent ObjectDisposedException
-            _disposed = true;
 
             log.Info($"[SAVESCHEDULER] Stopped. Remaining states={_states.Count} Remaining queued={remainingQueued}");
         }
