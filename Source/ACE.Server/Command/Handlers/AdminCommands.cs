@@ -7151,6 +7151,157 @@ namespace ACE.Server.Command.Handlers
             obj.SendUpdatePosition(true);
         }
 
+        [CommandHandler("checksaves", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Checks if a character has ghost save state by verifying the 2 criteria (does not change anything)", "<character name>")]
+        public static void HandleCheckSaves(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /checksaves <character name>", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var characterName = string.Join(" ", parameters);
+            uint? characterId = null;
+
+            // Try online player first
+            var onlinePlayer = PlayerManager.GetOnlinePlayer(characterName);
+            if (onlinePlayer != null)
+            {
+                characterId = onlinePlayer.Guid.Full;
+            }
+            else
+            {
+                // Try offline player from database
+                var character = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByName(characterName);
+                if (character != null)
+                {
+                    characterId = character.Id;
+                }
+            }
+
+            if (!characterId.HasValue)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Character '{characterName}' not found.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var scheduler = SaveScheduler.Instance;
+            
+            // Check the 2 criteria that /clearsaves uses:
+            // 1. CharacterSaveState reports pending or active
+            var hasPendingOrActive = scheduler.HasPendingOrActiveSave(characterId.Value);
+            
+            // 2. SaveScheduler reports no real work exists
+            // Real work means any SaveState with Executing=1 or Queued=1 for this character
+            var hasRealWork = scheduler.CharacterHasRealWork(characterId.Value);
+
+            // Get time context for severity assessment
+            var lastActivity = scheduler.GetLastActivityUtc(characterId.Value);
+            var timeSinceActivity = lastActivity.HasValue ? (DateTime.UtcNow - lastActivity.Value).TotalSeconds : (double?)null;
+
+            var message = $"Save state check for {characterName} (0x{characterId.Value:X8}):\n";
+            if (timeSinceActivity.HasValue)
+            {
+                message += $"  Last save activity: {timeSinceActivity.Value:F0} seconds ago\n";
+            }
+            else
+            {
+                message += $"  Last save activity: No activity recorded\n";
+            }
+            message += $"  Criterion 1 - CharacterSaveState reports pending/active: {hasPendingOrActive}\n";
+            message += $"  Criterion 2 - SaveScheduler reports real work exists (executing or queued): {hasRealWork}\n";
+            message += $"\n";
+
+            // Determine if safe to clear (both criteria must be met: pending/active AND no real work)
+            var canClear = hasPendingOrActive && !hasRealWork;
+            
+            if (canClear)
+            {
+                message += $"  Safe to clear: All criteria met for ghost state.\n";
+                if (timeSinceActivity.HasValue)
+                {
+                    if (timeSinceActivity.Value < 10)
+                        message += $"  Note: Very recent activity ({timeSinceActivity.Value:F0}s) - may be transient race condition.\n";
+                    else if (timeSinceActivity.Value < 60)
+                        message += $"  Note: Recent activity ({timeSinceActivity.Value:F0}s) - monitor if it recurs.\n";
+                    else if (timeSinceActivity.Value < 300)
+                        message += $"  Warning: Stale activity ({timeSinceActivity.Value:F0}s) - likely real issue.\n";
+                    else
+                        message += $"  CRITICAL: Very stale activity ({timeSinceActivity.Value:F0}s) - deadlock or long-running incident.\n";
+                }
+                message += $"  Use /clearsaves {characterName} to clear.";
+            }
+            else
+            {
+                message += $"  Not safe to clear:\n";
+                if (!hasPendingOrActive)
+                    message += $"    - CharacterSaveState does not report pending/active\n";
+                if (hasRealWork)
+                    message += $"    - SaveScheduler reports real work exists (SaveState with Executing or Queued)\n";
+            }
+
+            CommandHandlerHelper.WriteOutputInfo(session, message, ChatMessageType.Broadcast);
+        }
+
+        [CommandHandler("clearsaves", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Clears ghost save state for a character if safe", "<character name>")]
+        public static void HandleClearSaves(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /clearsaves <character name>", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var characterName = string.Join(" ", parameters);
+            uint? characterId = null;
+
+            // Try online player first
+            var onlinePlayer = PlayerManager.GetOnlinePlayer(characterName);
+            if (onlinePlayer != null)
+            {
+                characterId = onlinePlayer.Guid.Full;
+            }
+            else
+            {
+                // Try offline player from database
+                var character = DatabaseManager.Shard.BaseDatabase.GetCharacterStubByName(characterName);
+                if (character != null)
+                {
+                    characterId = character.Id;
+                }
+            }
+
+            if (!characterId.HasValue)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Character '{characterName}' not found.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var scheduler = SaveScheduler.Instance;
+            var cleared = scheduler.ClearGhostSaveState(characterId.Value);
+
+            if (cleared)
+            {
+                var message = $"Successfully cleared ghost save state for {characterName} (0x{characterId.Value:X8})";
+                CommandHandlerHelper.WriteOutputInfo(session, message, ChatMessageType.Broadcast);
+                PlayerManager.BroadcastToAuditChannel(session?.Player, $"{session?.Player?.Name ?? "Console"} cleared ghost save state for {characterName} (0x{characterId.Value:X8})");
+            }
+            else
+            {
+                var hasGhost = scheduler.HasGhostSaveState(characterId.Value);
+                var hasRealWork = scheduler.CharacterHasRealWork(characterId.Value);
+                var hasPendingOrActive = scheduler.HasPendingOrActiveSave(characterId.Value);
+
+                var message = $"Cannot clear save state for {characterName} (0x{characterId.Value:X8}):\n";
+                message += $"  HasPendingOrActive: {hasPendingOrActive}\n";
+                message += $"  HasRealWork: {hasRealWork}\n";
+                message += $"  HasGhostState: {hasGhost}\n";
+                message += $"  Clear conditions not met - character may have real work or no ghost state exists.";
+
+                CommandHandlerHelper.WriteOutputInfo(session, message, ChatMessageType.Broadcast);
+            }
+        }
+
         [CommandHandler("reload-loot-tables", AccessLevel.Admin, CommandHandlerFlag.None, "reloads the latest data from the loot tables", "optional profile folder")]
         public static void HandleReloadLootTables(Session session, params string[] parameters)
         {
