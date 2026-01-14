@@ -355,6 +355,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> max_chars_per_account { get; private set; } = new(11, "retail defaults to 11, client supports up to 20");
         public static ConfigProperty<long> pk_timer { get; private set; } = new(20, "the number of seconds where a player cannot perform certain actions (ie. teleporting) after becoming involved in a PK battle");
         public static ConfigProperty<long> player_save_interval { get; private set; } = new(300, "the number of seconds between automatic player saves");
+        public static ConfigProperty<long> save_scheduler_stuck_seconds { get; private set; } = new(30, "the number of seconds a save operation can be in flight before being considered stuck and logged by the SaveScheduler watchdog");
         public static ConfigProperty<long> rares_max_days_between { get; private set; } = new(45, "for rares_real_time_v2: the maximum number of days a player can go before a rare is generated on rare eligible creature kills");
         public static ConfigProperty<long> rares_max_seconds_between { get; private set; } = new(5256000, "for rares_real_time: the maximum number of seconds a player can go before a second chance at a rare is allowed on rare eligible creature kills that did not generate a rare");
         public static ConfigProperty<long> summoning_killtask_multicredit_cap { get; private set; } = new(2, "if allow_summoning_killtask_multicredit is enabled, the maximum # of killtask credits a player can receive from 1 kill");

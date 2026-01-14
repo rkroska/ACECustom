@@ -525,6 +525,12 @@ namespace ACE.Server.WorldObjects
         {
             IsBusy = true;
             IsLoggingOut = true;
+            // Note: BeginLogoutSave() should already be called by LogOffPlayer in Session.cs
+            // before calling LogOut(). This is defensive in case LogOut() is called directly.
+            if (!_isShuttingDownOrOffline)
+            {
+                BeginLogoutSave();
+            }
 
             if (Fellowship != null)
                 FellowshipQuit(false);
@@ -643,9 +649,6 @@ namespace ACE.Server.WorldObjects
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
-            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
-            // Don't set the player offline until they have successfully saved
-            //PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
             log.Debug($"[LOGOUT] Account {Account.AccountName} exited the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }

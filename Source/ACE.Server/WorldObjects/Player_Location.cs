@@ -912,6 +912,7 @@ namespace ACE.Server.WorldObjects
             0x5964,     // Gauntlet Arena One (Radiant Blood)
             0x5965,     // Gauntlet Arena Two (Radiant Blood)
             0x79E9,     // Bloodstone Factory
+            0x654C,
         };
 
         /// <summary>

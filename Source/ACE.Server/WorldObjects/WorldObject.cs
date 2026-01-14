@@ -104,6 +104,8 @@ namespace ACE.Server.WorldObjects
         // NOTE: This field may be accessed from multiple world threads concurrently (e.g., different landblock threads),
         // so we use Interlocked operations for thread safety. SaveBiotaToDatabase reads this via IsInContainerMutation.
         private int _containerMutationDepth;
+        private DateTime _lastContainerMutationUtc = DateTime.MinValue;
+        private const int MUTATION_LEAK_TIMEOUT_SECONDS = 30; // Safety valve: reset depth if stuck >30s
 
         internal bool IsInContainerMutation => Volatile.Read(ref _containerMutationDepth) > 0;
 
@@ -117,6 +119,7 @@ namespace ACE.Server.WorldObjects
         internal void BeginContainerMutation(uint? oldContainerBiotaId)
         {
             var newDepth = Interlocked.Increment(ref _containerMutationDepth);
+            _lastContainerMutationUtc = DateTime.UtcNow;
 #if DEBUG
             log.Debug($"[CONTAINER MUTATION] Begin for {Name} (0x{Guid}) | OldContainerBiotaId={oldContainerBiotaId} | Depth={newDepth}");
 #endif
@@ -127,6 +130,9 @@ namespace ACE.Server.WorldObjects
         /// Always decrements depth if > 0 to prevent depth leaks and permanent save suppression.
         /// Depth management must be structural, not semantic.
         /// Thread-safe: Uses Interlocked.Decrement for concurrent access from multiple world threads.
+        /// When mutation depth transitions from >0 to 0, marks ChangesDetected = true to ensure persistence.
+        /// The normal save tick or scheduled save will flush the changes, avoiding direct persistence calls
+        /// from gameplay mutation plumbing which can run on non-world threads and create timing-dependent issues.
         /// </summary>
         internal void EndContainerMutation(uint? oldContainerBiotaId, uint? newContainerBiotaId)
         {
@@ -134,9 +140,21 @@ namespace ACE.Server.WorldObjects
             if (prevDepth > 0)
             {
                 var newDepth = Interlocked.Decrement(ref _containerMutationDepth);
+                _lastContainerMutationUtc = DateTime.UtcNow;
 #if DEBUG
                 log.Debug($"[CONTAINER MUTATION] End for {Name} (0x{Guid}) | Old={oldContainerBiotaId} New={newContainerBiotaId} | Depth={newDepth}");
 #endif
+                // When mutation depth transitions from >0 to 0, mark dirty to ensure persistence
+                // The normal player save tick or scheduled save will flush it, avoiding direct
+                // persistence calls from mutation code which can run on non-world threads and create
+                // timing-dependent issues that are "impossible to test locally".
+                if (newDepth == 0)
+                {
+                    ChangesDetected = true;
+#if DEBUG
+                    log.Debug($"[CONTAINER MUTATION] Mutation depth reached 0 for {Name} (0x{Guid}) - marked ChangesDetected=true");
+#endif
+                }
             }
         }
 

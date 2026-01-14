@@ -20,6 +20,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.Managers;
 using ACE.Server.Entity;
+using ACE.Server.Entity.Actions;
 
 namespace ACE.Server.Network
 {
@@ -46,6 +47,12 @@ namespace ACE.Server.Network
         public List<LoginCharacter> Characters { get; } = new List<LoginCharacter>();
 
         public Player Player { get; private set; }
+
+        /// <summary>
+        /// Indicates that this session is waiting for saves to drain before proceeding with login.
+        /// Prevents multiple callbacks from being registered for the same login attempt.
+        /// </summary>
+        public bool WaitingForLoginDrain { get; set; }
 
 
         public DateTime logOffRequestTime;
@@ -257,13 +264,20 @@ namespace ACE.Server.Network
         {
             if (Player == null) return;
 
+            // CRITICAL: Mark player immutable and save immediately to prevent item loss
+            // This must happen BEFORE any logout processing to capture final mutations
+            // Pattern: Client disconnects → Player continues mutating → Save fires later → Final mutations never captured
+            // This is exactly how an equipped item can vanish after a crash.
+            // 
+            // Correct chain:
+            // 1. Mark player immutable (BeginLogoutSave sets _isShuttingDownOrOffline = true)
+            // 2. Save immediately (BeginLogoutSave calls SavePlayerToDatabase(ForcedImmediate))
+            // 3. Log character logout
+            // 4. Call Player.LogOut(...)
+            Player.BeginLogoutSave();
+
             // Log character logout to char_tracker table
             CharacterTracker.LogCharacterLogout(Player);
-
-            // Character database objects are not cached. Each session gets a new character entity and dbContext from ShardDatabase.
-            // To ensure the latest version of the character is saved before any new logins pull these records again, we queue a save here if necessary, at the instant logoff is requested.
-            if (Player.CharacterChangesDetected)
-                Player.SaveCharacterToDatabase(true);
 
             if (logOffRequestTime == DateTime.MinValue)
             {
@@ -279,6 +293,42 @@ namespace ACE.Server.Network
             // If we still exist on a landblock, we can't exit yet.
             if (Player?.CurrentLandblock != null)
                 return;
+
+            // CRITICAL: Block character select until logout save completes
+            // This prevents "I logged out, logged in, item vanished" bug where:
+            // - Client reaches character select
+            // - Player logs back in quickly
+            // - DB queue had not flushed
+            // - You load stale snapshot
+            // 
+            // By waiting here, we ensure the save callback has run before allowing character select.
+            // TickOutbound will keep calling this each tick, but it won't proceed until save completes.
+            // 
+            // TIMEOUT: If save doesn't complete within 15 seconds, log error and proceed to avoid
+            // permanent deadlock from bugs, exceptions, SaveScheduler issues, or DB queue stuck.
+            if (Player != null && !Player.IsLogoutSaveComplete)
+            {
+                // Check for timeout to prevent permanent deadlock
+                if (logOffRequestTime != DateTime.MinValue)
+                {
+                    var waitTime = DateTime.UtcNow - logOffRequestTime;
+                    if (waitTime.TotalSeconds > 15)
+                    {
+                        log.Error($"[LOGOUT] Logout save timeout for {Player.Name} (0x{Player.Guid}) after {waitTime.TotalSeconds:F1}s - proceeding to character select despite incomplete save. This may indicate SaveScheduler issue, DB queue stuck, or callback exception.");
+                        // Proceed anyway to avoid permanent deadlock
+                    }
+                    else
+                    {
+                        // Still within timeout, continue waiting
+                        return;
+                    }
+                }
+                else
+                {
+                    // logOffRequestTime not set, continue waiting
+                    return;
+                }
+            }
 
             logOffRequestTime = DateTime.MinValue;
 

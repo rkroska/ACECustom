@@ -163,13 +163,26 @@ namespace ACE.Server.Managers
             if (playersWithChanges > 0)
             {
                 log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
-                DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
-                {
-                    if (success)
-                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
-                    else
-                        log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
-                });
+                // Use SaveScheduler which sits above SerializedShardDatabase
+                // NOTE: "OfflinePlayerSaves" is intentionally a global, singleton key.
+                // This is correct because there is exactly one offline save concept (all offline players),
+                // it is periodic, and it is global (not per-account or per-shard).
+                // If per-account or per-shard offline saves are added later, they must use different keys
+                // (e.g., "OfflinePlayerSaves:Account:{accountId}") to avoid incorrect coalescing.
+                ACE.Database.SaveScheduler.Instance.RequestSave(
+                    "OfflinePlayerSaves",
+                    ACE.Database.SaveScheduler.SaveType.Periodic,
+                    () =>
+                    {
+                        DatabaseManager.Shard.QueueOfflinePlayerSavesInternal(success =>
+                        {
+                            if (success)
+                                log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
+                            else
+                                log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
+                        });
+                        return true;
+                    });
             }
             else
             {
@@ -464,6 +477,29 @@ namespace ACE.Server.Managers
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Marks a player as dirty for forced periodic saves.
+        /// This ensures aging saves bypass "I'm clean" logic and actually perform persistence work.
+        /// Thread-safe: Uses read lock to access player, then marks dirty flags.
+        /// </summary>
+        public static void MarkPlayerDirty(uint playerId)
+        {
+            playersLock.EnterWriteLock();
+            try
+            {
+                if (onlinePlayers.TryGetValue(playerId, out var player))
+                {
+                    // Mark both biota and character as dirty to ensure save executes
+                    player.ChangesDetected = true;
+                    player.CharacterChangesDetected = true;
+                }
+            }
+            finally
+            {
+                playersLock.ExitWriteLock();
+            }
         }
 
         /// <summary>

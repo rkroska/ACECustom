@@ -380,6 +380,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<Creature> GetAttackTargetsUncached()
         {
+            if (PhysicsObj == null)
+                return new List<Creature>();
+
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             

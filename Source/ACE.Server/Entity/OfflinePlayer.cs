@@ -1,17 +1,21 @@
 using System;
 using System.Threading;
 
+using log4net;
+
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Entity;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Entity
 {
     public class OfflinePlayer : IPlayer
     {
+        private static readonly ILog log = LogManager.GetLogger(typeof(OfflinePlayer));
         /// <summary>
         /// This is object property overrides that should have come from the shard db (or init to defaults of object is new to this instance).
         /// You should not manipulate these values directly. To manipulate this use the exposed SetProperty and RemoveProperty functions instead.
@@ -38,6 +42,16 @@ namespace ACE.Server.Entity
 
             if (character != null)
                 Account = DatabaseManager.Authentication.GetAccountById(character.AccountId);
+
+            // ---- LOGIN RECOVERY ----
+            if (SaveInProgress &&
+                SaveServerBootId != ServerRuntime.BootId)
+            {
+                log.Warn($"[LOGIN] Clearing abandoned SaveInProgress for offline player {Guid}");
+                SaveInProgress = false;
+                SaveServerBootId = null;
+                LastRequestedDatabaseSave = DateTime.UtcNow;
+            }
         }
 
         public bool IsDeleted => DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(Guid.Full).IsDeleted;
@@ -47,6 +61,7 @@ namespace ACE.Server.Entity
 
         public bool ChangesDetected { get; set; }
         public bool SaveInProgress { get; set; }
+        internal Guid? SaveServerBootId { get; set; }
 
         public readonly ReaderWriterLockSlim BiotaDatabaseLock = new ReaderWriterLockSlim();
 
@@ -71,6 +86,7 @@ namespace ACE.Server.Entity
         {
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
+            SaveServerBootId = ServerRuntime.BootId;
             ChangesDetected = false;
 
             if (enqueueSave)
