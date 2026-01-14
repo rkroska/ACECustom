@@ -168,6 +168,10 @@ namespace ACE.Database
         // Can be set externally via SetStuckThreshold() to read from ServerConfig
         private TimeSpan _stuckThreshold = TimeSpan.FromSeconds(30);
 
+        // Track last cleanup time for coalesce tracker cleanup
+        private DateTime _lastCoalesceCleanupUtc = DateTime.MinValue;
+        private const int CoalesceCleanupIntervalSeconds = 45; // Run cleanup every 45 seconds
+
         // Metrics counters
         private long _enqueued;
         private long _executedAtomic;
@@ -1560,6 +1564,24 @@ namespace ACE.Database
                             {
                                 InvokeCallbacks(charId, callbacks);
                             }
+                        }
+                    }
+
+                    // Third pass: cleanup idle coalesce trackers in SerializedShardDatabase
+                    // This prevents unbounded growth of the _coalesce dictionary
+                    // Run every 30-60 seconds (using 45 seconds as a middle ground)
+                    if ((now - _lastCoalesceCleanupUtc).TotalSeconds >= CoalesceCleanupIntervalSeconds)
+                    {
+                        try
+                        {
+                            // Cleanup trackers that have been idle for 10 minutes
+                            DatabaseManager.Shard?.CleanupIdleTrackers(TimeSpan.FromMinutes(10));
+                            _lastCoalesceCleanupUtc = now;
+                        }
+                        catch (Exception cleanupEx)
+                        {
+                            log.Error("[SAVESCHEDULER] Watchdog coalesce cleanup threw exception", cleanupEx);
+                            // Continue watchdog loop even if cleanup fails
                         }
                     }
                 }
