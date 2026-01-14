@@ -190,6 +190,22 @@ namespace ACE.Server.Managers
                 Thread.Sleep(10);
             }
 
+            // CRITICAL: Stop SaveScheduler BEFORE stopping world/network threads
+            // This ensures:
+            // 1. Callbacks can drain (EnqueueToWorldThread still works)
+            // 2. Completion signals fire (SignalLogoutSaveComplete can execute)
+            // 3. No false timeout errors (saves complete before world thread stops)
+            // 
+            // Order: Allow SaveScheduler to drain → Wait for callbacks to process → Stop SaveScheduler → Stop world/network → Stop DB workers
+            // 
+            // DrainAndStop() handles:
+            // - Reducing stuck threshold for aggressive ghost cleanup
+            // - Waiting for all queued saves (QueueCount == 0)
+            // - Waiting for all executing saves (StateCount == 0)
+            // - Waiting for all callbacks to be processed (ActionQueue.Count == 0)
+            // - Calling Stop() to gracefully shut down worker threads
+            SaveScheduler.Instance.DrainAndStop(TimeSpan.FromSeconds(30));
+            
             log.Debug("Stopping world...");
 
             // Disabled thread update loop

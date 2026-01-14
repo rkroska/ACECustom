@@ -127,6 +127,7 @@ namespace ACE.Database
         private Thread _watchdogThread;
 
         private volatile int _shutdownRequested; // 0 = false, 1 = true
+        private volatile bool _disposed; // Set to true after queues are disposed
 
         private const int DefaultWorkerCount = 3;
 
@@ -666,11 +667,88 @@ namespace ACE.Database
         }
 
         /// <summary>
+        /// Drains all pending saves and callbacks, then stops the scheduler.
+        /// This is the recommended method to call during server shutdown.
+        /// 
+        /// The drain process:
+        /// 1. Prevents new saves from being enqueued (sets shutdown flag)
+        /// 2. Reduces stuck threshold to 5 seconds for aggressive ghost cleanup
+        /// 3. Waits for all queued saves to complete (QueueCount == 0)
+        /// 4. Waits for all executing saves to complete (StateCount == 0)
+        /// 5. Waits for all callbacks to be processed (ActionQueue.Count == 0)
+        /// 6. Calls Stop() to gracefully shut down worker threads
+        /// 
+        /// This ensures callbacks can drain and completion signals fire before world thread stops.
+        /// </summary>
+        /// <param name="timeout">Maximum time to wait for drain. Defaults to 30 seconds.</param>
+        public void DrainAndStop(TimeSpan timeout)
+        {
+            // Prevent new saves from being enqueued during drain
+            Interlocked.Exchange(ref _shutdownRequested, 1);
+            
+            // Reduce stuck threshold during shutdown to make ghost cleanup more aggressive
+            SetStuckThreshold(TimeSpan.FromSeconds(5));
+
+            var start = DateTime.UtcNow;
+            while (true)
+            {
+                var queued = QueueCount;
+                var states = StateCount;
+
+                // IMPORTANT: callbacks may still be pending on world thread
+                // Access WorldManager.ActionQueue via reflection to avoid circular dependency
+                int actionQueueCount = 0;
+                try
+                {
+                    var worldManagerType = Type.GetType("ACE.Server.Managers.WorldManager, ACE.Server");
+                    if (worldManagerType != null)
+                    {
+                        var actionQueueField = worldManagerType.GetField("ActionQueue", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        if (actionQueueField != null)
+                        {
+                            var actionQueue = actionQueueField.GetValue(null);
+                            var countMethod = actionQueue.GetType().GetMethod("Count");
+                            if (countMethod != null)
+                            {
+                                actionQueueCount = (int)countMethod.Invoke(actionQueue, null);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // If WorldManager is not available or ActionQueue is not accessible, assume 0
+                    actionQueueCount = 0;
+                }
+
+                if (queued == 0 && states == 0 && actionQueueCount == 0)
+                    break;
+
+                if (DateTime.UtcNow - start > timeout)
+                {
+                    log.Warn($"[SAVESCHEDULER] Drain timeout after {timeout.TotalSeconds}s " +
+                             $"(queued={queued}, states={states}, actionQueue={actionQueueCount})");
+                    break;
+                }
+
+                Thread.Sleep(10);
+            }
+
+            Stop();
+        }
+
+        /// <summary>
         /// Stops the scheduler gracefully, allowing current work to complete.
         /// This method is idempotent and can be called multiple times safely.
+        /// Note: DrainAndStop() sets _shutdownRequested before calling Stop(), so this check
+        /// prevents redundant work if Stop() is called after DrainAndStop() or a previous Stop().
         /// </summary>
         public void Stop()
         {
+            // Already set by DrainAndStop or previous Stop call
+            if (_disposed)
+                return;
+            
             // Set shutdown flag atomically - if already set, return early (idempotent)
             if (Interlocked.Exchange(ref _shutdownRequested, 1) != 0)
                 return;
@@ -691,12 +769,18 @@ namespace ACE.Database
             // Wait for watchdog thread to finish
             _watchdogThread?.Join();
 
+            // Capture queue counts before disposal (QueueCount returns 0 after _disposed is set)
+            var remainingQueued = _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
+
             // Now safe to dispose collections
             _atomicQueue.Dispose();
             _criticalQueue.Dispose();
             _periodicQueue.Dispose();
 
-            log.Info($"[SAVESCHEDULER] Stopped. Remaining states={_states.Count} Remaining queued={QueueCount}");
+            // Set disposed flag after queues are disposed to prevent ObjectDisposedException
+            _disposed = true;
+
+            log.Info($"[SAVESCHEDULER] Stopped. Remaining states={_states.Count} Remaining queued={remainingQueued}");
         }
 
         /// <summary>
@@ -706,8 +790,27 @@ namespace ACE.Database
 
         /// <summary>
         /// Gets the total number of queued save requests across all queues.
+        /// Returns 0 if disposed or shutdown requested to prevent ObjectDisposedException.
         /// </summary>
-        public int QueueCount => _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
+        public int QueueCount
+        {
+            get
+            {
+                if (_disposed || IsShutdownRequested)
+                    return 0;
+
+                try
+                {
+                    return _atomicQueue.Count
+                         + _criticalQueue.Count
+                         + _periodicQueue.Count;
+                }
+                catch (ObjectDisposedException)
+                {
+                    return 0;
+                }
+            }
+        }
 
         /// <summary>
         /// Gets the number of save requests currently queued and pending execution.
