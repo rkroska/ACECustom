@@ -667,6 +667,36 @@ namespace ACE.Database
         }
 
         /// <summary>
+        /// Gets the ActionQueue count via reflection to avoid circular dependency.
+        /// Returns 0 if WorldManager is not available or ActionQueue is not accessible.
+        /// </summary>
+        private int GetActionQueueCount()
+        {
+            try
+            {
+                var worldManagerType = Type.GetType("ACE.Server.Managers.WorldManager, ACE.Server");
+                if (worldManagerType != null)
+                {
+                    var actionQueueField = worldManagerType.GetField("ActionQueue", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (actionQueueField != null)
+                    {
+                        var actionQueue = actionQueueField.GetValue(null);
+                        var countMethod = actionQueue.GetType().GetMethod("Count");
+                        if (countMethod != null)
+                        {
+                            return (int)countMethod.Invoke(actionQueue, null);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // If WorldManager is not available or ActionQueue is not accessible, assume 0
+            }
+            return 0;
+        }
+
+        /// <summary>
         /// Drains all pending saves and callbacks, then stops the scheduler.
         /// This is the recommended method to call during server shutdown.
         /// 
@@ -683,51 +713,22 @@ namespace ACE.Database
         /// <param name="timeout">Maximum time to wait for drain. Defaults to 30 seconds.</param>
         public void DrainAndStop(TimeSpan timeout)
         {
-            // Prevent new saves from being enqueued during drain
+            // Prevent new saves from being enqueued
             Interlocked.Exchange(ref _shutdownRequested, 1);
-            
-            // Reduce stuck threshold during shutdown to make ghost cleanup more aggressive
+
             SetStuckThreshold(TimeSpan.FromSeconds(5));
 
             var start = DateTime.UtcNow;
             while (true)
             {
-                var queued = QueueCount;
-                var states = StateCount;
-
-                // IMPORTANT: callbacks may still be pending on world thread
-                // Access WorldManager.ActionQueue via reflection to avoid circular dependency
-                int actionQueueCount = 0;
-                try
-                {
-                    var worldManagerType = Type.GetType("ACE.Server.Managers.WorldManager, ACE.Server");
-                    if (worldManagerType != null)
-                    {
-                        var actionQueueField = worldManagerType.GetField("ActionQueue", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                        if (actionQueueField != null)
-                        {
-                            var actionQueue = actionQueueField.GetValue(null);
-                            var countMethod = actionQueue.GetType().GetMethod("Count");
-                            if (countMethod != null)
-                            {
-                                actionQueueCount = (int)countMethod.Invoke(actionQueue, null);
-                            }
-                        }
-                    }
-                }
-                catch
-                {
-                    // If WorldManager is not available or ActionQueue is not accessible, assume 0
-                    actionQueueCount = 0;
-                }
-
-                if (queued == 0 && states == 0 && actionQueueCount == 0)
+                if (QueueCount == 0 &&
+                    StateCount == 0 &&
+                    GetActionQueueCount() == 0)
                     break;
 
                 if (DateTime.UtcNow - start > timeout)
                 {
-                    log.Warn($"[SAVESCHEDULER] Drain timeout after {timeout.TotalSeconds}s " +
-                             $"(queued={queued}, states={states}, actionQueue={actionQueueCount})");
+                    log.Warn("[SAVESCHEDULER] Drain timeout");
                     break;
                 }
 
@@ -740,20 +741,21 @@ namespace ACE.Database
         /// <summary>
         /// Stops the scheduler gracefully, allowing current work to complete.
         /// This method is idempotent and can be called multiple times safely.
-        /// Note: DrainAndStop() sets _shutdownRequested before calling Stop(), so this check
-        /// prevents redundant work if Stop() is called after DrainAndStop() or a previous Stop().
+        /// 
+        /// Note: _shutdownRequested means "do not accept new work"
+        ///       _disposed means "shutdown has already been completed"
+        /// These are different states - we only early return if already disposed.
         /// </summary>
         public void Stop()
         {
-            // Already set by DrainAndStop or previous Stop call
+            // If already fully stopped, do nothing
             if (_disposed)
-                return;
-            
-            // Set shutdown flag atomically - if already set, return early (idempotent)
-            if (Interlocked.Exchange(ref _shutdownRequested, 1) != 0)
                 return;
 
             log.Info("[SAVESCHEDULER] Stopping scheduler...");
+
+            // Ensure shutdown flag is set (idempotent - may already be set by DrainAndStop)
+            Interlocked.Exchange(ref _shutdownRequested, 1);
 
             // Complete adding to all queues (allows GetConsumingEnumerable to exit)
             _atomicQueue.CompleteAdding();
@@ -790,13 +792,17 @@ namespace ACE.Database
 
         /// <summary>
         /// Gets the total number of queued save requests across all queues.
-        /// Returns 0 if disposed or shutdown requested to prevent ObjectDisposedException.
+        /// Returns 0 if disposed to prevent ObjectDisposedException.
+        /// 
+        /// Note: _shutdownRequested blocks new saves but does not affect QueueCount.
+        /// Only _disposed suppresses observability (returns 0 after disposal).
+        /// This ensures QueueCount remains truthful during DrainAndStop().
         /// </summary>
         public int QueueCount
         {
             get
             {
-                if (_disposed || IsShutdownRequested)
+                if (_disposed)
                     return 0;
 
                 try
