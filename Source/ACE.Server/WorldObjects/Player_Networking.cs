@@ -255,28 +255,63 @@ namespace ACE.Server.WorldObjects
         /// This method iterates through your main pack, any packs and finds all the items contained
         /// It also iterates over your wielded items - it sends create object messages needed by the login process
         /// it is called from SendSelf as part of the login message traffic.   Og II
+        /// Refactored to use ActionChain for pagination to prevent packet floods.
         /// </summary>
         public void SendInventoryAndWieldedItems()
         {
-            foreach (var item in Inventory.Values)
-            {
-                Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+            var actionChain = new ActionChain();
+            int itemCount = 0;
+            int batchSize = 25;
+            float batchDelay = 0.1f;
 
-                // Was the item I just send a container? If so, we need to send the items in the container as well. Og II
-                if (item is Container container)
-                {
-                    Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
-
-                    foreach (var itemsInContainer in container.Inventory.Values)
-                        Session.Network.EnqueueSend(new GameMessageCreateObject(itemsInContainer));
-                }
-            }
-
+            // 1. Equipped Items (Priority: Immediate, send first)
             foreach (var item in EquippedObjects.Values)
             {
-                item.Wielder = this;
-                Session.Network.EnqueueSend(new GameMessageCreateObject(item));                
+                actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                {
+                    item.Wielder = this;
+                    Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+                });
+                itemCount++;
             }
+
+            // 2. Inventory Items
+            foreach (var item in Inventory.Values)
+            {
+                // Batching check
+                if (itemCount > 0 && itemCount % batchSize == 0)
+                    actionChain.AddDelaySeconds(batchDelay);
+
+                actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                {
+                    Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+                });
+                itemCount++;
+
+                // Container contents
+                if (item is Container container)
+                {
+                    actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                    {
+                        Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
+                    });
+
+                    foreach (var itemsInContainer in container.Inventory.Values)
+                    {
+                        // Batching check
+                        if (itemCount > 0 && itemCount % batchSize == 0)
+                            actionChain.AddDelaySeconds(batchDelay);
+
+                        actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                        {
+                            Session.Network.EnqueueSend(new GameMessageCreateObject(itemsInContainer));
+                        });
+                        itemCount++;
+                    }
+                }
+            }
+            
+            actionChain.EnqueueChain();
         }
 
         public void SendContractTrackerTable()

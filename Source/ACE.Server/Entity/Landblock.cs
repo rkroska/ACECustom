@@ -342,7 +342,7 @@ namespace ACE.Server.Entity
                 CreateWorldObjectsCompleted = true;
 
                 PhysicsLandblock.SortObjects();
-            }));
+            }, ActionPriority.Low));
         }
 
         /// <summary>
@@ -358,7 +358,7 @@ namespace ACE.Server.Entity
             {
                 foreach (var fso in factoryShardObjects)
                     AddWorldObject(fso, VariationId);
-            }));
+            }, ActionPriority.Low));
         }
 
         /// <summary>
@@ -425,7 +425,7 @@ namespace ACE.Server.Entity
 
                     if (!AddWorldObject(wo, VariationId))
                         wo.Destroy();
-                }));
+                }, ActionPriority.Low));
             }
         }
 
