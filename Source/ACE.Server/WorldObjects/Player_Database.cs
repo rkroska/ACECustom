@@ -343,7 +343,11 @@ namespace ACE.Server.WorldObjects
             // IMPORTANT: This must be captured by reference, not cloned, so getBiotas can populate it
             var preparedGuidsForCallback = new HashSet<uint>();
             
-            // Func that builds the biotas list at execution time to avoid stale snapshots
+            // CRITICAL: Snapshot inventory on main thread to prevent race condition
+            // Force materialization with .ToList() to ensure we have a concrete snapshot, not a lazy enumerable
+            // that could be affected by dictionary modifications during iteration.
+            var possessionsSnapshot = GetAllPossessions().ToList();
+            
             Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas = () =>
             {
                 var biotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
@@ -351,10 +355,12 @@ namespace ACE.Server.WorldObjects
                 SaveBiotaToDatabase(false);
                 biotas.Add((Biota, BiotaDatabaseLock));
 
-                var allPossessions = GetAllPossessions();
-
-                foreach (var possession in allPossessions)
+                // Use the snapshot captured on the main thread instead of calling GetAllPossessions()
+                foreach (var possession in possessionsSnapshot)
                 {
+                    if (possession.IsDestroyed)
+                        continue;
+                    
                     if (!possession.ChangesDetected)
                         continue;
 

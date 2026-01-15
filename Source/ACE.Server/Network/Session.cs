@@ -314,7 +314,16 @@ namespace ACE.Server.Network
                     var waitTime = DateTime.UtcNow - logOffRequestTime;
                     if (waitTime.TotalSeconds > 15)
                     {
-                        log.Error($"[LOGOUT] Logout save timeout for {Player.Name} (0x{Player.Guid}) after {waitTime.TotalSeconds:F1}s - proceeding to character select despite incomplete save. This may indicate SaveScheduler issue, DB queue stuck, or callback exception.");
+                        // During shutdown, this is expected behavior - downgrade to WARN
+                        // SaveScheduler may be stopping, world thread may be stopping, but saves should still complete
+                        if (ServerManager.ShutdownInProgress || SaveScheduler.Instance.IsShutdownRequested)
+                        {
+                            log.Warn($"[LOGOUT] Logout save timeout for {Player.Name} (0x{Player.Guid}) after {waitTime.TotalSeconds:F1}s during shutdown - proceeding to character select. Save may still complete in background.");
+                        }
+                        else
+                        {
+                            log.Error($"[LOGOUT] Logout save timeout for {Player.Name} (0x{Player.Guid}) after {waitTime.TotalSeconds:F1}s - proceeding to character select despite incomplete save. This may indicate SaveScheduler issue, DB queue stuck, or callback exception.");
+                        }
                         // Proceed anyway to avoid permanent deadlock
                     }
                     else

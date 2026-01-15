@@ -50,6 +50,12 @@ namespace ACE.Server.Managers
         private static DateTime lastEnsureSaveCheckUtc = DateTime.MinValue;
 
         /// <summary>
+        /// Timestamp of the last TickPlayerSaves call.
+        /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
+        /// </summary>
+        private static DateTime lastPeriodicSaveTickUtc = DateTime.MinValue;
+
+        /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
         /// </summary>
         public static void Initialize()
@@ -120,6 +126,123 @@ namespace ACE.Server.Managers
                 {
                     playersLock.ExitReadLock();
                 }
+            }
+
+            // Tick periodic player saves (rate limited to every 3 seconds to match SaveScheduler.TickIntervalSeconds)
+            // This enforces the 3-minute save window even if players have no changes
+            if (lastPeriodicSaveTickUtc == DateTime.MinValue || DateTime.UtcNow >= lastPeriodicSaveTickUtc.AddSeconds(3))
+            {
+                lastPeriodicSaveTickUtc = DateTime.UtcNow;
+                
+                SaveScheduler.Instance.TickPlayerSaves(playerId =>
+                {
+                    // Lock only long enough to fetch the player
+                    Player player;
+                    playersLock.EnterReadLock();
+                    try
+                    {
+                        if (!onlinePlayers.TryGetValue(playerId, out player))
+                            return null; // Player not found or not online
+
+                        // Skip if player is already saving to prevent overlapping saves
+                        if (player.SaveInProgress)
+                            return null;
+                    }
+                    finally
+                    {
+                        playersLock.ExitReadLock();
+                    }
+
+                    // Release lock before doing work to reduce lock contention
+                    // Do prep work on world thread (not SaveScheduler worker thread)
+                    // This ensures thread safety and matches the intent of "main thread snapshot" comments
+                    var biotas = new Collection<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>();
+
+                    player.SaveBiotaToDatabase(false);
+                    
+                    // Safety check: if SaveBiotaToDatabase early returned (mutation guard, etc), don't proceed
+                    if (!player.SaveInProgress)
+                        return null;
+
+                    // Snapshot inventory on main thread to prevent race condition (only if player prep succeeded)
+                    var possessionsSnapshot = player.GetAllPossessions().ToList();
+                    
+                    // Track which possessions were actually prepared for this batch save
+                    var preparedGuidsForCallback = new HashSet<uint>();
+
+                    biotas.Add((player.Biota, player.BiotaDatabaseLock));
+
+                    foreach (var possession in possessionsSnapshot)
+                    {
+                        if (possession.IsDestroyed)
+                            continue;
+                        
+                        if (!possession.ChangesDetected)
+                            continue;
+
+                        // Skip if already saving to prevent noisy behavior and concurrency issues
+                        if (possession.SaveInProgress)
+                            continue;
+
+                        var possessionGuid = possession.Guid.Full;
+
+                        possession.SaveBiotaToDatabase(false);
+
+                        // Only add to preparedGuidsForCallback after confirming it was actually included in the batch
+                        // SaveBiotaToDatabase can early return for various reasons (container guard, destroyed, etc.)
+                        if (possession.SaveInProgress)
+                        {
+                            preparedGuidsForCallback.Add(possessionGuid);
+                            biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                        }
+                    }
+
+                    // getBiotas just returns the already-built collection (runs on SaveScheduler worker thread)
+                    Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas = () => biotas;
+                    
+                    Action<bool> saveCallback = (result) =>
+                    {
+                        try
+                        {
+                            player.SaveInProgress = false;
+                            player.SaveStartTime = DateTime.MinValue;
+
+                            var currentPossessions = player.GetAllPossessions();
+                            foreach (var possession in currentPossessions)
+                            {
+                                if (!possession.IsDestroyed && preparedGuidsForCallback.Contains(possession.Guid.Full))
+                                {
+                                    possession.SaveInProgress = false;
+                                    possession.SaveStartTime = DateTime.MinValue;
+
+                                    if (result)
+                                        possession.ChangesDetected = false;
+                                    else
+                                        possession.ChangesDetected = true;
+                                }
+                            }
+
+                            if (result)
+                            {
+                                player.ChangesDetected = false;
+                            }
+                            else
+                            {
+                                player.ChangesDetected = true;
+                                player.BiotaSaveFailed = true;
+
+                                if (!player.CharacterChangesDetected)
+                                    player.CharacterChangesDetected = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"[SAVE] Periodic save callback failed for {player.Name} (0x{player.Guid})", ex);
+                        }
+                    };
+
+                    return new PlayerSaveJob(player, getBiotas, saveCallback, duringLogout: false);
+                });
             }
 
             while (playersPendingLogoff.Count > 0)
@@ -570,6 +693,10 @@ namespace ACE.Server.Managers
 
             player.SendFriendStatusUpdates();
 
+            // Register player with SaveScheduler for periodic save tracking
+            // Use Guid.Full to match onlinePlayers dictionary key
+            SaveScheduler.Instance.RegisterPlayer(player.Guid.Full);
+
             return true;
         }
 
@@ -604,6 +731,10 @@ namespace ACE.Server.Managers
 
             player.SendFriendStatusUpdates(false);
             player.HandleAllegianceOnLogout();
+
+            // Unregister player from SaveScheduler periodic save tracking
+            // Use Guid.Full to match onlinePlayers dictionary key
+            SaveScheduler.Instance.UnregisterPlayer(player.Guid.Full);
 
             return true;
         }
