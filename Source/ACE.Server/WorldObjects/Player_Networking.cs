@@ -269,6 +269,7 @@ namespace ACE.Server.WorldObjects
             {
                 actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
                 {
+                    if (Session?.Network == null) return;
                     item.Wielder = this;
                     Session.Network.EnqueueSend(new GameMessageCreateObject(item));
                 });
