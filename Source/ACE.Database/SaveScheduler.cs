@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-
 using log4net;
 
 namespace ACE.Database
@@ -12,33 +11,33 @@ namespace ACE.Database
     /// <summary>
     /// Interface for save jobs that can be executed by SaveScheduler.
     /// Reduces delegate allocations by allowing job instances to be reused or resolved at execution time.
-    /// 
+    ///
     /// CRITICAL IMPLEMENTATION REQUIREMENT:
     /// Save jobs must read "live" state (e.g., dirty flags, current values) at execution time in Execute(),
     /// NOT capture them in the constructor. This is essential for proper coalescing semantics.
-    /// 
+    ///
     /// Rules for ISaveJob implementations:
     /// 1. A save job MUST check dirty flags at execution time (in Execute()), not in the constructor
     /// 2. Dirty flags must only be cleared after persistence success
     /// 3. If a job captures a dirty snapshot in its constructor, coalescing can suppress needed saves
-    /// 
+    ///
     /// Example of CORRECT pattern:
-    ///   public bool Execute()
-    ///   {
-    ///       // Read live state at execution time
-    ///       if (!_object.IsDirty) return true; // Already clean, skip save
-    ///       var success = SaveToDatabase(_object);
-    ///       if (success) _object.ClearDirtyFlag(); // Only clear after success
-    ///       return success;
-    ///   }
-    /// 
+    /// public bool Execute()
+    /// {
+    ///     // Read live state at execution time
+    ///     if (!_object.IsDirty) return true; // Already clean, skip save
+    ///     var success = SaveToDatabase(_object);
+    ///     if (success) _object.ClearDirtyFlag(); // Only clear after success
+    ///     return success;
+    /// }
+    ///
     /// Example of INCORRECT pattern (DO NOT DO THIS):
-    ///   public MySaveJob(MyObject obj)
-    ///   {
-    ///       _wasDirty = obj.IsDirty; // BAD: Captures snapshot in constructor
-    ///       _object = obj;
-    ///   }
-    ///   public bool Execute() { ... } // Too late, already captured stale state
+    /// public MySaveJob(MyObject obj)
+    /// {
+    ///     _wasDirty = obj.IsDirty; // BAD: Captures snapshot in constructor
+    ///     _object = obj;
+    /// }
+    /// public bool Execute() { ... } // Too late, already captured stale state
     /// </summary>
     public interface ISaveJob
     {
@@ -111,6 +110,13 @@ namespace ACE.Database
         /// </summary>
         public static Action<Action> EnqueueToWorldThread { get; set; }
 
+        /// <summary>
+        /// Hook for getting the world thread action queue count.
+        /// Set by WorldManager.Initialize() to avoid circular dependencies.
+        /// Used by DrainAndStop() to ensure all callbacks are processed before shutdown.
+        /// </summary>
+        public static Func<int> GetWorldQueueCount { get; set; }
+
         private readonly ConcurrentDictionary<string, SaveState> _states =
             new ConcurrentDictionary<string, SaveState>();
 
@@ -149,11 +155,8 @@ namespace ACE.Database
         private readonly ConcurrentDictionary<uint, PlayerSaveState> _players =
             new ConcurrentDictionary<uint, PlayerSaveState>();
 
-        private readonly ConcurrentQueue<uint> _roundRobinQueue =
-            new ConcurrentQueue<uint>();
-
-        private readonly ConcurrentQueue<uint> _agingQueue =
-            new ConcurrentQueue<uint>();
+        private readonly ConcurrentQueue<uint> _roundRobinQueue = new ConcurrentQueue<uint>();
+        private readonly ConcurrentQueue<uint> _agingQueue = new ConcurrentQueue<uint>();
 
         // Per-character save tracking for login blocking
         // Tracks pending and active saves per character to provide authoritative answers
@@ -171,6 +174,7 @@ namespace ACE.Database
         // Track last cleanup time for coalesce tracker cleanup
         private DateTime _lastCoalesceCleanupUtc = DateTime.MinValue;
         private const int CoalesceCleanupIntervalSeconds = 45; // Run cleanup every 45 seconds
+
         private DateTime _lastIdleStateCleanupUtc = DateTime.MinValue;
         private const int IdleStateCleanupIntervalSeconds = 60; // Run idle cleanup every 60 seconds
 
@@ -182,9 +186,9 @@ namespace ACE.Database
         private long _failedAtomic;
         private long _failedCritical;
         private long _failedPeriodic;
-        private long _requeuedDirty;      // Requeued due to dirty flag (new work arrived during execution)
-        private long _reroutedPriority;   // Rerouted due to priority upgrade (moved between queues)
-        private long _executingKeys;      // Count of keys currently executing (for accurate drain detection)
+        private long _requeuedDirty; // Requeued due to dirty flag (new work arrived during execution)
+        private long _reroutedPriority; // Rerouted due to priority upgrade (moved between queues)
+        private long _executingKeys; // Count of keys currently executing (for accurate drain detection)
 
         // Average work time tracking (total milliseconds and count per priority)
         private long _totalWorkMsAtomic;
@@ -244,10 +248,10 @@ namespace ACE.Database
         /// <summary>
         /// Requests a save operation to be executed asynchronously.
         /// Prevents duplicate keys from existing in multiple queues at once.
-        /// 
+        ///
         /// SaveScheduler is generic and does not know about database implementations.
         /// The saveJob is responsible for calling the appropriate database methods.
-        /// 
+        ///
         /// Returns false if shutdown has been requested (caller should treat as "skip because shutting down", not "failed save").
         /// Returns true if the save was successfully enqueued or updated.
         /// </summary>
@@ -264,7 +268,7 @@ namespace ACE.Database
         {
             if (saveWork == null)
                 return false;
-            
+
             // For backward compatibility, wrap the delegate
             // Note: This still creates a wrapper object, but allows gradual migration
             return RequestSaveInternal(key, type, new DelegateSaveJob(saveWork));
@@ -288,39 +292,49 @@ namespace ACE.Database
 
             var state = _states.GetOrAdd(key, _ => new SaveState { Priority = prio, Job = saveJob });
 
-            // Always keep the latest job instance (latest state wins)
-            // Job field is volatile, so assignment has proper memory barriers
-            // NOTE: The saveJob.Execute() method must read live state (dirty flags, etc.) at execution time,
-            // not capture it in the constructor. See ISaveJob documentation for details.
-            state.Job = saveJob;
-
             // Bump generation for this key to track state updates
             Interlocked.Increment(ref state.Generation);
 
             // Upgrade priority if needed (lower number = higher priority)
-            int old;
+            int oldPriority;
+            bool priorityUpgraded = false;
             do
             {
-                old = state.Priority;
-                if (prio >= old) break; // New priority is not higher, no upgrade needed
+                oldPriority = state.Priority;
+                if (prio >= oldPriority) break; // New priority is not higher, no upgrade needed
+                priorityUpgraded = true; // Priority was upgraded
             }
-            while (Interlocked.CompareExchange(ref state.Priority, prio, old) != old);
+            while (Interlocked.CompareExchange(ref state.Priority, prio, oldPriority) != oldPriority);
 
             // HARDENING: If key is executing, never enqueue - only set Dirty and return
             // This guarantees "one execution at a time per key" and keeps all requeues
             // coming from the worker finally block, where CharacterSaveState math is safest
+            // CRITICAL: Replace Job when executing so requeue uses latest job
             if (Volatile.Read(ref state.Executing) == 1)
             {
+                // Job field is volatile, so assignment has proper memory barriers
+                state.Job = saveJob;
                 Interlocked.Exchange(ref state.Dirty, 1);
                 return true;
             }
 
-            // Enqueue only once per key
+            // Enqueue only once per key (unless priority is upgraded - see below)
             // Use CompareExchange on Queued to atomically claim the slot (set to 1 only if it was 0)
             // Then enqueue, and only keep Queued=1 if enqueue succeeds
-            // This strictly maintains the invariant "Queued means present in exactly one queue"
-            if (Interlocked.CompareExchange(ref state.Queued, 1, 0) == 0)
+            // NOTE: When priority is upgraded, we may temporarily have the key in multiple queues
+            // The invariant is "Queued=1 means logically queued somewhere" - physical duplicates are allowed during upgrades
+            // Worker dequeue logic safely discards stale entries via Executing check and Queued==0 check
+            // CRITICAL: Only replace Job if this is a NEW enqueue (CompareExchange succeeded)
+            // If key is already queued, preserve the existing job that did prep work
+            var wasNewlyEnqueued = Interlocked.CompareExchange(ref state.Queued, 1, 0) == 0;
+            if (wasNewlyEnqueued)
             {
+                // CRITICAL: This is a new enqueue, so set the job
+                // Job field is volatile, so assignment has proper memory barriers
+                // NOTE: The saveJob.Execute() method must read live state (dirty flags, etc.) at execution time,
+                // not capture it in the constructor. See ISaveJob documentation for details.
+                state.Job = saveJob;
+                
                 var enqueuedOk = EnqueueByPriority(key, state.Priority);
                 if (enqueuedOk)
                 {
@@ -345,7 +359,7 @@ namespace ACE.Database
                 {
                     // Enqueue failed, roll back Queued flag
                     Interlocked.Exchange(ref state.Queued, 0);
-                    
+
                     // Do not remove state here - let watchdog clean up idle states after sufficient idle time
                     // Removing here can cause race conditions where RequestSave has a reference but state is deleted
                     return false;
@@ -353,17 +367,42 @@ namespace ACE.Database
             }
             else
             {
-                // Key is already queued or another thread is enqueueing
-                // Check if already queued or executing, and set Dirty if executing
+                // Key is already queued (CompareExchange failed - was already 1)
+                // CRITICAL: Do NOT replace Job here - preserve the existing job that did prep work
+                // The existing job's callback will clear the SaveInProgress flags it set during prep
+                // Check if executing (defensive check in case state changed between CompareExchange and here)
                 var queued = Volatile.Read(ref state.Queued);
                 var executing = Volatile.Read(ref state.Executing);
-                
+
                 if (executing == 1)
                 {
-                    // Currently executing, set Dirty to trigger requeue in finally block
+                    // Currently executing (race condition - started between CompareExchange and here)
+                    // Set Dirty to trigger requeue in finally block
+                    // Note: Job replacement already handled at line 313 if it was executing when we first checked
                     Interlocked.Exchange(ref state.Dirty, 1);
                 }
-                // If Queued=1 but Executing=0, the key is already queued and will be processed
+                else if (queued == 1 && priorityUpgraded)
+                {
+                    // Priority was upgraded and key is already queued (but not executing)
+                    // Immediately re-enqueue to higher priority queue to jump the line
+                    // This creates a temporary duplicate entry (key in both old and new queues)
+                    // Worker dequeue logic safely handles this:
+                    // - If higher priority worker processes first: sets Executing=1, lower priority worker skips (Executing check)
+                    // - If lower priority worker processes first: sees priority mismatch, reroutes WITHOUT clearing Queued
+                    //   (early reroute at line 440-454 does NOT touch Queued, preventing ghost pending leaks)
+                    // - Higher priority entry will be processed normally
+                    // The worst case is duplicate processing, but save jobs should be idempotent
+                    var reenqueuedOk = EnqueueByPriority(key, state.Priority);
+                    if (reenqueuedOk)
+                    {
+                        var nowTicks = DateTime.UtcNow.Ticks;
+                        Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
+                        // Reset FirstEnqueuedTicksUtc for priority upgrades (work is being rerouted)
+                        Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
+                        Interlocked.Increment(ref _reroutedPriority);
+                    }
+                }
+                // If Queued=1 but Executing=0 and priority wasn't upgraded, the key is already queued and will be processed
                 // The Dirty flag in the finally block will catch any new work that arrives during execution
             }
 
@@ -407,8 +446,39 @@ namespace ACE.Database
 
                 // Skip stale queue entries - if Queued is already 0, this entry was superseded
                 // This prevents old entries from executing when a newer enqueue already happened
+                // Also handles duplicate entries from priority upgrades: if another worker already processed
+                // and cleared Queued during reroute, this entry is stale and should be skipped
                 if (Volatile.Read(ref state.Queued) == 0)
                     continue;
+
+                // Early reroute before Executing claim
+                // Check priority BEFORE claiming Executing to avoid creating a window where
+                // Queued is temporarily 0 (which would allow RequestSave to increment pending again)
+                var currentPriority = Volatile.Read(ref state.Priority);
+                if (currentPriority < myPriority)
+                {
+                    // Key belongs in a higher priority queue.
+                    // Do NOT change state.Queued here.
+                    // Do NOT claim state.Executing.
+                    var ok = EnqueueByPriority(key, currentPriority);
+
+                    if (ok)
+                    {
+                        var nowTicks = DateTime.UtcNow.Ticks;
+                        Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
+                        Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
+                        Interlocked.Increment(ref _reroutedPriority);
+                        continue; // Successfully rerouted, let higher priority worker handle it
+                    }
+                    else
+                    {
+                        // Reroute failed (shutdown, queue completed, or edge case).
+                        // SAFETY: Don't drop the save - process it on this worker instead.
+                        // Priority correctness is less important than "never lose a save".
+                        log.Fatal($"[SAVESCHEDULER] CRITICAL: Early reroute failed for key={key} from myPriority={myPriority} to newPriority={currentPriority}. Processing on current worker to prevent save loss.");
+                        // Fall through to normal processing below - do NOT continue or clear Queued
+                    }
+                }
 
                 // CRITICAL: Set Executing=1 immediately after dequeue to close race window
                 // Between dequeue and setting Executing, RequestSave can arrive and see Queued=1, Executing=0
@@ -419,74 +489,6 @@ namespace ACE.Database
                     // Already executing on another thread - skip this dequeue
                     // The executing thread will handle requeue via dirty flag if needed
                     continue;
-                }
-
-                // Check priority after claiming Executing
-                // If priority was upgraded since enqueue, clear Executing and requeue to correct queue
-                // IMPORTANT: Do this BEFORE incrementing _executingKeys to prevent leaks on reroute
-                var currentPriority = Volatile.Read(ref state.Priority);
-                if (currentPriority < myPriority)
-                {
-                    // Clear Executing before requeueing since we're not executing at this priority
-                    Volatile.Write(ref state.Executing, 0);
-                    
-                    // Clear Queued flag before requeueing to maintain invariant:
-                    // Queued means "present in exactly one queue"
-                    // Without this, the higher priority worker may never claim it because
-                    // Queued already indicates it's in a queue, or future upgrades behave incorrectly
-                    Interlocked.Exchange(ref state.Queued, 0);
-                    var ok = EnqueueByPriority(key, currentPriority);
-                    if (ok)
-                    {
-                        Interlocked.Exchange(ref state.Queued, 1);
-                        var nowTicks = DateTime.UtcNow.Ticks;
-                        Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
-                        // Reset FirstEnqueuedTicksUtc for upgraded requeues the same way as dirty requeues
-                        // because the work is not stuck, it is being rerouted
-                        // Keep FirstEverEnqueuedTicksUtc unchanged (hot key detector)
-                        Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
-                        Interlocked.Increment(ref _reroutedPriority);
-                        continue;
-                    }
-                    else
-                    {
-                        // We attempted to reroute this key to a higher priority queue and failed.
-                        // At this point the key is not in any queue, so Queued must be 0 or the invariant breaks.
-                        // Leaving Queued as 1 would cause RequestSave to think it is already queued and never re-enqueue it.
-
-                        log.Fatal($"[SAVESCHEDULER] CRITICAL: EnqueueByPriority failed while rerouting upgraded key={key} " +
-                                  $"from myPriority={myPriority} to newPriority={currentPriority}. Clearing Queued so RequestSave can retry.");
-
-                        // Not in any queue, so must not be marked queued
-                        Interlocked.Exchange(ref state.Queued, 0);
-
-                        // Not executing, so RequestSave can set Dirty or enqueue normally
-                        Volatile.Write(ref state.Executing, 0);
-
-                        // Fix CharacterSaveState: pending count was incremented on original enqueue
-                        // but reroute failed, so we need to decrement it to prevent blocking logins
-                        // Only decrement if state already exists (don't create one just to decrement)
-                        var rerouteCharacterId = ExtractCharacterIdFromKey(key);
-                        if (rerouteCharacterId.HasValue && _characterSaves.TryGetValue(rerouteCharacterId.Value, out var existingCharState))
-                        {
-                            existingCharState.DecrementPending();
-                            
-                            // CRITICAL: After rollback, callbacks might now be ready to fire
-                            // If pendingCount and activeCount both hit zero, we must drain callbacks
-                            // Otherwise callbacks can get stuck forever (login callback never fires)
-                            var lateCallbacks = existingCharState.CheckAndDrainCallbacks();
-                            if (lateCallbacks != null)
-                            {
-                                InvokeCallbacks(rerouteCharacterId.Value, lateCallbacks);
-                            }
-                        }
-
-                        // Optional, if you want: mark Dirty so the next worker pass prefers requeue logic,
-                        // but it is not required. The main requirement is Queued=0.
-                        // Interlocked.Exchange(ref state.Dirty, 1);
-
-                        continue;
-                    }
                 }
 
                 // Only count real executions (after priority reroute check to prevent leaks)
@@ -506,12 +508,16 @@ namespace ACE.Database
                     charState.StartExecution(); // pending--, active++
                 }
 
+                // Declare outside try so it is available in finally for safe job clearing
+                ISaveJob executedJob = null;
+
                 try
                 {
                     // Capture job reference to avoid race where Job changes between null check and Execute call
-                    var job = Volatile.Read(ref state.Job);
+                    // Store in executedJob for safe clearing in finally block
+                    executedJob = Volatile.Read(ref state.Job);
                     var startTime = DateTime.UtcNow;
-                    var result = job?.Execute() ?? false;
+                    var result = executedJob?.Execute() ?? false;
                     var duration = DateTime.UtcNow - startTime;
                     var durationMs = (long)duration.TotalMilliseconds;
 
@@ -593,6 +599,7 @@ namespace ACE.Database
                     // and doesn't set Dirty or enqueue, but does increment Generation)
                     var wasDirty = Interlocked.Exchange(ref state.Dirty, 0) == 1;
                     var currentGen = Volatile.Read(ref state.Generation);
+
                     // Dirty OR generation change means we must run again
                     var hasNewWork = wasDirty || (currentGen != processingGen);
 
@@ -600,6 +607,21 @@ namespace ACE.Database
                     // If someone else already enqueued it (RequestSave sneaked in), we don't want to increment pending
                     // This prevents double enqueue from causing pending count drift (incremented twice, decremented once)
                     var willRequeue = hasNewWork && (Interlocked.CompareExchange(ref state.Queued, 1, 0) == 0);
+
+                    // MEMORY OPTIMIZATION: Clear job reference if no new work arrived and job hasn't been replaced
+                    // This releases closure references (biotas, callbacks, Player object) immediately
+                    // instead of keeping them alive for up to 5 minutes until watchdog cleanup
+                    // 
+                    // CRITICAL: Only clear if NO new work arrived AND the job is still the same one we executed
+                    // hasNewWork is the true "more work exists" signal
+                    // willRequeue is only "I personally claimed the requeue slot"
+                    // If a new RequestSave replaced the job, CAS fails and we keep the newest job
+                    if (!hasNewWork && executedJob != null)
+                    {
+                        // Only clear if it is still the same job we executed
+                        // CompareExchange will fail if job was replaced, keeping the newer job
+                        Interlocked.CompareExchange(ref state.Job, null, executedJob);
+                    }
 
                     // Atomically finish execution, optionally requeue, and drain callbacks if ready
                     // This ensures all counter changes and callback draining happen under one lock,
@@ -627,8 +649,7 @@ namespace ACE.Database
                                             log.Error($"[SAVESCHEDULER] Callback invocation failed for character {charState.CharacterId}", ex);
                                         }
                                     }
-                                }
-                                );
+                                });
                             }
                             else
                             {
@@ -661,7 +682,7 @@ namespace ACE.Database
                     if (willRequeue)
                     {
                         // Enqueue the work (we already claimed Queued=1 above)
-                        // This maintains the invariant "Queued means present in exactly one queue"
+                        // This maintains the invariant "Queued=1 means logically queued somewhere"
                         var ok = EnqueueByPriority(key, state.Priority);
                         if (ok)
                         {
@@ -671,6 +692,7 @@ namespace ACE.Database
                             // This prevents frequently dirtied keys from looking "stuck" forever
                             // Keep FirstEverEnqueuedTicksUtc unchanged (hot key detector)
                             Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
+
                             if (wasDirty)
                                 Interlocked.Increment(ref _requeuedDirty);
                         }
@@ -682,7 +704,7 @@ namespace ACE.Database
                             if (characterId.HasValue && charState != null)
                             {
                                 charState.DecrementPending();
-                                
+
                                 // CRITICAL: After rollback, callbacks might now be ready to fire
                                 // If pendingCount and activeCount both hit zero, we must drain callbacks
                                 // Otherwise callbacks can get stuck forever (login callback never fires)
@@ -694,6 +716,7 @@ namespace ACE.Database
                             }
                         }
                     }
+
                     // Do not remove state here - let watchdog clean up idle states after sufficient idle time
                     // Removing here can cause race conditions where RequestSave has a reference but state is deleted
                     // The watchdog will clean up truly idle states (queued=0, executing=0, dirty=0) after 5-10 minutes
@@ -702,39 +725,20 @@ namespace ACE.Database
         }
 
         /// <summary>
-        /// Gets the ActionQueue count via reflection to avoid circular dependency.
-        /// Returns 0 if WorldManager is not available or ActionQueue is not accessible.
+        /// Gets the ActionQueue count.
+        /// Uses GetWorldQueueCount hook if set, otherwise returns 0.
         /// </summary>
         private int GetActionQueueCount()
         {
-            try
-            {
-                var worldManagerType = Type.GetType("ACE.Server.Managers.WorldManager, ACE.Server");
-                if (worldManagerType != null)
-                {
-                    var actionQueueField = worldManagerType.GetField("ActionQueue", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    if (actionQueueField != null)
-                    {
-                        var actionQueue = actionQueueField.GetValue(null);
-                        var countMethod = actionQueue.GetType().GetMethod("Count");
-                        if (countMethod != null)
-                        {
-                            return (int)countMethod.Invoke(actionQueue, null);
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // If WorldManager is not available or ActionQueue is not accessible, assume 0
-            }
+            if (GetWorldQueueCount != null)
+                return GetWorldQueueCount();
             return 0;
         }
 
         /// <summary>
         /// Drains all pending saves and callbacks, then stops the scheduler.
         /// This is the recommended method to call during server shutdown.
-        /// 
+        ///
         /// The drain process:
         /// 1. Prevents new saves from being enqueued (sets shutdown flag)
         /// 2. Reduces stuck threshold to 5 seconds for aggressive ghost cleanup
@@ -742,7 +746,7 @@ namespace ACE.Database
         /// 4. Waits for all executing saves to complete (ExecutingKeyCount == 0)
         /// 5. Waits for all callbacks to be processed (ActionQueue.Count == 0)
         /// 6. Calls Stop() to gracefully shut down worker threads
-        /// 
+        ///
         /// This ensures callbacks can drain and completion signals fire before world thread stops.
         /// Note: Uses ExecutingKeyCount instead of StateCount because StateCount includes idle states
         /// that haven't been cleaned up yet (watchdog waits 5 minutes), which would cause false timeouts.
@@ -752,15 +756,12 @@ namespace ACE.Database
         {
             // Prevent new saves from being enqueued
             Interlocked.Exchange(ref _shutdownRequested, 1);
-
             SetStuckThreshold(TimeSpan.FromSeconds(5));
 
             var start = DateTime.UtcNow;
             while (true)
             {
-                if (QueueCount == 0 &&
-                    ExecutingKeyCount == 0 &&
-                    GetActionQueueCount() == 0)
+                if (QueueCount == 0 && ExecutingKeyCount == 0 && GetActionQueueCount() == 0)
                     break;
 
                 if (DateTime.UtcNow - start > timeout)
@@ -778,9 +779,9 @@ namespace ACE.Database
         /// <summary>
         /// Stops the scheduler gracefully, allowing current work to complete.
         /// This method is idempotent and can be called multiple times safely.
-        /// 
+        ///
         /// Note: _shutdownRequested means "do not accept new work"
-        ///       _disposed means "shutdown has already been completed"
+        /// _disposed means "shutdown has already been completed"
         /// These are different states - we only early return if already disposed.
         /// </summary>
         public void Stop()
@@ -807,7 +808,7 @@ namespace ACE.Database
 
             // Signal watchdog thread to exit and then wait for it to finish.
             // IMPORTANT: _disposed is what controls the watchdog loop condition:
-            //   while (!_disposed) { ... }
+            // while (!_disposed) { ... }
             // If we waited for the watchdog before setting _disposed, we would
             // deadlock here because the watchdog would never see the exit signal.
             _disposed = true;
@@ -828,12 +829,13 @@ namespace ACE.Database
         /// Gets the number of save states currently tracked (may include completed states awaiting cleanup).
         /// </summary>
         public int StateCount => _states.Count;
+
         public long ExecutingKeyCount => Interlocked.Read(ref _executingKeys);
 
         /// <summary>
         /// Gets the total number of queued save requests across all queues.
         /// Returns 0 if disposed to prevent ObjectDisposedException.
-        /// 
+        ///
         /// Note: _shutdownRequested blocks new saves but does not affect QueueCount.
         /// Only _disposed suppresses observability (returns 0 after disposal).
         /// This ensures QueueCount remains truthful during DrainAndStop().
@@ -847,9 +849,7 @@ namespace ACE.Database
 
                 try
                 {
-                    return _atomicQueue.Count
-                         + _criticalQueue.Count
-                         + _periodicQueue.Count;
+                    return _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
                 }
                 catch (ObjectDisposedException)
                 {
@@ -870,7 +870,6 @@ namespace ACE.Database
         public void RegisterPlayer(uint playerId)
         {
             var added = false;
-
             _players.GetOrAdd(playerId, id =>
             {
                 added = true;
@@ -926,11 +925,12 @@ namespace ACE.Database
             foreach (var kvp in _players)
             {
                 var state = kvp.Value;
+
                 // Use Volatile.Read for thread-safe access (written on SaveScheduler worker thread, read on world thread)
                 var lastAttemptTicks = Volatile.Read(ref state.LastAttemptTicksUtc);
                 var lastAttempt = new DateTime(lastAttemptTicks, DateTimeKind.Utc);
-                if ((now - lastAttempt).TotalSeconds >= SaveWindowSeconds &&
-                    Interlocked.CompareExchange(ref state.Enqueued, 1, 0) == 0)
+
+                if ((now - lastAttempt).TotalSeconds >= SaveWindowSeconds && Interlocked.CompareExchange(ref state.Enqueued, 1, 0) == 0)
                 {
                     _agingQueue.Enqueue(state.PlayerId);
                 }
@@ -961,9 +961,7 @@ namespace ACE.Database
             int rrAttempts = 0;
             int rrMaxAttempts = playerCount; // safe upper bound - at most one pass over player population
 
-            while (issued < minPerTick &&
-                   rrAttempts < rrMaxAttempts &&
-                   _roundRobinQueue.TryDequeue(out var rrId))
+            while (issued < minPerTick && rrAttempts < rrMaxAttempts && _roundRobinQueue.TryDequeue(out var rrId))
             {
                 rrAttempts++;
 
@@ -1001,7 +999,7 @@ namespace ACE.Database
         /// Enqueues a player save using the existing RequestSave logic.
         /// Wraps the save job with ForcedPeriodicSaveJob to ensure aging saves always execute,
         /// even if dirty flags were cleared prematurely or changes were masked.
-        /// 
+        ///
         /// CRITICAL: This method MUST clear state.Enqueued in all failure cases to prevent players
         /// from getting stuck "enqueued" forever. Step 1 sets Enqueued=1 before we actually enqueue,
         /// so if this method fails (factory returns null, RequestSave fails, exception), we must
@@ -1016,7 +1014,7 @@ namespace ACE.Database
             try
             {
                 var job = saveFactory(state.PlayerId);
-                
+
                 // Factory returned null (player not found, already saving, etc.)
                 // CRITICAL: Clear Enqueued flag so player can be scheduled again
                 if (job == null)
@@ -1024,21 +1022,21 @@ namespace ACE.Database
                     Interlocked.Exchange(ref state.Enqueued, 0);
                     return false;
                 }
-                
+
                 // Wrap with forced save job to ensure aging saves bypass "I'm clean" logic
                 // This prevents periodic saves from becoming no-ops when:
                 // - Dirty flag was cleared prematurely
                 // - SaveInProgress suppressed earlier
                 // - Mutation logic masked changes
                 // - Player inventory mutated without a subsequent flag
-                // 
+                //
                 // ARCHITECTURAL: SaveScheduler does not know about players - the save job handles dirty marking
                 // forceDirty is determined by which queue triggered the save (aging vs round robin), not time math
                 // This makes forced dirty marking deterministic and avoids timing edge cases
                 var forcedJob = new ForcedPeriodicSaveJob(job, forceDirty);
-                
+
                 var enqueued = RequestSave(SaveKeys.Player(state.PlayerId), SaveType.Periodic, new PlayerSaveJobWrapper(forcedJob, state));
-                
+
                 // If enqueue failed, clear the Enqueued flag so the player can be scheduled again
                 // CRITICAL: Step 1 set Enqueued=1, so we must clear it if RequestSave fails
                 if (!enqueued)
@@ -1046,10 +1044,9 @@ namespace ACE.Database
                     Interlocked.Exchange(ref state.Enqueued, 0);
                     return false;
                 }
-                
+
                 // LastSavedTicksUtc will be updated when the job completes (in PlayerSaveJobWrapper.Execute)
                 // This prevents the "10 minute gap" problem by tracking when saves actually finish
-                
                 return true;
             }
             catch (Exception ex)
@@ -1066,7 +1063,7 @@ namespace ACE.Database
         /// Wrapper that forces a save to execute even if the object believes it is clean.
         /// Used for aging/periodic saves to prevent silent no-ops when dirty flags are cleared prematurely
         /// or changes are masked by mutation logic.
-        /// 
+        ///
         /// ARCHITECTURAL: SaveScheduler is generic and does not know about players.
         /// The inner save job (created in ACE.Server) handles the actual dirty marking logic.
         /// This wrapper just signals that dirty marking should occur.
@@ -1116,7 +1113,7 @@ namespace ACE.Database
                 {
                     var result = _innerJob?.Execute() ?? false;
                     var nowTicks = DateTime.UtcNow.Ticks;
-                    
+
                     // Always update LastAttemptTicksUtc to track when saves are attempted
                     // This prevents retry storms when DB fails - aging uses attempt time for scheduling
                     // Use Volatile.Write for thread-safe access (written on SaveScheduler worker thread, read on world thread)
@@ -1127,7 +1124,6 @@ namespace ACE.Database
                     // Can be used for forceDirty enforcement or other success-based logic
                     if (result)
                         Volatile.Write(ref _playerState.LastSavedTicksUtc, nowTicks);
-                    
                     return result;
                 }
                 finally
@@ -1141,25 +1137,25 @@ namespace ACE.Database
 
         private sealed class SaveState
         {
-            public volatile int Priority;   // 0 = atomic, 1 = critical, 2 = periodic
-            public volatile int Queued;     // 0 = no, 1 = yes (only set after successful enqueue - maintains invariant "Queued means present in exactly one queue")
-            public volatile int Executing;  // 0 = no, 1 = yes
-            public volatile int Dirty;      // 0 = clean, 1 = dirty (new request arrived while in flight)
-            public volatile ISaveJob Job;   // Save job to execute (reduces delegate allocations) - volatile for thread-safe updates
-            public long FirstEnqueuedTicksUtc;      // When this state was last enqueued (progress detector - reset on requeue) - 0 = not set
-            public long FirstEverEnqueuedTicksUtc;  // When this state was first ever enqueued (hot key detector - never reset) - 0 = not set
-            public long EnqueuedTicksUtc;          // When this state was last enqueued (updated on requeue) - 0 = not set
-            public long LastStuckLogTicksUtc;      // When we last logged a stuck warning (for rate limiting) - 0 = not set
-            public int Generation;          // Increments per RequestSave to track state updates
-            public int LastProcessedGen;    // Last generation a worker finished processing
+            public volatile int Priority; // 0 = atomic, 1 = critical, 2 = periodic
+            public volatile int Queued; // 0 = no, 1 = yes (only set after successful enqueue - means "logically queued somewhere", physical duplicates allowed during priority upgrades)
+            public volatile int Executing; // 0 = no, 1 = yes
+            public volatile int Dirty; // 0 = clean, 1 = dirty (new request arrived while in flight)
+            public volatile ISaveJob Job; // Save job to execute (reduces delegate allocations) - volatile for thread-safe updates
+            public long FirstEnqueuedTicksUtc; // When this state was last enqueued (progress detector - reset on requeue) - 0 = not set
+            public long FirstEverEnqueuedTicksUtc; // When this state was first ever enqueued (hot key detector - never reset) - 0 = not set
+            public long EnqueuedTicksUtc; // When this state was last enqueued (updated on requeue) - 0 = not set
+            public long LastStuckLogTicksUtc; // When we last logged a stuck warning (for rate limiting) - 0 = not set
+            public int Generation; // Increments per RequestSave to track state updates
+            public int LastProcessedGen; // Last generation a worker finished processing
         }
 
         private sealed class PlayerSaveState
         {
             public uint PlayerId;
-            public long LastAttemptTicksUtc;  // atomic friendly - updated on every save attempt (success or fail)
-            public long LastSavedTicksUtc;    // atomic friendly - updated only on successful saves
-            public int Enqueued;              // 0 or 1
+            public long LastAttemptTicksUtc; // atomic friendly - updated on every save attempt (success or fail)
+            public long LastSavedTicksUtc; // atomic friendly - updated only on successful saves
+            public int Enqueued; // 0 or 1
         }
 
         /// <summary>
@@ -1171,30 +1167,51 @@ namespace ACE.Database
         private sealed class CharacterSaveState
         {
             public uint CharacterId;
-            private int _pendingCount;  // Number of saves queued but not yet executing
-            private int _activeCount;   // Number of saves currently executing
+            private int _pendingCount; // Number of saves queued but not yet executing
+            private int _activeCount; // Number of saves currently executing
             private DateTime _lastActivityUtc;
             private readonly object _lock = new object();
             private readonly List<Action> _callbacks = new List<Action>();
 
             public int PendingCount
             {
-                get { lock (_lock) { return _pendingCount; } }
+                get
+                {
+                    lock (_lock)
+                    {
+                        return _pendingCount;
+                    }
+                }
             }
 
             public int ActiveCount
             {
-                get { lock (_lock) { return _activeCount; } }
+                get
+                {
+                    lock (_lock)
+                    {
+                        return _activeCount;
+                    }
+                }
             }
 
             public DateTime LastActivityUtc
             {
-                get { lock (_lock) { return _lastActivityUtc; } }
+                get
+                {
+                    lock (_lock)
+                    {
+                        return _lastActivityUtc;
+                    }
+                }
             }
 
             public void TouchActivity()
             {
-                lock (_lock) { _lastActivityUtc = DateTime.UtcNow; }
+                lock (_lock)
+                {
+                    _lastActivityUtc = DateTime.UtcNow;
+                }
             }
 
             /// <summary>
@@ -1286,6 +1303,7 @@ namespace ACE.Database
                         _pendingCount--;
                     else
                         log.Warn($"[SAVESCHEDULER] Character {CharacterId} DecrementPending with pending=0, clamping");
+
                     _lastActivityUtc = DateTime.UtcNow;
                 }
             }
@@ -1297,15 +1315,19 @@ namespace ACE.Database
             /// </summary>
             public bool AddCallbackIfNotComplete(Action callback)
             {
-                if (callback == null) return false;
+                if (callback == null)
+                    return false;
+
                 lock (_lock)
                 {
                     _lastActivityUtc = DateTime.UtcNow;
+
                     if (_pendingCount == 0 && _activeCount == 0)
                     {
                         // Already complete, signal immediate invocation
                         return true;
                     }
+
                     // Not complete, register callback
                     _callbacks.Add(callback);
                     return false;
@@ -1319,6 +1341,7 @@ namespace ACE.Database
             {
                 if (_callbacks.Count == 0)
                     return null;
+
                 var toInvoke = new List<Action>(_callbacks);
                 _callbacks.Clear();
                 return toInvoke;
@@ -1333,8 +1356,10 @@ namespace ACE.Database
                 lock (_lock)
                 {
                     _lastActivityUtc = DateTime.UtcNow;
+
                     if (_pendingCount == 0 && _activeCount == 0)
                         return DrainCallbacksLocked();
+
                     return null;
                 }
             }
@@ -1369,6 +1394,7 @@ namespace ACE.Database
                     // Check if all work is complete and drain callbacks if so
                     if (_pendingCount == 0 && _activeCount == 0)
                         return DrainCallbacksLocked();
+
                     return null;
                 }
             }
@@ -1406,17 +1432,18 @@ namespace ACE.Database
 
             // All character-affecting saves use format: character:<id>:<type>[:<suffix>]
             // Examples:
-            //   character:123:player
-            //   character:123:character
-            //   character:123:item:456
-            //   character:123:storage_tx:guid
-            //   character:123:vendor_tx:guid
-            //   character:123:bank_tx:guid
-            //   character:123:logout
+            // character:123:player
+            // character:123:character
+            // character:123:item:456
+            // character:123:storage_tx:guid
+            // character:123:vendor_tx:guid
+            // character:123:bank_tx:guid
+            // character:123:logout
             if (key.StartsWith("character:", StringComparison.OrdinalIgnoreCase))
             {
                 var afterPrefix = key.Substring("character:".Length);
                 var colonIndex = afterPrefix.IndexOf(':');
+
                 if (colonIndex > 0)
                 {
                     // Format: character:<id>:<type>[:<suffix>]
@@ -1464,12 +1491,10 @@ namespace ACE.Database
                 log.Warn($"[SAVESCHEDULER] Clearing ghost save state for character {characterId}");
                 var callbacks = state.ForceClearIfNoWorkAndDrainCallbacks();
                 TryRemoveIdleCharacterSaveState(characterId);
-
                 if (callbacks != null)
                 {
                     InvokeCallbacks(characterId, callbacks);
                 }
-
                 return false;
             }
 
@@ -1493,13 +1518,17 @@ namespace ACE.Database
                 var s = kvp.Value;
                 var executing = Volatile.Read(ref s.Executing);
                 var queued = Volatile.Read(ref s.Queued);
-                
+
                 // Executing or Queued always indicate real work.
                 // Dirty is only meaningful while one of these is set, so we intentionally ignore Dirty
                 // unless work is executing or queued to avoid theoretical edge cases.
-                if (executing == 1) return true;
-                if (queued == 1) return true;
+                if (executing == 1)
+                    return true;
+
+                if (queued == 1)
+                    return true;
             }
+
             return false;
         }
 
@@ -1566,7 +1595,6 @@ namespace ACE.Database
             log.Warn($"[SAVESCHEDULER] Admin command clearing ghost save state for character {characterId}");
             var callbacks = state.ForceClearIfNoWorkAndDrainCallbacks();
             TryRemoveIdleCharacterSaveState(characterId);
-
             if (callbacks != null)
             {
                 InvokeCallbacks(characterId, callbacks);
@@ -1603,7 +1631,7 @@ namespace ACE.Database
                 return;
 
             var state = GetOrCreateCharacterSaveState(characterId);
-            
+
             // Atomic check-and-register: if complete, invoke immediately; otherwise register
             if (state.AddCallbackIfNotComplete(callback))
             {
@@ -1689,7 +1717,8 @@ namespace ACE.Database
                         // Use FirstEnqueuedTicksUtc to detect truly stuck saves (progress detector - resets on requeue)
                         // This detects saves that are not making progress, not just busy keys
                         var firstEnqTicks = Volatile.Read(ref state.FirstEnqueuedTicksUtc);
-                        if (firstEnqTicks == 0) continue;
+                        if (firstEnqTicks == 0)
+                            continue;
 
                         var firstEnq = new DateTime(firstEnqTicks, DateTimeKind.Utc);
                         var age = now - firstEnq;
@@ -1699,10 +1728,8 @@ namespace ACE.Database
                         {
                             // Rate limit: only log if we haven't logged recently (every 30 seconds)
                             var lastLogTicks = Volatile.Read(ref state.LastStuckLogTicksUtc);
-                            var timeSinceLastLog = lastLogTicks != 0 
-                                ? (now - new DateTime(lastLogTicks, DateTimeKind.Utc)).TotalSeconds 
-                                : double.MaxValue;
-                            
+                            var timeSinceLastLog = lastLogTicks != 0 ? (now - new DateTime(lastLogTicks, DateTimeKind.Utc)).TotalSeconds : double.MaxValue;
+
                             if (timeSinceLastLog >= 30.0)
                             {
                                 LogStuck(key, state);
@@ -1735,7 +1762,6 @@ namespace ACE.Database
                             log.Warn($"[SAVESCHEDULER] Watchdog clearing ghost character save state for {charId}");
                             var callbacks = cs.ForceClearIfNoWorkAndDrainCallbacks();
                             TryRemoveIdleCharacterSaveState(charId);
-
                             if (callbacks != null)
                             {
                                 InvokeCallbacks(charId, callbacks);
@@ -1753,18 +1779,19 @@ namespace ACE.Database
                         try
                         {
                             const int IdleStateCleanupAgeSeconds = 300; // 5 minutes
+
                             var keysToRemove = new List<string>();
-                            
+
                             foreach (var kvp in _states)
                             {
                                 var key = kvp.Key;
                                 var state = kvp.Value;
-                                
+
                                 // Read volatile fields to establish memory barrier
                                 var queued = Volatile.Read(ref state.Queued);
                                 var executing = Volatile.Read(ref state.Executing);
                                 var dirty = Volatile.Read(ref state.Dirty);
-                                
+
                                 // Only consider for removal if completely idle
                                 if (queued == 0 && executing == 0 && dirty == 0)
                                 {
@@ -1773,27 +1800,30 @@ namespace ACE.Database
                                     var lastActivityTicks = Volatile.Read(ref state.EnqueuedTicksUtc);
                                     if (lastActivityTicks == 0)
                                         lastActivityTicks = Volatile.Read(ref state.FirstEverEnqueuedTicksUtc);
-                                    if (lastActivityTicks == 0) continue; // Never enqueued, skip
+
+                                    if (lastActivityTicks == 0)
+                                        continue; // Never enqueued, skip
+
                                     var lastActivity = new DateTime(lastActivityTicks, DateTimeKind.Utc);
                                     var idleTime = (now - lastActivity).TotalSeconds;
+
                                     if (idleTime >= IdleStateCleanupAgeSeconds)
                                     {
                                         keysToRemove.Add(key);
                                     }
                                 }
                             }
-                            
+
                             // Remove idle states (outside enumeration to avoid modification during iteration)
                             foreach (var key in keysToRemove)
                             {
                                 _states.TryRemove(key, out _);
                             }
-                            
+
                             if (keysToRemove.Count > 0)
                             {
                                 log.Debug($"[SAVESCHEDULER] Watchdog cleaned up {keysToRemove.Count} idle SaveState entries");
                             }
-                            
                             _lastIdleStateCleanupUtc = now;
                         }
                         catch (Exception cleanupEx)
@@ -1841,11 +1871,11 @@ namespace ACE.Database
             var firstAge = firstEnqTicks != 0 ? (now - new DateTime(firstEnqTicks, DateTimeKind.Utc)).TotalSeconds : 0;
             var firstEverAge = firstEverEnqTicks != 0 ? (now - new DateTime(firstEverEnqTicks, DateTimeKind.Utc)).TotalSeconds : 0;
             var lastAge = lastEnqTicks != 0 ? (now - new DateTime(lastEnqTicks, DateTimeKind.Utc)).TotalSeconds : 0;
-            
+
             var currentGen = Volatile.Read(ref state.Generation);
             var lastProcessedGen = Volatile.Read(ref state.LastProcessedGen);
             var genLag = currentGen - lastProcessedGen;
-            
+
             // firstEnqueued = progress detector (resets on requeue, shows how long since last progress)
             // firstEverEnqueued = hot key detector (never resets, shows total time key has been active)
             log.Warn($"[SAVESCHEDULER] Stuck save detected key={key} prio={state.Priority} executing={state.Executing} " +

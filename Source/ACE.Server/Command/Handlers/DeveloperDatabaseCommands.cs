@@ -46,19 +46,15 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("save-offline-characters", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Save all offline players with pending changes.")]
         public static void HandleSaveOfflineCharacters(Session session, params string[] parameters)
         {
-            CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves...");
+            CommandHandlerHelper.WriteOutputInfo(session, "Performing offline player saves...");
             
-                                    // Queue the save operation to the database queue (non-blocking)
-                        DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
-                        {
-                            // Background thread; avoid direct session output.
-                            // Consider logging if you want completion visibility:
-                            // log.Info($"Offline save task completed. Success={success}");
-                        });
+            // Call directly on world thread (command handlers run on world thread)
+            // This method handles player selection and enqueues DB work without crossing thread boundaries
+            PlayerManager.PerformOfflinePlayerSaves();
 
-            CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
-            CommandHandlerHelper.WriteOutputInfo(session, "Save operation has been queued to the database queue.");
-            CommandHandlerHelper.WriteOutputInfo(session, "The main thread is not blocked - saves will process in the background.");
+            CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE INITIATED ===");
+            CommandHandlerHelper.WriteOutputInfo(session, "Offline save operation has been initiated.");
+            CommandHandlerHelper.WriteOutputInfo(session, "Player selection happens on world thread, DB work is queued to background.");
             CommandHandlerHelper.WriteOutputInfo(session, "");
             CommandHandlerHelper.WriteOutputInfo(session, "Use @offline-save-stats to view current save status");
         }
@@ -68,19 +64,15 @@ namespace ACE.Server.Command.Handlers
         {
             CommandHandlerHelper.WriteOutputInfo(session, "Testing offline player saves (all players with changes)...");
 
-            CommandHandlerHelper.WriteOutputInfo(session, "Queuing offline player saves to database queue...");
+            CommandHandlerHelper.WriteOutputInfo(session, "Performing offline player saves...");
             
-            // Queue the save operation to the database queue (non-blocking)
-            DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
-            {
-                // Background thread; avoid direct session output.
-                // Consider logging if you want completion visibility:
-                // log.Info($"Offline save task completed. Success={success}");
-            });
+            // Call directly on world thread (command handlers run on world thread)
+            // This method handles player selection and enqueues DB work without crossing thread boundaries
+            PlayerManager.PerformOfflinePlayerSaves();
 
-            CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE QUEUED ===");
-            CommandHandlerHelper.WriteOutputInfo(session, "Save operation has been queued to the database queue.");
-            CommandHandlerHelper.WriteOutputInfo(session, "The main thread is not blocked - saves will process in the background.");
+            CommandHandlerHelper.WriteOutputInfo(session, "=== OFFLINE SAVE INITIATED ===");
+            CommandHandlerHelper.WriteOutputInfo(session, "Offline save operation has been initiated.");
+            CommandHandlerHelper.WriteOutputInfo(session, "Player selection happens on world thread, DB work is queued to background.");
             CommandHandlerHelper.WriteOutputInfo(session, "");
             CommandHandlerHelper.WriteOutputInfo(session, "WARNING: This command actually saves data to the database!");
             CommandHandlerHelper.WriteOutputInfo(session, "NOTE: Saves run on background threads via the dedicated database queue!");
