@@ -10,7 +10,7 @@ namespace ACE.Common
 {
     public static class ConfigManager
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILog log = LogManager.GetLogger(typeof(ConfigManager));
         public static MasterConfiguration Config { get; private set; }
 
         /// <summary>
@@ -78,7 +78,7 @@ namespace ACE.Common
                 }
                 {
                     // Redact secrets from the logs.
-                    string secretKeys = "Password|ApiToken|DiscordToken";
+                    string secretKeys = "Password|ApiToken|DiscordToken|WebhookURL";
                     string pattern = $@"^(\s*[""']?(?:{secretKeys})[""']?\s*[:=]\s*[""']).*([""']\s*,?)$";
                     string replacement = @"$1******$2";
                     redactedFileText = Regex.Replace(redactedFileText, pattern, replacement, RegexOptions.Multiline);
@@ -89,9 +89,7 @@ namespace ACE.Common
             }
             catch (Exception exception)
             {
-                log.Error("An exception occured while loading the configuration file!");
-                log.Error($"Exception: {exception.Message}");
-
+                log.Error("An exception occured while loading the configuration file!", exception);
                 // environment.exit swallows this exception for testing purposes.  we want to expose it.
                 throw;
             }
