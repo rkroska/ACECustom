@@ -284,6 +284,7 @@ namespace ACE.Server.WorldObjects
 
                 actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
                 {
+                    if (Session?.Network == null) return;
                     Session.Network.EnqueueSend(new GameMessageCreateObject(item));
                 });
                 itemCount++;
@@ -293,6 +294,7 @@ namespace ACE.Server.WorldObjects
                 {
                     actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
                     {
+                        if (Session?.Network == null) return;
                         Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
                     });
 
@@ -304,6 +306,7 @@ namespace ACE.Server.WorldObjects
 
                         actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
                         {
+                            if (Session?.Network == null) return;
                             Session.Network.EnqueueSend(new GameMessageCreateObject(itemsInContainer));
                         });
                         itemCount++;
