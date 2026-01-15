@@ -1,14 +1,16 @@
+using log4net;
 using System;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-
-using DouglasCrockford.JsMin;
+using System.Text.RegularExpressions;
 
 namespace ACE.Common
 {
     public static class ConfigManager
     {
+        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         public static MasterConfiguration Config { get; private set; }
 
         /// <summary>
@@ -57,18 +59,38 @@ namespace ACE.Common
             {
                 if (!File.Exists(pathToUse))
                 {
-                    Console.WriteLine("Configuration file is missing.  Please copy the file Config.js.example to Config.js and edit it to match your needs before running ACE.");
+                    log.Error("Configuration file is missing.  Please copy the file Config.js.example to Config.js and edit it to match your needs before running ACE.");
                     throw new Exception("missing configuration file");
                 }
 
-                var fileText = File.ReadAllText(pathToUse);
+                log.Info($"Reading file at {pathToUse}");
+                string fileText = File.ReadAllText(pathToUse);
+
+                string redactedFileText = fileText;
+                {
+                    // In this block, we remove whitespace lines and comment lines. Pattern Breakdown:
+                    // ^\s*(?://|#).*$\n? : Matches lines starting with whitespace + // or #
+                    // |                  : OR
+                    // ^\s*$\n?           : Matches lines containing only whitespace
+                    // \n?                : Optionally matches the trailing newline to collapse the gap
+                    string pattern = @"^\s*(?://|#).*$\n?|^\s*$\n?";
+                    redactedFileText = Regex.Replace(redactedFileText, pattern, "", RegexOptions.Multiline);
+                }
+                {
+                    // Redact secrets from the logs.
+                    string secretKeys = "Password|ApiToken";
+                    string pattern = $@"^(\s*[""']?(?:{secretKeys})[""']?\s*[:=]\s*[""']).*([""']\s*,?)$";
+                    string replacement = @"$1******$2";
+                    redactedFileText = Regex.Replace(redactedFileText, pattern, replacement, RegexOptions.Multiline);
+                }
+                log.Info($"Config file contents (trimmed blank lines and comments):\n{redactedFileText}");
 
                 Config = JsonSerializer.Deserialize<MasterConfiguration>(fileText, SerializerOptions);
             }
             catch (Exception exception)
             {
-                Console.WriteLine("An exception occured while loading the configuration file!");
-                Console.WriteLine($"Exception: {exception.Message}");
+                log.Error("An exception occured while loading the configuration file!");
+                log.Error($"Exception: {exception.Message}");
 
                 // environment.exit swallows this exception for testing purposes.  we want to expose it.
                 throw;
