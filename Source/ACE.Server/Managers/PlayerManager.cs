@@ -113,18 +113,22 @@ namespace ACE.Server.Managers
             if (lastEnsureSaveCheckUtc == DateTime.MinValue || DateTime.UtcNow >= lastEnsureSaveCheckUtc.AddSeconds(3))
             {
                 lastEnsureSaveCheckUtc = DateTime.UtcNow;
-                
+
+                List<Player> snapshot;
+
                 playersLock.EnterReadLock();
                 try
                 {
-                    foreach (var player in onlinePlayers.Values)
-                    {
-                        player.EnsureSaveIfOwed();
-                    }
+                    snapshot = onlinePlayers.Values.ToList();
                 }
                 finally
                 {
                     playersLock.ExitReadLock();
+                }
+
+                foreach (var player in snapshot)
+                {
+                    player.EnsureSaveIfOwed();
                 }
             }
 
