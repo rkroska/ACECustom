@@ -391,6 +391,10 @@ namespace ACE.Server.WorldObjects
 
         private EnvironChangeType? currentFogColor;
 
+        /// <summary>
+        /// Updates the player's current fog color and sends an environment change update to the client.
+        /// Respects global fog override if active.
+        /// </summary>
         public void SetFogColor(EnvironChangeType fogColor)
         {
             if (fogColor == EnvironChangeType.Clear && !currentFogColor.HasValue)
@@ -411,9 +415,28 @@ namespace ACE.Server.WorldObjects
                 currentFogColor = null;
         }
 
-        public void ClearFogColor()
+        /// <summary>
+        /// Handles fog logic before teleporting. 
+        /// Returns true if the teleport was intercepted and delayed to clear fog.
+        /// Returns false if teleport should proceed immediately.
+        /// </summary>
+        public bool HandleFogBeforeTeleport(Position dest)
         {
-            SetFogColor(EnvironChangeType.Clear);
+            // Check currentFogColor set for player. If LandblockManager.GlobalFogColor is set, don't bother checking, dungeons didn't clear like this on retail worlds.
+            // if not clear, reset to clear before portaling in case portaling to dungeon (no current way to fast check unloaded landblock for IsDungeon or current FogColor)
+            // client doesn't respond to any change inside dungeons, and only queues for change if in dungeon, executing change upon next teleport
+            // so if we delay teleport long enough to ensure clear arrives before teleport, we don't get fog carrying over into dungeon.
+
+            if (currentFogColor.HasValue && currentFogColor != EnvironChangeType.Clear && !LandblockManager.GlobalFogColor.HasValue)
+            {
+                var delayTeleport = new ActionChain();
+                delayTeleport.AddAction(this, ActionType.PlayerLocation_ClearFogColor, () => SetFogColor(EnvironChangeType.Clear));
+                delayTeleport.AddDelaySeconds(1);
+                delayTeleport.AddAction(this, ActionType.WorldManager_ThreadSafeTeleport, () => WorldManager.ThreadSafeTeleport(this, dest));
+                delayTeleport.EnqueueChain();
+                return true;
+            }
+            return false;
         }
 
         public void SendEnvironChange(EnvironChangeType environChangeType)

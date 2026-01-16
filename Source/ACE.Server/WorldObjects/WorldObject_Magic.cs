@@ -1369,7 +1369,7 @@ namespace ACE.Server.WorldObjects
                 var teleportDest = new Position(spell.Position);
                 AdjustDungeon(teleportDest);
 
-                targetCreature.FakeTeleport(teleportDest);
+                targetCreature.Teleport(teleportDest);
             }
         }
 

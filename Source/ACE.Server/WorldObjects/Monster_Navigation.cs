@@ -1,7 +1,3 @@
-using System;
-using System.Diagnostics;
-using System.Numerics;
-
 using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -11,6 +7,9 @@ using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Common;
+using System;
+using System.Diagnostics;
+using System.Numerics;
 
 namespace ACE.Server.WorldObjects
 {
@@ -193,9 +192,7 @@ namespace ACE.Server.WorldObjects
                     ResetAttack();
             }
 
-            if (MonsterState == State.Return)
-                Sleep();
-
+            if (MonsterState == State.Return) Sleep();
             PhysicsObj.CachedVelocity = Vector3.Zero;
             IsMoving = false;
         }
@@ -262,7 +259,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void Movement()
         {
-            if (IsDead || PhysicsObj == null)
+            if (IsDead || PhysicsObj == null || Teleporting)
                 return;
 
             //if (!IsRanged)
@@ -282,7 +279,6 @@ namespace ACE.Server.WorldObjects
                 CancelMoveTo();
 
             CheckForStuck();
-            ApplyFastHealing();
             CheckDistressCalls();
         }
 
@@ -291,27 +287,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void CheckForStuck()
         {
-            if (!IsMoving || AttackTarget == null)
-                return;
-
-            if (ShouldBypassStuckLogic())
-                return;
+            if (!IsMoving || AiImmobile) return;
 
             var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
-            if (moveToManager == null)
-                return;
+            if (moveToManager == null) return;
 
             var currentTime = Timers.RunningTime;
-
-            if (currentTime - LastStuckCheckTime < StuckCheckInterval)
-                return;
+            if (currentTime - LastStuckCheckTime < StuckCheckInterval) return;
 
             LastStuckCheckTime = currentTime;
-
-            if (moveToManager.FailProgressCount >= MaxStuckAttempts)
-            {
-                HandleStuck();
-            }
+            if (++moveToManager.FailProgressCount >= MaxStuckAttempts) HandleStuck();
         }
 
         /// <summary>
@@ -331,28 +316,7 @@ namespace ACE.Server.WorldObjects
             }
             else if (MonsterState == State.Return)
             {
-                ForceHome();
-            }
-        }
-
-        /// <summary>
-        /// Bypass stuck logic if mob is set with bool property 52 (aiImobile)
-        /// </summary>
-        public bool ShouldBypassStuckLogic()
-        {
-            return AiImmobile;
-        }
-
-        /// <summary>
-        /// Apply fast healing when returning home
-        /// </summary>
-        public void ApplyFastHealing()
-        {
-            if (MonsterState == State.Return)
-            {
-                // Increase vital regen when returning home
-                // This is handled by the existing vital regen system
-                // The actual implementation would be in the vital regen logic
+                DoTeleport(Home);
             }
         }
 
@@ -421,9 +385,6 @@ namespace ACE.Server.WorldObjects
 
             if (PhysicsObj?.MovementManager?.MoveToManager != null)
             {
-                if (MonsterState == State.Return && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
-                    Sleep();
-
                 if (MonsterState == State.Awake && IsMoving && PhysicsObj.MovementManager.MoveToManager.PendingActions.Count == 0)
                     IsMoving = false;
             }
@@ -449,25 +410,15 @@ namespace ACE.Server.WorldObjects
 
             if (Location.LandblockId.Raw != newPos.ObjCellID)
             {
-                //var prevBlockCell = Location.LandblockId.Raw;
                 var prevBlock = Location.LandblockId.Raw >> 16;
-                //var prevCell = Location.LandblockId.Raw & 0xFFFF;
-
-                //var newBlockCell = newPos.ObjCellID;
                 var newBlock = newPos.ObjCellID >> 16;
-                //var newCell = newPos.ObjCellID & 0xFFFF;
 
                 Location.LandblockId = new LandblockId(newPos.ObjCellID);
 
                 if (prevBlock != newBlock)
                 {
                     LandblockManager.RelocateObjectForPhysics(this, true);
-                    //Console.WriteLine($"Relocating {Name} from {prevBlockCell:X8} to {newBlockCell:X8}");
-                    //Console.WriteLine("Old position: " + Location.Pos);
-                    //Console.WriteLine("New position: " + newPos.Frame.Origin);
                 }
-                //else
-                    //Console.WriteLine("Moving " + Name + " to " + Location.LandblockId.Raw.ToString("X8"));
             }
 
             // skip ObjCellID check when updating from physics
@@ -477,19 +428,6 @@ namespace ACE.Server.WorldObjects
             Location.PositionZ = newPos.Frame.Origin.Z;
 
             Location.Rotation = newPos.Frame.Orientation;
-
-            if (DebugMove)
-                DebugDistance();
-        }
-
-        public void DebugDistance()
-        {
-            if (AttackTarget == null) return;
-
-            //var dist = GetDistanceToTarget();
-            //var angle = GetAngle(AttackTarget);
-            //Console.WriteLine("Dist: " + dist);
-            //Console.WriteLine("Angle: " + angle);
         }
 
         public void GetMovementSpeed()
@@ -611,61 +549,47 @@ namespace ACE.Server.WorldObjects
 
         public void CheckMissHome()
         {
-            if (MonsterState == State.Return)
-                return;
-
-            var homePosition = GetPosition(PositionType.Home);
-            //var matchIndoors = Location.Indoors == homePosition.Indoors;
-
-            //var globalPos = matchIndoors ? Location.ToGlobal() : Location.Pos;
-            //var globalHomePos = matchIndoors ? homePosition.ToGlobal() : homePosition.Pos;
-            var globalPos = Location.ToGlobal();
-            var globalHomePos = homePosition.ToGlobal();
-
-            var homeDistSq = Vector3.DistanceSquared(globalHomePos, globalPos);
-
-            if (homeDistSq > HomeRadiusSq)
-                MoveToHome();
+            if (MonsterState == State.Return) return;
+            var homeDistSq = Vector3.DistanceSquared(Home.ToGlobal(), Location.ToGlobal());
+            if (homeDistSq > HomeRadiusSq) MoveToHome();
         }
 
+        /// <summary>
+        /// Initiates the Return Home behavior for a monster.
+        /// Turns on State.Return, clears target, and moves towards Home position.
+        /// </summary>
         public void MoveToHome()
         {
-            if (DebugMove)
-                Console.WriteLine($"{Name}.MoveToHome()");
+            if (DebugMove) Console.WriteLine($"{Name}.MoveToHome()");
 
-            var prevAttackTarget = AttackTarget;
-
-            MonsterState = State.Return;
-            AttackTarget = null;
-
-            var home = GetPosition(PositionType.Home);
-
-            if (Location.Equals(home))
+            if (Location.Equals(Home))
             {
                 Sleep();
                 return;
             }
 
+            var prevAttackTarget = AttackTarget;
+            MonsterState = State.Return;
+            AttackTarget = null;
             NextCancelTime = Timers.RunningTime + 5.0f;
-
-            MoveTo(home, RunRate, false, 1.0f);
-
-            var homePos = new Physics.Common.Position(home);
-
+            MoveTo(Home, RunRate, false, 1.0f);
+            var homePos = new Physics.Common.Position(Home);
             var mvp = GetMovementParameters();
             mvp.DistanceToObject = 0.6f;
             mvp.DesiredHeading = homePos.Frame.get_heading();
-
             PhysicsObj.MoveToPosition(homePos, mvp);
             IsMoving = true;
 
             EmoteManager.OnHomeSick(prevAttackTarget);
         }
 
+        /// <summary>
+        /// Cancels current movement.
+        /// If returning home, forces a teleport to home.
+        /// Otherwise slows/stops the creature and resets attack/target state.
+        /// </summary>
         public void CancelMoveTo()
         {
-            //Console.WriteLine($"{Name}.CancelMoveTo()");
-
             if (IsDead || PhysicsObj == null)
             {
                 IsMoving = false;
@@ -681,7 +605,10 @@ namespace ACE.Server.WorldObjects
             }
 
             if (MonsterState == State.Return)
-                ForceHome();
+            {
+                DoTeleport(Home);
+                return;
+            }
 
             EnqueueBroadcastMotion(new Motion(CurrentMotionState.Stance, MotionCommand.Ready));
 
@@ -696,33 +623,40 @@ namespace ACE.Server.WorldObjects
             FindNextTarget();
         }
 
-        public void ForceHome()
+        /// <summary>
+        /// Executes the full Monster teleport sequence (Leash/Recall).
+        /// Plays fade-out effects, waits, teleports, then plays fade-in effects and sleeps.
+        /// </summary>
+        public void DoTeleport(ACE.Entity.Position destination)
         {
-            if (IsDead || PhysicsObj == null)
-            {
-                if (PhysicsObj == null)
-                    log.Warn($"{Name} ({Guid}) - ForceHome failed: PhysicsObj is null");
-                return;
-            }
+            if (IsDead || PhysicsObj == null || Teleporting) return;
 
-            var homePos = GetPosition(PositionType.Home);
+            // Even though Teleport() also sets this to true, we set
+            // it early to block effects during our animation.
+            Teleporting = true;
 
-            if (DebugMove)
-                Console.WriteLine($"{Name} ({Guid}) - ForceHome({homePos.ToLOCString()})");
+            // Fade out, then enqueue the other things.
+            PlayParticleEffect(PlayScript.Destroy, Guid);
+            PlayParticleEffect(PlayScript.DispelLife, Guid);
 
-            var setPos = new SetPosition();
-            setPos.Pos = new Physics.Common.Position(homePos);
-            setPos.Flags = SetPositionFlags.Teleport;
-
-            PhysicsObj.SetPosition(setPos);
-
-            UpdatePosition_SyncLocation();
-            SendUpdatePosition();
-
-            var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(0.5f);
-            actionChain.AddAction(this, ActionType.MonsterNavigation_Sleep, Sleep);
-            actionChain.EnqueueChain();
+            // Create an ActionChain to enqueue the rest of the steps.
+            // 1. Wait for creature to become invisible from PlayScript.Destroy.
+            // 2. Teleport the creature to its destination.
+            // 3. Wait for the creature and its physics object to move.
+            // 4. Spawn (PlayScript.Create) and reset. 
+            new ActionChain()
+                .AddDelaySeconds(3.0f)
+                .AddAction(this, ActionType.CreatureLocation_TeleportToPosition, () => { Teleport(destination); })
+                .AddDelaySeconds(1.5f)
+                .AddAction(this, ActionType.CreatureLocation_PostTeleportVisuals, () =>
+                {
+                    PlayParticleEffect(PlayScript.Create, Guid);
+                    EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Ready));
+                    ResetAttack();
+                    Sleep();
+                    Teleporting = false;
+                })
+                .EnqueueChain();
         }
     }
 }
