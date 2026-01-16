@@ -1075,6 +1075,7 @@ namespace ACE.Database
             _atomicQueue.CompleteAdding();
             _criticalQueue.CompleteAdding();
             _periodicQueue.CompleteAdding();
+            _periodicPlayerQueue.CompleteAdding();
 
             // Wait for worker threads to finish processing current items
             foreach (var thread in _workers)
@@ -1091,12 +1092,13 @@ namespace ACE.Database
             _watchdogThread?.Join();
 
             // Capture queue counts before disposal (QueueCount returns 0 after _disposed is set)
-            var remainingQueued = _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
+            var remainingQueued = _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count + _periodicPlayerQueue.Count;
 
             // Now safe to dispose collections
             _atomicQueue.Dispose();
             _criticalQueue.Dispose();
             _periodicQueue.Dispose();
+            _periodicPlayerQueue.Dispose();
 
             log.Info($"[SAVESCHEDULER] Stopped. Remaining states={_states.Count} Remaining queued={remainingQueued}");
         }
@@ -1125,7 +1127,7 @@ namespace ACE.Database
 
                 try
                 {
-                    return _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
+                    return _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count + _periodicPlayerQueue.Count;
                 }
                 catch (ObjectDisposedException)
                 {
