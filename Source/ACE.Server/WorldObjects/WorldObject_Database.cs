@@ -80,6 +80,21 @@ namespace ACE.Server.WorldObjects
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
             // Avoid property getters - use passed itemGuid and displayName
             
+            // GC BREAKER: If save has been stuck for > 15 minutes, force reset
+            // This is a safety net for unknown edge cases (starvation is now fixed via SaveScheduler routing)
+            const double STUCK_SAVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+            if (timeInFlight > STUCK_SAVE_TIMEOUT_MS)
+            {
+                log.Error($"[DB STUCK SAVE] {displayName} (0x{itemGuid:X8}) has been stuck in SaveInProgress for {timeInFlight / 1000 / 60:N1} minutes - FORCING RESET");
+                SaveInProgress = false;
+                SaveStartTime = DateTime.MinValue;
+                ChangesDetected = true; // Ensure re-save is attempted
+                
+                // Send critical Discord alert
+                SendStuckSaveDiscordAlert(displayName, itemGuid, timeInFlight);
+                return;
+            }
+            
             // Use captured stack size from save snapshot (preserves save invariant)
             var currentStack = capturedStackSize;
             var stackChanged = currentStack.HasValue && LastSavedStackSize.HasValue && currentStack != LastSavedStackSize;
@@ -796,6 +811,30 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Error($"Failed to send DB slow alert to Discord: {ex.Message}");
                 }
+            }
+        }
+        
+        private static void SendStuckSaveDiscordAlert(string itemName, ObjectGuid itemGuid, double timeInFlightMs)
+        {
+            // Create display name for consistent null handling
+            var displayName = itemName ?? "item";
+
+            // Check Discord is configured
+            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+                ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                return;
+            
+            try
+            {
+                var timeInMinutes = timeInFlightMs / 1000 / 60;
+                var msg = $"🔴🔴 **CRITICAL - STUCK SAVE RESET**: `{displayName}` (0x{itemGuid:X8}) was stuck in SaveInProgress for **{timeInMinutes:N1} minutes**. Force-reset applied, re-save queued. Investigate for data loss!";
+                
+                DiscordChatManager.SendDiscordMessage("DB CRITICAL", msg, 
+                    ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to send stuck save alert to Discord: {ex.Message}");
             }
         }
         

@@ -639,26 +639,63 @@ namespace ACE.Database
         }
 
 
+
         public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback)
         {
-            _uniqueQueue.Enqueue(new WorkItem(() =>
+            // Route through SaveScheduler to prevent UniqueQueue starvation
+            // Individual items that are frequently updated will no longer be pushed to the back of the queue
+            var saveJob = new IndividualBiotaSaveJob(biota, rwLock, callback, BaseDatabase);
+            
+            // RequestItemSave handles coalescing and proper FIFO ordering
+            var enqueued = SaveScheduler.Instance.RequestItemSave(biota.Id, saveJob);
+            
+            if (!enqueued)
+            {
+                // Shutdown requested - invoke callback with failure
+                try { callback?.Invoke(false); }
+                catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id} during shutdown", cbEx); }
+            }
+        }
+
+        /// <summary>
+        /// Save job for individual biota saves.
+        /// Executes the actual database save and invokes the callback.
+        /// </summary>
+        private sealed class IndividualBiotaSaveJob : ISaveJob
+        {
+            private readonly ACE.Entity.Models.Biota _biota;
+            private readonly ReaderWriterLockSlim _rwLock;
+            private readonly Action<bool> _callback;
+            private readonly ShardDatabase _database;
+
+            public IndividualBiotaSaveJob(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback, ShardDatabase database)
+            {
+                _biota = biota ?? throw new ArgumentNullException(nameof(biota));
+                _rwLock = rwLock ?? throw new ArgumentNullException(nameof(rwLock));
+                _callback = callback;
+                _database = database ?? throw new ArgumentNullException(nameof(database));
+            }
+
+            public bool Execute()
             {
                 bool result = false;
                 try
                 {
-                    result = BaseDatabase.SaveBiota(biota, rwLock);
+                    result = _database.SaveBiota(_biota, _rwLock);
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] SaveBiota failed for biota {biota.Id}", ex);
+                    log.Error($"[DATABASE] SaveBiota failed for biota {_biota.Id}", ex);
                     result = false;
                 }
                 finally
                 {
-                    try { callback?.Invoke(result); }
-                    catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id}", cbEx); }
+                    try { _callback?.Invoke(result); }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {_biota.Id}", cbEx); }
                 }
-            }, "SaveBiota: " + biota.Id));
+                
+                return result;
+            }
         }
 
 

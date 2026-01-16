@@ -360,27 +360,46 @@ namespace ACE.Server.WorldObjects
                 // Check if save was already in progress before attempting to save
                 // Only mark as prepared if THIS job actually started the save
                 var wasAlreadySavingPlayer = SaveInProgress;
+                
+                // FIX #4: Clear ChangesDetected BEFORE SaveBiotaToDatabase (Clear-Before-Enqueue pattern)
+                ChangesDetected = false;
+                
                 SaveBiotaToDatabase(false);
                 if (!wasAlreadySavingPlayer && SaveInProgress)
                 {
                     preparedPlayerForCallback = true;
                     biotas.Add((Biota, BiotaDatabaseLock));
                 }
+                else if (!SaveInProgress)
+                {
+                    // FIX #4: SaveBiotaToDatabase rejected (mutation guard, etc.) - restore flag
+                    ChangesDetected = true;
+                }
             }
             else
             {
                 if (!SaveInProgress)
                 {
+                    // FIX #4: Clear ChangesDetected BEFORE SaveBiotaToDatabase (Clear-Before-Enqueue pattern)
+                    ChangesDetected = false;
+                    
                     SaveBiotaToDatabase(false);
                     if (SaveInProgress)
                     {
                         preparedPlayerForCallback = true;
                         biotas.Add((Biota, BiotaDatabaseLock));
                     }
+                    else
+                    {
+                        // FIX #4: SaveBiotaToDatabase rejected (mutation guard, etc.) - restore flag
+                        ChangesDetected = true;
+                    }
                 }
             }
 
             // Prepare possession biotas on world thread
+            // FIX #4: Clear ChangesDetected BEFORE adding to biotas (Clear-Before-Enqueue pattern)
+            // If a mutation happens DURING the save, it will set ChangesDetected=true again, preventing loss
             foreach (var possession in possessionsSnapshot)
             {
                 if (possession.IsDestroyed)
@@ -395,6 +414,10 @@ namespace ACE.Server.WorldObjects
 
                 var possessionGuid = possession.Guid.Full;
 
+                // FIX #4: Clear ChangesDetected BEFORE SaveBiotaToDatabase (optimistic clear)
+                // If save fails or new mutation occurs, flags will be restored/set
+                possession.ChangesDetected = false;
+                
                 possession.SaveBiotaToDatabase(false);
 
                 // Only add to preparedGuidsForCallback after confirming it was actually included in the batch
@@ -403,6 +426,12 @@ namespace ACE.Server.WorldObjects
                 {
                     preparedGuidsForCallback.Add(possessionGuid);
                     biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                }
+                else
+                {
+                    // FIX #4: SaveBiotaToDatabase rejected the save (mutation guard, early return, etc.)
+                    // Restore ChangesDetected since we cleared it optimistically but didn't actually save
+                    possession.ChangesDetected = true;
                 }
             }
 
@@ -468,19 +497,19 @@ namespace ACE.Server.WorldObjects
                                     possession.SaveInProgress = false;
                                     possession.SaveStartTime = DateTime.MinValue;
 
-                                    if (saveResult)
-                                        possession.ChangesDetected = false;
-                                    else
+                                    // FIX #4: On failure, restore ChangesDetected to ensure retry
+                                    // On success, DON'T modify ChangesDetected (preserves concurrent mutations)
+                                    if (!saveResult)
                                         possession.ChangesDetected = true;
                                 }
                             }
 
                             if (saveResult)
                             {
-                                // Clear ChangesDetected on successful save
-                                // Note: If new mutations occurred during save execution, they will set ChangesDetected=true again
-                                // and coalescing/followup saves will handle them
-                                ChangesDetected = false;
+                                // FIX #4: DON'T clear ChangesDetected here (Clear-Before-Enqueue pattern)
+                                // Flags were optimistically cleared before DoSave
+                                // If mutations occurred during save, they already set ChangesDetected=true
+                                // Clearing here would clobber those concurrent changes
 
                                 // Check captured logout intent - works even if this callback is from a coalesced save
                                 // This ensures logout completes even if the logout request got merged into an existing save

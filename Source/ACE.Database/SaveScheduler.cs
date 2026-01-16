@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using log4net;
@@ -272,6 +273,30 @@ namespace ACE.Database
             // For backward compatibility, wrap the delegate
             // Note: This still creates a wrapper object, but allows gradual migration
             return RequestSaveInternal(key, type, new DelegateSaveJob(saveWork));
+        }
+
+        /// <summary>
+        /// Requests a save operation for an individual item (non-player biota).
+        /// Routes individual saves through SaveScheduler to prevent UniqueQueue starvation.
+        /// Uses Periodic priority for proper FIFO ordering with coalescing support.
+        /// </summary>
+        /// <param name="biotaId">The biota ID to save</param>
+        /// <param name="saveJob">The save job to execute</param>
+        /// <returns>True if save was enqueued or coalesced, false if shutdown requested</returns>
+        public bool RequestItemSave(uint biotaId, ISaveJob saveJob)
+        {
+            if (IsShutdownRequested)
+                return false;
+
+            if (saveJob == null)
+                return false;
+
+            // Use standardized key format for individual item saves
+            var key = SaveKeys.Biota(biotaId);
+            
+            // Route as Periodic (same as player periodic saves) for proper FIFO ordering
+            // Coalescing is handled by the SaveScheduler state machine (no UniqueQueue starvation)
+            return RequestSaveInternal(key, SaveType.Periodic, saveJob);
         }
 
         /// <summary>
@@ -608,6 +633,10 @@ namespace ACE.Database
                     // This prevents double enqueue from causing pending count drift (incremented twice, decremented once)
                     var willRequeue = hasNewWork && (Interlocked.CompareExchange(ref state.Queued, 1, 0) == 0);
 
+                    // FIX #3: Transaction keys (vendor_tx, storage_tx, etc.) are unique per operation and should
+                    // be cleaned up aggressively to prevent memory growth during high transaction volume
+                    var isTransactionKey = key.Contains("_tx:");
+
                     // MEMORY OPTIMIZATION: Clear job reference if no new work arrived and job hasn't been replaced
                     // This releases closure references (biotas, callbacks, Player object) immediately
                     // instead of keeping them alive for up to 5 minutes until watchdog cleanup
@@ -621,6 +650,14 @@ namespace ACE.Database
                         // Only clear if it is still the same job we executed
                         // CompareExchange will fail if job was replaced, keeping the newer job
                         Interlocked.CompareExchange(ref state.Job, null, executedJob);
+                        
+                        // FIX #3: For transaction keys, also remove the SaveState immediately to prevent accumulation
+                        // Transaction keys are never reused, so keeping the state serves no purpose
+                        // Only remove if we successfully cleared the job (CAS succeeded) AND no work exists
+                        if (isTransactionKey && state.Job == null)
+                        {
+                            _states.TryRemove(key, out _);
+                        }
                     }
 
                     // Atomically finish execution, optionally requeue, and drain callbacks if ready
@@ -654,19 +691,9 @@ namespace ACE.Database
                             else
                             {
                                 // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
-                                // This fallback is unsafe and should never occur in production
-                                log.Error("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Invoking callbacks directly (unsafe - may cause thread safety issues). This indicates WorldManager.Initialize() was not called or failed.");
-                                foreach (var callback in callbacksToInvoke)
-                                {
-                                    try
-                                    {
-                                        callback();
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        log.Error($"[SAVESCHEDULER] Callback invocation failed for character {charState.CharacterId}", ex);
-                                    }
-                                }
+                                // Fail fast - do not execute callbacks on DB thread (violates world thread contract)
+                                log.Fatal("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Cannot invoke callbacks safely. This indicates WorldManager.Initialize() was not called or failed.");
+                                throw new InvalidOperationException("EnqueueToWorldThread delegate not set - cannot safely invoke callbacks on world thread. This indicates a fatal initialization error in WorldManager.Initialize().");
                             }
 
                             // All saves complete and callbacks drained - try to clean up idle CharacterSaveState
@@ -1508,14 +1535,20 @@ namespace ACE.Database
         /// </summary>
         public bool CharacterHasRealWork(uint characterId)
         {
-            foreach (var kvp in _states)
+            // HARDENING: Snapshot keys before iteration to prevent missing newly added saves
+            // ConcurrentDictionary enumeration is thread-safe but not atomic - keys added during
+            // iteration might be skipped due to internal bucket rehashing
+            var keysSnapshot = _states.Keys.ToArray();
+            
+            foreach (var key in keysSnapshot)
             {
-                var key = kvp.Key;
                 var cid = ExtractCharacterIdFromKey(key);
                 if (!cid.HasValue || cid.Value != characterId)
                     continue;
 
-                var s = kvp.Value;
+                // Key might have been removed between snapshot and now - handle gracefully
+                if (!_states.TryGetValue(key, out var s))
+                    continue;
                 var executing = Volatile.Read(ref s.Executing);
                 var queued = Volatile.Read(ref s.Queued);
 
@@ -1579,14 +1612,21 @@ namespace ACE.Database
                 return false;
 
             // Double-check: verify no SaveState has Executing or Queued for this character
-            foreach (var kvp in _states)
+            // HARDENING: Snapshot keys before iteration to prevent missing newly added saves
+            // ConcurrentDictionary enumeration is thread-safe but not atomic - keys added during
+            // iteration might be skipped due to internal bucket rehashing
+            var keysSnapshot = _states.Keys.ToArray();
+            
+            foreach (var key in keysSnapshot)
             {
-                var key = kvp.Key;
                 var cid = ExtractCharacterIdFromKey(key);
                 if (!cid.HasValue || cid.Value != characterId)
                     continue;
 
-                var s = kvp.Value;
+                // Key might have been removed between snapshot and now - handle gracefully
+                if (!_states.TryGetValue(key, out var s))
+                    continue;
+
                 if (Volatile.Read(ref s.Executing) == 1 || Volatile.Read(ref s.Queued) == 1)
                     return false; // Real work exists, cannot clear
             }
@@ -1643,9 +1683,9 @@ namespace ACE.Database
                 else
                 {
                     // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
-                    // This fallback is unsafe and should never occur in production
-                    log.Error("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Invoking callback directly (unsafe - may cause thread safety issues). This indicates WorldManager.Initialize() was not called or failed.");
-                    callback();
+                    // Fail fast - do not execute callback on calling thread (violates world thread contract)
+                    log.Fatal("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Cannot invoke callback safely. This indicates WorldManager.Initialize() was not called or failed.");
+                    throw new InvalidOperationException("EnqueueToWorldThread delegate not set - cannot safely invoke callback on world thread. This indicates a fatal initialization error in WorldManager.Initialize().");
                 }
             }
             // Otherwise callback is registered and will be invoked when saves complete
@@ -1678,18 +1718,10 @@ namespace ACE.Database
             }
             else
             {
-                log.Error("[SAVESCHEDULER] EnqueueToWorldThread not set during force clear; invoking directly (unsafe)");
-                foreach (var cb in callbacks)
-                {
-                    try
-                    {
-                        cb();
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[SAVESCHEDULER] Callback failed after force clear for character {characterId}", ex);
-                    }
-                }
+                // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                // Fail fast - do not execute callbacks on DB thread (violates world thread contract)
+                log.Fatal("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set during force clear! Cannot invoke callbacks safely. This indicates WorldManager.Initialize() was not called or failed.");
+                throw new InvalidOperationException("EnqueueToWorldThread delegate not set - cannot safely invoke callbacks on world thread. This indicates a fatal initialization error in WorldManager.Initialize().");
             }
         }
 
