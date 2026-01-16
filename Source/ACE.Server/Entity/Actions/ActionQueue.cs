@@ -104,7 +104,7 @@ namespace ACE.Server.Entity.Actions
                     {
                         processedCount++;
                         processedForThisPriority++;
-                        _priorityProcessedCounts[p]++; // Track metric
+                        System.Threading.Interlocked.Increment(ref _priorityProcessedCounts[p]); // Thread-safe metric tracking
                         didWorkThisPass = true;
 
                         CountByQueueItemType.AddOrUpdate(result.Type, 0, (key, oldValue) => Math.Max(oldValue - 1, 0));
