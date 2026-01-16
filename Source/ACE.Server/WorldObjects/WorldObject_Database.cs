@@ -11,6 +11,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Physics.Managers;
 
 namespace ACE.Server.WorldObjects
 {
@@ -523,116 +524,86 @@ namespace ACE.Server.WorldObjects
 #endif
             
             //DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
-            DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
+            // Determine owner for valid SaveScheduler linkage
+            // This is critical for preventing "detached" saves that don't wait for logout
+            uint? ownerPlayerId = null;
+
+            if (wielderId.HasValue)
+            {
+                var wielderGuid = new ObjectGuid(wielderId.Value);
+                if (wielderGuid.IsPlayer())
+                    ownerPlayerId = wielderId.Value;
+            }
+            
+            // If not equipped, check container hierarchy
+            if (ownerPlayerId == null)
+            {
+                // Fallback: Use WorldObject.Container reference if biota property lookup failed
+                if (!expectedContainerId.HasValue && Container != null)
                 {
-                    try
+                    expectedContainerId = Container.Guid.Full;
+                }
+
+                if (expectedContainerId.HasValue)
+                {
+                    var containerGuid = new ObjectGuid(expectedContainerId.Value);
+                    if (containerGuid.IsPlayer())
                     {
-                        if (IsDestroyed)
+                        // Directly in player inventory
+                        ownerPlayerId = expectedContainerId.Value;
+                    }
+                    else
+                    {
+                        // In a sub-container (e.g. Sack, Chest, etc.)
+                        // Traverse up to find root owner safely
+                        var currentId = expectedContainerId.Value;
+                        int depth = 0;
+                        while (depth < 5)
                         {
-                            log.Debug($"[DB CALLBACK] Callback fired for destroyed {displayName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms (includes queue time)");
-                            onCompleted?.Invoke(false);
-                            return;
-                        }
-                        
-                        // Calculate total time (request to completion, includes queue wait time)
-                        // NOTE: This includes queue delays, not just database execution time
-                        // Large values may indicate queue backup, not slow database operations
-                        double saveTime = 0;
-                        if (SaveStartTime != DateTime.MinValue && SaveStartTime != default(DateTime))
-                        {
-                            var timeSpan = DateTime.UtcNow - SaveStartTime;
-                            // Guard against negative time (shouldn't happen, but be defensive)
-                            if (timeSpan.TotalMilliseconds >= 0 && timeSpan.TotalMilliseconds < double.MaxValue)
-                                saveTime = timeSpan.TotalMilliseconds;
-                        }
-                        
-                        var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
-                        if (saveTime > slowThreshold && this is not Player)
-                        {
-                            // Get owner info using raw biota access (avoid property getters)
-                            string ownerInfo = "";
-                            if (containerIdFromBiota.HasValue)
+                            var containerObj = ServerObjectManager.GetObjectA(currentId)?.WeenieObj?.WorldObject;
+                            if (containerObj == null) break;
+
+                            if (containerObj is Player p)
                             {
-                                var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
-                                if (containerGuid.IsPlayer())
-                                {
-                                    var owner = PlayerManager.GetOnlinePlayer(containerGuid.Full);
-                                    if (owner != null)
-                                    {
-                                        // Get name from biota directly (avoid property getter)
-                                        string ownerName = null;
-                                        owner.BiotaDatabaseLock.EnterReadLock();
-                                        try
-                                        {
-                                            if (owner.Biota.PropertiesString != null && owner.Biota.PropertiesString.TryGetValue(PropertyString.Name, out var on))
-                                                ownerName = on;
-                                        }
-                                        finally
-                                        {
-                                            owner.BiotaDatabaseLock.ExitReadLock();
-                                        }
-                                        ownerInfo = $" | Owner: {ownerName ?? "player"}";
-                                    }
-                                }
-                            }
-                            log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {displayName} (Stack: {stackSize}){ownerInfo}");
-                            SendDbSlowDiscordAlert(displayName, saveTime, stackSize ?? 0, ownerInfo);
-                        }
-                        
-                        CheckDatabaseQueueSize();
-                        
-#if DEBUG
-                        // Log save result with ContainerId (use containerIdFromBiota we already have)
-                        uint? savedBiotaContainerId = containerIdFromBiota;
-                        // Use displayName and itemGuid (already captured safely) - never use property getters
-                        var callbackItemInfo = $"{displayName} (0x{itemGuid})";
-                        log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
-#endif
-                        
-                        if (!result)
-                        {
-                            // Restore ChangesDetected if save failed so changes aren't lost
-                            if (hadChanges)
-                            {
-                                ChangesDetected = true;
-#if DEBUG
-                                // Use itemName and itemGuid (already captured safely) - never use property getters
-                                var failedSaveItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
-                                log.Warn($"[SAVE DEBUG] {failedSaveItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
-#endif
+                                ownerPlayerId = p.Guid.Full;
+                                break;
                             }
                             
-                            if (this is Player player)
+                            // Move up to parent
+                            // Use safe property lookup or direct reference
+                            if (containerObj.Container != null)
+                                currentId = containerObj.Container.Guid.Full;
+                            else
                             {
-                                // This will trigger a boot on next player tick
-                                player.BiotaSaveFailed = true;
+                                // Try getting property from object directly (safest)
+                                var parentId = containerObj.GetProperty(PropertyInstanceId.Container);
+                                if (parentId.HasValue)
+                                    currentId = parentId.Value;
+                                else
+                                    break; // Dead end
                             }
+                            
+                            depth++;
                         }
-                        
-                        onCompleted?.Invoke(result);
                     }
-                    catch (Exception ex)
+                }
+            }
+
+                if (ownerPlayerId.HasValue)
+                {
+                    DatabaseManager.Shard.SavePlayerBiota(Biota, ownerPlayerId.Value, BiotaDatabaseLock, result =>
                     {
-                        // Restore ChangesDetected if callback throws
-                        if (hadChanges)
-                        {
-                            ChangesDetected = true;
-#if DEBUG
-                            // Use itemName and itemGuid (already captured safely) - never use property getters
-                            var callbackItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
-                            log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
-#endif
-                        }
-                        log.Error($"Exception in save callback for {displayName} (0x{itemGuid}): {ex.Message}");
-                        onCompleted?.Invoke(false);
-                    }
-                    finally
+                        HandleSaveCallback(result, displayName, itemGuid, stackSize, containerIdFromBiota, itemName, hadChanges, onCompleted);
+                    });
+                }
+                else
+                {
+                    DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
                     {
-                        // ALWAYS clear SaveInProgress, even if callback throws
-                        SaveInProgress = false;
-                        SaveStartTime = DateTime.MinValue; // Reset for next save
-                    }
-                });
+                        HandleSaveCallback(result, displayName, itemGuid, stackSize, containerIdFromBiota, itemName, hadChanges, onCompleted);
+                    });
+                }
+
             // For bulk saves, SaveInProgress cleared by caller after bulk completes
         }
 
@@ -884,6 +855,115 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Error($"Failed to send DB queue alert to Discord: {ex.Message}");
                 }
+            }
+        }
+
+        private void HandleSaveCallback(bool result, string displayName, ObjectGuid itemGuid, int? stackSize, uint? containerIdFromBiota, string itemName, bool hadChanges, Action<bool> onCompleted)
+        {
+            try
+            {
+                if (IsDestroyed)
+                {
+                    log.Debug($"[DB CALLBACK] Callback fired for destroyed {displayName} (0x{itemGuid}) after {(DateTime.UtcNow - SaveStartTime).TotalMilliseconds:N0}ms (includes queue time)");
+                    onCompleted?.Invoke(false);
+                    return;
+                }
+                
+                // Calculate total time (request to completion, includes queue wait time)
+                double saveTime = 0;
+                if (SaveStartTime != DateTime.MinValue && SaveStartTime != default(DateTime))
+                {
+                    var timeSpan = DateTime.UtcNow - SaveStartTime;
+                    // Guard against negative time (shouldn't happen, but be defensive)
+                    if (timeSpan.TotalMilliseconds >= 0 && timeSpan.TotalMilliseconds < double.MaxValue)
+                        saveTime = timeSpan.TotalMilliseconds;
+                }
+                
+                var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
+                if (saveTime > slowThreshold && this is not Player)
+                {
+                    // Get owner info using raw biota access (avoid property getters)
+                    string ownerInfo = "";
+                    if (containerIdFromBiota.HasValue)
+                    {
+                        var containerGuid = new ObjectGuid(containerIdFromBiota.Value);
+                        if (containerGuid.IsPlayer())
+                        {
+                            var owner = PlayerManager.GetOnlinePlayer(containerGuid.Full);
+                            if (owner != null)
+                            {
+                                // Get name from biota directly (avoid property getter)
+                                string ownerName = null;
+                                owner.BiotaDatabaseLock.EnterReadLock();
+                                try
+                                {
+                                    if (owner.Biota.PropertiesString != null && owner.Biota.PropertiesString.TryGetValue(PropertyString.Name, out var on))
+                                        ownerName = on;
+                                }
+                                finally
+                                {
+                                    owner.BiotaDatabaseLock.ExitReadLock();
+                                }
+                                ownerInfo = $" | Owner: {ownerName ?? "player"}";
+                            }
+                        }
+                    }
+                    log.Warn($"[DB SLOW] Item save took {saveTime:N0}ms for {displayName} (Stack: {stackSize}){ownerInfo}");
+                    SendDbSlowDiscordAlert(displayName, saveTime, stackSize ?? 0, ownerInfo);
+                }
+                
+                CheckDatabaseQueueSize();
+                
+#if DEBUG
+                // Log save result with ContainerId (use containerIdFromBiota we already have)
+                uint? savedBiotaContainerId = containerIdFromBiota;
+                // Use displayName and itemGuid (already captured safely) - never use property getters
+                var callbackItemInfo = $"{displayName} (0x{itemGuid})";
+                log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
+#endif
+                
+                if (!result)
+                {
+                    // Restore ChangesDetected if save failed so changes aren't lost
+                    if (hadChanges)
+                    {
+                        ChangesDetected = true;
+#if DEBUG
+                        // Use itemName and itemGuid (already captured safely) - never use property getters
+                        var failedSaveItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
+                        log.Warn($"[SAVE DEBUG] {failedSaveItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+#endif
+                    }
+                    
+                    if (this is Player player)
+                    {
+                        // This will trigger a boot on next player tick
+                        player.BiotaSaveFailed = true;
+                    }
+                }
+                
+                onCompleted?.Invoke(result);
+            }
+            catch (Exception ex)
+            {
+                // Restore ChangesDetected if callback throws
+                if (hadChanges)
+                {
+                    ChangesDetected = true;
+#if DEBUG
+                    // Use itemName and itemGuid (already captured safely) - never use property getters
+                    var callbackItemInfo = $"{itemName ?? "item"} (0x{itemGuid})";
+                    log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
+#endif
+                }
+                log.Error($"Exception in save callback for {displayName} (0x{itemGuid}): {ex.Message}");
+                onCompleted?.Invoke(false);
+            }
+            finally
+            {
+                // ALWAYS clear SaveInProgress, even if callback throws
+                SaveInProgress = false;
+                SaveStartTime = DateTime.MinValue; // Reset for next save
             }
         }
     }

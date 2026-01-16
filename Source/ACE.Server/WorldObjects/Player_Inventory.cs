@@ -109,7 +109,17 @@ namespace ACE.Server.WorldObjects
             if (item.WeenieType == WeenieType.Coin || item.WeenieType == WeenieType.Container)
                 UpdateCoinValue();
 
-            item.SaveBiotaToDatabase();
+            var itemName = item.Name;
+            var itemGuid = item.Guid;
+            var containerName = container.Name;
+            var containerGuid = container.Guid;
+
+            item.SaveBiotaToDatabase(true, (success) => {
+                if (!success)
+                {
+                     log.Error($"[SAVE FAILURE] TryCreateInInventoryWithNetworking: Failed to save {itemName} (0x{itemGuid}) to database! Container: {containerName} (0x{containerGuid})");
+                }
+            });
 
             return true;
         }

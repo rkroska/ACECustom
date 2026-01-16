@@ -703,7 +703,6 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!player.HasEnoughBurdenToAddToInventory(worldObject))
                     {
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
                         container = null;
                         // End mutation on failure
                         worldObject.EndContainerMutation(oldContainerBiotaId, null);
@@ -719,7 +718,6 @@ namespace ACE.Server.WorldObjects
 
                 if ((ContainerCapacity ?? 0) <= containerItems.Count)
                 {
-                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - container capacity full in {containerInfo} ({containerItems.Count}/{ContainerCapacity ?? 0})");
                     container = null;
                     // End mutation on failure
                     worldObject.EndContainerMutation(oldContainerBiotaId, null);
@@ -737,27 +735,23 @@ namespace ACE.Server.WorldObjects
                     {
                         var containers = Inventory.Values.OfType<Container>().ToList();
                         containers.Sort((a, b) => (a.Placement ?? 0).CompareTo(b.Placement ?? 0));
-                        
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory main pack full for {itemInfo} in {containerInfo} ({containerItems.Count}/{ItemCapacity ?? 0}), trying {containers.Count} side packs");
+
 
                         foreach (var sidePack in containers)
                         {
-                            log.Debug($"[SAVE DEBUG] TryAddToInventory trying side pack {sidePack.Name} (0x{sidePack.Guid}) for {itemInfo}");
                             if (sidePack.TryAddToInventory(worldObject, out container, placementPosition, true))
                             {
                                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
                                 Value += (worldObject.Value ?? 0);
                                 
-                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
+                                // Fix: End mutation (decrement depth) when successfully added to side pack (recursive case)
+                                worldObject.EndContainerMutation(oldContainerBiotaId, sidePack.Biota.Id);
+
                                 return true;
                             }
                         }
                         
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
-                    }
-                    else
-                    {
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - main pack full and limitToMainPackOnly=true in {containerInfo}");
+
                     }
 
                     container = null;
@@ -789,12 +783,10 @@ namespace ACE.Server.WorldObjects
             // Verify ContainerId was set correctly
             var newContainerId = worldObject.ContainerId;
             var containerBiotaId = Biota.Id;
-            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerBiotaId={oldContainerBiotaId} (0x{(oldContainerBiotaId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
             
             // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
             if (worldObject.ContainerId != Biota.Id)
             {
-                log.Warn($"[SAVE DEBUG] TryAddToInventory ContainerId mismatch detected for {itemInfo} | ContainerId property={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Container.Biota.Id={Biota.Id} (0x{Biota.Id:X8}) | Fixing...");
                 worldObject.ContainerId = Biota.Id;
             }
 

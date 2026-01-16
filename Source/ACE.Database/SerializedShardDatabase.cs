@@ -656,6 +656,27 @@ namespace ACE.Database
                 catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id} during shutdown", cbEx); }
             }
         }
+        
+        public void SavePlayerBiota(ACE.Entity.Models.Biota biota, uint playerId, ReaderWriterLockSlim rwLock, Action<bool> callback)
+        {
+            // Route through SaveScheduler using character-linked key
+            // This ensures logic like logout/server shutdown waits for these items to save
+            // associated with the player's session work
+            var saveJob = new IndividualBiotaSaveJob(biota, rwLock, callback, BaseDatabase);
+            
+            // Use SaveKeys.Item to link to character
+            var key = SaveKeys.Item(playerId, biota.Id);
+            
+            // Use Periodic priority (same as RequestItemSave)
+            var enqueued = SaveScheduler.Instance.RequestSave(key, SaveScheduler.SaveType.Periodic, saveJob);
+            
+            if (!enqueued)
+            {
+                // Shutdown requested - invoke callback with failure
+                try { callback?.Invoke(false); }
+                catch (Exception cbEx) { log.Error($"[DATABASE] SavePlayerBiota callback threw exception for biota {biota.Id} during shutdown", cbEx); }
+            }
+        }
 
         /// <summary>
         /// Save job for individual biota saves.
