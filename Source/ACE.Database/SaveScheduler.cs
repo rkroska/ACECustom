@@ -679,7 +679,7 @@ namespace ACE.Database
 
                 if (willRequeue)
                 {
-                    var ok = EnqueueByPriority(key, currentPriority);
+                    var ok = EnqueueByPriority(key, state.Priority);
                     if (ok)
                     {
                         Volatile.Write(ref state.EnqueuedTicksUtc, DateTime.UtcNow.Ticks);
@@ -2189,7 +2189,7 @@ namespace ACE.Database
             log.Warn($"[SAVESCHEDULER] Stuck save detected key={key} prio={state.Priority} executing={state.Executing} " +
                      $"firstEnqueued={firstAge:F1}s ago (progress) firstEverEnqueued={firstEverAge:F1}s ago (hot key) lastEnqueued={lastAge:F1}s ago " +
                      $"gen={currentGen} lastProcessedGen={lastProcessedGen} genLag={genLag} " +
-                     $"atomicQ={_atomicQueue.Count} criticalQ={_criticalQueue.Count} periodicQ={_periodicQueue.Count}");
+                     $"atomicQ={_atomicQueue.Count} criticalQ={_criticalQueue.Count} periodicQ={_periodicQueue.Count} periodicPlayerQ={_periodicPlayerQueue.Count}");
         }
 
         /// <summary>
