@@ -209,6 +209,7 @@ namespace ACE.Server.Physics.Common
             if (alreadyKnown) return false;
 
             bool added = false;
+            bool shouldAddKnownPlayer = false;
             
             // Phase 1: Update LOCAL state (Lock This)
             rwLock.EnterWriteLock();
@@ -218,8 +219,7 @@ namespace ACE.Server.Physics.Common
                 if (!KnownObjects.ContainsKey(obj.ID))
                 {
                     added = KnownObjects.TryAdd(obj.ID, obj);
-                    if (added && obj.IsPlayer)
-                        AddKnownPlayer(obj);
+                    shouldAddKnownPlayer = added && obj.IsPlayer;
                 }
             }
             finally
@@ -227,7 +227,11 @@ namespace ACE.Server.Physics.Common
                 rwLock.ExitWriteLock();
             }
 
-            // Phase 2: Update REMOTE state (Unlock This -> Call Other)
+            // Phase 2: Update THIS instance's KnownPlayers (outside lock to avoid recursive lock)
+            if (shouldAddKnownPlayer)
+                AddKnownPlayer(obj);
+
+            // Phase 3: Update REMOTE state (Unlock This -> Call Other)
             // Ideally we do this outside the lock to prevent deadlocks (A holds A, calls B. B holds B, calls A)
             if (added)
             {
@@ -831,12 +835,20 @@ namespace ACE.Server.Physics.Common
 
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddKnownPlayer({obj.Name})");
 
-            // TryAdd for existing keys still modifies collection?
-            if (KnownPlayers.ContainsKey(obj.ID))
-                return false;
+            rwLock.EnterWriteLock();
+            try
+            {
+                // TryAdd for existing keys still modifies collection?
+                if (KnownPlayers.ContainsKey(obj.ID))
+                    return false;
 
-            KnownPlayers.TryAdd(obj.ID, obj);
-            return true;
+                KnownPlayers.TryAdd(obj.ID, obj);
+                return true;
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -1069,19 +1081,30 @@ namespace ACE.Server.Physics.Common
                     return false;
             }
 
-            // TryAdd for existing keys still modifies collection?
-            if (VisibleTargets.ContainsKey(obj.ID))
-                return false;
+            bool added = false;
+            
+            rwLock.EnterWriteLock();
+            try
+            {
+                // TryAdd for existing keys still modifies collection?
+                if (VisibleTargets.ContainsKey(obj.ID))
+                    return false;
 
-            //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddVisibleTarget({obj.Name})");
+                //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddVisibleTarget({obj.Name})");
 
-            VisibleTargets.Add(obj.ID, obj);
+                VisibleTargets.Add(obj.ID, obj);
+                added = true;
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
 
-            // maintain inverse for monsters / combat pets
-            if (!obj.IsPlayer)
+            // maintain inverse for monsters / combat pets (outside lock to prevent deadlock)
+            if (added && !obj.IsPlayer)
                 obj.ObjMaint.AddVisibleTarget(PhysicsObj);
 
-            return true;
+            return added;
         }
 
         /// <summary>
@@ -1113,7 +1136,16 @@ namespace ACE.Server.Physics.Common
         private bool RemoveVisibleTarget(PhysicsObj obj)
         {
             //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.RemoveVisibleTarget({obj.Name})");
-            return VisibleTargets.Remove(obj.ID);
+            
+            rwLock.EnterWriteLock();
+            try
+            {
+                return VisibleTargets.Remove(obj.ID);
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
         }
 
         public List<PhysicsObj> GetVisibleObjectsDist(ObjCell cell, VisibleObjectType type, int? VariationId = null)
