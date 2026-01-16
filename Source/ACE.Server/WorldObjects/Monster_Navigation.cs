@@ -654,11 +654,13 @@ namespace ACE.Server.WorldObjects
                 .AddDelaySeconds(1.5f)
                 .AddAction(this, ActionType.CreatureLocation_PostTeleportVisuals, () =>
                 {
-                    if (IsDead || PhysicsObj == null) return;
-                    PlayParticleEffect(PlayScript.Create, Guid);
-                    EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Ready));
-                    ResetAttack();
-                    Sleep();
+                    if (!IsDead && PhysicsObj != null)
+                    {
+                        PlayParticleEffect(PlayScript.Create, Guid);
+                        EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Ready));
+                        ResetAttack();
+                        Sleep();
+                    }
                     Teleporting = false;
                 })
                 .EnqueueChain();
