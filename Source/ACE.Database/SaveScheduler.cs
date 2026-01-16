@@ -179,6 +179,13 @@ namespace ACE.Database
         private DateTime _lastIdleStateCleanupUtc = DateTime.MinValue;
         private const int IdleStateCleanupIntervalSeconds = 60; // Run idle cleanup every 60 seconds
 
+        // Stuck save coalescing to reduce log spam
+        private DateTime _lastStuckSummaryLogUtc = DateTime.MinValue;
+        private const int StuckSummaryIntervalSeconds = 30; // Log summary every 30 seconds
+        private int _stuckSaveCountPrio0 = 0; // Atomic
+        private int _stuckSaveCountPrio1 = 0; // Critical
+        private int _stuckSaveCountPrio2 = 0; // Periodic
+
         // Metrics counters
         private long _enqueued;
         private long _executedAtomic;
@@ -278,12 +285,13 @@ namespace ACE.Database
         /// <summary>
         /// Requests a save operation for an individual item (non-player biota).
         /// Routes individual saves through SaveScheduler to prevent UniqueQueue starvation.
-        /// Uses Periodic priority for proper FIFO ordering with coalescing support.
+        /// Uses specified priority for ordering (default Periodic).
         /// </summary>
         /// <param name="biotaId">The biota ID to save</param>
         /// <param name="saveJob">The save job to execute</param>
+        /// <param name="priority">The priority to use (default: Periodic)</param>
         /// <returns>True if save was enqueued or coalesced, false if shutdown requested</returns>
-        public bool RequestItemSave(uint biotaId, ISaveJob saveJob)
+        public bool RequestItemSave(uint biotaId, ISaveJob saveJob, SaveType priority = SaveType.Periodic)
         {
             if (IsShutdownRequested)
                 return false;
@@ -294,9 +302,9 @@ namespace ACE.Database
             // Use standardized key format for individual item saves
             var key = SaveKeys.Biota(biotaId);
             
-            // Route as Periodic (same as player periodic saves) for proper FIFO ordering
+            // Route as requested priority (default Periodic for backward compatibility)
             // Coalescing is handled by the SaveScheduler state machine (no UniqueQueue starvation)
-            return RequestSaveInternal(key, SaveType.Periodic, saveJob);
+            return RequestSaveInternal(key, priority, saveJob);
         }
 
         /// <summary>
@@ -466,6 +474,21 @@ namespace ACE.Database
         {
             foreach (var key in myQueue.GetConsumingEnumerable())
             {
+                // Throttling for Periodic saves (backpressure) to prevent flooding the DB queue.
+                // SerializedShardDatabase processes saves sequentially on a single thread.
+                // If we flood it with 4000+ periodic saves, Critical saves (logout) get stuck 
+                // behind them in the DB queue, rendering SaveScheduler priorities useless.
+                // By waiting here, we keep the DB queue short allow Critical saves to skip the line.
+                // 50 items = ~1-2 seconds of DB work.
+                if (myPriority >= 2)
+                {
+                    var shard = DatabaseManager.Shard;
+                    while (!IsShutdownRequested && shard != null && shard.QueueCount > 50)
+                    {
+                        Thread.Sleep(50);
+                    }
+                }
+
                 if (!_states.TryGetValue(key, out var state))
                     continue;
 
@@ -1736,43 +1759,68 @@ namespace ACE.Database
                 {
                     var now = DateTime.UtcNow;
 
+                    // First pass: detect stuck saves and accumulate counts
+                    int stuckPrio0 = 0;
+                    int stuckPrio1 = 0;
+                    int stuckPrio2 = 0;
+
                     foreach (var kvp in _states)
                     {
                         var key = kvp.Key;
                         var state = kvp.Value;
 
-                        // Read volatile fields first to establish memory barrier
-                        var queued = Volatile.Read(ref state.Queued);
-                        var executing = Volatile.Read(ref state.Executing);
-
-                        // Now read FirstEnqueuedTicksUtc (after memory barrier ensures visibility)
-                        // Use FirstEnqueuedTicksUtc to detect truly stuck saves (progress detector - resets on requeue)
-                        // This detects saves that are not making progress, not just busy keys
-                        var firstEnqTicks = Volatile.Read(ref state.FirstEnqueuedTicksUtc);
-                        if (firstEnqTicks == 0)
+                        // Skip if not queued or executing (Queued and Executing are volatile ints: 0 or 1)
+                        if (state.Queued == 0 && state.Executing == 0)
                             continue;
 
+                        var firstEnqTicks = Volatile.Read(ref state.FirstEnqueuedTicksUtc);
+                        if (firstEnqTicks == 0)
+                            continue; // Never enqueued, skip
+
                         var firstEnq = new DateTime(firstEnqTicks, DateTimeKind.Utc);
-                        var age = now - firstEnq;
+                        var age = (now - firstEnq).TotalSeconds;
 
-                        // Only warn if it is still queued or executing and age exceeds threshold
-                        if (age >= _stuckThreshold && (queued == 1 || executing == 1))
+                        if (age >= _stuckThreshold.TotalSeconds)
                         {
-                            // Rate limit: only log if we haven't logged recently (every 30 seconds)
-                            var lastLogTicks = Volatile.Read(ref state.LastStuckLogTicksUtc);
-                            var timeSinceLastLog = lastLogTicks != 0 ? (now - new DateTime(lastLogTicks, DateTimeKind.Utc)).TotalSeconds : double.MaxValue;
-
-                            if (timeSinceLastLog >= 30.0)
+                            // Count stuck saves by priority
+                            switch (state.Priority)
                             {
-                                LogStuck(key, state);
+                                case 0: stuckPrio0++; break;
+                                case 1: stuckPrio1++; break;
+                                case 2: stuckPrio2++; break;
+                            }
 
-                                // Update LastStuckLogTicksUtc to rate limit warnings
-                                // FirstEnqueuedTicksUtc resets on requeue (progress detector)
-                                // FirstEverEnqueuedTicksUtc never resets (hot key detector - available in LogStuck)
-                                // Write happens after volatile reads (memory barrier ensures visibility)
-                                Volatile.Write(ref state.LastStuckLogTicksUtc, now.Ticks);
+                            // Still log individual critical/atomic saves, but less frequently
+                            if (state.Priority <= 1)
+                            {
+                                var lastLogTicks = Volatile.Read(ref state.LastStuckLogTicksUtc);
+                                var lastLog = lastLogTicks != 0 ? new DateTime(lastLogTicks, DateTimeKind.Utc) : DateTime.MinValue;
+                                var timeSinceLastLog = (now - lastLog).TotalSeconds;
+
+                                if (timeSinceLastLog >= 30.0)
+                                {
+                                    LogStuck(key, state);
+                                    Volatile.Write(ref state.LastStuckLogTicksUtc, now.Ticks);
+                                }
                             }
                         }
+                    }
+
+                    // Update running totals
+                    _stuckSaveCountPrio0 = stuckPrio0;
+                    _stuckSaveCountPrio1 = stuckPrio1;
+                    _stuckSaveCountPrio2 = stuckPrio2;
+
+                    // Log coalesced summary periodically
+                    if ((now - _lastStuckSummaryLogUtc).TotalSeconds >= StuckSummaryIntervalSeconds)
+                    {
+                        if (stuckPrio0 > 0 || stuckPrio1 > 0 || stuckPrio2 > 0)
+                        {
+                            var dbQueueCount = DatabaseManager.Shard?.QueueCount ?? 0;
+                            log.Warn($"[SAVESCHEDULER] Stuck save summary: Atomic={stuckPrio0} Critical={stuckPrio1} Periodic={stuckPrio2} | " +
+                                     $"Queues: atomicQ={_atomicQueue.Count} criticalQ={_criticalQueue.Count} periodicQ={_periodicQueue.Count} dbQ={dbQueueCount}");
+                        }
+                        _lastStuckSummaryLogUtc = now;
                     }
 
                     // Second pass: reconcile ghost character states

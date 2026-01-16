@@ -188,10 +188,96 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, NetworkStatistics.Summary(), ChatMessageType.Broadcast);
         }
 
+        [CommandHandler("loadlandblocks", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, 0, "Force load landblocks in a radius around a center point.", "lb_hex radius\nExample: loadlandblocks 0x1234 5\nloadlandblocks random 5")]
+        public static void HandleLoadLandblocks(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: loadlandblocks <center_lb_hex|random> <radius>");
+                return;
+            }
+
+            uint centerLbRaw;
+            if (parameters[0].Equals("random", StringComparison.OrdinalIgnoreCase))
+            {
+                // Generate random valid landblock X/Y (0-254)
+                var rnd = new Random();
+                byte x = (byte)rnd.Next(0, 255);
+                byte y = (byte)rnd.Next(0, 255);
+                // Landblock ID format: 0xXXYY0000 generally, but constructor takes raw or x,y
+                // Using the byte constructor from what we saw in LandblockManager
+                centerLbRaw = (uint)((x << 8) | y) << 16 | 0xFFFF; // This is a bit guessy on RAW format, let's use the struct if possible, but we need uint for the logging below.
+                
+                // actually, let's just make the LandblockId directly
+                var lbId = new LandblockId(x, y);
+                centerLbRaw = (uint)lbId.Landblock; // Keep the 'raw' variable for the log message logic below which expects just the high bytes usually?
+                // Actually the previous code used: new LandblockId(centerLbRaw) where centerLbRaw was parsed from hex.
+                // If I parse 0x1234, that's just the high word?
+                // LandblockId constructor from uint usually expects the full thing or just the high word?
+                // Let's resolve this by checking LandblockId struct if I can, or just safe assumption:
+                // If the user types 1234, that's 0x1234.
+                // 0x1234 -> X=12, Y=34 ? No. 0x1234 is likely raw high word.
+                // modifying the logic to be cleaner.
+            }
+            else if (!uint.TryParse(parameters[0].Replace("0x", ""), NumberStyles.HexNumber, null, out centerLbRaw))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid Landblock Hex");
+                return;
+            }
+
+            if (!int.TryParse(parameters[1], out int radius))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid Radius");
+                return;
+            }
+
+            LandblockId centerLb;
+            if (parameters[0].Equals("random", StringComparison.OrdinalIgnoreCase))
+            {
+                var rnd = new Random();
+                centerLb = new LandblockId((byte)rnd.Next(0, 255), (byte)rnd.Next(0, 255));
+                // Update raw for display
+                centerLbRaw = (uint)centerLb.Landblock;
+            }
+            else
+            {
+                 centerLb = new LandblockId(centerLbRaw);
+            }
+
+            int startX = centerLb.LandblockX - radius;
+            int endX = centerLb.LandblockX + radius;
+            int startY = centerLb.LandblockY - radius;
+            int endY = centerLb.LandblockY + radius;
+
+            int loadedCount = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Starting bulk load of landblocks around {centerLb.Landblock:X4}, Radius: {radius}");
+
+            for (int x = startX; x <= endX; x++)
+            {
+                for (int y = startY; y <= endY; y++)
+                {
+                    if (x < 0 || x > 254 || y < 0 || y > 254) continue;
+
+                    var lbId = new LandblockId((byte)x, (byte)y);
+                    
+                    // Trigger load - GetLandblock with permaload=false (normal load)
+                    // We use the default variation (null)
+                    LandblockManager.GetLandblock(lbId, loadAdjacents: false, variation: null, permaload: false);
+                    loadedCount++;
+                }
+            }
+
+            sw.Stop();
+            CommandHandlerHelper.WriteOutputInfo(session, $"Finished loading {loadedCount} landblocks in {sw.ElapsedMilliseconds}ms.");
+        }
+
         /// <summary>
         /// List all clothing bases which are compatible with setup
         /// </summary>
         [CommandHandler("listcb", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, "List Clothing Tables available")]
+
         public static void HandleShowCompatibleClothingBases(Session session, params string[] parameters)
         {
             uint.TryParse(parameters[0], out var setupId);

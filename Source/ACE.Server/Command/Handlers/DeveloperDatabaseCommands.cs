@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -137,6 +139,131 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, "@save-offline-characters - Save all players with changes");
             CommandHandlerHelper.WriteOutputInfo(session, "@test-queue-saves - Test offline save performance via queue");
             CommandHandlerHelper.WriteOutputInfo(session, "@databasequeueinfo - Show database queue status");
+            CommandHandlerHelper.WriteOutputInfo(session, "@simulateload <count> <ms> - Enqueue dummy saves to stress queue");
+        }
+
+        [CommandHandler("simulateload", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, 0, "Simulate high database load.", "count [sleepMs]\n" + "count: Number of dummy saves to enqueue\nsleepMs: Sleep duration per save (default 10ms)")]
+        public static void HandleSimulateLoad(Session session, params string[] parameters)
+        {
+            int count = 300;
+            int sleepMs = 50; // default 50ms to make it noticeable
+
+            if (parameters.Length > 0) int.TryParse(parameters[0], out count);
+            if (parameters.Length > 1) int.TryParse(parameters[1], out sleepMs);
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Enqueuing {count} dummy Periodic saves with {sleepMs}ms latency each...");
+
+            for (int i = 0; i < count; i++)
+            {
+                var job = new DummySaveJob(sleepMs);
+                // Use a fake biota ID range to avoid collisions with real items
+                // 3 billion range is safe (uint max is 4.2 billion)
+                uint fakeBiotaId = (uint)(3000000000 + i); 
+                SaveScheduler.Instance.RequestItemSave(fakeBiotaId, job, SaveScheduler.SaveType.Periodic);
+            }
+            
+            CommandHandlerHelper.WriteOutputInfo(session, "Load simulation enqueued. Use @databasequeueinfo to monitor.");
+        }
+        [CommandHandler("maslogintest", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, 0, "Simulate mass headless login.", "count [delayMs] [dirty]\n" + "count: Number of players to login\ndirty: true to force Critical Save check")]
+        public static void HandleMassLoginTest(Session session, params string[] parameters)
+        {
+            int count = 200;
+            int delayMs = 50;
+            bool makeDirty = false;
+
+            if (parameters.Length > 0) int.TryParse(parameters[0], out count);
+            if (parameters.Length > 1) int.TryParse(parameters[1], out delayMs);
+            if (parameters.Length > 2) bool.TryParse(parameters[2], out makeDirty);
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Starting Mass Login Simulation: {count} players (delay={delayMs}ms, dirty={makeDirty})...");
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var allBiotas = DatabaseManager.Shard.BaseDatabase.GetAllPlayerBiotasInParallel();
+                    var selected = allBiotas.OrderBy(x => Guid.NewGuid()).Take(count).ToList();
+
+                    int started = 0;
+                    foreach (var biota in selected)
+                    {
+                        try
+                        {
+                            if (makeDirty)
+                            {
+                                var offlinePlayer = PlayerManager.GetOfflinePlayer(biota.Id);
+                                if (offlinePlayer != null)
+                                {
+                                    offlinePlayer.ChangesDetected = true;
+                                }
+                            }
+
+                            var headlessSession = new Session(true);
+                            var loginChar = new LoginCharacter();
+                            loginChar.Id = biota.Id;
+                            // Safe name access
+                            loginChar.Name = biota.PropertiesString.ContainsKey(ACE.Entity.Enum.Properties.PropertyString.Name) ? biota.PropertiesString[ACE.Entity.Enum.Properties.PropertyString.Name] : $"Headless_{biota.Id}";
+
+                            WorldManager.PlayerEnterWorld(headlessSession, loginChar);
+                            started++;
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Headless login failed for {biota.Id}", ex);
+                        }
+                        if (delayMs > 0) Thread.Sleep(delayMs);
+                    }
+                    if (session != null)
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Mass Login Simulation: Triggered {started} logins.");
+                    else
+                        log.Info($"Mass Login Simulation: Triggered {started} logins.");
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Mass Login Simulation Failed", ex);
+                }
+            });
+        }
+        [CommandHandler("dirtyplayer", AccessLevel.Developer, CommandHandlerFlag.ConsoleInvoke, 0, "Flag an offline player as having changes to force a save on login.", "player_name")]
+        public static void HandleDirtyPlayer(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                 CommandHandlerHelper.WriteOutputInfo(session, "Usage: dirtyplayer <player_name>");
+                 return;
+            }
+
+            string playerName = parameters[0];
+            // Find offline player by name (case insensitive)
+            var offlinePlayer = PlayerManager.GetAllOffline().FirstOrDefault(p => p.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase));
+
+            if (offlinePlayer != null)
+            {
+                offlinePlayer.ChangesDetected = true;
+                CommandHandlerHelper.WriteOutputInfo(session, $"Offline player '{offlinePlayer.Name}' (0x{offlinePlayer.Guid:X8}) marked as dirty (ChangesDetected=true).");
+                CommandHandlerHelper.WriteOutputInfo(session, "Next login for this player will trigger a CRITICAL priority save.");
+            }
+            else
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Offline player '{playerName}' not found.");
+            }
+        }
+
+        private class DummySaveJob : ISaveJob
+        {
+            private readonly int _sleepMs;
+
+            public DummySaveJob(int sleepMs)
+            {
+                _sleepMs = sleepMs;
+            }
+
+            public bool Execute()
+            {
+                // Simulate DB latency
+                System.Threading.Thread.Sleep(_sleepMs);
+                return true;
+            }
         }
 
         [CommandHandler("fix-shortcut-bars", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Fixes the players with duplicate items on their shortcut bars.", "<execute>")]

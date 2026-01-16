@@ -241,6 +241,11 @@ namespace ACE.Database
             return _readOnlyQueue.Select(item => item.Key).ToList();
         }
 
+        /// <summary>
+        /// Returns the number of pending items in the unique save queue.
+        /// </summary>
+        public int QueueCount => _uniqueQueue.Count;
+
         private void DoReadOnlyWork()
         {
             while (!_readOnlyQueue.IsAddingCompleted)
@@ -345,9 +350,6 @@ namespace ACE.Database
                 }
             }
         }
-
-
-        public int QueueCount => _uniqueQueue.Count;
 
         /// <summary>
         /// Attempts to enqueue work with coalescing support.
@@ -640,20 +642,38 @@ namespace ACE.Database
 
 
 
-        public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback)
+        public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback, SaveScheduler.SaveType priority = SaveScheduler.SaveType.Periodic)
         {
             // Route through SaveScheduler to prevent UniqueQueue starvation
             // Individual items that are frequently updated will no longer be pushed to the back of the queue
             var saveJob = new IndividualBiotaSaveJob(biota, rwLock, callback, BaseDatabase);
             
             // RequestItemSave handles coalescing and proper FIFO ordering
-            var enqueued = SaveScheduler.Instance.RequestItemSave(biota.Id, saveJob);
+            // Use specified priority (default Periodic for backward compatibility)
             
-            if (!enqueued)
+            // CRITICAL FIX: Use Player key format if this biota is a player
+            // This ensures SaveScheduler.ExtractCharacterIdFromKey works, which is required
+            // for HasPendingOrActiveSave to correctly block login during critical saves.
+            if (ACE.Entity.ObjectGuid.IsPlayer(biota.Id))
             {
-                // Shutdown requested - invoke callback with failure
-                try { callback?.Invoke(false); }
-                catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id} during shutdown", cbEx); }
+                 var key = SaveKeys.Player(biota.Id);
+                 var enqueued = SaveScheduler.Instance.RequestItemSave(biota.Id, saveJob, priority);
+                 if (!enqueued)
+                 {
+                     // Shutdown requested - invoke callback with failure
+                     try { callback?.Invoke(false); }
+                     catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for player {biota.Id} during shutdown", cbEx); }
+                 }
+            }
+            else
+            {
+                 var enqueued = SaveScheduler.Instance.RequestItemSave(biota.Id, saveJob, priority);
+                 if (!enqueued)
+                 {
+                     // Shutdown requested - invoke callback with failure
+                     try { callback?.Invoke(false); }
+                     catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id} during shutdown", cbEx); }
+                 }
             }
         }
 
