@@ -25,6 +25,14 @@ namespace ACE.Server.Entity.Actions
         private static DateTime lastDiscordAlert = DateTime.MinValue;
         private static int discordAlertsThisMinute = 0;
         
+        // Metrics: Cumulative count of actions processed by priority
+        private long[] _priorityProcessedCounts;
+
+        public long[] GetPriorityStats()
+        {
+            return _priorityProcessedCounts?.ToArray() ?? new long[0];
+        }
+        
         private class ActionStats
         {
             public long Count;
@@ -60,64 +68,91 @@ namespace ACE.Server.Entity.Actions
             var actionThrottleLimit = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
             var originalQueueSize = Count();
             
+            // Initialization for metrics (cumulative)
+            if (_priorityProcessedCounts == null)
+                _priorityProcessedCounts = new long[Queues.Length];
+
             int processedCount = 0;
             Dictionary<ActionType, int> processedActionsThisTick = new Dictionary<ActionType, int>();
 
-            // Iterate through priority queues (High -> Normal -> Low)
-            // Assuming ActionPriority enum is ordered High=0, Normal=1, Low=2 (or verified elsewhere)
-            // Even if not, we iterate the array. The ActionPriority enum definition was: High, Normal, Low.
-            // So iterating 0..Length processes High first.
-            for (int p = 0; p < Queues.Length; p++)
+            // Weighted Round Robin Logic
+            // Weights: High (5), Normal (2), Low await(1)
+            // This ensures even under saturation, Low priority gets ~12% of cycles
+            int[] weights = { 5, 2, 1 }; 
+            
+            // Safety check for weights array length matching queues
+            if (weights.Length != Queues.Length)
             {
-                var queue = Queues[p];
-                if (queue.IsEmpty) continue;
+                 // Fallback if priority enum changes size
+                 weights = new int[Queues.Length];
+                 for(int i=0; i<weights.Length; i++) weights[i] = 1;
+            }
 
-                while (processedCount < actionThrottleLimit && queue.TryDequeue(out var result))
+            while (processedCount < actionThrottleLimit)
+            {
+                bool didWorkThisPass = false;
+
+                // Cycle through each priority queue
+                for (int p = 0; p < Queues.Length; p++)
                 {
-                    processedCount++;
+                    var queue = Queues[p];
+                    int weight = weights[p];
+                    int processedForThisPriority = 0;
 
-                    CountByQueueItemType.AddOrUpdate(result.Type, 0, (key, oldValue) => Math.Max(oldValue - 1, 0));
-                    if (!processedActionsThisTick.ContainsKey(result.Type))
-                        processedActionsThisTick[result.Type] = 0;
-                    processedActionsThisTick[result.Type]++;
-
-                    // Track performance if enabled
-                    if (enableTracking)
-                        sw.Restart();
-
-                    try
+                    // Process up to 'weight' items for this priority
+                    while (processedForThisPriority < weight && processedCount < actionThrottleLimit && queue.TryDequeue(out var result))
                     {
-                        Tuple<IActor, IAction> enqueue = result.Act();
+                        processedCount++;
+                        processedForThisPriority++;
+                        _priorityProcessedCounts[p]++; // Track metric
+                        didWorkThisPass = true;
 
-                        // Record performance metrics if enabled
+                        CountByQueueItemType.AddOrUpdate(result.Type, 0, (key, oldValue) => Math.Max(oldValue - 1, 0));
+                        if (!processedActionsThisTick.ContainsKey(result.Type))
+                            processedActionsThisTick[result.Type] = 0;
+                        processedActionsThisTick[result.Type]++;
+
+                        // Track performance if enabled
                         if (enableTracking)
+                            sw.Restart();
+
+                        try
                         {
-                            sw.Stop();
-                            var elapsedMs = sw.Elapsed.TotalMilliseconds;
+                            Tuple<IActor, IAction> enqueue = result.Act();
 
-                            var tags = new TagList
+                            // Record performance metrics if enabled
+                            if (enableTracking)
                             {
-                                { "ActionType", result.Type.ToString() }
-                            };
-                            MetricsManager.actionLatencies.Record(elapsedMs * 1000.0, tags);
+                                sw.Stop();
+                                var elapsedMs = sw.Elapsed.TotalMilliseconds;
 
-                            if (elapsedMs >= trackThresholdMs)
-                            {
-                                TrackActionPerformance(result, elapsedMs, trackThresholdMs, warnThresholdMs, discordMaxAlertsPerMinute);
+                                var tags = new TagList
+                                {
+                                    { "ActionType", result.Type.ToString() }
+                                };
+                                MetricsManager.actionLatencies.Record(elapsedMs * 1000.0, tags);
+
+                                if (elapsedMs >= trackThresholdMs)
+                                {
+                                    TrackActionPerformance(result, elapsedMs, trackThresholdMs, warnThresholdMs, discordMaxAlertsPerMinute);
+                                }
                             }
-                        }
 
-                        enqueue?.Item1.EnqueueAction(enqueue.Item2);
+                            enqueue?.Item1.EnqueueAction(enqueue.Item2);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"Error processing action {result.Type} (Priority: {result.Priority}): {ex.Message}", ex);
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Error processing action {result.Type} (Priority: {result.Priority}): {ex.Message}", ex);
-                    }
+
+                    if (processedCount >= actionThrottleLimit) break;
                 }
 
-                if (processedCount >= actionThrottleLimit) break;
+                // If we did a full pass of all queues and found no work, we are done
+                if (!didWorkThisPass) break;
             }
-            
+
             // Periodic stats report (if tracking enabled)
             if (enableTracking && (DateTime.UtcNow - lastStatsReport).TotalMinutes >= reportIntervalMinutes)
             {
@@ -146,6 +181,8 @@ namespace ACE.Server.Entity.Actions
                         .OrderByDescending(kvp => kvp.Value)
                         .Select(kvp => $" - {kvp.Value}x {kvp.Key}");
                     warningMsg += "\n\nActions remaining:\n" + string.Join("\n", actionsRemaining);
+
+                    // Append Metrics to warning message logic below (not modified here, but available via _priorityProcessedCounts)
 
                     log.Warn(warningMsg);
                     
@@ -358,6 +395,24 @@ namespace ACE.Server.Entity.Actions
                     .ToList();
                 
                 log.Info("=== ACTION QUEUE PERFORMANCE REPORT ===");
+                
+                if (_priorityProcessedCounts != null)
+                {
+                    long total = _priorityProcessedCounts.Sum();
+                    if (total > 0)
+                    {
+                        log.Info("--- Priority Distribution ---");
+                        var priorities = Enum.GetValues(typeof(ActionPriority));
+                        for (int i = 0; i < _priorityProcessedCounts.Length; i++)
+                        {
+                            var priorityName = i < priorities.Length ? priorities.GetValue(i).ToString() : i.ToString();
+                            var count = _priorityProcessedCounts[i];
+                            var percent = (double)count / total * 100.0;
+                            log.Info($"  {priorityName}: {count:N0} ({percent:F1}%)");
+                        }
+                    }
+                }
+
                 log.Info("Top 10 actions by total time spent:");
                 
                 foreach (var kvp in topOffenders)
