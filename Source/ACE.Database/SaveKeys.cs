@@ -49,6 +49,12 @@ namespace ACE.Database
         /// Format: character:<id>:logout
         /// </summary>
         public static string Logout(uint characterId) => $"character:{characterId}:logout";
+        
+        /// <summary>
+        /// Creates a save key for individual biota saves (non-player items, housing, world objects, etc.)
+        /// Format: biota:<id>
+        /// </summary>
+        public static string Biota(uint biotaId) => $"biota:{biotaId}";
     }
 }
 

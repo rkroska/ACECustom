@@ -79,6 +79,12 @@ namespace ACE.Server.Managers
             
             log.Debug("[WORLDMANAGER] SaveScheduler.EnqueueToWorldThread initialized");
 
+            // Wire up SerializedShardDatabase hooks to avoid circular dependencies
+            SerializedShardDatabase.EnqueueToWorldThread = SaveScheduler.EnqueueToWorldThread;
+            SerializedShardDatabase.PerformOfflinePlayerSavesHook = PlayerManager.PerformOfflinePlayerSaves;
+            
+            log.Debug("[WORLDMANAGER] SerializedShardDatabase hooks initialized");
+
             var thread = new Thread(() =>
             {
                 UpdateWorld();
