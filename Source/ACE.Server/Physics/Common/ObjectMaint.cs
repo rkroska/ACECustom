@@ -23,7 +23,7 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public static readonly float DestructionTime = 25.0f;
 
-        private static readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
+        private readonly ReaderWriterLockSlim rwLock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
 
         /// <summary>
         /// The owner of this ObjectMaint instance
@@ -196,33 +196,45 @@ namespace ACE.Server.Physics.Common
         /// <returns>true if previously an unknown object</returns>
         public bool AddKnownObject(PhysicsObj obj)
         {
+            // Initial sanity checks (no lock needed yet)
+            if (this.PhysicsObj.Position.Variation != obj.Position.Variation)
+                return false;
+
+            // Check if already known (optimistic read to avoid write lock overhead)
+            bool alreadyKnown = false;
+            rwLock.EnterReadLock();
+            try {
+                if (KnownObjects.ContainsKey(obj.ID)) alreadyKnown = true;
+            } finally { rwLock.ExitReadLock(); }
+            if (alreadyKnown) return false;
+
+            bool added = false;
+            
+            // Phase 1: Update LOCAL state (Lock This)
             rwLock.EnterWriteLock();
             try
             {
-                if (this.PhysicsObj.Position.Variation != obj.Position.Variation)
+                // Double-check inside write lock
+                if (!KnownObjects.ContainsKey(obj.ID))
                 {
-                    return false;
-                }
-                if (KnownObjects.ContainsKey(obj.ID))
-                    return false;
-
-                bool added = KnownObjects.TryAdd(obj.ID, obj);
-
-                if (added) // maintain KnownPlayers for both parties
-                {
-                    if (obj.IsPlayer)
+                    added = KnownObjects.TryAdd(obj.ID, obj);
+                    if (added && obj.IsPlayer)
                         AddKnownPlayer(obj);
-
-                    obj.ObjMaint.AddKnownPlayer(PhysicsObj);
                 }
-                
-
-                return added;
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
+
+            // Phase 2: Update REMOTE state (Unlock This -> Call Other)
+            // Ideally we do this outside the lock to prevent deadlocks (A holds A, calls B. B holds B, calls A)
+            if (added)
+            {
+                obj.ObjMaint.AddKnownPlayer(PhysicsObj);
+            }
+
+            return added;
         }
 
         /// <summary>
@@ -246,20 +258,28 @@ namespace ACE.Server.Physics.Common
 
         public bool RemoveKnownObject(PhysicsObj obj, bool inversePlayer = true)
         {
+            // Lock Safety: Always update local state first, release lock, THEN update remote state.
+            bool removed = false;
+            
             rwLock.EnterWriteLock();
             try
             {
-                var result = KnownObjects.Remove(obj.ID, out _);
-
-                if (inversePlayer && PhysicsObj.IsPlayer)
-                    obj.ObjMaint.RemoveKnownPlayer(PhysicsObj);
-
-                return result;
+                removed = KnownObjects.Remove(obj.ID, out _);
             }
             finally
             {
                 rwLock.ExitWriteLock();
             }
+
+            // Remote update outside lock to prevent deadlocks
+            if (removed && inversePlayer && PhysicsObj.IsPlayer)
+            {
+                 // We don't need a lock here because we are calling a method on another object
+                 // that will handle its own locking.
+                 obj.ObjMaint.RemoveKnownPlayer(PhysicsObj);
+            }
+
+            return removed;
         }
 
 
