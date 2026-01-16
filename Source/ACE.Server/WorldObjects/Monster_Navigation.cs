@@ -316,7 +316,7 @@ namespace ACE.Server.WorldObjects
             }
             else if (MonsterState == State.Return)
             {
-                DoTeleport(Home);
+                if (Home != null) DoTeleport(Home);
             }
         }
 
@@ -549,6 +549,7 @@ namespace ACE.Server.WorldObjects
 
         public void CheckMissHome()
         {
+            if (Home == null) return;
             if (MonsterState == State.Return) return;
             var homeDistSq = Vector3.DistanceSquared(Home.ToGlobal(), Location.ToGlobal());
             if (homeDistSq > HomeRadiusSq) MoveToHome();
@@ -562,6 +563,7 @@ namespace ACE.Server.WorldObjects
         {
             if (DebugMove) Console.WriteLine($"{Name}.MoveToHome()");
 
+            if (Home == null) return;
             if (Location.Equals(Home))
             {
                 Sleep();
@@ -606,7 +608,7 @@ namespace ACE.Server.WorldObjects
 
             if (MonsterState == State.Return)
             {
-                DoTeleport(Home);
+                if (Home != null) DoTeleport(Home);
                 return;
             }
 
