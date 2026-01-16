@@ -448,7 +448,7 @@ namespace ACE.Server.WorldObjects
             }
             catch (Exception e)
             {
-                log.Warn(e.Message);
+                log.Warn(e);
             }
 
             player?.Session.Network.EnqueueSend(new GameMessagePlayerTeleport(player));
@@ -485,7 +485,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (knownObj.PhysicsObj == null) continue;
                 if (knownObj.Location == null) continue;
-                if (knownObj.Location.Variation != destinationVariation) continue;
+                if (knownObj.Location.Variation == destinationVariation) continue;
 
                 knownObj.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
                 PhysicsObj?.ObjMaint?.RemoveObject(knownObj.PhysicsObj);

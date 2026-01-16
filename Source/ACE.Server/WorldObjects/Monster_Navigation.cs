@@ -646,10 +646,15 @@ namespace ACE.Server.WorldObjects
             // 4. Spawn (PlayScript.Create) and reset. 
             new ActionChain()
                 .AddDelaySeconds(3.0f)
-                .AddAction(this, ActionType.CreatureLocation_TeleportToPosition, () => { Teleport(destination); })
+                .AddAction(this, ActionType.CreatureLocation_TeleportToPosition, () => 
+                {
+                    if (IsDead || PhysicsObj == null) return;
+                    Teleport(destination); 
+                })
                 .AddDelaySeconds(1.5f)
                 .AddAction(this, ActionType.CreatureLocation_PostTeleportVisuals, () =>
                 {
+                    if (IsDead || PhysicsObj == null) return;
                     PlayParticleEffect(PlayScript.Create, Guid);
                     EnqueueBroadcastMotion(new Motion(MotionStance.NonCombat, MotionCommand.Ready));
                     ResetAttack();
