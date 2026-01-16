@@ -5,7 +5,6 @@ namespace ACE.Server.Entity.Actions
     public abstract class ActionEventBase : IAction
     {
         public abstract ActionType Type { get; }
-        public virtual ActionPriority Priority { get; protected set; } = ActionPriority.Normal;
 
         protected Tuple<IActor, IAction> NextAct { get; private set; }
 

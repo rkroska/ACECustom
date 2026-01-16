@@ -7,11 +7,10 @@ namespace ACE.Server.Entity.Actions
         public override ActionType Type { get; }
         public readonly Action Action;
 
-        public ActionEventDelegate(ActionType type, Action action, ActionPriority priority = ActionPriority.Normal)
+        public ActionEventDelegate(ActionType type, Action action)
         {
             Type = type;
             Action = action;
-            Priority = priority;
         }
 
         public override Tuple<IActor, IAction> Act()

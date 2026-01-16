@@ -29,13 +29,6 @@ namespace ACE.Server.WorldObjects
         private double _lastDistanceCacheTime = 0.0;
         private const double DISTANCE_CACHE_DURATION = 0.25; // Cache for 0.25 seconds
 
-        // Network Throttling
-        private Vector3 _lastNetworkUpdatePos;
-        private double _lastNetworkUpdateTime;
-        private const double NetworkUpdateInterval = 0.1; // 10Hz limit
-        private const float NetworkUpdateMinDistanceSq = 0.05f * 0.05f; // Threshold squared
-        private const double NetworkUpdateForceInterval = 0.5; // Heartbeat
-
         /// <summary>
         /// Invalidate distance cache when target changes
         /// </summary>
@@ -420,42 +413,7 @@ namespace ACE.Server.WorldObjects
             UpdatePosition_SyncLocation();
 
             if (netsend)
-            {
-                var currentTime = Timers.RunningTime;
-                var timeDelta = currentTime - _lastNetworkUpdateTime;
-
-                // Throttling Logic
-                if (timeDelta >= NetworkUpdateInterval)
-                {
-                    bool shouldSend = false;
-
-                    // Force update if it's been a while (keepalive/sync)
-                    if (timeDelta >= NetworkUpdateForceInterval)
-                    {
-                        shouldSend = true;
-                    }
-                    else
-                    {
-                        // Check distance moved since last send
-                        if (PhysicsObj != null)
-                        {
-                            var currentPos = PhysicsObj.Position.Frame.Origin;
-                            if (Vector3.DistanceSquared(currentPos, _lastNetworkUpdatePos) > NetworkUpdateMinDistanceSq)
-                            {
-                                shouldSend = true;
-                            }
-                        }
-                    }
-
-                    if (shouldSend)
-                    {
-                        SendUpdatePosition();
-                        _lastNetworkUpdateTime = currentTime;
-                        if (PhysicsObj != null)
-                            _lastNetworkUpdatePos = PhysicsObj.Position.Frame.Origin;
-                    }
-                }
-            }
+                SendUpdatePosition();
 
             if (DebugMove)
                 //Console.WriteLine($"{Name} ({Guid}) - UpdatePosition (velocity: {PhysicsObj.CachedVelocity.Length()})");

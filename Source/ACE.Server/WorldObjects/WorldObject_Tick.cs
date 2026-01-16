@@ -241,11 +241,6 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj == null || !PhysicsObj.is_active())
                 return false;
 
-            // Optimization: Stop ticking physics for stationary corpses to save CPU
-            // Must check InitialUpdates to allow gravity to initialize (prevent floating corpses)
-            if (this is Corpse && PhysicsObj.Velocity == Vector3.Zero && PhysicsObj.InitialUpdates > 5)
-                return false;
-
             bool isDying = false;
             bool cachedVelocityFix = false;
 

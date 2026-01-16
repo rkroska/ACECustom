@@ -182,7 +182,7 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
                 {
                     log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
-                    ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas), ActionPriority.High));
+                    ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas)));
                 });
             });            
         }

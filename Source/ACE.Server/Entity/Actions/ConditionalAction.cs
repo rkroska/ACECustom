@@ -5,7 +5,6 @@ namespace ACE.Server.Entity.Actions
     public class ConditionalAction : IAction
     {
         public ActionType Type => ActionType.ControlFlowConditional;
-        public ActionPriority Priority => ActionPriority.Normal;
         public Func<bool> Condition { get; }
         public ActionChain TrueChain { get; }
         public ActionChain FalseChain { get; }

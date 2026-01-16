@@ -700,14 +700,10 @@ namespace ACE.Server.Network
             actionChain.EnqueueChain();
         }
 
-        private const int MaxPacketsPerTick = 50;
-
         private void FlushPackets()
         {
-            int packetsSent = 0;
-            while (packetsSent < MaxPacketsPerTick && packetQueue.TryDequeue(out var packet))
+            while (packetQueue.TryDequeue(out var packet))
             {
-                packetsSent++;
                 packetLog.DebugFormat("[{0}] Flushing packets, count {1}", session.LoggingIdentifier, packetQueue.Count);
 
                 if (packet.Header.HasFlag(PacketHeaderFlags.EncryptedChecksum) && ConnectionData.PacketSequence.CurrentValue == 0)
