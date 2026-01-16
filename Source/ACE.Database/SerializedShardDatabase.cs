@@ -657,7 +657,8 @@ namespace ACE.Database
             if (ACE.Entity.ObjectGuid.IsPlayer(biota.Id))
             {
                  var key = SaveKeys.Player(biota.Id);
-                 var enqueued = SaveScheduler.Instance.RequestItemSave(biota.Id, saveJob, priority);
+                 // Use RequestSave directly with the player key (not RequestItemSave which builds its own biota key)
+                 var enqueued = SaveScheduler.Instance.RequestSave(key, priority, saveJob);
                  if (!enqueued)
                  {
                      // Shutdown requested - invoke callback with failure

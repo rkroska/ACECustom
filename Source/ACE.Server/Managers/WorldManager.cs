@@ -231,7 +231,7 @@ namespace ACE.Server.Managers
 
                     if (session.IsHeadless)
                     {
-                        log.Info($"[LOGIN_FLOW] Headless session for { character.Name} passed all save checks. Skipping World Entry to preserve server resources.");
+                        log.Info($"[LOGIN_FLOW] Headless session for {character.Name} passed all save checks. Skipping World Entry to preserve server resources.");
                         return;
                     }
 
