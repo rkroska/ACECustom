@@ -130,10 +130,7 @@ namespace ACE.Server.Physics.Animation
                 case MovementType.MoveToPosition:
                 case MovementType.TurnToObject:
                 case MovementType.TurnToHeading:
-
-                    if (MoveToManager == null)
-                        MoveToManager = MoveToManager.Create(PhysicsObj, WeenieObj);
-
+                    MoveToManager ??= new MoveToManager(PhysicsObj, WeenieObj);
                     return MoveToManager.PerformMovement(mvs);
 
                 default:

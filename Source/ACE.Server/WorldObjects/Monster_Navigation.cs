@@ -277,9 +277,8 @@ namespace ACE.Server.WorldObjects
             var manager = PhysicsObj?.MovementManager?.MoveToManager;
             if (manager == null) return;
 
-            // If we think we're moving but the manager isn't moving, we are broken/stuck.
             // If the manager is active and we haven't had motion in long enough, we are stuck.
-            if (!manager.IsActive() || manager.IsStuck(/*stuckThresholdSeconds=*/ 5.0f))
+            if (manager.IsStuck(/*stuckThresholdSeconds=*/ 5.0f))
                 HandleStuck();
         }
 
