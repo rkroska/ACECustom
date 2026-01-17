@@ -90,7 +90,7 @@ namespace ACE.Server.Physics.Animation
         /// <summary>
         /// Returns true if the manager is currently active.
         /// </summary>
-        public bool IsActive() => CurrentCommand != 0 || PendingActions.Count > 0;
+        public bool IsActive() => CurrentCommand != 0 || PendingActions.Count > 0 || MovementType != MovementType.Invalid;
 
         /// <summary>
         /// Returns true if the last successful action was long ago (stuck).
