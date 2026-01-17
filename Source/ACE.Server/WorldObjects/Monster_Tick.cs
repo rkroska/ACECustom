@@ -68,9 +68,6 @@ namespace ACE.Server.WorldObjects
 
             if (!IsAwake)
             {
-                if (MonsterState == State.Return)
-                    MonsterState = State.Idle;
-
                 if (IsFactionMob || HasFoeType)
                     FactionMob_CheckMonsters();
 
@@ -96,11 +93,11 @@ namespace ACE.Server.WorldObjects
 
             HandleFindTarget();
 
-            CheckMissHome();    // tickrate?
+            CheckMissHome();
 
             if (AttackTarget == null && MonsterState != State.Return)
             {
-                Sleep();
+                MoveToHome();
                 return;
             }
 
@@ -120,12 +117,8 @@ namespace ACE.Server.WorldObjects
                 // Stop considering this player as a valid target
                 AttackTarget = null;
 
-                // Try to acquire a new target
+                // Try to acquire a new target (or return home).
                 FindNextTarget();
-
-                // If nothing else is available, go back to idle state
-                if (AttackTarget == null && MonsterState != State.Return)
-                    Sleep();
 
                 return;
             }
