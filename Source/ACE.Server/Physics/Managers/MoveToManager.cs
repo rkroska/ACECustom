@@ -1,10 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
 using ACE.Entity.Enum;
 using ACE.Server.Physics.Combat;
 using ACE.Server.Physics.Common;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Server.Physics.Animation
 {
@@ -20,8 +19,8 @@ namespace ACE.Server.Physics.Animation
         public double PreviousDistanceTime;
         public float OriginalDistance;
         public double OriginalDistanceTime;
-        public int FailProgressCount;
-        //public uint SoughtObjectID;
+        private double LastSuccessfulAction;
+        private double LastTickTime;
         public uint TopLevelObjectID;
         public float SoughtObjectRadius;
         public float SoughtObjectHeight;
@@ -73,7 +72,8 @@ namespace ACE.Server.Physics.Animation
 
             PreviousHeading = 0.0f;
 
-            FailProgressCount = 0;
+            LastTickTime = PhysicsTimer.CurrentTime;
+            LastSuccessfulAction = PhysicsTimer.CurrentTime;
             CurrentCommand = 0;
             AuxCommand = 0;
             MovingAway = false;
@@ -82,11 +82,28 @@ namespace ACE.Server.Physics.Animation
             SoughtPosition = new Position();
             CurrentTargetPosition = new Position();
 
-            //SoughtObjectID = 0;
             TopLevelObjectID = 0;
             SoughtObjectRadius = 0;
             SoughtObjectHeight = 0;
         }
+
+        /// <summary>
+        /// Returns true if the manager is currently active.
+        /// </summary>
+        public bool IsActive() => CurrentCommand != 0 || PendingActions.Count > 0;
+
+        /// <summary>
+        /// Returns true if the last successful action was long ago (stuck).
+        /// A custom stuckThreshold can be provided, otherwise a default of 5 seconds will be used.
+        /// </summary>
+        public bool IsStuck(double stuckThresholdSeconds = 5.0f)
+        {
+            if (!IsActive()) return false;
+            // Compare against LastTickTime to ensure we only check against valid simulation opportunities
+            if (LastTickTime > LastSuccessfulAction + stuckThresholdSeconds) return true;
+            return false;
+        }
+
 
         public WeenieError PerformMovement(MovementStruct mvs)
         {
@@ -113,14 +130,11 @@ namespace ACE.Server.Physics.Animation
 
         public void MoveToObject(uint objectID, uint topLevelID, float radius, float height, MovementParameters movementParams)
         {
-            //Console.WriteLine("MoveToObject");
-
             if (PhysicsObj == null) return;
 
             PhysicsObj.StopCompletely(false);
 
             StartingPosition = new Position(PhysicsObj.Position);
-            //SoughtObjectID = objectID;
             SoughtObjectRadius = radius;
             SoughtObjectHeight = height;
             MovementType = MovementType.MoveToObject;
@@ -140,8 +154,6 @@ namespace ACE.Server.Physics.Animation
 
         public void MoveToObject_Internal(Position targetPosition, Position interpolatedPosition)
         {
-            //Console.WriteLine("MoveToObject_Internal");
-
             if (PhysicsObj == null)
             {
                 CancelMoveTo(WeenieError.NoPhysicsObject);
@@ -183,8 +195,6 @@ namespace ACE.Server.Physics.Animation
 
         public void MoveToPosition(Position position, MovementParameters movementParams)
         {
-            //Console.WriteLine("MoveToPosition");
-
             if (PhysicsObj == null) return;
 
             PhysicsObj.StopCompletely(false);
@@ -229,8 +239,6 @@ namespace ACE.Server.Physics.Animation
 
         public void TurnToObject(uint objectID, uint topLevelID, MovementParameters movementParams)
         {
-            //Console.WriteLine("TurnToObject");
-
             if (PhysicsObj == null)
             {
                 MovementParams.ContextID = movementParams.ContextID;
@@ -241,7 +249,6 @@ namespace ACE.Server.Physics.Animation
                 PhysicsObj.StopCompletely(false);
 
             MovementType = MovementType.TurnToObject;
-            //SoughtObjectID = objectID;
 
             CurrentTargetPosition.Frame.set_heading(movementParams.DesiredHeading);
 
@@ -260,8 +267,6 @@ namespace ACE.Server.Physics.Animation
 
         public void TurnToObject_Internal(Position targetPosition)
         {
-            //Console.WriteLine("TurnToObject_Internal");
-
             if (PhysicsObj == null)
             {
                 CancelMoveTo(WeenieError.NoPhysicsObject);
@@ -283,8 +288,6 @@ namespace ACE.Server.Physics.Animation
 
         public void TurnToHeading(MovementParameters movementParams)
         {
-            //Console.WriteLine("TurnToHeading");
-
             if (PhysicsObj == null)
             {
                 MovementParams.ContextID = movementParams.ContextID;
@@ -350,13 +353,14 @@ namespace ACE.Server.Physics.Animation
 
         public void BeginMoveForward()
         {
-            //Console.WriteLine("BeginMoveForward");
-
             if (PhysicsObj == null)
             {
                 CancelMoveTo(WeenieError.NoPhysicsObject);
                 return;
             }
+
+            // We are about to perform a new action, so reset the timer for stuckness.
+            LastSuccessfulAction = PhysicsTimer.CurrentTime;
 
             var dist = GetCurrentDistance();
             var heading = PhysicsObj.Position.heading(CurrentTargetPosition) - PhysicsObj.get_heading();
@@ -403,8 +407,6 @@ namespace ACE.Server.Physics.Animation
         /// </summary>
         public void HandleMoveToPosition()
         {
-            //Console.WriteLine("HandleMoveToPosition");
-
             if (PhysicsObj == null)
             {
                 CancelMoveTo(WeenieError.NoPhysicsObject);
@@ -453,19 +455,7 @@ namespace ACE.Server.Physics.Animation
 
             var dist = GetCurrentDistance();
 
-            if (!CheckProgressMade(dist))
-            {
-                if (!PhysicsObj.IsInterpolating() && !PhysicsObj.IsAnimating)
-                    FailProgressCount++;
-                
-                // Enhanced stuck detection with better thresholds
-                if (FailProgressCount >= 5)
-                {
-                    CancelMoveTo(WeenieError.ActionCancelled);
-                    return;
-                }
-            }
-            else
+            if (CheckProgressMade(dist))
             {
                 // custom for low monster update rate
                 var inRange = false;
@@ -479,7 +469,7 @@ namespace ACE.Server.Physics.Animation
                     PreviousDistanceTime = PhysicsTimer.CurrentTime;
                 }
 
-                FailProgressCount = 0;
+                LastSuccessfulAction = PhysicsTimer.CurrentTime;
                 if (MovingAway && dist >= MovementParams.MinDistance || !MovingAway && dist <= MovementParams.DistanceToObject || inRange)
                 {
                     PendingActions.RemoveAt(0);
@@ -508,6 +498,7 @@ namespace ACE.Server.Physics.Animation
                         PhysicsObj.set_target_quantum(time);
                 }
             }
+            LastTickTime = PhysicsTimer.CurrentTime;
         }
 
         /// <summary>
@@ -516,13 +507,14 @@ namespace ACE.Server.Physics.Animation
         /// </summary>
         public void BeginTurnToHeading()
         {
-            //Console.WriteLine("BeginTurnToHeading");
-
             if (PhysicsObj == null)
             {
                 CancelMoveTo(WeenieError.NoPhysicsObject);
                 return;
             }
+
+            // We are about to perform a new action, so reset the timer for stuckness.
+            LastSuccessfulAction = PhysicsTimer.CurrentTime;
 
             if (PhysicsObj.IsAnimating && !AlwaysTurn) return;
 
@@ -576,8 +568,6 @@ namespace ACE.Server.Physics.Animation
         /// </summary>
         public void HandleTurnToHeading()
         {
-            //Console.WriteLine("HandleTurnToHeading");
-
             if (PhysicsObj == null)
             {
                 CancelMoveTo(WeenieError.NoPhysicsObject);
@@ -595,7 +585,7 @@ namespace ACE.Server.Physics.Animation
 
             if (heading_greater(heading, pendingAction.Heading, CurrentCommand))
             {
-                FailProgressCount = 0;
+                LastSuccessfulAction = PhysicsTimer.CurrentTime;
                 PhysicsObj.set_heading(pendingAction.Heading, true);
 
                 RemovePendingActionsHead();
@@ -612,19 +602,13 @@ namespace ACE.Server.Physics.Animation
             }
 
             var diff = heading_diff(heading, PreviousHeading, CurrentCommand);
-
             if (diff > PhysicsGlobals.EPSILON && diff < 180.0f)
             {
-                FailProgressCount = 0;
+                LastSuccessfulAction = PhysicsTimer.CurrentTime;
                 PreviousHeading = heading;
             }
-            else
-            {
-                PreviousHeading = heading;
-
-                if (!PhysicsObj.IsInterpolating() && !PhysicsObj.IsAnimating)
-                    FailProgressCount++;
-            }
+            PreviousHeading = heading;
+            LastTickTime = PhysicsTimer.CurrentTime;
         }
 
         public void HandleUpdateTarget(TargetInfo targetInfo)
@@ -711,11 +695,8 @@ namespace ACE.Server.Physics.Animation
 
         public void CancelMoveTo(WeenieError retval)
         {
-            //Console.WriteLine($"CancelMoveTo({retval})");
-
-            if (MovementType == MovementType.Invalid)
-                return;
-
+            if (MovementType == MovementType.Invalid) return;
+            CurrentCommand = 0;
             PendingActions.Clear();
             CleanUpAndCallWeenie(retval);
         }

@@ -372,21 +372,15 @@ namespace ACE.Server.WorldObjects
                     UpdatePosition_SyncLocation();
                     SendUpdatePosition();
 
-                    if (PhysicsObj?.MovementManager?.MoveToManager?.FailProgressCount < 5)
+                    var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
+                    if (moveToManager?.IsStuck(2.5f) ?? false)
                     {
-                        AddMoveToTick();
-                    }
-                    else
-                    {
-                        if (PhysicsObj?.MovementManager?.MoveToManager != null)
-                        {
-                            PhysicsObj.MovementManager.MoveToManager.CancelMoveTo(WeenieError.ActionCancelled);
-                            PhysicsObj.MovementManager.MoveToManager.FailProgressCount = 0;
-                        }
+                        moveToManager?.CancelMoveTo(WeenieError.ActionCancelled);
                         EnqueueBroadcastMotion(new Motion(CurrentMotionState.Stance, MotionCommand.Ready));
+                        return;
                     }
 
-                    //Console.WriteLine($"{Name}.Position: {Location}");
+                    AddMoveToTick();
                 }
             });
             actionChain.EnqueueChain();

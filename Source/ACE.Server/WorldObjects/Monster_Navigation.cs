@@ -118,14 +118,6 @@ namespace ACE.Server.WorldObjects
         public double NextCancelTime;
 
         /// <summary>
-        /// Stuck detection properties
-        /// </summary>
-        public double LastStuckCheckTime;
-        public int StuckAttempts;
-        public const int MaxStuckAttempts = 3;
-        public const double StuckCheckInterval = 2.0;
-
-        /// <summary>
         /// Starts the process of monster turning towards target
         /// </summary>
         public void StartTurn()
@@ -160,9 +152,6 @@ namespace ACE.Server.WorldObjects
             NextCancelTime = LastMoveTime + ThreadSafeRandom.Next(2, 4);
             moveBit = false;
 
-            // Initialize stuck detection
-            LastStuckCheckTime = Timers.RunningTime;
-
             var mvp = GetMovementParameters(targetDist);
             if (turnTo)
                 PhysicsObj.TurnToObject(AttackTarget.PhysicsObj, mvp);
@@ -182,8 +171,10 @@ namespace ACE.Server.WorldObjects
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - OnMoveComplete({status})");
 
-            if (status != WeenieError.None)
+            if (status != WeenieError.None) {
+                IsMoving = false;
                 return;
+            }
 
             if (AiImmobile && CurrentAttack == CombatType.Melee)
             {
@@ -272,12 +263,6 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
-            if (moveToManager != null && 
-                moveToManager.FailProgressCount > 0 && 
-                Timers.RunningTime > NextCancelTime)
-                CancelMoveTo();
-
             CheckForStuck();
             CheckDistressCalls();
         }
@@ -289,14 +274,16 @@ namespace ACE.Server.WorldObjects
         {
             if (!IsMoving || AiImmobile) return;
 
-            var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
-            if (moveToManager == null) return;
+            var manager = PhysicsObj?.MovementManager?.MoveToManager;
+            if (manager == null) return;
 
-            var currentTime = Timers.RunningTime;
-            if (currentTime - LastStuckCheckTime < StuckCheckInterval) return;
+            // If we think we're moving but the manager isn't moving, we are broken/stuck.
+            if (!manager.IsActive())
+                HandleStuck();
 
-            LastStuckCheckTime = currentTime;
-            if (++moveToManager.FailProgressCount >= MaxStuckAttempts) HandleStuck();
+            // If the manager is active and we haven't had motion in long enough, we are stuck.
+            if (PhysicsObj?.MovementManager?.MoveToManager?.IsStuck(/*stuckThresholdSeconds=*/ 5.0f) ?? false)
+                HandleStuck();
         }
 
         /// <summary>
@@ -307,7 +294,6 @@ namespace ACE.Server.WorldObjects
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - Confirmed stuck, attempting recovery");
 
-            StuckAttempts = 0;
             CancelMoveTo();
 
             if (MonsterState == State.Awake)
@@ -596,15 +582,10 @@ namespace ACE.Server.WorldObjects
             {
                 IsMoving = false;
                 NextMoveTime = Timers.RunningTime + 1.0f;
-                StuckAttempts = 0;
                 return;
             }
-
-            if (PhysicsObj?.MovementManager?.MoveToManager != null)
-            {
-                PhysicsObj.MovementManager.MoveToManager.CancelMoveTo(WeenieError.ActionCancelled);
-                PhysicsObj.MovementManager.MoveToManager.FailProgressCount = 0;
-            }
+            
+            PhysicsObj?.MovementManager?.MoveToManager?.CancelMoveTo(WeenieError.ActionCancelled);
 
             if (MonsterState == State.Return)
             {
@@ -616,9 +597,6 @@ namespace ACE.Server.WorldObjects
 
             IsMoving = false;
             NextMoveTime = Timers.RunningTime + 1.0f;
-
-            // Reset stuck detection
-            StuckAttempts = 0;
 
             ResetAttack();
 
