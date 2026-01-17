@@ -274,32 +274,38 @@ namespace ACE.Server.WorldObjects
         {
             if (!IsMoving || AiImmobile) return;
 
-            var manager = PhysicsObj?.MovementManager?.MoveToManager;
+            MoveToManager manager = PhysicsObj?.MovementManager?.MoveToManager;
             if (manager == null) return;
 
             // If the manager is active and we haven't had motion in long enough, we are stuck.
-            if (manager.IsStuck(/*stuckThresholdSeconds=*/ 5.0f))
-                HandleStuck();
-        }
-
-        /// <summary>
-        /// Handles when a monster is confirmed to be stuck
-        /// </summary>
-        public void HandleStuck()
-        {
-            if (DebugMove)
-                Console.WriteLine($"{Name} ({Guid}) - Confirmed stuck, attempting recovery");
+            if (!manager.IsStuck(/*stuckThresholdSeconds=*/ 5.0f)) return;
 
             CancelMoveTo();
+            switch (MonsterState)
+            {
+                // Stuck active monsters try to find a new target
+                // This can trigger in cases like where a monster can't reach its target.
+                case State.Awake:
+                    FindNextTarget();
+                    break;
 
-            if (MonsterState == State.Awake)
-            {
-                FindNextTarget();
+                // Stuck monsters trying to return home teleport there.
+                // This can trigger in cases like where a monster is stuck on a wall running home.
+                case State.Return:
+                    if (Home != null) DoTeleport(Home);
+                    break;
+
+                // Stuck Idle monsters should just stop moving. Likely a race condition.
+                case State.Idle:
+                    break;
+
+                // Unexpected case, log error.
+                default:
+                    log.Error($"Monster stuck - unhandled state {Enum.GetName(MonsterState)}");
+                    break;
             }
-            else if (MonsterState == State.Return)
-            {
-                if (Home != null) DoTeleport(Home);
-            }
+
+            manager.ResetStuck();
         }
 
         /// <summary>

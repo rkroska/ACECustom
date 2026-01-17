@@ -85,6 +85,14 @@ namespace ACE.Server.Physics.Animation
         }
 
         /// <summary>
+        /// Resets the stuck flag, preventing "IsStuck" from triggering again immediately.
+        /// </summary>
+        public void ResetStuck()
+        {
+            LastSuccessfulAction = PhysicsTimer.CurrentTime;
+        }
+
+        /// <summary>
         /// Adds a node to the PendingActions list.
         /// If the list is empty, also marks the last successful action as now (for stuckness detection).
         /// </summary>
