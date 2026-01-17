@@ -816,6 +816,22 @@ namespace ACE.Server.Physics.Common
         /// <returns>true if previously an unknown object</returns>
         private bool AddKnownPlayer(PhysicsObj obj)
         {
+            rwLock.EnterWriteLock();
+            try
+            {
+                return AddKnownPlayerInternal(obj);
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>
+        /// Internal version - caller MUST hold rwLock in write mode
+        /// </summary>
+        private bool AddKnownPlayerInternal(PhysicsObj obj)
+        {
             // only tracking players who know about this object
             if (!obj.IsPlayer)
             {
@@ -833,22 +849,12 @@ namespace ACE.Server.Physics.Common
                 return false;
             }
 
-            //Console.WriteLine($"{PhysicsObj.Name} ({PhysicsObj.ID:X8}).ObjectMaint.AddKnownPlayer({obj.Name})");
+            // TryAdd for existing keys still modifies collection?
+            if (KnownPlayers.ContainsKey(obj.ID))
+                return false;
 
-            rwLock.EnterWriteLock();
-            try
-            {
-                // TryAdd for existing keys still modifies collection?
-                if (KnownPlayers.ContainsKey(obj.ID))
-                    return false;
-
-                KnownPlayers.TryAdd(obj.ID, obj);
-                return true;
-            }
-            finally
-            {
-                rwLock.ExitWriteLock();
-            }
+            KnownPlayers.TryAdd(obj.ID, obj);
+            return true;
         }
 
         /// <summary>
@@ -863,7 +869,7 @@ namespace ACE.Server.Physics.Common
 
                 foreach (var obj in objs)
                 {
-                    if (AddKnownPlayer(obj))
+                    if (AddKnownPlayerInternal(obj))
                         newObjs.Add(obj);
                 }
 
@@ -1114,23 +1120,19 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public List<PhysicsObj> AddVisibleTargets(IEnumerable<PhysicsObj> objs)
         {
-            rwLock.EnterWriteLock();
-            try
-            {
-                var visibleAdded = new List<PhysicsObj>();
+            // No outer lock needed - each AddVisibleTarget call handles its own locking
+            // This is safer because AddVisibleTarget makes cross-instance calls that
+            // must happen outside the lock to prevent deadlocks
+            var visibleAdded = new List<PhysicsObj>();
 
-                foreach (var obj in objs)
-                {
-                    if (AddVisibleTarget(obj))
-                        visibleAdded.Add(obj);
-                }
-
-                return AddKnownPlayers(visibleAdded.Where(o => o.IsPlayer));
-            }
-            finally
+            foreach (var obj in objs)
             {
-                rwLock.ExitWriteLock();
+                if (AddVisibleTarget(obj))
+                    visibleAdded.Add(obj);
             }
+
+            // AddKnownPlayers handles its own locking
+            return AddKnownPlayers(visibleAdded.Where(o => o.IsPlayer));
         }
 
         private bool RemoveVisibleTarget(PhysicsObj obj)
