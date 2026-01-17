@@ -601,8 +601,6 @@ namespace ACE.Server.WorldObjects
             NextMoveTime = Timers.RunningTime + 1.0f;
 
             ResetAttack();
-
-            FindNextTarget();
         }
 
         /// <summary>
