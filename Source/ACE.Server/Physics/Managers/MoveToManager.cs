@@ -374,11 +374,10 @@ namespace ACE.Server.Physics.Animation
 
         /// <summary>
         /// Main iterator function for movement
-        /// Can only be called when PhysicsObj is non-null.
         /// </summary>
         private void HandleMoveToPosition()
         {
-            var curPos = new Position(PhysicsObj!.Position);
+            var curPos = new Position(PhysicsObj.Position);
             var movementParams = new MovementParameters
             {
                 CancelMoveTo = false,
@@ -525,7 +524,6 @@ namespace ACE.Server.Physics.Animation
 
         /// <summary>
         /// Main iterator function for turning
-        /// Can only be called when PhysicsObj is non-null.
         /// </summary>
         private void HandleTurnToHeading()
         {
@@ -535,7 +533,7 @@ namespace ACE.Server.Physics.Animation
                 return;
             }
 
-            var heading = PhysicsObj!.get_heading();
+            var heading = PhysicsObj.get_heading();
             var pendingAction = PendingActions[0];
             if (heading_greater(heading, pendingAction.Heading, CurrentCommand))
             {
