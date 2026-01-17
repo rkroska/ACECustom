@@ -513,10 +513,10 @@ namespace ACE.Server.Physics.Animation
                 return;
             }
 
+            if (PhysicsObj.IsAnimating && !AlwaysTurn) return;
+
             // We are about to perform a new action, so reset the timer for stuckness.
             LastSuccessfulAction = PhysicsTimer.CurrentTime;
-
-            if (PhysicsObj.IsAnimating && !AlwaysTurn) return;
 
             var pendingAction = PendingActions[0];
             var headingDiff = heading_diff(pendingAction.Heading, PhysicsObj.get_heading(), (uint)MotionCommand.TurnRight);
