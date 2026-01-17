@@ -600,10 +600,8 @@ namespace ACE.Server.Physics.Animation
 
             var diff = heading_diff(heading, PreviousHeading, CurrentCommand);
             if (diff > PhysicsGlobals.EPSILON && diff < 180.0f)
-            {
                 LastSuccessfulAction = PhysicsTimer.CurrentTime;
-                PreviousHeading = heading;
-            }
+
             PreviousHeading = heading;
             LastTickTime = PhysicsTimer.CurrentTime;
         }
