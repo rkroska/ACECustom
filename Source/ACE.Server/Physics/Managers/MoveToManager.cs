@@ -597,10 +597,12 @@ namespace ACE.Server.Physics.Animation
                 BeginNextNode();
                 return;
             }
-
-            var diff = heading_diff(heading, PreviousHeading, CurrentCommand);
-            if (diff > PhysicsGlobals.EPSILON && diff < 180.0f)
-                LastSuccessfulAction = PhysicsTimer.CurrentTime;
+            else
+            {
+                var diff = heading_diff(heading, PreviousHeading, CurrentCommand);
+                if (diff > PhysicsGlobals.EPSILON && diff < 180.0f)
+                    LastSuccessfulAction = PhysicsTimer.CurrentTime;
+            }
 
             PreviousHeading = heading;
             LastTickTime = PhysicsTimer.CurrentTime;
