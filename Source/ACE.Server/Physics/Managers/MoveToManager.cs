@@ -401,17 +401,11 @@ namespace ACE.Server.Physics.Animation
 
         /// <summary>
         /// Main iterator function for movement
+        /// Can only be called when PhysicsObj is non-null.
         /// </summary>
         private void HandleMoveToPosition()
         {
-            if (PhysicsObj == null)
-            {
-                CancelMoveTo(WeenieError.NoPhysicsObject);
-                return;
-            }
-
             var curPos = new Position(PhysicsObj.Position);
-
             var movementParams = new MovementParameters();
             movementParams.CancelMoveTo = false;
 
@@ -495,7 +489,6 @@ namespace ACE.Server.Physics.Animation
                         PhysicsObj.set_target_quantum(time);
                 }
             }
-            LastTickTime = PhysicsTimer.CurrentTime;
         }
 
         /// <summary>
@@ -562,24 +555,18 @@ namespace ACE.Server.Physics.Animation
 
         /// <summary>
         /// Main iterator function for turning
+        /// Can only be called when PhysicsObj is non-null.
         /// </summary>
         private void HandleTurnToHeading()
         {
-            if (PhysicsObj == null)
-            {
-                CancelMoveTo(WeenieError.NoPhysicsObject);
-                return;
-            }
-
             if (CurrentCommand != (uint)MotionCommand.TurnRight && CurrentCommand != (uint)MotionCommand.TurnLeft)
             {
                 BeginTurnToHeading();
                 return;
             }
 
-            var pendingAction = PendingActions[0];
             var heading = PhysicsObj.get_heading();
-
+            var pendingAction = PendingActions[0];
             if (heading_greater(heading, pendingAction.Heading, CurrentCommand))
             {
                 LastSuccessfulAction = PhysicsTimer.CurrentTime;
@@ -605,7 +592,6 @@ namespace ACE.Server.Physics.Animation
             }
 
             PreviousHeading = heading;
-            LastTickTime = PhysicsTimer.CurrentTime;
         }
 
         public void HandleUpdateTarget(TargetInfo targetInfo)
@@ -757,6 +743,9 @@ namespace ACE.Server.Physics.Animation
             WeenieObj = wobj;
         }
 
+        /// <summary>
+        /// Main Physics Tick entry point. Called by the Physics engine every quantum.
+        /// </summary>
         public void UseTime()
         {
             if (PhysicsObj == null || !PhysicsObj.TransientState.HasFlag(TransientStateFlags.Contact))
@@ -779,6 +768,9 @@ namespace ACE.Server.Physics.Animation
                         break;
                 }
             }
+
+            // There was valid work to be done and we had the opportunity to do it.
+            LastTickTime = PhysicsTimer.CurrentTime;
         }
 
         private WeenieError _DoMotion(uint motion, MovementParameters movementParams)
