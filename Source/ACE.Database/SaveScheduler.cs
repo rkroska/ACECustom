@@ -138,6 +138,10 @@ namespace ACE.Database
 
         private const int DefaultWorkerCount = 3;
 
+        // High priority queue for player saves (Periodic)
+        private readonly BlockingCollection<string> _periodicPlayerQueue =
+            new BlockingCollection<string>();
+
         /// <summary>
         /// Returns true if shutdown has been requested.
         /// </summary>
@@ -178,6 +182,13 @@ namespace ACE.Database
 
         private DateTime _lastIdleStateCleanupUtc = DateTime.MinValue;
         private const int IdleStateCleanupIntervalSeconds = 60; // Run idle cleanup every 60 seconds
+
+        // Stuck save coalescing to reduce log spam
+        private DateTime _lastStuckSummaryLogUtc = DateTime.MinValue;
+        private const int StuckSummaryIntervalSeconds = 30; // Log summary every 30 seconds
+        private int _stuckSaveCountPrio0 = 0; // Atomic
+        private int _stuckSaveCountPrio1 = 0; // Critical
+        private int _stuckSaveCountPrio2 = 0; // Periodic
 
         // Metrics counters
         private long _enqueued;
@@ -223,10 +234,10 @@ namespace ACE.Database
             _workers.Add(criticalThread);
             criticalThread.Start();
 
-            // Start remaining workers for periodic queue (or round-robin across all queues)
+            // Start remaining workers for periodic queue with priority logic
             for (int i = 2; i < count; i++)
             {
-                var thread = new Thread(() => WorkerLoop(_periodicQueue, 2))
+                var thread = new Thread(() => PeriodicWorkerLoop())
                 {
                     IsBackground = true,
                     Name = $"SaveScheduler-Periodic-{i - 2}"
@@ -278,12 +289,13 @@ namespace ACE.Database
         /// <summary>
         /// Requests a save operation for an individual item (non-player biota).
         /// Routes individual saves through SaveScheduler to prevent UniqueQueue starvation.
-        /// Uses Periodic priority for proper FIFO ordering with coalescing support.
+        /// Uses specified priority for ordering (default Periodic).
         /// </summary>
         /// <param name="biotaId">The biota ID to save</param>
         /// <param name="saveJob">The save job to execute</param>
+        /// <param name="priority">The priority to use (default: Periodic)</param>
         /// <returns>True if save was enqueued or coalesced, false if shutdown requested</returns>
-        public bool RequestItemSave(uint biotaId, ISaveJob saveJob)
+        public bool RequestItemSave(uint biotaId, ISaveJob saveJob, SaveType priority = SaveType.Periodic)
         {
             if (IsShutdownRequested)
                 return false;
@@ -294,9 +306,9 @@ namespace ACE.Database
             // Use standardized key format for individual item saves
             var key = SaveKeys.Biota(biotaId);
             
-            // Route as Periodic (same as player periodic saves) for proper FIFO ordering
+            // Route as requested priority (default Periodic for backward compatibility)
             // Coalescing is handled by the SaveScheduler state machine (no UniqueQueue starvation)
-            return RequestSaveInternal(key, SaveType.Periodic, saveJob);
+            return RequestSaveInternal(key, priority, saveJob);
         }
 
         /// <summary>
@@ -443,10 +455,25 @@ namespace ACE.Database
             if (IsShutdownRequested)
                 return false;
 
-            BlockingCollection<string> queue =
-                (priority == 0) ? _atomicQueue :
-                (priority == 1) ? _criticalQueue :
-                _periodicQueue;
+            BlockingCollection<string> queue;
+
+            if (priority == 0) // Atomic
+                queue = _atomicQueue;
+            else if (priority == 1) // Critical
+                queue = _criticalQueue;
+            else // Periodic
+            {
+                // PRIORITY SPLIT: Route player saves to high-priority queue
+                // This prevents bulk item saves from blocking player saves
+                if (ExtractCharacterIdFromKey(key).HasValue)
+                {
+                    queue = _periodicPlayerQueue;
+                }
+                else
+                {
+                    queue = _periodicQueue;
+                }
+            }
 
             if (IsShutdownRequested || queue.IsAddingCompleted)
                 return false;
@@ -462,10 +489,232 @@ namespace ACE.Database
             }
         }
 
+        /// <summary>
+        /// Specialized worker loop for periodic saves with strict priority.
+        /// Always processes player saves before item saves to prevent bulk items from blocking players.
+        /// </summary>
+        private void PeriodicWorkerLoop()
+        {
+            var queues = new[] { _periodicPlayerQueue, _periodicQueue };
+
+            while (!IsShutdownRequested && !_disposed)
+            {
+                string key = null;
+                try
+                {
+                    // STRICT PRIORITY: Try player queue first (non-blocking)
+                    if (_periodicPlayerQueue.TryTake(out key))
+                    {
+                        // Process player save immediately
+                        ProcessPeriodicKey(key);
+                    }
+                    // Then try item queue (non-blocking)
+                    else if (_periodicQueue.TryTake(out key))
+                    {
+                        // Process item save only if no players waiting
+                        ProcessPeriodicKey(key);
+                    }
+                    // Both empty: block until any work arrives
+                    else
+                    {
+                        BlockingCollection<string>.TakeFromAny(queues, out key);
+                        if (key != null)
+                            ProcessPeriodicKey(key);
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // Queue disposed during shutdown
+                    break;
+                }
+                catch (InvalidOperationException)
+                {
+                    // Queue completed during shutdown
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Processes a single periodic save key. Extracted for reuse by PeriodicWorkerLoop.
+        /// </summary>
+        private void ProcessPeriodicKey(string key)
+        {
+            const int myPriority = 2; // Periodic priority
+
+            // Throttling for Periodic saves (backpressure)
+            var shard = DatabaseManager.Shard;
+            while (!IsShutdownRequested && shard != null && shard.QueueCount > 50)
+            {
+                Thread.Sleep(50);
+            }
+
+            if (!_states.TryGetValue(key, out var state))
+                return;
+
+            if (Volatile.Read(ref state.Queued) == 0)
+                return;
+
+            var currentPriority = Volatile.Read(ref state.Priority);
+            if (currentPriority < myPriority)
+            {
+                var ok = EnqueueByPriority(key, currentPriority);
+                if (ok)
+                {
+                    var nowTicks = DateTime.UtcNow.Ticks;
+                    Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
+                    Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
+                    Interlocked.Increment(ref _reroutedPriority);
+                    return;
+                }
+                else
+                {
+                    log.Fatal($"[SAVESCHEDULER] CRITICAL: Early reroute failed for key={key} from myPriority={myPriority} to newPriority={currentPriority}. Processing on current worker to prevent save loss.");
+                }
+            }
+
+            if (Interlocked.Exchange(ref state.Executing, 1) == 1)
+                return;
+
+            Interlocked.Increment(ref _executingKeys);
+            var processingGen = Volatile.Read(ref state.Generation);
+
+            var characterId = ExtractCharacterIdFromKey(key);
+            CharacterSaveState charState = null;
+            if (characterId.HasValue)
+            {
+                charState = GetOrCreateCharacterSaveState(characterId.Value);
+                charState.StartExecution();
+            }
+
+            ISaveJob executedJob = null;
+
+            try
+            {
+                executedJob = Volatile.Read(ref state.Job);
+                var startTime = DateTime.UtcNow;
+                var result = executedJob?.Execute() ?? false;
+                var duration = DateTime.UtcNow - startTime;
+                var durationMs = (long)duration.TotalMilliseconds;
+
+                Interlocked.Increment(ref _executedPeriodic);
+                Interlocked.Add(ref _totalWorkMsPeriodic, durationMs);
+                Interlocked.Increment(ref _workCountPeriodic);
+                if (!result)
+                    Interlocked.Increment(ref _failedPeriodic);
+
+                if (duration.TotalMilliseconds >= 1000)
+                {
+                    log.Warn($"[SAVESCHEDULER] Save operation '{key}' took {duration.TotalMilliseconds:N0}ms");
+                }
+
+                if (log.IsDebugEnabled)
+                {
+                    log.Debug($"[SAVESCHEDULER] Save '{key}' completed (result={result}, duration={duration.TotalMilliseconds:N0}ms)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _failedPeriodic);
+                log.Error($"[SAVESCHEDULER] Save operation '{key}' threw exception", ex);
+            }
+            finally
+            {
+                Volatile.Write(ref state.LastProcessedGen, processingGen);
+                Interlocked.Decrement(ref _executingKeys);
+                Volatile.Write(ref state.Executing, 0);
+                Interlocked.Exchange(ref state.Queued, 0);
+
+                var wasDirty = Interlocked.Exchange(ref state.Dirty, 0) == 1;
+                var currentGen = Volatile.Read(ref state.Generation);
+                var hasNewWork = wasDirty || (currentGen != processingGen);
+                var willRequeue = hasNewWork && (Interlocked.CompareExchange(ref state.Queued, 1, 0) == 0);
+
+                var isTransactionKey = key.Contains("_tx:");
+
+                if (!hasNewWork && executedJob != null)
+                {
+                    Interlocked.CompareExchange(ref state.Job, null, executedJob);
+                    if (isTransactionKey && state.Job == null)
+                    {
+                        _states.TryRemove(key, out _);
+                    }
+                }
+
+                List<Action> callbacksToInvoke = null;
+                if (charState != null)
+                {
+                    callbacksToInvoke = charState.FinishExecutionMaybeRequeueAndDrain(willRequeue);
+                    if (callbacksToInvoke != null)
+                    {
+                        if (EnqueueToWorldThread != null)
+                        {
+                            EnqueueToWorldThread(() =>
+                            {
+                                foreach (var callback in callbacksToInvoke)
+                                {
+                                    try
+                                    {
+                                        callback();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        log.Error($"[SAVESCHEDULER] Callback invocation failed for character {charState.CharacterId}", ex);
+                                    }
+                                }
+                            });
+                        }
+                        else
+                        {
+                            log.Fatal("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Cannot invoke callbacks safely.");
+                            throw new InvalidOperationException("EnqueueToWorldThread delegate not set.");
+                        }
+
+                        if (characterId.HasValue)
+                        {
+                            TryRemoveIdleCharacterSaveState(characterId.Value);
+                        }
+                    }
+                }
+
+                if (willRequeue)
+                {
+                    var ok = EnqueueByPriority(key, state.Priority);
+                    if (ok)
+                    {
+                        Volatile.Write(ref state.EnqueuedTicksUtc, DateTime.UtcNow.Ticks);
+                    }
+                    else
+                    {
+                        Interlocked.Exchange(ref state.Queued, 0);
+                        if (charState != null)
+                        {
+                            charState.DecrementPending();
+                        }
+                    }
+                }
+            }
+        }
+
         private void WorkerLoop(BlockingCollection<string> myQueue, int myPriority)
         {
             foreach (var key in myQueue.GetConsumingEnumerable())
             {
+                // Throttling for Periodic saves (backpressure) to prevent flooding the DB queue.
+                // SerializedShardDatabase processes saves sequentially on a single thread.
+                // If we flood it with 4000+ periodic saves, Critical saves (logout) get stuck 
+                // behind them in the DB queue, rendering SaveScheduler priorities useless.
+                // By waiting here, we keep the DB queue short allow Critical saves to skip the line.
+                // 50 items = ~1-2 seconds of DB work.
+                if (myPriority >= 2)
+                {
+                    var shard = DatabaseManager.Shard;
+                    while (!IsShutdownRequested && shard != null && shard.QueueCount > 50)
+                    {
+                        Thread.Sleep(50);
+                    }
+                }
+
                 if (!_states.TryGetValue(key, out var state))
                     continue;
 
@@ -826,6 +1075,7 @@ namespace ACE.Database
             _atomicQueue.CompleteAdding();
             _criticalQueue.CompleteAdding();
             _periodicQueue.CompleteAdding();
+            _periodicPlayerQueue.CompleteAdding();
 
             // Wait for worker threads to finish processing current items
             foreach (var thread in _workers)
@@ -842,12 +1092,13 @@ namespace ACE.Database
             _watchdogThread?.Join();
 
             // Capture queue counts before disposal (QueueCount returns 0 after _disposed is set)
-            var remainingQueued = _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
+            var remainingQueued = _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count + _periodicPlayerQueue.Count;
 
             // Now safe to dispose collections
             _atomicQueue.Dispose();
             _criticalQueue.Dispose();
             _periodicQueue.Dispose();
+            _periodicPlayerQueue.Dispose();
 
             log.Info($"[SAVESCHEDULER] Stopped. Remaining states={_states.Count} Remaining queued={remainingQueued}");
         }
@@ -876,7 +1127,7 @@ namespace ACE.Database
 
                 try
                 {
-                    return _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count;
+                    return _atomicQueue.Count + _criticalQueue.Count + _periodicQueue.Count + _periodicPlayerQueue.Count;
                 }
                 catch (ObjectDisposedException)
                 {
@@ -1736,43 +1987,68 @@ namespace ACE.Database
                 {
                     var now = DateTime.UtcNow;
 
+                    // First pass: detect stuck saves and accumulate counts
+                    int stuckPrio0 = 0;
+                    int stuckPrio1 = 0;
+                    int stuckPrio2 = 0;
+
                     foreach (var kvp in _states)
                     {
                         var key = kvp.Key;
                         var state = kvp.Value;
 
-                        // Read volatile fields first to establish memory barrier
-                        var queued = Volatile.Read(ref state.Queued);
-                        var executing = Volatile.Read(ref state.Executing);
-
-                        // Now read FirstEnqueuedTicksUtc (after memory barrier ensures visibility)
-                        // Use FirstEnqueuedTicksUtc to detect truly stuck saves (progress detector - resets on requeue)
-                        // This detects saves that are not making progress, not just busy keys
-                        var firstEnqTicks = Volatile.Read(ref state.FirstEnqueuedTicksUtc);
-                        if (firstEnqTicks == 0)
+                        // Skip if not queued or executing (Queued and Executing are volatile ints: 0 or 1)
+                        if (state.Queued == 0 && state.Executing == 0)
                             continue;
 
+                        var firstEnqTicks = Volatile.Read(ref state.FirstEnqueuedTicksUtc);
+                        if (firstEnqTicks == 0)
+                            continue; // Never enqueued, skip
+
                         var firstEnq = new DateTime(firstEnqTicks, DateTimeKind.Utc);
-                        var age = now - firstEnq;
+                        var age = (now - firstEnq).TotalSeconds;
 
-                        // Only warn if it is still queued or executing and age exceeds threshold
-                        if (age >= _stuckThreshold && (queued == 1 || executing == 1))
+                        if (age >= _stuckThreshold.TotalSeconds)
                         {
-                            // Rate limit: only log if we haven't logged recently (every 30 seconds)
-                            var lastLogTicks = Volatile.Read(ref state.LastStuckLogTicksUtc);
-                            var timeSinceLastLog = lastLogTicks != 0 ? (now - new DateTime(lastLogTicks, DateTimeKind.Utc)).TotalSeconds : double.MaxValue;
-
-                            if (timeSinceLastLog >= 30.0)
+                            // Count stuck saves by priority
+                            switch (state.Priority)
                             {
-                                LogStuck(key, state);
+                                case 0: stuckPrio0++; break;
+                                case 1: stuckPrio1++; break;
+                                case 2: stuckPrio2++; break;
+                            }
 
-                                // Update LastStuckLogTicksUtc to rate limit warnings
-                                // FirstEnqueuedTicksUtc resets on requeue (progress detector)
-                                // FirstEverEnqueuedTicksUtc never resets (hot key detector - available in LogStuck)
-                                // Write happens after volatile reads (memory barrier ensures visibility)
-                                Volatile.Write(ref state.LastStuckLogTicksUtc, now.Ticks);
+                            // Still log individual critical/atomic saves, but less frequently
+                            if (state.Priority <= 1)
+                            {
+                                var lastLogTicks = Volatile.Read(ref state.LastStuckLogTicksUtc);
+                                var lastLog = lastLogTicks != 0 ? new DateTime(lastLogTicks, DateTimeKind.Utc) : DateTime.MinValue;
+                                var timeSinceLastLog = (now - lastLog).TotalSeconds;
+
+                                if (timeSinceLastLog >= 30.0)
+                                {
+                                    LogStuck(key, state);
+                                    Volatile.Write(ref state.LastStuckLogTicksUtc, now.Ticks);
+                                }
                             }
                         }
+                    }
+
+                    // Update running totals
+                    _stuckSaveCountPrio0 = stuckPrio0;
+                    _stuckSaveCountPrio1 = stuckPrio1;
+                    _stuckSaveCountPrio2 = stuckPrio2;
+
+                    // Log coalesced summary periodically
+                    if ((now - _lastStuckSummaryLogUtc).TotalSeconds >= StuckSummaryIntervalSeconds)
+                    {
+                        if (stuckPrio0 > 0 || stuckPrio1 > 0 || stuckPrio2 > 0)
+                        {
+                            var dbQueueCount = DatabaseManager.Shard?.QueueCount ?? 0;
+                            log.Warn($"[SAVESCHEDULER] Stuck save summary: Atomic={stuckPrio0} Critical={stuckPrio1} Periodic={stuckPrio2} | " +
+                                     $"Queues: atomicQ={_atomicQueue.Count} criticalQ={_criticalQueue.Count} periodicQ={_periodicQueue.Count} dbQ={dbQueueCount}");
+                        }
+                        _lastStuckSummaryLogUtc = now;
                     }
 
                     // Second pass: reconcile ghost character states
@@ -1913,7 +2189,7 @@ namespace ACE.Database
             log.Warn($"[SAVESCHEDULER] Stuck save detected key={key} prio={state.Priority} executing={state.Executing} " +
                      $"firstEnqueued={firstAge:F1}s ago (progress) firstEverEnqueued={firstEverAge:F1}s ago (hot key) lastEnqueued={lastAge:F1}s ago " +
                      $"gen={currentGen} lastProcessedGen={lastProcessedGen} genLag={genLag} " +
-                     $"atomicQ={_atomicQueue.Count} criticalQ={_criticalQueue.Count} periodicQ={_periodicQueue.Count}");
+                     $"atomicQ={_atomicQueue.Count} criticalQ={_criticalQueue.Count} periodicQ={_periodicQueue.Count} periodicPlayerQ={_periodicPlayerQueue.Count}");
         }
 
         /// <summary>

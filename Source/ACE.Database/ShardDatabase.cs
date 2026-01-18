@@ -550,6 +550,8 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
+                    if (biota == null) continue;
+
                     if (variationId.HasValue)
                     {
                         if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId)) //filter to only the objects that are the correct variation
@@ -587,6 +589,8 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
+
+                    if (biota == null) continue;
 
                     // Filter out objects that are in a container
                     if (biota.BiotaPropertiesIID.FirstOrDefault(r => r.Type == 2 && r.Value != 0) != null)

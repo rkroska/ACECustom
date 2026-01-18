@@ -756,6 +756,11 @@ namespace ACE.Server.WorldObjects
                 // We add to these values because amount will be negative if we're subtracting from a stack, so we want to add a negative number.
                 container.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 container.Value += (stack.StackUnitValue ?? 0) * amount;
+
+                // Fix for 0-encumbrance/0-value items (e.g. quest tokens):
+                // If numeric values don't change, SetProperty won't set ChangesDetected.
+                // We must force it here to ensure the container saves.
+                container.ChangesDetected = true;
                 
                 // Notify container that a stack size changed (for non-Player containers to schedule saves)
                 if (!(container is Player))
@@ -768,6 +773,10 @@ namespace ACE.Server.WorldObjects
             {
                 rootContainer.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 rootContainer.Value += (stack.StackUnitValue ?? 0) * amount;
+
+                // Fix for 0-encumbrance/0-value items:
+                // Force dirty ensures the root player/container saves even if burden doesn't change.
+                rootContainer.ChangesDetected = true;
                 
                 // Notify root container that a stack size changed (for non-Player containers to schedule saves)
                 if (!(rootContainer is Player))

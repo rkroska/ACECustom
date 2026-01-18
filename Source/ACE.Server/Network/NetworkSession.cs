@@ -108,6 +108,23 @@ namespace ACE.Server.Network
             }
         }
 
+        public NetworkSession(Session session, bool isHeadless)
+        {
+            this.session = session;
+            // connectionListener is null
+
+            ClientId = 0xFFFF;
+            ServerId = 0;
+
+            TimeoutTick = DateTime.MaxValue.Ticks;
+
+            for (int i = 0; i < currentBundles.Length; i++)
+            {
+                currentBundleLocks[i] = new object();
+                currentBundles[i] = new NetworkBundle();
+            }
+        }
+
         /// <summary>
         /// Enequeues a GameMessage for sending to this client.
         /// This may be called from many threads.
@@ -744,6 +761,8 @@ namespace ACE.Server.Network
 
         private void SendPacketRaw(ServerPacket packet)
         {
+            if (session.IsHeadless) return;
+
             byte[] buffer = ArrayPool<byte>.Shared.Rent((int)(PacketHeader.HeaderSize + (packet.Data?.Length ?? 0) + (packet.Fragments.Count * PacketFragment.MaxFragementSize)));
 
             try
