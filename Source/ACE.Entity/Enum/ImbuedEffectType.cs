@@ -58,6 +58,8 @@ namespace ACE.Entity.Enum
                     return "Melee Defense";
                 case ImbuedEffectType.MissileDefense:
                     return "Missile Defense";
+                case ImbuedEffectType.MagicDefense:
+                    return "Magic Defense";
                 case ImbuedEffectType.Spellbook:
                     return "Spellbook";
                 case ImbuedEffectType.IgnoreSomeMagicProjectileDamage:

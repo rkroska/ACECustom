@@ -688,13 +688,13 @@ namespace ACE.Server.Network.Structure
                 const double DefaultSplitArrowRange = 8.0;
                 const double DefaultSplitArrowDamageMultiplier = 0.6;
 
-                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DefaultSplitArrowCount;
+                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
                 PropertiesInt[PropertyInt.SplitArrowCount] = splitCount;
 
-                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DefaultSplitArrowRange;
+                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? Creature.DEFAULT_SPLIT_ARROW_RANGE;
                 PropertiesFloat[PropertyFloat.SplitArrowRange] = splitRange;
 
-                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DefaultSplitArrowDamageMultiplier;
+                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
                 PropertiesFloat[PropertyFloat.SplitArrowDamageMultiplier] = damageMultiplier;
             }
 
@@ -747,10 +747,9 @@ namespace ACE.Server.Network.Structure
             // Split Arrow
             if (weapon.GetProperty(PropertyBool.SplitArrows) == true)
             {
-                var count = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 0;
-                var dmgMult = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 1.0f;
-                var val = dmgMult - 1;
-                effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:0.##}x Dmg");
+                var count = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
+                var val = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
+                effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:P0} Dmg");
             }
 
             // Crushing Blow
@@ -760,7 +759,7 @@ namespace ACE.Server.Network.Structure
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
             }
 
-            // Crushing Blow
+            // Crippling Blow
             if (weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
             {
                 var mod = WorldObject.GetCripplingBlowMod(skill);
