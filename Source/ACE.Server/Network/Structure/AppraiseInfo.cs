@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -10,13 +11,14 @@ using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.WorldObjects;
+using ACE.Server.WorldObjects.Entity;
 
 namespace ACE.Server.Network.Structure
 {
     /// <summary>
     /// Handles calculating and sending all object appraisal info
     /// </summary>
-    public class AppraiseInfo
+    public partial class AppraiseInfo
     {
         private static readonly uint EnchantmentMask = 0x80000000;
 
@@ -50,6 +52,10 @@ namespace ACE.Server.Network.Structure
 
         // This helps ensure the item will identify properly. Some "items" are technically "Creatures".
         private bool NPCLooksLikeObject;
+
+
+        [GeneratedRegex("(\\B[A-Z])")]
+        private static partial Regex CreatureNameRegex();
 
         public AppraiseInfo()
         {
@@ -113,7 +119,7 @@ namespace ACE.Server.Network.Structure
                 BuildCreature(creature);
 
             if (wo.Damage != null && !(wo is Clothing) || wo is MeleeWeapon || wo is Missile || wo is MissileLauncher || wo is Ammunition || wo is Caster)
-                BuildWeapon(wo);
+                BuildWeapon(wo, examiner);
 
             // TODO: Resolve this issue a better way?
             // Because of the way ACE handles default base values in recipe system (or rather the lack thereof)
@@ -475,11 +481,9 @@ namespace ACE.Server.Network.Structure
             if (wo is Creature)
                 return;
 
-            // add primary spell, if exists
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(wo.SpellDID.Value);
 
-            // add proc spell, if exists
             if (wo.ProcSpell.HasValue)
                 SpellBook.Add(wo.ProcSpell.Value);
 
@@ -659,7 +663,7 @@ namespace ACE.Server.Network.Structure
             // add ratings from equipped items?
         }
 
-        private void BuildWeapon(WorldObject weapon)
+        private void BuildWeapon(WorldObject weapon, Player examiner)
         {
             if (!Success)
                 return;
@@ -692,6 +696,129 @@ namespace ACE.Server.Network.Structure
 
                 var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DefaultSplitArrowDamageMultiplier;
                 PropertiesFloat[PropertyFloat.SplitArrowDamageMultiplier] = damageMultiplier;
+            }
+
+            // Add all the descriptive enhancements
+            var effectDescriptions = new List<string>();
+
+            // Determine skill: explicit WeaponSkill, or fallback for Casters (Wands)
+            var checkSkill = weapon.WeaponSkill;
+            if (checkSkill == Skill.None && weapon is Caster)
+            {
+                uint warBase = examiner.GetCreatureSkill(Skill.WarMagic).Base;
+                uint voidBase = examiner.GetCreatureSkill(Skill.VoidMagic).Base;
+                checkSkill = (voidBase > warBase) ? Skill.VoidMagic : Skill.WarMagic;
+            }
+
+            CreatureSkill? skill = examiner?.GetCreatureSkill(checkSkill);
+
+            // Slayer
+            if (weapon.SlayerCreatureType.HasValue)
+            {
+                var bonus = weapon.SlayerDamageBonus ?? 1.0;
+                var rawName = weapon.SlayerCreatureType.ToString();
+                var niceName = CreatureNameRegex().Replace(rawName, " $1");
+                effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage");
+            }
+
+            // Biting Strike
+            if (weapon.CriticalFrequency.HasValue)
+            {
+                var val = weapon.CriticalFrequency.Value;
+                effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
+            }
+
+            // Resistance Cleaving (Fixed Resistance Modifier)
+            if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
+            {
+                var typeName = weapon.ResistanceModifierType.Value.DisplayName();
+                var val = weapon.ResistanceModifier.Value;
+                effectDescriptions.Add($"- {typeName} Cleaving: +{val:P0} Dmg (Vuln)");
+            }
+
+            // Armor Cleaving 
+            if (weapon.GetProperty(PropertyFloat.IgnoreArmor).HasValue)
+            {
+                var mod = weapon.GetArmorCleavingMod();
+                var reduction = 1.0f - mod;
+                effectDescriptions.Add($"- Armor Cleaving: {reduction:P0} Armor Ignored");
+            }
+
+            // Split Arrow
+            if (weapon.GetProperty(PropertyBool.SplitArrows) == true)
+            {
+                var count = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? 0;
+                var dmgMult = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 1.0f;
+                var val = dmgMult - 1;
+                effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:0.##}x Dmg");
+            }
+
+            // Crushing Blow
+            else if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
+            {
+                var val = weapon.GetProperty(PropertyFloat.CriticalMultiplier);
+                effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
+            }
+
+            // Crushing Blow
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
+            {
+                var mod = WorldObject.GetCripplingBlowMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.CripplingBlow.DisplayName()}: {mod:0.##}x Crit Dmg");
+            }
+
+            // Armor Rending
+            if (weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            {
+                var mod = WorldObject.GetArmorRendingMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.ArmorRending.DisplayName()}: {mod:P1} Ignored");
+            }
+
+            // Critical Strike
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
+            {
+                var mod = WorldObject.GetCriticalStrikeMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.CriticalStrike.DisplayName()}: +{mod:P1} Crit Chance");
+            }
+
+            // Elemental Rendings
+            var rendings = new ImbuedEffectType[]
+            {
+                ImbuedEffectType.SlashRending,
+                ImbuedEffectType.PierceRending,
+                ImbuedEffectType.BludgeonRending,
+                ImbuedEffectType.AcidRending,
+                ImbuedEffectType.ColdRending,
+                ImbuedEffectType.ElectricRending,
+                ImbuedEffectType.FireRending,
+                ImbuedEffectType.NetherRending
+            };
+
+            foreach (var type in rendings)
+            {
+                if (weapon.HasImbuedEffect(type))
+                {
+                    var mod = WorldObject.GetRendingMod(skill);
+                    var bonusPct = (mod - 1.0);
+                    effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg (vuln)");
+                }
+            }
+
+            if (effectDescriptions.Count > 0)
+            {
+                effectDescriptions.Sort();
+                var enhancementsBlock = $"Property Details:\n{string.Join("\n", effectDescriptions)}";
+
+                if (PropertiesString.TryGetValue(PropertyString.Use, out string value))
+                    PropertiesString[PropertyString.Use] = enhancementsBlock + "\n\n" + value;
+                else
+                    PropertiesString[PropertyString.Use] = enhancementsBlock;
+
+                // Make sure there's a line break between the string and some of the other "details".
+                if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) ||
+                    PropertiesInt.ContainsKey(PropertyInt.ItemSpellcraft) ||
+                    PropertiesInt.ContainsKey(PropertyInt.WieldRequirements))
+                    PropertiesString[PropertyString.Use] += "\n";
             }
 
             // item enchantments can also be on wielder currently

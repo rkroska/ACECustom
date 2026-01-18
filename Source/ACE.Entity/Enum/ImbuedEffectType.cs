@@ -26,4 +26,49 @@ namespace ACE.Entity.Enum
         AlwaysCritical                  = 0x40000000,
         IgnoreAllArmor                  = 0x80000000
     }
+    public static class ImbuedEffectTypeExtensions
+    {
+        public static string DisplayName(this ImbuedEffectType effectType)
+        {
+            switch (effectType)
+            {
+                case ImbuedEffectType.CriticalStrike:
+                    return "Critical Strike";
+                case ImbuedEffectType.CripplingBlow:
+                    return "Crippling Blow";
+                case ImbuedEffectType.ArmorRending:
+                    return "Armor Rending";
+                case ImbuedEffectType.SlashRending:
+                    return $"{DamageType.Slash.DisplayName()} Rending";
+                case ImbuedEffectType.PierceRending:
+                    return $"{DamageType.Pierce.DisplayName()} Rending";
+                case ImbuedEffectType.BludgeonRending:
+                    return $"{DamageType.Bludgeon.DisplayName()} Rending";
+                case ImbuedEffectType.AcidRending:
+                    return $"{DamageType.Acid.DisplayName()} Rending";
+                case ImbuedEffectType.ColdRending:
+                    return $"{DamageType.Cold.DisplayName()} Rending";
+                case ImbuedEffectType.ElectricRending:
+                    return $"{DamageType.Electric.DisplayName()} Rending";
+                case ImbuedEffectType.FireRending:
+                    return $"{DamageType.Fire.DisplayName()} Rending";
+                case ImbuedEffectType.NetherRending:
+                    return $"{DamageType.Nether.DisplayName()} Rending";
+                case ImbuedEffectType.MeleeDefense:
+                    return "Melee Defense";
+                case ImbuedEffectType.MissileDefense:
+                    return "Missile Defense";
+                case ImbuedEffectType.Spellbook:
+                    return "Spellbook";
+                case ImbuedEffectType.IgnoreSomeMagicProjectileDamage:
+                    return "Magic Absorbing";
+                case ImbuedEffectType.AlwaysCritical:
+                    return "Always Crit";
+                case ImbuedEffectType.IgnoreAllArmor:
+                    return "Ignore Armor";
+                default:
+                    return effectType.ToString();
+            }
+        }
+    }
 }
