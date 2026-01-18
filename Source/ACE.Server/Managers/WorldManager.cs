@@ -122,7 +122,7 @@ namespace ACE.Server.Managers
         public static void PlayerEnterWorld(Session session, LoginCharacter character)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            log.Info($"[LOGIN_FLOW] PlayerEnterWorld started for {character.Name} (0x{character.Id:X8})");
+            log.Debug($"[LOGIN_FLOW] PlayerEnterWorld started for {character.Name} (0x{character.Id:X8})");
 
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
 
@@ -146,7 +146,7 @@ namespace ACE.Server.Managers
             // Prevents login blocking by ensuring the save drains before HasPendingOrActiveSave check
             if (offlinePlayer.ChangesDetected && !SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))
             {
-                log.Info($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Offline player {character.Name} has pending changes - triggering CRITICAL priority save before login");
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Offline player {character.Name} has pending changes - triggering CRITICAL priority save before login");
                 
                 // Use Critical priority to jump ahead of Periodic offline maintenance saves
                 // This calls DatabaseManager.Shard.SaveBiota directly with Critical priority
@@ -159,7 +159,7 @@ namespace ACE.Server.Managers
                         {
                             if (result)
                             {
-                                log.Info($"[LOGIN_FLOW] Critical save completed for {character.Name} - clearing ChangesDetected");
+                                log.Debug($"[LOGIN_FLOW] Critical save completed for {character.Name} - clearing ChangesDetected");
                                 // Clear ChangesDetected on successful save
                                 offlinePlayer.ChangesDetected = false;
                             }
@@ -173,13 +173,13 @@ namespace ACE.Server.Managers
             }
             else
             {
-                log.Info($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Skipping Critical Save: ChangesDetected={offlinePlayer.ChangesDetected}, HasPendingOrActiveSave={SaveScheduler.Instance.HasPendingOrActiveSave(character.Id)}");
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Skipping Critical Save: ChangesDetected={offlinePlayer.ChangesDetected}, HasPendingOrActiveSave={SaveScheduler.Instance.HasPendingOrActiveSave(character.Id)}");
             }
 
             // Check if there are any pending or active saves for this character using authoritative save system
             if (SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))
             {
-                log.Info($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - HasPendingOrActiveSave=TRUE for {character.Name}");
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - HasPendingOrActiveSave=TRUE for {character.Name}");
                 // Prevent multiple callbacks for the same session/character login attempt
                 if (session.WaitingForLoginDrain)
                 {
@@ -196,13 +196,13 @@ namespace ACE.Server.Managers
                 SaveScheduler.Instance.OnSavesDrained(character.Id, () =>
                 {
                     session.WaitingForLoginDrain = false;
-                    log.Info($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Saves drained callback fired for {character.Name}");
+                    log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Saves drained callback fired for {character.Name}");
 
                     // Verify session is still valid before continuing
                     if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
                     {
                         var waitDuration = (DateTime.UtcNow - waitStartTime).TotalSeconds;
-                        log.Info($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Continuing login after {waitDuration:F3}s wait");
+                        log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Continuing login after {waitDuration:F3}s wait");
                         
                         // Alert if wait exceeded threshold (diagnostic only, no client notification)
                         if (waitDuration > 5.0)
@@ -218,7 +218,7 @@ namespace ACE.Server.Managers
             }
             else
             {
-                 log.Info($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - No pending saves for {character.Name}, proceeding to login immediately.");
+                 log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - No pending saves for {character.Name}, proceeding to login immediately.");
             }
 
             // No saves in flight, proceed immediately with login
@@ -231,7 +231,7 @@ namespace ACE.Server.Managers
 
                     if (session.IsHeadless)
                     {
-                        log.Info($"[LOGIN_FLOW] Headless session for {character.Name} passed all save checks. Skipping World Entry to preserve server resources.");
+                        log.Debug($"[LOGIN_FLOW] Headless session for {character.Name} passed all save checks. Skipping World Entry to preserve server resources.");
                         return;
                     }
 
