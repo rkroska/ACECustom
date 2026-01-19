@@ -442,11 +442,7 @@ namespace ACE.Server.WorldObjects
             // Since we can't easily inject it into the base method, we duplicate the minimal necessary logic
             var ignoreMagicResist = (weapon?.IgnoreMagicResist ?? false) || (attacker?.IgnoreMagicResist ?? false);
             
-            if (ignoreMagicResist)
-            {
-                if (!(attacker is Player) || !(this is Player) || ServerConfig.ignore_magic_resist_pvp_scalar.Value == 1.0)
-                    return weaponResistanceMod;
-            }
+            if (ignoreMagicResist) return weaponResistanceMod;
             
             var vulnMod = EnchantmentManager.GetVulnerabilityResistanceMod(damageType);
             var naturalResistMod = GetNaturalResistance(damageType);
@@ -466,20 +462,6 @@ namespace ACE.Server.WorldObjects
             // whichever is more powerful
             if (vulnMod < weaponResistanceMod)
                 vulnMod = weaponResistanceMod;
-            
-            if (ignoreMagicResist)
-            {
-                // convert to additive space
-                var addProt = -ModToRating(protMod);
-                var addVuln = ModToRating(vulnMod);
-                
-                // scale
-                addProt = IgnoreMagicResistScaled(addProt);
-                addVuln = IgnoreMagicResistScaled(addVuln);
-                
-                protMod = GetNegativeRatingMod(addProt);
-                vulnMod = GetPositiveRatingMod(addVuln);
-            }
             
             return protMod * vulnMod;
         }

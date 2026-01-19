@@ -1369,7 +1369,18 @@ namespace ACE.Server.WorldObjects
                 var teleportDest = new Position(spell.Position);
                 AdjustDungeon(teleportDest);
 
-                targetCreature.FakeTeleport(teleportDest);
+                targetCreature.Teleport(teleportDest);
+                
+                // Perform cleanup for monsters (normally handled by DoTeleport or Client Login for players)
+                new ActionChain()
+                    .AddDelaySeconds(1.0f)
+                    .AddAction(targetCreature, ActionType.CreatureLocation_PostTeleportVisuals, () =>
+                    {
+                        if (targetCreature.IsDead || targetCreature.PhysicsObj == null) return;
+                        targetCreature.PlayParticleEffect(PlayScript.Create, targetCreature.Guid);
+                        targetCreature.Teleporting = false;
+                    })
+                    .EnqueueChain();
             }
         }
 
