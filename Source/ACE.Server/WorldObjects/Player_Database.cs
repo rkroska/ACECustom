@@ -306,8 +306,10 @@ namespace ACE.Server.WorldObjects
             // immediate requeue - will wait for next periodic tick). However, SaveScheduler already
             // protects against job overwrite (preserves job when Queued=1, Executing=0), so this
             // early return is primarily a gate optimization, not a correctness requirement.
-            // If you want fast followups, you can remove this check and rely on SaveScheduler protection.
-            if (!duringLogout && SaveInProgress)
+            // CRITICAL: High-priority saves (ForcedImmediate, ForcedShortWindow) bypass this check
+            // to ensure they always capture complete snapshots, even if a periodic save is in progress.
+            bool isHighPrioritySave = (reason == SaveReason.ForcedImmediate || reason == SaveReason.ForcedShortWindow);
+            if (!duringLogout && !isHighPrioritySave && SaveInProgress)
                 return;
 
             if (!ShouldEnqueueSave(reason, out var requestedTime))

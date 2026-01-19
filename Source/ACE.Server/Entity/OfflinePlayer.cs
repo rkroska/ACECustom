@@ -106,13 +106,22 @@ namespace ACE.Server.Entity
 
                 // Route through Save Scheduler with Periodic priority
                 var saveKey = SaveKeys.Player(Guid.Full);
-                SaveScheduler.Instance.RequestSave(saveKey, SaveScheduler.SaveType.Periodic, () =>
+                var enqueued = SaveScheduler.Instance.RequestSave(saveKey, SaveScheduler.SaveType.Periodic, () =>
                 {
                     // This runs on SaveScheduler worker thread
                     // Call B is materialized BEFORE passing to SaveBiotasInParallel (not a factory)
                     DatabaseManager.Shard.SaveBiotasInParallel(biotas, wrappedCallback, $"OfflinePlayer:{Guid.Full}");
                     return true; // Indicates successful enqueue to database queue
                 });
+                
+                // If shutdown is requested, RequestSave returns false and the enqueue action never executes
+                // This leaves SaveInProgress stuck, so we must clear it and restore ChangesDetected
+                if (!enqueued)
+                {
+                    SaveInProgress = false;
+                    ChangesDetected = true;
+                    onCompleted?.Invoke(false);
+                }
             }
         }
 

@@ -464,6 +464,16 @@ namespace ACE.Database
                         var reenqueuedOk = EnqueueByPriority(key, state.Priority);
                         if (reenqueuedOk)
                         {
+                            // CRITICAL: Increment Pending count because we added a second physical queue entry.
+                            // The worker will process both entries (one real, one ghost).
+                            // Balance the accounting so StartExecution doesn't warn about underflow.
+                            var cid = ExtractCharacterIdFromKey(key);
+                            if (cid.HasValue)
+                            {
+                                var charState = GetOrCreateCharacterSaveState(cid.Value);
+                                charState.IncrementPending();
+                            }
+
                             var nowTicks = DateTime.UtcNow.Ticks;
                             Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
                             // Reset FirstEnqueuedTicksUtc for priority upgrades (work is being rerouted)
@@ -1379,7 +1389,7 @@ namespace ACE.Database
         /// The inner save job (created in ACE.Server) handles the actual dirty marking logic.
         /// This wrapper just signals that dirty marking should occur.
         /// </summary>
-        private sealed class ForcedPeriodicSaveJob : ISaveJob
+        private sealed class ForcedPeriodicSaveJob : ISaveJob, ICancellableSaveJob
         {
             private readonly ISaveJob _inner;
             private readonly bool _forceDirty;
@@ -1402,12 +1412,20 @@ namespace ACE.Database
 
                 return _inner.Execute();
             }
+
+            public void Cancel()
+            {
+                if (_inner is ICancellableSaveJob cancellable)
+                {
+                    cancellable.Cancel();
+                }
+            }
         }
 
         /// <summary>
         /// Wrapper that updates player save state after execution.
         /// </summary>
-        private sealed class PlayerSaveJobWrapper : ISaveJob
+        private sealed class PlayerSaveJobWrapper : ISaveJob, ICancellableSaveJob
         {
             private readonly ISaveJob _innerJob;
             private readonly PlayerSaveState _playerState;
@@ -1443,6 +1461,20 @@ namespace ACE.Database
                     // This ensures players can be scheduled again even if the save failed
                     Interlocked.Exchange(ref _playerState.Enqueued, 0);
                 }
+            }
+
+            public void Cancel()
+            {
+                // Forward cancellation to inner job
+                if (_innerJob is ICancellableSaveJob cancellable)
+                {
+                    cancellable.Cancel();
+                }
+
+                // CRITICAL: We also need to clear the Enqueued flag on the PlayerSaveState
+                // because this job is being discarded and will never run.
+                // If we don't, the player will look "Enqueued" forever (until Watchdog fix).
+                Interlocked.Exchange(ref _playerState.Enqueued, 0);
             }
         }
 
