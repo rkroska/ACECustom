@@ -4,82 +4,45 @@ using ACE.Entity.Enum;
 using ACE.Server.Physics.Common;
 using ACE.Server.Physics.Combat;
 
+#nullable enable
+
 namespace ACE.Server.Physics.Animation
 {
-    public class MovementManager
+    public class MovementManager(PhysicsObj obj, WeenieObject? wobj)
     {
-        public MotionInterp MotionInterpreter;
-        public MoveToManager MoveToManager;
-        public PhysicsObj PhysicsObj;
-        public WeenieObject WeenieObj;
-
-        public MovementManager() { }
-
-        public MovementManager(PhysicsObj obj, WeenieObject wobj)
-        {
-            PhysicsObj = obj;
-            WeenieObj = wobj;
-
-            MotionInterpreter = new MotionInterp(obj, wobj);
-            MoveToManager = new MoveToManager(obj, wobj);
-        }
+        public MotionInterp MotionInterpreter = new(obj, wobj);
+        public MoveToManager MoveToManager = new(obj, wobj);
+        public PhysicsObj PhysicsObj = obj;
+        public WeenieObject WeenieObj = wobj;
 
         public void CancelMoveTo(WeenieError error)
         {
-            if (MoveToManager != null)
-                MoveToManager.CancelMoveTo(error);
-        }
-
-        public static MovementManager Create(PhysicsObj obj, WeenieObject wobj)
-        {
-            return new MovementManager(obj, wobj);
+            MoveToManager.CancelMoveTo(error);
         }
 
         public void EnterDefaultState()
         {
-            if (PhysicsObj == null) return;
-
-            if (MotionInterpreter == null)
-                MotionInterpreter = MotionInterp.Create(PhysicsObj, WeenieObj);
-
             MotionInterpreter.enter_default_state();
-        }
-
-        public void HandleEnterWorld()
-        {
-            //if (MotionInterpreter != null)
-                //NoticeHandler.RecvNotice_PrevSpellSelection(MotionInterpreter);
         }
 
         public void HandleExitWorld()
         {
-            if (MotionInterpreter != null)
-                MotionInterpreter.HandleExitWorld();
+            MotionInterpreter.HandleExitWorld();
         }
 
         public void HandleUpdateTarget(TargetInfo targetInfo)
         {
-            if (MoveToManager != null)
-                MoveToManager.HandleUpdateTarget(targetInfo);
+            MoveToManager.HandleUpdateTarget(targetInfo);
         }
 
         public void HitGround()
         {
-            if (MotionInterpreter != null)
-                MotionInterpreter.HitGround();
-
-            if (MoveToManager != null)
-                MoveToManager.HitGround();
+            MotionInterpreter.HitGround();
+            MoveToManager.HitGround();
         }
 
         public InterpretedMotionState InqInterpretedMotionState()
         {
-            if (MotionInterpreter == null)
-            {
-                MotionInterpreter = MotionInterp.Create(PhysicsObj, WeenieObj);
-                if (PhysicsObj != null)
-                    MotionInterpreter.enter_default_state();
-            }
             return MotionInterpreter.InterpretedState;
         }
 
@@ -93,17 +56,13 @@ namespace ACE.Server.Physics.Animation
 
         public void LeaveGround()
         {
-            if (MotionInterpreter != null)
-                MotionInterpreter.LeaveGround();
-
-            // NoticeHandler::RecvNotice_PrevSpellSection
+            MotionInterpreter.LeaveGround();
         }
 
 
-        public void MotionDone(uint motion, bool success)
+        public void MotionDone(bool success)
         {
-            if (MotionInterpreter != null)
-                MotionInterpreter.MotionDone(success);
+            MotionInterpreter.MotionDone(success);
         }
 
         public WeenieError PerformMovement(MovementStruct mvs)
@@ -117,23 +76,12 @@ namespace ACE.Server.Physics.Animation
                 case MovementType.StopRawCommand:
                 case MovementType.StopInterpretedCommand:
                 case MovementType.StopCompletely:
-
-                    if (MotionInterpreter == null)
-                    {
-                        MotionInterpreter = MotionInterp.Create(PhysicsObj, WeenieObj);
-                        if (PhysicsObj != null)
-                            MotionInterpreter.enter_default_state();
-                    }
                     return MotionInterpreter.PerformMovement(mvs);
 
                 case MovementType.MoveToObject:
                 case MovementType.MoveToPosition:
                 case MovementType.TurnToObject:
                 case MovementType.TurnToHeading:
-
-                    if (MoveToManager == null)
-                        MoveToManager = MoveToManager.Create(PhysicsObj, WeenieObj);
-
                     return MoveToManager.PerformMovement(mvs);
 
                 default:
@@ -143,34 +91,23 @@ namespace ACE.Server.Physics.Animation
 
         public void ReportExhaustion()
         {
-            if (MotionInterpreter != null)
-                MotionInterpreter.ReportExhaustion();
-
-            // NoticeHandler::RecvNotice_PrevSpellSelection
+            MotionInterpreter.ReportExhaustion();
         }
 
         public void SetWeenieObject(WeenieObject wobj)
         {
             WeenieObj = wobj;
-            if (MotionInterpreter != null)
-                MotionInterpreter.SetWeenieObject(wobj);
-            if (MoveToManager != null)
-                MoveToManager.SetWeenieObject(wobj);
+            MotionInterpreter.SetWeenieObject(wobj);
+            MoveToManager.SetWeenieObject(wobj);
         }
 
         public void UseTime()
         {
-            if (MoveToManager != null) MoveToManager.UseTime();
+            MoveToManager.UseTime();
         }
 
         public MotionInterp get_minterp()
         {
-            if (MotionInterpreter == null)
-            {
-                MotionInterpreter = MotionInterp.Create(PhysicsObj, WeenieObj);
-                if (PhysicsObj != null)
-                    MotionInterpreter.enter_default_state();
-            }
             return MotionInterpreter;
         }
 
