@@ -459,16 +459,6 @@ namespace ACE.Database
                         var reenqueuedOk = EnqueueByPriority(key, state.Priority);
                         if (reenqueuedOk)
                         {
-                            // CRITICAL: Increment Pending count because we added a second physical queue entry.
-                            // The worker will process both entries (one real, one ghost).
-                            // Balance the accounting so StartExecution doesn't warn about underflow.
-                            var cid = ExtractCharacterIdFromKey(key);
-                            if (cid.HasValue)
-                            {
-                                var charState = GetOrCreateCharacterSaveState(cid.Value);
-                                charState.IncrementPending();
-                            }
-
                             var nowTicks = DateTime.UtcNow.Ticks;
                             Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
                             // Reset FirstEnqueuedTicksUtc for priority upgrades (work is being rerouted)
@@ -1763,39 +1753,39 @@ namespace ACE.Database
         /// Returns null if the key is not character-related.
         /// All character-affecting saves now use the format: character:<id>:<type>[:<suffix>]
         /// </summary>
+        /// <summary>
+        /// Extracts character ID from a save key if it's a character-related save.
+        /// Returns null if the key is not character-related.
+        /// All character-affecting saves now use the format: character:<id>:<type>[:<suffix>]
+        /// </summary>
         private uint? ExtractCharacterIdFromKey(string key)
         {
             if (string.IsNullOrWhiteSpace(key))
                 return null;
 
-            // All character-affecting saves use format: character:<id>:<type>[:<suffix>]
-            // Examples:
-            // character:123:player
-            // character:123:character
-            // character:123:item:456
-            // character:123:storage_tx:guid
-            // character:123:vendor_tx:guid
-            // character:123:bank_tx:guid
-            // character:123:logout
-            if (key.StartsWith("character:", StringComparison.OrdinalIgnoreCase))
+            // Optimization: Use Span to avoid substring allocations on hot path
+            ReadOnlySpan<char> keySpan = key.AsSpan();
+            ReadOnlySpan<char> prefix = "character:".AsSpan();
+
+            if (keySpan.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
-                var afterPrefix = key.Substring("character:".Length);
+                var afterPrefix = keySpan.Slice(prefix.Length);
                 var colonIndex = afterPrefix.IndexOf(':');
 
+                ReadOnlySpan<char> idSpan;
                 if (colonIndex > 0)
                 {
                     // Format: character:<id>:<type>[:<suffix>]
-                    var idStr = afterPrefix.Substring(0, colonIndex);
-                    if (uint.TryParse(idStr, out var characterId))
-                        return characterId;
+                    idSpan = afterPrefix.Slice(0, colonIndex);
                 }
                 else
                 {
                     // Legacy format: character:<id> (no type suffix)
-                    // Try to parse the entire remainder as character ID
-                    if (uint.TryParse(afterPrefix, out var characterId))
-                        return characterId;
+                    idSpan = afterPrefix;
                 }
+
+                if (uint.TryParse(idSpan, out var characterId))
+                    return characterId;
             }
 
             return null;
