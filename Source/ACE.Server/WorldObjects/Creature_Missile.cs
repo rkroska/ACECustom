@@ -69,9 +69,9 @@ namespace ACE.Server.WorldObjects
         }
 
         // Split arrow constants
-        private const int DEFAULT_SPLIT_ARROW_COUNT = 3;
-        private const float DEFAULT_SPLIT_ARROW_RANGE = 8f;
-        private const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
+        public const int DEFAULT_SPLIT_ARROW_COUNT = 3;
+        public const float DEFAULT_SPLIT_ARROW_RANGE = 8f;
+        public const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
         
         // Split arrow validation constants
         private const int SPLIT_ARROW_COUNT_MIN = 0;
