@@ -23,6 +23,8 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_MakeCorpse,
         CreatureDeath_SaveInParallelCallback,
         CreatureEquipment_TryActivateItemSpellsOnWield,
+        CreatureLocation_TeleportToPosition,
+        CreatureLocation_PostTeleportVisuals,
         CreatureMissile_EnqueueBroadcast,
         CreatureMissile_EnsureAmmoVisible,
         CreatureNavigation_AddMoveToTick,
@@ -664,9 +666,17 @@ namespace ACE.Server.Entity.Actions
         }
     }
 
+    public enum ActionPriority
+    {
+        High,
+        Normal,
+        Low
+    }
+
     public interface IAction
     {
         ActionType Type { get; }
+        ActionPriority Priority { get; }
 
         Tuple<IActor, IAction> Act();
 

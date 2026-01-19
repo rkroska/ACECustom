@@ -342,7 +342,7 @@ namespace ACE.Server.Entity
                 CreateWorldObjectsCompleted = true;
 
                 PhysicsLandblock.SortObjects();
-            }));
+            }, ActionPriority.Low));
         }
 
         /// <summary>
@@ -358,7 +358,7 @@ namespace ACE.Server.Entity
             {
                 foreach (var fso in factoryShardObjects)
                     AddWorldObject(fso, VariationId);
-            }));
+            }, ActionPriority.Low));
         }
 
         /// <summary>
@@ -425,7 +425,7 @@ namespace ACE.Server.Entity
 
                     if (!AddWorldObject(wo, VariationId))
                         wo.Destroy();
-                }));
+                }, ActionPriority.Low));
             }
         }
 
@@ -574,6 +574,13 @@ namespace ACE.Server.Entity
                     log.Warn($"[PERFORMANCE] monster_tick_throttle_limit set to {throttleValue}, enforcing minimum of 50. This value is too low and may cause server performance issues.");
 
                 
+                // Time Slicing: Budget 15ms per tick for monster processing
+                // This prevents server lockup (lag/rubberbanding) when hundreds of monsters are active.
+                // Monsters that miss this slice will remain at the front of the priority queue for the next tick.
+                long monsterProcessingBudgetMs = 15;
+                if (ServerConfig.monster_tick_throttle_limit.Value > 500) // Increase budget if they really want tons of monsters
+                     monsterProcessingBudgetMs = 30;
+
                 while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
                     var monster = sortedCreaturesByNextTick.First.Value;
@@ -587,6 +594,10 @@ namespace ACE.Server.Entity
                         monster.Monster_Tick(currentUnixTime);
                         sortedCreaturesByNextTick.AddLast(monster); // All creatures tick at a fixed interval
                         monstersProcessed++;
+
+                        // Check time budget (every 5 monsters to avoid excessive stopwatch overhead)
+                        if (monstersProcessed % 5 == 0 && stopwatch.ElapsedMilliseconds > monsterProcessingBudgetMs)
+                            break;
                     }
                     else
                     {
