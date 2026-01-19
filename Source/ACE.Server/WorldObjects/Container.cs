@@ -748,10 +748,15 @@ namespace ACE.Server.WorldObjects
                                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
                                 Value += (worldObject.Value ?? 0);
                                 
+                                // FIX (PR #323): End mutation (decrement depth) when successfully added to side pack (recursive case)
+                                // This was missing and caused SaveInProgress to get stuck during logout
+                                worldObject.EndContainerMutation(oldContainerBiotaId, sidePack.Biota.Id);
+                                
                                 log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
                                 return true;
                             }
                         }
+
                         
                         log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
                     }

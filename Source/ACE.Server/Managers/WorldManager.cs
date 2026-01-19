@@ -121,11 +121,14 @@ namespace ACE.Server.Managers
 
         public static void PlayerEnterWorld(Session session, LoginCharacter character)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            log.Debug($"[LOGIN_FLOW] PlayerEnterWorld started for {character.Name} (0x{character.Id:X8})");
+
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
 
             if (offlinePlayer == null)
             {
-                log.Error($"PlayerEnterWorld requested for character.Id 0x{character.Id:X8} not found in PlayerManager OfflinePlayers.");
+                log.Error($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - PlayerEnterWorld requested for character.Id 0x{character.Id:X8} not found in PlayerManager OfflinePlayers.");
                 return;
             }
 
@@ -133,20 +136,57 @@ namespace ACE.Server.Managers
             if (offlinePlayer.SaveInProgress &&
                 offlinePlayer.SaveServerBootId != ServerRuntime.BootId)
             {
-                log.Warn($"[LOGIN] Clearing abandoned SaveInProgress for {character.Name}");
+                log.Warn($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Clearing abandoned SaveInProgress for {character.Name}");
                 offlinePlayer.SaveInProgress = false;
                 offlinePlayer.SaveServerBootId = null;
+            }
+
+            // If offline player has unsaved changes, trigger an immediate CRITICAL priority save
+            // This bypasses the low-priority offline maintenance queue and completes quickly
+            // Prevents login blocking by ensuring the save drains before HasPendingOrActiveSave check
+            if (offlinePlayer.ChangesDetected && !SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))
+            {
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Offline player {character.Name} has pending changes - triggering CRITICAL priority save before login");
+                
+                // Use Critical priority to jump ahead of Periodic offline maintenance saves
+                // This calls DatabaseManager.Shard.SaveBiota directly with Critical priority
+                DatabaseManager.Shard.SaveBiota(offlinePlayer.Biota, offlinePlayer.BiotaDatabaseLock, result =>
+                {
+                    // Callback runs on DB worker thread - route to world thread
+                    if (SaveScheduler.EnqueueToWorldThread != null)
+                    {
+                        SaveScheduler.EnqueueToWorldThread(() =>
+                        {
+                            if (result)
+                            {
+                                log.Debug($"[LOGIN_FLOW] Critical save completed for {character.Name} - clearing ChangesDetected");
+                                // Clear ChangesDetected on successful save
+                                offlinePlayer.ChangesDetected = false;
+                            }
+                            else
+                            {
+                                log.Error($"[LOGIN_FLOW] Critical save FAILED for {character.Name} - will retry on next login attempt");
+                            }
+                        });
+                    }
+                }, SaveScheduler.SaveType.Critical);
+            }
+            else
+            {
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Skipping Critical Save: ChangesDetected={offlinePlayer.ChangesDetected}, HasPendingOrActiveSave={SaveScheduler.Instance.HasPendingOrActiveSave(character.Id)}");
             }
 
             // Check if there are any pending or active saves for this character using authoritative save system
             if (SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))
             {
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - HasPendingOrActiveSave=TRUE for {character.Name}");
                 // Prevent multiple callbacks for the same session/character login attempt
                 if (session.WaitingForLoginDrain)
                 {
-                    log.Debug($"[LOGIN] {character.Name} already waiting for saves to drain, ignoring duplicate PlayerEnterWorld call");
+                    log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - {character.Name} already waiting for saves to drain, ignoring duplicate PlayerEnterWorld call");
                     return;
                 }
+
 
                 session.WaitingForLoginDrain = true;
                 var waitStartTime = DateTime.UtcNow;
@@ -156,11 +196,13 @@ namespace ACE.Server.Managers
                 SaveScheduler.Instance.OnSavesDrained(character.Id, () =>
                 {
                     session.WaitingForLoginDrain = false;
+                    log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Saves drained callback fired for {character.Name}");
 
                     // Verify session is still valid before continuing
                     if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
                     {
                         var waitDuration = (DateTime.UtcNow - waitStartTime).TotalSeconds;
+                        log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Continuing login after {waitDuration:F3}s wait");
                         
                         // Alert if wait exceeded threshold (diagnostic only, no client notification)
                         if (waitDuration > 5.0)
@@ -174,6 +216,10 @@ namespace ACE.Server.Managers
                 });
                 return;
             }
+            else
+            {
+                 log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - No pending saves for {character.Name}, proceeding to login immediately.");
+            }
 
             // No saves in flight, proceed immediately with login
             DatabaseManager.Shard.GetCharacter(character.Id, fullCharacter =>
@@ -182,6 +228,13 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
                 {
                     log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
+
+                    if (session.IsHeadless)
+                    {
+                        log.Debug($"[LOGIN_FLOW] Headless session for {character.Name} passed all save checks. Skipping World Entry to preserve server resources.");
+                        return;
+                    }
+
                     ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas), ActionPriority.High));
                 });
             });            
