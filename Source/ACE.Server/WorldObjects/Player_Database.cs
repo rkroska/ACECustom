@@ -841,8 +841,17 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                // Normal save: use callback directly (no character save to wait for)
-                biotaCallback = _saveCallback;
+                // Normal save: wrap callback with guard to prevent double invocation
+                // This protects against race conditions where Cancel() fires during DB execution
+                biotaCallback = (result) =>
+                {
+                    _biotaSaveResult = result;
+                    // HARDENING: Use CompareExchange to guarantee callback fires only once
+                    if (Interlocked.CompareExchange(ref _completionFired, 1, 0) == 0)
+                    {
+                        _saveCallback?.Invoke(result);
+                    }
+                };
             }
 
             // This runs on SaveScheduler worker thread

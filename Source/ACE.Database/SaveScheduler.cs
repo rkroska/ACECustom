@@ -429,13 +429,8 @@ namespace ACE.Database
                     // Currently executing (race condition - started between CompareExchange and here)
                     // Set Dirty to trigger requeue in finally block
                     // CRITICAL: Replace job to ensure latest snapshot is used for requeue
-                    // Cancel old job first to clean up its SaveInProgress flags
-                    var oldJob = Volatile.Read(ref state.Job);
-                    if (oldJob is ICancellableSaveJob cancellable)
-                    {
-                        try { cancellable.Cancel(); }
-                        catch (Exception ex) { log.Error($"[SAVESCHEDULER] Cancel() failed for executing job key={key}", ex); }
-                    }
+                    // NOTE: Do NOT call Cancel() here. The job is already running and cannot be aborted.
+                    // Letting it finish naturally is safer. The new job will run immediately after via Dirty flag.
                     state.Job = saveJob;
                     Interlocked.Exchange(ref state.Dirty, 1);
                 }
@@ -540,7 +535,7 @@ namespace ACE.Database
         {
             var queues = new[] { _periodicPlayerQueue, _periodicQueue };
 
-            while (!IsShutdownRequested && !_disposed)
+            while (!_disposed)
             {
                 string key = null;
                 try
