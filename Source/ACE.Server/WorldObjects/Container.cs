@@ -15,6 +15,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages;
+using ACE.Server.Entity;
 
 namespace ACE.Server.WorldObjects
 {
@@ -832,7 +833,7 @@ namespace ACE.Server.WorldObjects
 
                 container = this;
 
-                OnAddItem();
+                OnAddItem(worldObject);
 
                 // Step 4: End mutation after successful add
                 worldObject.EndContainerMutation(oldContainerBiotaId, Biota.Id);
@@ -1268,21 +1269,72 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// This event is raised when player adds item to container
         /// </summary>
-        protected virtual void OnAddItem()
+        protected virtual void OnAddItem(WorldObject addedItem)
         {
-            // empty base
+            if (addedItem != null)
+                UpdateCharms(true, addedItem);
         }
 
         /// <summary>
         /// This event is raised when player removes item from container
         /// </summary>
-        protected virtual void OnRemoveItem(WorldObject worldObject)
+        protected virtual void OnRemoveItem(WorldObject removedItem)
         {
             // Suppress enchant invalidation during container churn
-            if (worldObject.IsInContainerMutation)
+            if (removedItem.IsInContainerMutation)
                 return;
 
-            // empty base
+            if (removedItem != null)
+                UpdateCharms(false, removedItem);
+        }
+
+        private void UpdateCharms(bool adding, WorldObject item)
+        {
+            if (GetRootOwner() is not Player player) return;
+            ProcessCharmRecursively(player, item, adding);
+        }
+
+        private void ProcessCharmRecursively(Player player,  WorldObject item, bool adding) { 
+            bool isCharm = item.GetProperty(PropertyBool.IsCharm) ?? false;
+            if (isCharm)
+            {
+                List<uint> spells = [];
+                if (item.SpellDID.HasValue) spells.Add(item.SpellDID.Value);
+                List<int> knownSpells = item.Biota.GetKnownSpellsIds(item.BiotaDatabaseLock);
+                foreach(int spellId in knownSpells) spells.Add((uint)spellId);
+
+                foreach (uint spellId in spells)
+                {
+                    if (adding)
+                    {
+                        if(player.EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
+                            player.CreateItemSpell(item, spellId);
+                    }
+                    else
+                    {
+                        player.RemoveItemSpell(item, spellId);
+                    }
+                }
+            }
+
+            if (item is not Container container) return;
+            List<WorldObject> children = [.. container.Inventory.Values];
+            foreach (var child in children) ProcessCharmRecursively(player, child, adding);
+        }
+
+        /// <summary>
+        /// Helper to find the root owner (Player usually)
+        /// </summary>
+        public WorldObject GetRootOwner()
+        {
+            WorldObject current = this;
+            int safety = 0;
+            while (current.Container != null && safety < 100)
+            {
+                current = current.Container;
+                safety++;
+            }
+            return current;
         }
 
         /// <summary>

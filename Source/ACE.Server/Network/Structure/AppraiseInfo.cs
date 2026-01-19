@@ -331,6 +331,14 @@ namespace ACE.Server.Network.Structure
                 PropertiesString[PropertyString.Use] = useMessage;
             }
 
+            if (wo.GetProperty(PropertyBool.IsCharm) == true)
+            {
+                if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse))
+                    PropertiesString[PropertyString.Use] = $"Charm: Holding this item grants its magical effects.\n{existingUse}";
+                else
+                    PropertiesString[PropertyString.Use] = "Charm: Holding this item grants its magical effects.";
+            }
+
             if (wo is CraftTool && (wo.ItemType == ItemType.TinkeringMaterial || wo.WeenieClassId >= 36619 && wo.WeenieClassId <= 36628 || wo.WeenieClassId >= 36634 && wo.WeenieClassId <= 36636))
             {
                 PropertiesInt.Remove(PropertyInt.Structure);
