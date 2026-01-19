@@ -661,9 +661,17 @@ namespace ACE.Server.Entity.Actions
         }
     }
 
+    public enum ActionPriority
+    {
+        High,
+        Normal,
+        Low
+    }
+
     public interface IAction
     {
         ActionType Type { get; }
+        ActionPriority Priority { get; }
 
         Tuple<IActor, IAction> Act();
 
