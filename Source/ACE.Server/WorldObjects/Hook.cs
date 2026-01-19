@@ -130,7 +130,6 @@ namespace ACE.Server.WorldObjects
             }
 
             if (Inventory.Count > 0)
-            if (Inventory.Count > 0)
                 OnAddItem(Inventory.Values.FirstOrDefault());
         }
 
