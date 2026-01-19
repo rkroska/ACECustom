@@ -683,10 +683,6 @@ namespace ACE.Server.Network.Structure
             if (hasSplitArrows == true)
             {
                 PropertiesBool[PropertyBool.SplitArrows] = true;
-                // prefer configured values; otherwise fall back to runtime defaults for transparency
-                const int DefaultSplitArrowCount = 3;
-                const double DefaultSplitArrowRange = 8.0;
-                const double DefaultSplitArrowDamageMultiplier = 0.6;
 
                 var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
                 PropertiesInt[PropertyInt.SplitArrowCount] = splitCount;
