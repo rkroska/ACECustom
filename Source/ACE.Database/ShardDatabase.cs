@@ -658,21 +658,23 @@ namespace ACE.Database
 
         private static List<LoginCharacter> GetCharacterListForLogin(uint accountID, bool includeDeleted, uint characterID = 0)
         {
-            var context = new ShardDbContext();
-            IQueryable<LoginCharacter> query;
+            using (var context = new ShardDbContext())
+            {
+                IQueryable<LoginCharacter> query;
 
-            if (accountID > 0)
-                query = context.Character
-                    .Where(r => r.AccountId == accountID && (includeDeleted || !r.IsDeleted))
-                    .AsNoTracking()
-                    .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
-            else
-                query = context.Character
-                    .Where(r => r.Id == characterID && (includeDeleted || !r.IsDeleted))
-                    .AsNoTracking()
-                    .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
+                if (accountID > 0)
+                    query = context.Character
+                        .Where(r => r.AccountId == accountID && (includeDeleted || !r.IsDeleted))
+                        .AsNoTracking()
+                        .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
+                else
+                    query = context.Character
+                        .Where(r => r.Id == characterID && (includeDeleted || !r.IsDeleted))
+                        .AsNoTracking()
+                        .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
 
-            return query.ToList();
+                return query.ToList();
+            }
         }
 
         private static List<Character> GetCharacterList(uint accountID, bool includeDeleted, uint characterID = 0)
