@@ -221,6 +221,12 @@ namespace ACE.Server.WorldObjects
 
             var setup = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
 
+            if (setup.Spheres.Count == 0)
+            {
+                log.Error($"Creature_Missile.GetProjectileRadius(): SetupId for {weenie.WeenieClassId} - {weenie.ClassName} is invalid for a projectile, as it has no Spheres defined");
+                return 0.0f;
+            }
+
             if (!weenie.PropertiesFloat.TryGetValue(PropertyFloat.DefaultScale, out var scale))
                 scale = 1.0f;
 
