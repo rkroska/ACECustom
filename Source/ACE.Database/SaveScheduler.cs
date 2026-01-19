@@ -65,6 +65,21 @@ namespace ACE.Database
     }
 
     /// <summary>
+    /// Interface for save jobs that need cleanup when discarded (replaced by a newer job).
+    /// When a job is replaced in SaveScheduler, Cancel() is called to ensure proper resource cleanup.
+    /// This prevents stuck SaveInProgress flags and other state issues.
+    /// </summary>
+    public interface ICancellableSaveJob : ISaveJob
+    {
+        /// <summary>
+        /// Called when this job is being discarded (replaced by a newer job).
+        /// The job should invoke its completion callback with false and clean up any state.
+        /// This method will NOT be called if Execute() has already been called.
+        /// </summary>
+        void Cancel();
+    }
+
+    /// <summary>
     /// Wrapper to convert Func&lt;bool&gt; delegates to ISaveJob for backward compatibility.
     /// This allows gradual migration while reducing allocations for new code paths.
     /// </summary>
@@ -405,8 +420,6 @@ namespace ACE.Database
             else
             {
                 // Key is already queued (CompareExchange failed - was already 1)
-                // CRITICAL: Do NOT replace Job here - preserve the existing job that did prep work
-                // The existing job's callback will clear the SaveInProgress flags it set during prep
                 // Check if executing (defensive check in case state changed between CompareExchange and here)
                 var queued = Volatile.Read(ref state.Queued);
                 var executing = Volatile.Read(ref state.Executing);
@@ -415,32 +428,52 @@ namespace ACE.Database
                 {
                     // Currently executing (race condition - started between CompareExchange and here)
                     // Set Dirty to trigger requeue in finally block
-                    // Note: Job replacement already handled at line 313 if it was executing when we first checked
+                    // CRITICAL: Replace job to ensure latest snapshot is used for requeue
+                    // Cancel old job first to clean up its SaveInProgress flags
+                    var oldJob = Volatile.Read(ref state.Job);
+                    if (oldJob is ICancellableSaveJob cancellable)
+                    {
+                        try { cancellable.Cancel(); }
+                        catch (Exception ex) { log.Error($"[SAVESCHEDULER] Cancel() failed for executing job key={key}", ex); }
+                    }
+                    state.Job = saveJob;
                     Interlocked.Exchange(ref state.Dirty, 1);
                 }
-                else if (queued == 1 && priorityUpgraded)
+                else if (queued == 1)
                 {
-                    // Priority was upgraded and key is already queued (but not executing)
-                    // Immediately re-enqueue to higher priority queue to jump the line
-                    // This creates a temporary duplicate entry (key in both old and new queues)
-                    // Worker dequeue logic safely handles this:
-                    // - If higher priority worker processes first: sets Executing=1, lower priority worker skips (Executing check)
-                    // - If lower priority worker processes first: sees priority mismatch, reroutes WITHOUT clearing Queued
-                    //   (early reroute at line 440-454 does NOT touch Queued, preventing ghost pending leaks)
-                    // - Higher priority entry will be processed normally
-                    // The worst case is duplicate processing, but save jobs should be idempotent
-                    var reenqueuedOk = EnqueueByPriority(key, state.Priority);
-                    if (reenqueuedOk)
+                    // Key is queued but not yet executing
+                    // CRITICAL FIX: Replace the job with the new one to ensure latest snapshot is saved
+                    // This prevents data loss when a newer save request arrives while an older one is queued
+                    // Example: Periodic save (Snapshot A) is queued, then player drops item and immediate save (Snapshot B) arrives
+                    // Without replacement: Snapshot A (old) would run, losing the item drop
+                    // With replacement: Snapshot B (new) runs, preserving the item drop
+                    // CRITICAL: Cancel old job first to clean up its SaveInProgress flags
+                    var oldJob = Volatile.Read(ref state.Job);
+                    if (oldJob is ICancellableSaveJob cancellable)
                     {
-                        var nowTicks = DateTime.UtcNow.Ticks;
-                        Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
-                        // Reset FirstEnqueuedTicksUtc for priority upgrades (work is being rerouted)
-                        Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
-                        Interlocked.Increment(ref _reroutedPriority);
+                        try { cancellable.Cancel(); }
+                        catch (Exception ex) { log.Error($"[SAVESCHEDULER] Cancel() failed for queued job key={key}", ex); }
                     }
+                    state.Job = saveJob;
+                    
+                    if (priorityUpgraded)
+                    {
+                        // Priority was upgraded - re-enqueue to higher priority queue to jump the line
+                        // This creates a temporary duplicate entry (key in both old and new queues)
+                        // Worker dequeue logic safely handles this via Executing check
+                        var reenqueuedOk = EnqueueByPriority(key, state.Priority);
+                        if (reenqueuedOk)
+                        {
+                            var nowTicks = DateTime.UtcNow.Ticks;
+                            Volatile.Write(ref state.EnqueuedTicksUtc, nowTicks);
+                            // Reset FirstEnqueuedTicksUtc for priority upgrades (work is being rerouted)
+                            Volatile.Write(ref state.FirstEnqueuedTicksUtc, nowTicks);
+                            Interlocked.Increment(ref _reroutedPriority);
+                        }
+                    }
+                    // If priority wasn't upgraded, job replacement is sufficient
+                    // The existing queue entry will execute the new job (latest snapshot)
                 }
-                // If Queued=1 but Executing=0 and priority wasn't upgraded, the key is already queued and will be processed
-                // The Dirty flag in the finally block will catch any new work that arrives during execution
             }
 
             return true;

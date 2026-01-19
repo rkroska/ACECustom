@@ -378,7 +378,12 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                if (!SaveInProgress)
+                // For high-priority saves (ForcedImmediate, ForcedShortWindow), bypass the SaveInProgress check
+                // This ensures we always capture a complete snapshot for Critical/Atomic saves,
+                // even if a Periodic save is already queued. The old job will be cancelled and replaced.
+                bool isHighPriority = (reason == SaveReason.ForcedImmediate || reason == SaveReason.ForcedShortWindow);
+                
+                if (!SaveInProgress || isHighPriority)
                 {
                     // FIX #4: Clear ChangesDetected BEFORE SaveBiotaToDatabase (Clear-Before-Enqueue pattern)
                     ChangesDetected = false;
@@ -708,7 +713,7 @@ namespace ACE.Server.WorldObjects
     /// This keeps SaveScheduler generic - it doesn't know about players or PlayerManager.
     /// The dirty marking logic stays in ACE.Server where Player knowledge belongs.
     /// </summary>
-    internal sealed class PlayerSaveJob : ACE.Database.IForcedPeriodicSaveJob
+    internal sealed class PlayerSaveJob : ACE.Database.IForcedPeriodicSaveJob, ACE.Database.ICancellableSaveJob
     {
         private readonly Player _player;
         private readonly Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> _getBiotas;
@@ -866,6 +871,34 @@ namespace ACE.Server.WorldObjects
             }
             
             return true; // Indicates successful enqueue to _uniqueQueue
+        }
+
+        /// <summary>
+        /// Cancels this job when it is replaced by a newer job.
+        /// Invokes the callback with false to ensure SaveInProgress flags are cleaned up.
+        /// Uses _completionFired guard to prevent double-invocation if Cancel() is called
+        /// while the job is transitioning to execution.
+        /// </summary>
+        public void Cancel()
+        {
+            // CRITICAL: Use CompareExchange to ensure callback fires only once
+            // If the job has already started executing (or was already cancelled), this will fail and we skip
+            if (Interlocked.CompareExchange(ref _completionFired, 1, 0) == 0)
+            {
+                // Successfully claimed the callback slot - invoke with failure
+                // This triggers the finally block in Player_Database.SavePlayerToDatabase
+                // which clears SaveInProgress flags for this job
+                try
+                {
+                    _saveCallback?.Invoke(false);
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't throw - we're already in cleanup mode
+                    var playerLog = LogManager.GetLogger(typeof(Player));
+                    playerLog.Error($"[SAVE] PlayerSaveJob.Cancel() callback threw exception for player {_player.Name} (0x{_player.Guid})", ex);
+                }
+            }
         }
     }
 }
