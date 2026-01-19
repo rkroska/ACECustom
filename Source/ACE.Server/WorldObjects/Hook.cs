@@ -130,17 +130,18 @@ namespace ACE.Server.WorldObjects
             }
 
             if (Inventory.Count > 0)
-                OnAddItem();
+            if (Inventory.Count > 0)
+                OnAddItem(Inventory.Values.FirstOrDefault());
         }
 
         /// <summary>
         /// This event is raised when player adds item to hook
         /// </summary>
-        protected override void OnAddItem()
+        protected override void OnAddItem(WorldObject addedItem)
         {
             //Console.WriteLine("Hook.OnAddItem()");
 
-            var item = Inventory.Values.FirstOrDefault();
+            var item = addedItem ?? Inventory.Values.FirstOrDefault();
 
             if (item == null)
             {
