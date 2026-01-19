@@ -710,7 +710,7 @@ namespace ACE.Server.Network.Structure
                 checkSkill = (voidBase > warBase) ? Skill.VoidMagic : Skill.WarMagic;
             }
 
-            CreatureSkill? skill = examiner?.GetCreatureSkill(checkSkill);
+            CreatureSkill skill = examiner.GetCreatureSkill(checkSkill);
 
             // Slayer
             if (weapon.SlayerCreatureType.HasValue)
@@ -753,7 +753,7 @@ namespace ACE.Server.Network.Structure
             }
 
             // Crushing Blow
-            else if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
+            if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
             {
                 var val = weapon.GetProperty(PropertyFloat.CriticalMultiplier);
                 effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
