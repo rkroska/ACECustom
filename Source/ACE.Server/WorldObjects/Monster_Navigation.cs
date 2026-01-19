@@ -674,8 +674,9 @@ namespace ACE.Server.WorldObjects
                     Teleport(destination); 
                 })
                 .AddDelaySeconds(1.5f)
-                .AddAction(this, ActionType.CreatureLocation_PostTeleportVisuals, () =>
+                .AddAction(this, ActionType.CreatureLocation_TeleportDone, () =>
                 {
+                    OnTeleportComplete();
                     if (!IsDead && PhysicsObj != null)
                     {
                         PlayParticleEffect(PlayScript.Create, Guid);
@@ -683,7 +684,6 @@ namespace ACE.Server.WorldObjects
                         ResetAttack();
                         Sleep();
                     }
-                    Teleporting = false;
                 })
                 .EnqueueChain();
         }

@@ -24,7 +24,7 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_SaveInParallelCallback,
         CreatureEquipment_TryActivateItemSpellsOnWield,
         CreatureLocation_TeleportToPosition,
-        CreatureLocation_PostTeleportVisuals,
+        CreatureLocation_TeleportDone,
         CreatureMissile_EnqueueBroadcast,
         CreatureMissile_EnsureAmmoVisible,
         CreatureNavigation_AddMoveToTick,
