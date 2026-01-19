@@ -306,9 +306,10 @@ namespace ACE.Server.WorldObjects
             // immediate requeue - will wait for next periodic tick). However, SaveScheduler already
             // protects against job overwrite (preserves job when Queued=1, Executing=0), so this
             // early return is primarily a gate optimization, not a correctness requirement.
-            // CRITICAL: High-priority saves (ForcedImmediate, ForcedShortWindow) bypass this check
-            // to ensure they always capture complete snapshots, even if a periodic save is in progress.
-            bool isHighPrioritySave = (reason == SaveReason.ForcedImmediate || reason == SaveReason.ForcedShortWindow);
+            // CRITICAL: Only ForcedImmediate bypasses SaveInProgress (used for logout snapshots)
+            // ForcedShortWindow now respects SaveInProgress to prevent race conditions
+            // It maintains urgency via the 4-second window in ShouldEnqueueSave
+            bool isHighPrioritySave = (reason == SaveReason.ForcedImmediate);
             if (!duringLogout && !isHighPrioritySave && SaveInProgress)
                 return;
 
@@ -380,10 +381,9 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                // For high-priority saves (ForcedImmediate, ForcedShortWindow), bypass the SaveInProgress check
-                // This ensures we always capture a complete snapshot for Critical/Atomic saves,
-                // even if a Periodic save is already queued. The old job will be cancelled and replaced.
-                bool isHighPriority = (reason == SaveReason.ForcedImmediate || reason == SaveReason.ForcedShortWindow);
+                // Only ForcedImmediate bypasses SaveInProgress (used for logout critical snapshots)
+                // ForcedShortWindow now respects SaveInProgress to prevent concurrent modification
+                bool isHighPriority = (reason == SaveReason.ForcedImmediate);
                 
                 if (!SaveInProgress || isHighPriority)
                 {
@@ -535,10 +535,11 @@ namespace ACE.Server.WorldObjects
                                     CharacterChangesDetected = true;
 
                                 // On save failure, still switch offline if logout was pending
-                                // Player will be marked offline even if save failed
-                                if (wasLogoutPending)
+                                // If this was a logout save, we must verify the logout completed effectively
+                                if (wasLogoutPending || duringLogout)
                                 {
-                                    // Already on world thread, can call directly
+                                    // Ensure we are removed from PlayerManager
+                                    // This is the critical step that allows the player to log back in
                                     PlayerManager.SwitchPlayerFromOnlineToOffline(this);
                                 }
                             }

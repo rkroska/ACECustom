@@ -142,7 +142,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Deposit all pyreals
         /// </summary>
-        public void DepositPyreals(bool suppressChat = false)
+        public void DepositPyreals(bool suppressChat = false, bool suppressSave = false)
         {
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting DepositPyreals operation");
             
@@ -189,7 +189,7 @@ namespace ACE.Server.WorldObjects
         /// Deposit specified amount of pyreals
         /// </summary>
         /// <param name="Amount"></param>
-        public void DepositPyreals(long Amount, bool suppressChat = false)
+        public void DepositPyreals(long Amount, bool suppressChat = false, bool suppressSave = false)
         {
             log.Debug($"[BANK_DEBUG] Player: {Name} | Starting DepositPyreals(Amount: {Amount:N0}) operation");
             
@@ -273,13 +273,13 @@ namespace ACE.Server.WorldObjects
             }
             
             // Force save after bank deposit
-            if (totalDeposited > 0)
+            if (!suppressSave && totalDeposited > 0)
             {
-                SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+                SavePlayerToDatabase();
             }
         }
 
-        public void DepositLegendaryKeys(bool suppressChat = false)
+        public void DepositLegendaryKeys(bool suppressChat = false, bool suppressSave = false)
         {
             if (BankedLegendaryKeys == null)
             {
@@ -386,13 +386,13 @@ namespace ACE.Server.WorldObjects
             }
             
             // Force save after bank deposit
-            if (totalDeposited > 0)
+            if (!suppressSave && totalDeposited > 0)
             {
                 SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
             }
         }
 
-        public void DepositMythicalKeys(bool suppressChat = false)
+        public void DepositMythicalKeys(bool suppressChat = false, bool suppressSave = false)
         {
             if (BankedMythicalKeys == null)
             {
@@ -500,13 +500,13 @@ namespace ACE.Server.WorldObjects
             }
             
             // Force save after bank deposit
-            if (totalDeposited > 0)
+            if (!suppressSave && totalDeposited > 0)
             {
                 SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
             }
         }
 
-        public void DepositPeas(bool suppressChat = false)
+        public void DepositPeas(bool suppressChat = false, bool suppressSave = false)
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             LogAndPrint($"[BANK_DEBUG] Player: {Name} | Starting DepositPeas operation with performance improvements");
@@ -715,21 +715,21 @@ namespace ACE.Server.WorldObjects
             }
             
             // Force save after bank deposit
-            if (totalDeposited > 0)
+            if (!suppressSave && totalDeposited > 0)
             {
                 SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
             }
         }
 
-        public void DepositEnlightenedCoins(bool suppressChat = false)
+        public void DepositEnlightenedCoins(bool suppressChat = false, bool suppressSave = false)
         {
             if (BankedEnlightenedCoins == null)
             {
                 BankedEnlightenedCoins = 0;
             }
+            long totalDeposited = 0;
             lock (balanceLock)
             {
-                long totalDeposited = 0;
                 //int i = 0;
                 var EnlList = this.GetInventoryItemsOfWCID(300004);
                 foreach (var coin in EnlList)
@@ -759,18 +759,19 @@ namespace ACE.Server.WorldObjects
             }
 
             // Force save after bank deposit
-            SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+            if (!suppressSave && totalDeposited > 0)
+                SavePlayerToDatabase();
         }
 
-        public void DepositWeaklyEnlightenedCoins(bool suppressChat = false)
+        public void DepositWeaklyEnlightenedCoins(bool suppressChat = false, bool suppressSave = false)
         {
             if (BankedWeaklyEnlightenedCoins == null)
             {
                 BankedWeaklyEnlightenedCoins = 0;
             }
+            long totalDeposited = 0;
             lock (balanceLock)
             {
-                long totalDeposited = 0;
                 //int i = 0;
                 var WeakEnlList = this.GetInventoryItemsOfWCID(300003);
                 foreach (var coin in WeakEnlList)
@@ -800,14 +801,15 @@ namespace ACE.Server.WorldObjects
             }
 
             // Force save after bank deposit
-            SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+            if (!suppressSave && totalDeposited > 0)
+                SavePlayerToDatabase();
         }
 
 
         /// <summary>
         /// Deposit all luminance
         /// </summary>
-        public void DepositLuminance(bool suppressChat = false)
+        public void DepositLuminance(bool suppressChat = false, bool suppressSave = false)
         {
             long availableLuminance = this.AvailableLuminance ?? 0;
             if (availableLuminance > 0)
@@ -825,7 +827,7 @@ namespace ACE.Server.WorldObjects
         /// Deposit specified amount of luminance
         /// </summary>
         /// <param name="Amount"></param>
-        public void DepositLuminance(long Amount, bool suppressChat = false)
+        public void DepositLuminance(long Amount, bool suppressChat = false, bool suppressSave = false)
         {
             if (Amount <= 0)
             {
@@ -887,7 +889,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Deposits all trade notes
         /// </summary>
-        public void DepositTradeNotes(bool suppressChat = false)
+        public void DepositTradeNotes(bool suppressChat = false, bool suppressSave = false)
         {
             if (BankedPyreals == null)
             {
@@ -936,9 +938,9 @@ namespace ACE.Server.WorldObjects
             }
             
             // Force save after bank deposit
-            if (totalDeposited > 0)
+            if (!suppressSave && totalDeposited > 0)
             {
-                SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
+                SavePlayerToDatabase();
             }
         }
 
