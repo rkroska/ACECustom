@@ -539,15 +539,18 @@ namespace ACE.Server.Command.Handlers
                 //deposit
                 if (parameters.Count() == 1 || (parameters.Count() == 2 && parameters[1] == "a"))
                 {
-                    //deposit all - suppress individual messages
-                    session.Player.DepositPyreals(true);
-                    session.Player.DepositLuminance(true);
-                    session.Player.DepositLegendaryKeys(true);
-                    session.Player.DepositPeas(true);
-                    session.Player.DepositEnlightenedCoins(true);
-                    session.Player.DepositWeaklyEnlightenedCoins(true);
-                    session.Player.DepositMythicalKeys(true);
-                    session.Player.DepositTradeNotes(true);
+                    //deposit all - suppress individual messages and saves
+                    session.Player.DepositPyreals(suppressChat: true, suppressSave: true);
+                    session.Player.DepositLuminance(suppressChat: true, suppressSave: true);
+                    session.Player.DepositLegendaryKeys(suppressChat: true, suppressSave: true);
+                    session.Player.DepositPeas(suppressChat: true, suppressSave: true);
+                    session.Player.DepositEnlightenedCoins(suppressChat: true, suppressSave: true);
+                    session.Player.DepositWeaklyEnlightenedCoins(suppressChat: true, suppressSave: true);
+                    session.Player.DepositMythicalKeys(suppressChat: true, suppressSave: true);
+                    session.Player.DepositTradeNotes(suppressChat: true, suppressSave: true);
+
+                    // Single save operation for all deposits
+                    session.Player.SavePlayerToDatabase();
 
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited all currencies!", ChatMessageType.System));
                     return;

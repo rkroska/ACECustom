@@ -38,7 +38,7 @@ namespace ACE.Server.WorldObjects
             if (!EncumbranceVal.HasValue)
                 EncumbranceVal = 0;
 
-            if (!StackUnitEncumbrance.HasValue)
+            if (!StackUnitEncumbrance.HasValue || (StackUnitEncumbrance == 0 && EncumbranceVal > 0))
             {
                 if (StackSize > 1)
                     StackUnitEncumbrance = EncumbranceVal / StackSize;
@@ -46,7 +46,7 @@ namespace ACE.Server.WorldObjects
                     StackUnitEncumbrance = EncumbranceVal;
             }
 
-            if (!StackUnitValue.HasValue)
+            if (!StackUnitValue.HasValue || (StackUnitValue == 0 && Value > 0))
             {
                 if (StackSize > 1)
                     StackUnitValue = Value / StackSize;
@@ -58,6 +58,8 @@ namespace ACE.Server.WorldObjects
             // In the distance future, this can be removed. 2019-02-13 Mag-nus
             if (MaxStackSize > 1)
             {
+                // Re-calculate totals to ensure consistency (e.g. if we just repaired the unit values)
+                // But only if we trust the unit values (which we just ensured we do)
                 EncumbranceVal = (StackUnitEncumbrance ?? 0) * (StackSize ?? 1);
                 Value = (StackUnitValue ?? 0) * (StackSize ?? 1);
             }
