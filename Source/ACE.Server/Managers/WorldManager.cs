@@ -141,40 +141,12 @@ namespace ACE.Server.Managers
                 offlinePlayer.SaveServerBootId = null;
             }
 
-            // If offline player has unsaved changes, trigger an immediate CRITICAL priority save
-            // This bypasses the low-priority offline maintenance queue and completes quickly
-            // Prevents login blocking by ensuring the save drains before HasPendingOrActiveSave check
-            if (offlinePlayer.ChangesDetected && !SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))
-            {
-                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Offline player {character.Name} has pending changes - triggering CRITICAL priority save before login");
-                
-                // Use Critical priority to jump ahead of Periodic offline maintenance saves
-                // This calls DatabaseManager.Shard.SaveBiota directly with Critical priority
-                DatabaseManager.Shard.SaveBiota(offlinePlayer.Biota, offlinePlayer.BiotaDatabaseLock, result =>
-                {
-                    // Callback runs on DB worker thread - route to world thread
-                    if (SaveScheduler.EnqueueToWorldThread != null)
-                    {
-                        SaveScheduler.EnqueueToWorldThread(() =>
-                        {
-                            if (result)
-                            {
-                                log.Debug($"[LOGIN_FLOW] Critical save completed for {character.Name} - clearing ChangesDetected");
-                                // Clear ChangesDetected on successful save
-                                offlinePlayer.ChangesDetected = false;
-                            }
-                            else
-                            {
-                                log.Error($"[LOGIN_FLOW] Critical save FAILED for {character.Name} - will retry on next login attempt");
-                            }
-                        });
-                    }
-                }, SaveScheduler.SaveType.Critical);
-            }
-            else
-            {
-                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Skipping Critical Save: ChangesDetected={offlinePlayer.ChangesDetected}, HasPendingOrActiveSave={SaveScheduler.Instance.HasPendingOrActiveSave(character.Id)}");
-            }
+            // NOTE: Removed Critical save trigger at login (PR 326) as it caused 10-15 minute login trickle
+            // by serializing all logins through the single-threaded Critical queue.
+            // Offline changes are persisted via:
+            // 1. Bank transfers already call offlinePlayer.SaveBiotaToDatabase() immediately
+            // 2. ChangesDetected flag transfers to online player (SwitchPlayerFromOfflineToOnline)
+            // 3. First periodic save (within 3 min) will persist any remaining changes
 
             // Check if there are any pending or active saves for this character using authoritative save system
             if (SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))

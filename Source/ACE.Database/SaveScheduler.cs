@@ -189,7 +189,7 @@ namespace ACE.Database
 
         // Configurable stuck save threshold (default: 30 seconds)
         // Can be set externally via SetStuckThreshold() to read from ServerConfig
-        private TimeSpan _stuckThreshold = TimeSpan.FromSeconds(30);
+        private TimeSpan _stuckThreshold = TimeSpan.FromSeconds(15);
 
         // Track last cleanup time for coalesce tracker cleanup
         private DateTime _lastCoalesceCleanupUtc = DateTime.MinValue;
