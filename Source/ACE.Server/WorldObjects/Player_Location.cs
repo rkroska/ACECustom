@@ -45,12 +45,12 @@ namespace ACE.Server.WorldObjects
             return false;
         }
 
-        private static readonly Motion motionLifestoneRecall = new Motion(MotionStance.NonCombat, MotionCommand.LifestoneRecall);
+        private static readonly Motion motionLifestoneRecall = new(MotionStance.NonCombat, MotionCommand.LifestoneRecall);
 
-        private static readonly Motion motionHouseRecall = new Motion(MotionStance.NonCombat, MotionCommand.HouseRecall);
+        private static readonly Motion motionHouseRecall = new(MotionStance.NonCombat, MotionCommand.HouseRecall);
 
-        public static float RecallMoveThreshold = 8.0f;
-        public static float RecallMoveThresholdSq = RecallMoveThreshold * RecallMoveThreshold;
+        private const float RecallMoveThreshold = 8.0f;
+        public const float RecallMoveThresholdSq = RecallMoveThreshold * RecallMoveThreshold;
 
         public bool TooBusyToRecall
         {
@@ -174,7 +174,7 @@ namespace ACE.Server.WorldObjects
             var startPos = new Position(Location);
 
             // Wait for animation
-            ActionChain lifestoneChain = new ActionChain();
+            ActionChain lifestoneChain = new();
 
             // Then do teleport
             IsBusy = true;
@@ -195,7 +195,7 @@ namespace ACE.Server.WorldObjects
             lifestoneChain.EnqueueChain();
         }
 
-        private static readonly Motion motionMarketplaceRecall = new Motion(MotionStance.NonCombat, MotionCommand.MarketplaceRecall);
+        private static readonly Motion motionMarketplaceRecall = new(MotionStance.NonCombat, MotionCommand.MarketplaceRecall);
 
         public void HandleActionTeleToMarketPlace()
         {
@@ -240,7 +240,7 @@ namespace ACE.Server.WorldObjects
             // TODO: (OptimShi): Actual animation length is longer than in retail. 18.4s
             // float mpAnimationLength = MotionTable.GetAnimationLength((uint)MotionTableId, MotionCommand.MarketplaceRecall);
             // mpChain.AddDelaySeconds(mpAnimationLength);
-            ActionChain mpChain = new ActionChain();
+            ActionChain mpChain = new();
             mpChain.AddDelaySeconds(14);
 
             // Then do teleport
@@ -262,7 +262,7 @@ namespace ACE.Server.WorldObjects
             mpChain.EnqueueChain();
         }
 
-        private static readonly Motion motionAllegianceHometownRecall = new Motion(MotionStance.NonCombat, MotionCommand.AllegianceHometownRecall);
+        private static readonly Motion motionAllegianceHometownRecall = new(MotionStance.NonCombat, MotionCommand.AllegianceHometownRecall);
 
         public void HandleActionRecallAllegianceHometown()
         {
@@ -467,16 +467,16 @@ namespace ACE.Server.WorldObjects
             return allegianceHouse;
         }
 
-        private static readonly Motion motionPkArenaRecall = new Motion(MotionStance.NonCombat, MotionCommand.PKArenaRecall);
+        private static readonly Motion motionPkArenaRecall = new(MotionStance.NonCombat, MotionCommand.PKArenaRecall);
 
-        private static List<Position> pkArenaLocs = new List<Position>()
-        {
+        private static List<Position> pkArenaLocs =
+        [
             new Position(DatabaseManager.World.GetCachedWeenie("portalpkarenanew1")?.GetPosition(PositionType.Destination) ?? new Position(0x00660117, 30, -50, 0.005f, 0, 0,  0.000000f,  1.000000f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpkarenanew2")?.GetPosition(PositionType.Destination) ?? new Position(0x00660106, 10,   0, 0.005f, 0, 0, -0.947071f,  0.321023f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpkarenanew3")?.GetPosition(PositionType.Destination) ?? new Position(0x00660103, 30, -30, 0.005f, 0, 0, -0.699713f,  0.714424f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpkarenanew4")?.GetPosition(PositionType.Destination) ?? new Position(0x0066011E, 50,   0, 0.005f, 0, 0, -0.961021f, -0.276474f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpkarenanew5")?.GetPosition(PositionType.Destination) ?? new Position(0x00660127, 60, -30, 0.005f, 0, 0,  0.681639f,  0.731689f)),
-        };
+        ];
 
         public void HandleActionTeleToPkArena()
         {
@@ -547,14 +547,14 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
         }
 
-        private static List<Position> pklArenaLocs = new List<Position>()
-        {
+        private static List<Position> pklArenaLocs =
+        [
             new Position(DatabaseManager.World.GetCachedWeenie("portalpklarenanew1")?.GetPosition(PositionType.Destination) ?? new Position(0x00670117, 30, -50, 0.005f, 0, 0,  0.000000f,  1.000000f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpklarenanew2")?.GetPosition(PositionType.Destination) ?? new Position(0x00670106, 10,   0, 0.005f, 0, 0, -0.947071f,  0.321023f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpklarenanew3")?.GetPosition(PositionType.Destination) ?? new Position(0x00670103, 30, -30, 0.005f, 0, 0, -0.699713f,  0.714424f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpklarenanew4")?.GetPosition(PositionType.Destination) ?? new Position(0x0067011E, 50,   0, 0.005f, 0, 0, -0.961021f, -0.276474f)),
             new Position(DatabaseManager.World.GetCachedWeenie("portalpklarenanew5")?.GetPosition(PositionType.Destination) ?? new Position(0x00670127, 60, -30, 0.005f, 0, 0,  0.681639f,  0.731689f)),
-        };
+        ];
 
         public void HandleActionTeleToPklArena()
         {
@@ -636,7 +636,7 @@ namespace ACE.Server.WorldObjects
             if (FastTick)
             {
                 var actionChain = new ActionChain();
-                EnqueueMotionAction(actionChain, new List<MotionCommand>() { motionCommand }, 1.0f, motionStance);
+                EnqueueMotionAction(actionChain, [motionCommand], 1.0f, motionStance);
                 actionChain.EnqueueChain();
             }
             else
@@ -754,8 +754,8 @@ namespace ACE.Server.WorldObjects
         /// If a regular player logs out in one of these landblocks,
         /// they will be transported back to the lifestone when they log back in.
         /// </summary>
-        public static HashSet<ushort> NoLog_Landblocks = new HashSet<ushort>()
-        {
+        private static HashSet<ushort> NoLog_Landblocks =
+        [
             // https://asheron.fandom.com/wiki/Special:Search?query=Lifestone+on+Relog%3A+Yes+
             // https://docs.google.com/spreadsheets/d/122xOw3IKCezaTDjC_hggWSVzYJ_9M_zUUtGEXkwNXfs/edit#gid=846612575
 
@@ -799,7 +799,7 @@ namespace ACE.Server.WorldObjects
             0x5965,     // Gauntlet Arena Two (Radiant Blood)
             0x79E9,     // Bloodstone Factory
             0x654C,
-        };
+        ];
 
         /// <summary>
         /// Called when a player first logs in

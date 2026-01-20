@@ -8,20 +8,15 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Entity
 {
-    public class RecordCast
+    public class RecordCast(Player player)
     {
-        public Player Player;
+        public Player Player = player;
 
         public bool Enabled;
 
         public string Filename => $"{Player.Name}Cast.log";
 
         public StringBuilder Buffer = new StringBuilder();
-
-        public RecordCast(Player player)
-        {
-            Player = player;
-        }
 
         public void OnMoveToState(MoveToState moveToState)
         {

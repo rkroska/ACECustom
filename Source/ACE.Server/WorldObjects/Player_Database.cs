@@ -64,7 +64,7 @@ namespace ACE.Server.WorldObjects
         /// The critical thing is that the collections are not added to or removed from while Entity Framework is iterating over them.<para />
         /// Mag-nus 2018-08-19
         /// </summary>
-        public readonly ReaderWriterLockSlim CharacterDatabaseLock = new ReaderWriterLockSlim();
+        public readonly ReaderWriterLockSlim CharacterDatabaseLock = new();
 
         public enum SaveReason
         {
@@ -79,7 +79,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private const int ForcedShortWindowSeconds = 4;
 
-        private readonly object _saveGateLock = new object();
+        private readonly object _saveGateLock = new();
 
         // Next time we are allowed to enqueue a player save (biota and character)
         private DateTime _nextAllowedSaveUtc = DateTime.MinValue;
@@ -93,7 +93,7 @@ namespace ACE.Server.WorldObjects
         private volatile bool _isShuttingDownOrOffline = false;
 
         // Logout save completion tracking
-        private readonly ManualResetEventSlim _logoutSaveCompleted = new ManualResetEventSlim(false);
+        private readonly ManualResetEventSlim _logoutSaveCompleted = new(false);
         private int _logoutSaveStarted; // 0 or 1
         private volatile bool _logoutPending = false; // Set when logout save is requested, cleared when logout completes
 
@@ -478,17 +478,17 @@ namespace ACE.Server.WorldObjects
 
             // getBiotas just returns the pre-built collection (runs on DB worker thread)
             // No world-thread work happens here - everything is already prepared
-            Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas = () => biotas;
-            
+            IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> getBiotas() => biotas;
+
             // CRITICAL: Callback runs on DB worker thread, so we must route all world state access to world thread
             // This prevents deadlocks and world thread stalls when DB worker touches live world objects
-            Action<bool> saveCallback = (result) =>
+            void saveCallback(bool result)
             {
                 // Capture result and logout intent in closure for world thread execution
                 // Capture logout intent once to ensure completion signal always fires when logout was requested
                 var saveResult = result;
                 var wasLogoutPending = Volatile.Read(ref _logoutPending);
-                
+
                 if (SaveScheduler.EnqueueToWorldThread != null)
                 {
                     SaveScheduler.EnqueueToWorldThread(() =>
@@ -558,7 +558,7 @@ namespace ACE.Server.WorldObjects
                                 Volatile.Write(ref _logoutPending, false);
                                 SignalLogoutSaveComplete();
                             }
-                            
+
                             // CRITICAL: Only clear SaveInProgress if THIS job actually started the player save
                             // This prevents clearing flags if the player was already saving from another request
                             if (preparedPlayerForCallback)
@@ -566,7 +566,7 @@ namespace ACE.Server.WorldObjects
                                 SaveInProgress = false;
                                 SaveStartTime = DateTime.MinValue;
                             }
-                            
+
                             // Clear possessions' SaveInProgress flags safely (only for possessions this job prepared)
                             try
                             {
@@ -593,7 +593,7 @@ namespace ACE.Server.WorldObjects
                     // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
                     // This fallback is unsafe and should never occur in production
                     log.Error("[SAVE] CRITICAL: EnqueueToWorldThread not set! Save callback cannot safely execute. This indicates WorldManager.Initialize() was not called or failed.");
-                    
+
                     // CRITICAL: Even if EnqueueToWorldThread is null (fatal mis-init), signal logout completion
                     // to prevent players from hanging at character select screen forever
                     // Use captured logout intent instead of duringLogout parameter since callback may be from coalesced save
@@ -603,7 +603,7 @@ namespace ACE.Server.WorldObjects
                         SignalLogoutSaveComplete();
                     }
                 }
-            };
+            }
 
             // Always use the same player save key to allow coalescing
             // Use Critical save type during logout to ensure final snapshot is persisted
@@ -635,16 +635,16 @@ namespace ACE.Server.WorldObjects
             // will be set and aging saves will eventually retry.
 
             // Func that gets the current Character state at execution time
-            Func<(ACE.Database.Models.Shard.Character character, ReaderWriterLockSlim rwLock)> getCharacter = () =>
+            (Database.Models.Shard.Character character, ReaderWriterLockSlim rwLock) getCharacter() =>
                 (Character, CharacterDatabaseLock);
 
             // CRITICAL: Callback runs on DB worker thread, so we must route all world state access to world thread
             // This prevents deadlocks and world thread stalls when DB worker touches live world objects
-            Action<bool> saveCallback = (result) =>
+            void saveCallback(bool result)
             {
                 // Capture result in closure for world thread execution
                 var saveResult = result;
-                
+
                 if (SaveScheduler.EnqueueToWorldThread != null)
                 {
                     SaveScheduler.EnqueueToWorldThread(() =>
@@ -668,7 +668,7 @@ namespace ACE.Server.WorldObjects
                     // This fallback is unsafe and should never occur in production
                     log.Error("[SAVE] CRITICAL: EnqueueToWorldThread not set! Character save callback cannot safely execute. This indicates WorldManager.Initialize() was not called or failed.");
                 }
-            };
+            }
 
             // Use Critical save type during logout to ensure final snapshot is persisted
             var saveKey = SaveKeys.Character(Character.Id);
@@ -679,7 +679,7 @@ namespace ACE.Server.WorldObjects
                 // Call SerializedShardDatabase method which enqueues to _uniqueQueue
                 DatabaseManager.Shard.SaveCharacterCoalesced(
                     Character.Id,
-                    getCharacter,
+getCharacter,
                     duringLogout ? null : saveCallback);
                 return true; // Indicates successful enqueue to _uniqueQueue
             });
@@ -716,35 +716,24 @@ namespace ACE.Server.WorldObjects
     /// This keeps SaveScheduler generic - it doesn't know about players or PlayerManager.
     /// The dirty marking logic stays in ACE.Server where Player knowledge belongs.
     /// </summary>
-    internal sealed class PlayerSaveJob : ACE.Database.IForcedPeriodicSaveJob, ACE.Database.ICancellableSaveJob
+    internal sealed class PlayerSaveJob(
+        Player player,
+        Func<IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas,
+        Action<bool> saveCallback,
+        bool duringLogout,
+        bool includeCharacterSave = false) : IForcedPeriodicSaveJob, ICancellableSaveJob
     {
-        private readonly Player _player;
-        private readonly Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> _getBiotas;
-        private readonly Action<bool> _saveCallback;
-        private readonly bool _duringLogout;
-        private readonly bool _includeCharacterSave;
+        private readonly Player _player = player ?? throw new ArgumentNullException(nameof(player));
+        private readonly Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> _getBiotas = getBiotas ?? throw new ArgumentNullException(nameof(getBiotas));
+        private readonly Action<bool> _saveCallback = saveCallback ?? throw new ArgumentNullException(nameof(saveCallback));
+        private readonly bool _duringLogout = duringLogout;
+        private readonly bool _includeCharacterSave = includeCharacterSave;
         private bool _forceDirty;
         // Two-stage completion latch for logout: wait for both character and biota saves
-        private int _pendingSaves; // Counter for two-stage logout completion
+        private int _pendingSaves = includeCharacterSave ? 2 : 0; // Counter for two-stage logout completion
         private bool _biotaSaveResult;
         private bool _characterSaveResult;
         private int _completionFired; // Guard to ensure callback fires only once (0 = not fired, 1 = fired)
-
-        public PlayerSaveJob(
-            Player player,
-            Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas,
-            Action<bool> saveCallback,
-            bool duringLogout,
-            bool includeCharacterSave = false)
-        {
-            _player = player ?? throw new ArgumentNullException(nameof(player));
-            _getBiotas = getBiotas ?? throw new ArgumentNullException(nameof(getBiotas));
-            _saveCallback = saveCallback ?? throw new ArgumentNullException(nameof(saveCallback));
-            _duringLogout = duringLogout;
-            _includeCharacterSave = includeCharacterSave;
-            // Initialize counter only if character save is included (two-stage completion)
-            _pendingSaves = includeCharacterSave ? 2 : 0; // 0 means not using counter (normal save path)
-        }
 
         /// <summary>
         /// Forces the player to be marked as dirty before save execution.
@@ -776,10 +765,10 @@ namespace ACE.Server.WorldObjects
             if (_includeCharacterSave)
             {
                 // Save character first (runs on DB worker thread, callback on DB worker thread)
-                Func<(ACE.Database.Models.Shard.Character character, ReaderWriterLockSlim rwLock)> getCharacter = () =>
+                (Database.Models.Shard.Character character, ReaderWriterLockSlim rwLock) getCharacter() =>
                     (_player.Character, _player.CharacterDatabaseLock);
-                
-                Action<bool> characterCallback = (result) =>
+
+                void characterCallback(bool result)
                 {
                     _characterSaveResult = result;
                     // Thread-safe decrement and check if both saves are complete
@@ -792,15 +781,15 @@ namespace ACE.Server.WorldObjects
                         var combinedResult = _biotaSaveResult && _characterSaveResult;
                         _saveCallback?.Invoke(combinedResult);
                     }
-                };
-                
+                }
+
                 // HARDENING: Wrap enqueue in try/catch to prevent hanging logout if enqueue fails
                 try
                 {
                     DatabaseManager.Shard.SaveCharacterCoalesced(
                         _player.Character.Id,
-                        getCharacter,
-                        characterCallback);
+getCharacter,
+characterCallback);
                 }
                 catch (Exception ex)
                 {
