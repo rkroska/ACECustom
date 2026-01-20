@@ -70,7 +70,7 @@ namespace ACE.Server.Entity
         }
     }
 
-    public class Confirmation_CraftInteration(ObjectGuid playerGuid, ObjectGuid sourceGuid, ObjectGuid targetGuid) : Confirmation(playerGuid, ConfirmationType.CraftInteraction)
+    public class Confirmation_CraftInteraction(ObjectGuid playerGuid, ObjectGuid sourceGuid, ObjectGuid targetGuid) : Confirmation(playerGuid, ConfirmationType.CraftInteraction)
     {
         public ObjectGuid SourceGuid = sourceGuid;
         public ObjectGuid TargetGuid = targetGuid;
@@ -104,6 +104,8 @@ namespace ACE.Server.Entity
 
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
+            if (Player == null) return;
+
             var inviter = PlayerManager.GetOnlinePlayer(InviterGuid);
 
             if (!response)

@@ -45,10 +45,6 @@ namespace ACE.Server.WorldObjects
             return false;
         }
 
-        private static readonly Motion motionLifestoneRecall = new(MotionStance.NonCombat, MotionCommand.LifestoneRecall);
-
-        private static readonly Motion motionHouseRecall = new(MotionStance.NonCombat, MotionCommand.HouseRecall);
-
         private const float RecallMoveThreshold = 8.0f;
         public const float RecallMoveThresholdSq = RecallMoveThreshold * RecallMoveThreshold;
 
@@ -195,8 +191,6 @@ namespace ACE.Server.WorldObjects
             lifestoneChain.EnqueueChain();
         }
 
-        private static readonly Motion motionMarketplaceRecall = new(MotionStance.NonCombat, MotionCommand.MarketplaceRecall);
-
         public void HandleActionTeleToMarketPlace()
         {
             if (IsOlthoiPlayer)
@@ -262,12 +256,8 @@ namespace ACE.Server.WorldObjects
             mpChain.EnqueueChain();
         }
 
-        private static readonly Motion motionAllegianceHometownRecall = new(MotionStance.NonCombat, MotionCommand.AllegianceHometownRecall);
-
         public void HandleActionRecallAllegianceHometown()
         {
-            //Console.WriteLine($"{Name}.HandleActionRecallAllegianceHometown()");
-
             if (IsOlthoiPlayer)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.OlthoiCanOnlyRecallToLifestone));
@@ -466,8 +456,6 @@ namespace ACE.Server.WorldObjects
 
             return allegianceHouse;
         }
-
-        private static readonly Motion motionPkArenaRecall = new(MotionStance.NonCombat, MotionCommand.PKArenaRecall);
 
         private static List<Position> pkArenaLocs =
         [
