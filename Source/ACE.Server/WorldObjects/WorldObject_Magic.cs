@@ -1367,20 +1367,7 @@ namespace ACE.Server.WorldObjects
                 // monsters can cast some portal spells on themselves too, possibly?
                 // under certain circumstances, such as ensuring the destination is the same landblock
                 var teleportDest = new Position(spell.Position);
-                AdjustDungeon(teleportDest);
-
-                targetCreature.Teleport(teleportDest);
-                
-                // Perform cleanup for monsters (normally handled by DoTeleport or Client Login for players)
-                new ActionChain()
-                    .AddDelaySeconds(1.0f)
-                    .AddAction(targetCreature, ActionType.CreatureLocation_PostTeleportVisuals, () =>
-                    {
-                        if (targetCreature.IsDead || targetCreature.PhysicsObj == null) return;
-                        targetCreature.PlayParticleEffect(PlayScript.Create, targetCreature.Guid);
-                        targetCreature.Teleporting = false;
-                    })
-                    .EnqueueChain();
+                targetCreature.DoTeleport(teleportDest);
             }
         }
 

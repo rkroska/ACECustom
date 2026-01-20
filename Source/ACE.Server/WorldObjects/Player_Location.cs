@@ -666,7 +666,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public double? LastPortalTeleportTimestampError;
 
-        public void OnTeleportComplete()
+        public override void OnTeleportComplete()
         {
 
             int nonexemptCount = 0;
@@ -703,19 +703,11 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // set materialize physics state
-            // this takes the player from pink bubbles -> fully materialized
-            if (CloakStatus != CloakStatus.On)
-                ReportCollisions = true;
-
-            IgnoreCollisions = false;
-            Hidden = false;
-            Teleporting = false;
+            // Call base to handle common cleanup (IgnoreCollisions, Hidden, Teleporting, Broadcast)
+            base.OnTeleportComplete();
             
             CheckMonsters();
             CheckHouse();
-
-            EnqueueBroadcastPhysicsState();
 
             // hijacking this for both start/end on portal teleport
             if (LastTeleportStartTimestamp == LastPortalTeleportTimestamp)

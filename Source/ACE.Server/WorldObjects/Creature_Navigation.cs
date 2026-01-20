@@ -469,6 +469,25 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Finalizes teleportation by cleaning up physics flags and state.
+        /// Should be called when the teleport animation/delay is fully complete.
+        /// </summary>
+        public virtual void OnTeleportComplete()
+        {
+            // set materialize physics state
+            // this takes the player from pink bubbles -> fully materialized
+            // Only re-enable collisions if not cloaked (admin/GM)
+            if (CloakStatus != CloakStatus.On)
+                ReportCollisions = true;
+
+            IgnoreCollisions = false;
+            Hidden = false;
+            Teleporting = false;
+
+            EnqueueBroadcastPhysicsState();
+        }
+
+        /// <summary>
         /// Cleans up visibility of objects when switching variations.
         /// </summary>
         public virtual void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
