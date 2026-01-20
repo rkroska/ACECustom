@@ -30,11 +30,12 @@ namespace ACE.Server.Entity
         {
             if (!response) return;
 
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
-            var attributeTransferDevice = Player.FindObject(AttributeTransferDevice.Full, Player.SearchLocations.MyInventory) as AttributeTransferDevice;
+            var attributeTransferDevice = player.FindObject(AttributeTransferDevice.Full, Player.SearchLocations.MyInventory) as AttributeTransferDevice;
 
-            attributeTransferDevice?.ActOnUse(Player, true);
+            attributeTransferDevice?.ActOnUse(player, true);
         }
     }
 
@@ -46,11 +47,12 @@ namespace ACE.Server.Entity
         {
             if (!response) return;
 
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
-            var skillAlterationDevice = Player.FindObject(SkillAlterationDevice.Full, Player.SearchLocations.MyInventory) as SkillAlterationDevice;
+            var skillAlterationDevice = player.FindObject(SkillAlterationDevice.Full, Player.SearchLocations.MyInventory) as SkillAlterationDevice;
 
-            skillAlterationDevice?.ActOnUse(Player, true);
+            skillAlterationDevice?.ActOnUse(player, true);
         }
     }
 
@@ -62,11 +64,12 @@ namespace ACE.Server.Entity
         {
             if (!response) return;
 
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
-            var augmentation = Player.FindObject(AugmentationGuid.Full, Player.SearchLocations.MyInventory) as AugmentationDevice;
+            var augmentation = player.FindObject(AugmentationGuid.Full, Player.SearchLocations.MyInventory) as AugmentationDevice;
 
-            augmentation?.ActOnUse(Player, true);
+            augmentation?.ActOnUse(player, true);
         }
     }
 
@@ -79,22 +82,22 @@ namespace ACE.Server.Entity
 
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
             if (!response)
             {
-                Player.SendWeenieError(WeenieError.YouChickenOut);
-
+                player.SendWeenieError(WeenieError.YouChickenOut);
                 return;
             }
 
             // inventory only?
-            var source = Player.FindObject(SourceGuid.Full, Player.SearchLocations.LocationsICanMove);
-            var target = Player.FindObject(TargetGuid.Full, Player.SearchLocations.LocationsICanMove);
+            var source = player.FindObject(SourceGuid.Full, Player.SearchLocations.LocationsICanMove);
+            var target = player.FindObject(TargetGuid.Full, Player.SearchLocations.LocationsICanMove);
 
             if (source == null || target == null) return;
 
-            RecipeManager.UseObjectOnTarget(Player, source, target, true);
+            RecipeManager.UseObjectOnTarget(player, source, target, true);
         }
     }
 
@@ -104,18 +107,19 @@ namespace ACE.Server.Entity
 
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
             var inviter = PlayerManager.GetOnlinePlayer(InviterGuid);
 
             if (!response)
             {
-                inviter?.SendMessage($"{Player.Name} {(timeout ? "did not respond to" : "has declined")} your offer of fellowship.");
+                inviter?.SendMessage($"{player.Name} {(timeout ? "did not respond to" : "has declined")} your offer of fellowship.");
                 return;
             }
 
-            if (Player != null && inviter != null && inviter.Fellowship != null)
-                inviter.Fellowship.AddConfirmedMember(inviter, Player, response);
+            if (player != null && inviter != null && inviter.Fellowship != null)
+                inviter.Fellowship.AddConfirmedMember(inviter, player, response);
         }
     }
 
@@ -125,17 +129,18 @@ namespace ACE.Server.Entity
 
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
             var vassal = PlayerManager.GetOnlinePlayer(VassalGuid);
 
             if (!response)
             {
-                vassal?.SendMessage($"{Player.Name} {(timeout ? "did not respond to" : "has declined")} your offer of allegiance.");
+                vassal?.SendMessage($"{player.Name} {(timeout ? "did not respond to" : "has declined")} your offer of allegiance.");
                 return;
             }
 
-            vassal?.SwearAllegiance(Player.Guid.Full, true, true);
+            vassal?.SwearAllegiance(player.Guid.Full, true, true);
         }
     }
 
@@ -147,14 +152,15 @@ namespace ACE.Server.Entity
 
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
-            var source = Player.FindObject(SourceGuid.Full, Player.SearchLocations.Landblock);
+            var source = player.FindObject(SourceGuid.Full, Player.SearchLocations.Landblock);
 
             if (source is Hook hook && hook.Item != null)
                 source = hook.Item;
 
-            source?.EmoteManager.ExecuteEmoteSet(response ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure, Quest, Player);
+            source?.EmoteManager.ExecuteEmoteSet(response ? EmoteCategory.TestSuccess : EmoteCategory.TestFailure, Quest, player);
         }
     }
 
@@ -166,7 +172,8 @@ namespace ACE.Server.Entity
         {
             if (!response) return;
 
-            if (Player == null) return;
+            var player = Player;
+            if (player == null) return;
 
             Action();
         }
