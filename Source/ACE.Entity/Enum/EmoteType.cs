@@ -143,6 +143,7 @@ namespace ACE.Entity.Enum
         GrantVitalStat                = 134, //Custom
         InqServerQuestSolves          = 135, //Custom - Check if quest has been completed by anyone on server
         GrantRandomQuestStamp         = 136, //Custom
+        RegisterPetSkin               = 150, //Custom - Pet Registry registration
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

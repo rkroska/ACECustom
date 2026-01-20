@@ -1426,6 +1426,24 @@ namespace ACE.Server.Command.Handlers
                             session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
                         }
                     }
+                    else if (key == "pets")
+                    {
+                        // Pet Registry leaderboard - by account
+                        var topPets = PetRegistryManager.GetTopPets();
+                        if (topPets.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Pet Species Registered:", ChatMessageType.Broadcast));
+                            for (int i = 0; i < topPets.Count; i++)
+                            {
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {topPets[i].Count:N0} species - {topPets[i].AccountName}", ChatMessageType.Broadcast));
+                            }
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("No pet registrations yet!", ChatMessageType.Broadcast));
+                        }
+                        return; // Early return since we handled display ourselves
+                    }
                     else if (key == "gymnos")
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
@@ -1440,6 +1458,40 @@ namespace ACE.Server.Command.Handlers
             catch (Exception ex)
             {
                 log.Error($"Error in DisplayTop command: {ex.Message}", ex);
+            }
+        }
+
+        [CommandHandler("petslog", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "View your Pet Registry collection")]
+        public static void HandlePetsLog(Session session, params string[] parameters)
+        {
+            try
+            {
+                var player = session.Player;
+                var accountId = player.Account.AccountId;
+
+                var entries = PetRegistryManager.GetPetRegistry(accountId);
+                var count = entries.Count;
+
+                if (count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("=== Your Pet Log ===", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Your Pet Log is empty.", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Show captured essences to Professor Ruggan to register them!", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat($"=== Your Pet Log ({count} species) ===", ChatMessageType.Broadcast));
+
+                var i = 1;
+                foreach (var (wcid, name, date) in entries)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{i++}. {name}", ChatMessageType.Broadcast));
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error in petslog command: {ex.Message}", ex);
+                session.Network.EnqueueSend(new GameMessageSystemChat("An error occurred. Please try again.", ChatMessageType.Broadcast));
             }
         }
 

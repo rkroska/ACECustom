@@ -1582,6 +1582,43 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                case EmoteType.RegisterPetSkin:
+                    // Pet Registry - register captured essence to player's account
+                    // In emote context: player is the target, WorldObject is the NPC
+                    // The essence WCID is stored in emote.WeenieClassId
+                    if (player != null)
+                    {
+                        // Find the captured essence in player's inventory by WCID
+                        // The emote should be triggered with WeenieClassId matching the captured essence
+                        WorldObject essence = null;
+                        
+                        if (emote.WeenieClassId.HasValue && emote.WeenieClassId.Value > 0)
+                        {
+                            // Find by specific WCID (most reliable)
+                            essence = player.FindObject(
+                                player.GetInventoryItemsOfWCID((uint)emote.WeenieClassId.Value).FirstOrDefault()?.Guid.Full ?? 0,
+                                Player.SearchLocations.MyInventory,
+                                out _, out _, out _);
+                        }
+                        
+                        if (essence == null)
+                        {
+                            // Fallback: find any captured essence in inventory
+                            essence = player.GetAllPossessions()
+                                .FirstOrDefault(wo => MonsterCapture.IsCapturedAppearance(wo));
+                        }
+                        
+                        if (essence != null)
+                        {
+                            PetRegistryManager.RegisterEssence(player, essence);
+                        }
+                        else
+                        {
+                            player.SendMessage("You need to show me a captured essence to register.");
+                        }
+                    }
+                    break;
+
                 case EmoteType.StartBarber:
 
                     if (player != null)
