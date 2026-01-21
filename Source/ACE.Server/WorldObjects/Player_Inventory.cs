@@ -3707,7 +3707,11 @@ namespace ACE.Server.WorldObjects
                 if (target is Player targetAsPlayer)
                     GiveObjectToPlayer(targetAsPlayer, item, itemFoundInContainer, itemRootOwner, itemWasEquipped, amount);
                 else
+                {
+                    // Track specific item for emote handlers
+                    LastGivenItemGuid = item.Guid;
                     GiveObjectToNPC(target, item, itemFoundInContainer, itemRootOwner, itemWasEquipped, amount);
+                }
 
             });    // if player is within UseRadius of moveToTarget, perform rotation?
         }

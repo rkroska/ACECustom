@@ -97,6 +97,12 @@ namespace ACE.Server.WorldObjects
             set { if (value == null) RemoveProperty(PropertyString.CapturedItems); else SetProperty(PropertyString.CapturedItems, value); }
         }
 
+        public int? VisualOverrideCreatureType
+        {
+            get => GetProperty(PropertyInt.CapturedCreatureType);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureType); else SetProperty(PropertyInt.CapturedCreatureType, value.Value); }
+        }
+
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
@@ -256,6 +262,8 @@ namespace ACE.Server.WorldObjects
 
                 if (VisualOverrideClothingBase.HasValue)
                     pet.ClothingBase = VisualOverrideClothingBase.Value;
+                else
+                    pet.RemoveProperty(PropertyDataId.ClothingBase); // Remove inherited ClothingBase if original had none
 
                 if (VisualOverrideIcon.HasValue)
                     pet.IconId = VisualOverrideIcon.Value;
@@ -272,15 +280,32 @@ namespace ACE.Server.WorldObjects
                 // Apply creature name override
                 if (!string.IsNullOrEmpty(VisualOverrideName))
                 {
-                    // Keep the player's name prefix, replace the pet type
-                    // e.g., "Admin's Punk Healing Idol" -> "Admin's Monouga"
+                    // Strip ALL existing "Player's" prefixes to get base creature name
+                    var baseName = VisualOverrideName;
+                    int apostropheIdx;
+                    while ((apostropheIdx = baseName.IndexOf("'s ")) > 0)
+                    {
+                        baseName = baseName.Substring(apostropheIdx + 3);
+                    }
+                    
+                    // Now add only the current owner's name
                     var ownerName = player.Name;
-                    pet.Name = $"{ownerName}'s {VisualOverrideName}";
+                    //pet.Name = $"{ownerName}'s {baseName}";
+                    pet.Name = $"{baseName}";
+                }
+                
+                // Apply creature type (species) override
+                if (VisualOverrideCreatureType.HasValue)
+                {
+                    pet.CreatureType = (ACE.Entity.Enum.CreatureType)VisualOverrideCreatureType.Value;
                 }
 
                 // Equip Captured Items (Armor, Weapons, Shield)
                 if (!string.IsNullOrEmpty(VisualOverrideCapturedItems))
                 {
+                    // Calculate scale ratio: how much the pet was shrunk/grown
+                    var petScaleRatio = pet.ObjScale ?? 1.0f;
+                    
                     var itemEntries = VisualOverrideCapturedItems.Split('|', StringSplitOptions.RemoveEmptyEntries);
                     foreach (var entry in itemEntries)
                     {
@@ -291,11 +316,19 @@ namespace ACE.Server.WorldObjects
                             var item = WorldObjectFactory.CreateNewWorldObject(itemWcid);
                             if (item != null)
                             {
-                                // Apply Visual Properties
+                                // Apply Visual Properties - scale items by pet's scale ratio
                                 if (parts.Length > 1 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var itemScale))
                                 {
-                                    if (System.Math.Abs(itemScale - 1.0f) > 0.001f)
-                                        item.ObjScale = itemScale;
+                                    // Multiply original item scale by pet scale ratio
+                                    var adjustedScale = itemScale * petScaleRatio;
+                                    if (System.Math.Abs(adjustedScale - 1.0f) > 0.001f)
+                                        item.ObjScale = adjustedScale;
+                                }
+                                else
+                                {
+                                    // No original scale stored, just use pet's ratio
+                                    if (System.Math.Abs(petScaleRatio - 1.0f) > 0.001f)
+                                        item.ObjScale = petScaleRatio;
                                 }
 
                                 if (parts.Length > 2 && int.TryParse(parts[2], out var itemPalette) && itemPalette != 0)

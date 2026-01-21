@@ -46,6 +46,8 @@ namespace ACE.Server.WorldObjects
 
         public bool LastContact = true;
 
+        public ObjectGuid LastGivenItemGuid { get; set; }
+
         public bool IsJumping
         {
             get

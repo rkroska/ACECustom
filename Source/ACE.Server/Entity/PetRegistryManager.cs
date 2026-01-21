@@ -4,6 +4,7 @@ using System.Linq;
 
 using ACE.Database;
 using ACE.Database.Models.Shard;
+using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
@@ -91,6 +92,7 @@ namespace ACE.Server.Entity
             // Extract creature info from the essence
             var wcid = essence.GetProperty(PropertyInt.CapturedCreatureWCID);
             var creatureName = essence.GetProperty(PropertyString.CapturedCreatureName);
+            var creatureType = essence.GetProperty(PropertyInt.CapturedCreatureType);
 
             if (!wcid.HasValue || string.IsNullOrEmpty(creatureName))
             {
@@ -101,21 +103,61 @@ namespace ACE.Server.Entity
             var accountId = player.Account.AccountId;
             var creatureWcid = (uint)wcid.Value;
 
-            // Check if already registered
-            if (IsPetRegistered(accountId, creatureWcid))
+            // Check if already registered (by creature name, not WCID)
+            if (IsPetRegistered(accountId, creatureName))
             {
-                player.SendMessage($"You've already registered {creatureName} in your Pet Log.");
+                player.SendMessage($"You've already registered a {creatureName} in your Pet Log.");
                 return;
             }
 
             // Register it
-            if (RegisterPet(accountId, creatureWcid, creatureName))
+            if (RegisterPet(accountId, creatureWcid, creatureName, creatureType.HasValue ? (uint?)creatureType.Value : null))
             {
                 var count = GetPetRegistryCount(accountId);
                 player.SendMessage($"Registered: {creatureName}! Your Pet Log now has {count} unique species.");
-                player.SendMessage("Use '/petslog' anytime to review your collection.");
+                player.SendMessage("Use '/pets' anytime to review your collection.");
                 
                 log.Debug($"[PetRegistry] {player.Name} (Account: {accountId}) registered {creatureName} (WCID: {creatureWcid})");
+                
+                // Check if this is the first pet of this creature type - award QB
+                if (creatureType.HasValue)
+                {
+                    var typeValue = (uint)creatureType.Value;
+                    
+                    // Check if account already has ANY pet of this type
+                    // Note: We registered the pet above, so we need to check if count > 1
+                    using (var context = new ShardDbContext())
+                    {
+                        var typeCount = context.PetRegistry
+                            .Count(p => p.AccountId == accountId && p.CreatureType == typeValue);
+                        
+                        if (typeCount == 1) // This is the first of this type!
+                        {
+                            var typeName = ((CreatureType)typeValue).ToString();
+                            player.QuestManager.Stamp($"CapturedEssence{typeName}");
+                            player.SendMessage($"First {typeName} captured!", ChatMessageType.Broadcast);
+                            
+                            log.Debug($"[PetRegistry] {player.Name} captured their first {typeName} - QB awarded");
+                        }
+                    }
+                }
+                
+                // Check milestone QB awards: 1, 5, 10, then every 25 (25, 50, 75, 100, 125, ...)
+                bool isMilestone = count == 1 || count == 5 || count == 10 || (count >= 25 && count % 25 == 0);
+                
+                if (isMilestone)
+                {
+                    var questName = $"PetRegistry{count}";
+                    
+                    // Check if already awarded this milestone
+                    if (!player.QuestManager.HasQuest(questName))
+                    {
+                        player.QuestManager.Stamp(questName);
+                        player.SendMessage($"Milestone: {count} pets registered!", ChatMessageType.Broadcast);
+                        
+                        log.Debug($"[PetRegistry] {player.Name} reached milestone {count} pets - QB awarded");
+                    }
+                }
             }
             else
             {
@@ -124,20 +166,20 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Check if a WCID is already registered for an account
+        /// Check if a creature name is already registered for an account
         /// </summary>
-        public static bool IsPetRegistered(uint accountId, uint wcid)
+        public static bool IsPetRegistered(uint accountId, string creatureName)
         {
             using (var context = new ShardDbContext())
             {
-                return context.PetRegistry.Any(p => p.AccountId == accountId && p.Wcid == wcid);
+                return context.PetRegistry.Any(p => p.AccountId == accountId && p.CreatureName == creatureName);
             }
         }
 
         /// <summary>
         /// Register a new pet to an account
         /// </summary>
-        public static bool RegisterPet(uint accountId, uint wcid, string creatureName)
+        public static bool RegisterPet(uint accountId, uint wcid, string creatureName, uint? creatureType = null)
         {
             try
             {
@@ -148,6 +190,7 @@ namespace ACE.Server.Entity
                         AccountId = accountId,
                         Wcid = wcid,
                         CreatureName = creatureName,
+                        CreatureType = creatureType,
                         RegisteredAt = DateTime.UtcNow
                     };
 
@@ -179,39 +222,65 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Get pet count for an account
+        /// Get unique pet count for an account (by distinct creature names)
         /// </summary>
         public static int GetPetRegistryCount(uint accountId)
         {
             using (var context = new ShardDbContext())
             {
-                return context.PetRegistry.Count(p => p.AccountId == accountId);
+                return context.PetRegistry
+                    .Where(p => p.AccountId == accountId)
+                    .Select(p => p.CreatureName)
+                    .Distinct()
+                    .Count();
             }
         }
 
         /// <summary>
-        /// Get top accounts by pet count (for leaderboard)
+        /// Get top accounts by unique pet count (for leaderboard) - counts distinct creature names
+        /// Returns main character name (by most logins) instead of account name
         /// </summary>
-        public static List<(uint AccountId, string AccountName, int Count)> GetTopPets(int limit = 25)
+        public static List<(uint AccountId, string CharacterName, int Count)> GetTopPets(int limit = 25)
         {
             using (var context = new ShardDbContext())
             {
+                // Count distinct creature names per account
                 var topAccounts = context.PetRegistry
-                    .GroupBy(p => p.AccountId)
+                    .GroupBy(p => new { p.AccountId, p.CreatureName })
+                    .Select(g => g.Key.AccountId)
+                    .GroupBy(accountId => accountId)
                     .Select(g => new { AccountId = g.Key, Count = g.Count() })
                     .OrderByDescending(x => x.Count)
                     .Take(limit)
                     .ToList();
 
-                // Get account names from authentication database
-                var results = new List<(uint AccountId, string AccountName, int Count)>();
+                // Get main character name (most logins) for each account
+                var results = new List<(uint AccountId, string CharacterName, int Count)>();
                 foreach (var entry in topAccounts)
                 {
-                    var accountName = DatabaseManager.Authentication.GetAccountById(entry.AccountId)?.AccountName ?? "Unknown";
-                    results.Add((entry.AccountId, accountName, entry.Count));
+                    // Get character with most total_logins for this account
+                    var mainCharacter = context.Character
+                        .Where(c => c.AccountId == entry.AccountId && !c.IsDeleted)
+                        .OrderByDescending(c => c.TotalLogins)
+                        .Select(c => c.Name)
+                        .FirstOrDefault() ?? "Unknown";
+                    
+                    results.Add((entry.AccountId, mainCharacter, entry.Count));
                 }
 
                 return results;
+            }
+        }
+
+        /// <summary>
+        /// Check if account has registered ANY pet of a specific creature type
+        /// Used for "First Drudge", "First Banderling" QB awards
+        /// </summary>
+        public static bool HasCreatureType(uint accountId, uint creatureType)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.PetRegistry.Any(p => p.AccountId == accountId && p.CreatureType == creatureType);
             }
         }
     }

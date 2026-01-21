@@ -144,6 +144,8 @@ namespace ACE.Entity.Enum
         InqServerQuestSolves          = 135, //Custom - Check if quest has been completed by anyone on server
         GrantRandomQuestStamp         = 136, //Custom
         RegisterPetSkin               = 150, //Custom - Pet Registry registration
+        InqPetRegistryCount           = 151, //Custom - Check pet registry count (uses min/max)
+        InqPetRegistryCreatureType    = 152, //Custom - Check if account has any pet of creature type (uses stat field)
 
         // Unknown Id Emotes & Custom Emotes
         Enlightenment                 = 9001

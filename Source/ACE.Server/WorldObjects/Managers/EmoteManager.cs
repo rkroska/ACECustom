@@ -1592,7 +1592,20 @@ namespace ACE.Server.WorldObjects.Managers
                         // The emote should be triggered with WeenieClassId matching the captured essence
                         WorldObject essence = null;
                         
-                        if (emote.WeenieClassId.HasValue && emote.WeenieClassId.Value > 0)
+                        // 1. Strict Mode: Check if we have a specific handed item context (HIGHEST PRIORITY)
+                        if (player.LastGivenItemGuid != ObjectGuid.Invalid)
+                        {
+                            // Verify this item is still in possession and valid
+                            var givenItem = player.GetInventoryItem(player.LastGivenItemGuid);
+                            
+                            if (givenItem != null && MonsterCapture.IsCapturedAppearance(givenItem))
+                            {
+                                essence = givenItem;
+                            }
+                        }
+
+                        // 2. WCID Fallback: Try to find by emote's WCID if no strict item found
+                        if (essence == null && emote.WeenieClassId.HasValue && emote.WeenieClassId.Value > 0)
                         {
                             // Find by specific WCID (most reliable)
                             essence = player.FindObject(
@@ -1603,10 +1616,25 @@ namespace ACE.Server.WorldObjects.Managers
                         
                         if (essence == null)
                         {
-                            // Fallback: find any captured essence in inventory
-                            essence = player.GetAllPossessions()
-                                .FirstOrDefault(wo => MonsterCapture.IsCapturedAppearance(wo));
+                            // 3. Smart Fallback: Prefer UNREGISTERED essence
+                            var allEssences = player.GetAllPossessions()
+                                .Where(wo => MonsterCapture.IsCapturedAppearance(wo))
+                                .ToList();
+
+                            // First try to find one we haven't registered yet
+                            essence = allEssences.FirstOrDefault(wo => 
+                            {
+                                var name = wo.GetProperty(PropertyString.CapturedCreatureName);
+                                return !string.IsNullOrEmpty(name) && !PetRegistryManager.IsPetRegistered(player.Account.AccountId, name);
+                            });
+
+                            // If all are registered, just pick the first one (will trigger "already registered" msg)
+                            if (essence == null)
+                                essence = allEssences.FirstOrDefault();
                         }
+                        
+                        // Clear the ephemeral context after use
+                        player.LastGivenItemGuid = ObjectGuid.Invalid;
                         
                         if (essence != null)
                         {
@@ -1615,6 +1643,42 @@ namespace ACE.Server.WorldObjects.Managers
                         else
                         {
                             player.SendMessage("You need to show me a captured essence to register.");
+                        }
+                    }
+                    break;
+
+                case EmoteType.InqPetRegistryCount:
+                    // Pet Registry - check if player's pet registry count is within min/max range
+                    // Uses emote.Min and emote.Max for range, emote.Message for quest name
+                    // Branches to QuestSuccess if count is in range, QuestFailure otherwise
+                    if (player != null)
+                    {
+                        var petCount = PetRegistryManager.GetPetRegistryCount(player.Account.AccountId);
+                        var minCount = emote.Min ?? int.MinValue;
+                        var maxCount = emote.Max ?? int.MaxValue;
+                        
+                        var inRange = petCount >= minCount && petCount <= maxCount;
+                        
+                        log.Debug($"[InqPetRegistryCount] Player {player.Name}: count={petCount}, min={minCount}, max={maxCount}, inRange={inRange}");
+                        
+                        ExecuteEmoteSet(inRange ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+                    break;
+
+                case EmoteType.InqPetRegistryCreatureType:
+                    // Pet Registry - check if player has ANY pet of a specific creature type
+                    // Uses emote.Stat field for CreatureType (Drudge=2, Banderling=6, etc.)
+                    // Branches to QuestSuccess if has type, QuestFailure if first of type
+                    if (player != null)
+                    {
+                        var creatureType = emote.Stat;
+                        if (creatureType.HasValue)
+                        {
+                            var hasType = PetRegistryManager.HasCreatureType(player.Account.AccountId, (uint)creatureType.Value);
+                            
+                            log.Debug($"[InqPetRegistryCreatureType] Player {player.Name}: creatureType={creatureType}, hasType={hasType}");
+                            
+                            ExecuteEmoteSet(hasType ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
                         }
                     }
                     break;

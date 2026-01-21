@@ -39,9 +39,9 @@ namespace ACE.Server.Entity
                 return;
             }
             
-            // Find nearest creature within 5 units
+            // Find nearest creature within 5 units - must be attackable (hostile mobs only)
             var nearbyCreatures = player.PhysicsObj.ObjMaint.GetVisibleObjectsValuesOfTypeCreature()
-                .Where(c => c != null && c != player && !(c is Player) && c.Location != null && c.Location.DistanceTo(player.Location) <= 5.0f)
+                .Where(c => c != null && c != player && !(c is Player) && c.Attackable && c.Location != null && c.Location.DistanceTo(player.Location) <= 5.0f)
                 .OrderBy(c => c.Location.DistanceTo(player.Location))
                 .ToList();
             
@@ -60,11 +60,22 @@ namespace ACE.Server.Entity
                 return;
             }
             
-            // Health threshold check (must be below 20%)
+            // Get crystal tier early for debug bypass checks
+            var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
+            var isDebugLens = crystalTier == 4;
+            
+            // Health threshold check (must be below 20%) - DEBUG LENS BYPASSES THIS
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
-            if (healthPercent > 0.20f)
+            if (!isDebugLens && healthPercent > 0.20f)
             {
                 player.SendTransientError($"The creature is too strong! Weaken it below 20% health first. (Currently {healthPercent:P0})");
+                return;
+            }
+            
+            // Prevent capturing tamed creatures (other players' pets)
+            if (targetCreature.PetOwner != null && targetCreature.PetOwner.Value > 0)
+            {
+                player.SendTransientError("You cannot capture a tamed creature!");
                 return;
             }
             
@@ -92,8 +103,8 @@ namespace ACE.Server.Entity
             
             player.SendMessage($"[Debug] Capture Roll: {roll:P2} vs Chance: {successRate:P2} -> {(success ? "SUCCESS" : "FAIL")}");
             
-            // Always consume crystal
-            player.TryConsumeFromInventoryWithNetworking(crystal, 1);
+            // Consume crystal (DEBUG LENS tier 4 is never consumed)
+            var consumeResult = isDebugLens ? true : player.TryConsumeFromInventoryWithNetworking(crystal, 1);
             
             if (success)
             {
@@ -107,7 +118,7 @@ namespace ACE.Server.Entity
                 targetCreature.SetCombatMode(CombatMode.NonCombat);
                 
                 // Create siphoned essence
-                var capturedItem = CreateCapturedAppearance(targetCreature, crystal);
+                var capturedItem = CreateCapturedAppearance(targetCreature, crystal, player);
                 if (capturedItem == null)
                 {
                     player.SendTransientError("Failed to create siphoned essence!");
@@ -196,6 +207,7 @@ namespace ACE.Server.Entity
                 1 => (0.05f, 0.10f), // Flawed: 5% base, 10% max
                 2 => (0.10f, 0.20f), // Pristine: 10% base, 20% max
                 3 => (0.15f, 0.30f), // Perfect: 15% base, 30% max
+                4 => (1.00f, 1.00f), // Debug: 100% capture rate for testing
                 _ => (0.10f, 0.20f)
             };
             
@@ -210,9 +222,11 @@ namespace ACE.Server.Entity
             // Health bonus (max +5% at 0% health)
             var healthBonus = (1f - healthPercent) * 0.05f;
             
-            // Creature difficulty penalty (max -25% for level 1100+)
+            // Creature difficulty penalty based on level DIFFERENCE (max -25% for 100+ levels higher)
             var creatureLevel = creature.Level ?? 1;
-            var difficultyPenalty = Math.Max(0, (creatureLevel - 200) / 3600f);
+            var playerLevel = player.Level ?? 1;
+            var levelDiff = Math.Max(0, creatureLevel - playerLevel);
+            var difficultyPenalty = Math.Min(levelDiff / 400f, 0.25f);  // 0% at same level, 25% at 100+ levels higher
             
             // Capture Difficulty Multiplier (default 1.0)
             var difficultyMultiplier = (float)(creature.GetProperty(PropertyFloat.CaptureDifficulty) ?? 1.0f);
@@ -226,7 +240,7 @@ namespace ACE.Server.Entity
             player.SendMessage($"[Debug] Skill Bonus: +{skillBonus:P1}");
             if (isSpecialized) player.SendMessage($"[Debug] Spec Bonus: +{specializationBonus:P1}");
             player.SendMessage($"[Debug] Health Bonus: +{healthBonus:P1} (Target HP: {healthPercent:P0})");
-            if (difficultyPenalty > 0) player.SendMessage($"[Debug] Level Penalty: -{difficultyPenalty:P1}");
+            if (difficultyPenalty > 0) player.SendMessage($"[Debug] Level Penalty: -{difficultyPenalty:P1} (You: {playerLevel}, Target: {creatureLevel})");
             if (difficultyMultiplier != 1.0f) player.SendMessage($"[Debug] Diff Multiplier: x{difficultyMultiplier:F2}");
             player.SendMessage($"[Debug] Final Rate: {finalRate:P1} (Cap: {tierCap:P1})");
             player.SendMessage($"[Debug] --------------------");
@@ -237,19 +251,31 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Create captured appearance with ALL visual properties
         /// </summary>
-        private static WorldObject CreateCapturedAppearance(Creature creature, WorldObject crystal)
+        private static WorldObject CreateCapturedAppearance(Creature creature, WorldObject crystal, Player player)
         {
             var item = WorldObjectFactory.CreateNewWorldObject(78780004); // Captured Appearance Template
             
             if (item == null)
                 return null;
             
-            item.Name = $"Siphoned {creature.Name} Essence";
-            item.LongDesc = $"The siphoned essence of {creature.Name}. Use on a pet device to apply this appearance to your summoned pet.";
+            // Get the base creature name (strip ALL "Player's" prefixes - may be nested)
+            var creatureName = creature.Name;
+            int apostropheIdx;
+            while ((apostropheIdx = creatureName.IndexOf("'s ")) > 0)
+            {
+                creatureName = creatureName.Substring(apostropheIdx + 3); // Skip past "'s "
+            }
             
-            // Store creature reference and name
+            item.Name = $"Siphoned {creatureName} Essence";
+            item.LongDesc = $"The siphoned essence of a {creatureName}. Use on a pet device to apply this appearance to your summoned pet.";
+            
+            // Store creature reference, name, and species (use base name without ownership prefix)
             item.SetProperty(PropertyInt.CapturedCreatureWCID, (int)creature.WeenieClassId);
-            item.SetProperty(PropertyString.CapturedCreatureName, creature.Name);
+            item.SetProperty(PropertyString.CapturedCreatureName, creatureName);
+            
+            // Capture creature type (species) for spawned pet
+            if (creature.CreatureType.HasValue)
+                item.SetProperty(PropertyInt.CapturedCreatureType, (int)creature.CreatureType.Value);
             
             // Capture ALL visual properties
             if (creature.SetupTableId != 0)
@@ -316,7 +342,7 @@ namespace ACE.Server.Entity
             
             // Smart scale normalization for pets
             // We target a consistent physical size (e.g. human height) rather than just scaling relative to the model
-            var normalizedScale = NormalizeScaleForPet(creature);
+            var normalizedScale = NormalizeScaleForPet(creature, player);
             item.SetProperty(PropertyFloat.CapturedScale, normalizedScale);
             
             return item;
@@ -324,29 +350,45 @@ namespace ACE.Server.Entity
         
         /// <summary>
         /// Normalize creature scale based on PHYSICAL HEIGHT
-        /// Targets a standard pet size (~1.75m tall) regardless of original model size
+        /// Targets a standard pet size (~0.75m tall) regardless of original model size
         /// </summary>
-        private static float NormalizeScaleForPet(Creature creature)
+        private static float NormalizeScaleForPet(Creature creature, Player player)
         {
-            const float TARGET_HEIGHT = 1.75f; // Target height in meters (approx human size)
-            const float MIN_SCALE = 0.2f;      // Don't let them get microscopic
-            const float MAX_SCALE = 0.6f;      // Don't let them get huge (bosses)
+            const float TARGET_HEIGHT = 0.75f; // Target height in meters (compact pet size)
+            const float MIN_SCALE = 0.01f;     // Allow massive creatures to shrink to target (75m → 0.75m)
+            const float MAX_SCALE = 15.0f;     // Allow tiny creatures (rabbits, bugs) to scale up to target
             
             // Get current physical height (includes current scale)
             var currentHeight = creature.PhysicsObj.GetHeight();
+            var currentScale = creature.ObjScale ?? 1.0f;
+            
+            player.SendMessage($"[Debug] --- Scale Normalization ---");
+            player.SendMessage($"[Debug] Creature: {creature.Name}");
+            player.SendMessage($"[Debug] Physical Height: {currentHeight:F2}m");
+            player.SendMessage($"[Debug] Current ObjScale: {currentScale:F3}");
             
             // If height is 0 (some models), fallback to simple scale logic
             if (currentHeight <= 0.1f)
+            {
+                player.SendMessage($"[Debug] Height too small, using fallback scale: 0.4");
+                player.SendMessage($"[Debug] --------------------------");
                 return 0.4f;
+            }
 
             // Calculate scale needed to reach target height
             // CurrentHeight = BaseHeight * CurrentScale
             // TargetScale = (TargetHeight / CurrentHeight) * CurrentScale
-            var currentScale = creature.ObjScale ?? 1.0f;
             var neededScale = (TARGET_HEIGHT / currentHeight) * currentScale;
+            var clampedScale = Math.Clamp(neededScale, MIN_SCALE, MAX_SCALE);
+            
+            player.SendMessage($"[Debug] Target Height: {TARGET_HEIGHT:F2}m");
+            player.SendMessage($"[Debug] Calculated Scale: {neededScale:F4}");
+            player.SendMessage($"[Debug] Clamped Scale: {clampedScale:F4} (min:{MIN_SCALE}, max:{MAX_SCALE})");
+            player.SendMessage($"[Debug] Final Pet Height: {(currentHeight / currentScale) * clampedScale:F2}m");
+            player.SendMessage($"[Debug] --------------------------");
             
             // Apply bounds
-            return Math.Clamp(neededScale, MIN_SCALE, MAX_SCALE);
+            return clampedScale;
         }
         
         /// <summary>
@@ -380,6 +422,7 @@ namespace ACE.Server.Entity
             crate.VisualOverrideScale = capturedItem.GetProperty(PropertyFloat.CapturedScale);
             crate.VisualOverrideName = capturedItem.GetProperty(PropertyString.CapturedCreatureName);
             crate.VisualOverrideCapturedItems = capturedItem.GetProperty(PropertyString.CapturedItems);
+            crate.VisualOverrideCreatureType = capturedItem.GetProperty(PropertyInt.CapturedCreatureType);
             
             // Update the crate's icon: 0x060012F8 base + creature overlay from essence
             crate.IconId = 0x060012F8;

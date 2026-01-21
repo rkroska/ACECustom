@@ -1428,14 +1428,14 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "pets")
                     {
-                        // Pet Registry leaderboard - by account
+                        // Pet Registry leaderboard - by account (shows main character)
                         var topPets = PetRegistryManager.GetTopPets();
                         if (topPets.Count > 0)
                         {
-                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Pet Species Registered:", ChatMessageType.Broadcast));
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Pets Registered:", ChatMessageType.Broadcast));
                             for (int i = 0; i < topPets.Count; i++)
                             {
-                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {topPets[i].Count:N0} species - {topPets[i].AccountName}", ChatMessageType.Broadcast));
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {topPets[i].Count:N0} pets - {topPets[i].CharacterName}", ChatMessageType.Broadcast));
                             }
                         }
                         else
@@ -1461,8 +1461,8 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        [CommandHandler("petslog", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "View your Pet Registry collection")]
-        public static void HandlePetsLog(Session session, params string[] parameters)
+        [CommandHandler("pets", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "View your Pet Registry collection")]
+        public static void HandlePets(Session session, params string[] parameters)
         {
             try
             {
@@ -1480,7 +1480,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
-                session.Network.EnqueueSend(new GameMessageSystemChat($"=== Your Pet Log ({count} species) ===", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"=== Your Pet Log ({count} pets) ===", ChatMessageType.Broadcast));
 
                 var i = 1;
                 foreach (var (wcid, name, date) in entries)
