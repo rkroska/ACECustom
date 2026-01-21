@@ -55,6 +55,7 @@ namespace ACE.Server.Entity
                                     `account_id` INT UNSIGNED NOT NULL,
                                     `wcid` INT UNSIGNED NOT NULL,
                                     `creature_name` VARCHAR(100) NOT NULL,
+                                    `creature_type` INT UNSIGNED NULL,
                                     `registered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                     PRIMARY KEY (`account_id`, `wcid`),
                                     INDEX `IX_pet_registry_AccountId` (`account_id`)

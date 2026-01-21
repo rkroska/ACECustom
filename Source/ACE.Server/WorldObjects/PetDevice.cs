@@ -129,11 +129,8 @@ namespace ACE.Server.WorldObjects
         // Monster Capture System - Handle captured appearance application
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
-            player.SendMessage($"DEBUG: PetDevice.HandleActionUseOnTarget called! Source: {target?.Name}, Target: {Name}");
-            
             if (MonsterCapture.IsCapturedAppearance(target))
             {
-                player.SendMessage("DEBUG: Routing to MonsterCapture.ApplyAppearanceToCrate");
                 MonsterCapture.ApplyAppearanceToCrate(player, this, target);
                 return;
             }

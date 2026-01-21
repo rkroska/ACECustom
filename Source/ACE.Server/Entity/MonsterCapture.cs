@@ -101,8 +101,6 @@ namespace ACE.Server.Entity
             var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
             var success = roll < successRate;
             
-            player.SendMessage($"[Debug] Capture Roll: {roll:P2} vs Chance: {successRate:P2} -> {(success ? "SUCCESS" : "FAIL")}");
-            
             // Consume crystal (DEBUG LENS tier 4 is never consumed)
             var consumeResult = isDebugLens ? true : player.TryConsumeFromInventoryWithNetworking(crystal, 1);
             
@@ -157,7 +155,6 @@ namespace ACE.Server.Entity
                 player.SendMessage($"The siphon failed! The lens shatters!");
                 
                 // Enrage the creature!
-                player.SendMessage($"[Debug] Capture Failed! TRIGGERING HARDCORE ENRAGE");
 
                 // Apply "Hardcore" stats: 2x Damage, ~3x Effective Health (0.67 reduction)
                 targetCreature.SetProperty(PropertyFloat.EnrageDamageMultiplier, 2.0f);
@@ -185,10 +182,6 @@ namespace ACE.Server.Entity
                 
                 // Heal to Full
                 targetCreature.Health.Current = targetCreature.Health.MaxValue;
-
-                player.SendMessage($"[Debug] - Health Restored: {targetCreature.Health.Current}/{targetCreature.Health.MaxValue}");
-                player.SendMessage($"[Debug] - Damage Multiplier: 2.0x");
-                player.SendMessage($"[Debug] - Damage Reduction: 67% (3x eff HP)");
                 
                 targetCreature.Enrage();
             }
@@ -234,16 +227,6 @@ namespace ACE.Server.Entity
             // Calculate final rate with tier cap
             var rawRate = (baseRate + skillBonus + specializationBonus + healthBonus - difficultyPenalty) * difficultyMultiplier;
             var finalRate = Math.Clamp(rawRate, 0.01f, tierCap);
-
-            player.SendMessage($"[Debug] --- Capture Math ---");
-            player.SendMessage($"[Debug] Base Rate: {baseRate:P1} (Tier {crystalTier})");
-            player.SendMessage($"[Debug] Skill Bonus: +{skillBonus:P1}");
-            if (isSpecialized) player.SendMessage($"[Debug] Spec Bonus: +{specializationBonus:P1}");
-            player.SendMessage($"[Debug] Health Bonus: +{healthBonus:P1} (Target HP: {healthPercent:P0})");
-            if (difficultyPenalty > 0) player.SendMessage($"[Debug] Level Penalty: -{difficultyPenalty:P1} (You: {playerLevel}, Target: {creatureLevel})");
-            if (difficultyMultiplier != 1.0f) player.SendMessage($"[Debug] Diff Multiplier: x{difficultyMultiplier:F2}");
-            player.SendMessage($"[Debug] Final Rate: {finalRate:P1} (Cap: {tierCap:P1})");
-            player.SendMessage($"[Debug] --------------------");
 
             return finalRate;
         }
@@ -362,16 +345,9 @@ namespace ACE.Server.Entity
             var currentHeight = creature.PhysicsObj.GetHeight();
             var currentScale = creature.ObjScale ?? 1.0f;
             
-            player.SendMessage($"[Debug] --- Scale Normalization ---");
-            player.SendMessage($"[Debug] Creature: {creature.Name}");
-            player.SendMessage($"[Debug] Physical Height: {currentHeight:F2}m");
-            player.SendMessage($"[Debug] Current ObjScale: {currentScale:F3}");
-            
             // If height is 0 (some models), fallback to simple scale logic
             if (currentHeight <= 0.1f)
             {
-                player.SendMessage($"[Debug] Height too small, using fallback scale: 0.4");
-                player.SendMessage($"[Debug] --------------------------");
                 return 0.4f;
             }
 
@@ -380,12 +356,6 @@ namespace ACE.Server.Entity
             // TargetScale = (TargetHeight / CurrentHeight) * CurrentScale
             var neededScale = (TARGET_HEIGHT / currentHeight) * currentScale;
             var clampedScale = Math.Clamp(neededScale, MIN_SCALE, MAX_SCALE);
-            
-            player.SendMessage($"[Debug] Target Height: {TARGET_HEIGHT:F2}m");
-            player.SendMessage($"[Debug] Calculated Scale: {neededScale:F4}");
-            player.SendMessage($"[Debug] Clamped Scale: {clampedScale:F4} (min:{MIN_SCALE}, max:{MAX_SCALE})");
-            player.SendMessage($"[Debug] Final Pet Height: {(currentHeight / currentScale) * clampedScale:F2}m");
-            player.SendMessage($"[Debug] --------------------------");
             
             // Apply bounds
             return clampedScale;
