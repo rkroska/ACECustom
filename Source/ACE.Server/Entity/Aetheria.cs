@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -9,6 +6,9 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using log4net;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace ACE.Server.Entity
 {
@@ -70,31 +70,31 @@ namespace ACE.Server.Entity
 
         static Aetheria()
         {
-            Icons = new Dictionary<AetheriaColor, Dictionary<Sigil, uint>>();
-
-            Icons.Add(AetheriaColor.Blue,   new Dictionary<Sigil, uint>());
-            Icons.Add(AetheriaColor.Yellow, new Dictionary<Sigil, uint>());
-            Icons.Add(AetheriaColor.Red,    new Dictionary<Sigil, uint>());
-
-            Icons[AetheriaColor.Blue].Add(Sigil.Defense,     0x06006BF2);
-            Icons[AetheriaColor.Blue].Add(Sigil.Destruction, 0x06006BFE);
-            Icons[AetheriaColor.Blue].Add(Sigil.Fury,        0x06006BFF);
-            Icons[AetheriaColor.Blue].Add(Sigil.Growth,      0x06006C00);
-            Icons[AetheriaColor.Blue].Add(Sigil.Vigor,       0x06006C01);
-
-            Icons[AetheriaColor.Yellow].Add(Sigil.Defense,     0x06006C06);
-            Icons[AetheriaColor.Yellow].Add(Sigil.Destruction, 0x06006C07);
-            Icons[AetheriaColor.Yellow].Add(Sigil.Fury,        0x06006BF3);
-            Icons[AetheriaColor.Yellow].Add(Sigil.Growth,      0x06006C08);
-            Icons[AetheriaColor.Yellow].Add(Sigil.Vigor,       0x06006BFD);
-
-            Icons[AetheriaColor.Red].Add(Sigil.Defense,     0x06006C02);
-            Icons[AetheriaColor.Red].Add(Sigil.Destruction, 0x06006C03);
-            Icons[AetheriaColor.Red].Add(Sigil.Fury,        0x06006C04);
-            Icons[AetheriaColor.Red].Add(Sigil.Growth,      0x06006BF4);
-            Icons[AetheriaColor.Red].Add(Sigil.Vigor,       0x06006C05);
+            Icons = new Dictionary<AetheriaColor, Dictionary<Sigil, uint>>
+            {
+                { AetheriaColor.Blue, new Dictionary<Sigil, uint>(){
+                    {Sigil.Defense,     0x06006BF2},
+                    {Sigil.Destruction, 0x06006BFE},
+                    {Sigil.Fury,        0x06006BFF},
+                    {Sigil.Growth,      0x06006C00},
+                    {Sigil.Vigor,       0x06006C01},
+                } },
+                { AetheriaColor.Yellow, new Dictionary<Sigil, uint>() {
+                    {Sigil.Defense,     0x06006C06},
+                    {Sigil.Destruction, 0x06006C07},
+                    {Sigil.Fury,        0x06006BF3},
+                    {Sigil.Growth,      0x06006C08},
+                    {Sigil.Vigor,       0x06006BFD},
+                } },
+                { AetheriaColor.Red, new Dictionary<Sigil, uint>() {
+                    {Sigil.Defense,     0x06006C02},
+                    {Sigil.Destruction, 0x06006C03},
+                    {Sigil.Fury,        0x06006C04},
+                    {Sigil.Growth,      0x06006BF4},
+                    {Sigil.Vigor,       0x06006C05},
+                } }
+            };
         }
-
 
         public static bool IsAetheria(uint wcid)
         {
@@ -121,8 +121,6 @@ namespace ACE.Server.Entity
         /// </summary>
         public static void UseObjectOnTarget(Player player, WorldObject source, WorldObject target)
         {
-            //Console.WriteLine($"Aetheria.UseObjectOnTarget({player.Name}, {source.Name}, {target.Name})");
-
             if (player.IsBusy)
             {
                 player.SendUseDoneEvent(WeenieError.YoureTooBusy);
@@ -247,7 +245,7 @@ namespace ACE.Server.Entity
             log.Debug($"[CRAFTING] {player.Name} revealed a {color} {randSigil} with a surge of {surgeSpell} on {target.Name}:0x{target.Guid}");
         }
 
-        public static Dictionary<Sigil, EquipmentSet> SigilToEquipmentSet = new Dictionary<Sigil, EquipmentSet>()
+        public static readonly Dictionary<Sigil, EquipmentSet> SigilToEquipmentSet = new()
         {
             { Sigil.Defense, EquipmentSet.AetheriaDefense },
             { Sigil.Destruction, EquipmentSet.AetheriaDestruction },
@@ -256,14 +254,14 @@ namespace ACE.Server.Entity
             { Sigil.Vigor, EquipmentSet.AetheriaVigor }
         };
 
-        public static Dictionary<AetheriaColor, EquipMask> ColorToMask = new Dictionary<AetheriaColor, EquipMask>()
+        public static readonly Dictionary<AetheriaColor, EquipMask> ColorToMask = new()
         {
             { AetheriaColor.Blue, EquipMask.SigilOne },
             { AetheriaColor.Yellow, EquipMask.SigilTwo },
             { AetheriaColor.Red, EquipMask.SigilThree },
         };
 
-        public static Dictionary<SpellId, bool> SurgeTargetSelf = new Dictionary<SpellId, bool>()
+        public static readonly Dictionary<SpellId, bool> SurgeTargetSelf = new()
         {
             { SpellId.AetheriaProcDamageBoost,     true },
             { SpellId.AetheriaProcDamageOverTime,  false },

@@ -33,7 +33,7 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static readonly ConcurrentDictionary<uint, DateTime> lastFshipListUsage = new ConcurrentDictionary<uint, DateTime>();
+        private static readonly ConcurrentDictionary<uint, DateTime> lastFshipListUsage = [];
 
         public static readonly int MaxFellows = 29;
 
@@ -60,7 +60,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
         {
-            if (parameters == null || parameters.Count() == 0)
+            if (parameters == null || parameters.Length == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship add <name or targetted player>", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship landblock to invite all players in your landblock", ChatMessageType.Broadcast));
@@ -71,7 +71,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship list to show fellows and leaders in your landblock", ChatMessageType.Broadcast));
             }
 
-            if (parameters.Count() == 1)
+            if (parameters.Length == 1)
             {
                 if (parameters[0] == "landblock")
                 {
@@ -138,8 +138,7 @@ namespace ACE.Server.Command.Handlers
                     var tPGuid = session.Player.CurrentAppraisalTarget;
                     if (tPGuid != null)
                     {
-                        var tplayer = PlayerManager.FindByGuid(tPGuid.Value) as Player;
-                        if (tplayer != null)
+                        if (PlayerManager.FindByGuid(tPGuid.Value) is Player tplayer)
                         {
                             session.Player.FellowshipRecruit(tplayer);
                         }
@@ -221,11 +220,10 @@ namespace ACE.Server.Command.Handlers
                                         // Check if this player is the leader
                                         bool isLeader = fellowship.FellowshipLeaderGuid == player.Guid.Full;
                                         
-                                        if (!fellowshipsInLandblock.ContainsKey(fellowshipGuid))
+                                        if (!fellowshipsInLandblock.TryGetValue(fellowshipGuid, out (Fellowship fellowship, Player leader, bool leaderInLandblock) current))
                                         {
                                             // Find the leader (might not be in this landblock)
-                                            var leader = PlayerManager.FindByGuid(fellowshipGuid) as Player;
-                                            if (leader == null)
+                                            if (PlayerManager.FindByGuid(fellowshipGuid) is not Player leader)
                                             {
                                                 log.Warn($"Fellowship leader with GUID {fellowshipGuid} not found");
                                                 continue;
@@ -234,8 +232,6 @@ namespace ACE.Server.Command.Handlers
                                         }
                                         else if (isLeader)
                                         {
-                                            // Update to show leader is in landblock
-                                            var current = fellowshipsInLandblock[fellowshipGuid];
                                             fellowshipsInLandblock[fellowshipGuid] = (current.fellowship, current.leader, true);
                                         }
                                     }
@@ -293,7 +289,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            if (parameters.Count() == 2)
+            if (parameters.Length == 2)
             {
                 if (parameters[0] == "create")
                 {
@@ -302,8 +298,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 if (parameters[0] == "add")
                 {
-                    var tplayer = PlayerManager.FindByName(parameters[1]) as Player;
-                    if (tplayer != null)
+                    if (PlayerManager.FindByName(parameters[1]) is Player tplayer)
                     {
                         session.Player.FellowshipRecruit(tplayer);
                         return;
@@ -311,8 +306,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 if (parameters[0] == "remove")
                 {
-                    var tplayer = PlayerManager.FindByName(parameters[1]) as Player;
-                    if (tplayer != null)
+                    if (PlayerManager.FindByName(parameters[1]) is Player tplayer)
                     {
                         session.Player.FellowshipDismissPlayer(tplayer.Guid.Full);
                         return;
@@ -453,7 +447,7 @@ namespace ACE.Server.Command.Handlers
             long amount = -1;
             string transferTargetName = "";
 
-            if (parameters.Count() >= 2)
+            if (parameters.Length >= 2)
             {
                 if (parameters[1] == "pyreals" || parameters[1] == "p")
                 {
@@ -492,7 +486,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            if (parameters.Count() == 3 || parameters.Count() == 4)
+            if (parameters.Length == 3 || parameters.Length == 4)
             {
                 // Skip amount parsing for trade notes (iType = 3) since parameters[2] is the denomination
                 if (iType != 3)
@@ -510,7 +504,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            if (parameters.Count() == 4)
+            if (parameters.Length == 4)
             {
                 transferTargetName = parameters[3];
             }
@@ -537,7 +531,7 @@ namespace ACE.Server.Command.Handlers
                 session.LastBankCommandTime = currentTime;
 
                 //deposit
-                if (parameters.Count() == 1 || (parameters.Count() == 2 && parameters[1] == "a"))
+                if (parameters.Length == 1 || (parameters.Length == 2 && parameters[1] == "a"))
                 {
                     //deposit all - suppress individual messages
                     session.Player.DepositPyreals(true);
@@ -782,13 +776,13 @@ namespace ACE.Server.Command.Handlers
             HandleBank(session, parameters);
         }
 
-        static readonly uint[] _lowLevelOverlays = {
+        static readonly uint[] _lowLevelOverlays = [
         0x6006C34,    // lvl 1
         0x6006C35,    // lvl 2
         0x6006C36     // lvl 3
-        };
+        ];
 
-        static readonly HashSet<uint> _allowedOverlays = new HashSet<uint>(_lowLevelOverlays);
+        static readonly HashSet<uint> _allowedOverlays = [.._lowLevelOverlays];
 
         [CommandHandler("clap", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 1, "Deposit Enlightened Coins and Weakly Enlightened Coins using items from your pack. It will take the lower of the Red Coalesced Aetheria/Red Chunks/Empyrean Trinket and Blue Coalesced Aetheria/Blue Chunks/Falatacot (including powders) and deposit that amount.", "Usage: /clap all")]
         public static void HandleClap(Session session, params string[] parameters)
@@ -1118,35 +1112,35 @@ namespace ACE.Server.Command.Handlers
 
         private static void ReportXPRequired(Session session, int amount, string attrAbbr)
         {
-            ulong xp = 0; string AttrName = ""; bool success = false;
+            ulong xp = 0; string AttrName = "";
             switch (attrAbbr)
             {
                 case "str":
-                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out success);
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Strength, out AttrName, false, out _);
                     break;
                 case "end":
-                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out success);
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Endurance, out AttrName, false, out _);
                     break;
                 case "coo":
-                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out success);
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Coordination, out AttrName, false, out _);
                     break;
                 case "qui":
-                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out success);
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Quickness, out AttrName, false, out _);
                     break;
                 case "foc":
-                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out success);
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Focus, out AttrName, false, out _);
                     break;
                 case "sel":
-                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out success);
+                    xp = GetOrRaiseAttrib(session, amount, PropertyAttribute.Self, out AttrName, false, out _);
                     break;
                 case "sta":
-                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out success);
+                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxStamina, out AttrName, false, out _);
                     break;
                 case "hea":
-                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out success);
+                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxHealth, out AttrName, false, out _);
                     break;
                 case "man":
-                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out success);
+                    xp = GetOrRaise2ndAttrib(session, amount, PropertyAttribute2nd.MaxMana, out AttrName, false, out _);
                     break;
             }
             if (string.IsNullOrEmpty(AttrName))
@@ -1206,7 +1200,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
             int amt = 1; ulong xpCost = 0; string AttrName = string.Empty; bool success = false;
-            if (parameters.Count() == 2)
+            if (parameters.Length == 2)
             {
                 if (!int.TryParse(parameters[1], out amt))
                 {
@@ -1314,25 +1308,23 @@ namespace ACE.Server.Command.Handlers
 
                 session.LastQBCommandTime = currentTime;
 
-                using (var context = new AuthDbContext())
+                using var context = new AuthDbContext();
+                var res = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted >= 1).ToList();
+                if (res != null)
                 {
-                    var res = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted >= 1).ToList();
-                    if (res != null)
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Your completed quest bonus list:", ChatMessageType.Broadcast);
+                    foreach (var item in res)
                     {
-                        CommandHandlerHelper.WriteOutputInfo(session, $"Your completed quest bonus list:", ChatMessageType.Broadcast);
-                        foreach (var item in res)
-                        {
-                            CommandHandlerHelper.WriteOutputInfo(session, $"{item.Quest}", ChatMessageType.Broadcast);
-                        }
+                        CommandHandlerHelper.WriteOutputInfo(session, $"{item.Quest}", ChatMessageType.Broadcast);
                     }
-                    var res2 = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted == 0).ToList();
-                    if (res2 != null)
+                }
+                var res2 = context.AccountQuest.Where(x => x.AccountId == session.AccountId && x.NumTimesCompleted == 0).ToList();
+                if (res2 != null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Your incomplete quest bonus list:", ChatMessageType.Broadcast);
+                    foreach (var item in res2)
                     {
-                        CommandHandlerHelper.WriteOutputInfo(session, $"Your incomplete quest bonus list:", ChatMessageType.Broadcast);
-                        foreach (var item in res2)
-                        {
-                            CommandHandlerHelper.WriteOutputInfo(session, $"{item.Quest}", ChatMessageType.Broadcast);
-                        }
+                        CommandHandlerHelper.WriteOutputInfo(session, $"{item.Quest}", ChatMessageType.Broadcast);
                     }
                 }
             }
@@ -1344,7 +1336,7 @@ namespace ACE.Server.Command.Handlers
         {
             try
             {
-                List<Leaderboard> list = new List<Leaderboard>();
+                List<Leaderboard> list = [];
                 LeaderboardCache cache = LeaderboardCache.Instance;
                 if (parameters.Length < 1)
                 {
@@ -1661,20 +1653,20 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
-        private static List<string> configList = new List<string>()
-        {
+        private static readonly List<string> configList =
+        [
             "Common settings:\nConfirmVolatileRareUse, MainPackPreferred, SalvageMultiple, SideBySideVitals, UseCraftSuccessDialog",
             "Interaction settings:\nAcceptLootPermits, AllowGive, AppearOffline, AutoAcceptFellowRequest, DragItemOnPlayerOpensSecureTrade, FellowshipShareLoot, FellowshipShareXP, IgnoreAllegianceRequests, IgnoreFellowshipRequests, IgnoreTradeRequests, UseDeception",
             "UI settings:\nCoordinatesOnRadar, DisableDistanceFog, DisableHouseRestrictionEffects, DisableMostWeatherEffects, FilterLanguage, LockUI, PersistentAtDay, ShowCloak, ShowHelm, ShowTooltips, SpellDuration, TimeStamp, ToggleRun, UseMouseTurning",
             "Chat settings:\nHearAllegianceChat, HearGeneralChat, HearLFGChat, HearRoleplayChat, HearSocietyChat, HearTradeChat, HearPKDeaths, StayInChatMode",
             "Combat settings:\nAdvancedCombatUI, AutoRepeatAttack, AutoTarget, LeadMissileTargets, UseChargeAttack, UseFastMissiles, ViewCombatTarget, VividTargetingIndicator",
             "Character display settings:\nDisplayAge, DisplayAllegianceLogonNotifications, DisplayChessRank, DisplayDateOfBirth, DisplayFishingSkill, DisplayNumberCharacterTitles, DisplayNumberDeaths"
-        };
+        ];
 
         /// <summary>
         /// Mapping of GDLE -> ACE CharacterOptions
         /// </summary>
-        private static Dictionary<string, string> translateOptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        private static readonly Dictionary<string, string> translateOptions = new(StringComparer.OrdinalIgnoreCase)
         {
             // Common
             { "ConfirmVolatileRareUse", "ConfirmUseOfRareGems" },
@@ -1826,7 +1818,7 @@ namespace ACE.Server.Command.Handlers
 
             foreach (var knownObj in knownObjs)
             {
-                if (creaturesOnly && !(knownObj is Creature))
+                if (creaturesOnly && knownObj is not Creature)
                     continue;
 
                 session.Player.RemoveTrackedObject(knownObj, false);
@@ -1888,7 +1880,7 @@ namespace ACE.Server.Command.Handlers
             for (var i = 1; i < parameters.Length; i++)
                 description += parameters[i] + " ";
 
-            description.Trim();
+            description = description.Trim();
 
             switch (category.ToLower())
             {

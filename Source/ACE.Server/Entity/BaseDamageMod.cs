@@ -32,7 +32,7 @@ namespace ACE.Server.Entity
 
         public float MinDamage => MaxDamage * (1.0f - BaseDamage.Variance * VarianceMod);
 
-        public Range Range => new Range(MinDamage, MaxDamage);
+        public Range Range => new(MinDamage, MaxDamage);
 
         public BaseDamageMod(BaseDamage baseDamage)
         {

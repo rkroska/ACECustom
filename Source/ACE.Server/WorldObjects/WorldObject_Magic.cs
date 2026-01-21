@@ -708,8 +708,6 @@ namespace ACE.Server.WorldObjects
             var player = this as Player;
             var creature = this as Creature;
 
-            var targetPlayer = targetCreature as Player;
-
             // prevent double deaths from indirect casts
             // caster is already checked in player/monster, and re-checking caster here would break death emotes such as bunny smite
             if (targetCreature != null && targetCreature.IsDead)
@@ -890,9 +888,8 @@ namespace ACE.Server.WorldObjects
             if (player != null && sourceMsg != null)
                 player.SendChatMessage(player, sourceMsg, ChatMessageType.Magic);
 
-            if (targetPlayer != null && targetMsg != null)
+            if (targetCreature is Player targetPlayer && targetMsg != null)
                 targetPlayer.SendChatMessage(caster, targetMsg, ChatMessageType.Magic);
-
 
             if (isDrain && targetCreature.IsAlive && spell.Source == PropertyAttribute2nd.Health)
             {
@@ -975,9 +972,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void HandleCastSpell_PortalLink(Spell spell, WorldObject target)
         {
-            var player = this as Player;
-
-            if (player == null) return;
+            if (this is not Player player) return;
 
             if (player.IsOlthoiPlayer)
             {
@@ -1300,9 +1295,7 @@ namespace ACE.Server.WorldObjects
             if (portal == null || location == null)
                 return false;
 
-            var gateway = WorldObjectFactory.CreateNewWorldObject("portalgateway") as Portal;
-
-            if (gateway == null)
+            if (WorldObjectFactory.CreateNewWorldObject("portalgateway") is not Portal gateway)
                 return false;
 
             gateway.Location = new Position(location);
@@ -1722,7 +1715,7 @@ namespace ACE.Server.WorldObjects
 
             var speed = GetProjectileSpeed(spell);
 
-            if (target == null && this is Creature creature && !(this is Player))
+            if (target == null && this is Creature creature && this is not Player)
                 target = creature.AttackTarget;
 
             if (target == null)
@@ -1794,10 +1787,8 @@ namespace ACE.Server.WorldObjects
             for (var i = 0; i < origins.Count; i++)
             {
                 var origin = origins[i];
-
-                var sp = WorldObjectFactory.CreateNewWorldObject(spell.Wcid) as SpellProjectile;
-
-                if (sp == null)
+                
+                if (WorldObjectFactory.CreateNewWorldObject(spell.Wcid) is not SpellProjectile sp)
                 {
                     log.Error($"{Name} ({Guid}).LaunchSpellProjectiles({spell.Id} - {spell.Name}) - failed to create spell projectile from wcid {spell.Wcid}");
                     break;
@@ -1973,11 +1964,8 @@ namespace ACE.Server.WorldObjects
 
         public int GetMaxSpellLevel()
         {
-            if (_maxSpellLevel == null)
-            {
-                _maxSpellLevel = Biota.PropertiesSpellBook != null && Biota.PropertiesSpellBook.Count > 0 ?
+            _maxSpellLevel ??= Biota.PropertiesSpellBook != null && Biota.PropertiesSpellBook.Count > 0 ?
                     Biota.PropertiesSpellBook.Keys.Max(i => SpellLevelCache.GetSpellLevel(i)) : 0;
-            }
             return _maxSpellLevel.Value;
         }
 
@@ -2011,7 +1999,7 @@ namespace ACE.Server.WorldObjects
                 {
                     lumAug += player.LuminanceAugmentLifeCount ?? 0f;
                 }
-                lumAug = lumAug * 0.01f;
+                lumAug *= 0.01f;
             }
 
             if (spell.DotDuration == 0)
@@ -2213,8 +2201,7 @@ namespace ACE.Server.WorldObjects
                     else
                     {
                         // 'fails to affect'?
-                        if (player != null)
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {targetCreature.Name} with {spell.Name}", ChatMessageType.Magic));
+                        player?.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {targetCreature.Name} with {spell.Name}", ChatMessageType.Magic));
 
                         if (targetPlayer != null && !targetPlayer.SquelchManager.Squelches.Contains(this, ChatMessageType.Magic))
                             targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} fails to affect you with {spell.Name}", ChatMessageType.Magic));

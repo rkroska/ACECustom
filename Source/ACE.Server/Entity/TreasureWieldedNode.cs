@@ -3,16 +3,11 @@ using ACE.Database.Models.World;
 
 namespace ACE.Server.Entity
 {
-    public class TreasureWieldedNode
+    public class TreasureWieldedNode(List<TreasureWielded> items, int idx)
     {
-        public TreasureWielded Item;
+        public TreasureWielded Item = items[idx];
 
         public TreasureWieldedSet Subset;
-
-        public TreasureWieldedNode(List<TreasureWielded> items, int idx)
-        {
-            Item = items[idx];
-        }
 
         public int TotalNestedItems
         {
