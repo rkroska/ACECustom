@@ -12,42 +12,14 @@ namespace ACE.Server.Physics.Common
 {
     public static class LScape
     {
-        public static int MidRadius = 5;
-        public static int MidWidth = 11;
-
         //private static readonly object landblockMutex = new object();
         /// <summary>
         /// This is not used if PhysicsEngine.Instance.Server is true
         /// </summary>
-        public static ConcurrentDictionary<VariantCacheId, Landblock> Landblocks = new ConcurrentDictionary<VariantCacheId, Landblock>();
-
-        public static uint LoadedCellID;
-        public static uint ViewerCellID;
-        public static int ViewerXOffset;
-        public static int ViewerYOffset;
-        //public static GameSky GameSky;
-        //public static Surface LandscapeDetailSurface;
-        //public static Surface EnvironmentDetailSurface;
-        //public static Surface BuildingDetailSurface;
-        //public static Surface ObjectDetailSurface;
-
-        public static float AmbientLevel = 0.4f;
-        public static Vector3 Sunlight = new Vector3(1.2f, 0, 0.5f);
-
-        public static bool SetMidRadius(int radius)
-        {
-            if (radius < 1 || Landblocks == null)
-                return false;
-
-            MidRadius = radius;
-            MidWidth = 2 * radius + 1;
-            return true;
-        }
-
-        public static int LandblocksCount => Landblocks.Count;
+        private static readonly ConcurrentDictionary<VariantCacheId, Landblock> Landblocks = new();
 
         /// <summary>
-        /// Loads the backing store landblock structure<para />
+        /// Loads the backing store landblock structure
         /// This function is thread safe
         /// </summary>
         /// <param name="blockCellID">Any landblock + cell ID within the landblock</param>
@@ -59,30 +31,11 @@ namespace ACE.Server.Physics.Common
             {
                 
                 var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
-                //Console.WriteLine($"Server instance loaded landblock from manager: {lbid}");
                 return lbmLandblock.PhysicsLandblock;
             }
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
-            // client implementation
-            /*if (Landblocks == null || Landblocks.Count == 0)
-                return null;
-
-            if (!LandDefs.inbound_valid_cellid(cellID) || cellID >= 0x100)
-                return null;
-
-            var local_lcoord = LandDefs.blockid_to_lcoord(LoadedCellID);
-            var global_lcoord = LandDefs.gid_to_lcoord(cellID);
-
-            var xDiff = ((int)global_lcoord.Value.X + 8 * MidRadius - (int)local_lcoord.Value.X) / 8;
-            var yDiff = ((int)global_lcoord.Value.Y + 8 * MidRadius - (int)local_lcoord.Value.Y) / 8;
-
-            if (xDiff < 0 || yDiff < 0 || xDiff < MidWidth || yDiff < MidWidth)
-                return null;
-
-            return Landblocks[yDiff + xDiff * MidWidth];*/
+            VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
 
             // check if landblock is already cached
-
             if (Landblocks.TryGetValue(cacheKey, out var landblock))
                 return landblock;
             
@@ -99,7 +52,7 @@ namespace ACE.Server.Physics.Common
 
         public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)landblockID, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new() { Landblock = (ushort)landblockID, Variant = variationId ?? 0 };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()
@@ -120,19 +73,13 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public static ObjCell get_landcell(uint blockCellID, int? variationId)
         {
-            //Console.WriteLine($"get_landcell({blockCellID:X8}");
-            //if (blockCellID == 3880648731 || blockCellID == 3880648721)
-            //{
-            //    Console.WriteLine(new System.Diagnostics.StackTrace());
-            //}
-
             var landblock = get_landblock(blockCellID, variationId);
             if (landblock == null)
                 return null;
 
             var cellID = blockCellID & 0xFFFF;
             var cacheKey = new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 };
-            ObjCell cell = null;
+            ObjCell cell;
 
             // outdoor cells
             if (cellID < 0x100)
@@ -157,7 +104,6 @@ namespace ACE.Server.Physics.Common
                 cell.Pos.Variation = variationId; //todo - gross
                 cell.VariationId = variationId;
                 landblock.LandCells.TryAdd(cacheKey, cell);
-                //Console.WriteLine($"Added LB: {landblock.ID}, cell: {cell.ID}, var: {variationId}, total cache: {landblock.LandCells.Count}");
                 var envCell = (EnvCell)cell;
                 envCell.PostInit(variationId);
                 

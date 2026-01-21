@@ -267,8 +267,10 @@ namespace ACE.Server.WorldObjects
 
             PhysicsObj.Position.ObjCellID = cell.ID;
 
-            var location = new Physics.Common.Position();
-            location.ObjCellID = cell.ID;
+            var location = new Physics.Common.Position
+            {
+                ObjCellID = cell.ID
+            };
             location.Frame.Origin = Location.Pos;
             location.Frame.Orientation = Location.Rotation;
             location.Variation = VariationId;
@@ -313,8 +315,7 @@ namespace ACE.Server.WorldObjects
 
         private void InitializePropertyDictionaries()
         {
-            if (Biota.PropertiesEnchantmentRegistry == null)
-                Biota.PropertiesEnchantmentRegistry = new Collection<PropertiesEnchantmentRegistry>();
+            Biota.PropertiesEnchantmentRegistry ??= [];
         }
 
         private void SetEphemeralValues()
@@ -324,8 +325,7 @@ namespace ACE.Server.WorldObjects
             EmoteManager = new EmoteManager(this);
             EnchantmentManager = new EnchantmentManagerWithCaching(this);
 
-            if (Placement == null)
-                Placement = ACE.Entity.Enum.Placement.Resting;
+            Placement ??= ACE.Entity.Enum.Placement.Resting;
 
             if (MotionTableId != 0)
                 CurrentMotionState = new Motion(MotionStance.Invalid);
@@ -542,41 +542,41 @@ namespace ACE.Server.WorldObjects
                 switch (prop.Name.ToLower())
                 {
                     case "guid":
-                        sb.AppendLine($"{prop.Name} = {obj.Guid.Full} (GuidType.{obj.Guid.Type.ToString()})");
+                        sb.AppendLine($"{prop.Name} = {obj.Guid.Full} (GuidType.{obj.Guid.Type})");
                         break;
                     case "descriptionflags":
-                        sb.AppendLine($"{prop.Name} = {ObjectDescriptionFlags.ToString()}" + " (" + (uint)ObjectDescriptionFlags + ")");
+                        sb.AppendLine($"{prop.Name} = {ObjectDescriptionFlags}" + " (" + (uint)ObjectDescriptionFlags + ")");
                         break;
                     case "weenieflags":
                         var weenieFlags = CalculateWeenieHeaderFlag();
-                        sb.AppendLine($"{prop.Name} = {weenieFlags.ToString()}" + " (" + (uint)weenieFlags + ")");
+                        sb.AppendLine($"{prop.Name} = {weenieFlags}" + " (" + (uint)weenieFlags + ")");
                         break;
                     case "weenieflags2":
                         var weenieFlags2 = CalculateWeenieHeaderFlag2();
-                        sb.AppendLine($"{prop.Name} = {weenieFlags2.ToString()}" + " (" + (uint)weenieFlags2 + ")");
+                        sb.AppendLine($"{prop.Name} = {weenieFlags2}" + " (" + (uint)weenieFlags2 + ")");
                         break;
                     case "itemtype":
-                        sb.AppendLine($"{prop.Name} = {obj.ItemType.ToString()}" + " (" + (uint)obj.ItemType + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ItemType}" + " (" + (uint)obj.ItemType + ")");
                         break;
                     case "creaturetype":
-                        sb.AppendLine($"{prop.Name} = {obj.CreatureType.ToString()}" + " (" + (uint)obj.CreatureType + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.CreatureType}" + " (" + (uint)obj.CreatureType + ")");
                         break;
                     case "containertype":
-                        sb.AppendLine($"{prop.Name} = {obj.ContainerType.ToString()}" + " (" + (uint)obj.ContainerType + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ContainerType}" + " (" + (uint)obj.ContainerType + ")");
                         break;
                     case "usable":
-                        sb.AppendLine($"{prop.Name} = {obj.ItemUseable.ToString()}" + " (" + (uint)obj.ItemUseable + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ItemUseable}" + " (" + (uint)obj.ItemUseable + ")");
                         break;
                     case "radarbehavior":
-                        sb.AppendLine($"{prop.Name} = {obj.RadarBehavior.ToString()}" + " (" + (uint)obj.RadarBehavior + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.RadarBehavior}" + " (" + (uint)obj.RadarBehavior + ")");
                         break;
                     case "physicsdescriptionflag":
                         var physicsDescriptionFlag = CalculatedPhysicsDescriptionFlag();
-                        sb.AppendLine($"{prop.Name} = {physicsDescriptionFlag.ToString()}" + " (" + (uint)physicsDescriptionFlag + ")");
+                        sb.AppendLine($"{prop.Name} = {physicsDescriptionFlag}" + " (" + (uint)physicsDescriptionFlag + ")");
                         break;
                     case "physicsstate":
                         var physicsState = PhysicsObj.State;
-                        sb.AppendLine($"{prop.Name} = {physicsState.ToString()}" + " (" + (uint)physicsState + ")");
+                        sb.AppendLine($"{prop.Name} = {physicsState}" + " (" + (uint)physicsState + ")");
                         break;
                     //case "propertiesspellid":
                     //    foreach (var item in obj.PropertiesSpellId)
@@ -814,14 +814,8 @@ namespace ACE.Server.WorldObjects
         public static bool AdjustDungeonPos(Position pos)
         {
             if (pos == null) return false;
-
-            var landblock = LScape.get_landblock(pos.Cell, pos.Variation);
-            if (landblock == null || !landblock.HasDungeon) return false;
-
-            var dungeonID = pos.Cell >> 16;
-
-            var adjusted = AdjustPos.Adjust(dungeonID, pos);
-            return adjusted;
+            LScape.get_landblock(pos.Cell, pos.Variation);
+            return false;
         }
 
 
@@ -957,11 +951,13 @@ namespace ACE.Server.WorldObjects
             {
                 var motionInterp = PhysicsObj.get_minterp();
 
-                var rawState = new Physics.Animation.RawMotionState();
-                rawState.ForwardCommand = 0;    // always 0? must be this for monster sleep animations (skeletons, golems)
-                                                // else the monster will immediately wake back up..
-                rawState.CurrentHoldKey = HoldKey.Run;
-                rawState.CurrentStyle = (uint)motionCommand;
+                var rawState = new Physics.Animation.RawMotionState
+                {
+                    ForwardCommand = 0,    // always 0? must be this for monster sleep animations (skeletons, golems)
+                                           // else the monster will immediately wake back up..
+                    CurrentHoldKey = HoldKey.Run,
+                    CurrentStyle = (uint)motionCommand
+                };
 
                 if (!PhysicsObj.IsMovingOrAnimating)
                     //PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime - PhysicsGlobals.MinQuantum;
@@ -1089,10 +1085,7 @@ namespace ACE.Server.WorldObjects
 
         public virtual List<WorldObject> GetUniqueObjects()
         {
-            if (Unique == null)
-                return new List<WorldObject>();
-            else
-                return new List<WorldObject>() { this };
+            return (Unique == null) ? [] : [this];
         }
 
         public bool HasArmorLevel()

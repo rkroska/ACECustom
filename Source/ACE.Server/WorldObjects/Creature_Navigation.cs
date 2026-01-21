@@ -38,44 +38,15 @@ namespace ACE.Server.WorldObjects
         {
             var currentDir = Location.GetCurrentDir();
 
-            var targetDir = Vector3.Zero;
-            if (Location.Indoors == target.Location.Indoors)
-                targetDir = GetDirection(Location.ToGlobal(), target.Location.ToGlobal());
-            else
-                targetDir = GetDirection(Location.Pos, target.Location.Pos);
+            Vector3 targetDir = (Location.Indoors == target.Location.Indoors) ?
+                GetDirection(Location.ToGlobal(), target.Location.ToGlobal()) :
+                GetDirection(Location.Pos, target.Location.Pos);
 
             targetDir.Z = 0.0f;
             targetDir = Vector3.Normalize(targetDir);
             
             // get the 2D angle between these vectors
             return GetAngle(currentDir, targetDir);
-        }
-
-        public float GetAngle_Physics(WorldObject target)
-        {
-            var currentDir = GetCurrentDir_Physics();
-
-            var targetDir = Vector3.Zero;
-            if (Location.Indoors == target.Location.Indoors)
-                targetDir = GetDirection(Location.ToGlobal(), target.Location.ToGlobal());
-            else
-                targetDir = GetDirection(Location.Pos, target.Location.Pos);
-
-            targetDir.Z = 0.0f;
-            targetDir = Vector3.Normalize(targetDir);
-
-            // get the 2D angle between these vectors
-            return GetAngle(currentDir, targetDir);
-        }
-
-        public Vector3 GetCurrentDir_Physics()
-        {
-            return Vector3.Normalize(Vector3.Transform(Vector3.UnitY, PhysicsObj.Position.Frame.Orientation));
-        }
-
-        public float GetAngle_Physics2(WorldObject target)
-        {
-            return PhysicsObj.Position.heading_diff(target.PhysicsObj.Position);
         }
 
         /// <summary>
@@ -92,21 +63,9 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns the 2D angle of the input vector
-        /// </summary>
-        public static float GetAngle(Vector3 dir)
-        {
-            var rads = Math.Atan2(dir.Y, dir.X);
-            if (double.IsNaN(rads)) return 0.0f;
-
-            var angle = rads * 57.2958f;
-            return (float)angle;
-        }
-
-        /// <summary>
         /// Returns the 2D angle between 2 vectors
         /// </summary>
-        public static float GetAngle(Vector3 a, Vector3 b)
+        private static float GetAngle(Vector3 a, Vector3 b)
         {
             var cosTheta = a.Dot2D(b);
             var rads = Math.Acos(cosTheta);
@@ -119,11 +78,8 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns a normalized 2D vector from self to target
         /// </summary>
-        public Vector3 GetDirection(Vector3 self, Vector3 target)
+        private static Vector3 GetDirection(Vector3 self, Vector3 target)
         {
-            var target2D = new Vector3(self.X, self.Y, 0);
-            var self2D = new Vector3(target.X, target.Y, 0);
-
             return Vector3.Normalize(target - self);
         }
 
@@ -246,18 +202,6 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns the amount of time for this creature to rotate
-        /// towards the rotation from the input position, based on the omega speed from its MotionTable
-        /// Used by the emote system, which has the target rotation stored in positions
-        /// </summary>
-        /// <param name="position">Only the rotation information from this position is used here</param>
-        public float GetRotateDelay(ACE.Entity.Position position)
-        {
-            var angle = GetAngle(position);
-            return GetRotateDelay(angle);
-        }
-
-        /// <summary>
         /// This is called by the monster AI system for ranged attacks
         /// It is mostly a duplicate of Rotate(), and should be refactored eventually...
         /// It sets CurrentMotionState and AttackTarget here
@@ -323,18 +267,11 @@ namespace ACE.Server.WorldObjects
 
         public virtual void BroadcastMoveTo(Player player)
         {
-            Motion motion = null;
-
-            if (AttackTarget != null)
-            {
+            Motion motion = (AttackTarget != null) ?
                 // move to object
-                motion = GetMoveToMotion(AttackTarget, RunRate);
-            }
-            else
-            {
+                GetMoveToMotion(AttackTarget, RunRate):
                 // move to position
-                motion = GetMoveToPosition(Home, RunRate, 1.0f);
-            }
+                GetMoveToPosition(Home, RunRate, 1.0f);
 
             player.Session.Network.EnqueueSend(new GameMessageUpdateMotion(this, motion));
         }
@@ -390,9 +327,11 @@ namespace ACE.Server.WorldObjects
         {
             // TODO: change parameters to accept an optional MoveToParameters
 
-            var motion = new Motion(this, position);
-            motion.MovementType = MovementType.MoveToPosition;
-            //motion.Flag |= MovementParams.CanCharge | MovementParams.FailWalk | MovementParams.UseFinalHeading | MovementParams.MoveAway;
+            var motion = new Motion(this, position)
+            {
+                MovementType = MovementType.MoveToPosition
+            };
+
             if (walkRunThreshold != null)
                 motion.MoveToParameters.WalkRunThreshold = walkRunThreshold.Value;
             if (speed != null)

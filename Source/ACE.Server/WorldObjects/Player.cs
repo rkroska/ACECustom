@@ -201,7 +201,7 @@ namespace ACE.Server.WorldObjects
 
             RecordCast = new RecordCast(this);
 
-            AttackQueue = new AttackQueue(this);
+            AttackQueue = new AttackQueue();
 
             if (!PlayerKillsPk.HasValue)
                 PlayerKillsPk = 0;

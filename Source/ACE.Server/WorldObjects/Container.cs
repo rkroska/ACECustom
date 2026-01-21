@@ -115,19 +115,18 @@ namespace ACE.Server.WorldObjects
 
         private void InitializePropertyDictionaries()
         {
-            if (ephemeralPropertyInts == null)
-                ephemeralPropertyInts = new Dictionary<PropertyInt, int?>();
+            ephemeralPropertyInts ??= [];
         }
 
         private void SetEphemeralValues(bool fromBiota)
         {
             ephemeralPropertyInts.TryAdd(PropertyInt.EncumbranceVal, EncumbranceVal ?? 0); // Containers are init at 0 burden or their initial value from database. As inventory/equipment is added the burden will be increased
-            if (!(this is Creature) && !(this is Corpse)) // Creatures/Corpses do not have a value
+            if (this is not Creature && this is not Corpse) // Creatures/Corpses do not have a value
                 ephemeralPropertyInts.TryAdd(PropertyInt.Value, Value ?? 0);
 
             //CurrentMotionState = motionStateClosed; // What container defaults to open?
 
-            if (!fromBiota && !(this is Creature))
+            if (!fromBiota && this is not Creature)
                 GenerateContainList();
 
             if (!ContainerCapacity.HasValue)
@@ -147,7 +146,7 @@ namespace ACE.Server.WorldObjects
         /// To access items inside of the side slot items, you'll need to access that items.Inventory dictionary.<para />
         /// Do not manipulate this dictionary directly.
         /// </summary>
-        public Dictionary<ObjectGuid, WorldObject> Inventory { get; } = new Dictionary<ObjectGuid, WorldObject>();
+        public Dictionary<ObjectGuid, WorldObject> Inventory { get; } = [];
 
         /// <summary>
         /// The only time this should be used is to populate Inventory from the ctor.
@@ -398,12 +397,12 @@ namespace ACE.Server.WorldObjects
             // Defensive guard: fail safe if inventory not loaded
             // Return empty list to avoid null reference issues
             if (!InventoryLoaded)
-                return new List<Container>();
+                return [];
 
             if (_sideContainersCacheDirty || _cachedSideContainers == null)
             {
                 if (_cachedSideContainers == null)
-                    _cachedSideContainers = new List<Container>();
+                    _cachedSideContainers = [];
                 else
                     _cachedSideContainers.Clear();
 
@@ -460,7 +459,7 @@ namespace ACE.Server.WorldObjects
         {
             // Defensive guard: fail safe if inventory not loaded
             if (!InventoryLoaded)
-                return new List<WorldObject>();
+                return [];
 
             var items = new List<WorldObject>();
 
@@ -497,7 +496,7 @@ namespace ACE.Server.WorldObjects
         {
             // Defensive guard: fail safe if inventory not loaded
             if (!InventoryLoaded)
-                return new List<WorldObject>();
+                return [];
 
             var items = new List<WorldObject>();
 
@@ -534,7 +533,7 @@ namespace ACE.Server.WorldObjects
         {
             // Defensive guard: fail safe if inventory not loaded
             if (!InventoryLoaded)
-                return new List<WorldObject>();
+                return [];
 
             var items = new List<WorldObject>();
 
@@ -712,7 +711,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-            IList<WorldObject> containerItems;
+            List<WorldObject> containerItems;
 
             if (worldObject.UseBackpackSlot)
             {
@@ -991,15 +990,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override void ActOnUse(WorldObject wo)
         {
-            if (!(wo is Player player))
+            if (wo is not Player player)
                 return;
 
             // If we have a previous container open, let's close it
             if (player.LastOpenedContainerId != ObjectGuid.Invalid && player.LastOpenedContainerId != Guid)
             {
-                var lastOpenedContainer = CurrentLandblock?.GetObject(player.LastOpenedContainerId) as Container;
-
-                if (lastOpenedContainer != null && lastOpenedContainer.IsOpen && lastOpenedContainer.Viewer == player.Guid.Full)
+                if (CurrentLandblock?.GetObject(player.LastOpenedContainerId) is Container lastOpenedContainer && lastOpenedContainer.IsOpen && lastOpenedContainer.Viewer == player.Guid.Full)
                     lastOpenedContainer.Close(player);
             }
 
@@ -1056,7 +1053,7 @@ namespace ACE.Server.WorldObjects
 
             SendInventory(player);
 
-            if (!(this is Chest) && !ResetMessagePending && ResetInterval.HasValue)
+            if (this is not Chest && !ResetMessagePending && ResetInterval.HasValue)
             {
                 var actionChain = new ActionChain();
                 if (ResetInterval.Value < 15)
@@ -1294,7 +1291,7 @@ namespace ACE.Server.WorldObjects
             ProcessCharmRecursively(player, item, adding);
         }
 
-        private void ProcessCharmRecursively(Player player,  WorldObject item, bool adding) { 
+        private static void ProcessCharmRecursively(Player player,  WorldObject item, bool adding) { 
             bool isCharm = item.GetProperty(PropertyBool.IsCharm) ?? false;
             if (isCharm)
             {
