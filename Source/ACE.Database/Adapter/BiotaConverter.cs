@@ -19,11 +19,11 @@ namespace ACE.Database.Adapter
                 throw new ArgumentNullException(nameof(biota), "Cannot convert null biota to entity biota");
             }
 
-            var result = new ACE.Entity.Models.Biota();
-
-            result.Id = biota.Id;
-            result.WeenieClassId = biota.WeenieClassId;
-            result.WeenieType = (WeenieType)biota.WeenieType;
+            var result = new ACE.Entity.Models.Biota {
+                Id = biota.Id,
+                WeenieClassId = biota.WeenieClassId,
+                WeenieType = (WeenieType)biota.WeenieType
+            };
 
             if (biota.BiotaPropertiesBool != null && (instantiateEmptyCollections || biota.BiotaPropertiesBool.Count > 0))
             {
@@ -614,8 +614,8 @@ namespace ACE.Database.Adapter
                         TryToBond = value.TryToBond
                     };
 
-                    if (includeDatabaseRecordIds)
-                        entity.Id = value.DatabaseRecordId;
+                    if (includeDatabaseRecordIds && value.DatabaseRecordId.HasValue)
+                        entity.Id = value.DatabaseRecordId.Value;
 
                     result.BiotaPropertiesCreateList.Add(entity);
                 }
@@ -639,8 +639,8 @@ namespace ACE.Database.Adapter
                         MaxHealth = value.MaxHealth,
                     };
 
-                    if (includeDatabaseRecordIds)
-                        entity.Id = value.DatabaseRecordId;
+                    if (includeDatabaseRecordIds && value.DatabaseRecordId.HasValue)
+                        entity.Id = value.DatabaseRecordId.Value;
 
                     foreach (var value2 in value.PropertiesEmoteAction)
                     {
@@ -698,8 +698,8 @@ namespace ACE.Database.Adapter
                             AnglesZ = value2.AnglesZ,
                         };
 
-                        if (includeDatabaseRecordIds)
-                            entity2.Id = value2.DatabaseRecordId;
+                        if (includeDatabaseRecordIds && value2.DatabaseRecordId.HasValue)
+                            entity2.Id = value2.DatabaseRecordId.Value;
 
                         entity.BiotaPropertiesEmoteAction.Add(entity2);
                     }
@@ -745,8 +745,8 @@ namespace ACE.Database.Adapter
                         AnglesZ = value.AnglesZ,
                     };
 
-                    if (includeDatabaseRecordIds)
-                        entity.Id = value.DatabaseRecordId;
+                    if (includeDatabaseRecordIds && value.DatabaseRecordId.HasValue)
+                        entity.Id = value.DatabaseRecordId.Value;
 
                     result.BiotaPropertiesGenerator.Add(entity);
                 }

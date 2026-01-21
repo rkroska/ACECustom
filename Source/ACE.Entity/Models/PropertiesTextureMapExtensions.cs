@@ -22,7 +22,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesTextureMap> Clone(this IList<PropertiesTextureMap> value, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesTextureMap>? Clone(this IList<PropertiesTextureMap> value, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -30,7 +30,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return new List<PropertiesTextureMap>(value);
+                return [.. value];
             }
             finally
             {

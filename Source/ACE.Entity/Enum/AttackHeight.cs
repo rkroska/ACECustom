@@ -9,27 +9,15 @@ namespace ACE.Entity.Enum
 
     public static class AttackHeightExtensions
     {
-        public static string GetString(this AttackHeight attackHeight)
-        {
-            switch (attackHeight)
-            {
-                case AttackHeight.High:   return "High";
-                case AttackHeight.Medium: return "Med";
-                case AttackHeight.Low:    return "Low";
-            }
-            return null;
-        }
-
         public static Quadrant ToQuadrant(this AttackHeight attackHeight)
         {
-            switch (attackHeight)
+            return attackHeight switch
             {
-                case AttackHeight.High:   return Quadrant.High;
-                case AttackHeight.Medium: return Quadrant.Medium;
-                case AttackHeight.Low:    return Quadrant.Low;
-                default:
-                    return Quadrant.None;
-            }
+                AttackHeight.High => Quadrant.High,
+                AttackHeight.Medium => Quadrant.Medium,
+                AttackHeight.Low => Quadrant.Low,
+                _ => Quadrant.None,
+            };
         }
     }
 }

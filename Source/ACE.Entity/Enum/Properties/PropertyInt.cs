@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 using System.Globalization;
 
 namespace ACE.Entity.Enum.Properties
@@ -704,7 +703,7 @@ namespace ACE.Entity.Enum.Properties
 
     public static class PropertyIntExtensions
     {
-        public static string GetValueEnumName(this PropertyInt property, int value)
+        public static string? GetValueEnumName(this PropertyInt property, int value)
         {
             switch (property)
             {

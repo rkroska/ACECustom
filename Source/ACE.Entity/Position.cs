@@ -32,7 +32,7 @@ namespace ACE.Entity
 
         public Vector3 Pos
         {
-            get => new Vector3(PositionX, PositionY, PositionZ);
+            get => new(PositionX, PositionY, PositionZ);
             set => SetPosition(value);
         }
 
@@ -50,7 +50,7 @@ namespace ACE.Entity
 
         public Quaternion Rotation
         {
-            get => new Quaternion(RotationX, RotationY, RotationZ, RotationW);
+            get => new(RotationX, RotationY, RotationZ, RotationW);
             set
             {
                 RotationW = value.W;
