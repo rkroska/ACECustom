@@ -18,7 +18,7 @@ namespace ACE.Entity.Enum.Properties
             HashSet<T> results = [];
             foreach (FieldInfo field in typeof(T).GetFields(BindingFlags.Public | BindingFlags.Static))
             {
-                if (field.GetCustomAttribute<EphemeralAttribute>() == null) continue;
+                if (field.GetCustomAttribute<SendOnLoginAttribute>() == null) continue;
                 if (field.GetValue(null) is T result) results.Add(result);
             }
             return results;
