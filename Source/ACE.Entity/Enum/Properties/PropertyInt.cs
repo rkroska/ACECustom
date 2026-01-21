@@ -699,7 +699,7 @@ namespace ACE.Entity.Enum.Properties
         EnrageVisualEffect                      = 9027,
         [AssessmentProperty]
         SplitArrowCount                         = 9031,
-
+        CreatureVariant                         = 9032,
     }
 
     public static class PropertyIntExtensions

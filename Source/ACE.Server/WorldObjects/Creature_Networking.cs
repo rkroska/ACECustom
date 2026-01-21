@@ -8,6 +8,7 @@ using ACE.DatLoader.Entity;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
+using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -218,21 +219,24 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            if (coverage.Count == 0 && ClothingBase.HasValue)
+                return base.CalculateObjDesc();
+
             // Add the "naked" body parts. These are the ones not already covered.
-            // Note that this is the original SetupTableId, not thisSetupId.
-            if (SetupTableId > 0)
+
+            if (CreatureVariant.HasValue)
+            {
+                objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+            }
+            else if (SetupTableId > 0)
             {
                 var baseSetup = DatManager.PortalDat.ReadFromDat<SetupModel>(SetupTableId);
                 for (byte i = 0; i < baseSetup.Parts.Count; i++)
                 {
                     if (!coverage.Contains(i) && i != 0x10) // Don't add body parts for those that are already covered. Also don't add the head, that was already covered by AddCharacterBaseModelData()
                         objDesc.AnimPartChanges.Add(new PropertiesAnimPart { Index = i, AnimationId = baseSetup.Parts[i] });
-                    //AddModel(i, baseSetup.Parts[i]);
                 }
             }
-
-            if (coverage.Count == 0 && ClothingBase.HasValue)
-                return base.CalculateObjDesc();
 
             return objDesc;
         }
