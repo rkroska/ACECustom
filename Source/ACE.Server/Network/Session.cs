@@ -109,10 +109,20 @@ namespace ACE.Server.Network
 
         public DateTime LoginTime { get; set; }
 
+        public bool IsHeadless { get; set; }
+
         public Session(ConnectionListener connectionListener, IPEndPoint endPoint, ushort clientId, ushort serverId)
         {
             EndPoint = endPoint;
             Network = new NetworkSession(this, connectionListener, clientId, serverId);
+        }
+
+        public Session(bool isHeadless)
+        {
+            IsHeadless = isHeadless;
+            // Use dummy values for headless session
+            EndPoint = new IPEndPoint(IPAddress.Loopback, 0);
+            Network = new NetworkSession(this, isHeadless);
         }
 
 

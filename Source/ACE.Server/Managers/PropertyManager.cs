@@ -1,12 +1,9 @@
 using ACE.Database;
 using ACE.Database.Models.Shard;
-using Google.Protobuf.WellKnownTypes;
 using log4net;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -458,7 +455,7 @@ namespace ACE.Server.Managers
                 ServerConfig.SetValue("content_folder", "/ace/Content");
 
             // Subscribe the worker thread to  execute DoWork whenever it elapses.
-            _workerThread.Elapsed += (Object source, ElapsedEventArgs e) => DoWork();
+            _workerThread.Elapsed += (source, e) => DoWork();
             _workerThread.AutoReset = true;
             _workerThread.Start();
         }

@@ -550,6 +550,8 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
+                    if (biota == null) continue;
+
                     if (variationId.HasValue)
                     {
                         if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId)) //filter to only the objects that are the correct variation
@@ -587,6 +589,8 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
+
+                    if (biota == null) continue;
 
                     // Filter out objects that are in a container
                     if (biota.BiotaPropertiesIID.FirstOrDefault(r => r.Type == 2 && r.Value != 0) != null)
@@ -654,21 +658,23 @@ namespace ACE.Database
 
         private static List<LoginCharacter> GetCharacterListForLogin(uint accountID, bool includeDeleted, uint characterID = 0)
         {
-            var context = new ShardDbContext();
-            IQueryable<LoginCharacter> query;
+            using (var context = new ShardDbContext())
+            {
+                IQueryable<LoginCharacter> query;
 
-            if (accountID > 0)
-                query = context.Character
-                    .Where(r => r.AccountId == accountID && (includeDeleted || !r.IsDeleted))
-                    .AsNoTracking()
-                    .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
-            else
-                query = context.Character
-                    .Where(r => r.Id == characterID && (includeDeleted || !r.IsDeleted))
-                    .AsNoTracking()
-                    .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
+                if (accountID > 0)
+                    query = context.Character
+                        .Where(r => r.AccountId == accountID && (includeDeleted || !r.IsDeleted))
+                        .AsNoTracking()
+                        .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
+                else
+                    query = context.Character
+                        .Where(r => r.Id == characterID && (includeDeleted || !r.IsDeleted))
+                        .AsNoTracking()
+                        .Select(x => new LoginCharacter { Id = x.Id, AccountId = x.AccountId, Name = x.Name, IsDeleted = x.IsDeleted, IsPlussed = x.IsPlussed, DeleteTime = x.DeleteTime, LastLoginTimestamp = x.LastLoginTimestamp });
 
-            return query.ToList();
+                return query.ToList();
+            }
         }
 
         private static List<Character> GetCharacterList(uint accountID, bool includeDeleted, uint characterID = 0)

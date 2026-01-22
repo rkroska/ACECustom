@@ -77,7 +77,7 @@ namespace ACE.Server.Entity
 
         /// <summary>
         /// This will set the LastRequestedDatabaseSave to UtcNow and ChangesDetected to false.<para />
-        /// If enqueueSave is set to true, DatabaseManager.Shard.SaveBiota() will be called for the biota.<para />
+        /// If enqueueSave is set to true, the save will be routed through SaveScheduler with SaveType.Periodic.<para />
         /// Set enqueueSave to false if you want to perform all the normal routines for a save but not the actual save. This is useful if you're going to collect biotas in bulk for bulk saving.
         /// </summary>
         /// <param name="enqueueSave">Whether to enqueue the save operation</param>
@@ -91,13 +91,42 @@ namespace ACE.Server.Entity
 
             if (enqueueSave)
             {
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
+                // Build biotas collection for SaveScheduler
+                var biotas = new System.Collections.ObjectModel.Collection<(ACE.Entity.Models.Biota biota, System.Threading.ReaderWriterLockSlim rwLock)>();
+                biotas.Add((Biota, BiotaDatabaseLock));
+
+                Func<System.Collections.Generic.IEnumerable<(ACE.Entity.Models.Biota biota, System.Threading.ReaderWriterLockSlim rwLock)>> getBiotas = () => biotas;
+
+                // Wrap the user callback to clear SaveInProgress
+                Action<bool> wrappedCallback = (result) =>
                 {
                     SaveInProgress = false;
                     onCompleted?.Invoke(result);
+                };
+
+                // Route through Save Scheduler with Periodic priority
+                var saveKey = SaveKeys.Player(Guid.Full);
+                var enqueued = SaveScheduler.Instance.RequestSave(saveKey, SaveScheduler.SaveType.Periodic, () =>
+                {
+                    // This runs on SaveScheduler worker thread
+                    // Call B is materialized BEFORE passing to SaveBiotasInParallel (not a factory)
+                    DatabaseManager.Shard.SaveBiotasInParallel(biotas, wrappedCallback, $"OfflinePlayer:{Guid.Full}");
+                    return true; // Indicates successful enqueue to database queue
                 });
+                
+                // If shutdown is requested, RequestSave returns false and the enqueue action never executes
+                // This leaves SaveInProgress stuck, so we must clear it and restore ChangesDetected
+                if (!enqueued)
+                {
+                    SaveInProgress = false;
+                    ChangesDetected = true;
+                    onCompleted?.Invoke(false);
+                }
             }
         }
+
+
+
 
 
         #region GetProperty Functions

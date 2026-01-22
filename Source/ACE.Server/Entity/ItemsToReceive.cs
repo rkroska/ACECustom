@@ -8,13 +8,8 @@ namespace ACE.Server.Entity
     /// <summary>
     /// Helper class to verify player has enough free inventory slots / container slots / burden to receive some items
     /// </summary>
-    public class ItemsToReceive
+    public class ItemsToReceive(Player player)
     {
-        /// <summary>
-        /// The player to receive the items
-        /// </summary>
-        private Player player { get; set; }
-
         public int RequiredInventorySlots { get; set; }
         public int RequiredContainerSlots { get; set; }
         public int RequiredBurden { get; set; }
@@ -24,24 +19,15 @@ namespace ACE.Server.Entity
         /// </summary>
         public int RequiredSlots => RequiredContainerSlots + RequiredInventorySlots;
 
-        private int playerFreeInventorySlots { get; set; }
-        private int playerFreeContainerSlots { get; set; }
-        private int playerAvailableBurden { get; set; }
+        private int playerFreeInventorySlots { get; set; } = player.GetFreeInventorySlots();
+        private int playerFreeContainerSlots { get; set; } = player.GetFreeContainerSlots();
+        private int playerAvailableBurden { get; set; } = player.GetAvailableBurden();
 
         public bool PlayerOutOfInventorySlots => RequiredInventorySlots > playerFreeInventorySlots;
         public bool PlayerOutOfContainerSlots => RequiredContainerSlots > playerFreeContainerSlots;
         public bool PlayerExceedsAvailableBurden => RequiredBurden > playerAvailableBurden;
 
         public bool PlayerExceedsLimits => PlayerOutOfInventorySlots || PlayerOutOfContainerSlots || PlayerExceedsAvailableBurden;
-
-        public ItemsToReceive(Player player)
-        {
-            this.player = player;
-
-            playerFreeInventorySlots = player.GetFreeInventorySlots();
-            playerFreeContainerSlots = player.GetFreeContainerSlots();
-            playerAvailableBurden = player.GetAvailableBurden();
-        }
 
         public bool Add(uint weenieClassId, int amount)
         {

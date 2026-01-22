@@ -400,7 +400,7 @@ namespace ACE.Server.WorldObjects
         /// It does not add it to inventory as you could be unwielding to the ground or a chest.<para />
         /// It will also decrease the EncumbranceVal and Value.
         /// </summary>
-        public bool TryDequipObjectWithNetworking(ObjectGuid objectGuid, out WorldObject item, DequipObjectAction dequipObjectAction)
+        public bool TryDequipObjectWithNetworking(ObjectGuid objectGuid, out WorldObject item, DequipObjectAction dequipObjectAction, bool deferSave = false)
         {
             if (!TryDequipObjectWithBroadcasting(objectGuid, out item, out var wieldedLocation, (dequipObjectAction == DequipObjectAction.DropItem)))
                 return false;
@@ -437,7 +437,7 @@ namespace ACE.Server.WorldObjects
                 // If we don't, the player can drop the item, log out, and log back in. If the landblock hasn't queued a database save in that time,
                 // the player will end up loading with this object in their inventory even though the landblock is the true owner. This is because
                 // when we load player inventory, the database still has the record that shows this player as the ContainerId for the item.
-                DeepSave(item);
+                if (!deferSave) DeepSave(item);
             }
 
             if (dequipObjectAction != DequipObjectAction.ToCorpseOnDeath)
@@ -756,6 +756,11 @@ namespace ACE.Server.WorldObjects
                 // We add to these values because amount will be negative if we're subtracting from a stack, so we want to add a negative number.
                 container.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 container.Value += (stack.StackUnitValue ?? 0) * amount;
+
+                // Fix for 0-encumbrance/0-value items (e.g. quest tokens):
+                // If numeric values don't change, SetProperty won't set ChangesDetected.
+                // We must force it here to ensure the container saves.
+                container.ChangesDetected = true;
                 
                 // Notify container that a stack size changed (for non-Player containers to schedule saves)
                 if (!(container is Player))
@@ -768,6 +773,10 @@ namespace ACE.Server.WorldObjects
             {
                 rootContainer.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 rootContainer.Value += (stack.StackUnitValue ?? 0) * amount;
+
+                // Fix for 0-encumbrance/0-value items:
+                // Force dirty ensures the root player/container saves even if burden doesn't change.
+                rootContainer.ChangesDetected = true;
                 
                 // Notify root container that a stack size changed (for non-Player containers to schedule saves)
                 if (!(rootContainer is Player))
@@ -4056,7 +4065,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // for NPCs that accept items with EmoteCategory.Give,
                     // if stacked item, only give 1, ignoring amount indicated, unless they are AiAcceptEverything in which case, take full amount indicated
-                    if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive))
+                    if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive, deferSave: true))
                     {
                         if (item == itemToGive)
                             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, item, target));
@@ -4157,7 +4166,7 @@ namespace ACE.Server.WorldObjects
                                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You give {target.Name} {iouToTurnIn.Name}.", ChatMessageType.Broadcast));
                                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
-                                RemoveItemForGive(iouToTurnIn, null, false, null, 1, out _, true);
+                                RemoveItemForGive(iouToTurnIn, null, false, null, 1, out _, true, deferSave: true);
                                 success = TryCreateInInventoryWithNetworking(item);
 
                                 if (success)
@@ -4186,7 +4195,7 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameEventTell(target, "Hmm... Something isn't quite right with this IOU. I can't seem to make out what its for. I'm sorry!", this, ChatMessageType.Tell));
         }
 
-        private bool RemoveItemForGive(WorldObject item, Container itemFoundInContainer, bool itemWasEquipped, Container itemRootOwner, int amount, out WorldObject itemToGive, bool destroy = false)
+        private bool RemoveItemForGive(WorldObject item, Container itemFoundInContainer, bool itemWasEquipped, Container itemRootOwner, int amount, out WorldObject itemToGive, bool destroy = false, bool deferSave = false)
         {
             if (item.StackSize > 1 && amount < item.StackSize) // We're splitting a stack
             {
@@ -4225,7 +4234,7 @@ namespace ACE.Server.WorldObjects
             // We're giving the whole object
             if (itemWasEquipped)
             {
-                if (!TryDequipObjectWithNetworking(item.Guid, out _, DequipObjectAction.GiveItem))
+                if (!TryDequipObjectWithNetworking(item.Guid, out _, DequipObjectAction.GiveItem, deferSave: deferSave || destroy))
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryDequipObjectWithNetworking failed!")); // Custom error message
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
@@ -4235,7 +4244,7 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.GiveItem))
+                if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.GiveItem, deferSave: deferSave || destroy))
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryRemoveFromInventoryWithNetworking failed!")); // Custom error message
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));

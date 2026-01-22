@@ -201,7 +201,7 @@ namespace ACE.Server.WorldObjects
 
             RecordCast = new RecordCast(this);
 
-            AttackQueue = new AttackQueue(this);
+            AttackQueue = new AttackQueue();
 
             if (!PlayerKillsPk.HasValue)
                 PlayerKillsPk = 0;
@@ -649,6 +649,11 @@ namespace ACE.Server.WorldObjects
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
+
+            // FAILSAFE: Ensure player is removed from PlayerManager.onlinePlayers
+            // This is required because ForceLogoff bypasses the standard Session.LogOffPlayer flow
+            // which handles the switch to offline status.
+            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
             log.Debug($"[LOGOUT] Account {Account.AccountName} exited the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }

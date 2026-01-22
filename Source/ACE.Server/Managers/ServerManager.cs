@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 
 using log4net;
@@ -128,12 +129,16 @@ namespace ACE.Server.Managers
             PropertyManager.ResyncVariables();
             PropertyManager.StopUpdating();
 
+
             WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_LogOffAllPlayers, () =>
             {
-                log.Debug("Logging off all players...");
+                var onlinePlayers = PlayerManager.GetAllOnline();
+                var playersWithChanges = onlinePlayers.Count(p => p.ChangesDetected || p.CharacterChangesDetected);
+                
+                log.Info($"Logging off {onlinePlayers.Count} player{(onlinePlayers.Count != 1 ? "s" : "")}... ({playersWithChanges} with pending saves)");
 
                 // logout each player
-                foreach (var player in PlayerManager.GetAllOnline())
+                foreach (var player in onlinePlayers)
                     player.Session.LogOffPlayer(true);
             }));
 
@@ -143,7 +148,11 @@ namespace ACE.Server.Managers
             var playerLogoffStart = DateTime.UtcNow;
             while ((playerCount = PlayerManager.GetOnlineCount()) > 0)
             {
-                logUpdateTS = LogStatusUpdate(logUpdateTS, $"Waiting for {playerCount} player{(playerCount > 1 ? "s" : "")} to log off...");
+                // Count players with saves in progress to show logout save progress
+                var onlinePlayers = PlayerManager.GetAllOnline();
+                var savingCount = onlinePlayers.Count(p => p.SaveInProgress);
+                
+                logUpdateTS = LogStatusUpdate(logUpdateTS, $"Waiting for {playerCount} player{(playerCount > 1 ? "s" : "")} to log off... ({savingCount} saving)");
                 Thread.Sleep(10);
                 if (playerCount > 0 && DateTime.UtcNow - playerLogoffStart > TimeSpan.FromMinutes(5))
                 {
@@ -157,6 +166,7 @@ namespace ACE.Server.Managers
                     }    
                 }
             }
+
 
             WorldManager.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DisconnectAllSessions, () =>
             {
@@ -190,6 +200,21 @@ namespace ACE.Server.Managers
                 Thread.Sleep(10);
             }
 
+            // CRITICAL: Save offline players BEFORE draining SaveScheduler
+            // This ensures offline saves are queued while the world thread is still running,
+            // allowing callbacks to execute properly and saves to complete
+            log.Info("Saving OfflinePlayers that have unsaved changes...");
+            PlayerManager.PerformOfflinePlayerSaves();
+
+            // Wait for SaveScheduler queue to drain - shows progress to console
+            logUpdateTS = DateTime.MinValue;
+            int saveQueueCount;
+            while ((saveQueueCount = SaveScheduler.Instance.QueueCount) > 0)
+            {
+                logUpdateTS = LogStatusUpdate(logUpdateTS, $"Waiting for {saveQueueCount} pending periodic save{(saveQueueCount > 1 ? "s" : "")} to complete...");
+                Thread.Sleep(100);
+            }
+
             // CRITICAL: Stop SaveScheduler BEFORE stopping world/network threads
             // This ensures:
             // 1. Callbacks can drain (EnqueueToWorldThread still works)
@@ -218,9 +243,6 @@ namespace ACE.Server.Managers
                 logUpdateTS = LogStatusUpdate(logUpdateTS, "Waiting for world to stop...");
                 Thread.Sleep(10);
             }
-
-            log.Info("Saving OfflinePlayers that have unsaved changes...");
-            PlayerManager.SaveOfflinePlayersWithChanges();
 
             // Wait for the database queue to empty
             logUpdateTS = DateTime.MinValue;

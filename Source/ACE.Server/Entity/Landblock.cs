@@ -53,7 +53,7 @@ namespace ACE.Server.Entity
 
         public override bool Equals(object obj)
         {
-            return base.Equals(obj) && this.VariationId == ((Landblock)obj).VariationId;
+            return base.Equals(obj) && VariationId == ((Landblock)obj).VariationId;
         }
 
         /// <summary>
@@ -101,7 +101,7 @@ namespace ACE.Server.Entity
 
         public List<Landblock> Adjacents = new List<Landblock>();
 
-        private readonly ActionQueue actionQueue = new ActionQueue();
+        private readonly ActionQueue actionQueue = new();
 
         public int WorldObjectCount
         { get
@@ -155,19 +155,10 @@ namespace ACE.Server.Entity
         public CellLandblock CellLandblock { get; }
         public LandblockInfo LandblockInfo { get; }
 
-        /// <summary>
-        /// The landblock static meshes for
-        /// collision detection and physics simulation
-        /// </summary>
-        public LandblockMesh LandblockMesh { get; private set; }
-
-        public List<ModelMesh> Buildings { get; private set; }
-
-
-        public readonly RateMonitor Monitor5m = new RateMonitor();
+        public readonly RateMonitor Monitor5m = new();
         private readonly TimeSpan last5mClearInteval = TimeSpan.FromMinutes(5);
         private DateTime last5mClear;
-        public readonly RateMonitor Monitor1h = new RateMonitor();
+        public readonly RateMonitor Monitor1h = new();
         private readonly TimeSpan last1hClearInteval = TimeSpan.FromHours(1);
         private DateTime last1hClear;
         private bool monitorsRequireEventStart = true;

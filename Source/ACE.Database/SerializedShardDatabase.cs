@@ -38,6 +38,18 @@ namespace ACE.Database
         /// </summary>
         public readonly ShardDatabase BaseDatabase;
 
+        /// <summary>
+        /// Hook for routing actions back to the world thread from DB layer.
+        /// Set by WorldManager.Initialize() to avoid circular dependencies.
+        /// </summary>
+        public static Action<Action> EnqueueToWorldThread { get; set; }
+
+        /// <summary>
+        /// Hook for performing offline player saves.
+        /// Set by WorldManager.Initialize() to avoid circular dependencies.
+        /// </summary>
+        public static Action PerformOfflinePlayerSavesHook { get; set; }
+
         // Reused per worker thread - safe because DoSaves is single-threaded
         // Must never be accessed from other threads
         protected readonly Stopwatch stopwatch = new Stopwatch();
@@ -61,6 +73,11 @@ namespace ACE.Database
             public long LastUsedTicks = DateTime.UtcNow.Ticks;
             // Track if state was dirty when save started (to handle redundant saves correctly)
             public int WasDirtyWhenStarted = 0; // 0 = false, 1 = true
+            // Store the latest work item factory so followup saves use the newest snapshot
+            // This prevents stale snapshot reuse when new requests arrive while Queued or Saving
+            private Func<WorkItem> _latestWorkItemFactory;
+            // Thread-safe callback queue to ensure all callbacks are invoked, not just the latest one
+            private readonly ConcurrentQueue<Action<bool>> _callbacks = new ConcurrentQueue<Action<bool>>();
             
             public DateTime LastUsedUtc
             {
@@ -70,6 +87,46 @@ namespace ACE.Database
             public void UpdateLastUsed()
             {
                 Interlocked.Exchange(ref LastUsedTicks, DateTime.UtcNow.Ticks);
+            }
+            
+            /// <summary>
+            /// Updates the latest work item factory atomically.
+            /// Called when a new save request arrives while Queued or Saving.
+            /// </summary>
+            public void UpdateLatestFactory(Func<WorkItem> factory)
+            {
+                Volatile.Write(ref _latestWorkItemFactory, factory);
+            }
+            
+            /// <summary>
+            /// Gets the latest work item factory atomically.
+            /// Called when creating a followup save to ensure it uses the newest snapshot.
+            /// </summary>
+            public Func<WorkItem> GetLatestFactory()
+            {
+                return Volatile.Read(ref _latestWorkItemFactory);
+            }
+            
+            /// <summary>
+            /// Adds a callback to be invoked when the save completes.
+            /// Thread-safe: uses ConcurrentQueue to store callbacks.
+            /// </summary>
+            public void AddCallback(Action<bool> callback)
+            {
+                if (callback != null)
+                    _callbacks.Enqueue(callback);
+            }
+            
+            /// <summary>
+            /// Drains and returns all registered callbacks.
+            /// Thread-safe: uses ConcurrentQueue.TryDequeue to drain all callbacks.
+            /// </summary>
+            public List<Action<bool>> DrainCallbacks()
+            {
+                var list = new List<Action<bool>>();
+                while (_callbacks.TryDequeue(out var cb))
+                    list.Add(cb);
+                return list;
             }
         }
 
@@ -116,6 +173,16 @@ namespace ACE.Database
                     var state = (CoalesceState)Volatile.Read(ref tracker.State);
                     if (state == CoalesceState.Idle)
                     {
+                        // Drain leftover callbacks so closures don't leak
+                        var remainingCallbacks = tracker.DrainCallbacks();
+                        if (remainingCallbacks != null && remainingCallbacks.Count > 0)
+                        {
+                            log.Warn($"[DATABASE] CleanupIdleTrackers: Found {remainingCallbacks.Count} undrained callbacks for key={key}. Dropping to prevent memory leak.");
+                        }
+
+                        // Drop captured snapshot factory reference too
+                        tracker.UpdateLatestFactory(null);
+
                         _coalesce.TryRemove(key, out _);
                     }
                 }
@@ -173,6 +240,11 @@ namespace ACE.Database
         {
             return _readOnlyQueue.Select(item => item.Key).ToList();
         }
+
+        /// <summary>
+        /// Returns the number of pending items in the unique save queue.
+        /// </summary>
+        public int QueueCount => _uniqueQueue.Count;
 
         private void DoReadOnlyWork()
         {
@@ -279,17 +351,21 @@ namespace ACE.Database
             }
         }
 
-
-        public int QueueCount => _uniqueQueue.Count;
-
         /// <summary>
         /// Attempts to enqueue work with coalescing support.
         /// Returns true if the work was enqueued, false if it was marked dirty instead.
         /// </summary>
-        private bool TryEnqueueCoalesced(string coalesceKey, Func<WorkItem> workItemFactory)
+        /// <param name="coalesceKey">The coalescing key for this work item</param>
+        /// <param name="workItemFactory">Factory for the initial work item</param>
+        /// <param name="followupFactory">Factory for followup work items (used when marked Dirty). If null, workItemFactory is used.</param>
+        private bool TryEnqueueCoalesced(string coalesceKey, Func<WorkItem> workItemFactory, Func<WorkItem> followupFactory = null)
         {
             var tracker = _coalesce.GetOrAdd(coalesceKey, _ => new CoalesceTracker());
             tracker.UpdateLastUsed();
+            
+            // Use followupFactory if provided, otherwise use workItemFactory
+            // CRITICAL: followupFactory has the newest snapshot, so we always store that for followup saves
+            var factoryToStore = followupFactory ?? workItemFactory;
 
             while (true)
             {
@@ -300,6 +376,9 @@ namespace ACE.Database
                     if (Interlocked.CompareExchange(ref tracker.State, (int)CoalesceState.Queued, (int)CoalesceState.Idle)
                         == (int)CoalesceState.Idle)
                     {
+                        // Store the followup factory so followup saves can use it if marked Dirty
+                        tracker.UpdateLatestFactory(factoryToStore);
+                        
                         var workItem = workItemFactory?.Invoke();
                         if (workItem == null)
                         {
@@ -317,15 +396,18 @@ namespace ACE.Database
                 if (state == CoalesceState.Queued)
                 {
                     // There's already work queued but not started yet
-                    // Mark as Dirty to ensure a followup save happens after the queued work completes
-                    // This prevents losing work if mutations happen after the queued work is created
+                    // Update the latest factory to use the newest snapshot, then mark as Dirty
+                    // This ensures the followup save uses the latest data, not the stale snapshot from the queued work
+                    tracker.UpdateLatestFactory(factoryToStore);
                     Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Dirty);
                     return false;
                 }
 
                 if (state == CoalesceState.Saving)
                 {
-                    // A save is in progress, mark as Dirty so it will enqueue a followup
+                    // A save is in progress, update the latest factory to use the newest snapshot, then mark as Dirty
+                    // This ensures the followup save uses the latest data, not the stale snapshot from the in-progress save
+                    tracker.UpdateLatestFactory(factoryToStore);
                     Interlocked.Exchange(ref tracker.State, (int)CoalesceState.Dirty);
                     return false;
                 }
@@ -391,10 +473,13 @@ namespace ACE.Database
             }
         }
 
-        private void OnCoalescedSaveFinished(string coalesceKey, Func<WorkItem> enqueueFollowup)
+        /// <summary>
+        /// Called when a coalesced save finishes. Returns true if a followup save was queued, false if state became Idle.
+        /// </summary>
+        private bool OnCoalescedSaveFinished(string coalesceKey, Func<WorkItem> enqueueFollowup)
         {
             if (!_coalesce.TryGetValue(coalesceKey, out var tracker))
-                return;
+                return false; // No tracker, assume no followup
 
             // Use CAS loop to atomically transition from Dirty to Queued, avoiding race window
             // We're finishing a save, so we're in Saving state. Check if it became Dirty.
@@ -413,15 +498,21 @@ namespace ACE.Database
                     if (prev == CoalesceState.Dirty)
                     {
                         // Successfully transitioned Dirty -> Queued, enqueue followup
-                        // Update LastUsedUtc when enqueuing followup to prevent premature cleanup
+                        // CRITICAL: Use the latest factory from tracker to ensure followup uses newest snapshot
+                        // This prevents stale snapshot reuse when new requests arrived while this save was in progress
                         tracker.UpdateLastUsed();
                         
-                        var next = enqueueFollowup?.Invoke();
-                        if (next != null)
+                        // Get the latest factory from tracker (always use latest, ignore passed-in enqueueFollowup)
+                        var latestFactory = tracker.GetLatestFactory();
+                        if (latestFactory != null)
                         {
-                            _uniqueQueue.Enqueue(next);
+                            var next = latestFactory();
+                            if (next != null)
+                            {
+                                _uniqueQueue.Enqueue(next);
+                            }
                         }
-                        return;
+                        return true; // Followup was queued
                     }
                     // State changed, retry
                     continue;
@@ -451,15 +542,20 @@ namespace ACE.Database
                         if (prevState == CoalesceState.Saving)
                         {
                             // Successfully transitioned, enqueue followup
+                            // CRITICAL: Use the latest factory from tracker to ensure followup uses newest snapshot
                             tracker.UpdateLastUsed();
-                            var next = enqueueFollowup?.Invoke();
-                            if (next != null)
+                            var latestFactory = tracker.GetLatestFactory();
+                            if (latestFactory != null)
                             {
-                                _uniqueQueue.Enqueue(next);
+                                var next = latestFactory();
+                                if (next != null)
+                                {
+                                    _uniqueQueue.Enqueue(next);
+                                }
                             }
                             // Clear the flag
                             Interlocked.Exchange(ref tracker.WasDirtyWhenStarted, 0);
-                            return;
+                            return true; // Followup was queued
                         }
                         // State changed (probably became Dirty), retry
                         continue;
@@ -474,14 +570,14 @@ namespace ACE.Database
                     if (prevState2 == CoalesceState.Saving)
                     {
                         // Successfully transitioned to Idle
-                        return;
+                        return false; // No followup, state is Idle
                     }
                     // State changed (probably became Dirty), retry
                     continue;
                 }
                 
-                // Unexpected state, just return
-                return;
+                // Unexpected state, assume no followup
+                return false;
             }
         }
 
@@ -545,26 +641,82 @@ namespace ACE.Database
         }
 
 
-        public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback)
+
+        public void SaveBiota(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback, SaveScheduler.SaveType priority = SaveScheduler.SaveType.Periodic)
         {
-            _uniqueQueue.Enqueue(new WorkItem(() =>
+            // Route through SaveScheduler to prevent UniqueQueue starvation
+            // Individual items that are frequently updated will no longer be pushed to the back of the queue
+            var saveJob = new IndividualBiotaSaveJob(biota, rwLock, callback, BaseDatabase);
+            
+            // RequestItemSave handles coalescing and proper FIFO ordering
+            // Use specified priority (default Periodic for backward compatibility)
+            
+            // CRITICAL FIX: Use Player key format if this biota is a player
+            // This ensures SaveScheduler.ExtractCharacterIdFromKey works, which is required
+            // for HasPendingOrActiveSave to correctly block login during critical saves.
+            if (ACE.Entity.ObjectGuid.IsPlayer(biota.Id))
+            {
+                 var key = SaveKeys.Player(biota.Id);
+                 // Use RequestSave directly with the player key (not RequestItemSave which builds its own biota key)
+                 var enqueued = SaveScheduler.Instance.RequestSave(key, priority, saveJob);
+                 if (!enqueued)
+                 {
+                     // Shutdown requested - invoke callback with failure
+                     try { callback?.Invoke(false); }
+                     catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for player {biota.Id} during shutdown", cbEx); }
+                 }
+            }
+            else
+            {
+                 var enqueued = SaveScheduler.Instance.RequestItemSave(biota.Id, saveJob, priority);
+                 if (!enqueued)
+                 {
+                     // Shutdown requested - invoke callback with failure
+                     try { callback?.Invoke(false); }
+                     catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id} during shutdown", cbEx); }
+                 }
+            }
+        }
+
+        /// <summary>
+        /// Save job for individual biota saves.
+        /// Executes the actual database save and invokes the callback.
+        /// </summary>
+        private sealed class IndividualBiotaSaveJob : ISaveJob
+        {
+            private readonly ACE.Entity.Models.Biota _biota;
+            private readonly ReaderWriterLockSlim _rwLock;
+            private readonly Action<bool> _callback;
+            private readonly ShardDatabase _database;
+
+            public IndividualBiotaSaveJob(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock, Action<bool> callback, ShardDatabase database)
+            {
+                _biota = biota ?? throw new ArgumentNullException(nameof(biota));
+                _rwLock = rwLock ?? throw new ArgumentNullException(nameof(rwLock));
+                _callback = callback;
+                _database = database ?? throw new ArgumentNullException(nameof(database));
+            }
+
+            public bool Execute()
             {
                 bool result = false;
                 try
                 {
-                    result = BaseDatabase.SaveBiota(biota, rwLock);
+                    result = _database.SaveBiota(_biota, _rwLock);
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"[DATABASE] SaveBiota failed for biota {biota.Id}", ex);
+                    log.Error($"[DATABASE] SaveBiota failed for biota {_biota.Id}", ex);
                     result = false;
                 }
                 finally
                 {
-                    try { callback?.Invoke(result); }
-                    catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {biota.Id}", cbEx); }
+                    try { _callback?.Invoke(result); }
+                    catch (Exception cbEx) { log.Error($"[DATABASE] SaveBiota callback threw exception for biota {_biota.Id}", cbEx); }
                 }
-            }, "SaveBiota: " + biota.Id));
+                
+                return result;
+            }
         }
 
 
@@ -599,12 +751,18 @@ namespace ACE.Database
             Action<bool> callback, // WARNING: Runs on DB worker thread - must not touch world state directly
             string sourceTrace)
         {
-            var coalesceKey = "player:" + playerId;
+            var coalesceKey = SaveKeys.Player(playerId);
 
-            // Create follow-up work item factory (must be reusable to chain if marked Dirty during followup)
-            // Declare as null first, then assign the lambda that references itself
-            Func<WorkItem> createFollowupWorkItem = null;
-            createFollowupWorkItem = () => new WorkItem(() =>
+            // Get or create tracker to store latest factory
+            var tracker = _coalesce.GetOrAdd(coalesceKey, _ => new CoalesceTracker());
+            
+            // Always add callback to tracker to ensure it's invoked even if coalesced
+            tracker.AddCallback(callback);
+            
+            // Create the factory that will be stored in tracker and used for followups
+            // CRITICAL: This factory captures the current getBiotas (but NOT callback - callbacks are stored separately)
+            // When a new request arrives, we'll create a new factory with the new getBiotas and update the tracker
+            Func<WorkItem> createFollowupFactory = () => new WorkItem(() =>
             {
                 OnCoalescedSaveStarted(coalesceKey);
                 bool r2 = false;
@@ -615,47 +773,68 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    // Pass the same factory again so it can chain if marked Dirty during followup
-                    OnCoalescedSaveFinished(coalesceKey, createFollowupWorkItem);
-                }
-                // Invoke callback after state transition is complete to avoid reentrancy surprises
-                // If callback enqueues another save, state will be Idle/Queued, not Saving
-                try
-                {
-                    callback?.Invoke(r2);
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[DATABASE] SavePlayerBiotasCoalesced followup callback threw exception for player {playerId}", ex);
+                    // CRITICAL: Use latest factory from tracker for followup to ensure newest snapshot
+                    // OnCoalescedSaveFinished will read from tracker, so followup uses latest getBiotas
+                    var followupQueued = OnCoalescedSaveFinished(coalesceKey, null); // Pass null, OnCoalescedSaveFinished reads from tracker
+                    
+                    // Only drain and invoke callbacks when state becomes Idle (no followup queued)
+                    // This ensures callbacks correspond to the final stable completion for this coalesced burst
+                    if (!followupQueued)
+                    {
+                        var callbacks = tracker.DrainCallbacks();
+                        foreach (var cb in callbacks)
+                        {
+                            try
+                            {
+                                cb?.Invoke(r2);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"[DATABASE] SavePlayerBiotasCoalesced followup callback threw exception for player {playerId}", ex);
+                            }
+                        }
+                    }
                 }
             }, "SavePlayerBiotasCoalesced followup:" + playerId);
 
-            TryEnqueueCoalesced(coalesceKey, () =>
-                new WorkItem(() =>
-                {
-                    OnCoalescedSaveStarted(coalesceKey);
+            // Create factory for initial work item
+            Func<WorkItem> createInitialWorkItem = () => new WorkItem(() =>
+            {
+                OnCoalescedSaveStarted(coalesceKey);
 
-                    bool result = false;
-                    try
+                bool result = false;
+                try
+                {
+                    var biotas = getBiotas();
+                    result = BaseDatabase.SaveBiotasInParallel(biotas);
+                }
+                finally
+                {
+                    // CRITICAL: Use latest factory from tracker for followup to ensure newest snapshot
+                    // OnCoalescedSaveFinished will read from tracker, so followup uses latest getBiotas
+                    var followupQueued = OnCoalescedSaveFinished(coalesceKey, null); // Pass null, OnCoalescedSaveFinished reads from tracker
+                    
+                    // Only drain and invoke callbacks when state becomes Idle (no followup queued)
+                    // This ensures callbacks correspond to the final stable completion for this coalesced burst
+                    if (!followupQueued)
                     {
-                        var biotas = getBiotas();
-                        result = BaseDatabase.SaveBiotasInParallel(biotas);
+                        var callbacks = tracker.DrainCallbacks();
+                        foreach (var cb in callbacks)
+                        {
+                            try
+                            {
+                                cb?.Invoke(result);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"[DATABASE] SavePlayerBiotasCoalesced callback threw exception for player {playerId}", ex);
+                            }
+                        }
                     }
-                    finally
-                    {
-                        OnCoalescedSaveFinished(coalesceKey, createFollowupWorkItem);
-                    }
-                    // Invoke callback after state transition is complete to avoid reentrancy surprises
-                    // If callback enqueues another save, state will be Idle/Queued, not Saving
-                    try
-                    {
-                        callback?.Invoke(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] SavePlayerBiotasCoalesced callback threw exception for player {playerId}", ex);
-                    }
-                }, "SavePlayerBiotasCoalesced:" + playerId));
+                }
+            }, "SavePlayerBiotasCoalesced:" + playerId);
+            
+            TryEnqueueCoalesced(coalesceKey, createInitialWorkItem, createFollowupFactory);
         }
 
         /// <summary>
@@ -666,12 +845,18 @@ namespace ACE.Database
             Func<(Character character, ReaderWriterLockSlim rwLock)> getCharacter,
             Action<bool> callback) // WARNING: Runs on DB worker thread - must not touch world state directly
         {
-            var coalesceKey = "character:" + characterId;
+            var coalesceKey = SaveKeys.Character(characterId);
 
-            // Create follow-up work item factory (must be reusable to chain if marked Dirty during followup)
-            // Declare as null first, then assign the lambda that references itself
-            Func<WorkItem> createFollowupWorkItem = null;
-            createFollowupWorkItem = () => new WorkItem(() =>
+            // Get or create tracker to store latest factory
+            var tracker = _coalesce.GetOrAdd(coalesceKey, _ => new CoalesceTracker());
+            
+            // Always add callback to tracker to ensure it's invoked even if coalesced
+            tracker.AddCallback(callback);
+            
+            // Create the factory that will be stored in tracker and used for followups
+            // CRITICAL: This factory captures the current getCharacter (but NOT callback - callbacks are stored separately)
+            // When a new request arrives, we'll create a new factory with the new getCharacter and update the tracker
+            Func<WorkItem> createFollowupFactory = () => new WorkItem(() =>
             {
                 OnCoalescedSaveStarted(coalesceKey);
                 bool r2 = false;
@@ -682,47 +867,68 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    // Pass the same factory again so it can chain if marked Dirty during followup
-                    OnCoalescedSaveFinished(coalesceKey, createFollowupWorkItem);
-                }
-                // Invoke callback after state transition is complete to avoid reentrancy surprises
-                // If callback enqueues another save, state will be Idle/Queued, not Saving
-                try
-                {
-                    callback?.Invoke(r2);
-                }
-                catch (Exception ex)
-                {
-                    log.Error($"[DATABASE] SaveCharacterCoalesced followup callback threw exception for character {characterId}", ex);
+                    // CRITICAL: Use latest factory from tracker for followup to ensure newest snapshot
+                    // OnCoalescedSaveFinished will read from tracker, so followup uses latest getCharacter
+                    var followupQueued = OnCoalescedSaveFinished(coalesceKey, null); // Pass null, OnCoalescedSaveFinished reads from tracker
+                    
+                    // Only drain and invoke callbacks when state becomes Idle (no followup queued)
+                    // This ensures callbacks correspond to the final stable completion for this coalesced burst
+                    if (!followupQueued)
+                    {
+                        var callbacks = tracker.DrainCallbacks();
+                        foreach (var cb in callbacks)
+                        {
+                            try
+                            {
+                                cb?.Invoke(r2);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"[DATABASE] SaveCharacterCoalesced followup callback threw exception for character {characterId}", ex);
+                            }
+                        }
+                    }
                 }
             }, "SaveCharacterCoalesced followup:" + characterId);
 
-            TryEnqueueCoalesced(coalesceKey, () =>
-                new WorkItem(() =>
-                {
-                    OnCoalescedSaveStarted(coalesceKey);
+            // Create factory for initial work item
+            Func<WorkItem> createInitialWorkItem = () => new WorkItem(() =>
+            {
+                OnCoalescedSaveStarted(coalesceKey);
 
-                    bool result = false;
-                    try
+                bool result = false;
+                try
+                {
+                    var (character, rwLock) = getCharacter();
+                    result = BaseDatabase.SaveCharacter(character, rwLock);
+                }
+                finally
+                {
+                    // CRITICAL: Use latest factory from tracker for followup to ensure newest snapshot
+                    // OnCoalescedSaveFinished will read from tracker, so followup uses latest getCharacter
+                    var followupQueued = OnCoalescedSaveFinished(coalesceKey, null); // Pass null, OnCoalescedSaveFinished reads from tracker
+                    
+                    // Only drain and invoke callbacks when state becomes Idle (no followup queued)
+                    // This ensures callbacks correspond to the final stable completion for this coalesced burst
+                    if (!followupQueued)
                     {
-                        var (character, rwLock) = getCharacter();
-                        result = BaseDatabase.SaveCharacter(character, rwLock);
+                        var callbacks = tracker.DrainCallbacks();
+                        foreach (var cb in callbacks)
+                        {
+                            try
+                            {
+                                cb?.Invoke(result);
+                            }
+                            catch (Exception ex)
+                            {
+                                log.Error($"[DATABASE] SaveCharacterCoalesced callback threw exception for character {characterId}", ex);
+                            }
+                        }
                     }
-                    finally
-                    {
-                        OnCoalescedSaveFinished(coalesceKey, createFollowupWorkItem);
-                    }
-                    // Invoke callback after state transition is complete to avoid reentrancy surprises
-                    // If callback enqueues another save, state will be Idle/Queued, not Saving
-                    try
-                    {
-                        callback?.Invoke(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] SaveCharacterCoalesced callback threw exception for character {characterId}", ex);
-                    }
-                }, "SaveCharacterCoalesced:" + characterId));
+                }
+            }, "SaveCharacterCoalesced:" + characterId);
+            
+            TryEnqueueCoalesced(coalesceKey, createInitialWorkItem, createFollowupFactory);
         }
 
         public void RemoveBiota(uint id, Action<bool> callback)
@@ -981,89 +1187,44 @@ namespace ACE.Database
         }
 
         /// <summary>
-        /// Queues offline player saves to be processed in the background.
-        /// This is a legacy convenience method that enqueues directly to _uniqueQueue.
-        /// 
-        /// For new code, use SaveScheduler.RequestSave() with a work delegate that calls QueueOfflinePlayerSavesInternal().
-        /// Architecture: Gameplay → SaveScheduler.RequestSave() → (work delegate) → QueueOfflinePlayerSavesInternal() → _uniqueQueue → DB
-        /// 
-        /// NOTE: Inner layer (SerializedShardDatabase) does not call outer layer (SaveScheduler).
-        /// This method is for backward compatibility only.
+        /// Queues offline player saves to be processed on the world thread.
+        /// Uses hooks to avoid circular dependencies between database and server layers.
         /// </summary>
         public void QueueOfflinePlayerSaves(Action<bool> callback = null)
         {
-            // Direct enqueue to _uniqueQueue (bypasses SaveScheduler for backward compatibility)
-            // Inner layer does not call outer layer - this method is for legacy code only
-            QueueOfflinePlayerSavesInternal(callback);
+            if (EnqueueToWorldThread == null || PerformOfflinePlayerSavesHook == null)
+            {
+                log.Error("[DATABASE] Offline saves hook not set, cannot queue offline saves safely.");
+                callback?.Invoke(false);
+                return;
+            }
+
+            EnqueueToWorldThread(() =>
+            {
+                bool success = false;
+                try
+                {
+                    PerformOfflinePlayerSavesHook();
+                    success = true;
+                }
+                catch (Exception ex)
+                {
+                    log.Error("[DATABASE] Offline save hook threw exception", ex);
+                }
+
+                callback?.Invoke(success);
+            });
         }
 
         /// <summary>
         /// Internal method that performs the actual offline player save work.
         /// Called by SaveScheduler's work delegate.
-        /// Enqueues work to _uniqueQueue which is processed by DB worker thread.
+        /// Routes to world thread using hooks to avoid circular dependencies.
         /// </summary>
         public void QueueOfflinePlayerSavesInternal(Action<bool> callback = null)
         {
-            // Use a stable key so multiple enqueues collapse to the most recent
-            var workItemKey = "OfflinePlayerSaves";
-            _uniqueQueue.Enqueue(new WorkItem(() =>
-            {
-                var success = false;
-                var startTime = DateTime.UtcNow;
-                try
-                {
-                    // Import the PlayerManager to avoid circular dependencies
-                    var playerManagerType = Type.GetType("ACE.Server.Managers.PlayerManager, ACE.Server");
-                    if (playerManagerType == null)
-                    {
-                        log.Warn("[DATABASE] PlayerManager type not found; offline save skipped.");
-                    }
-                    else
-                    {
-                        // Call the existing PerformOfflinePlayerSaves method directly
-                        var saveMethod = playerManagerType.GetMethod(
-                            "PerformOfflinePlayerSaves",
-                            System.Reflection.BindingFlags.Public
-                              | System.Reflection.BindingFlags.Static
-                              | System.Reflection.BindingFlags.NonPublic,
-                            null,
-                            Type.EmptyTypes,
-                            null);
-
-                        if (saveMethod == null)
-                        {
-                            log.Warn("[DATABASE] PerformOfflinePlayerSaves method not found on PlayerManager; offline save skipped.");
-                        }
-                        else
-                        {
-                            log.Info("[DATABASE] Calling PlayerManager.PerformOfflinePlayerSaves() via reflection");
-                            saveMethod.Invoke(null, null);
-                            success = true;
-                            log.Info("[DATABASE] Successfully called PerformOfflinePlayerSaves");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    log.Error("[DATABASE] Offline player save work item failed", ex);
-                }
-                finally
-                {
-                    var elapsed = DateTime.UtcNow - startTime;
-                    if (elapsed.TotalMilliseconds >= 5000)
-                    {
-                        log.Warn($"[DATABASE] OfflinePlayerSaves work item took {elapsed.TotalMilliseconds:N0}ms to complete");
-                    }
-                    try
-                    {
-                        callback?.Invoke(success);
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"[DATABASE] QueueOfflinePlayerSaves callback threw exception: {ex}", ex);
-                    }
-                }
-            }, workItemKey));
+            // Use the public method which handles hook routing
+            QueueOfflinePlayerSaves(callback);
         }
 
 

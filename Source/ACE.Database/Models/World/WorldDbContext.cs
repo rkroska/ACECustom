@@ -96,7 +96,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("cook_book");
 
-                entity.HasComment("Cook Book for Recipes");
+                entity.ToTable(t => t.HasComment("Cook Book for Recipes"));
 
                 entity.HasIndex(e => new { e.RecipeId, e.SourceWCID, e.TargetWCID }, "recipe_source_target_uidx")
                     .IsUnique();
@@ -137,7 +137,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("encounter");
 
-                entity.HasComment("Encounters");
+                entity.ToTable(t => t.HasComment("Encounters"));
 
                 entity.HasIndex(e => new { e.Landblock, e.CellX, e.CellY }, "landblock_cellx_celly_uidx")
                     .IsUnique();
@@ -175,7 +175,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("event");
 
-                entity.HasComment("Events");
+                entity.ToTable(t => t.HasComment("Events"));
 
                 entity.HasIndex(e => e.Name, "name_UNIQUE")
                     .IsUnique();
@@ -214,7 +214,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("house_portal");
 
-                entity.HasComment("House Portal Destinations");
+                entity.ToTable(t => t.HasComment("House Portal Destinations"));
 
                 entity.HasIndex(e => new { e.HouseId, e.ObjCellId }, "house_Id_UNIQUE")
                     .IsUnique();
@@ -257,7 +257,7 @@ namespace ACE.Database.Models.World
 
                 entity.ToTable("landblock_instance");
 
-                entity.HasComment("Weenie Instances for each Landblock");
+                entity.ToTable(t => t.HasComment("Weenie Instances for each Landblock"));
 
                 entity.HasIndex(e => e.Landblock, "instance_landblock_idx");
 
@@ -306,7 +306,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("landblock_instance_link");
 
-                entity.HasComment("Weenie Instance Links");
+                entity.ToTable(t => t.HasComment("Weenie Instance Links"));
 
                 entity.HasIndex(e => e.ChildGuid, "child_idx");
 
@@ -341,7 +341,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("points_of_interest");
 
-                entity.HasComment("Points of Interest for @telepoi command");
+                entity.ToTable(t => t.HasComment("Points of Interest for @telepoi command"));
 
                 entity.HasIndex(e => e.Name, "name_UNIQUE")
                     .IsUnique()
@@ -372,7 +372,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("quest");
 
-                entity.HasComment("Quests");
+                entity.ToTable(t => t.HasComment("Quests"));
 
                 entity.HasIndex(e => e.Name, "name_UNIQUE")
                     .IsUnique();
@@ -410,7 +410,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe");
 
-                entity.HasComment("Recipes");
+                entity.ToTable(t => t.HasComment("Recipes"));
 
                 entity.Property(e => e.Id)
                     .ValueGeneratedNever()
@@ -494,7 +494,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mod");
 
-                entity.HasComment("Recipe Mods");
+                entity.ToTable(t => t.HasComment("Recipe Mods"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_Mod");
 
@@ -532,7 +532,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mods_bool");
 
-                entity.HasComment("Recipe Bool Mods");
+                entity.ToTable(t => t.HasComment("Recipe Bool Mods"));
 
                 entity.HasIndex(e => e.RecipeModId, "recipeId_mod_bool");
 
@@ -564,7 +564,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mods_d_i_d");
 
-                entity.HasComment("Recipe DID Mods");
+                entity.ToTable(t => t.HasComment("Recipe DID Mods"));
 
                 entity.HasIndex(e => e.RecipeModId, "recipeId_mod_did");
 
@@ -596,7 +596,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mods_float");
 
-                entity.HasComment("Recipe Float Mods");
+                entity.ToTable(t => t.HasComment("Recipe Float Mods"));
 
                 entity.HasIndex(e => e.RecipeModId, "recipeId_mod_float");
 
@@ -628,7 +628,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mods_i_i_d");
 
-                entity.HasComment("Recipe IID Mods");
+                entity.ToTable(t => t.HasComment("Recipe IID Mods"));
 
                 entity.HasIndex(e => e.RecipeModId, "recipeId_mod_iid");
 
@@ -660,7 +660,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mods_int");
 
-                entity.HasComment("Recipe Int Mods");
+                entity.ToTable(t => t.HasComment("Recipe Int Mods") );
 
                 entity.HasIndex(e => e.RecipeModId, "recipeId_mod_int");
 
@@ -692,7 +692,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_mods_string");
 
-                entity.HasComment("Recipe String Mods");
+                entity.ToTable(t => t.HasComment("Recipe String Mods"));
 
                 entity.HasIndex(e => e.RecipeModId, "recipeId_mod_string");
 
@@ -726,7 +726,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_requirements_bool");
 
-                entity.HasComment("Recipe Bool Requirments");
+                entity.ToTable(t => t.HasComment("Recipe Bool Requirments"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_req_bool");
 
@@ -760,7 +760,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_requirements_d_i_d");
 
-                entity.HasComment("Recipe DID Requirments");
+                entity.ToTable(t => t.HasComment("Recipe DID Requirments"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_req_did");
 
@@ -794,7 +794,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_requirements_float");
 
-                entity.HasComment("Recipe Float Requirments");
+                entity.ToTable(t => t.HasComment("Recipe Float Requirments"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_req_float");
 
@@ -828,7 +828,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_requirements_i_i_d");
 
-                entity.HasComment("Recipe IID Requirments");
+                entity.ToTable(t => t.HasComment("Recipe IID Requirments"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_req_iid");
 
@@ -862,7 +862,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_requirements_int");
 
-                entity.HasComment("Recipe Int Requirments");
+                entity.ToTable(t => t.HasComment("Recipe Int Requirments"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_req_int");
 
@@ -896,7 +896,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("recipe_requirements_string");
 
-                entity.HasComment("Recipe String Requirments");
+                entity.ToTable(t => t.HasComment("Recipe String Requirments"));
 
                 entity.HasIndex(e => e.RecipeId, "recipeId_req_string");
 
@@ -932,7 +932,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("spell");
 
-                entity.HasComment("Spell Table Extended Data");
+                entity.ToTable(t => t.HasComment("Spell Table Extended Data"));
 
                 entity.Property(e => e.Id)
                     .ValueGeneratedNever()
@@ -1081,7 +1081,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("treasure_death");
 
-                entity.HasComment("Death Treasure");
+                entity.ToTable(t => t.HasComment("Death Treasure"));
 
                 entity.HasIndex(e => e.TreasureType, "treasureType_idx");
 
@@ -1217,7 +1217,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("treasure_wielded");
 
-                entity.HasComment("Wielded Treasure");
+                entity.ToTable(t => t.HasComment("Wielded Treasure"));
 
                 entity.HasIndex(e => e.TreasureType, "treasureType_idx");
 
@@ -1299,7 +1299,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("version");
 
-                entity.HasComment("Version Information");
+                entity.ToTable(t => t.HasComment("Version Information"));
 
                 entity.Property(e => e.Id).HasColumnName("id");
 
@@ -1325,7 +1325,7 @@ namespace ACE.Database.Models.World
 
                 entity.ToTable("weenie");
 
-                entity.HasComment("Weenies");
+                entity.ToTable(t => t.HasComment("Weenies"));
 
                 entity.HasIndex(e => e.ClassName, "className_UNIQUE")
                     .IsUnique();
@@ -1355,7 +1355,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_anim_part");
 
-                entity.HasComment("Animation Part Changes (from PCAPs) of Weenies");
+                entity.ToTable(t => t.HasComment("Animation Part Changes (from PCAPs) of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Index }, "object_Id_index_uidx")
                     .IsUnique();
@@ -1382,7 +1382,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_attribute");
 
-                entity.HasComment("Attribute Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Attribute Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_attribute_type_uidx")
                     .IsUnique();
@@ -1421,7 +1421,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_attribute_2nd");
 
-                entity.HasComment("Attribute2nd (Vital) Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Attribute2nd (Vital) Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_attribute2nd_type_uidx")
                     .IsUnique();
@@ -1464,7 +1464,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_body_part");
 
-                entity.HasComment("Body Part Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Body Part Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Key }, "wcid_bodypart_type_uidx")
                     .IsUnique();
@@ -1541,7 +1541,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_book");
 
-                entity.HasComment("Book Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Book Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_bookdata_uidx")
                     .IsUnique();
@@ -1574,7 +1574,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_book_page_data");
 
-                entity.HasComment("Page Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Page Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.PageId }, "wcid_pageid_uidx")
                     .IsUnique();
@@ -1629,7 +1629,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_bool");
 
-                entity.HasComment("Bool Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Bool Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_bool_type_uidx")
                     .IsUnique();
@@ -1660,7 +1660,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_create_list");
 
-                entity.HasComment("CreateList Properties of Weenies");
+                entity.ToTable(t => t.HasComment("CreateList Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_createlist");
 
@@ -1707,7 +1707,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_d_i_d");
 
-                entity.HasComment("DataID Properties of Weenies");
+                entity.ToTable(t => t.HasComment("DataID Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_did_type_uidx")
                     .IsUnique();
@@ -1738,7 +1738,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_emote");
 
-                entity.HasComment("Emote Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Emote Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_emote");
 
@@ -1785,7 +1785,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_emote_action");
 
-                entity.HasComment("EmoteAction Properties of Weenies");
+                entity.ToTable(t => t.HasComment("EmoteAction Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.EmoteId, e.Order }, "emoteid_order_uidx")
                     .IsUnique();
@@ -1912,7 +1912,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_event_filter");
 
-                entity.HasComment("EventFilter Properties of Weenies");
+                entity.ToTable(t => t.HasComment("EventFilter Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Event }, "wcid_eventfilter_type_uidx")
                     .IsUnique();
@@ -1939,7 +1939,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_float");
 
-                entity.HasComment("Float Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Float Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_float_type_uidx")
                     .IsUnique();
@@ -1970,7 +1970,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_generator");
 
-                entity.HasComment("Generator Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Generator Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_generator");
 
@@ -2052,7 +2052,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_i_i_d");
 
-                entity.HasComment("InstanceID Properties of Weenies");
+                entity.ToTable(t => t.HasComment("InstanceID Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_iid_type_uidx")
                     .IsUnique();
@@ -2083,7 +2083,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_int");
 
-                entity.HasComment("Int Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Int Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_int_type_uidx")
                     .IsUnique();
@@ -2114,7 +2114,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_int64");
 
-                entity.HasComment("Int64 Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Int64 Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_int64_type_uidx")
                     .IsUnique();
@@ -2145,7 +2145,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_palette");
 
-                entity.HasComment("Palette Changes (from PCAPs) of Weenies");
+                entity.ToTable(t => t.HasComment("Palette Changes (from PCAPs) of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.SubPaletteId, e.Offset, e.Length }, "object_Id_subPaletteId_offset_length_uidx")
                     .IsUnique();
@@ -2174,7 +2174,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_position");
 
-                entity.HasComment("Position Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Position Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.PositionType }, "wcid_position_type_uidx")
                     .IsUnique();
@@ -2219,7 +2219,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_skill");
 
-                entity.HasComment("Skill Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Skill Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_skill_type_uidx")
                     .IsUnique();
@@ -2270,7 +2270,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_spell_book");
 
-                entity.HasComment("SpellBook Properties of Weenies");
+                entity.ToTable(t => t.HasComment("SpellBook Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Spell }, "wcid_spellbook_type_uidx")
                     .IsUnique();
@@ -2302,7 +2302,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_string");
 
-                entity.HasComment("String Properties of Weenies");
+                entity.ToTable(t => t.HasComment("String Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Type }, "wcid_string_type_uidx")
                     .IsUnique();
@@ -2335,7 +2335,7 @@ namespace ACE.Database.Models.World
             {
                 entity.ToTable("weenie_properties_texture_map");
 
-                entity.HasComment("Texture Map Changes (from PCAPs) of Weenies");
+                entity.ToTable(t => t.HasComment("Texture Map Changes (from PCAPs) of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Index, e.OldId }, "object_Id_index_oldId_uidx")
                     .IsUnique();

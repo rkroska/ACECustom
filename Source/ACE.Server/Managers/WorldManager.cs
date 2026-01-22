@@ -79,6 +79,12 @@ namespace ACE.Server.Managers
             
             log.Debug("[WORLDMANAGER] SaveScheduler.EnqueueToWorldThread initialized");
 
+            // Wire up SerializedShardDatabase hooks to avoid circular dependencies
+            SerializedShardDatabase.EnqueueToWorldThread = SaveScheduler.EnqueueToWorldThread;
+            SerializedShardDatabase.PerformOfflinePlayerSavesHook = PlayerManager.PerformOfflinePlayerSaves;
+            
+            log.Debug("[WORLDMANAGER] SerializedShardDatabase hooks initialized");
+
             var thread = new Thread(() =>
             {
                 UpdateWorld();
@@ -115,11 +121,14 @@ namespace ACE.Server.Managers
 
         public static void PlayerEnterWorld(Session session, LoginCharacter character)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            log.Debug($"[LOGIN_FLOW] PlayerEnterWorld started for {character.Name} (0x{character.Id:X8})");
+
             var offlinePlayer = PlayerManager.GetOfflinePlayer(character.Id);
 
             if (offlinePlayer == null)
             {
-                log.Error($"PlayerEnterWorld requested for character.Id 0x{character.Id:X8} not found in PlayerManager OfflinePlayers.");
+                log.Error($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - PlayerEnterWorld requested for character.Id 0x{character.Id:X8} not found in PlayerManager OfflinePlayers.");
                 return;
             }
 
@@ -127,20 +136,29 @@ namespace ACE.Server.Managers
             if (offlinePlayer.SaveInProgress &&
                 offlinePlayer.SaveServerBootId != ServerRuntime.BootId)
             {
-                log.Warn($"[LOGIN] Clearing abandoned SaveInProgress for {character.Name}");
+                log.Warn($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Clearing abandoned SaveInProgress for {character.Name}");
                 offlinePlayer.SaveInProgress = false;
                 offlinePlayer.SaveServerBootId = null;
             }
 
+            // NOTE: Removed Critical save trigger at login (PR 326) as it caused 10-15 minute login trickle
+            // by serializing all logins through the single-threaded Critical queue.
+            // Offline changes are persisted via:
+            // 1. Bank transfers already call offlinePlayer.SaveBiotaToDatabase() immediately
+            // 2. ChangesDetected flag transfers to online player (SwitchPlayerFromOfflineToOnline)
+            // 3. First periodic save (within 3 min) will persist any remaining changes
+
             // Check if there are any pending or active saves for this character using authoritative save system
             if (SaveScheduler.Instance.HasPendingOrActiveSave(character.Id))
             {
+                log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - HasPendingOrActiveSave=TRUE for {character.Name}");
                 // Prevent multiple callbacks for the same session/character login attempt
                 if (session.WaitingForLoginDrain)
                 {
-                    log.Debug($"[LOGIN] {character.Name} already waiting for saves to drain, ignoring duplicate PlayerEnterWorld call");
+                    log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - {character.Name} already waiting for saves to drain, ignoring duplicate PlayerEnterWorld call");
                     return;
                 }
+
 
                 session.WaitingForLoginDrain = true;
                 var waitStartTime = DateTime.UtcNow;
@@ -150,11 +168,13 @@ namespace ACE.Server.Managers
                 SaveScheduler.Instance.OnSavesDrained(character.Id, () =>
                 {
                     session.WaitingForLoginDrain = false;
+                    log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Saves drained callback fired for {character.Name}");
 
                     // Verify session is still valid before continuing
                     if (session != null && session.Player == null && session.State != Network.Enum.SessionState.TerminationStarted)
                     {
                         var waitDuration = (DateTime.UtcNow - waitStartTime).TotalSeconds;
+                        log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - Continuing login after {waitDuration:F3}s wait");
                         
                         // Alert if wait exceeded threshold (diagnostic only, no client notification)
                         if (waitDuration > 5.0)
@@ -168,6 +188,10 @@ namespace ACE.Server.Managers
                 });
                 return;
             }
+            else
+            {
+                 log.Debug($"[LOGIN_FLOW] {sw.ElapsedMilliseconds}ms - No pending saves for {character.Name}, proceeding to login immediately.");
+            }
 
             // No saves in flight, proceed immediately with login
             DatabaseManager.Shard.GetCharacter(character.Id, fullCharacter =>
@@ -176,6 +200,13 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
                 {
                     log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
+
+                    if (session.IsHeadless)
+                    {
+                        log.Debug($"[LOGIN_FLOW] Headless session for {character.Name} passed all save checks. Skipping World Entry to preserve server resources.");
+                        return;
+                    }
+
                     ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas), ActionPriority.High));
                 });
             });            
@@ -387,11 +418,11 @@ namespace ACE.Server.Managers
         /// Note that this work will be done on the next tick, not immediately, so be careful about your order of operations.
         /// If you must ensure order, pass your follow up work in with the argument actionToFollowUpWith. That work will be enqueued onto the Player.
         /// </summary>
-        public static void ThreadSafeTeleport(Player player, Position newPosition, IAction actionToFollowUpWith = null, bool fromPortal = false)
+        public static void ThreadSafeTeleport(Creature creature, Position newPosition, IAction actionToFollowUpWith = null, bool fromPortal = false)
         {
             EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_ThreadSafeTeleport, () =>
             {
-                player.Teleport(newPosition, fromPortal);
+                creature.Teleport(newPosition, fromPortal);
 
                     if (actionToFollowUpWith != null)
                         EnqueueAction(actionToFollowUpWith);

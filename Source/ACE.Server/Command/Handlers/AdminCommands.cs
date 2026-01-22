@@ -1072,26 +1072,25 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Starting database migration for all transfer monitoring tables...", ChatMessageType.System));
-                
-                using (var context = new ShardModels.ShardDbContext())
-                {
-                    // Create transfer_logs table
-                    CreateTransferLogsTableForMigration(context, session);
-                    
-                    // Create transfer_summaries table
-                    CreateTransferSummariesTableForMigration(context, session);
-                    
-                    // Create tracked_items table
-                    CreateTrackedItemsTableForMigration(context, session);
-                    
-                    // Create transfer_monitoring_configs table
-                    CreateTransferMonitoringConfigsTableForMigration(context, session);
-                    
-                    // Create transfer_blacklist table
-                    CreateTransferBlacklistTableForMigration(context, session);
-                    
-                    session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
-                }
+
+                using var context = new ShardModels.ShardDbContext();
+
+                // Create transfer_logs table
+                CreateTransferLogsTableForMigration(context, session);
+
+                // Create transfer_summaries table
+                CreateTransferSummariesTableForMigration(context, session);
+
+                // Create tracked_items table
+                CreateTrackedItemsTableForMigration(context, session);
+
+                // Create transfer_monitoring_configs table
+                CreateTransferMonitoringConfigsTableForMigration(context, session);
+
+                // Create transfer_blacklist table
+                CreateTransferBlacklistTableForMigration(context, session);
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
             }
             catch (Exception ex)
             {
@@ -1104,41 +1103,41 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Fixing duplicate transfer summaries...", ChatMessageType.System));
-                
-                using (var context = new ShardModels.ShardDbContext())
+
+                using var context = new ShardModels.ShardDbContext();
+
+                // First, check if the unique index exists
+                var indexExists = false;
+                try
                 {
-                    // First, check if the unique index exists
-                    var indexExists = false;
-                    try
+                    using (var command = context.Database.GetDbConnection().CreateCommand())
                     {
-                        using (var command = context.Database.GetDbConnection().CreateCommand())
-                        {
-                            command.CommandText = @"
+                        command.CommandText = @"
                                 SELECT COUNT(*) FROM information_schema.statistics 
                                 WHERE table_schema = DATABASE() 
                                 AND table_name = 'transfer_summaries' 
                                 AND index_name = 'idx_transfer_summary_unique'";
-                            context.Database.OpenConnection();
-                            var count = Convert.ToInt32(command.ExecuteScalar());
-                            indexExists = count > 0;
-                        }
+                        context.Database.OpenConnection();
+                        var count = Convert.ToInt32(command.ExecuteScalar());
+                        indexExists = count > 0;
                     }
-                    catch
-                    {
-                        // If query fails, assume index doesn't exist
-                        indexExists = false;
-                    }
-                    finally
-                    {
-                        context.Database.CloseConnection();
-                    }
+                }
+                catch
+                {
+                    // If query fails, assume index doesn't exist
+                    indexExists = false;
+                }
+                finally
+                {
+                    context.Database.CloseConnection();
+                }
 
-                    if (!indexExists)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Unique index does not exist. Cleaning up duplicates and creating index...", ChatMessageType.System));
-                        
-                        // Clean up any duplicate data first by keeping the record with the latest LastTransfer
-                        var deletedCount = context.Database.ExecuteSqlRaw(@"
+                if (!indexExists)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Unique index does not exist. Cleaning up duplicates and creating index...", ChatMessageType.System));
+
+                    // Clean up any duplicate data first by keeping the record with the latest LastTransfer
+                    var deletedCount = context.Database.ExecuteSqlRaw(@"
                             DELETE t1 FROM transfer_summaries t1
                             INNER JOIN transfer_summaries t2
                                 ON t1.FromPlayerName = t2.FromPlayerName
@@ -1146,22 +1145,21 @@ namespace ACE.Server.Command.Handlers
                                AND t1.TransferType   = t2.TransferType
                                AND t1.Id             > t2.Id");
 
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {deletedCount} duplicate summary records", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {deletedCount} duplicate summary records", ChatMessageType.System));
 
-                        // Now create the unique index
-                        context.Database.ExecuteSqlRaw(@"
+                    // Now create the unique index
+                    context.Database.ExecuteSqlRaw(@"
                             CREATE UNIQUE INDEX `idx_transfer_summary_unique`
                             ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
-                        
-                        session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index created successfully", ChatMessageType.System));
-                    }
-                    else
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index already exists", ChatMessageType.System));
-                    }
-                    
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Transfer summaries fix completed successfully!", ChatMessageType.System));
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index created successfully", ChatMessageType.System));
                 }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index already exists", ChatMessageType.System));
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Transfer summaries fix completed successfully!", ChatMessageType.System));
             }
             catch (Exception ex)
             {
@@ -1837,7 +1835,7 @@ namespace ACE.Server.Command.Handlers
                                 
                                 message += $"Account: {accountName}";
                                 if (account.AccessLevel > (int)AccessLevel.Player)
-                                    message += $" (AccessLevel: {((AccessLevel)account.AccessLevel).ToString()})";
+                                    message += $" (AccessLevel: {((AccessLevel)account.AccessLevel)})";
                                 message += $"\n";
                                 var createLocal = account.CreateTime.ToLocalTime();
                                 message += $"  Created: {createLocal:MMM dd yyyy h:mm tt} {createLocal:zzz}\n";
@@ -1924,7 +1922,7 @@ namespace ACE.Server.Command.Handlers
                     else
                         message = $"Account '{account.AccountName}' is not banned.\n";
                     if (account.AccessLevel > (int)AccessLevel.Player)
-                        message += $"Account '{account.AccountName}' has been granted AccessLevel.{((AccessLevel)account.AccessLevel).ToString()} rights.\n";
+                        message += $"Account '{account.AccountName}' has been granted AccessLevel.{((AccessLevel)account.AccessLevel)} rights.\n";
                     var localTime = account.CreateTime.ToLocalTime();
                     message += $"Account created on {localTime:MMM dd yyyy h:mm tt} {localTime:zzz} by IP: {(account.CreateIP != null ? new IPAddress(account.CreateIP).ToString() : "N/A")} \n";
                     if (account.LastLoginTime.HasValue)
@@ -1998,7 +1996,7 @@ namespace ACE.Server.Command.Handlers
                         foreach (var character in characters.Where(x => !x.IsDeleted && x.DeleteTime == 0))
                         {
                             var charDisplayName = $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\"";
-                            var charId = $"ID 0x{character.Id.ToString("X8")}";
+                            var charId = $"ID 0x{character.Id:X8}";
                             
                             // Get birth date and format to match account creation date format
                             string birthDateStr = "N/A";
@@ -2041,14 +2039,14 @@ namespace ACE.Server.Command.Handlers
                     {
                         message += "-------------------\n";
                         foreach (var character in pendingDeletedCharacters)
-                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id.ToString("X8")} -- Will be deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
+                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id:X8} -- Will be deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
                     }
                     message += "-------------------\n";
                     var deletedCharacters = characters.Where(x => x.IsDeleted).ToList();
                     if (deletedCharacters.Count > 0)
                     {
                         foreach (var character in deletedCharacters)
-                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id.ToString("X8")} -- Deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
+                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id:X8} -- Deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
                     }
                     else
                         message += "No deleted characters.\n";
@@ -2156,7 +2154,7 @@ namespace ACE.Server.Command.Handlers
             {
                 // parsedPositionInt value should be limited too a value from, 0-9
                 // Create a new position from the current player location
-                PositionType positionType = new PositionType();
+                PositionType positionType = new();
                 // Transform too the correct PositionType, based on the "Saved Positions" subset:
                 switch (parsedPositionInt)
                 {
@@ -2283,7 +2281,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length == 0)
             {
                 //player.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(player, PropertyInt.PlayerKillerStatus, (int)player.PlayerKillerStatus));
-                var message = $"Your current PK state is: {session.Player.PlayerKillerStatus.ToString()}\n"
+                var message = $"Your current PK state is: {session.Player.PlayerKillerStatus}\n"
                     + "You can change it to the following:\n"
                     + "NPK      = Non-Player Killer\n"
                     + "PK       = Player Killer\n"
@@ -2313,9 +2311,9 @@ namespace ACE.Server.Command.Handlers
                         break;
                 }
                 session.Player.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(session.Player, PropertyInt.PlayerKillerStatus, (int)session.Player.PlayerKillerStatus));
-                CommandHandlerHelper.WriteOutputInfo(session, $"Your current PK state is now set to: {session.Player.PlayerKillerStatus.ToString()}", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Your current PK state is now set to: {session.Player.PlayerKillerStatus}", ChatMessageType.Broadcast);
 
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed their PK state to {session.Player.PlayerKillerStatus.ToString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed their PK state to {session.Player.PlayerKillerStatus}.");
             }
         }
 
