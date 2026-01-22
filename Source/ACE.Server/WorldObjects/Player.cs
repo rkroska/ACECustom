@@ -203,7 +203,7 @@ namespace ACE.Server.WorldObjects
 
             RecordCast = new RecordCast(this);
 
-            AttackQueue = new AttackQueue(this);
+            AttackQueue = new AttackQueue();
 
             if (!PlayerKillsPk.HasValue)
                 PlayerKillsPk = 0;
@@ -527,6 +527,12 @@ namespace ACE.Server.WorldObjects
         {
             IsBusy = true;
             IsLoggingOut = true;
+            // Note: BeginLogoutSave() should already be called by LogOffPlayer in Session.cs
+            // before calling LogOut(). This is defensive in case LogOut() is called directly.
+            if (!_isShuttingDownOrOffline)
+            {
+                BeginLogoutSave();
+            }
 
             if (Fellowship != null)
                 FellowshipQuit(false);
@@ -645,9 +651,11 @@ namespace ACE.Server.WorldObjects
         {
             CurrentLandblock?.RemoveWorldObject(Guid, false);
             SetPropertiesAtLogOut();
-            SavePlayerToDatabase(duringLogout: true, reason: SaveReason.ForcedImmediate);
-            // Don't set the player offline until they have successfully saved
-            //PlayerManager.SwitchPlayerFromOnlineToOffline(this);
+
+            // FAILSAFE: Ensure player is removed from PlayerManager.onlinePlayers
+            // This is required because ForceLogoff bypasses the standard Session.LogOffPlayer flow
+            // which handles the switch to offline status.
+            PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
             log.Debug($"[LOGOUT] Account {Account.AccountName} exited the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }

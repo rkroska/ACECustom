@@ -19,6 +19,11 @@ using ACE.Server.Entity;
 
 namespace ACE.Server
 {
+    public static class ServerRuntime
+    {
+        public static Guid BootId { get; internal set; }
+    }
+
     partial class Program
     {
         /// <summary>
@@ -42,6 +47,10 @@ namespace ACE.Server
 
         public static void Main(string[] args)
         {
+            // Set BootId very early - before any database or manager initialization
+            ServerRuntime.BootId = Guid.NewGuid();
+            log.Info($"Server BootId: {ServerRuntime.BootId}");
+
             var consoleTitle = $"ACEmulator - v{ServerBuildInfo.FullVersion}";
 
             Console.Title = consoleTitle;
@@ -132,12 +141,18 @@ namespace ACE.Server
             var configConfigContainer = Path.Combine(containerConfigDirectory, "Config.js");
 
             if (IsRunningInContainer && File.Exists(configConfigContainer))
+            {
+                log.Info($"Copying {configConfigContainer} to {configFile}");
                 File.Copy(configConfigContainer, configFile, true);
+            }
 
             if (!File.Exists(configFile))
             {
                 if (!IsRunningInContainer)
+                {
+                    log.Info($"Running out-of-box setup.");
                     DoOutOfBoxSetup(configFile);
+                }
                 else
                 {
                     if (!File.Exists(configConfigContainer))
@@ -146,12 +161,14 @@ namespace ACE.Server
                         File.Copy(configFile, configConfigContainer);
                     }
                     else
+                    {
                         File.Copy(configConfigContainer, configFile);
+                    }
                 }
             }
 
-            log.Info("Initializing ConfigManager...");
-            ConfigManager.Initialize();
+            log.Info($"Initializing ConfigManager with {configFile}...");
+            ConfigManager.Initialize(configFile);
 
             log.Info("Initializing ModManager...");
             ModManager.Initialize();
@@ -291,6 +308,9 @@ namespace ACE.Server
 
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
+
+            // Configure SaveScheduler stuck threshold from ServerConfig
+            SaveScheduler.Instance.SetStuckThreshold(TimeSpan.FromSeconds(ServerConfig.save_scheduler_stuck_seconds.Value));
 
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();

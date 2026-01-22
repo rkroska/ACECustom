@@ -400,7 +400,7 @@ namespace ACE.Server.WorldObjects
         /// It does not add it to inventory as you could be unwielding to the ground or a chest.<para />
         /// It will also decrease the EncumbranceVal and Value.
         /// </summary>
-        public bool TryDequipObjectWithNetworking(ObjectGuid objectGuid, out WorldObject item, DequipObjectAction dequipObjectAction)
+        public bool TryDequipObjectWithNetworking(ObjectGuid objectGuid, out WorldObject item, DequipObjectAction dequipObjectAction, bool deferSave = false)
         {
             if (!TryDequipObjectWithBroadcasting(objectGuid, out item, out var wieldedLocation, (dequipObjectAction == DequipObjectAction.DropItem)))
                 return false;
@@ -437,7 +437,7 @@ namespace ACE.Server.WorldObjects
                 // If we don't, the player can drop the item, log out, and log back in. If the landblock hasn't queued a database save in that time,
                 // the player will end up loading with this object in their inventory even though the landblock is the true owner. This is because
                 // when we load player inventory, the database still has the record that shows this player as the ContainerId for the item.
-                DeepSave(item);
+                if (!deferSave) DeepSave(item);
             }
 
             if (dequipObjectAction != DequipObjectAction.ToCorpseOnDeath)
@@ -756,12 +756,33 @@ namespace ACE.Server.WorldObjects
                 // We add to these values because amount will be negative if we're subtracting from a stack, so we want to add a negative number.
                 container.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 container.Value += (stack.StackUnitValue ?? 0) * amount;
+
+                // Fix for 0-encumbrance/0-value items (e.g. quest tokens):
+                // If numeric values don't change, SetProperty won't set ChangesDetected.
+                // We must force it here to ensure the container saves.
+                container.ChangesDetected = true;
+                
+                // Notify container that a stack size changed (for non-Player containers to schedule saves)
+                if (!(container is Player))
+                {
+                    container.OnStackSizeChanged(stack, amount);
+                }
             }
 
             if (rootContainer != null && rootContainer != container)
             {
                 rootContainer.EncumbranceVal += (stack.StackUnitEncumbrance ?? 0) * amount;
                 rootContainer.Value += (stack.StackUnitValue ?? 0) * amount;
+
+                // Fix for 0-encumbrance/0-value items:
+                // Force dirty ensures the root player/container saves even if burden doesn't change.
+                rootContainer.ChangesDetected = true;
+                
+                // Notify root container that a stack size changed (for non-Player containers to schedule saves)
+                if (!(rootContainer is Player))
+                {
+                    rootContainer.OnStackSizeChanged(stack, amount);
+                }
             }
 
             return true;
@@ -1573,14 +1594,46 @@ namespace ACE.Server.WorldObjects
 #if DEBUG
                 log.Debug($"[SAVE DEBUG] DoHandleActionPutItemInContainer triggering save for {item.Name} (0x{item.Guid}) | Moving from {(prevContainer is Player prevPlayer2 ? $"Player {prevPlayer2.Name}" : $"{prevContainer.Name} (0x{prevContainer.Guid})")} to {(container is Player newPlayer ? $"Player {newPlayer.Name}" : $"{container.Name} (0x{container.Guid})")} | Item ContainerId={item.ContainerId} (0x{(item.ContainerId ?? 0):X8}) | Item Container={item.Container?.Name ?? "null"} (0x{(item.Container?.Guid.Full ?? 0):X8})");
 #endif
-                item.SaveBiotaToDatabase();
+                // Use SaveScheduler to offload saves from gameplay thread
+                // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+                // Item saves use character:<id>:item:<guid> format to track character-affecting saves
+                var itemSaveKey = SaveKeys.Item(Character.Id, item.Guid.Full);
+                SaveScheduler.Instance.RequestSave(itemSaveKey, ACE.Database.SaveScheduler.SaveType.Critical, () =>
+                {
+                    item.SaveBiotaToDatabase();
+                    return true;
+                });
                 
                 // CRITICAL: Save the container immediately to prevent duplication race conditions
                 // If the item is saved but the container isn't, a crash/race can cause duplication
                 // This ensures both item and container state are persisted
                 if (container is Container worldContainer && !(container is Player))
                 {
-                    worldContainer.SaveBiotaToDatabase();
+                    // Determine appropriate save key based on container type
+                    string containerKey;
+                    ACE.Database.SaveScheduler.SaveType containerType;
+                    if (worldContainer is Hook hook)
+                    {
+                        containerKey = $"hook_tx:{hook.Guid}";
+                        containerType = ACE.Database.SaveScheduler.SaveType.Atomic;
+                    }
+                    else if (worldContainer is Storage storage)
+                    {
+                        // Storage transactions use character:<id>:storage_tx:<guid> format
+                        containerKey = SaveKeys.StorageTx(Character.Id, storage.Guid.Full);
+                        containerType = ACE.Database.SaveScheduler.SaveType.Atomic;
+                    }
+                    else
+                    {
+                        containerKey = $"container:{worldContainer.Guid}";
+                        containerType = ACE.Database.SaveScheduler.SaveType.Critical;
+                    }
+                    
+                    SaveScheduler.Instance.RequestSave(containerKey, containerType, () =>
+                    {
+                        worldContainer.SaveBiotaToDatabase();
+                        return true;
+                    });
                 }
                 
                 // Save container owners if they are players (immediate save for player-to-world-container operations)
@@ -1589,14 +1642,17 @@ namespace ACE.Server.WorldObjects
                 // Source container owner: inventory changed (item removed)
                 // Destination container owner: inventory changed (item added)
                 // Use ForcedImmediate to ensure saves happen immediately and console logs are visible
+                // Special handling for hooks: player save is critical to capture inventory delta
                 if (itemRootOwner is Player sourcePlayer && containerRootOwner != itemRootOwner)
                 {
                     // Only save if moving to/from a world container (not same-player inventory move)
+                    // For hooks, this captures the player inventory delta when placing item on hook
                     sourcePlayer.SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
                 }
                 if (containerRootOwner is Player destPlayer && destPlayer != itemRootOwner)
                 {
                     // Only save if moving to/from a world container (not same-player inventory move)
+                    // For hooks, this captures the player inventory delta when removing item from hook
                     destPlayer.SavePlayerToDatabase(reason: SaveReason.ForcedImmediate);
                 }
             }
@@ -3614,6 +3670,74 @@ namespace ACE.Server.WorldObjects
                     targetStack.EnqueueBroadcast(new GameMessageSetStackSize(targetStack));
                 else
                     Session.Network.EnqueueSend(new GameMessageSetStackSize(targetStack));
+                
+                // When merge occurs in a container (not player), schedule container save
+                // This ensures stack size changes are persisted for Storage, Hook, etc.
+                if (targetStackRootOwner is Container containerOwner && !(containerOwner is Player))
+                {
+                    // Mark container as dirty (already happens via AdjustStack updating EncumbranceVal/Value)
+                    containerOwner.ChangesDetected = true;
+                    
+                    // Schedule SaveScheduler save for the container
+                    // Architecture: Gameplay → SaveScheduler → SerializedShardDatabase → _uniqueQueue → DB
+                    string containerKey;
+                    if (containerOwner is Hook hook)
+                        containerKey = $"hook_tx:{hook.Guid}";
+                    else if (containerOwner is Storage storage)
+                        containerKey = $"storage_tx:{storage.Guid}";
+                    else
+                        containerKey = $"container_tx:{containerOwner.Guid}";
+                    
+                    ACE.Database.SaveScheduler.Instance.RequestSave(containerKey, ACE.Database.SaveScheduler.SaveType.Atomic, () =>
+                    {
+                        // Prepare container and merged item for atomic save
+                        var biotas = new System.Collections.Generic.List<(ACE.Entity.Models.Biota biota, System.Threading.ReaderWriterLockSlim rwLock)>();
+                        var objectsToClear = new System.Collections.Generic.List<WorldObject>();
+                        
+                        // Prep container biota
+                        bool containerWasAlreadyInProgress = containerOwner.SaveInProgress;
+                        containerOwner.SaveBiotaToDatabase(enqueueSave: false);
+                        if (containerOwner.SaveInProgress && !containerWasAlreadyInProgress)
+                        {
+                            objectsToClear.Add(containerOwner);
+                        }
+                        biotas.Add((containerOwner.Biota, containerOwner.BiotaDatabaseLock));
+                        
+                        // Prep merged item biota (stack size changed)
+                        bool itemWasAlreadyInProgress = targetStack.SaveInProgress;
+                        targetStack.SaveBiotaToDatabase(enqueueSave: false);
+                        if (targetStack.SaveInProgress && !itemWasAlreadyInProgress)
+                        {
+                            objectsToClear.Add(targetStack);
+                        }
+                        biotas.Add((targetStack.Biota, targetStack.BiotaDatabaseLock));
+                        
+                        // Enqueue DB work with callback to clear flags after save completes
+                        ACE.Database.DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
+                        {
+                            // Enqueue flag clearing to gameplay thread
+                            containerOwner.EnqueueAction(new ACE.Server.Entity.Actions.ActionEventDelegate(
+                                ACE.Server.Entity.Actions.ActionType.Landblock_ClearFlagsAfterSave, () =>
+                            {
+                                foreach (var obj in objectsToClear)
+                                {
+                                    if (obj.IsDestroyed)
+                                        continue;
+                                        
+                                    obj.SaveInProgress = false;
+                                    obj.SaveStartTime = DateTime.MinValue;
+                                    
+                                    // Only clear ChangesDetected if save succeeded
+                                    if (result)
+                                        obj.ChangesDetected = false;
+                                    else
+                                        obj.ChangesDetected = true;
+                                }
+                            }));
+                        }, $"Player:StackableMerge:Container:{containerOwner.Guid}");
+                        return true;
+                    });
+                }
             }
 
             var itemFoundOnCorpse = sourceStackRootOwner is Corpse;
@@ -3945,7 +4069,7 @@ namespace ACE.Server.WorldObjects
                 {
                     // for NPCs that accept items with EmoteCategory.Give,
                     // if stacked item, only give 1, ignoring amount indicated, unless they are AiAcceptEverything in which case, take full amount indicated
-                    if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive))
+                    if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive, deferSave: true))
                     {
                         if (item == itemToGive)
                             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, item, target));
@@ -4046,7 +4170,7 @@ namespace ACE.Server.WorldObjects
                                 Session.Network.EnqueueSend(new GameMessageSystemChat($"You give {target.Name} {iouToTurnIn.Name}.", ChatMessageType.Broadcast));
                                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
-                                RemoveItemForGive(iouToTurnIn, null, false, null, 1, out _, true);
+                                RemoveItemForGive(iouToTurnIn, null, false, null, 1, out _, true, deferSave: true);
                                 success = TryCreateInInventoryWithNetworking(item);
 
                                 if (success)
@@ -4075,7 +4199,7 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameEventTell(target, "Hmm... Something isn't quite right with this IOU. I can't seem to make out what its for. I'm sorry!", this, ChatMessageType.Tell));
         }
 
-        private bool RemoveItemForGive(WorldObject item, Container itemFoundInContainer, bool itemWasEquipped, Container itemRootOwner, int amount, out WorldObject itemToGive, bool destroy = false)
+        private bool RemoveItemForGive(WorldObject item, Container itemFoundInContainer, bool itemWasEquipped, Container itemRootOwner, int amount, out WorldObject itemToGive, bool destroy = false, bool deferSave = false)
         {
             if (item.StackSize > 1 && amount < item.StackSize) // We're splitting a stack
             {
@@ -4114,7 +4238,7 @@ namespace ACE.Server.WorldObjects
             // We're giving the whole object
             if (itemWasEquipped)
             {
-                if (!TryDequipObjectWithNetworking(item.Guid, out _, DequipObjectAction.GiveItem))
+                if (!TryDequipObjectWithNetworking(item.Guid, out _, DequipObjectAction.GiveItem, deferSave: deferSave || destroy))
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryDequipObjectWithNetworking failed!")); // Custom error message
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
@@ -4124,7 +4248,7 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.GiveItem))
+                if (!TryRemoveFromInventoryWithNetworking(item.Guid, out _, RemoveFromInventoryAction.GiveItem, deferSave: deferSave || destroy))
                 {
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "TryRemoveFromInventoryWithNetworking failed!")); // Custom error message
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));

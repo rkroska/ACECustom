@@ -43,11 +43,25 @@ namespace ACE.Server.Managers
         /// </summary>
         private static DateTime lastOfflineSaveCheck = DateTime.MinValue;
 
+
         /// <summary>
-        /// Timestamp of the last EnsureSaveIfOwed check for online players.
+        /// Timestamp of the last TickPlayerSaves call.
         /// Thread-safe: Tick() is called from single-threaded WorldManager.UpdateWorld() loop.
         /// </summary>
-        private static DateTime lastEnsureSaveCheckUtc = DateTime.MinValue;
+        private static DateTime lastPeriodicSaveTickUtc = DateTime.MinValue;
+
+        /// <summary>
+        /// Pending queue for time-sliced offline player saves.
+        /// Populated hourly by SaveOfflinePlayersWithChanges, drained incrementally in Tick.
+        /// Thread-safe: Only accessed from world thread (Tick is single-threaded).
+        /// </summary>
+        private static readonly Queue<OfflinePlayer> _pendingOfflineSaves = new Queue<OfflinePlayer>();
+        
+        /// <summary>
+        /// Maximum number of offline players to save per tick.
+        /// Tunable: 50 players per tick = ~5ms overhead (vs 50ms+ for 5000 players).
+        /// </summary>
+        private const int OfflineSavesPerTick = 50;
 
         /// <summary>
         /// This will load all the players from the database into the OfflinePlayers dictionary. It should be called before WorldManager is initialized.
@@ -103,22 +117,183 @@ namespace ACE.Server.Managers
 
             var currentUnixTime = Time.GetUnixTime();
 
-            // Ensure any owed saves don't get stuck if activity stops (rate limited to every 3 seconds)
-            if (lastEnsureSaveCheckUtc == DateTime.MinValue || DateTime.UtcNow >= lastEnsureSaveCheckUtc.AddSeconds(3))
+            // Tick periodic player saves (rate limited to every 3 seconds to match SaveScheduler.TickIntervalSeconds)
+            // This enforces the 3-minute save window even if players have no changes
+            if (lastPeriodicSaveTickUtc == DateTime.MinValue || DateTime.UtcNow >= lastPeriodicSaveTickUtc.AddSeconds(3))
             {
-                lastEnsureSaveCheckUtc = DateTime.UtcNow;
+                lastPeriodicSaveTickUtc = DateTime.UtcNow;
                 
-                playersLock.EnterReadLock();
-                try
+                SaveScheduler.Instance.TickPlayerSaves(playerId =>
                 {
-                    foreach (var player in onlinePlayers.Values)
+                    // Lock only long enough to fetch the player
+                    Player player;
+                    playersLock.EnterReadLock();
+                    try
                     {
-                        player.EnsureSaveIfOwed();
+                        if (!onlinePlayers.TryGetValue(playerId, out player))
+                            return null; // Player not found or not online
+
+                        // Skip if player is already saving to prevent overlapping saves
+                        if (player.SaveInProgress)
+                            return null;
+                    }
+                    finally
+                    {
+                        playersLock.ExitReadLock();
+                    }
+
+                    // Release lock before doing work to reduce lock contention
+                    // Do prep work on world thread (not SaveScheduler worker thread)
+                    // This ensures thread safety and matches the intent of "main thread snapshot" comments
+                    var biotas = new Collection<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>();
+
+                    player.SaveBiotaToDatabase(false);
+                    
+                    // Safety check: if SaveBiotaToDatabase early returned (mutation guard, etc), don't proceed
+                    if (!player.SaveInProgress)
+                        return null;
+
+                    // Snapshot inventory on main thread to prevent race condition (only if player prep succeeded)
+                    var possessionsSnapshot = player.GetAllPossessions().ToList();
+                    
+                    // Track which possessions were actually prepared for this batch save
+                    var preparedGuidsForCallback = new HashSet<uint>();
+
+                    biotas.Add((player.Biota, player.BiotaDatabaseLock));
+
+                    foreach (var possession in possessionsSnapshot)
+                    {
+                        if (possession.IsDestroyed)
+                            continue;
+                        
+                        if (!possession.ChangesDetected)
+                            continue;
+
+                        // Skip if already saving to prevent noisy behavior and concurrency issues
+                        if (possession.SaveInProgress)
+                            continue;
+
+                        var possessionGuid = possession.Guid.Full;
+
+                        possession.SaveBiotaToDatabase(false);
+
+                        // Only add to preparedGuidsForCallback after confirming it was actually included in the batch
+                        // SaveBiotaToDatabase can early return for various reasons (container guard, destroyed, etc.)
+                        if (possession.SaveInProgress)
+                        {
+                            preparedGuidsForCallback.Add(possessionGuid);
+                            biotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                        }
+                    }
+
+                    // getBiotas just returns the already-built collection (runs on SaveScheduler worker thread)
+                    Func<IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>> getBiotas = () => biotas;
+                    
+                    Action<bool> saveCallback = (result) =>
+                    {
+                        try
+                        {
+                            player.SaveInProgress = false;
+                            player.SaveStartTime = DateTime.MinValue;
+
+                            var currentPossessions = player.GetAllPossessions();
+                            foreach (var possession in currentPossessions)
+                            {
+                                if (!possession.IsDestroyed && preparedGuidsForCallback.Contains(possession.Guid.Full))
+                                {
+                                    possession.SaveInProgress = false;
+                                    possession.SaveStartTime = DateTime.MinValue;
+
+                                    if (result)
+                                        possession.ChangesDetected = false;
+                                    else
+                                        possession.ChangesDetected = true;
+                                }
+                            }
+
+                            if (result)
+                            {
+                                player.ChangesDetected = false;
+                            }
+                            else
+                            {
+                                player.ChangesDetected = true;
+                                player.BiotaSaveFailed = true;
+
+                                if (!player.CharacterChangesDetected)
+                                    player.CharacterChangesDetected = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            log.Error($"[SAVE] Periodic save callback failed for {player.Name} (0x{player.Guid})", ex);
+                        }
+                    };
+
+                    return new PlayerSaveJob(player, getBiotas, saveCallback, duringLogout: false);
+                });
+            }
+
+            // Process pending offline saves incrementally (time-slicing)
+            // Drain up to OfflineSavesPerTick players per frame to avoid lag spikes
+            if (_pendingOfflineSaves.Count > 0)
+            {
+                var processed = 0;
+                while (_pendingOfflineSaves.Count > 0 && processed < OfflineSavesPerTick)
+                {
+                    var player = _pendingOfflineSaves.Dequeue();
+                    processed++;
+
+                    try
+                    {
+                        // Enqueue actual DB save with completion callback
+                        player.SaveBiotaToDatabase(true, result =>
+                        {
+                            // This callback runs on the database worker thread
+                            // Route back to the world thread before touching player state or playersLock
+                            if (SaveScheduler.EnqueueToWorldThread != null)
+                            {
+                                SaveScheduler.EnqueueToWorldThread(() =>
+                                {
+                                    if (!result)
+                                    {
+                                        // Re-enqueue for retry on failure
+                                        _pendingOfflineSaves.Enqueue(player);
+                                        log.Error($"[PLAYERMANAGER] Offline save failed for {player.Name} ({player.Guid.Full}); re-enqueued for retry");
+                                    }
+                                    else
+                                    {
+                                        // Clear ChangesDetected on successful save
+                                        playersLock.EnterWriteLock();
+                                        try
+                                        {
+                                            player.ChangesDetected = false;
+                                        }
+                                        finally
+                                        {
+                                            playersLock.ExitWriteLock();
+                                        }
+                                        log.Debug($"[PLAYERMANAGER] Saved offline player: {player.Name}");
+                                    }
+                                });
+                            }
+                            else
+                            {
+                                // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                                log.Error("[PLAYERMANAGER] CRITICAL: EnqueueToWorldThread not set! Offline save callback cannot safely execute.");
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"[PLAYERMANAGER] Failed to enqueue save for offline player {player.Name} ({player.Guid.Full}): {ex}");
+                        // Don't re-enqueue on exception to avoid infinite loops
                     }
                 }
-                finally
+
+                if (processed > 0)
                 {
-                    playersLock.ExitReadLock();
+                    log.Debug($"[PLAYERMANAGER] Processed {processed} offline saves this tick. {_pendingOfflineSaves.Count} remaining in queue.");
                 }
             }
 
@@ -141,35 +316,38 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Queues a background task to save any offline players that have ChangesDetected.
-        /// Actual persistence is performed by PerformOfflinePlayerSaves() on the DB worker.
+        /// Actual persistence is performed by PerformOfflinePlayerSaves() on the world thread.
         /// </summary>
         public static void SaveOfflinePlayersWithChanges()
         {
-
-            // Check if there are actually players with changes to save
-            var playersWithChanges = 0;
+            // Snapshot offline players with changes into pending queue for time-sliced processing
+            // This spreads the load across multiple frames instead of causing a single-frame spike
+            
+            List<OfflinePlayer> playersToEnqueue;
             
             playersLock.EnterReadLock();
             try
             {
-                playersWithChanges = offlinePlayers.Values.Count(p => p.ChangesDetected);
+                playersToEnqueue = offlinePlayers.Values
+                    .Where(p => p.ChangesDetected)
+                    .ToList();
             }
             finally
             {
                 playersLock.ExitReadLock();
             }
 
-            // Only queue the save if there are actually changes to save
-            if (playersWithChanges > 0)
+            if (playersToEnqueue.Count > 0)
             {
-                log.Info($"[PLAYERMANAGER] Queuing offline save for {playersWithChanges} players with changes");
-                DatabaseManager.Shard.QueueOfflinePlayerSaves(success =>
+                log.Info($"[PLAYERMANAGER] Enqueuing {playersToEnqueue.Count} offline players for time-sliced saves");
+                
+                // Add to pending queue (world thread only, no lock needed for _pendingOfflineSaves)
+                foreach (var player in playersToEnqueue)
                 {
-                    if (success)
-                        log.Info($"[PLAYERMANAGER] Offline save tasks dispatched for {playersWithChanges} players");
-                    else
-                        log.Warn("[PLAYERMANAGER] Offline save task dispatch failed (reflection or invocation issue).");
-                });
+                    _pendingOfflineSaves.Enqueue(player);
+                }
+                
+                log.Info($"[PLAYERMANAGER] Pending offline save queue now has {_pendingOfflineSaves.Count} players");
             }
             else
             {
@@ -178,19 +356,21 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
-        /// Internal method to actually perform the offline player saves.
-        /// This is called by the queue system.
+        /// Performs offline player saves. Must be called from world thread.
+        /// This method handles player selection and enqueues DB work without crossing thread boundaries.
         /// </summary>
-        internal static void PerformOfflinePlayerSaves()
+        public static void PerformOfflinePlayerSaves()
         {
             log.Info("[PLAYERMANAGER] Performing offline save operation");
             
-            var playersToSave = new List<OfflinePlayer>();
+            List<OfflinePlayer> playersToSave;
             
             playersLock.EnterReadLock();
             try
             {
-                playersToSave = offlinePlayers.Values.Where(p => p.ChangesDetected).ToList();
+                playersToSave = offlinePlayers.Values
+                    .Where(p => p.ChangesDetected)
+                    .ToList();
             }
             finally
             {
@@ -209,16 +389,46 @@ namespace ACE.Server.Managers
                         // enqueue actual DB save with completion callback to ensure retry on failure
                         player.SaveBiotaToDatabase(true, result =>
                         {
-                            if (!result)
+                            // This callback runs on the database worker thread
+                            // Route back to the world thread before touching player state or playersLock
+                            if (SaveScheduler.EnqueueToWorldThread != null)
                             {
-                                // Re-flag for retry on failure
-                                playersLock.EnterWriteLock();
-                                try { player.ChangesDetected = true; } finally { playersLock.ExitWriteLock(); }
-                                log.Error($"[PLAYERMANAGER] Offline save failed for {player.Name} ({player.Guid.Full}); will retry next cycle");
+                                SaveScheduler.EnqueueToWorldThread(() =>
+                                {
+                                    if (!result)
+                                    {
+                                        // Re-flag for retry on failure
+                                        playersLock.EnterWriteLock();
+                                        try
+                                        {
+                                            player.ChangesDetected = true;
+                                        }
+                                        finally
+                                        {
+                                            playersLock.ExitWriteLock();
+                                        }
+                                        log.Error($"[PLAYERMANAGER] Offline save failed for {player.Name} ({player.Guid.Full}); will retry next cycle");
+                                    }
+                                    else
+                                    {
+                                        // Clear ChangesDetected on successful save
+                                        playersLock.EnterWriteLock();
+                                        try
+                                        {
+                                            player.ChangesDetected = false;
+                                        }
+                                        finally
+                                        {
+                                            playersLock.ExitWriteLock();
+                                        }
+                                        log.Debug($"[PLAYERMANAGER] Saved offline player: {player.Name}");
+                                    }
+                                });
                             }
                             else
                             {
-                                log.Debug($"[PLAYERMANAGER] Saved offline player: {player.Name}");
+                                // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
+                                log.Error("[PLAYERMANAGER] CRITICAL: EnqueueToWorldThread not set! Offline save callback cannot safely execute. This indicates WorldManager.Initialize() was not called or failed.");
                             }
                         });
                         log.Debug($"[PLAYERMANAGER] Enqueued save for offline player: {player.Name}");
@@ -467,6 +677,29 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Marks a player as dirty for forced periodic saves.
+        /// This ensures aging saves bypass "I'm clean" logic and actually perform persistence work.
+        /// Thread-safe: Uses read lock to access player, then marks dirty flags.
+        /// </summary>
+        public static void MarkPlayerDirty(uint playerId)
+        {
+            playersLock.EnterWriteLock();
+            try
+            {
+                if (onlinePlayers.TryGetValue(playerId, out var player))
+                {
+                    // Mark both biota and character as dirty to ensure save executes
+                    player.ChangesDetected = true;
+                    player.CharacterChangesDetected = true;
+                }
+            }
+            finally
+            {
+                playersLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>
         /// This will return null of the name was not found.
         /// </summary>
         public static Player GetOnlinePlayer(string name)
@@ -534,6 +767,10 @@ namespace ACE.Server.Managers
 
             player.SendFriendStatusUpdates();
 
+            // Register player with SaveScheduler for periodic save tracking
+            // Use Guid.Full to match onlinePlayers dictionary key
+            SaveScheduler.Instance.RegisterPlayer(player.Guid.Full);
+
             return true;
         }
 
@@ -568,6 +805,10 @@ namespace ACE.Server.Managers
 
             player.SendFriendStatusUpdates(false);
             player.HandleAllegianceOnLogout();
+
+            // Unregister player from SaveScheduler periodic save tracking
+            // Use Guid.Full to match onlinePlayers dictionary key
+            SaveScheduler.Instance.UnregisterPlayer(player.Guid.Full);
 
             return true;
         }

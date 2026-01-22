@@ -196,6 +196,8 @@ namespace ACE.Entity.Enum.Properties
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
         IsSplitArrowKill                 = 9032,
+        [AssessmentProperty]
+        IsCharm                          = 9040,
         /// <summary>
         /// If TRUE on a weapon, allows multi-strike hits to each roll a proc with decay
         /// </summary>

@@ -77,25 +77,16 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// This event is raised when player adds item to storage
         /// </summary>
-        protected override void OnAddItem()
+        protected override void OnAddItem(WorldObject addedItem)
         {
             //Console.WriteLine("Storage.OnAddItem()");
 
             if (Inventory.Count > 0)
             {
-                // Here we explicitly save the storage to the database to prevent item loss.
-                // If the player adds an item to the storage, and the server crashes before the storage has been saved, the item will be lost.
-                // Ensure ChangesDetected is set and force save even if SaveInProgress is set
-                // (Storage saves are critical for preventing item loss)
-                ChangesDetected = true;
-                // Clear SaveInProgress if set to allow immediate save
-                // This is safe because we're saving after a mutation completes
-                if (SaveInProgress)
-                {
-                    SaveInProgress = false;
-                }
-                // Use enqueueSave=true to ensure the save is queued and logged
-                SaveBiotaToDatabase(enqueueSave: true);
+                // Use existing save path - SaveBiotaToDatabase() already has internal coalescing,
+                // serialization key, and correct dirty flag semantics
+                // Do not wrap in SaveScheduler as it would create duplicate save identities
+                SaveBiotaToDatabase();
             }
         }
 
@@ -106,18 +97,10 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine("Storage.OnRemoveItem()");
 
-            // Here we explicitly save the storage to the database to prevent property desync.
-            // Ensure ChangesDetected is set and force save even if SaveInProgress is set
-            // (Storage saves are critical for preventing item loss)
-            ChangesDetected = true;
-            // Clear SaveInProgress if set to allow immediate save
-            // This is safe because we're saving after a mutation completes
-            if (SaveInProgress)
-            {
-                SaveInProgress = false;
-            }
-            // Use enqueueSave=true to ensure the save is queued and logged
-            SaveBiotaToDatabase(enqueueSave: true);
+            // Use existing save path - SaveBiotaToDatabase() already has internal coalescing,
+            // serialization key, and correct dirty flag semantics
+            // Do not wrap in SaveScheduler as it would create duplicate save identities
+            SaveBiotaToDatabase();
         }
     }
 }

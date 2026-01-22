@@ -1,17 +1,21 @@
 using System;
 using System.Threading;
 
+using log4net;
+
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Entity;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Entity
 {
     public class OfflinePlayer : IPlayer
     {
+        private static readonly ILog log = LogManager.GetLogger(typeof(OfflinePlayer));
         /// <summary>
         /// This is object property overrides that should have come from the shard db (or init to defaults of object is new to this instance).
         /// You should not manipulate these values directly. To manipulate this use the exposed SetProperty and RemoveProperty functions instead.
@@ -38,6 +42,16 @@ namespace ACE.Server.Entity
 
             if (character != null)
                 Account = DatabaseManager.Authentication.GetAccountById(character.AccountId);
+
+            // ---- LOGIN RECOVERY ----
+            if (SaveInProgress &&
+                SaveServerBootId != ServerRuntime.BootId)
+            {
+                log.Warn($"[LOGIN] Clearing abandoned SaveInProgress for offline player {Guid}");
+                SaveInProgress = false;
+                SaveServerBootId = null;
+                LastRequestedDatabaseSave = DateTime.UtcNow;
+            }
         }
 
         public bool IsDeleted => DatabaseManager.Shard.BaseDatabase.GetCharacterStubByGuid(Guid.Full).IsDeleted;
@@ -47,6 +61,7 @@ namespace ACE.Server.Entity
 
         public bool ChangesDetected { get; set; }
         public bool SaveInProgress { get; set; }
+        internal Guid? SaveServerBootId { get; set; }
 
         public readonly ReaderWriterLockSlim BiotaDatabaseLock = new ReaderWriterLockSlim();
 
@@ -62,7 +77,7 @@ namespace ACE.Server.Entity
 
         /// <summary>
         /// This will set the LastRequestedDatabaseSave to UtcNow and ChangesDetected to false.<para />
-        /// If enqueueSave is set to true, DatabaseManager.Shard.SaveBiota() will be called for the biota.<para />
+        /// If enqueueSave is set to true, the save will be routed through SaveScheduler with SaveType.Periodic.<para />
         /// Set enqueueSave to false if you want to perform all the normal routines for a save but not the actual save. This is useful if you're going to collect biotas in bulk for bulk saving.
         /// </summary>
         /// <param name="enqueueSave">Whether to enqueue the save operation</param>
@@ -71,17 +86,47 @@ namespace ACE.Server.Entity
         {
             LastRequestedDatabaseSave = DateTime.UtcNow;
             SaveInProgress = true;
+            SaveServerBootId = ServerRuntime.BootId;
             ChangesDetected = false;
 
             if (enqueueSave)
             {
-                DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, result =>
+                // Build biotas collection for SaveScheduler
+                var biotas = new System.Collections.ObjectModel.Collection<(ACE.Entity.Models.Biota biota, System.Threading.ReaderWriterLockSlim rwLock)>();
+                biotas.Add((Biota, BiotaDatabaseLock));
+
+                Func<System.Collections.Generic.IEnumerable<(ACE.Entity.Models.Biota biota, System.Threading.ReaderWriterLockSlim rwLock)>> getBiotas = () => biotas;
+
+                // Wrap the user callback to clear SaveInProgress
+                Action<bool> wrappedCallback = (result) =>
                 {
                     SaveInProgress = false;
                     onCompleted?.Invoke(result);
+                };
+
+                // Route through Save Scheduler with Periodic priority
+                var saveKey = SaveKeys.Player(Guid.Full);
+                var enqueued = SaveScheduler.Instance.RequestSave(saveKey, SaveScheduler.SaveType.Periodic, () =>
+                {
+                    // This runs on SaveScheduler worker thread
+                    // Call B is materialized BEFORE passing to SaveBiotasInParallel (not a factory)
+                    DatabaseManager.Shard.SaveBiotasInParallel(biotas, wrappedCallback, $"OfflinePlayer:{Guid.Full}");
+                    return true; // Indicates successful enqueue to database queue
                 });
+                
+                // If shutdown is requested, RequestSave returns false and the enqueue action never executes
+                // This leaves SaveInProgress stuck, so we must clear it and restore ChangesDetected
+                if (!enqueued)
+                {
+                    SaveInProgress = false;
+                    ChangesDetected = true;
+                    onCompleted?.Invoke(false);
+                }
             }
         }
+
+
+
 
 
         #region GetProperty Functions

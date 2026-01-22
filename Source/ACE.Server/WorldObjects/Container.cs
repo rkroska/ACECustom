@@ -15,6 +15,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages;
+using ACE.Server.Entity;
 
 namespace ACE.Server.WorldObjects
 {
@@ -114,19 +115,18 @@ namespace ACE.Server.WorldObjects
 
         private void InitializePropertyDictionaries()
         {
-            if (ephemeralPropertyInts == null)
-                ephemeralPropertyInts = new Dictionary<PropertyInt, int?>();
+            ephemeralPropertyInts ??= [];
         }
 
         private void SetEphemeralValues(bool fromBiota)
         {
             ephemeralPropertyInts.TryAdd(PropertyInt.EncumbranceVal, EncumbranceVal ?? 0); // Containers are init at 0 burden or their initial value from database. As inventory/equipment is added the burden will be increased
-            if (!(this is Creature) && !(this is Corpse)) // Creatures/Corpses do not have a value
+            if (this is not Creature && this is not Corpse) // Creatures/Corpses do not have a value
                 ephemeralPropertyInts.TryAdd(PropertyInt.Value, Value ?? 0);
 
             //CurrentMotionState = motionStateClosed; // What container defaults to open?
 
-            if (!fromBiota && !(this is Creature))
+            if (!fromBiota && this is not Creature)
                 GenerateContainList();
 
             if (!ContainerCapacity.HasValue)
@@ -146,7 +146,7 @@ namespace ACE.Server.WorldObjects
         /// To access items inside of the side slot items, you'll need to access that items.Inventory dictionary.<para />
         /// Do not manipulate this dictionary directly.
         /// </summary>
-        public Dictionary<ObjectGuid, WorldObject> Inventory { get; } = new Dictionary<ObjectGuid, WorldObject>();
+        public Dictionary<ObjectGuid, WorldObject> Inventory { get; } = [];
 
         /// <summary>
         /// The only time this should be used is to populate Inventory from the ctor.
@@ -397,12 +397,12 @@ namespace ACE.Server.WorldObjects
             // Defensive guard: fail safe if inventory not loaded
             // Return empty list to avoid null reference issues
             if (!InventoryLoaded)
-                return new List<Container>();
+                return [];
 
             if (_sideContainersCacheDirty || _cachedSideContainers == null)
             {
                 if (_cachedSideContainers == null)
-                    _cachedSideContainers = new List<Container>();
+                    _cachedSideContainers = [];
                 else
                     _cachedSideContainers.Clear();
 
@@ -459,7 +459,7 @@ namespace ACE.Server.WorldObjects
         {
             // Defensive guard: fail safe if inventory not loaded
             if (!InventoryLoaded)
-                return new List<WorldObject>();
+                return [];
 
             var items = new List<WorldObject>();
 
@@ -496,7 +496,7 @@ namespace ACE.Server.WorldObjects
         {
             // Defensive guard: fail safe if inventory not loaded
             if (!InventoryLoaded)
-                return new List<WorldObject>();
+                return [];
 
             var items = new List<WorldObject>();
 
@@ -533,7 +533,7 @@ namespace ACE.Server.WorldObjects
         {
             // Defensive guard: fail safe if inventory not loaded
             if (!InventoryLoaded)
-                return new List<WorldObject>();
+                return [];
 
             var items = new List<WorldObject>();
 
@@ -668,7 +668,7 @@ namespace ACE.Server.WorldObjects
         /// If enough burden is available, this will try to add an item to the main pack. If the main pack is full, it will try to add it to the first side pack with room.<para />
         /// It will also increase the EncumbranceVal and Value.
         /// </summary>
-        public bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
+        public virtual bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
         {
             var containerInfo = this is Player p ? $"Player {p.Name}" : $"{Name} (0x{Guid})";
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
@@ -711,7 +711,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-            IList<WorldObject> containerItems;
+            List<WorldObject> containerItems;
 
             if (worldObject.UseBackpackSlot)
             {
@@ -748,13 +748,15 @@ namespace ACE.Server.WorldObjects
                                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
                                 Value += (worldObject.Value ?? 0);
                                 
-                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
+                                // FIX (PR #323): End mutation (decrement depth) when successfully added to side pack (recursive case)
+                                // This was missing and caused SaveInProgress to get stuck during logout
+                                worldObject.EndContainerMutation(oldContainerBiotaId, sidePack.Biota.Id);
                                 
-                                var newContainerBiotaId = sidePack.Biota.Id;
-                                worldObject.EndContainerMutation(oldContainerBiotaId, newContainerBiotaId);
+                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
                                 return true;
                             }
                         }
+
                         
                         log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
                     }
@@ -830,7 +832,7 @@ namespace ACE.Server.WorldObjects
 
                 container = this;
 
-                OnAddItem();
+                OnAddItem(worldObject);
 
                 // Step 4: End mutation after successful add
                 worldObject.EndContainerMutation(oldContainerBiotaId, Biota.Id);
@@ -988,15 +990,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override void ActOnUse(WorldObject wo)
         {
-            if (!(wo is Player player))
+            if (wo is not Player player)
                 return;
 
             // If we have a previous container open, let's close it
             if (player.LastOpenedContainerId != ObjectGuid.Invalid && player.LastOpenedContainerId != Guid)
             {
-                var lastOpenedContainer = CurrentLandblock?.GetObject(player.LastOpenedContainerId) as Container;
-
-                if (lastOpenedContainer != null && lastOpenedContainer.IsOpen && lastOpenedContainer.Viewer == player.Guid.Full)
+                if (CurrentLandblock?.GetObject(player.LastOpenedContainerId) is Container lastOpenedContainer && lastOpenedContainer.IsOpen && lastOpenedContainer.Viewer == player.Guid.Full)
                     lastOpenedContainer.Close(player);
             }
 
@@ -1053,7 +1053,7 @@ namespace ACE.Server.WorldObjects
 
             SendInventory(player);
 
-            if (!(this is Chest) && !ResetMessagePending && ResetInterval.HasValue)
+            if (this is not Chest && !ResetMessagePending && ResetInterval.HasValue)
             {
                 var actionChain = new ActionChain();
                 if (ResetInterval.Value < 15)
@@ -1266,20 +1266,79 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// This event is raised when player adds item to container
         /// </summary>
-        protected virtual void OnAddItem()
+        protected virtual void OnAddItem(WorldObject addedItem)
         {
-            // empty base
+            if (addedItem != null)
+                UpdateCharms(true, addedItem);
         }
 
         /// <summary>
         /// This event is raised when player removes item from container
         /// </summary>
-        protected virtual void OnRemoveItem(WorldObject worldObject)
+        protected virtual void OnRemoveItem(WorldObject removedItem)
         {
             // Suppress enchant invalidation during container churn
-            if (worldObject.IsInContainerMutation)
+            if (removedItem.IsInContainerMutation)
                 return;
 
+            if (removedItem != null)
+                UpdateCharms(false, removedItem);
+        }
+
+        private void UpdateCharms(bool adding, WorldObject item)
+        {
+            if (GetRootOwner() is not Player player) return;
+            ProcessCharmRecursively(player, item, adding);
+        }
+
+        private static void ProcessCharmRecursively(Player player,  WorldObject item, bool adding) { 
+            bool isCharm = item.GetProperty(PropertyBool.IsCharm) ?? false;
+            if (isCharm)
+            {
+                List<uint> spells = [];
+                if (item.SpellDID.HasValue) spells.Add(item.SpellDID.Value);
+                List<int> knownSpells = item.Biota.GetKnownSpellsIds(item.BiotaDatabaseLock);
+                foreach(int spellId in knownSpells) spells.Add((uint)spellId);
+
+                foreach (uint spellId in spells)
+                {
+                    if (adding)
+                    {
+                        if(player.EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
+                            player.CreateItemSpell(item, spellId);
+                    }
+                    else
+                    {
+                        player.RemoveItemSpell(item, spellId);
+                    }
+                }
+            }
+
+            if (item is not Container container) return;
+            List<WorldObject> children = [.. container.Inventory.Values];
+            foreach (var child in children) ProcessCharmRecursively(player, child, adding);
+        }
+
+        /// <summary>
+        /// Helper to find the root owner (Player usually)
+        /// </summary>
+        public WorldObject GetRootOwner()
+        {
+            WorldObject current = this;
+            int safety = 0;
+            while (current.Container != null && safety < 100)
+            {
+                current = current.Container;
+                safety++;
+            }
+            return current;
+        }
+
+        /// <summary>
+        /// This event is raised when a stackable item's size changes within this container (merge or split)
+        /// </summary>
+        public virtual void OnStackSizeChanged(WorldObject stack, int amount)
+        {
             // empty base
         }
 

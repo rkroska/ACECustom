@@ -73,7 +73,6 @@ namespace ACE.Server.Physics
         //public DetectionManager DetectionManager;
         //public AttackManager AttackManager;
         public TargetManager TargetManager;
-        //public ParticleManager ParticleManager;
         public WeenieObject WeenieObj;
         public Plane ContactPlane;
         public uint ContactPlaneCellID;
@@ -704,7 +703,7 @@ namespace ACE.Server.Physics
         {
             if (MovementManager != null) return;
 
-            MovementManager = MovementManager.Create(this, WeenieObj);
+            MovementManager = new MovementManager(this, WeenieObj);
 
             if (init_motion)
                 MovementManager.EnterDefaultState();
@@ -737,7 +736,7 @@ namespace ACE.Server.Physics
         public void MotionDone(uint motion, bool success)
         {
             if (MovementManager != null)
-                MovementManager.MotionDone(motion, success);
+                MovementManager.MotionDone(success);
         }
 
 
@@ -745,7 +744,7 @@ namespace ACE.Server.Physics
         {
             if (MovementManager == null)
             {
-                MovementManager = MovementManager.Create(this, WeenieObj);
+                MovementManager = new MovementManager(this, WeenieObj);
                 MovementManager.EnterDefaultState();
                 if (!State.HasFlag(PhysicsState.Static))
                 {
@@ -767,7 +766,7 @@ namespace ACE.Server.Physics
         {
             if (MovementManager == null)
             {
-                MovementManager = MovementManager.Create(this, WeenieObj);
+                MovementManager = new MovementManager(this, WeenieObj);
                 MovementManager.EnterDefaultState();
                 if (!State.HasFlag(PhysicsState.Static))
                 {
@@ -1236,7 +1235,7 @@ namespace ACE.Server.Physics
             if (MovementManager == null)
             {
                 // refactor into common method
-                MovementManager = MovementManager.Create(this, WeenieObj);
+                MovementManager = new MovementManager(this, WeenieObj);
                 MovementManager.EnterDefaultState();
                 if (!State.HasFlag(PhysicsState.Static))
                 {
@@ -1888,9 +1887,6 @@ namespace ACE.Server.Physics
             if (PartArray != null)
                 PartArray.HandleEnterWorld();
 
-            if (MovementManager != null)
-                MovementManager.HandleEnterWorld();
-
             return true;
         }
 
@@ -1982,7 +1978,7 @@ namespace ACE.Server.Physics
         {
             if (MovementManager == null)
             {
-                MovementManager = MovementManager.Create(this, WeenieObj);
+                MovementManager = new MovementManager(this, WeenieObj);
                 MovementManager.EnterDefaultState();
                 if (State.HasFlag(PhysicsState.Static))
                 {

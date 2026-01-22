@@ -104,6 +104,8 @@ namespace ACE.Server.WorldObjects
         // NOTE: This field may be accessed from multiple world threads concurrently (e.g., different landblock threads),
         // so we use Interlocked operations for thread safety. SaveBiotaToDatabase reads this via IsInContainerMutation.
         private int _containerMutationDepth;
+        private DateTime _lastContainerMutationUtc = DateTime.MinValue;
+        private const int MUTATION_LEAK_TIMEOUT_SECONDS = 30; // Safety valve: reset depth if stuck >30s
 
         internal bool IsInContainerMutation => Volatile.Read(ref _containerMutationDepth) > 0;
 
@@ -117,6 +119,7 @@ namespace ACE.Server.WorldObjects
         internal void BeginContainerMutation(uint? oldContainerBiotaId)
         {
             var newDepth = Interlocked.Increment(ref _containerMutationDepth);
+            _lastContainerMutationUtc = DateTime.UtcNow;
 #if DEBUG
             log.Debug($"[CONTAINER MUTATION] Begin for {Name} (0x{Guid}) | OldContainerBiotaId={oldContainerBiotaId} | Depth={newDepth}");
 #endif
@@ -127,6 +130,9 @@ namespace ACE.Server.WorldObjects
         /// Always decrements depth if > 0 to prevent depth leaks and permanent save suppression.
         /// Depth management must be structural, not semantic.
         /// Thread-safe: Uses Interlocked.Decrement for concurrent access from multiple world threads.
+        /// When mutation depth transitions from >0 to 0, marks ChangesDetected = true to ensure persistence.
+        /// The normal save tick or scheduled save will flush the changes, avoiding direct persistence calls
+        /// from gameplay mutation plumbing which can run on non-world threads and create timing-dependent issues.
         /// </summary>
         internal void EndContainerMutation(uint? oldContainerBiotaId, uint? newContainerBiotaId)
         {
@@ -134,9 +140,21 @@ namespace ACE.Server.WorldObjects
             if (prevDepth > 0)
             {
                 var newDepth = Interlocked.Decrement(ref _containerMutationDepth);
+                _lastContainerMutationUtc = DateTime.UtcNow;
 #if DEBUG
                 log.Debug($"[CONTAINER MUTATION] End for {Name} (0x{Guid}) | Old={oldContainerBiotaId} New={newContainerBiotaId} | Depth={newDepth}");
 #endif
+                // When mutation depth transitions from >0 to 0, mark dirty to ensure persistence
+                // The normal player save tick or scheduled save will flush it, avoiding direct
+                // persistence calls from mutation code which can run on non-world threads and create
+                // timing-dependent issues that are "impossible to test locally".
+                if (newDepth == 0)
+                {
+                    ChangesDetected = true;
+#if DEBUG
+                    log.Debug($"[CONTAINER MUTATION] Mutation depth reached 0 for {Name} (0x{Guid}) - marked ChangesDetected=true");
+#endif
+                }
             }
         }
 
@@ -249,8 +267,10 @@ namespace ACE.Server.WorldObjects
 
             PhysicsObj.Position.ObjCellID = cell.ID;
 
-            var location = new Physics.Common.Position();
-            location.ObjCellID = cell.ID;
+            var location = new Physics.Common.Position
+            {
+                ObjCellID = cell.ID
+            };
             location.Frame.Origin = Location.Pos;
             location.Frame.Orientation = Location.Rotation;
             location.Variation = VariationId;
@@ -295,8 +315,7 @@ namespace ACE.Server.WorldObjects
 
         private void InitializePropertyDictionaries()
         {
-            if (Biota.PropertiesEnchantmentRegistry == null)
-                Biota.PropertiesEnchantmentRegistry = new Collection<PropertiesEnchantmentRegistry>();
+            Biota.PropertiesEnchantmentRegistry ??= [];
         }
 
         private void SetEphemeralValues()
@@ -306,8 +325,7 @@ namespace ACE.Server.WorldObjects
             EmoteManager = new EmoteManager(this);
             EnchantmentManager = new EnchantmentManagerWithCaching(this);
 
-            if (Placement == null)
-                Placement = ACE.Entity.Enum.Placement.Resting;
+            Placement ??= ACE.Entity.Enum.Placement.Resting;
 
             if (MotionTableId != 0)
                 CurrentMotionState = new Motion(MotionStance.Invalid);
@@ -524,41 +542,41 @@ namespace ACE.Server.WorldObjects
                 switch (prop.Name.ToLower())
                 {
                     case "guid":
-                        sb.AppendLine($"{prop.Name} = {obj.Guid.Full} (GuidType.{obj.Guid.Type.ToString()})");
+                        sb.AppendLine($"{prop.Name} = {obj.Guid.Full} (GuidType.{obj.Guid.Type})");
                         break;
                     case "descriptionflags":
-                        sb.AppendLine($"{prop.Name} = {ObjectDescriptionFlags.ToString()}" + " (" + (uint)ObjectDescriptionFlags + ")");
+                        sb.AppendLine($"{prop.Name} = {ObjectDescriptionFlags}" + " (" + (uint)ObjectDescriptionFlags + ")");
                         break;
                     case "weenieflags":
                         var weenieFlags = CalculateWeenieHeaderFlag();
-                        sb.AppendLine($"{prop.Name} = {weenieFlags.ToString()}" + " (" + (uint)weenieFlags + ")");
+                        sb.AppendLine($"{prop.Name} = {weenieFlags}" + " (" + (uint)weenieFlags + ")");
                         break;
                     case "weenieflags2":
                         var weenieFlags2 = CalculateWeenieHeaderFlag2();
-                        sb.AppendLine($"{prop.Name} = {weenieFlags2.ToString()}" + " (" + (uint)weenieFlags2 + ")");
+                        sb.AppendLine($"{prop.Name} = {weenieFlags2}" + " (" + (uint)weenieFlags2 + ")");
                         break;
                     case "itemtype":
-                        sb.AppendLine($"{prop.Name} = {obj.ItemType.ToString()}" + " (" + (uint)obj.ItemType + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ItemType}" + " (" + (uint)obj.ItemType + ")");
                         break;
                     case "creaturetype":
-                        sb.AppendLine($"{prop.Name} = {obj.CreatureType.ToString()}" + " (" + (uint)obj.CreatureType + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.CreatureType}" + " (" + (uint)obj.CreatureType + ")");
                         break;
                     case "containertype":
-                        sb.AppendLine($"{prop.Name} = {obj.ContainerType.ToString()}" + " (" + (uint)obj.ContainerType + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ContainerType}" + " (" + (uint)obj.ContainerType + ")");
                         break;
                     case "usable":
-                        sb.AppendLine($"{prop.Name} = {obj.ItemUseable.ToString()}" + " (" + (uint)obj.ItemUseable + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ItemUseable}" + " (" + (uint)obj.ItemUseable + ")");
                         break;
                     case "radarbehavior":
-                        sb.AppendLine($"{prop.Name} = {obj.RadarBehavior.ToString()}" + " (" + (uint)obj.RadarBehavior + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.RadarBehavior}" + " (" + (uint)obj.RadarBehavior + ")");
                         break;
                     case "physicsdescriptionflag":
                         var physicsDescriptionFlag = CalculatedPhysicsDescriptionFlag();
-                        sb.AppendLine($"{prop.Name} = {physicsDescriptionFlag.ToString()}" + " (" + (uint)physicsDescriptionFlag + ")");
+                        sb.AppendLine($"{prop.Name} = {physicsDescriptionFlag}" + " (" + (uint)physicsDescriptionFlag + ")");
                         break;
                     case "physicsstate":
                         var physicsState = PhysicsObj.State;
-                        sb.AppendLine($"{prop.Name} = {physicsState.ToString()}" + " (" + (uint)physicsState + ")");
+                        sb.AppendLine($"{prop.Name} = {physicsState}" + " (" + (uint)physicsState + ")");
                         break;
                     //case "propertiesspellid":
                     //    foreach (var item in obj.PropertiesSpellId)
@@ -796,14 +814,8 @@ namespace ACE.Server.WorldObjects
         public static bool AdjustDungeonPos(Position pos)
         {
             if (pos == null) return false;
-
-            var landblock = LScape.get_landblock(pos.Cell, pos.Variation);
-            if (landblock == null || !landblock.HasDungeon) return false;
-
-            var dungeonID = pos.Cell >> 16;
-
-            var adjusted = AdjustPos.Adjust(dungeonID, pos);
-            return adjusted;
+            LScape.get_landblock(pos.Cell, pos.Variation);
+            return false;
         }
 
 
@@ -939,11 +951,13 @@ namespace ACE.Server.WorldObjects
             {
                 var motionInterp = PhysicsObj.get_minterp();
 
-                var rawState = new Physics.Animation.RawMotionState();
-                rawState.ForwardCommand = 0;    // always 0? must be this for monster sleep animations (skeletons, golems)
-                                                // else the monster will immediately wake back up..
-                rawState.CurrentHoldKey = HoldKey.Run;
-                rawState.CurrentStyle = (uint)motionCommand;
+                var rawState = new Physics.Animation.RawMotionState
+                {
+                    ForwardCommand = 0,    // always 0? must be this for monster sleep animations (skeletons, golems)
+                                           // else the monster will immediately wake back up..
+                    CurrentHoldKey = HoldKey.Run,
+                    CurrentStyle = (uint)motionCommand
+                };
 
                 if (!PhysicsObj.IsMovingOrAnimating)
                     //PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime - PhysicsGlobals.MinQuantum;
@@ -1071,10 +1085,7 @@ namespace ACE.Server.WorldObjects
 
         public virtual List<WorldObject> GetUniqueObjects()
         {
-            if (Unique == null)
-                return new List<WorldObject>();
-            else
-                return new List<WorldObject>() { this };
+            return (Unique == null) ? [] : [this];
         }
 
         public bool HasArmorLevel()

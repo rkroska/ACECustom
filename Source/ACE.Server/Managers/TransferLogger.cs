@@ -854,16 +854,10 @@ namespace ACE.Server.Managers
                     return;
                 }
                 
-                // Only log if item tracking is enabled and this item should be tracked
+                // Only log if item tracking is enabled
                 if (!Config.EnableItemTracking)
                 {
                     log.Info("Skipping ground pickup logging - item tracking disabled");
-                    return;
-                }
-
-                if (!ShouldTrackItem(item.Name))
-                {
-                    log.Debug($"Skipping ground pickup logging for untracked item: {item.Name}");
                     return;
                 }
 
@@ -896,7 +890,7 @@ namespace ACE.Server.Managers
                     Task.Run(() => ProcessTransferLogBackground(transferLog));
                 }
 
-                // If item is a container, also log tracked items inside
+                // If item is a container, also log tracked items inside (even if container itself is not tracked)
                 if (item is Container container && container.Inventory != null && container.Inventory.Count > 0)
                 {
                     // Coalesce tracked items by name to sum quantities

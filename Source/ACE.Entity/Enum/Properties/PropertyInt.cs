@@ -47,7 +47,6 @@ namespace ACE.Entity.Enum.Properties
         [SendOnLogin]
         [AssessmentProperty]
         Level = 25,
-        [AssessmentProperty]
         AccountRequirements = 26,
         ArmorType = 27,
         [AssessmentProperty]

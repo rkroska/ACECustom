@@ -23,6 +23,8 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_MakeCorpse,
         CreatureDeath_SaveInParallelCallback,
         CreatureEquipment_TryActivateItemSpellsOnWield,
+        CreatureLocation_TeleportToPosition,
+        CreatureLocation_TeleportDone,
         CreatureMissile_EnqueueBroadcast,
         CreatureMissile_EnsureAmmoVisible,
         CreatureNavigation_AddMoveToTick,
@@ -85,6 +87,7 @@ namespace ACE.Server.Entity.Actions
         PlayerAllegiance_HandleLogin,
         PlayerDatabase_SaveBiotasInParallelCallback,
         PlayerDatabase_CharacterSaveFailed,
+        PlayerTrade_ClearFlagsAfterSave,
         PlayerCombat_ChangeCombatMode,
         PlayerCombat_ChangeCombatModeCallback,
         PlayerCombat_SetActionType,
@@ -194,6 +197,7 @@ namespace ACE.Server.Entity.Actions
         WorldManager_LogOffAllPlayers,
         WorldManager_PlayerEnterWorld,
         WorldManager_ThreadSafeTeleport,
+        SaveScheduler_OnSavesDrained,
         WorldObject_Destroy,
         WorldObjectDecay_Destroy,
         WorldObjectMagic_AdjustDungeonAndTeleportPlayer,
@@ -663,9 +667,17 @@ namespace ACE.Server.Entity.Actions
         }
     }
 
+    public enum ActionPriority
+    {
+        High,
+        Normal,
+        Low
+    }
+
     public interface IAction
     {
         ActionType Type { get; }
+        ActionPriority Priority { get; }
 
         Tuple<IActor, IAction> Act();
 
