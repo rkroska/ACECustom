@@ -707,6 +707,9 @@ namespace ACE.Entity.Enum.Properties
         VisualOverridePaletteTemplate           = 9035,
         CrystalTier                             = 9036, // 1=Flawed, 2=Pristine, 3=Perfect
         CapturedCreatureType                    = 9037, // Species of captured creature
+        
+        // Shiny Mobs System
+        CreatureVariant                         = 9038,
 
     }
 
