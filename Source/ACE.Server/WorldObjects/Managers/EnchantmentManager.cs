@@ -778,7 +778,10 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public void DispelAllEnchantments()
         {
-            var enchantments = WorldObject.Biota.PropertiesEnchantmentRegistry.Clone(WorldObject.BiotaDatabaseLock);
+            var enchantments = WorldObject.Biota.PropertiesEnchantmentRegistry
+                .Clone(WorldObject.BiotaDatabaseLock)
+                .Where(e => e.Duration != -1) // Avoid indefinite enchantments (items, charms).
+                .ToList();
 
             Dispel(enchantments);
         }
