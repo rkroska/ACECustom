@@ -243,8 +243,14 @@ namespace ACE.Server.WorldObjects
 
             // Optimization: Stop ticking physics for stationary corpses to save CPU
             // Must check InitialUpdates to allow gravity to initialize (prevent floating corpses)
+            // Also ensure the corpse has completed any pending landblock transition before stopping physics
             if (this is Corpse && PhysicsObj.Velocity == Vector3.Zero && PhysicsObj.InitialUpdates > 5)
-                return false;
+            {
+                var curCell = PhysicsObj.CurCell;
+                // Only skip physics if we're fully settled on a landblock (WorldObject location matches physics cell)
+                if (curCell != null && (Location.LandblockId.Raw >> 16) == (curCell.ID >> 16))
+                    return false;
+            }
 
             bool isDying = false;
             bool cachedVelocityFix = false;
