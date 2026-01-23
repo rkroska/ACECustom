@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyDataId : ushort
@@ -110,7 +108,7 @@ namespace ACE.Entity.Enum.Properties
 
     public static class PropertyDataIdExtensions
     {
-        public static string GetValueEnumName(this PropertyDataId property, uint value)
+        public static string? GetValueEnumName(this PropertyDataId property, uint value)
         {
             switch (property)
             {

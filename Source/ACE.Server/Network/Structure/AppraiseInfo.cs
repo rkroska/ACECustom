@@ -362,13 +362,13 @@ namespace ACE.Server.Network.Structure
 
         private void BuildProperties(WorldObject wo)
         {
-            PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesBool = wo.GetAllPropertyBools().Where(x => AssessmentProperties.PropertiesBool.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesFloat = wo.GetAllPropertyFloat().Where(x => AssessmentProperties.PropertiesDouble.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesBool = wo.GetAllPropertyBools().Where(x => AssessmentProperties.PropertiesBool.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesFloat = wo.GetAllPropertyFloat().Where(x => AssessmentProperties.PropertiesDouble.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
 
             if (wo is Player player)
             {

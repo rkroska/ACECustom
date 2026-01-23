@@ -31,10 +31,8 @@ namespace ACE.Server.WorldObjects
 
         private void InitializePropertyDictionaries()
         {
-            if (Biota.PropertiesBook == null)
-                Biota.PropertiesBook = new PropertiesBook();
-            if (Biota.PropertiesBookPageData == null)
-                Biota.PropertiesBookPageData = new List<PropertiesBookPageData>();
+            Biota.PropertiesBook ??= new PropertiesBook();
+            Biota.PropertiesBookPageData ??= [];
         }
 
         private void SetEphemeralValues()

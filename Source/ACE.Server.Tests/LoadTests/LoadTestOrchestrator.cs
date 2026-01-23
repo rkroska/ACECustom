@@ -11,20 +11,13 @@ namespace ACE.Server.Tests.LoadTests
     /// Orchestrates load tests with multiple simulated clients performing various game actions.
     /// Provides comprehensive metrics and reporting on server performance under load.
     /// </summary>
-    public class LoadTestOrchestrator
+    public class LoadTestOrchestrator(LoadTestConfiguration configuration)
     {
-        private readonly List<LoadTestClient> clients = new List<LoadTestClient>();
-        private readonly LoadTestConfiguration config;
-        private readonly LoadTestMetrics metrics;
-        private readonly object metricsLock = new object();
+        private readonly List<LoadTestClient> clients = [];
+        private readonly LoadTestConfiguration config = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        private readonly LoadTestMetrics metrics = new();
+        private readonly object metricsLock = new();
         private CancellationTokenSource cancellationTokenSource;
-        private bool isRunning;
-
-        public LoadTestOrchestrator(LoadTestConfiguration configuration)
-        {
-            config = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            metrics = new LoadTestMetrics();
-        }
 
         /// <summary>
         /// Executes a comprehensive load test scenario
@@ -40,7 +33,6 @@ namespace ACE.Server.Tests.LoadTests
 
             var testStart = DateTime.UtcNow;
             cancellationTokenSource = new CancellationTokenSource();
-            isRunning = true;
 
             try
             {
@@ -62,9 +54,7 @@ namespace ACE.Server.Tests.LoadTests
                 metrics.Errors.Add(ex);
             }
             finally
-            {
-                isRunning = false;
-                
+            {                
                 // Phase 4: Disconnect all clients (always runs on success or failure)
                 try
                 {
@@ -83,7 +73,7 @@ namespace ACE.Server.Tests.LoadTests
 
             var testEnd = DateTime.UtcNow;
             var results = GenerateResults(testStart, testEnd);
-            
+
             PrintResults(results);
             
             // Clear clients list after results are generated
@@ -99,7 +89,6 @@ namespace ACE.Server.Tests.LoadTests
         {
             Console.WriteLine("Stopping load test...");
             cancellationTokenSource?.Cancel();
-            isRunning = false;
         }
 
         #region Client Management
@@ -591,7 +580,7 @@ namespace ACE.Server.Tests.LoadTests
                 TotalClients = config.ConcurrentClients,
                 SuccessfulConnections = metrics.SuccessfulConnections,
                 FailedConnections = metrics.FailedConnections,
-                AverageConnectionTime = metrics.ConnectionTimes.Any() 
+                AverageConnectionTime = metrics.ConnectionTimes.Count != 0
                     ? TimeSpan.FromMilliseconds(metrics.ConnectionTimes.Average(t => t.TotalMilliseconds))
                     : TimeSpan.Zero,
                 
@@ -601,13 +590,13 @@ namespace ACE.Server.Tests.LoadTests
                 ActionsPerSecond = duration.TotalSeconds > 0 
                     ? metrics.ActionCount / duration.TotalSeconds
                     : 0,
-                AverageActionTime = metrics.ActionTimes.Any()
+                AverageActionTime = metrics.ActionTimes.Count != 0
                     ? TimeSpan.FromMilliseconds(metrics.ActionTimes.Average(t => t.TotalMilliseconds))
                     : TimeSpan.Zero,
-                MinActionTime = metrics.ActionTimes.Any() 
+                MinActionTime = metrics.ActionTimes.Count != 0
                     ? metrics.ActionTimes.Min()
                     : TimeSpan.Zero,
-                MaxActionTime = metrics.ActionTimes.Any()
+                MaxActionTime = metrics.ActionTimes.Count != 0
                     ? metrics.ActionTimes.Max()
                     : TimeSpan.Zero,
                 
@@ -620,11 +609,11 @@ namespace ACE.Server.Tests.LoadTests
                 
                 // Error metrics
                 TotalErrors = metrics.Errors.Count,
-                Errors = metrics.Errors.Take(20).ToList() // Limit to first 20 errors
+                Errors = [.. metrics.Errors.Take(20)] // Limit to first 20 errors
             };
         }
 
-        private void PrintResults(LoadTestResults results)
+        private static void PrintResults(LoadTestResults results)
         {
             Console.WriteLine();
             Console.WriteLine("=== Load Test Results ===");
@@ -655,7 +644,7 @@ namespace ACE.Server.Tests.LoadTests
             Console.WriteLine();
             
             Console.WriteLine($"Errors: {results.TotalErrors}");
-            if (results.Errors.Any())
+            if (results.Errors.Count != 0)
             {
                 Console.WriteLine("  First errors:");
                 foreach (var error in results.Errors.Take(5))

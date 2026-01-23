@@ -9,14 +9,13 @@ namespace ACE.Entity.Models
         /// <summary>
         /// This is only used to tie this property back to a specific database row
         /// </summary>
-        public uint DatabaseRecordId { get; set; }
-
-        public uint Type { get; set; }
-        public float Delay { get; set; }
-        public float Extent { get; set; }
+        public uint? DatabaseRecordId { get; set; }
+        public required uint Type { get; set; }
+        public required float Delay { get; set; }
+        public required float Extent { get; set; }
         public MotionCommand? Motion { get; set; }
-        public string Message { get; set; }
-        public string TestString { get; set; }
+        public required string Message { get; set; }
+        public required string TestString { get; set; }
         public int? Min { get; set; }
         public int? Max { get; set; }
         public long? Min64 { get; set; }
