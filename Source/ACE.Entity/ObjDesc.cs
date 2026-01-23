@@ -8,9 +8,9 @@ namespace ACE.Entity
     public class ObjDesc
     {
         public uint PaletteID { get; set; }
-        public List<PropertiesPalette> SubPalettes { get; set; } = new List<PropertiesPalette>();
-        public List<PropertiesTextureMap> TextureChanges { get; set; } = new List<PropertiesTextureMap>();
-        public List<PropertiesAnimPart> AnimPartChanges { get; set; } = new List<PropertiesAnimPart>();
+        public List<PropertiesPalette> SubPalettes { get; set; } = [];
+        public List<PropertiesTextureMap> TextureChanges { get; set; } = [];
+        public List<PropertiesAnimPart> AnimPartChanges { get; set; } = [];
 
         /// <summary>
         /// Helper function to ensure we don't add redundant parts to the list

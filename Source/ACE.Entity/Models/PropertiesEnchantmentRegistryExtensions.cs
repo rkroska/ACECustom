@@ -9,7 +9,7 @@ namespace ACE.Entity.Models
 {
     public static class PropertiesEnchantmentRegistryExtensions
     {
-        public static List<PropertiesEnchantmentRegistry> Clone(this ICollection<PropertiesEnchantmentRegistry> value, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesEnchantmentRegistry>? Clone(this ICollection<PropertiesEnchantmentRegistry> value, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -17,7 +17,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return value.ToList();
+                return [.. value];
             }
             finally
             {
@@ -34,7 +34,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return value.Any();
+                return value.Count != 0;
             }
             finally
             {
@@ -58,7 +58,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static PropertiesEnchantmentRegistry GetEnchantmentBySpell(this ICollection<PropertiesEnchantmentRegistry> value, int spellId, uint? casterGuid, ReaderWriterLockSlim rwLock)
+        public static PropertiesEnchantmentRegistry? GetEnchantmentBySpell(this ICollection<PropertiesEnchantmentRegistry> value, int spellId, uint? casterGuid, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -79,7 +79,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static PropertiesEnchantmentRegistry GetEnchantmentBySpellSet(this ICollection<PropertiesEnchantmentRegistry> value, int spellId, EquipmentSet spellSetId, ReaderWriterLockSlim rwLock)
+        public static PropertiesEnchantmentRegistry? GetEnchantmentBySpellSet(this ICollection<PropertiesEnchantmentRegistry> value, int spellId, EquipmentSet spellSetId, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -95,7 +95,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesEnchantmentRegistry> GetEnchantmentsByCategory(this ICollection<PropertiesEnchantmentRegistry> value, SpellCategory spellCategory, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesEnchantmentRegistry>? GetEnchantmentsByCategory(this ICollection<PropertiesEnchantmentRegistry> value, SpellCategory spellCategory, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -103,7 +103,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return value.Where(e => e.SpellCategory == spellCategory).ToList();
+                return [.. value.Where(e => e.SpellCategory == spellCategory)];
             }
             finally
             {
@@ -111,7 +111,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesEnchantmentRegistry> GetEnchantmentsByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesEnchantmentRegistry>? GetEnchantmentsByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -119,7 +119,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return value.Where(e => (e.StatModType & statModType) == statModType).ToList();
+                return [.. value.Where(e => (e.StatModType & statModType) == statModType)];
             }
             finally
             {
@@ -128,8 +128,8 @@ namespace ACE.Entity.Models
         }
 
         // this ensures level 8 item self spells always take precedence over level 8 item other spells
-        private static HashSet<int> Level8AuraSelfSpells = new HashSet<int>
-        {
+        private static readonly HashSet<int> Level8AuraSelfSpells =
+        [
             (int)SpellId.BloodDrinkerSelf8,
             (int)SpellId.DefenderSelf8,
             (int)SpellId.HeartSeekerSelf8,
@@ -142,9 +142,9 @@ namespace ACE.Entity.Models
             (int)SpellId.QuicknessSelf8,
             (int)SpellId.FocusSelf8,
             (int)SpellId.WillpowerSelf8
-        };
+        ];
 
-        public static List<PropertiesEnchantmentRegistry> GetEnchantmentsTopLayer(this ICollection<PropertiesEnchantmentRegistry> value, ReaderWriterLockSlim rwLock, HashSet<int> setSpells)
+        public static List<PropertiesEnchantmentRegistry>? GetEnchantmentsTopLayer(this ICollection<PropertiesEnchantmentRegistry> value, ReaderWriterLockSlim rwLock, HashSet<int> setSpells)
         {
             if (value == null)
                 return null;
@@ -160,7 +160,7 @@ namespace ACE.Entity.Models
                         .ThenByDescending(c => Level8AuraSelfSpells.Contains(c.SpellId))
                         .ThenByDescending(c => setSpells.Contains(c.SpellId) ? c.SpellId : c.StartTime).First();
 
-                return results.ToList();
+                return [.. results];
             }
             finally
             {
@@ -171,7 +171,7 @@ namespace ACE.Entity.Models
         /// <summary>
         /// Returns the top layers in each spell category for a StatMod type
         /// </summary>
-        public static List<PropertiesEnchantmentRegistry> GetEnchantmentsTopLayerByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, ReaderWriterLockSlim rwLock, HashSet<int> setSpells)
+        public static List<PropertiesEnchantmentRegistry>? GetEnchantmentsTopLayerByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, ReaderWriterLockSlim rwLock, HashSet<int> setSpells)
         {
             if (value == null)
                 return null;
@@ -189,7 +189,7 @@ namespace ACE.Entity.Models
                         .ThenByDescending(c => Level8AuraSelfSpells.Contains(c.SpellId))
                         .ThenByDescending(c => setSpells.Contains(c.SpellId) ? c.SpellId : c.StartTime).First();
 
-                return results.ToList();
+                return [.. results];
             }
             finally
             {
@@ -200,7 +200,7 @@ namespace ACE.Entity.Models
         /// <summary>
         /// Returns the top layers in each spell category for a StatMod type + key
         /// </summary>
-        public static List<PropertiesEnchantmentRegistry> GetEnchantmentsTopLayerByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, uint statModKey, ReaderWriterLockSlim rwLock, HashSet<int> setSpells, bool handleMultiple = false)
+        public static List<PropertiesEnchantmentRegistry>? GetEnchantmentsTopLayerByStatModType(this ICollection<PropertiesEnchantmentRegistry> value, EnchantmentTypeFlags statModType, uint statModKey, ReaderWriterLockSlim rwLock, HashSet<int> setSpells, bool handleMultiple = false)
         {
             if (value == null)
                 return null;
@@ -235,7 +235,7 @@ namespace ACE.Entity.Models
                         .ThenByDescending(c => Level8AuraSelfSpells.Contains(c.SpellId))
                         .ThenByDescending(c => setSpells.Contains(c.SpellId) ? c.SpellId : c.StartTime).First();
 
-                return results.ToList();
+                return [.. results];
             }
             finally
             {
@@ -243,7 +243,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesEnchantmentRegistry> HeartBeatEnchantmentsAndReturnExpired(this ICollection<PropertiesEnchantmentRegistry> value, double heartbeatInterval, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesEnchantmentRegistry>? HeartBeatEnchantmentsAndReturnExpired(this ICollection<PropertiesEnchantmentRegistry> value, double heartbeatInterval, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;

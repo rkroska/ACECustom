@@ -129,7 +129,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static string GetProperty(this Biota biota, PropertyString property, ReaderWriterLockSlim rwLock)
+        public static string? GetProperty(this Biota biota, PropertyString property, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesString == null)
                 return null;
@@ -148,7 +148,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static PropertiesPosition GetProperty(this Biota biota, PositionType property, ReaderWriterLockSlim rwLock)
+        public static PropertiesPosition? GetProperty(this Biota biota, PositionType property, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesPosition == null)
                 return null;
@@ -167,7 +167,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static Position GetPosition(this Biota biota, PositionType property, ReaderWriterLockSlim rwLock)
+        public static Position? GetPosition(this Biota biota, PositionType property, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesPosition == null)
                 return null;
@@ -197,8 +197,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesBool == null)
-                    biota.PropertiesBool = new Dictionary<PropertyBool, bool>();
+                biota.PropertiesBool ??= new Dictionary<PropertyBool, bool>();
 
                 changed = (!biota.PropertiesBool.TryGetValue(property, out var existing) || value != existing);
 
@@ -216,8 +215,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesDID == null)
-                    biota.PropertiesDID = new Dictionary<PropertyDataId, uint>();
+                biota.PropertiesDID ??= new Dictionary<PropertyDataId, uint>();
 
                 changed = (!biota.PropertiesDID.TryGetValue(property, out var existing) || value != existing);
 
@@ -235,8 +233,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesFloat == null)
-                    biota.PropertiesFloat = new Dictionary<PropertyFloat, double>();
+                biota.PropertiesFloat ??= new Dictionary<PropertyFloat, double>();
 
                 changed = (!biota.PropertiesFloat.TryGetValue(property, out var existing) || value != existing);
 
@@ -254,8 +251,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesIID == null)
-                    biota.PropertiesIID = new Dictionary<PropertyInstanceId, uint>();
+                biota.PropertiesIID ??= new Dictionary<PropertyInstanceId, uint>();
 
                 changed = (!biota.PropertiesIID.TryGetValue(property, out var existing) || value != existing);
 
@@ -273,8 +269,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesInt == null)
-                    biota.PropertiesInt = new Dictionary<PropertyInt, int>();
+                biota.PropertiesInt ??= new Dictionary<PropertyInt, int>();
 
                 changed = (!biota.PropertiesInt.TryGetValue(property, out var existing) || value != existing);
 
@@ -292,8 +287,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesInt64 == null)
-                    biota.PropertiesInt64 = new Dictionary<PropertyInt64, long>();
+                biota.PropertiesInt64 ??= new Dictionary<PropertyInt64, long>();
 
                 changed = (!biota.PropertiesInt64.TryGetValue(property, out var existing) || value != existing);
 
@@ -311,8 +305,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesString == null)
-                    biota.PropertiesString = new Dictionary<PropertyString, string>();
+                biota.PropertiesString ??= new Dictionary<PropertyString, string>();
 
                 changed = (!biota.PropertiesString.TryGetValue(property, out var existing) || value != existing);
 
@@ -330,8 +323,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesPosition == null)
-                    biota.PropertiesPosition = new Dictionary<PositionType, PropertiesPosition>();
+                biota.PropertiesPosition ??= new Dictionary<PositionType, PropertiesPosition>();
 
                 biota.PropertiesPosition[property] = value;
             }
@@ -346,8 +338,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.PropertiesPosition == null)
-                    biota.PropertiesPosition = new Dictionary<PositionType, PropertiesPosition>();
+                biota.PropertiesPosition ??= new Dictionary<PositionType, PropertiesPosition>();
 
                 var entity = new PropertiesPosition { ObjCellId = value.Cell, PositionX = value.PositionX, PositionY = value.PositionY, PositionZ = value.PositionZ, RotationW = value.RotationW, RotationX = value.RotationX, RotationY = value.RotationY, RotationZ = value.RotationZ, VariationId = value.Variation };
 
@@ -501,7 +492,7 @@ namespace ACE.Entity.Models
         public static Dictionary<int, float> CloneSpells(this Biota biota, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesSpellBook == null)
-                return new Dictionary<int, float>();
+                return [];
 
             rwLock.EnterReadLock();
             try
@@ -538,15 +529,15 @@ namespace ACE.Entity.Models
         public static List<int> GetKnownSpellsIds(this Biota biota, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesSpellBook == null)
-                return new List<int>();
+                return [];
 
             rwLock.EnterReadLock();
             try
             {
                 if (biota.PropertiesSpellBook == null)
-                    return new List<int>();
+                    return [];
 
-                return new List<int>(biota.PropertiesSpellBook.Keys);
+                return [..biota.PropertiesSpellBook.Keys];
             }
             finally
             {
@@ -557,15 +548,15 @@ namespace ACE.Entity.Models
         public static List<int> GetKnownSpellsIdsWhere(this Biota biota, Func<int, bool> predicate, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesSpellBook == null)
-                return new List<int>();
+                return [];
 
             rwLock.EnterReadLock();
             try
             {
                 if (biota.PropertiesSpellBook == null)
-                    return new List<int>();
+                    return [];
 
-                return biota.PropertiesSpellBook.Keys.Where(predicate).ToList();
+                return [..biota.PropertiesSpellBook.Keys.Where(predicate)];
             }
             finally
             {
@@ -576,15 +567,15 @@ namespace ACE.Entity.Models
         public static List<float> GetKnownSpellsProbabilities(this Biota biota, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesSpellBook == null)
-                return new List<float>();
+                return [];
 
             rwLock.EnterReadLock();
             try
             {
                 if (biota.PropertiesSpellBook == null)
-                    return new List<float>();
+                    return [];
 
-                return new List<float>(biota.PropertiesSpellBook.Values);
+                return [..biota.PropertiesSpellBook.Values];
             }
             finally
             {
@@ -619,8 +610,7 @@ namespace ACE.Entity.Models
                     return value;
                 }
 
-                if (biota.PropertiesSpellBook == null)
-                    biota.PropertiesSpellBook = new Dictionary<int, float>();
+                biota.PropertiesSpellBook ??= new Dictionary<int, float>();
 
                 biota.PropertiesSpellBook[spell] = probability;
                 spellAdded = true;
@@ -636,7 +626,7 @@ namespace ACE.Entity.Models
         public static Dictionary<int, float> GetMatchingSpells(this Biota biota, HashSet<int> match, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesSpellBook == null)
-                return new Dictionary<int, float>();
+                return [];
 
             rwLock.EnterReadLock();
             try
@@ -694,7 +684,7 @@ namespace ACE.Entity.Models
         // BiotaPropertiesSkill
         // =====================================
 
-        public static PropertiesSkill GetSkill(this Biota biota, Skill skill, ReaderWriterLockSlim rwLock)
+        public static PropertiesSkill? GetSkill(this Biota biota, Skill skill, ReaderWriterLockSlim rwLock)
         {
             if (biota.PropertiesSkill == null)
                 return null;
@@ -725,9 +715,7 @@ namespace ACE.Entity.Models
                     return value;
                 }
 
-                if (biota.PropertiesSkill == null)
-                    biota.PropertiesSkill = new Dictionary<Skill, PropertiesSkill>();
-
+                biota.PropertiesSkill ??= new Dictionary<Skill, PropertiesSkill>();
                 var entity = new PropertiesSkill();
                 biota.PropertiesSkill[skill] = entity;
                 skillAdded = true;
@@ -751,7 +739,7 @@ namespace ACE.Entity.Models
             try
             {
                 if (biota.HousePermissions == null)
-                    return new Dictionary<uint, bool>();
+                    return [];
 
                 return new Dictionary<uint, bool>(biota.HousePermissions);
             }
@@ -801,9 +789,7 @@ namespace ACE.Entity.Models
             rwLock.EnterWriteLock();
             try
             {
-                if (biota.HousePermissions == null)
-                    biota.HousePermissions = new Dictionary<uint, bool>();
-
+                biota.HousePermissions ??= new Dictionary<uint, bool>();
                 biota.HousePermissions[guestGuid] = storage;
             }
             finally
@@ -826,19 +812,6 @@ namespace ACE.Entity.Models
             {
                 rwLock.ExitWriteLock();
             }
-        }
-
-
-        // =====================================
-        // Utility
-        // =====================================
-
-        public static string GetName(this Biota biota)
-        {
-            if (biota.PropertiesString.TryGetValue(PropertyString.Name, out var value))
-                return value;
-
-            return null;
         }
     }
 }

@@ -22,7 +22,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesPalette> Clone(this IList<PropertiesPalette> value, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesPalette>? Clone(this IList<PropertiesPalette> value, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -30,7 +30,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return new List<PropertiesPalette>(value);
+                return [..value];
             }
             finally
             {

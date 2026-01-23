@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace ACE.Entity.Enum.Properties
 {
@@ -13,51 +14,50 @@ namespace ACE.Entity.Enum.Properties
         /// Method to return a list of enums by attribute type - in this case [AssessmentProperty] using generics to enhance code reuse.
         /// </summary>
         /// <typeparam name="T">Enum to list by [AssessmentProperty]</typeparam>
-        /// <typeparam name="TResult">Type of the results</typeparam>
-        private static HashSet<TResult> GetValues<T, TResult>()
+        private static HashSet<T> GetValues<T>()
         {
-            var list = typeof(T).GetFields().Select(x => new
+            HashSet<T> results = [];
+            foreach (FieldInfo field in typeof(T).GetFields(BindingFlags.Public | BindingFlags.Static))
             {
-                att = x.GetCustomAttributes(false).OfType<AssessmentPropertyAttribute>().FirstOrDefault(),
-                member = x
-            }).Where(x => x.att != null && x.member.Name != "value__").Select(x => (TResult)x.member.GetValue(null)).ToList();
-
-            return new HashSet<TResult>(list);
+                if (field.GetCustomAttribute<AssessmentPropertyAttribute>() == null) continue;
+                if (field.GetValue(null) is T result) results.Add(result);
+            }
+            return results;
         }
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary
-        public static HashSet<ushort> PropertiesInt = GetValues<PropertyInt, ushort>();
+        public readonly static HashSet<PropertyInt> PropertiesInt = GetValues<PropertyInt>();
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary>
-        public static HashSet<ushort> PropertiesInt64 = GetValues<PropertyInt64, ushort>();
+        public readonly static HashSet<PropertyInt64> PropertiesInt64 = GetValues<PropertyInt64>();
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary>
-        public static HashSet<ushort> PropertiesBool = GetValues<PropertyBool, ushort>();
+        public readonly static HashSet<PropertyBool> PropertiesBool = GetValues<PropertyBool>();
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary>
-        public static HashSet<ushort> PropertiesString = GetValues<PropertyString, ushort>();
+        public readonly static HashSet<PropertyString> PropertiesString = GetValues<PropertyString>();
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary>
-        public static HashSet<ushort> PropertiesDouble = GetValues<PropertyFloat, ushort>();
+        public readonly static HashSet<PropertyFloat> PropertiesDouble = GetValues<PropertyFloat>();
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary>
-        public static HashSet<ushort> PropertiesDataId = GetValues<PropertyDataId, ushort>();
+        public readonly static HashSet<PropertyDataId> PropertiesDataId = GetValues<PropertyDataId>();
 
         /// <summary>
         /// returns a list of values for PropertyInt that are [AssessmentProperty]
         /// </summary>
-        public static HashSet<ushort> PropertiesInstanceId = GetValues<PropertyInstanceId, ushort>();
+        public readonly static HashSet<PropertyInstanceId> PropertiesInstanceId = GetValues<PropertyInstanceId>();
     }
 }

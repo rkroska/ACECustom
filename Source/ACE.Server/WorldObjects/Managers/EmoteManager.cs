@@ -3574,63 +3574,67 @@ namespace ACE.Server.WorldObjects.Managers
         public bool AddEmote(Database.Models.World.WeeniePropertiesEmote emote)
         {
             //map the database emote to the biota object emote
-            ACE.Entity.Models.PropertiesEmote newEmote = new ACE.Entity.Models.PropertiesEmote();
-
-            newEmote.DatabaseRecordId = 1;
-            newEmote.Quest = emote.Quest;
-            newEmote.MaxHealth = emote.MaxHealth;
-            newEmote.MinHealth = emote.MinHealth;
-            newEmote.Style = (MotionStance?)emote.Style;
-            newEmote.Category = (EmoteCategory)emote.Category;
-            newEmote.VendorType = (VendorType?)emote.VendorType;
-            newEmote.Substyle = (MotionCommand?)emote.Substyle;
-            newEmote.Object = ACE.Database.Adapter.WeenieConverter.ConvertToEntityWeenie(emote.Object);
-            newEmote.Probability = emote.Probability;
-            newEmote.WeenieClassId = emote.WeenieClassId;
-            List<Database.Models.World.WeeniePropertiesEmoteAction> actions = emote.WeeniePropertiesEmoteAction.ToList();
-            for (int i = 0; i < actions.Count; i++)
+            PropertiesEmote newEmote = new()
             {
-                PropertiesEmoteAction newAction = new PropertiesEmoteAction();
+                DatabaseRecordId = 1,
+                Quest = emote.Quest,
+                MaxHealth = emote.MaxHealth,
+                MinHealth = emote.MinHealth,
+                Style = (MotionStance?)emote.Style,
+                Category = (EmoteCategory)emote.Category,
+                VendorType = (VendorType?)emote.VendorType,
+                Substyle = (MotionCommand?)emote.Substyle,
+                Object = Database.Adapter.WeenieConverter.ConvertToEntityWeenie(emote.Object),
+                Probability = emote.Probability,
+                WeenieClassId = emote.WeenieClassId,
+                PropertiesEmoteAction = [] // Will fill below
+            };
 
-                newAction.DatabaseRecordId = (uint)i + 1;
-                newAction.Amount = actions[i].Amount;
-                newAction.Amount64 = actions[i].Amount64;
-                newAction.AnglesW = actions[i].AnglesW;
-                newAction.AnglesX = actions[i].AnglesX;
-                newAction.AnglesY = actions[i].AnglesY;
-                newAction.AnglesZ = actions[i].AnglesZ;
-                newAction.Delay = actions[i].Delay;
-                newAction.DestinationType = actions[i].DestinationType;
-                newAction.Display = actions[i].Display;
-                newAction.Extent = actions[i].Extent;
-                newAction.HeroXP64 = actions[i].HeroXP64;
-                newAction.Max = actions[i].Max;
-                newAction.Max64 = actions[i].Max64;
-                newAction.Min = actions[i].Min;
-                newAction.MaxDbl = actions[i].MaxDbl;
-                newAction.Message = actions[i].Message;
-                newAction.Min64 = actions[i].Min64;
-                newAction.MinDbl = actions[i].MinDbl;
-                newAction.Motion = (MotionCommand?)actions[i].Motion;
-                newAction.ObjCellId = actions[i].ObjCellId;
-                newAction.OriginX = actions[i].OriginX;
-                newAction.OriginY = actions[i].OriginY;
-                newAction.OriginZ = actions[i].OriginZ;
-                newAction.Palette = actions[i].Palette;
-                newAction.Percent = actions[i].Percent;
-                newAction.PScript = (PlayScript?)actions[i].PScript;
-                newAction.Shade = actions[i].Shade;
-                newAction.Sound = (Sound?)actions[i].Sound;
-                newAction.SpellId = actions[i].SpellId;
-                newAction.StackSize = actions[i].StackSize;
-                newAction.TestString = actions[i].TestString;
-                newAction.TreasureClass = actions[i].TreasureClass;
-                newAction.TryToBond = actions[i].TryToBond;
-                newAction.Type = actions[i].Type;
-                newAction.WealthRating = actions[i].WealthRating;
-                newAction.WeenieClassId = actions[i].WeenieClassId;
-
-                newEmote.PropertiesEmoteAction.Add(newAction);
+            List<Database.Models.World.WeeniePropertiesEmoteAction> actions = [.. emote.WeeniePropertiesEmoteAction];
+            uint i = 0;
+            foreach (var action in actions)
+            {
+                ++i;
+                newEmote.PropertiesEmoteAction.Add(new PropertiesEmoteAction()
+                {
+                    DatabaseRecordId = (uint)i,
+                    Amount = action.Amount,
+                    Amount64 = action.Amount64,
+                    AnglesW = action.AnglesW,
+                    AnglesX = action.AnglesX,
+                    AnglesY = action.AnglesY,
+                    AnglesZ = action.AnglesZ,
+                    Delay = action.Delay,
+                    DestinationType = action.DestinationType,
+                    Display = action.Display,
+                    Extent = action.Extent,
+                    HeroXP64 = action.HeroXP64,
+                    Max = action.Max,
+                    Max64 = action.Max64,
+                    Min = action.Min,
+                    MaxDbl = action.MaxDbl,
+                    Message = action.Message,
+                    Min64 = action.Min64,
+                    MinDbl = action.MinDbl,
+                    Motion = (MotionCommand?)action.Motion,
+                    ObjCellId = action.ObjCellId,
+                    OriginX = action.OriginX,
+                    OriginY = action.OriginY,
+                    OriginZ = action.OriginZ,
+                    Palette = action.Palette,
+                    Percent = action.Percent,
+                    PScript = (PlayScript?)action.PScript,
+                    Shade = action.Shade,
+                    Sound = (Sound?)action.Sound,
+                    SpellId = action.SpellId,
+                    StackSize = action.StackSize,
+                    TestString = action.TestString,
+                    TreasureClass = action.TreasureClass,
+                    TryToBond = action.TryToBond,
+                    Type = action.Type,
+                    WealthRating = action.WealthRating,
+                    WeenieClassId = action.WeenieClassId,
+                });
 
             }
 
