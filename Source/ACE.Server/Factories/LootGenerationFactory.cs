@@ -296,11 +296,14 @@ namespace ACE.Server.Factories
         /// Uses creature level to scale tier probabilities - higher level creatures have better lens drop chances.
         /// Called from Creature_Death.GenerateTreasure().
         /// </summary>
-        public static WorldObject TryRollSiphonLensForCreature(int creatureLevel)
+        public static WorldObject TryRollSiphonLensForCreature(uint creatureLevel)
         {
             // Check master enable switch
             if (!ServerConfig.siphon_lens_enabled.Value)
+            {
+                // log.Debug($"[SIPHON LENS DEBUG] Disabled via config.");
                 return null;
+            }
 
             // Get configurable base rates
             var flawedRate = (float)ServerConfig.siphon_lens_flawed_rate.Value;
@@ -336,18 +339,18 @@ namespace ACE.Server.Factories
                 float perfectScale = Math.Min(1.0f, (creatureLevel - 100) / 50.0f);
                 effectivePerfectRate = perfectRate * perfectScale * levelMultiplier;
             }
-
+            
             var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
             
             // Check each lens type in order of rarity (Perfect first, then Pristine, then Flawed)
             if (rng < effectivePerfectRate)
-                return WorldObjectFactory.CreateNewWorldObject(78780103); // Perfect
+                return WorldObjectFactory.CreateNewWorldObject(78780003); // Perfect
             
             if (rng < effectivePerfectRate + effectivePristineRate)
-                return WorldObjectFactory.CreateNewWorldObject(78780102); // Pristine
+                return WorldObjectFactory.CreateNewWorldObject(78780002); // Pristine
             
             if (rng < effectivePerfectRate + effectivePristineRate + effectiveFlawedRate)
-                return WorldObjectFactory.CreateNewWorldObject(78780101); // Flawed
+                return WorldObjectFactory.CreateNewWorldObject(78780001); // Flawed
 
             return null;
         }

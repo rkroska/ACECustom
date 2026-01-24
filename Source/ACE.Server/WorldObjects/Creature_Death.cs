@@ -141,6 +141,9 @@ namespace ACE.Server.WorldObjects
             var motionDeath = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
             var deathAnimLength = ExecuteMotion(motionDeath);
 
+            // Try to generate Siphon Lens before death emotes (which might destroy the creature)
+            GenerateSiphonLens(topDamager);
+
             if (EmoteManager != null)
             {
                 EmoteManager.OnDeath(lastDamager);
@@ -833,33 +836,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            // Roll for siphon lens drop (works for ALL creatures, regardless of DeathTreasureType)
-            // Gives lens directly to killer's inventory instead of corpse/ground
-            var lens = LootGenerationFactory.TryRollSiphonLensForCreature(Level ?? 1);
-            if (lens != null)
-            {
-                bool lensDelivered = false;
-                var killerPlayer = killer?.TryGetAttacker() as Player;
-                
-                if (killerPlayer != null)
-                {
-                    if (killerPlayer.TryCreateInInventoryWithNetworking(lens))
-                    {
-                        killerPlayer.Session.Network.EnqueueSend(
-                            new GameMessageSystemChat($"You find a {lens.Name} on the creature!", ChatMessageType.Broadcast));
-                        lensDelivered = true;
-                    }
-                }
-                
-                // Fallback: killer is null, not a player, or inventory full - drop to corpse or ground
-                if (!lensDelivered)
-                {
-                    if (corpse != null)
-                        corpse.TryAddToInventory(lens);
-                    else
-                        droppedItems.Add(lens);
-                }
-            }
+
 
             return droppedItems;
         }
@@ -899,6 +876,44 @@ namespace ACE.Server.WorldObjects
                 spells.Add(new Server.Entity.Spell(kvp.Key, false));
 
             return string.Join(", ", spells.Select(i => i.Name));
+        }
+
+        /// <summary>
+        /// Generates a Siphon Lens and attempts to give it to the killer, or drops it to the ground.
+        /// This is separate from normal treasure generation to ensure it happens even if the creature
+        /// is destroyed by a death emote (DeleteSelf) before a corpse is created.
+        /// </summary>
+        private void GenerateSiphonLens(DamageHistoryInfo killer)
+        {
+            if (killer == null) return;
+
+            var lens = LootGenerationFactory.TryRollSiphonLensForCreature((uint)(Level ?? 1));
+            if (lens == null) return;
+
+            bool lensDelivered = false;
+            var killerPlayer = killer?.TryGetPetOwnerOrAttacker() as Player;
+            
+            if (killerPlayer != null)
+            {
+                if (killerPlayer.TryCreateInInventoryWithNetworking(lens))
+                {
+                    killerPlayer.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You find a {lens.Name} on the creature!", ChatMessageType.Broadcast));
+                    lensDelivered = true;
+                }
+                else
+                {
+                    killerPlayer.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You found a {lens.Name}, but your inventory is full! It fell to the ground.", ChatMessageType.Broadcast));
+                }
+            }
+            
+            // Fallback: killer is null, not a player, or inventory full - drop to ground
+            if (!lensDelivered)
+            {
+                lens.Location = new Position(Location);
+                LandblockManager.AddObject(lens);
+            }
         }
 
         public bool IsOnNoDeathXPLandblock => Location != null ? NoDeathXP_Landblocks.Contains(Location.LandblockId.Landblock) : false;
