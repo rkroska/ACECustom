@@ -217,16 +217,21 @@ namespace ACE.Server.Entity
             }
         }
 
+        private static readonly object _updateLock = new object();
+
         /// <summary>
         /// Update only the capture flag for a WCID
         /// </summary>
         public static bool SetNoCapture(uint wcid, bool noCapture, string reason, string addedBy)
         {
-            if (_cache.TryGetValue(wcid, out var existing))
+            lock (_updateLock)
             {
-                return AddBlacklist(wcid, noCapture, existing.NoShiny, reason ?? existing.Reason, addedBy);
+                if (_cache.TryGetValue(wcid, out var existing))
+                {
+                    return AddBlacklist(wcid, noCapture, existing.NoShiny, reason ?? existing.Reason, addedBy);
+                }
+                return AddBlacklist(wcid, noCapture, false, reason, addedBy);
             }
-            return AddBlacklist(wcid, noCapture, false, reason, addedBy);
         }
 
         /// <summary>
@@ -234,11 +239,14 @@ namespace ACE.Server.Entity
         /// </summary>
         public static bool SetNoShiny(uint wcid, bool noShiny, string reason, string addedBy)
         {
-            if (_cache.TryGetValue(wcid, out var existing))
+            lock (_updateLock)
             {
-                return AddBlacklist(wcid, existing.NoCapture, noShiny, reason ?? existing.Reason, addedBy);
+                if (_cache.TryGetValue(wcid, out var existing))
+                {
+                    return AddBlacklist(wcid, existing.NoCapture, noShiny, reason ?? existing.Reason, addedBy);
+                }
+                return AddBlacklist(wcid, false, noShiny, reason, addedBy);
             }
-            return AddBlacklist(wcid, false, noShiny, reason, addedBy);
         }
 
         /// <summary>

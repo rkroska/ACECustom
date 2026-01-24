@@ -145,6 +145,18 @@ namespace ACE.Server.WorldObjects
         {
             if (MonsterCapture.IsCapturedAppearance(target))
             {
+                if (player.IsBusy)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You are too busy to do that.", ChatMessageType.System));
+                    return;
+                }
+
+                if (player.CombatMode != CombatMode.NonCombat)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You are in combat mode!", ChatMessageType.System));
+                    return;
+                }
+
                 MonsterCapture.ApplyAppearanceToCrate(player, this, target);
                 return;
             }

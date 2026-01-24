@@ -7515,13 +7515,37 @@ namespace ACE.Server.Command.Handlers
 
                 if (type == "capture")
                 {
-                    BlacklistManager.SetNoCapture(wcid, false, status.Reason, addedBy);
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed capture blacklist from WCID {wcid}.", ChatMessageType.System));
+                    // Check if disabling this would leave both false
+                    if (!status.NoShiny)
+                    {
+                        // Both will be false, remove entirely
+                        if (BlacklistManager.RemoveBlacklist(wcid))
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                        else
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        BlacklistManager.SetNoCapture(wcid, false, status.Reason, addedBy);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed capture blacklist from WCID {wcid}.", ChatMessageType.System));
+                    }
                 }
                 else if (type == "shiny")
                 {
-                    BlacklistManager.SetNoShiny(wcid, false, status.Reason, addedBy);
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed shiny blacklist from WCID {wcid}.", ChatMessageType.System));
+                    // Check if disabling this would leave both false
+                    if (!status.NoCapture)
+                    {
+                        // Both will be false, remove entirely
+                        if (BlacklistManager.RemoveBlacklist(wcid))
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                        else
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        BlacklistManager.SetNoShiny(wcid, false, status.Reason, addedBy);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed shiny blacklist from WCID {wcid}.", ChatMessageType.System));
+                    }
                 }
                 else
                 {
