@@ -484,9 +484,9 @@ namespace ACE.Server.Physics.Common
             WaterType = LandDefs.WaterType.NotWater;
             //BlockSurfaceIndex = -1;
 
-            // init for landcell
+            // init for landcell - cells are indexed 0-63, not 1-64
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
-            for (uint i = 1; i <= 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId ?? 0}, new LandCell((i)));
+            for (uint i = 0; i < 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId ?? 0}, new LandCell((i + 1)));
         }
 
         /// <summary>

@@ -139,6 +139,8 @@ namespace ACE.Server.Physics.Common
             {
                 var lcoord = LandDefs.gid_to_lcoord(blockCellID, false);
                 if (lcoord == null) return null;
+                
+                // Calculate the land cell index (0-63 range) - this matches the dictionary keys
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
                 
                 if(!landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))

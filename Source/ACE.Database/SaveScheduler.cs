@@ -571,10 +571,22 @@ namespace ACE.Database
             const int myPriority = 2; // Periodic priority
 
             // Throttling for Periodic saves (backpressure)
+            // CRITICAL FIX: Add timeout to prevent infinite loop deadlock
+            // If DB queue is stuck, we must still process saves or the entire server hangs
             var shard = DatabaseManager.Shard;
-            while (!IsShutdownRequested && shard != null && shard.QueueCount > 50)
+            var throttleStart = DateTime.UtcNow;
+            var throttleTimeout = TimeSpan.FromSeconds(30);
+            
+            while (!IsShutdownRequested && !_disposed && shard != null && shard.QueueCount > 50)
             {
                 Thread.Sleep(50);
+                
+                // Timeout protection: If throttling for too long, break out and process anyway
+                if (DateTime.UtcNow - throttleStart > throttleTimeout)
+                {
+                    log.Warn($"[SAVESCHEDULER] Throttling timeout after {throttleTimeout.TotalSeconds}s with DB queue at {shard.QueueCount}. Processing save '{key}' anyway to prevent deadlock.");
+                    break;
+                }
             }
 
             if (!_states.TryGetValue(key, out var state))
@@ -778,7 +790,7 @@ namespace ACE.Database
                         // SAFETY: Don't drop the save - process it on this worker instead.
                         // Priority correctness is less important than "never lose a save".
                         log.Fatal($"[SAVESCHEDULER] CRITICAL: Early reroute failed for key={key} from myPriority={myPriority} to newPriority={currentPriority}. Processing on current worker to prevent save loss.");
-                        // Fall through to normal processing below - do NOT continue or clear Queued
+                        // Fall through to normal processing below - do not continue or clear Queued
                     }
                 }
 
@@ -921,7 +933,7 @@ namespace ACE.Database
                     // CRITICAL: Only clear if NO new work arrived AND the job is still the same one we executed
                     // hasNewWork is the true "more work exists" signal
                     // willRequeue is only "I personally claimed the requeue slot"
-                    // If a new RequestSave replaced the job, CAS fails and we keep the newest job
+                    // If a new RequestSave replaced the job, CAS fails and we keep the newer job
                     if (!hasNewWork && executedJob != null)
                     {
                         // Only clear if it is still the same job we executed
@@ -1933,7 +1945,7 @@ namespace ACE.Database
             }
 
             // All conditions met - safe to clear
-            log.Warn($"[SAVESCHEDULER] Admin command clearing ghost save state for character {characterId}");
+            log.Warn($"[ACE.Database] Admin command clearing ghost save state for character {characterId}");
             var callbacks = state.ForceClearIfNoWorkAndDrainCallbacks();
             TryRemoveIdleCharacterSaveState(characterId);
             if (callbacks != null)
@@ -1986,7 +1998,7 @@ namespace ACE.Database
                     // CRITICAL ERROR: EnqueueToWorldThread should always be set by WorldManager.Initialize()
                     // Fail fast - do not execute callback on calling thread (violates world thread contract)
                     log.Fatal("[SAVESCHEDULER] CRITICAL: EnqueueToWorldThread not set! Cannot invoke callback safely. This indicates WorldManager.Initialize() was not called or failed.");
-                    throw new InvalidOperationException("EnqueueToWorldThread delegate not set - cannot safely invoke callback on world thread. This indicates a fatal initialization error in WorldManager.Initialize().");
+                    throw new InvalidOperationException("EnqueueToWorldThread delegate not set - cannot safely invoke callbacks on world thread. This indicates a fatal initialization error in WorldManager.Initialize().");
                 }
             }
             // Otherwise callback is registered and will be invoked when saves complete
