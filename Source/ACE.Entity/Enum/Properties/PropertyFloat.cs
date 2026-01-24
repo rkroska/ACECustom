@@ -109,6 +109,7 @@ namespace ACE.Entity.Enum.Properties
         AccuracyLevel = 93,
         AttackAngle = 94,
         AttackTimestamp = 95,
+        [Ephemeral]
         CheckpointTimestamp = 96,
         SoldTimestamp = 97,
         UseTimestamp = 98,

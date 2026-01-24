@@ -191,7 +191,7 @@ namespace ACE.Server.WorldObjects
 
             if (CombatTable == null)
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - CombatTable is null");
+                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - CombatTable is null");
                 return null;
             }
 
@@ -200,7 +200,7 @@ namespace ACE.Server.WorldObjects
             var motionTable = DatManager.PortalDat.ReadFromDat<DatLoader.FileTypes.MotionTable>(MotionTableId);
             if (motionTable == null)
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - motionTable is null");
+                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - motionTable is null");
                 return null;
             }
 
