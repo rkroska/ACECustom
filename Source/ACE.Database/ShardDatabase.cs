@@ -236,7 +236,11 @@ namespace ACE.Database
 
         public virtual Biota GetBiota(ShardDbContext context, uint id, bool skipCache = false)
         {
+            // CRITICAL FIX: Always query the database, not just the change tracker
+            // The old code used FirstOrDefault() which only checks tracked entities
+            // This caused duplicate INSERT errors when saves used fresh DbContext instances
             var biota = context.Biota
+                .AsNoTracking()  // Don't track in this query - we'll update via UpdateDatabaseBiota
                 .FirstOrDefault(r => r.Id == id);
 
             if (biota == null)
@@ -369,9 +373,31 @@ namespace ACE.Database
                 {
                     if (existingBiota == null)
                     {
-                        existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
-
-                        context.Biota.Add(existingBiota);
+                        // Double-check biota doesn't exist in database before INSERT
+                        // This prevents duplicate key errors when saves race with fresh DbContext instances
+                        var biotaExistsInDb = context.Biota.Any(b => b.Id == biota.Id);
+                        if (biotaExistsInDb)
+                        {
+                            log.Warn($"[DATABASE] SaveBiota 0x{biota.Id:X8} detected existing biota after GetBiota returned null - switching to UPDATE path");
+                            // Load the existing biota for UPDATE instead of INSERT
+                            existingBiota = GetBiota(context, biota.Id);
+                            if (existingBiota != null)
+                            {
+                                ACE.Database.Adapter.BiotaUpdater.UpdateDatabaseBiota(context, biota, existingBiota);
+                            }
+                            else
+                            {
+                                // Still null after second attempt - log error and abort to prevent corruption
+                                log.Error($"[DATABASE] SaveBiota 0x{biota.Id:X8} exists in DB but GetBiota still returns null - aborting save");
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            // Truly new biota - safe to INSERT
+                            existingBiota = ACE.Database.Adapter.BiotaConverter.ConvertFromEntityBiota(biota);
+                            context.Biota.Add(existingBiota);
+                        }
                     }
                     else
                     {
