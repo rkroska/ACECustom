@@ -49,7 +49,6 @@ namespace ACE.Server.WorldObjects
             // Monster Capture System - POC: Handle capture crystals
             if (activator is Player player && MonsterCapture.IsCaptureCrystal(this))
             {
-                player.SendMessage("DEBUG: Crystal ActOnUse called!");
                 MonsterCapture.UseCaptureCrystal(player, this);
                 return;
             }

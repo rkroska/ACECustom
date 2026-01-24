@@ -108,6 +108,14 @@ namespace ACE.Server.WorldObjects
         public string CapturedObjDescAnimParts => GetProperty(PropertyString.CapturedObjDescAnimParts);
         public string CapturedObjDescPalettes => GetProperty(PropertyString.CapturedObjDescPalettes);
         public string CapturedObjDescTextures => GetProperty(PropertyString.CapturedObjDescTextures);
+        
+        /// <summary>
+        /// Returns true if any captured ObjDesc data exists (AnimParts, Palettes, or Textures).
+        /// </summary>
+        public bool HasCapturedObjDesc => 
+            !string.IsNullOrEmpty(CapturedObjDescAnimParts) ||
+            !string.IsNullOrEmpty(CapturedObjDescPalettes) ||
+            !string.IsNullOrEmpty(CapturedObjDescTextures);
 
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
@@ -258,10 +266,14 @@ namespace ACE.Server.WorldObjects
                 pet.RemoveProperty(PropertyInt.PaletteTemplate);
                 pet.RemoveProperty(PropertyFloat.Shade);
                 
-                // Clear existing Biota visual data (from weenie's CreateList or defaults)
-                pet.Biota.PropertiesAnimPart?.Clear();
-                pet.Biota.PropertiesPalette?.Clear();
-                pet.Biota.PropertiesTextureMap?.Clear();
+                // Clear existing Biota visual data only if we have captured ObjDesc to apply
+                // This prevents visual emptiness if the captured data is missing
+                if (HasCapturedObjDesc)
+                {
+                    pet.Biota.PropertiesAnimPart?.Clear();
+                    pet.Biota.PropertiesPalette?.Clear();
+                    pet.Biota.PropertiesTextureMap?.Clear();
+                }
                 
                 // Remove equipped clothing/armor items from the base pet weenie's CreateList
                 // These override our ObjDesc since CalculateObjDesc() prioritizes equipped items
@@ -331,7 +343,10 @@ namespace ACE.Server.WorldObjects
 
                 // Apply captured ObjDesc (AnimParts, Palettes, Textures) for full humanoid appearance
                 // This restores the exact visual appearance captured from the original creature
-                ApplyCapturedObjDesc(pet);
+                if (HasCapturedObjDesc)
+                {
+                    ApplyCapturedObjDesc(pet);
+                }
 
                 // Equip Captured Items (Armor, Weapons, Shield)
                 if (!string.IsNullOrEmpty(VisualOverrideCapturedItems))

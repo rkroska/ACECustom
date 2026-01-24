@@ -3832,8 +3832,7 @@ namespace ACE.Server.WorldObjects
                     GiveObjectToPlayer(targetAsPlayer, item, itemFoundInContainer, itemRootOwner, itemWasEquipped, amount);
                 else
                 {
-                    // Track specific item for emote handlers
-                    LastGivenItemGuid = item.Guid;
+                    // LastGivenItemGuid is set inside GiveObjectToNPC after stack split is determined
                     GiveObjectToNPC(target, item, itemFoundInContainer, itemRootOwner, itemWasEquipped, amount);
                 }
 
@@ -4071,6 +4070,9 @@ namespace ACE.Server.WorldObjects
                     // if stacked item, only give 1, ignoring amount indicated, unless they are AiAcceptEverything in which case, take full amount indicated
                     if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive, deferSave: true))
                     {
+                        // Track the actual transferred item GUID for emote handlers (may differ from original for stack splits)
+                        LastGivenItemGuid = itemToGive.Guid;
+                        
                         if (item == itemToGive)
                             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, item, target));
 
@@ -4093,6 +4095,9 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {item.NameWithMaterial}.", ChatMessageType.Broadcast));
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full, WeenieError.TradeAiRefuseEmote));
 
+                    // Track the item for emote handlers (RegisterPetSkin needs this to find the essence)
+                    LastGivenItemGuid = item.Guid;
+                    
                     target.EmoteManager.ExecuteEmoteSet(emoteResult, this);
                 }
                 else

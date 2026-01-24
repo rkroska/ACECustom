@@ -220,7 +220,16 @@ namespace ACE.Server.WorldObjects
             }
 
             if (coverage.Count == 0 && ClothingBase.HasValue)
+            {
+                // Even with no armor coverage, apply shiny variant textures before falling back
+                if (CreatureVariant.HasValue)
+                {
+                    var baseObjDesc = base.CalculateObjDesc();
+                    baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+                    return baseObjDesc;
+                }
                 return base.CalculateObjDesc();
+            }
 
             // Add the "naked" body parts. These are the ones not already covered.
 

@@ -97,6 +97,9 @@ namespace ACE.Server.Entity
         /// <param name="variant">The variant to apply to the creature.</param>
         public static void ApplyVariant(Creature creature, CreatureVariant variant)
         {
+            // Idempotency guard: prevent double-prefixing names and repeated scaling
+            if (creature.CreatureVariant != null) return;
+            
             if (!CanApplyVariant(creature)) return;
             creature.Name = $"{Enum.GetName(variant)} {creature.Name}";
             creature.CreatureVariant = variant;

@@ -6,6 +6,7 @@ using System.Linq;
 using ACE.Database;
 using ACE.Database.Models.Shard;
 using Microsoft.EntityFrameworkCore;
+using MySql.Data.MySqlClient;
 
 namespace ACE.Server.Entity
 {
@@ -44,16 +45,18 @@ namespace ACE.Server.Entity
             {
                 if (_tableCreated) return;
 
+                bool tableExists = false;
                 try
                 {
                     using (var context = new ShardDbContext())
                     {
                         // Check if table exists by trying to select from it
                         context.Database.ExecuteSqlRaw("SELECT 1 FROM creature_blacklist LIMIT 1");
+                        tableExists = true;
                         log.Info("creature_blacklist table exists");
                     }
                 }
-                catch
+                catch (Exception)
                 {
                     // Table doesn't exist, create it
                     log.Info("Creating creature_blacklist table...");
@@ -71,6 +74,7 @@ namespace ACE.Server.Entity
                                     `added_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+                            tableExists = true;
                             log.Info("creature_blacklist table created successfully");
                         }
                     }
@@ -80,7 +84,8 @@ namespace ACE.Server.Entity
                     }
                 }
 
-                _tableCreated = true;
+                // Only mark as created if table exists or was successfully created
+                _tableCreated = tableExists;
             }
         }
 
@@ -136,6 +141,12 @@ namespace ACE.Server.Entity
         /// </summary>
         public static bool AddBlacklist(uint wcid, bool noCapture, bool noShiny, string reason, string addedBy)
         {
+            // If both flags are false, remove the entry entirely to prevent phantom rows
+            if (!noCapture && !noShiny)
+            {
+                return RemoveBlacklist(wcid);
+            }
+            
             try
             {
                 using (var context = new ShardDbContext())

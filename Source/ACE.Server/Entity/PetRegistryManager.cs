@@ -9,6 +9,7 @@ using ACE.Entity.Enum.Properties;
 using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 using Microsoft.EntityFrameworkCore;
+using MySql.Data.MySqlClient;
 
 namespace ACE.Server.Entity
 {
@@ -33,23 +34,26 @@ namespace ACE.Server.Entity
             {
                 if (_tableCreated) return;
 
+                bool tableExists = false;
                 try
                 {
                     using (var context = new ShardDbContext())
                     {
                         // Check if table exists by trying to select from it
                         context.Database.ExecuteSqlRaw("SELECT 1 FROM pet_registry LIMIT 1");
+                        tableExists = true;
                         log.Info("pet_registry table exists");
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Table doesn't exist, create it
-                    log.Info("Creating pet_registry table...");
+                    // Table doesn't exist (or other error) - try to create it
+                    log.Info($"pet_registry table check failed ({ex.GetType().Name}), attempting to create...");
                     try
                     {
                         using (var context = new ShardDbContext())
                         {
+                            // Include is_shiny in PK to allow both shiny and non-shiny of same WCID
                             context.Database.ExecuteSqlRaw(@"
                                 CREATE TABLE `pet_registry` (
                                     `account_id` INT UNSIGNED NOT NULL,
@@ -58,20 +62,22 @@ namespace ACE.Server.Entity
                                     `creature_type` INT UNSIGNED NULL,
                                     `registered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                     `is_shiny` TINYINT(1) NOT NULL DEFAULT 0,
-                                    PRIMARY KEY (`account_id`, `wcid`),
+                                    PRIMARY KEY (`account_id`, `wcid`, `is_shiny`),
                                     INDEX `IX_pet_registry_AccountId` (`account_id`)
                                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                             
+                            tableExists = true;
                             log.Info("pet_registry table created successfully");
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception createEx)
                     {
-                        log.Error($"Failed to create pet_registry table: {ex.Message}");
+                        log.Error($"Failed to create pet_registry table: {createEx.Message}");
                     }
                 }
 
-                _tableCreated = true;
+                // Only mark as created if table exists or was successfully created
+                _tableCreated = tableExists;
             }
         }
 
@@ -222,7 +228,7 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Register a new pet to an account
+        /// Register a new pet to an account (upsert to handle duplicate entries)
         /// </summary>
         public static bool RegisterPet(uint accountId, uint wcid, string creatureName, uint? creatureType = null, bool isShiny = false)
         {
@@ -230,17 +236,31 @@ namespace ACE.Server.Entity
             {
                 using (var context = new ShardDbContext())
                 {
-                    var entry = new PetRegistry
+                    // Check for existing entry with same account/wcid/isShiny (composite key)
+                    var existing = context.PetRegistry
+                        .FirstOrDefault(p => p.AccountId == accountId && p.Wcid == wcid && p.IsShiny == isShiny);
+                    
+                    if (existing != null)
                     {
-                        AccountId = accountId,
-                        Wcid = wcid,
-                        CreatureName = creatureName,
-                        CreatureType = creatureType,
-                        RegisteredAt = DateTime.UtcNow,
-                        IsShiny = isShiny
-                    };
-
-                    context.PetRegistry.Add(entry);
+                        // Update existing entry (upsert)
+                        existing.CreatureName = creatureName;
+                        existing.CreatureType = creatureType;
+                        existing.RegisteredAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        // Add new entry
+                        context.PetRegistry.Add(new PetRegistry
+                        {
+                            AccountId = accountId,
+                            Wcid = wcid,
+                            CreatureName = creatureName,
+                            CreatureType = creatureType,
+                            RegisteredAt = DateTime.UtcNow,
+                            IsShiny = isShiny
+                        });
+                    }
+                    
                     context.SaveChanges();
                     return true;
                 }

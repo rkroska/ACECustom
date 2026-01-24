@@ -6728,6 +6728,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchbool", "showbool (string)")]
         [CommandHandler("fetchbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a bool", "fetchbool (string)")]
         public static void HandleFetchServerBoolProperty(Session session, params string[] parameters)
         {
@@ -6759,6 +6760,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchlong", "showlong (string)")]
         [CommandHandler("fetchlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a long", "fetchlong (string)")]
         public static void HandleFetchServerLongProperty(Session session, params string[] parameters)
         {
@@ -6803,6 +6805,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchdouble", "showdouble (string)")]
         [CommandHandler("fetchdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a double", "fetchdouble (string)")]
         public static void HandleFetchServerFloatProperty(Session session, params string[] parameters)
         {
@@ -6826,6 +6829,7 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, "Unknown string property was not updated. Type showprops for a list of properties.");
         }
 
+        [CommandHandler("showstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchstring", "showstring (string)")]
         [CommandHandler("fetchstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a string", "fetchstring (string)")]
         public static void HandleFetchServerStringProperty(Session session, params string[] parameters)
         {
@@ -7600,6 +7604,95 @@ namespace ACE.Server.Command.Handlers
                     message += $" (Reason: {status.Reason})";
 
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        // ========================================
+        // Shiny / Monster Capture Testing Commands
+        // ========================================
+
+        /// <summary>
+        /// Spawns a creature with the shiny variant applied for testing purposes.
+        /// </summary>
+        [CommandHandler("spawnshiny", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "Spawns a shiny version of a creature for testing.",
+            "<wcid or classname> [count]")]
+        public static void HandleSpawnShiny(Session session, params string[] parameters)
+        {
+            var param = parameters[0];
+            int count = 1;
+
+            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedCount))
+            {
+                count = Math.Clamp(parsedCount, 1, 10); // Limit to 10 max to prevent spam
+            }
+
+            ACE.Database.Models.World.Weenie weenie = null;
+
+            if (uint.TryParse(param, out var wcid))
+                weenie = DatabaseManager.World.GetWeenie(wcid);   // wcid
+            else
+                weenie = DatabaseManager.World.GetWeenie(param);  // classname
+
+            if (weenie == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find weenie {param}", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // Verify it's a creature
+            if (weenie.Type != (int)WeenieType.Creature)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Weenie {param} is not a creature (WeenieType: {(WeenieType)weenie.Type})", ChatMessageType.Broadcast));
+                return;
+            }
+
+            int spawned = 0;
+            for (int i = 0; i < count; i++)
+            {
+                var entityWeenie = Database.Adapter.WeenieConverter.ConvertToEntityWeenie(weenie);
+                var wo = WorldObjectFactory.CreateNewWorldObject(entityWeenie);
+
+                if (wo == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create object for {weenie.ClassId} - {weenie.ClassName}", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                var creature = wo as Creature;
+                if (creature == null)
+                {
+                    wo.Destroy();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Object {weenie.ClassId} - {weenie.ClassName} is not a Creature", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Apply shiny variant
+                CreatureVariantHelper.ApplyVariant(creature, CreatureVariant.Shiny);
+
+                // Position in front of player, in a line
+                float distance = 2.0f + (i * 1.0f);
+                var loc = session.Player.Location.InFrontOf(distance);
+
+                creature.Location = new Position(loc);
+                creature.Location.LandblockId = new LandblockId(creature.Location.GetCell());
+
+                if (!creature.EnterWorld())
+                {
+                    creature.Destroy();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spawn shiny {creature.Name} at this location", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                spawned++;
+            }
+
+            if (spawned > 0)
+            {
+                var weenieInfo = $"{weenie.ClassId} - {weenie.ClassName}";
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})", 
+                    ChatMessageType.Broadcast));
             }
         }
 

@@ -60,6 +60,13 @@ namespace ACE.Server.Entity
                 return;
             }
             
+            // Prevent capturing dead/dying creatures
+            if (targetCreature.Health.Current <= 0)
+            {
+                player.SendTransientError("The creature is already dead!");
+                return;
+            }
+            
             // Get crystal tier early for debug bypass checks
             var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
             var isDebugLens = crystalTier == 4;
@@ -109,7 +116,16 @@ namespace ACE.Server.Entity
             var success = roll < successRate;
             
             // Consume crystal (DEBUG LENS tier 4 is never consumed)
-            var consumeResult = isDebugLens ? true : player.TryConsumeFromInventoryWithNetworking(crystal, 1);
+            // Must check lens consumption BEFORE treating capture as successful
+            if (!isDebugLens)
+            {
+                var consumeResult = player.TryConsumeFromInventoryWithNetworking(crystal, 1);
+                if (!consumeResult)
+                {
+                    player.SendTransientError("Failed to consume the siphon lens!");
+                    return;
+                }
+            }
             
             if (success)
             {
@@ -117,18 +133,19 @@ namespace ACE.Server.Entity
                 targetCreature.EnqueueBroadcast(new GameMessageScript(
                     targetCreature.Guid, PlayScript.VisionUpWhite));
                 
-                // Make creature invulnerable and stop combat
-                targetCreature.Invincible = true;
-                targetCreature.IsBusy = true;
-                targetCreature.SetCombatMode(CombatMode.NonCombat);
-                
-                // Create siphoned essence
+                // Create siphoned essence BEFORE making creature invulnerable
+                // This way if it fails, creature isn't left stuck
                 var capturedItem = CreateCapturedAppearance(targetCreature, crystal, player);
                 if (capturedItem == null)
                 {
                     player.SendTransientError("Failed to create siphoned essence!");
                     return;
                 }
+                
+                // Only make creature invulnerable AFTER successful essence creation
+                targetCreature.Invincible = true;
+                targetCreature.IsBusy = true;
+                targetCreature.SetCombatMode(CombatMode.NonCombat);
                 
                 if (player.TryCreateInInventoryWithNetworking(capturedItem))
                 {

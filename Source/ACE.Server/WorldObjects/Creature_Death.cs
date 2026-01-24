@@ -836,24 +836,28 @@ namespace ACE.Server.WorldObjects
             // Roll for siphon lens drop (works for ALL creatures, regardless of DeathTreasureType)
             // Gives lens directly to killer's inventory instead of corpse/ground
             var lens = LootGenerationFactory.TryRollSiphonLensForCreature(Level ?? 1);
-            if (lens != null && killer != null)
+            if (lens != null)
             {
-                var killerPlayer = killer.TryGetAttacker() as Player;
+                bool lensDelivered = false;
+                var killerPlayer = killer?.TryGetAttacker() as Player;
+                
                 if (killerPlayer != null)
                 {
                     if (killerPlayer.TryCreateInInventoryWithNetworking(lens))
                     {
                         killerPlayer.Session.Network.EnqueueSend(
                             new GameMessageSystemChat($"You find a {lens.Name} on the creature!", ChatMessageType.Broadcast));
+                        lensDelivered = true;
                     }
+                }
+                
+                // Fallback: killer is null, not a player, or inventory full - drop to corpse or ground
+                if (!lensDelivered)
+                {
+                    if (corpse != null)
+                        corpse.TryAddToInventory(lens);
                     else
-                    {
-                        // Inventory full - add to corpse or drop on ground
-                        if (corpse != null)
-                            corpse.TryAddToInventory(lens);
-                        else
-                            droppedItems.Add(lens);
-                    }
+                        droppedItems.Add(lens);
                 }
             }
 

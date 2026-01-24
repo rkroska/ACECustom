@@ -197,8 +197,23 @@ namespace ACE.Entity.Enum.Properties
                 case PropertyDataId.WieldedTreasureType:
                 case PropertyDataId.YellowSurgeSpell:
 
-                case PropertyDataId x when x >= PropertyDataId.PCAPRecordedWeenieHeader:
+                case PropertyDataId x when x >= PropertyDataId.PCAPRecordedWeenieHeader && x <= PropertyDataId.PCAPPhysicsDIDDataTemplatedFrom:
                     return false;
+                
+                // Custom DIDs that should render as hex
+                case PropertyDataId.CreatedByAccountId:
+                case PropertyDataId.CapturedSetup:
+                case PropertyDataId.CapturedMotionTable:
+                case PropertyDataId.CapturedSoundTable:
+                case PropertyDataId.CapturedPaletteBase:
+                case PropertyDataId.CapturedClothingBase:
+                case PropertyDataId.VisualOverrideSetup:
+                case PropertyDataId.VisualOverrideMotionTable:
+                case PropertyDataId.VisualOverrideSoundTable:
+                case PropertyDataId.VisualOverridePaletteBase:
+                case PropertyDataId.VisualOverrideClothingBase:
+                case PropertyDataId.VisualOverrideIcon:
+                    return true;
 
                 default:
                     return true;
