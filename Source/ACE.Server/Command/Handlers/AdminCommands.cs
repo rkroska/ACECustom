@@ -7391,5 +7391,217 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        // blacklist {subcommand} {parameters}
+        [CommandHandler("blacklist", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Manage creature capture and shiny blacklists.",
+            "add <wcid> capture|shiny|both [reason] - Add WCID to blacklist\n" +
+            "remove <wcid> [capture|shiny] - Remove WCID from blacklist\n" +
+            "list [capture|shiny] - Show blacklisted WCIDs\n" +
+            "check <wcid> - Check blacklist status of a WCID\n" +
+            "reload - Reload cache from database")]
+        public static void HandleBlacklist(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist <add|remove|list|check|reload>", ChatMessageType.Help));
+                return;
+            }
+
+            var subcommand = parameters[0].ToLower();
+
+            switch (subcommand)
+            {
+                case "add":
+                    HandleBlacklistAdd(session, parameters.Skip(1).ToArray());
+                    break;
+                case "remove":
+                    HandleBlacklistRemove(session, parameters.Skip(1).ToArray());
+                    break;
+                case "list":
+                    HandleBlacklistList(session, parameters.Skip(1).ToArray());
+                    break;
+                case "check":
+                    HandleBlacklistCheck(session, parameters.Skip(1).ToArray());
+                    break;
+                case "reload":
+                    BlacklistManager.ReloadCache();
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Blacklist cache reloaded from database.", ChatMessageType.System));
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown subcommand: {subcommand}", ChatMessageType.Help));
+                    break;
+            }
+        }
+
+        private static void HandleBlacklistAdd(Session session, string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist add <wcid> <capture|shiny|both> [reason]", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            var type = parameters[1].ToLower();
+            var reason = parameters.Length > 2 ? string.Join(" ", parameters.Skip(2)) : null;
+            var addedBy = session.Player?.Name ?? "Unknown";
+
+            bool noCapture = false, noShiny = false;
+            switch (type)
+            {
+                case "capture":
+                    noCapture = true;
+                    break;
+                case "shiny":
+                    noShiny = true;
+                    break;
+                case "both":
+                    noCapture = true;
+                    noShiny = true;
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'capture', 'shiny', or 'both'.", ChatMessageType.Help));
+                    return;
+            }
+
+            if (BlacklistManager.AddBlacklist(wcid, noCapture, noShiny, reason, addedBy))
+            {
+                var flags = new List<string>();
+                if (noCapture) flags.Add("capture");
+                if (noShiny) flags.Add("shiny");
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Added WCID {wcid} to blacklist: {string.Join(", ", flags)}" + 
+                    (reason != null ? $" (Reason: {reason})" : ""), ChatMessageType.System));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to add WCID {wcid} to blacklist.", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleBlacklistRemove(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist remove <wcid> [capture|shiny]", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            if (parameters.Length > 1)
+            {
+                var type = parameters[1].ToLower();
+                var addedBy = session.Player?.Name ?? "Unknown";
+                var status = BlacklistManager.CheckStatus(wcid);
+                
+                if (!status.Exists)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
+                    return;
+                }
+
+                if (type == "capture")
+                {
+                    BlacklistManager.SetNoCapture(wcid, false, status.Reason, addedBy);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed capture blacklist from WCID {wcid}.", ChatMessageType.System));
+                }
+                else if (type == "shiny")
+                {
+                    BlacklistManager.SetNoShiny(wcid, false, status.Reason, addedBy);
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed shiny blacklist from WCID {wcid}.", ChatMessageType.System));
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'capture' or 'shiny'.", ChatMessageType.Help));
+                }
+            }
+            else
+            {
+                if (BlacklistManager.RemoveBlacklist(wcid))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely.", ChatMessageType.System));
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                }
+            }
+        }
+
+        private static void HandleBlacklistList(Session session, string[] parameters)
+        {
+            var entries = BlacklistManager.GetAllEntries();
+            
+            if (entries.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("No creatures are blacklisted.", ChatMessageType.System));
+                return;
+            }
+
+            var filter = parameters.Length > 0 ? parameters[0].ToLower() : null;
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("Creature Blacklist:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
+
+            foreach (var entry in entries)
+            {
+                if (filter == "capture" && !entry.NoCapture) continue;
+                if (filter == "shiny" && !entry.NoShiny) continue;
+
+                var flags = new List<string>();
+                if (entry.NoCapture) flags.Add("No Capture");
+                if (entry.NoShiny) flags.Add("No Shiny");
+
+                var message = $"WCID {entry.Wcid}: {string.Join(", ", flags)}";
+                if (!string.IsNullOrEmpty(entry.Reason))
+                    message += $" - {entry.Reason}";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        private static void HandleBlacklistCheck(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist check <wcid>", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            var status = BlacklistManager.CheckStatus(wcid);
+            
+            if (!status.Exists)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
+            }
+            else
+            {
+                var flags = new List<string>();
+                if (status.NoCapture) flags.Add("No Capture");
+                if (status.NoShiny) flags.Add("No Shiny");
+
+                var message = $"WCID {wcid}: {string.Join(", ", flags)}";
+                if (!string.IsNullOrEmpty(status.Reason))
+                    message += $" (Reason: {status.Reason})";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
     }
 }

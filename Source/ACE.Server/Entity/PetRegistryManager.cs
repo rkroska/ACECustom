@@ -57,6 +57,7 @@ namespace ACE.Server.Entity
                                     `creature_name` VARCHAR(100) NOT NULL,
                                     `creature_type` INT UNSIGNED NULL,
                                     `registered_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                    `is_shiny` TINYINT(1) NOT NULL DEFAULT 0,
                                     PRIMARY KEY (`account_id`, `wcid`),
                                     INDEX `IX_pet_registry_AccountId` (`account_id`)
                                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
@@ -94,6 +95,7 @@ namespace ACE.Server.Entity
             var wcid = essence.GetProperty(PropertyInt.CapturedCreatureWCID);
             var creatureName = essence.GetProperty(PropertyString.CapturedCreatureName);
             var creatureType = essence.GetProperty(PropertyInt.CapturedCreatureType);
+            var capturedVariant = essence.GetProperty(PropertyInt.CapturedCreatureVariant);
 
             if (!wcid.HasValue || string.IsNullOrEmpty(creatureName))
             {
@@ -103,42 +105,73 @@ namespace ACE.Server.Entity
 
             var accountId = player.Account.AccountId;
             var creatureWcid = (uint)wcid.Value;
+            var isShiny = capturedVariant.HasValue && capturedVariant.Value == (int)CreatureVariant.Shiny;
 
-            // Check if already registered (by creature name, not WCID)
-            if (IsPetRegistered(accountId, creatureName))
+            // Check if already registered (by creature name AND shiny status)
+            if (isShiny)
             {
-                player.SendMessage($"You've already registered a {creatureName} in your Pet Log.");
-                return;
+                if (IsShinyPetRegistered(accountId, creatureName))
+                {
+                    player.SendMessage($"You've already registered a Shiny {creatureName} in your Pet Log.");
+                    return;
+                }
+            }
+            else
+            {
+                if (IsPetRegistered(accountId, creatureName))
+                {
+                    player.SendMessage($"You've already registered a {creatureName} in your Pet Log.");
+                    return;
+                }
             }
 
-            // Register it
-            if (RegisterPet(accountId, creatureWcid, creatureName, creatureType.HasValue ? (uint?)creatureType.Value : null))
+            // Register it with shiny flag
+            if (RegisterPet(accountId, creatureWcid, creatureName, creatureType.HasValue ? (uint?)creatureType.Value : null, isShiny))
             {
                 var count = GetPetRegistryCount(accountId);
-                player.SendMessage($"Registered: {creatureName}! Your Pet Log now has {count} unique species.");
+                
+                if (isShiny)
+                    player.SendMessage($"Registered: Shiny {creatureName}! Your Pet Log now has {count} unique species.");
+                else
+                    player.SendMessage($"Registered: {creatureName}! Your Pet Log now has {count} unique species.");
+                
                 player.SendMessage("Use '/pets' anytime to review your collection.");
                 
-                log.Debug($"[PetRegistry] {player.Name} (Account: {accountId}) registered {creatureName} (WCID: {creatureWcid})");
+                log.Debug($"[PetRegistry] {player.Name} (Account: {accountId}) registered {(isShiny ? "Shiny " : "")}{creatureName} (WCID: {creatureWcid})");
                 
                 // Check if this is the first pet of this creature type - award QB
                 if (creatureType.HasValue)
                 {
                     var typeValue = (uint)creatureType.Value;
+                    var typeName = ((CreatureType)typeValue).ToString();
                     
-                    // Check if account already has ANY pet of this type
-                    // Note: We registered the pet above, so we need to check if count > 1
                     using (var context = new ShardDbContext())
                     {
+                        // Check for first of this SPECIES (any, shiny or not)
                         var typeCount = context.PetRegistry
                             .Count(p => p.AccountId == accountId && p.CreatureType == typeValue);
                         
-                        if (typeCount == 1) // This is the first of this type!
+                        if (typeCount == 1) // This is the first of this species!
                         {
-                            var typeName = ((CreatureType)typeValue).ToString();
                             player.QuestManager.Stamp($"CapturedEssence{typeName}");
                             player.SendMessage($"First {typeName} captured!", ChatMessageType.Broadcast);
                             
                             log.Debug($"[PetRegistry] {player.Name} captured their first {typeName} - QB awarded");
+                        }
+                        
+                        // Check for first SHINY of this SPECIES (additional QB)
+                        if (isShiny)
+                        {
+                            var shinyTypeCount = context.PetRegistry
+                                .Count(p => p.AccountId == accountId && p.CreatureType == typeValue && p.IsShiny);
+                            
+                            if (shinyTypeCount == 1) // This is the first SHINY of this species!
+                            {
+                                player.QuestManager.Stamp($"ShinyEssence{typeName}");
+                                player.SendMessage($"First Shiny {typeName} captured!", ChatMessageType.Broadcast);
+                                
+                                log.Debug($"[PetRegistry] {player.Name} captured their first Shiny {typeName} - QB awarded");
+                            }
                         }
                     }
                 }
@@ -167,20 +200,31 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Check if a creature name is already registered for an account
+        /// Check if a non-shiny creature name is already registered for an account
         /// </summary>
         public static bool IsPetRegistered(uint accountId, string creatureName)
         {
             using (var context = new ShardDbContext())
             {
-                return context.PetRegistry.Any(p => p.AccountId == accountId && p.CreatureName == creatureName);
+                return context.PetRegistry.Any(p => p.AccountId == accountId && p.CreatureName == creatureName && !p.IsShiny);
+            }
+        }
+
+        /// <summary>
+        /// Check if a shiny creature name is already registered for an account
+        /// </summary>
+        public static bool IsShinyPetRegistered(uint accountId, string creatureName)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.PetRegistry.Any(p => p.AccountId == accountId && p.CreatureName == creatureName && p.IsShiny);
             }
         }
 
         /// <summary>
         /// Register a new pet to an account
         /// </summary>
-        public static bool RegisterPet(uint accountId, uint wcid, string creatureName, uint? creatureType = null)
+        public static bool RegisterPet(uint accountId, uint wcid, string creatureName, uint? creatureType = null, bool isShiny = false)
         {
             try
             {
@@ -192,7 +236,8 @@ namespace ACE.Server.Entity
                         Wcid = wcid,
                         CreatureName = creatureName,
                         CreatureType = creatureType,
-                        RegisteredAt = DateTime.UtcNow
+                        RegisteredAt = DateTime.UtcNow,
+                        IsShiny = isShiny
                     };
 
                     context.PetRegistry.Add(entry);
@@ -282,6 +327,43 @@ namespace ACE.Server.Entity
             using (var context = new ShardDbContext())
             {
                 return context.PetRegistry.Any(p => p.AccountId == accountId && p.CreatureType == creatureType);
+            }
+        }
+
+        /// <summary>
+        /// Get top accounts by shiny pet count (for leaderboard) - counts distinct shiny creature names
+        /// Returns main character name (by most logins) instead of account name
+        /// </summary>
+        public static List<(uint AccountId, string CharacterName, int Count)> GetTopShinies(int limit = 25)
+        {
+            using (var context = new ShardDbContext())
+            {
+                // Count distinct shiny creature names per account
+                var topAccounts = context.PetRegistry
+                    .Where(p => p.IsShiny)
+                    .GroupBy(p => new { p.AccountId, p.CreatureName })
+                    .Select(g => g.Key.AccountId)
+                    .GroupBy(accountId => accountId)
+                    .Select(g => new { AccountId = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .Take(limit)
+                    .ToList();
+
+                // Get main character name (most logins) for each account
+                var results = new List<(uint AccountId, string CharacterName, int Count)>();
+                foreach (var entry in topAccounts)
+                {
+                    // Get character with most total_logins for this account
+                    var mainCharacter = context.Character
+                        .Where(c => c.AccountId == entry.AccountId && !c.IsDeleted)
+                        .OrderByDescending(c => c.TotalLogins)
+                        .Select(c => c.Name)
+                        .FirstOrDefault() ?? "Unknown";
+                    
+                    results.Add((entry.AccountId, mainCharacter, entry.Count));
+                }
+
+                return results;
             }
         }
     }

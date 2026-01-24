@@ -101,5 +101,8 @@ namespace ACE.Entity.Enum.Properties
         CapturedCreatures = 9008,
         CapturedCreatureName = 9009,
         CapturedItems = 9010,
+        CapturedObjDescAnimParts = 9011,   // Serialized AnimPartChanges
+        CapturedObjDescPalettes = 9012,    // Serialized SubPalettes
+        CapturedObjDescTextures = 9013,    // Serialized TextureChanges
     }
 }

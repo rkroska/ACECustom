@@ -238,6 +238,11 @@ namespace ACE.Server.Factories
 
         private static WorldObject TryRollMundaneAddon(TreasureDeath profile)
         {
+            // Try siphon lens first (independent roll, all tiers)
+            var lens = TryRollSiphonLens(profile);
+            if (lens != null)
+                return lens;
+
             // coalesced mana only dropped in tiers 1-4
             if (profile.Tier <= 4)
                 return TryRollCoalescedMana(profile);
@@ -245,6 +250,80 @@ namespace ACE.Server.Factories
             // aetheria dropped in tiers 5+
             else
                 return TryRollAetheria(profile);
+        }
+
+        /// <summary>
+        /// Rolls for a siphon lens drop with configurable rates per lens type.
+        /// Rates are configurable via /modifydouble:
+        ///   siphon_lens_flawed_rate (default ~1 in 1,000 kills)
+        ///   siphon_lens_pristine_rate (default ~1 in 2,500 kills)
+        ///   siphon_lens_perfect_rate (default ~1 in 6,000 kills)
+        /// WCIDs: 78780101 (Flawed), 78780102 (Pristine), 78780103 (Perfect)
+        /// </summary>
+        private static WorldObject TryRollSiphonLens(TreasureDeath profile)
+        {
+            // Check master enable switch
+            if (!ServerConfig.siphon_lens_enabled.Value)
+                return null;
+
+            // Get configurable rates
+            var flawedRate = (float)ServerConfig.siphon_lens_flawed_rate.Value;
+            var pristineRate = (float)ServerConfig.siphon_lens_pristine_rate.Value;
+            var perfectRate = (float)ServerConfig.siphon_lens_perfect_rate.Value;
+
+            // If all rates are 0, skip rolling entirely
+            if (flawedRate <= 0.0f && pristineRate <= 0.0f && perfectRate <= 0.0f)
+                return null;
+
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+            
+            // Check each lens type in order of rarity (Perfect first, then Pristine, then Flawed)
+            // This prevents more common lenses from "blocking" rarer ones
+            if (rng < perfectRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780103); // Perfect
+            
+            if (rng < perfectRate + pristineRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780102); // Pristine
+            
+            if (rng < perfectRate + pristineRate + flawedRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780101); // Flawed
+
+            return null;
+        }
+
+        /// <summary>
+        /// Rolls for a siphon lens drop for ANY creature death (works without DeathTreasureType).
+        /// Uses creature level to estimate tier for rate purposes.
+        /// Called from Creature_Death.GenerateTreasure().
+        /// </summary>
+        public static WorldObject TryRollSiphonLensForCreature(int creatureLevel)
+        {
+            // Check master enable switch
+            if (!ServerConfig.siphon_lens_enabled.Value)
+                return null;
+
+            // Get configurable rates
+            var flawedRate = (float)ServerConfig.siphon_lens_flawed_rate.Value;
+            var pristineRate = (float)ServerConfig.siphon_lens_pristine_rate.Value;
+            var perfectRate = (float)ServerConfig.siphon_lens_perfect_rate.Value;
+
+            // If all rates are 0, skip rolling entirely
+            if (flawedRate <= 0.0f && pristineRate <= 0.0f && perfectRate <= 0.0f)
+                return null;
+
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+            
+            // Check each lens type in order of rarity (Perfect first, then Pristine, then Flawed)
+            if (rng < perfectRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780103); // Perfect
+            
+            if (rng < perfectRate + pristineRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780102); // Pristine
+            
+            if (rng < perfectRate + pristineRate + flawedRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780101); // Flawed
+
+            return null;
         }
 
         private static WorldObject TryRollCoalescedMana(TreasureDeath profile)

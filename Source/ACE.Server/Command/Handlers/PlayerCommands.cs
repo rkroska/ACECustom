@@ -1439,6 +1439,24 @@ namespace ACE.Server.Command.Handlers
                         }
                         return; // Early return since we handled display ourselves
                     }
+                    else if (key == "shinies")
+                    {
+                        // Shiny Pet Registry leaderboard - by account (shows main character)
+                        var topShinies = PetRegistryManager.GetTopShinies();
+                        if (topShinies.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Accounts by Shinies Captured:", ChatMessageType.Broadcast));
+                            for (int i = 0; i < topShinies.Count; i++)
+                            {
+                                session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {topShinies[i].Count:N0} shinies - {topShinies[i].CharacterName}", ChatMessageType.Broadcast));
+                            }
+                        }
+                        else
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("No shinies captured yet!", ChatMessageType.Broadcast));
+                        }
+                        return; // Early return since we handled display ourselves
+                    }
                     else if (key == "gymnos")
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));

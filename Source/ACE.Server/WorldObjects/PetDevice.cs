@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using log4net;
 
@@ -102,6 +103,11 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.CapturedCreatureType);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureType); else SetProperty(PropertyInt.CapturedCreatureType, value.Value); }
         }
+
+        // Serialized ObjDesc data for humanoid appearance
+        public string CapturedObjDescAnimParts => GetProperty(PropertyString.CapturedObjDescAnimParts);
+        public string CapturedObjDescPalettes => GetProperty(PropertyString.CapturedObjDescPalettes);
+        public string CapturedObjDescTextures => GetProperty(PropertyString.CapturedObjDescTextures);
 
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
@@ -246,6 +252,32 @@ namespace ACE.Server.WorldObjects
             // Monster Capture System - Apply visual overrides if set
             if (VisualOverrideSetup.HasValue)
             {
+                // Force-clear ALL existing visual properties to prevent base weenie appearance leaking through
+                pet.RemoveProperty(PropertyDataId.ClothingBase);
+                pet.RemoveProperty(PropertyDataId.PaletteBase);
+                pet.RemoveProperty(PropertyInt.PaletteTemplate);
+                pet.RemoveProperty(PropertyFloat.Shade);
+                
+                // Clear existing Biota visual data (from weenie's CreateList or defaults)
+                pet.Biota.PropertiesAnimPart?.Clear();
+                pet.Biota.PropertiesPalette?.Clear();
+                pet.Biota.PropertiesTextureMap?.Clear();
+                
+                // Remove equipped clothing/armor items from the base pet weenie's CreateList
+                // These override our ObjDesc since CalculateObjDesc() prioritizes equipped items
+                var clothingToRemove = pet.EquippedObjects.Values
+                    .Where(x => x.ItemType == ACE.Entity.Enum.ItemType.Armor || 
+                                x.ItemType == ACE.Entity.Enum.ItemType.Clothing)
+                    .ToList();
+                
+                foreach (var item in clothingToRemove)
+                {
+                    // Directly remove from dictionaries and destroy
+                    pet.EquippedObjects.Remove(item.Guid);
+                    pet.Inventory.Remove(item.Guid);
+                    item.Destroy();
+                }
+                
                 pet.SetupTableId = VisualOverrideSetup.Value;
 
                 if (VisualOverrideMotionTable.HasValue)
@@ -296,6 +328,10 @@ namespace ACE.Server.WorldObjects
                 {
                     pet.CreatureType = (ACE.Entity.Enum.CreatureType)VisualOverrideCreatureType.Value;
                 }
+
+                // Apply captured ObjDesc (AnimParts, Palettes, Textures) for full humanoid appearance
+                // This restores the exact visual appearance captured from the original creature
+                ApplyCapturedObjDesc(pet);
 
                 // Equip Captured Items (Armor, Weapons, Shield)
                 if (!string.IsNullOrEmpty(VisualOverrideCapturedItems))
@@ -363,6 +399,78 @@ namespace ACE.Server.WorldObjects
             if (success != true) wo.Destroy();
 
             return success;
+        }
+
+        /// <summary>
+        /// Applies captured ObjDesc data (AnimParts, Palettes, Textures) to the pet's Biota.
+        /// This restores the exact visual appearance of humanoid creatures including clothing/armor.
+        /// </summary>
+        private void ApplyCapturedObjDesc(Creature pet)
+        {
+            // Parse and apply AnimPartChanges: Index:AnimationId,Index:AnimationId,...
+            var animPartsStr = CapturedObjDescAnimParts;
+            if (!string.IsNullOrEmpty(animPartsStr))
+            {
+                var animParts = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesAnimPart>();
+                foreach (var entry in animPartsStr.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = entry.Split(':');
+                    if (parts.Length >= 2 && 
+                        byte.TryParse(parts[0], out var index) && 
+                        uint.TryParse(parts[1], out var animId))
+                    {
+                        animParts.Add(new ACE.Entity.Models.PropertiesAnimPart { Index = index, AnimationId = animId });
+                    }
+                }
+                if (animParts.Count > 0)
+                {
+                    pet.Biota.PropertiesAnimPart = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesAnimPart>(animParts);
+                }
+            }
+
+            // Parse and apply SubPalettes: SubPaletteId:Offset:Length,SubPaletteId:Offset:Length,...
+            var palettesStr = CapturedObjDescPalettes;
+            if (!string.IsNullOrEmpty(palettesStr))
+            {
+                var palettes = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesPalette>();
+                foreach (var entry in palettesStr.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = entry.Split(':');
+                    if (parts.Length >= 3 && 
+                        uint.TryParse(parts[0], out var subPaletteId) && 
+                        ushort.TryParse(parts[1], out var offset) && 
+                        ushort.TryParse(parts[2], out var length))
+                    {
+                        palettes.Add(new ACE.Entity.Models.PropertiesPalette { SubPaletteId = subPaletteId, Offset = offset, Length = length });
+                    }
+                }
+                if (palettes.Count > 0)
+                {
+                    pet.Biota.PropertiesPalette = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesPalette>(palettes);
+                }
+            }
+
+            // Parse and apply TextureChanges: PartIndex:OldTexture:NewTexture,PartIndex:OldTexture:NewTexture,...
+            var texturesStr = CapturedObjDescTextures;
+            if (!string.IsNullOrEmpty(texturesStr))
+            {
+                var textures = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesTextureMap>();
+                foreach (var entry in texturesStr.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = entry.Split(':');
+                    if (parts.Length >= 3 && 
+                        byte.TryParse(parts[0], out var partIndex) && 
+                        uint.TryParse(parts[1], out var oldTexture) && 
+                        uint.TryParse(parts[2], out var newTexture))
+                    {
+                        textures.Add(new ACE.Entity.Models.PropertiesTextureMap { PartIndex = partIndex, OldTexture = oldTexture, NewTexture = newTexture });
+                    }
+                }
+                if (textures.Count > 0)
+                {
+                    pet.Biota.PropertiesTextureMap = new System.Collections.Generic.List<ACE.Entity.Models.PropertiesTextureMap>(textures);
+                }
+            }
         }
 
         /// <summary>

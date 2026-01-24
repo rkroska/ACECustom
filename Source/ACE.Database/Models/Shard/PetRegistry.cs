@@ -41,5 +41,11 @@ namespace ACE.Database.Models.Shard
         /// </summary>
         [Column("registered_at")]
         public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Whether this was a shiny variant capture
+        /// </summary>
+        [Column("is_shiny")]
+        public bool IsShiny { get; set; } = false;
     }
 }

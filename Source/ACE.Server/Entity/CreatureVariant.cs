@@ -81,6 +81,9 @@ namespace ACE.Server.Entity
         /// <returns></returns>
         private static bool CanApplyVariant(Creature creature)
         {
+            // Check shiny blacklist
+            if (BlacklistManager.IsNoShiny(creature.WeenieClassId)) return false;
+            
             // Creature types not allowed to receive a variant.
             if (creature.CreatureType == ACE.Entity.Enum.CreatureType.Wisp) return false;
 

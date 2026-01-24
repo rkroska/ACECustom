@@ -709,7 +709,8 @@ namespace ACE.Entity.Enum.Properties
         CapturedCreatureType                    = 9037, // Species of captured creature
         
         // Shiny Mobs System
-        CreatureVariant                         = 9038,
+        CreatureVariant                         = 9038, // Shiny variant on live creature
+        CapturedCreatureVariant                 = 9039, // Shiny status copied to essence
 
     }
 

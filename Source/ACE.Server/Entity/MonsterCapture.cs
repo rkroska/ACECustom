@@ -79,6 +79,13 @@ namespace ACE.Server.Entity
                 return;
             }
             
+            // Check capture blacklist
+            if (BlacklistManager.IsNoCapture(targetCreature.WeenieClassId))
+            {
+                player.SendTransientError("This creature cannot be captured!");
+                return;
+            }
+            
             // Check for Enraged state (The "One Chance" Rule)
             if (targetCreature.IsEnraged)
             {
@@ -136,13 +143,22 @@ namespace ACE.Server.Entity
                 }
                 
                 
-                // Despawn creature after 3 seconds
+                // Trigger proper creature death after 3 seconds (instead of Destroy)
+                // This ensures quest credit, XP, loot, and generator respawns work correctly
                 var actionChain = new ActionChain();
                 actionChain.AddDelaySeconds(3.0);
                 actionChain.AddAction(targetCreature, ActionType.MonsterCapture_DespawnCreature, () =>
                 {
-                    if (!targetCreature.IsDestroyed)
-                        targetCreature.Destroy();
+                    if (!targetCreature.IsDestroyed && targetCreature.Health.Current > 0)
+                    {
+                        // Record the player as the killer in damage history
+                        targetCreature.DamageHistory.Add(player, DamageType.Health, (uint)targetCreature.Health.Current);
+                        
+                        // Trigger proper death sequence (quest credit, XP, loot, respawn)
+                        // Die() uses DamageHistory.LastDamager and TopDamager internally
+                        targetCreature.OnDeath(targetCreature.DamageHistory.LastDamager, DamageType.Health);
+                        targetCreature.Die(); // Uses public overload
+                    }
                 });
                 actionChain.EnqueueChain();
             }
@@ -287,6 +303,45 @@ namespace ACE.Server.Entity
             if (creature.IconId != 0)
                 item.IconOverlayId = creature.IconId;
 
+            // Capture shiny variant status
+            if (creature.CreatureVariant.HasValue)
+                item.SetProperty(PropertyInt.CapturedCreatureVariant, (int)creature.CreatureVariant.Value);
+
+            // Capture the full ObjDesc (visual appearance) for humanoid creatures
+            // This preserves textures, palettes, and body part overrides from equipped items
+            try
+            {
+                var objDesc = creature.CalculateObjDesc();
+                
+                // Serialize AnimPartChanges: Index:AnimationId,Index:AnimationId,...
+                if (objDesc.AnimPartChanges != null && objDesc.AnimPartChanges.Count > 0)
+                {
+                    var animParts = string.Join(",", objDesc.AnimPartChanges.Select(a => $"{a.Index}:{a.AnimationId}"));
+                    item.SetProperty(PropertyString.CapturedObjDescAnimParts, animParts);
+                    log.Debug($"[MonsterCapture] Captured {objDesc.AnimPartChanges.Count} AnimPartChanges");
+                }
+                
+                // Serialize SubPalettes: SubPaletteId:Offset:Length,SubPaletteId:Offset:Length,...
+                if (objDesc.SubPalettes != null && objDesc.SubPalettes.Count > 0)
+                {
+                    var palettes = string.Join(",", objDesc.SubPalettes.Select(p => $"{p.SubPaletteId}:{p.Offset}:{p.Length}"));
+                    item.SetProperty(PropertyString.CapturedObjDescPalettes, palettes);
+                    log.Debug($"[MonsterCapture] Captured {objDesc.SubPalettes.Count} SubPalettes");
+                }
+                
+                // Serialize TextureChanges: PartIndex:OldTexture:NewTexture,PartIndex:OldTexture:NewTexture,...
+                if (objDesc.TextureChanges != null && objDesc.TextureChanges.Count > 0)
+                {
+                    var textures = string.Join(",", objDesc.TextureChanges.Select(t => $"{t.PartIndex}:{t.OldTexture}:{t.NewTexture}"));
+                    item.SetProperty(PropertyString.CapturedObjDescTextures, textures);
+                    log.Debug($"[MonsterCapture] Captured {objDesc.TextureChanges.Count} TextureChanges");
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Warn($"[MonsterCapture] Failed to capture ObjDesc for {creature.Name}: {ex.Message}");
+            }
+
             // Capture Equipped Items (Armor, Shield, Weapons)
             if (creature.EquippedObjects != null && creature.EquippedObjects.Count > 0)
             {
@@ -393,6 +448,26 @@ namespace ACE.Server.Entity
             crate.VisualOverrideName = capturedItem.GetProperty(PropertyString.CapturedCreatureName);
             crate.VisualOverrideCapturedItems = capturedItem.GetProperty(PropertyString.CapturedItems);
             crate.VisualOverrideCreatureType = capturedItem.GetProperty(PropertyInt.CapturedCreatureType);
+            
+            // Transfer ObjDesc properties for full humanoid appearance
+            // IMPORTANT: Clear old values if new essence doesn't have them (prevents corruption when switching creature types)
+            var animParts = capturedItem.GetProperty(PropertyString.CapturedObjDescAnimParts);
+            if (!string.IsNullOrEmpty(animParts))
+                crate.SetProperty(PropertyString.CapturedObjDescAnimParts, animParts);
+            else
+                crate.RemoveProperty(PropertyString.CapturedObjDescAnimParts);
+            
+            var palettes = capturedItem.GetProperty(PropertyString.CapturedObjDescPalettes);
+            if (!string.IsNullOrEmpty(palettes))
+                crate.SetProperty(PropertyString.CapturedObjDescPalettes, palettes);
+            else
+                crate.RemoveProperty(PropertyString.CapturedObjDescPalettes);
+            
+            var textures = capturedItem.GetProperty(PropertyString.CapturedObjDescTextures);
+            if (!string.IsNullOrEmpty(textures))
+                crate.SetProperty(PropertyString.CapturedObjDescTextures, textures);
+            else
+                crate.RemoveProperty(PropertyString.CapturedObjDescTextures);
             
             // Update the crate's icon: 0x060012F8 base + creature overlay from essence
             crate.IconId = 0x060012F8;
