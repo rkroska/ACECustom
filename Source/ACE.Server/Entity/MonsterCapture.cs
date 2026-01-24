@@ -66,6 +66,13 @@ namespace ACE.Server.Entity
                 player.SendTransientError("The creature is already dead!");
                 return;
             }
+
+            // Prevent multiple captures on the same creature
+            if (targetCreature.Invincible)
+            {
+                player.SendTransientError("This creature is already being captured!");
+                return;
+            }
             
             // Get crystal tier early for debug bypass checks
             var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
