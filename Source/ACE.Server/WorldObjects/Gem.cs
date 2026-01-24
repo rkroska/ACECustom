@@ -254,12 +254,9 @@ namespace ACE.Server.WorldObjects
 
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
-            player.SendMessage($"DEBUG: Gem.HandleActionUseOnTarget called! Source: {Name}, Target: {target?.Name}");
-            
             // Monster Capture System - Handle captured appearance on pet device
             if (MonsterCapture.IsCapturedAppearance(this) && target is PetDevice petDevice)
             {
-                player.SendMessage("DEBUG: Routing to MonsterCapture.ApplyAppearanceToCrate");
                 MonsterCapture.ApplyAppearanceToCrate(player, petDevice, this);
                 return;
             }
