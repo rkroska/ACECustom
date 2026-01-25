@@ -104,6 +104,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureType); else SetProperty(PropertyInt.CapturedCreatureType, value.Value); }
         }
 
+        public int? VisualOverrideCreatureVariant
+        {
+            get => GetProperty(PropertyInt.CapturedCreatureVariant);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CapturedCreatureVariant); else SetProperty(PropertyInt.CapturedCreatureVariant, value.Value); }
+        }
+
         // Serialized ObjDesc data for humanoid appearance
         public string CapturedObjDescAnimParts => GetProperty(PropertyString.CapturedObjDescAnimParts);
         public string CapturedObjDescPalettes => GetProperty(PropertyString.CapturedObjDescPalettes);
@@ -351,6 +357,12 @@ namespace ACE.Server.WorldObjects
                 if (VisualOverrideCreatureType.HasValue)
                 {
                     pet.CreatureType = (ACE.Entity.Enum.CreatureType)VisualOverrideCreatureType.Value;
+                }
+
+                // Apply creature variant override (e.g. shiny)
+                if (VisualOverrideCreatureVariant.HasValue)
+                {
+                    pet.CreatureVariant = (ACE.Server.Entity.CreatureVariant)VisualOverrideCreatureVariant.Value;
                 }
 
                 // Apply captured ObjDesc (AnimParts, Palettes, Textures) for full humanoid appearance

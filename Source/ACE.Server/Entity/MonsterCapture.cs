@@ -117,10 +117,18 @@ namespace ACE.Server.Entity
                 }
             }
             
-            // Calculate success rate
             var successRate = CalculateSuccessRate(player, crystal, targetCreature, healthPercent);
-            var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
-            var success = roll < successRate;
+            
+            bool success;
+            if (successRate >= 1.0f)
+            {
+                success = true;
+            }
+            else
+            {
+                var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
+                success = roll < successRate;
+            }
             
             // Consume crystal (DEBUG LENS tier 4 is never consumed)
             // Must check lens consumption BEFORE treating capture as successful
@@ -459,6 +467,13 @@ namespace ACE.Server.Entity
                 return;
             }
             
+            // Consume item FIRST to prevent duplication (exploit)
+            if (!player.TryConsumeFromInventoryWithNetworking(capturedItem, 1))
+            {
+                player.SendTransientError("Failed to consume the essence.");
+                return;
+            }
+
             // Apply ALL visual properties to crate
             crate.VisualOverrideSetup = setupId;
             crate.VisualOverrideMotionTable = capturedItem.GetProperty(PropertyDataId.CapturedMotionTable);
@@ -470,6 +485,7 @@ namespace ACE.Server.Entity
             crate.VisualOverrideShade = capturedItem.GetProperty(PropertyFloat.CapturedShade);
             crate.VisualOverrideScale = capturedItem.GetProperty(PropertyFloat.CapturedScale);
             crate.VisualOverrideName = capturedItem.GetProperty(PropertyString.CapturedCreatureName);
+            crate.VisualOverrideCreatureVariant = capturedItem.GetProperty(PropertyInt.CapturedCreatureVariant);
             crate.VisualOverrideCapturedItems = capturedItem.GetProperty(PropertyString.CapturedItems);
             crate.VisualOverrideCreatureType = capturedItem.GetProperty(PropertyInt.CapturedCreatureType);
             
@@ -501,6 +517,10 @@ namespace ACE.Server.Entity
             {
                 crate.IconOverlayId = capturedItem.IconOverlayId.Value;
             }
+            else
+            {
+                crate.IconOverlayId = 0;
+            }
             
             // Clear properties from essence template that shouldn't be on the crate
             crate.RemoveProperty(PropertyDataId.IconUnderlay);  // Don't copy underlay from essence
@@ -510,15 +530,14 @@ namespace ACE.Server.Entity
             player.UpdateProperty(crate, PropertyDataId.Icon, crate.IconId);
             if (crate.IconOverlayId.HasValue)
                 player.UpdateProperty(crate, PropertyDataId.IconOverlay, crate.IconOverlayId.Value);
+            else
+                player.UpdateProperty(crate, PropertyDataId.IconOverlay, 0u);
             
             // Debug logging
             log.Debug($"[MonsterCapture] Applied to Crate: CrateIcon={crate.IconId:X}, CrateOverlay={crate.IconOverlayId}, CrateUnderlay={crate.IconUnderlayId}, EssenceIcon={capturedItem.IconId:X}, EssenceOverlay={capturedItem.IconOverlayId}");
             
             // Save the crate with updated icons
             crate.SaveBiotaToDatabase();
-            
-            // Consume item
-            player.TryConsumeFromInventoryWithNetworking(capturedItem, 1);
             
             player.SendMessage($"You have applied the siphoned essence to your {crate.Name}!");
             player.SendMessage("Resummon your pet to see the new appearance!");
