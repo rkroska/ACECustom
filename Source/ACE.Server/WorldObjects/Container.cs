@@ -1177,10 +1177,6 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected virtual void OnRemoveItem(WorldObject removedItem)
         {
-            // Suppress enchant invalidation during container churn
-            if (removedItem.IsInContainerMutation)
-                return;
-
             if (removedItem != null)
                 UpdateCharms(false, removedItem);
         }
