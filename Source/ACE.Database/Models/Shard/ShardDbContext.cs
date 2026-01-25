@@ -66,6 +66,8 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<TransferMonitoringConfigDb> TransferMonitoringConfigs { get; set; }
         public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
         public virtual DbSet<CharTracker> CharTracker { get; set; }
+        public virtual DbSet<PetRegistry> PetRegistry { get; set; }
+        public virtual DbSet<CreatureBlacklist> CreatureBlacklist { get; set; }
 
         private static readonly int[] zeroInts = [0, 0];
 
@@ -118,6 +120,21 @@ namespace ACE.Database.Models.Shard
                 entity.HasIndex(e => e.CharacterName, "IX_char_tracker_CharacterName");
                 entity.HasIndex(e => e.LoginIP, "IX_char_tracker_LoginIP");
                 entity.HasIndex(e => e.LoginTimestamp, "IX_char_tracker_LoginTimestamp");
+            });
+
+            // Pet Registry - account-based creature collection tracking
+            modelBuilder.Entity<PetRegistry>(entity =>
+            {
+                entity.ToTable("pet_registry");
+                entity.HasKey(e => new { e.AccountId, e.Wcid, e.IsShiny });
+                entity.HasIndex(e => e.AccountId, "IX_pet_registry_AccountId");
+            });
+
+            // Creature Blacklist - blocks capture and/or shiny variants
+            modelBuilder.Entity<CreatureBlacklist>(entity =>
+            {
+                entity.ToTable("creature_blacklist");
+                entity.HasKey(e => e.Wcid);
             });
 
             modelBuilder.HasCharSet("utf8")

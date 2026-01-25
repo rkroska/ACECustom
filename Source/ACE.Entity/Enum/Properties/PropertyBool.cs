@@ -204,5 +204,9 @@ namespace ACE.Entity.Enum.Properties
         /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
         /// </summary>
         WeaponProcOnCleaveTargets        = 9036,
+
+        // Monster Capture System - POC
+        IsCaptureCrystal                 = 9037,
+        IsCapturedAppearance             = 9038,
     }
 }

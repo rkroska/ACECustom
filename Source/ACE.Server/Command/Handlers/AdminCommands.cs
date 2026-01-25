@@ -6728,6 +6728,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchbool", "showbool (string)")]
         [CommandHandler("fetchbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a bool", "fetchbool (string)")]
         public static void HandleFetchServerBoolProperty(Session session, params string[] parameters)
         {
@@ -6759,6 +6760,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchlong", "showlong (string)")]
         [CommandHandler("fetchlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a long", "fetchlong (string)")]
         public static void HandleFetchServerLongProperty(Session session, params string[] parameters)
         {
@@ -6803,6 +6805,7 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchdouble", "showdouble (string)")]
         [CommandHandler("fetchdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a double", "fetchdouble (string)")]
         public static void HandleFetchServerFloatProperty(Session session, params string[] parameters)
         {
@@ -6826,6 +6829,7 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, "Unknown string property was not updated. Type showprops for a list of properties.");
         }
 
+        [CommandHandler("showstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchstring", "showstring (string)")]
         [CommandHandler("fetchstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a string", "fetchstring (string)")]
         public static void HandleFetchServerStringProperty(Session session, params string[] parameters)
         {
@@ -7388,6 +7392,331 @@ namespace ACE.Server.Command.Handlers
             else
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a quest name.", ChatMessageType.Broadcast));
+            }
+        }
+
+        // blacklist {subcommand} {parameters}
+        [CommandHandler("blacklist", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Manage creature capture and shiny blacklists.",
+            "add <wcid> capture|shiny|both [reason] - Add WCID to blacklist\n" +
+            "remove <wcid> [capture|shiny] - Remove WCID from blacklist\n" +
+            "list [capture|shiny] - Show blacklisted WCIDs\n" +
+            "check <wcid> - Check blacklist status of a WCID\n" +
+            "reload - Reload cache from database")]
+        public static void HandleBlacklist(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist <add|remove|list|check|reload>", ChatMessageType.Help));
+                return;
+            }
+
+            var subcommand = parameters[0].ToLower();
+
+            switch (subcommand)
+            {
+                case "add":
+                    HandleBlacklistAdd(session, parameters.Skip(1).ToArray());
+                    break;
+                case "remove":
+                    HandleBlacklistRemove(session, parameters.Skip(1).ToArray());
+                    break;
+                case "list":
+                    HandleBlacklistList(session, parameters.Skip(1).ToArray());
+                    break;
+                case "check":
+                    HandleBlacklistCheck(session, parameters.Skip(1).ToArray());
+                    break;
+                case "reload":
+                    BlacklistManager.ReloadCache();
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Blacklist cache reloaded from database.", ChatMessageType.System));
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown subcommand: {subcommand}", ChatMessageType.Help));
+                    break;
+            }
+        }
+
+        private static void HandleBlacklistAdd(Session session, string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist add <wcid> <capture|shiny|both> [reason]", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            var type = parameters[1].ToLower();
+            var reason = parameters.Length > 2 ? string.Join(" ", parameters.Skip(2)) : null;
+            var addedBy = session.Player?.Name ?? "Unknown";
+
+            bool noCapture = false, noShiny = false;
+            switch (type)
+            {
+                case "capture":
+                    noCapture = true;
+                    break;
+                case "shiny":
+                    noShiny = true;
+                    break;
+                case "both":
+                    noCapture = true;
+                    noShiny = true;
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'capture', 'shiny', or 'both'.", ChatMessageType.Help));
+                    return;
+            }
+
+            if (BlacklistManager.AddBlacklist(wcid, noCapture, noShiny, reason, addedBy))
+            {
+                var flags = new List<string>();
+                if (noCapture) flags.Add("capture");
+                if (noShiny) flags.Add("shiny");
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Added WCID {wcid} to blacklist: {string.Join(", ", flags)}" + 
+                    (reason != null ? $" (Reason: {reason})" : ""), ChatMessageType.System));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to add WCID {wcid} to blacklist.", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleBlacklistRemove(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist remove <wcid> [capture|shiny]", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            if (parameters.Length > 1)
+            {
+                var type = parameters[1].ToLower();
+                var addedBy = session.Player?.Name ?? "Unknown";
+                var status = BlacklistManager.CheckStatus(wcid);
+                
+                if (!status.Exists)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
+                    return;
+                }
+
+                if (type == "capture")
+                {
+                    // Check if disabling this would leave both false
+                    if (!status.NoShiny)
+                    {
+                        // Both will be false, remove entirely
+                        if (BlacklistManager.RemoveBlacklist(wcid))
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                        else
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        BlacklistManager.SetNoCapture(wcid, false, status.Reason, addedBy);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed capture blacklist from WCID {wcid}.", ChatMessageType.System));
+                    }
+                }
+                else if (type == "shiny")
+                {
+                    // Check if disabling this would leave both false
+                    if (!status.NoCapture)
+                    {
+                        // Both will be false, remove entirely
+                        if (BlacklistManager.RemoveBlacklist(wcid))
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                        else
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        BlacklistManager.SetNoShiny(wcid, false, status.Reason, addedBy);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed shiny blacklist from WCID {wcid}.", ChatMessageType.System));
+                    }
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'capture' or 'shiny'.", ChatMessageType.Help));
+                }
+            }
+            else
+            {
+                if (BlacklistManager.RemoveBlacklist(wcid))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely.", ChatMessageType.System));
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                }
+            }
+        }
+
+        private static void HandleBlacklistList(Session session, string[] parameters)
+        {
+            var entries = BlacklistManager.GetAllEntries();
+            
+            if (entries.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("No creatures are blacklisted.", ChatMessageType.System));
+                return;
+            }
+
+            var filter = parameters.Length > 0 ? parameters[0].ToLower() : null;
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("Creature Blacklist:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
+
+            foreach (var entry in entries)
+            {
+                if (filter == "capture" && !entry.NoCapture) continue;
+                if (filter == "shiny" && !entry.NoShiny) continue;
+
+                var flags = new List<string>();
+                if (entry.NoCapture) flags.Add("No Capture");
+                if (entry.NoShiny) flags.Add("No Shiny");
+
+                var message = $"WCID {entry.Wcid}: {string.Join(", ", flags)}";
+                if (!string.IsNullOrEmpty(entry.Reason))
+                    message += $" - {entry.Reason}";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        private static void HandleBlacklistCheck(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist check <wcid>", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            var status = BlacklistManager.CheckStatus(wcid);
+            
+            if (!status.Exists)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
+            }
+            else
+            {
+                var flags = new List<string>();
+                if (status.NoCapture) flags.Add("No Capture");
+                if (status.NoShiny) flags.Add("No Shiny");
+
+                var message = $"WCID {wcid}: {string.Join(", ", flags)}";
+                if (!string.IsNullOrEmpty(status.Reason))
+                    message += $" (Reason: {status.Reason})";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        // ========================================
+        // Shiny / Monster Capture Testing Commands
+        // ========================================
+
+        /// <summary>
+        /// Spawns a creature with the shiny variant applied for testing purposes.
+        /// </summary>
+        [CommandHandler("spawnshiny", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "Spawns a shiny version of a creature for testing.",
+            "<wcid or classname> [count]")]
+        public static void HandleSpawnShiny(Session session, params string[] parameters)
+        {
+            var param = parameters[0];
+            int count = 1;
+
+            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedCount))
+            {
+                count = Math.Clamp(parsedCount, 1, 10); // Limit to 10 max to prevent spam
+            }
+
+            ACE.Database.Models.World.Weenie weenie = null;
+
+            if (uint.TryParse(param, out var wcid))
+                weenie = DatabaseManager.World.GetWeenie(wcid);   // wcid
+            else
+                weenie = DatabaseManager.World.GetWeenie(param);  // classname
+
+            if (weenie == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find weenie {param}", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // Verify it's a creature
+            if (weenie.Type != (int)WeenieType.Creature)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Weenie {param} is not a creature (WeenieType: {(WeenieType)weenie.Type})", ChatMessageType.Broadcast));
+                return;
+            }
+
+            int spawned = 0;
+            for (int i = 0; i < count; i++)
+            {
+                var entityWeenie = Database.Adapter.WeenieConverter.ConvertToEntityWeenie(weenie);
+                var wo = WorldObjectFactory.CreateNewWorldObject(entityWeenie);
+
+                if (wo == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create object for {weenie.ClassId} - {weenie.ClassName}", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                var creature = wo as Creature;
+                if (creature == null)
+                {
+                    wo.Destroy();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Object {weenie.ClassId} - {weenie.ClassName} is not a Creature", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Apply shiny variant
+                CreatureVariantHelper.ApplyVariant(creature, CreatureVariant.Shiny);
+
+                // Position in front of player, in a line
+                float distance = 2.0f + (i * 1.0f);
+                var loc = session.Player.Location.InFrontOf(distance);
+
+                creature.Location = new Position(loc);
+                creature.Location.LandblockId = new LandblockId(creature.Location.GetCell());
+
+                if (!creature.EnterWorld())
+                {
+                    creature.Destroy();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spawn shiny {creature.Name} at this location", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                spawned++;
+            }
+
+            if (spawned > 0)
+            {
+                var weenieInfo = $"{weenie.ClassId} - {weenie.ClassName}";
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})", 
+                    ChatMessageType.Broadcast));
             }
         }
 

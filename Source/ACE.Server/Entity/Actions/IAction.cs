@@ -211,6 +211,7 @@ namespace ACE.Server.Entity.Actions
         WorldObjectNetworking_EnqueueMotionMagicPersist,
         WorldObjectNetworking_EnqueueMotionMissile,
         WorldObjectNetworking_EnqueueMotionMissilePersist,
+        MonsterCapture_DespawnCreature,
 
         // GameMessage values map 1:1 with networking OpTypes.
         GameMessage_Unknown,

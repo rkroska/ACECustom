@@ -15,6 +15,7 @@ using ACE.Server.Command;
 using ACE.Server.Managers;
 using ACE.Server.Network.Managers;
 using ACE.Server.Mods;
+using ACE.Server.Entity;
 
 namespace ACE.Server
 {
@@ -301,6 +302,12 @@ namespace ACE.Server
 
             log.Info("Initializing Character Tracker...");
             CharacterTracker.EnsureDatabaseMigrated();
+
+            log.Info("Initializing Pet Registry...");
+            PetRegistryManager.EnsureTableCreated();
+
+            log.Info("Initializing Creature Blacklist...");
+            BlacklistManager.Initialize();
 
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
