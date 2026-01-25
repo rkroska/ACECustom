@@ -6,6 +6,7 @@ using ACE.Database;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 using Microsoft.EntityFrameworkCore;
@@ -285,6 +286,118 @@ namespace ACE.Server.Entity
                     .Select(p => new ValueTuple<uint, string, DateTime>(p.Wcid, p.CreatureName, p.RegisteredAt))
                     .ToList();
             }
+        }
+
+        public static List<PetRegistryEntry> GetFullPetRegistry(uint accountId)
+        {
+             using (var context = new ShardDbContext())
+            {
+                return context.PetRegistry
+                    .Where(p => p.AccountId == accountId)
+                    .Select(p => new PetRegistryEntry
+                    {
+                        Wcid = p.Wcid,
+                        CreatureName = p.CreatureName,
+                        CreatureType = (CreatureType?)p.CreatureType,
+                        IsShiny = p.IsShiny,
+                        RegisteredAt = p.RegisteredAt
+                    })
+                    .ToList();
+            }
+        }
+
+        public static List<PropertiesBookPageData> GenerateMonsterDexPages(Player player)
+        {
+            var registry = GetFullPetRegistry(player.Account.AccountId);
+            
+            // Group by Species (CreatureType)
+            var speciesGroups = registry
+                .GroupBy(r => r.CreatureType)
+                .OrderBy(g => g.Key.HasValue ? g.Key.Value.ToString() : "Unknown"); 
+
+            var pages = new List<PropertiesBookPageData>();
+
+            foreach (var group in speciesGroups)
+            {
+                var speciesName = group.Key.HasValue ? System.Text.RegularExpressions.Regex.Replace(group.Key.Value.ToString(), "(\\B[A-Z])", " $1") : "Unknown";
+
+                // Define Header and Legend
+                var headerText = new System.Text.StringBuilder();
+                headerText.Append($"Species: {speciesName}\n"); // Fixed header
+                headerText.Append("-----------------------------\n");
+                headerText.Append("[X] Normal  [*] Shiny\n");   // Legend
+                headerText.Append("-----------------------------\n\n");
+ 
+                // Initialize first page for this species
+                var pageText = new System.Text.StringBuilder();
+                pageText.Append(headerText);
+
+                // Get distinct variants (Normal/Shiny)
+                // Group by CreatureName to handle variants
+                var variants = group
+                    .GroupBy(r => r.CreatureName)
+                    .OrderBy(v => v.Key)
+                    .ToList();
+
+                foreach (var variant in variants)
+                {
+                    bool hasNormal = variant.Any(r => !r.IsShiny);
+                    bool hasShiny = variant.Any(r => r.IsShiny);
+
+                    string normalIcon = hasNormal ? "[X]" : "[  ]";
+                    string shinyIcon = hasShiny ? "[*]" : "[  ]";
+
+                    string line = $"{normalIcon} {shinyIcon} {variant.Key}\n";
+
+                    // Check if adding this line would exceed the limit (1000 chars)
+                    if (pageText.Length + line.Length > 1000)
+                    {
+                        // Save current page
+                        pages.Add(new PropertiesBookPageData
+                        {
+                            AuthorId = 0xFFFFFFFF,
+                            AuthorName = speciesName,
+                            AuthorAccount = "",
+                            IgnoreAuthor = true,
+                            PageText = pageText.ToString()
+                        });
+
+                        // Start new page with header
+                        pageText.Clear();
+                        // Optional: Add "(Cont.)" to header? User didn't ask, but good practice. keeping simple for now as per request "make a second page".
+                        pageText.Append(headerText);
+                    }
+
+                    pageText.Append(line);
+                }
+
+                // Add the final page for this species
+                if (pageText.Length > 0)
+                {
+                    pages.Add(new PropertiesBookPageData
+                    {
+                        AuthorId = 0xFFFFFFFF, // System
+                        AuthorName = speciesName,
+                        AuthorAccount = "",
+                        IgnoreAuthor = true,
+                        PageText = pageText.ToString()
+                    });
+                }
+            }
+
+            if (pages.Count == 0)
+            {
+                 pages.Add(new PropertiesBookPageData
+                {
+                    AuthorId = 0xFFFFFFFF,
+                    AuthorName = "Monster-Dex",
+                    AuthorAccount = "",
+                    IgnoreAuthor = true,
+                    PageText = "No creatures captured yet!\n\nGo out and use a Siphon Lens to capture creature essences!"
+                });
+            }
+
+            return pages;
         }
 
         /// <summary>
