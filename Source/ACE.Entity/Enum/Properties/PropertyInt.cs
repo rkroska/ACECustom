@@ -699,6 +699,18 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         SplitArrowCount                         = 9031,
 
+        // Monster Capture System - POC
+        CaptureCreatureType                     = 9032,
+        CapturedCreatureWCID                    = 9033,
+        CapturedPaletteTemplate                 = 9034,
+        VisualOverridePaletteTemplate           = 9035,
+        CrystalTier                             = 9036, // 1=Flawed, 2=Pristine, 3=Perfect
+        CapturedCreatureType                    = 9037, // Species of captured creature
+        
+        // Shiny Mobs System
+        CreatureVariant                         = 9038, // Shiny variant on live creature
+        CapturedCreatureVariant                 = 9039, // Shiny status copied to essence
+
     }
 
     public static class PropertyIntExtensions

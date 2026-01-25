@@ -13,6 +13,7 @@ using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Common;
 using ACE.Server.WorldObjects;
+using ACE.Server.Physics;
 
 namespace ACE.Server.Entity
 {
@@ -263,6 +264,10 @@ namespace ACE.Server.Entity
                 {
                     log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to create wcid {Biota.WeenieClassId}");
                     return null;
+                }
+                if (wo is Creature creature && creature.IsMonster && creature.Attackable)
+                {
+                    CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
                 }
 
                 if (Biota.PaletteId.HasValue && Biota.PaletteId > 0)
