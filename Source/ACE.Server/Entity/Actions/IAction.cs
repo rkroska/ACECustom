@@ -23,6 +23,8 @@ namespace ACE.Server.Entity.Actions
         CreatureDeath_MakeCorpse,
         CreatureDeath_SaveInParallelCallback,
         CreatureEquipment_TryActivateItemSpellsOnWield,
+        CreatureLocation_TeleportToPosition,
+        CreatureLocation_TeleportDone,
         CreatureMissile_EnqueueBroadcast,
         CreatureMissile_EnsureAmmoVisible,
         CreatureNavigation_AddMoveToTick,
@@ -206,6 +208,7 @@ namespace ACE.Server.Entity.Actions
         WorldObjectNetworking_EnqueueMotionMagicPersist,
         WorldObjectNetworking_EnqueueMotionMissile,
         WorldObjectNetworking_EnqueueMotionMissilePersist,
+        MonsterCapture_DespawnCreature,
 
         // GameMessage values map 1:1 with networking OpTypes.
         GameMessage_Unknown,
@@ -661,9 +664,17 @@ namespace ACE.Server.Entity.Actions
         }
     }
 
+    public enum ActionPriority
+    {
+        High,
+        Normal,
+        Low
+    }
+
     public interface IAction
     {
         ActionType Type { get; }
+        ActionPriority Priority { get; }
 
         Tuple<IActor, IAction> Act();
 

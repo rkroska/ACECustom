@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyFloat : ushort
@@ -257,5 +255,12 @@ namespace ACE.Entity.Enum.Properties
         LifeAugTuningConstantOverride  = 9037,
         LifeAugProtMaxBonusOverride    = 9038,
         LifeAugNewCurveAmount          = 9039,
+
+        // Monster Capture System - POC
+        CapturedShade                  = 9040,
+        CapturedScale                  = 9041,
+        VisualOverrideShade            = 9042,
+        VisualOverrideScale            = 9043,
+        CaptureDifficulty              = 9044,
     }
 }

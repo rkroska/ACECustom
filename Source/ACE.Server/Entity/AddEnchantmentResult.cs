@@ -52,18 +52,11 @@ namespace ACE.Server.Entity
 
         public ushort NextLayerId => (ushort)(TopLayerId + 1);
 
-        public AddEnchantmentResult() { }
-
-        public AddEnchantmentResult(StackType stackType)
-        {
-            StackType = stackType;
-        }
-
         public void BuildStack(List<PropertiesEnchantmentRegistry> entries, Spell spell, WorldObject caster, bool equip = false)
         {
-            Surpass = new List<PropertiesEnchantmentRegistry>();
-            Refresh = new List<PropertiesEnchantmentRegistry>();
-            Surpassed = new List<PropertiesEnchantmentRegistry>();
+            Surpass = [];
+            Refresh = [];
+            Surpassed = [];
 
             long augmentLevel = 0;
             if (caster is Creature creature)

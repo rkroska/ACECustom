@@ -16,14 +16,8 @@ namespace ACE.Server.Entity
         public CreateList(List<PropertiesCreateList> createList)
         {
             Items = createList;
-
-            BuildSets(createList);
-        }
-
-        public void BuildSets(List<PropertiesCreateList> createList)
-        {
-            Sets = new List<CreateListSet>();
-            ItemSets = new List<int>();
+            Sets = [];
+            ItemSets = [];
             var setIdx = -1;
 
             var totalProbability = 0.0f;
@@ -33,7 +27,7 @@ namespace ACE.Server.Entity
             {
                 var item = createList[i];
 
-                var destinationType = (DestinationType)item.DestinationType;
+                DestinationType destinationType = item.DestinationType;
                 var useRNG = destinationType.HasFlag(DestinationType.Treasure) && item.Shade != 0;
 
                 var shadeOrProbability = item.Shade;

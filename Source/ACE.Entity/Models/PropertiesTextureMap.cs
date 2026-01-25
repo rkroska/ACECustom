@@ -4,9 +4,9 @@ namespace ACE.Entity.Models
 {
     public class PropertiesTextureMap
     {
-        public byte PartIndex { get; set; }
-        public uint OldTexture { get; set; }
-        public uint NewTexture { get; set; }
+        public required byte PartIndex { get; set; }
+        public required uint OldTexture { get; set; }
+        public required uint NewTexture { get; set; }
 
         public PropertiesTextureMap Clone()
         {

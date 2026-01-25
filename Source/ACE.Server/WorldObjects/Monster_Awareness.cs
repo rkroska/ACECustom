@@ -236,6 +236,10 @@ namespace ACE.Server.WorldObjects
             NextFindTarget = Timers.RunningTime + rng;
         }
 
+        /// <summary>
+        /// Finds the next target. Returns true if the monster is targeting something after the call, false otherwise.
+        /// </summary>
+        /// <returns></returns>
         public virtual bool FindNextTarget()
         {
             stopwatch.Restart();
@@ -246,6 +250,8 @@ namespace ACE.Server.WorldObjects
 
                 // Don't use cached targets for critical target finding decisions
                 var visibleTargets = GetAttackTargetsUncached();
+
+                // Didn't find a target, so return home instead.
                 if (visibleTargets.Count == 0)
                 {
                     if (MonsterState != State.Return)
@@ -277,7 +283,6 @@ namespace ACE.Server.WorldObjects
                 {
                     case TargetingTactic.None:
 
-                        //Console.WriteLine($"{Name}.FindNextTarget(): TargetingTactic.None");
                         break; // same as focused?
 
                     case TargetingTactic.Random:
@@ -333,8 +338,6 @@ namespace ACE.Server.WorldObjects
                         break;
                 }
 
-                //Console.WriteLine($"{Name}.FindNextTarget = {AttackTarget.Name}");
-
                 if (AttackTarget != null && AttackTarget != prevAttackTarget)
                     EmoteManager.OnNewEnemy(AttackTarget);
 
@@ -380,6 +383,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public List<Creature> GetAttackTargetsUncached()
         {
+            if (PhysicsObj == null)
+                return new List<Creature>();
+
             var visibleTargets = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
             

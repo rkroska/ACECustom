@@ -8,9 +8,9 @@ namespace ACE.Entity
         Dynamic,
     }
 
-    public struct ObjectGuid
+    public readonly struct ObjectGuid
     {
-        public static readonly ObjectGuid Invalid = new ObjectGuid(0);
+        public static readonly ObjectGuid Invalid = new(0);
 
         /* These are not GUIDs
         public static uint WeenieMin { get; } = 0x00000001;
@@ -81,8 +81,9 @@ namespace ACE.Entity
             return g1.Full != g2.Full;
         }
 
-        public override bool Equals(object obj)
+        public override readonly bool Equals(object? obj)
         {
+            if (obj == null) return false;
             return obj is ObjectGuid guid && guid == this;
         }
 
