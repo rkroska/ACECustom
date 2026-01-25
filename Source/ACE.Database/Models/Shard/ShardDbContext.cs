@@ -126,7 +126,7 @@ namespace ACE.Database.Models.Shard
             modelBuilder.Entity<PetRegistry>(entity =>
             {
                 entity.ToTable("pet_registry");
-                entity.HasKey(e => new { e.AccountId, e.Wcid });
+                entity.HasKey(e => new { e.AccountId, e.Wcid, e.IsShiny });
                 entity.HasIndex(e => e.AccountId, "IX_pet_registry_AccountId");
             });
 

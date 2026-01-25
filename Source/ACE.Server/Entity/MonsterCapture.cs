@@ -243,6 +243,9 @@ namespace ACE.Server.Entity
             // Get crystal tier (1=Flawed, 2=Pristine, 3=Perfect)
             var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
             
+            // Debug Lens: Guaranteed 100% capture, bypasses all difficulty checks
+            if (crystalTier == 4) return 1.0f;
+            
             // Base rate and cap by tier
             var (baseRate, tierCap) = crystalTier switch {
                 1 => (0.05f, 0.10f), // Flawed: 5% base, 10% max
