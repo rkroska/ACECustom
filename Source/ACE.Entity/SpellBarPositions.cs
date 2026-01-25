@@ -1,19 +1,12 @@
 
 namespace ACE.Entity
 {
-    public class SpellBarPositions
+    public class SpellBarPositions(uint spellBarId, uint spellBarPositionId, uint spellId)
     {
-        public uint SpellBarId { get; set; }
+        public uint SpellBarId { get; set; } = spellBarId - 1;
 
-        public uint SpellBarPositionId { get; set; }
+        public uint SpellBarPositionId { get; set; } = spellBarPositionId - 1;
 
-        public uint SpellId { get; set; }
-
-        public SpellBarPositions(uint spellBarId, uint spellBarPositionId, uint spellId)
-        {
-            SpellBarId = spellBarId - 1;
-            SpellBarPositionId = spellBarPositionId - 1;
-            SpellId = spellId;
-        }
+        public uint SpellId { get; set; } = spellId;
     }
 }

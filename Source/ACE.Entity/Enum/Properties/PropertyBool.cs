@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace ACE.Entity.Enum.Properties
 {
     public enum PropertyBool : ushort
@@ -196,6 +194,8 @@ namespace ACE.Entity.Enum.Properties
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
         IsSplitArrowKill                 = 9032,
+        [AssessmentProperty]
+        IsCharm                          = 9040,
         /// <summary>
         /// If TRUE on a weapon, allows multi-strike hits to each roll a proc with decay
         /// </summary>
@@ -204,5 +204,9 @@ namespace ACE.Entity.Enum.Properties
         /// If TRUE on a weapon, its cast-on-strike can proc on cleaved targets
         /// </summary>
         WeaponProcOnCleaveTargets        = 9036,
+
+        // Monster Capture System - POC
+        IsCaptureCrystal                 = 9037,
+        IsCapturedAppearance             = 9038,
     }
 }

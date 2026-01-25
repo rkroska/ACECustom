@@ -4,8 +4,8 @@ namespace ACE.Entity.Models
 {
     public class PropertiesAnimPart
     {
-        public byte Index { get; set; }
-        public uint AnimationId { get; set; }
+        public required byte Index { get; set; }
+        public required uint AnimationId { get; set; }
 
         public PropertiesAnimPart Clone()
         {

@@ -15,6 +15,7 @@ using ACE.Server.Command;
 using ACE.Server.Managers;
 using ACE.Server.Network.Managers;
 using ACE.Server.Mods;
+using ACE.Server.Entity;
 
 namespace ACE.Server
 {
@@ -131,12 +132,18 @@ namespace ACE.Server
             var configConfigContainer = Path.Combine(containerConfigDirectory, "Config.js");
 
             if (IsRunningInContainer && File.Exists(configConfigContainer))
+            {
+                log.Info($"Copying {configConfigContainer} to {configFile}");
                 File.Copy(configConfigContainer, configFile, true);
+            }
 
             if (!File.Exists(configFile))
             {
                 if (!IsRunningInContainer)
+                {
+                    log.Info($"Running out-of-box setup.");
                     DoOutOfBoxSetup(configFile);
+                }
                 else
                 {
                     if (!File.Exists(configConfigContainer))
@@ -145,12 +152,14 @@ namespace ACE.Server
                         File.Copy(configFile, configConfigContainer);
                     }
                     else
+                    {
                         File.Copy(configConfigContainer, configFile);
+                    }
                 }
             }
 
-            log.Info("Initializing ConfigManager...");
-            ConfigManager.Initialize();
+            log.Info($"Initializing ConfigManager with {configFile}...");
+            ConfigManager.Initialize(configFile);
 
             log.Info("Initializing ModManager...");
             ModManager.Initialize();
@@ -284,6 +293,12 @@ namespace ACE.Server
 
             log.Info("Initializing Character Tracker...");
             CharacterTracker.EnsureDatabaseMigrated();
+
+            log.Info("Initializing Pet Registry...");
+            PetRegistryManager.EnsureTableCreated();
+
+            log.Info("Initializing Creature Blacklist...");
+            BlacklistManager.Initialize();
 
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();

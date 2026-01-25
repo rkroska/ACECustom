@@ -77,7 +77,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// This event is raised when player adds item to storage
         /// </summary>
-        protected override void OnAddItem()
+        protected override void OnAddItem(WorldObject addedItem)
         {
             //Console.WriteLine("Storage.OnAddItem()");
 

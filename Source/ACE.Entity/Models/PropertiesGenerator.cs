@@ -9,15 +9,15 @@ namespace ACE.Entity.Models
         /// <summary>
         /// This is only used to tie this property back to a specific database row
         /// </summary>
-        public uint DatabaseRecordId { get; set; }
+        public uint? DatabaseRecordId { get; set; }
 
-        public float Probability { get; set; }
-        public uint WeenieClassId { get; set; }
+        public required float Probability { get; set; }
+        public required uint WeenieClassId { get; set; }
         public float? Delay { get; set; }
-        public int InitCreate { get; set; }
-        public int MaxCreate { get; set; }
-        public RegenerationType WhenCreate { get; set; }
-        public RegenLocationType WhereCreate { get; set; }
+        public required int InitCreate { get; set; }
+        public required int MaxCreate { get; set; }
+        public required RegenerationType WhenCreate { get; set; }
+        public required RegenLocationType WhereCreate { get; set; }
         public int? StackSize { get; set; }
         public uint? PaletteId { get; set; }
         public float? Shade { get; set; }

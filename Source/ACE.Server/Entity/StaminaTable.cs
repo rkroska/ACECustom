@@ -3,16 +3,10 @@ using ACE.Entity.Enum;
 
 namespace ACE.Server.Entity
 {
-    public class StaminaCost
+    public class StaminaCost(int burden, float stamina)
     {
-        public int Burden;
-        public float Stamina;
-
-        public StaminaCost(int burden, float stamina)
-        {
-            Burden = burden;
-            Stamina = stamina;
-        }
+        public int Burden = burden;
+        public float Stamina = stamina;
     }
 
     public static class StaminaTable
@@ -26,23 +20,29 @@ namespace ACE.Server.Entity
 
         public static void BuildTable()
         {
-            Costs = new Dictionary<PowerAccuracy, List<StaminaCost>>();
+            Costs = [];
 
             // must be in descending order
-            var lowCosts = new List<StaminaCost>();
-            lowCosts.Add(new StaminaCost(1600, 1.5f));
-            lowCosts.Add(new StaminaCost(1200, 1));
-            lowCosts.Add(new StaminaCost(700, 1));
+            var lowCosts = new List<StaminaCost>
+            {
+                new(1600, 1.5f),
+                new(1200, 1),
+                new(700, 1)
+            };
 
-            var midCosts = new List<StaminaCost>();
-            midCosts.Add(new StaminaCost(1600, 3));
-            midCosts.Add(new StaminaCost(1200, 2));
-            midCosts.Add(new StaminaCost(700, 1));
+            var midCosts = new List<StaminaCost>
+            {
+                new(1600, 3),
+                new(1200, 2),
+                new(700, 1)
+            };
 
-            var highCosts = new List<StaminaCost>();
-            highCosts.Add(new StaminaCost(1600, 6));
-            highCosts.Add(new StaminaCost(1200, 4));
-            highCosts.Add(new StaminaCost(700, 2));
+            var highCosts = new List<StaminaCost>
+            {
+                new(1600, 6),
+                new(1200, 4),
+                new(700, 2)
+            };
 
             Costs.Add(PowerAccuracy.Low, lowCosts);
             Costs.Add(PowerAccuracy.Medium, midCosts);

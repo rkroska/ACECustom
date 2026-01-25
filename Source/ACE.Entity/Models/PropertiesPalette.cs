@@ -4,9 +4,9 @@ namespace ACE.Entity.Models
 {
     public class PropertiesPalette
     {
-        public uint SubPaletteId { get; set; }
-        public ushort Offset { get; set; }
-        public ushort Length { get; set; }
+        public required uint SubPaletteId { get; set; }
+        public required ushort Offset { get; set; }
+        public required ushort Length { get; set; }
 
         public PropertiesPalette Clone()
         {

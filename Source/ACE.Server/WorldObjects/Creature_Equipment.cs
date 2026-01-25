@@ -506,7 +506,7 @@ namespace ACE.Server.WorldObjects
 
             GetPlacementLocation(item, item.CurrentWieldedLocation ?? 0, out var placement, out var parentLocation);
 
-            Children.Add(new HeldItem(item.Guid.Full, (int)parentLocation, (EquipMask)item.CurrentWieldedLocation));
+            Children.Add(new HeldItem(item.Guid.Full, (int)parentLocation));
 
             item.Placement = placement;
             item.ParentLocation = parentLocation;

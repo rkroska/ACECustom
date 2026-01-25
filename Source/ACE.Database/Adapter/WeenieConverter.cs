@@ -12,13 +12,14 @@ namespace ACE.Database.Adapter
 {
     public static class WeenieConverter
     {
-        public static ACE.Entity.Models.Weenie ConvertToEntityWeenie(ACE.Database.Models.World.Weenie weenie, bool instantiateEmptyCollections = false)
+        public static Weenie ConvertToEntityWeenie(ACE.Database.Models.World.Weenie weenie, bool instantiateEmptyCollections = false)
         {
-            var result = new ACE.Entity.Models.Weenie();
-
-            result.WeenieClassId = weenie.ClassId;
-            result.ClassName = weenie.ClassName;
-            result.WeenieType = (WeenieType)weenie.Type;
+            var result = new Weenie()
+            {
+                WeenieClassId = weenie.ClassId,
+                ClassName = weenie.ClassName,
+                WeenieType = (WeenieType)weenie.Type
+            };
 
             if (weenie.WeeniePropertiesBool != null && (instantiateEmptyCollections || weenie.WeeniePropertiesBool.Count > 0))
             {

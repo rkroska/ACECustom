@@ -25,28 +25,31 @@ namespace ACE.Entity
         public double PantsHue { get; set; }
         public double FootwearHue { get; set; }
 
-        public void Unpack(BinaryReader reader)
+        public static Appearance Unpack(BinaryReader reader)
         {
-            Eyes            = reader.ReadUInt32();
-            Nose            = reader.ReadUInt32();
-            Mouth           = reader.ReadUInt32();
-            HairColor       = reader.ReadUInt32();
-            EyeColor        = reader.ReadUInt32();
-            HairStyle       = reader.ReadUInt32();
-            HeadgearStyle   = reader.ReadUInt32();
-            HeadgearColor   = reader.ReadUInt32();
-            ShirtStyle      = reader.ReadUInt32();
-            ShirtColor      = reader.ReadUInt32();
-            PantsStyle      = reader.ReadUInt32();
-            PantsColor      = reader.ReadUInt32();
-            FootwearStyle   = reader.ReadUInt32();
-            FootwearColor   = reader.ReadUInt32();
-            SkinHue         = reader.ReadDouble();
-            HairHue         = reader.ReadDouble();
-            HeadgearHue     = reader.ReadDouble();
-            ShirtHue        = reader.ReadDouble();
-            PantsHue        = reader.ReadDouble();
-            FootwearHue     = reader.ReadDouble();
+            return new Appearance()
+            {
+                Eyes            = reader.ReadUInt32(),
+                Nose            = reader.ReadUInt32(),
+                Mouth           = reader.ReadUInt32(),
+                HairColor       = reader.ReadUInt32(),
+                EyeColor        = reader.ReadUInt32(),
+                HairStyle       = reader.ReadUInt32(),
+                HeadgearStyle   = reader.ReadUInt32(),
+                HeadgearColor   = reader.ReadUInt32(),
+                ShirtStyle      = reader.ReadUInt32(),
+                ShirtColor      = reader.ReadUInt32(),
+                PantsStyle      = reader.ReadUInt32(),
+                PantsColor      = reader.ReadUInt32(),
+                FootwearStyle   = reader.ReadUInt32(),
+                FootwearColor   = reader.ReadUInt32(),
+                SkinHue         = reader.ReadDouble(),
+                HairHue         = reader.ReadDouble(),
+                HeadgearHue     = reader.ReadDouble(),
+                ShirtHue        = reader.ReadDouble(),
+                PantsHue        = reader.ReadDouble(),
+                FootwearHue     = reader.ReadDouble(),
+            };
         }
     }
 }

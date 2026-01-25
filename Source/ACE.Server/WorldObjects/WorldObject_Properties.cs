@@ -692,6 +692,15 @@ namespace ACE.Server.WorldObjects
             set => SetProperty(PropertyDataId.Setup, value);
         }
 
+        /// <summary>
+        /// The variant, found in CreatureVariant.cs
+        /// </summary>
+        public CreatureVariant? CreatureVariant
+        {
+            get => (CreatureVariant?)GetProperty(PropertyInt.CreatureVariant);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CreatureVariant); else SetProperty(PropertyInt.CreatureVariant, (int)value.Value); }
+        }
+
         // PhysicsDescriptionFlag.Parent is pulled from WielderId
 
         public List<HeldItem> Children { get; } = new List<HeldItem>();

@@ -1,13 +1,19 @@
-using System;
-using System.Numerics;
+using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
-using ACE.Server.Physics.Animation;
-using ACE.Server.Physics.Extensions;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Physics;
+using ACE.Server.Physics.Animation;
+using ACE.Server.Physics.Common;
+using ACE.Server.Physics.Extensions;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Numerics;
 
 namespace ACE.Server.WorldObjects
 {
@@ -32,11 +38,9 @@ namespace ACE.Server.WorldObjects
         {
             var currentDir = Location.GetCurrentDir();
 
-            var targetDir = Vector3.Zero;
-            if (Location.Indoors == target.Location.Indoors)
-                targetDir = GetDirection(Location.ToGlobal(), target.Location.ToGlobal());
-            else
-                targetDir = GetDirection(Location.Pos, target.Location.Pos);
+            Vector3 targetDir = (Location.Indoors == target.Location.Indoors) ?
+                GetDirection(Location.ToGlobal(), target.Location.ToGlobal()) :
+                GetDirection(Location.Pos, target.Location.Pos);
 
             targetDir.Z = 0.0f;
             targetDir = Vector3.Normalize(targetDir);
@@ -45,38 +49,11 @@ namespace ACE.Server.WorldObjects
             return GetAngle(currentDir, targetDir);
         }
 
-        public float GetAngle_Physics(WorldObject target)
-        {
-            var currentDir = GetCurrentDir_Physics();
-
-            var targetDir = Vector3.Zero;
-            if (Location.Indoors == target.Location.Indoors)
-                targetDir = GetDirection(Location.ToGlobal(), target.Location.ToGlobal());
-            else
-                targetDir = GetDirection(Location.Pos, target.Location.Pos);
-
-            targetDir.Z = 0.0f;
-            targetDir = Vector3.Normalize(targetDir);
-
-            // get the 2D angle between these vectors
-            return GetAngle(currentDir, targetDir);
-        }
-
-        public Vector3 GetCurrentDir_Physics()
-        {
-            return Vector3.Normalize(Vector3.Transform(Vector3.UnitY, PhysicsObj.Position.Frame.Orientation));
-        }
-
-        public float GetAngle_Physics2(WorldObject target)
-        {
-            return PhysicsObj.Position.heading_diff(target.PhysicsObj.Position);
-        }
-
         /// <summary>
         /// Returns the 2D angle between current direction
         /// and rotation from an input position
         /// </summary>
-        public float GetAngle(Position position)
+        public float GetAngle(ACE.Entity.Position position)
         {
             var currentDir = Location.GetCurrentDir();
             var targetDir = position.GetCurrentDir();
@@ -86,21 +63,9 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns the 2D angle of the input vector
-        /// </summary>
-        public static float GetAngle(Vector3 dir)
-        {
-            var rads = Math.Atan2(dir.Y, dir.X);
-            if (double.IsNaN(rads)) return 0.0f;
-
-            var angle = rads * 57.2958f;
-            return (float)angle;
-        }
-
-        /// <summary>
         /// Returns the 2D angle between 2 vectors
         /// </summary>
-        public static float GetAngle(Vector3 a, Vector3 b)
+        private static float GetAngle(Vector3 a, Vector3 b)
         {
             var cosTheta = a.Dot2D(b);
             var rads = Math.Acos(cosTheta);
@@ -113,11 +78,8 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Returns a normalized 2D vector from self to target
         /// </summary>
-        public Vector3 GetDirection(Vector3 self, Vector3 target)
+        private static Vector3 GetDirection(Vector3 self, Vector3 target)
         {
-            var target2D = new Vector3(self.X, self.Y, 0);
-            var self2D = new Vector3(target.X, target.Y, 0);
-
             return Vector3.Normalize(target - self);
         }
 
@@ -208,7 +170,7 @@ namespace ACE.Server.WorldObjects
         /// Used by the emote system, which has the target rotation stored in positions
         /// </summary>
         /// <returns>The amount of time in seconds for the rotation to complete</returns>
-        public float TurnTo(Position position)
+        public float TurnTo(ACE.Entity.Position position)
         {
             var frame = new AFrame(position.Pos, position.Rotation);
             var heading = frame.get_heading();
@@ -237,18 +199,6 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
 
             return rotateDelay;
-        }
-
-        /// <summary>
-        /// Returns the amount of time for this creature to rotate
-        /// towards the rotation from the input position, based on the omega speed from its MotionTable
-        /// Used by the emote system, which has the target rotation stored in positions
-        /// </summary>
-        /// <param name="position">Only the rotation information from this position is used here</param>
-        public float GetRotateDelay(Position position)
-        {
-            var angle = GetAngle(position);
-            return GetRotateDelay(angle);
         }
 
         /// <summary>
@@ -317,20 +267,11 @@ namespace ACE.Server.WorldObjects
 
         public virtual void BroadcastMoveTo(Player player)
         {
-            Motion motion = null;
-
-            if (AttackTarget != null)
-            {
+            Motion motion = (AttackTarget != null) ?
                 // move to object
-                motion = GetMoveToMotion(AttackTarget, RunRate);
-            }
-            else
-            {
+                GetMoveToMotion(AttackTarget, RunRate):
                 // move to position
-                var home = GetPosition(PositionType.Home);
-
-                motion = GetMoveToPosition(home, RunRate, 1.0f);
-            }
+                GetMoveToPosition(Home, RunRate, 1.0f);
 
             player.Session.Network.EnqueueSend(new GameMessageUpdateMotion(this, motion));
         }
@@ -338,7 +279,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Sends a network message for moving a creature to a new position
         /// </summary>
-        public void MoveTo(Position position, float runRate = 1.0f, bool setLoc = true, float? walkRunThreshold = null, float? speed = null)
+        public void MoveTo(ACE.Entity.Position position, float runRate = 1.0f, bool setLoc = true, float? walkRunThreshold = null, float? speed = null)
         {
             // build and send MoveToPosition message to client
             var motion = GetMoveToPosition(position, runRate, walkRunThreshold, speed);
@@ -348,7 +289,7 @@ namespace ACE.Server.WorldObjects
 
             // start executing MoveTo iterator on server
             if (!PhysicsObj.IsMovingOrAnimating)
-                PhysicsObj.UpdateTime = Physics.Common.PhysicsTimer.CurrentTime;
+                PhysicsObj.UpdateTime = PhysicsTimer.CurrentTime;
 
             var mvp = new MovementParameters(motion.MoveToParameters);
             PhysicsObj.MoveToPosition(new Physics.Common.Position(position), mvp);
@@ -368,33 +309,29 @@ namespace ACE.Server.WorldObjects
                     UpdatePosition_SyncLocation();
                     SendUpdatePosition();
 
-                    if (PhysicsObj?.MovementManager?.MoveToManager?.FailProgressCount < 5)
+                    var moveToManager = PhysicsObj?.MovementManager?.MoveToManager;
+                    if (moveToManager?.IsStuck(2.5f) ?? false)
                     {
-                        AddMoveToTick();
-                    }
-                    else
-                    {
-                        if (PhysicsObj?.MovementManager?.MoveToManager != null)
-                        {
-                            PhysicsObj.MovementManager.MoveToManager.CancelMoveTo(WeenieError.ActionCancelled);
-                            PhysicsObj.MovementManager.MoveToManager.FailProgressCount = 0;
-                        }
+                        moveToManager?.CancelMoveTo(WeenieError.ActionCancelled);
                         EnqueueBroadcastMotion(new Motion(CurrentMotionState.Stance, MotionCommand.Ready));
+                        return;
                     }
 
-                    //Console.WriteLine($"{Name}.Position: {Location}");
+                    AddMoveToTick();
                 }
             });
             actionChain.EnqueueChain();
         }
 
-        public Motion GetMoveToPosition(Position position, float runRate = 1.0f, float? walkRunThreshold = null, float? speed = null)
+        public Motion GetMoveToPosition(ACE.Entity.Position position, float runRate = 1.0f, float? walkRunThreshold = null, float? speed = null)
         {
             // TODO: change parameters to accept an optional MoveToParameters
 
-            var motion = new Motion(this, position);
-            motion.MovementType = MovementType.MoveToPosition;
-            //motion.Flag |= MovementParams.CanCharge | MovementParams.FailWalk | MovementParams.UseFinalHeading | MovementParams.MoveAway;
+            var motion = new Motion(this, position)
+            {
+                MovementType = MovementType.MoveToPosition
+            };
+
             if (walkRunThreshold != null)
                 motion.MoveToParameters.WalkRunThreshold = walkRunThreshold.Value;
             if (speed != null)
@@ -415,37 +352,223 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// For monsters only -- blips to a new position within the same landblock
+        /// Unified Teleport method for all creatures (Player and Monster/NPC).
+        /// Handles visual effects, physics state changes, networking, and safety checks.
         /// </summary>
-        public void FakeTeleport(Position _newPosition)
+        public virtual void Teleport(ACE.Entity.Position _newPosition, bool fromPortal = false)
         {
-            var newPosition = new Position(_newPosition);
-
+            var player = this as Player; // null if not a player
+            var newPosition = new ACE.Entity.Position(_newPosition);
             newPosition.PositionZ += 0.005f * (ObjScale ?? 1.0f);
 
-            if (Location.Landblock != newPosition.Landblock)
-            {
-                log.Error($"{Name} tried to teleport from {Location} to a different landblock {newPosition}");
+            if (player != null && player.HandleFogBeforeTeleport(_newPosition))
                 return;
+
+            Teleporting = true;
+            var timestamp = Time.GetUnixTime();
+            SetProperty(PropertyFloat.LastTeleportStartTimestamp, timestamp);
+
+            if (player != null)
+                player.LastTeleportTime = DateTime.UtcNow;
+
+            if (fromPortal)
+                SetProperty(PropertyFloat.LastPortalTeleportTimestamp, timestamp);
+
+            // check for changing varation - and remove anything from knownobjects that is not in the new variation
+            try
+            {
+                HandleVariationChangeVisbilityCleanup(Location.Variation, newPosition.Variation);
+            }
+            catch (Exception e)
+            {
+                log.Warn(e);
             }
 
+            player?.Session.Network.EnqueueSend(new GameMessagePlayerTeleport(player));
+
+            // load quickly, but player can load into landblock before server is finished loading
+            // send a "fake" update position to get the client to start loading asap,
+            // also might fix some decal bugs
+            var prevLoc = Location;
+            Location = newPosition;
+            SendUpdatePosition();
+            Location = prevLoc;
+
+            DoTeleportPhysicsStateChanges();
+
             // force out of hotspots
-            PhysicsObj.report_collision_end(true);
+            PhysicsObj?.report_collision_end(true);
 
-            //HandlePreTeleportVisibility(newPosition);
+            if (player != null && player.UnderLifestoneProtection)
+                player.LifestoneProtectionDispel();
 
-            // do the physics teleport
-            var setPosition = new Physics.Common.SetPosition();
-            setPosition.Pos = new Physics.Common.Position(newPosition);
-            setPosition.Flags = Physics.Common.SetPositionFlags.SendPositionEvent | Physics.Common.SetPositionFlags.Slide | Physics.Common.SetPositionFlags.Placement | Physics.Common.SetPositionFlags.Teleport;
+            player?.HandlePreTeleportVisibility(newPosition);
 
-            PhysicsObj.SetPosition(setPosition);
+            UpdatePosition(new ACE.Entity.Position(newPosition), true);
+        }
 
-            // update ace location
-            SyncLocation(_newPosition.Variation);
+        /// <summary>
+        /// Finalizes teleportation by cleaning up physics flags and state.
+        /// Should be called when the teleport animation/delay is fully complete.
+        /// </summary>
+        public virtual void OnTeleportComplete()
+        {
+            // set materialize physics state
+            // this takes the player from pink bubbles -> fully materialized
+            // Only re-enable collisions if not cloaked (admin/GM)
+            if (CloakStatus != CloakStatus.On)
+                ReportCollisions = true;
 
-            // broadcast blip to new position
-            SendUpdatePosition(true);
+            IgnoreCollisions = false;
+            Hidden = false;
+            Teleporting = false;
+
+            EnqueueBroadcastPhysicsState();
+        }
+
+        /// <summary>
+        /// Cleans up visibility of objects when switching variations.
+        /// </summary>
+        public virtual void HandleVariationChangeVisbilityCleanup(int? sourceVariation, int? destinationVariation)
+        {
+            if (this is not Player player) return;
+
+            foreach (WorldObject knownObj in player.GetKnownObjects()) 
+            {
+                if (knownObj.PhysicsObj == null) continue;
+                if (knownObj.Location == null) continue;
+                if (knownObj.Location.Variation == destinationVariation) continue;
+
+                knownObj.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
+                PhysicsObj?.ObjMaint?.RemoveObject(knownObj.PhysicsObj);
+
+                if (knownObj is Player knownPlayer) knownPlayer.RemoveTrackedObject(player, false);
+                player.RemoveTrackedObject(knownObj, false);
+            }
+        }
+
+        /// <summary>
+        /// Updates physics flags (Hidden, IgnoreCollisions, ReportCollisions) for teleportation.
+        /// Broadcasts updates only if values change.
+        /// </summary>
+        public virtual void DoTeleportPhysicsStateChanges()
+        {
+            bool broadcastUpdate = false;
+            if (this is Player && !(Hidden ?? false)) { Hidden = true; broadcastUpdate = true; }
+            if (!(IgnoreCollisions ?? false)) { IgnoreCollisions = true; broadcastUpdate = true; }
+            if (ReportCollisions ?? false) { ReportCollisions = false; broadcastUpdate = true; }
+
+            if (broadcastUpdate) EnqueueBroadcastPhysicsState();
+        }
+
+        /// <summary>
+        /// Used by physics engine to actually update a creature/player position
+        /// Automatically notifies clients of updated position
+        /// </summary>
+        public bool UpdatePosition(ACE.Entity.Position newPosition, bool forceUpdate = false)
+        {
+            bool verifyContact = false;
+            var player = this as Player;
+
+            // possible bug: while teleporting, client can still send AutoPos packets from old landblock
+            if (Teleporting && !forceUpdate) return false;
+            
+            if (!Teleporting && Location.Variation != null && newPosition.Variation == null) //do not wipe out the prior Variation unless teleporting
+            {
+                newPosition.Variation = Location.Variation;
+            }
+
+            // pre-validate movement
+            if (player != null && !player.ValidateMovement(newPosition))
+            {
+                log.Error($"{Name}.UpdatePosition() - movement pre-validation failed from {Location} to {newPosition}, t: {Teleporting}");
+                return false;
+            }
+
+            bool variationChange = Location.Variation != newPosition.Variation;
+
+            var success = true;
+
+            if (PhysicsObj != null)
+            {
+                var distSq = Location.SquaredDistanceTo(newPosition);
+
+                if (distSq > PhysicsGlobals.EpsilonSq || variationChange)
+                {
+                    if (!Teleporting && player != null)
+                    {
+                        var blockDist = PhysicsObj.GetBlockDist(Location.Cell, newPosition.Cell);
+
+                        // verify movement
+                        if (distSq > Player.MaxSpeedSq && blockDist > 1)
+                        {
+                            log.Warn($"MOVEMENT SPEED: {Name} trying to move from {Location} to {newPosition}, speed: {Math.Sqrt(distSq)}");
+                            return false;
+                        }
+
+                        // verify z-pos
+                        // Simplified for base creature (or only for player if needed)
+                        if (blockDist == 0 && player.LastGroundPos != null && newPosition.PositionZ - player.LastGroundPos.PositionZ > 10 && DateTime.UtcNow - player.LastJumpTime > TimeSpan.FromSeconds(1) && player.GetCreatureSkill(Skill.Jump).Current < 1000)
+                            verifyContact = true;
+                    }
+
+                    var curCell = LScape.get_landcell(newPosition.Cell, newPosition.Variation);
+                    if (curCell != null)
+                    {
+                        PhysicsObj.set_request_pos(newPosition.Pos, newPosition.Rotation, curCell, Location.LandblockId.Raw, newPosition.Variation);
+                            
+                        if (player != null && player.FastTick)
+                            success = PhysicsObj.update_object_server_new();
+                        else
+                            success = PhysicsObj.update_object_server();
+
+                        if (PhysicsObj.CurCell == null && curCell.ID >> 16 != 0x18A)
+                        {
+                            PhysicsObj.CurCell = curCell;
+                        }
+
+                        if (verifyContact && player != null && player.IsJumping)
+                        {
+                            var blockDist = PhysicsObj.GetBlockDist(newPosition.Cell, player.LastGroundPos.Cell);
+
+                            if (blockDist <= 1)
+                            {
+                                log.Warn($"z-pos hacking detected for {Name}, lastGroundPos: {player.LastGroundPos.ToLOCString()} - requestPos: {newPosition.ToLOCString()}");
+                                Location = new ACE.Entity.Position(player.LastGroundPos);
+                                //Sequences.GetNextSequence(SequenceType.ObjectForcePosition);
+                                SendUpdatePosition();
+                                return false;
+                            }
+                        }
+
+                        player?.CheckMonsters();
+                    }
+                }
+                else
+                    PhysicsObj.Position.Frame.Orientation = newPosition.Rotation;
+            }
+
+            if (Teleporting && !forceUpdate) return true;
+
+            if (!success) return false;
+
+            var landblockUpdate = (Location.Cell >> 16 != newPosition.Cell >> 16) || variationChange;
+
+            Location = new ACE.Entity.Position(newPosition);
+
+            if (player != null && player.RecordCast.Enabled)
+                player.RecordCast.Log($"CurPos: {Location.ToLOCString()}");
+
+            if (player != null && (player.RequestedLocationBroadcast || DateTime.UtcNow - player.LastUpdatePosition >= Player.MoveToState_UpdatePosition_Threshold))
+                SendUpdatePosition();
+            else if (player != null)
+                player.Session.Network.EnqueueSend(new GameMessageUpdatePosition(this));
+            else
+                SendUpdatePosition(); // Creature always sends?
+            
+            LandblockManager.RelocateObjectForPhysics(this, true);
+
+            return landblockUpdate;
         }
     }
 }

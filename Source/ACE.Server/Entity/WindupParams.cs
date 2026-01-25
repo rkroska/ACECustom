@@ -2,20 +2,11 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Entity
 {
-    public class WindupParams
+    public class WindupParams(uint targetGuid, uint spellId, WorldObject casterItem)
     {
-        public uint TargetGuid;
-        public uint SpellId;
-        //public bool BuiltInSpell;
-        public WorldObject CasterItem;
-
-        public WindupParams(uint targetGuid, uint spellId, WorldObject casterItem)
-        {
-            TargetGuid = targetGuid;
-            SpellId = spellId;
-            //BuiltInSpell = builtInSpell;
-            CasterItem = casterItem;
-        }
+        public uint TargetGuid = targetGuid;
+        public uint SpellId = spellId;
+        public WorldObject CasterItem = casterItem;
 
         public override string ToString()
         {

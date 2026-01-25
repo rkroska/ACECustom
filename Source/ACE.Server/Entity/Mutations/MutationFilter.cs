@@ -7,7 +7,7 @@ namespace ACE.Server.Entity.Mutations
 {
     public class MutationFilter
     {
-        public List<Mutation> Mutations = new List<Mutation>();
+        public List<Mutation> Mutations = [];
 
         // MutationFilter -> Mutation -> MutationOutcome -> EffectList -> Effect
         

@@ -2,15 +2,9 @@ using ACE.Entity.Enum;
 
 namespace ACE.Server.Entity
 {
-    public class BodyPartProbability
+    public class BodyPartProbability(CombatBodyPart bodyPart, float probability)
     {
-        public CombatBodyPart BodyPart;
-        public float Probability;
-
-        public BodyPartProbability(CombatBodyPart bodyPart, float probability)
-        {
-            BodyPart = bodyPart;
-            Probability = probability;
-        }
+        public CombatBodyPart BodyPart = bodyPart;
+        public float Probability = probability;
     }
 }

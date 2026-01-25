@@ -8,39 +8,9 @@ namespace ACE.Server.Entity
     {
         public List<TreasureWieldedSet> Sets;
 
-        public int TotalNestedSets
-        {
-            get
-            {
-                var cnt = 0;
-
-                foreach (var set in Sets)
-                    cnt += set.TotalNestedSets;
-
-                return cnt;
-            }
-        }
-
-        public int MaxDepth
-        {
-            get
-            {
-                var maxDepth = 0;
-
-                foreach (var set in Sets)
-                {
-                    var depth = set.GetMaxDepth();
-
-                    if (depth > maxDepth)
-                        maxDepth = depth;
-                }
-                return maxDepth;
-            }
-        }
-
         public TreasureWieldedTable(List<TreasureWielded> items)
         {
-            Sets = new List<TreasureWieldedSet>();
+            Sets = [];
 
             TreasureWieldedSet currentSet = null;
 

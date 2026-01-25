@@ -335,7 +335,7 @@ namespace ACE.Server.Managers
             if (numAugs > 0)
                 floorMsg += $"\n{numAugs * 5} percent is due to your augmentation.";
 
-            if (!player.ConfirmationManager.EnqueueSend(new Confirmation_CraftInteration(player.Guid, source.Guid, target.Guid), floorMsg))
+            if (!player.ConfirmationManager.EnqueueSend(new Confirmation_CraftInteraction(player.Guid, source.Guid, target.Guid), floorMsg))
             {
                 player.SendUseDoneEvent(WeenieError.ConfirmationInProgress);
                 return;

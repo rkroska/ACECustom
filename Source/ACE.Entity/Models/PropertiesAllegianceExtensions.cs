@@ -13,7 +13,7 @@ namespace ACE.Entity.Models
             try
             {
                 if (value == null)
-                    return new Dictionary<uint, PropertiesAllegiance>();
+                    return [];
 
                 return value.Where(i => i.Value.ApprovedVassal).ToDictionary(i => i.Key, i => i.Value);
             }
@@ -26,7 +26,7 @@ namespace ACE.Entity.Models
         public static Dictionary<uint, PropertiesAllegiance> GetBanList(this IDictionary<uint, PropertiesAllegiance> value, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
-                return new Dictionary<uint, PropertiesAllegiance>();
+                return [];
 
             rwLock.EnterReadLock();
             try
@@ -39,7 +39,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static PropertiesAllegiance GetFirstOrDefaultByCharacterId(this IDictionary<uint, PropertiesAllegiance> value, uint characterId, ReaderWriterLockSlim rwLock)
+        public static PropertiesAllegiance? GetFirstOrDefaultByCharacterId(this IDictionary<uint, PropertiesAllegiance> value, uint characterId, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;

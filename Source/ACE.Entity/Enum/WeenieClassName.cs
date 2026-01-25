@@ -1,4 +1,4 @@
-
+#pragma warning disable CA1707
 namespace ACE.Entity.Enum
 {
     /// <summary>

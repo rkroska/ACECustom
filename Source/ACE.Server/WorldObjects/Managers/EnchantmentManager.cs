@@ -213,12 +213,19 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         private PropertiesEnchantmentRegistry BuildEntry(Spell spell, WorldObject caster = null, WorldObject weapon = null, bool equip = false)
         {
-            var entry = new PropertiesEnchantmentRegistry();
-
-            entry.EnchantmentCategory = (uint)spell.MetaSpellType;
-            entry.SpellId = (int)spell.Id;
-            entry.SpellCategory = spell.Category;
-            entry.PowerLevel = spell.Power;
+            var entry = new PropertiesEnchantmentRegistry
+            {
+                EnchantmentCategory = (uint)spell.MetaSpellType,
+                SpellId = (int)spell.Id,
+                SpellCategory = spell.Category,
+                PowerLevel = spell.Power,
+                CasterObjectId = caster?.Guid.Full ?? WorldObject.Guid.Full,
+                DegradeModifier = spell.DegradeModifier,
+                DegradeLimit = spell.DegradeLimit,
+                StatModType = spell.StatModType,
+                StatModKey = spell.StatModKey,
+                StatModValue = spell.StatModVal,
+            };
 
             if (caster is Creature)
             {
@@ -247,21 +254,9 @@ namespace ACE.Server.WorldObjects.Managers
                     entry.StartTime = 0;
                 }
             }
-
-            if (caster == null)
-                entry.CasterObjectId = WorldObject.Guid.Full;
-            else
-                entry.CasterObjectId = caster.Guid.Full;
-
-            entry.DegradeModifier = spell.DegradeModifier;
-            entry.DegradeLimit = spell.DegradeLimit;
-            entry.StatModType = spell.StatModType;
-            entry.StatModKey = spell.StatModKey;
             bool selfCastEligible = (spell.IsBeneficial && spell.IsSelfTargeted) || spell.IsHarmful;
 
             //calculate luminance aug additions for statmod
-            entry.StatModValue = spell.StatModVal;
-
             if (caster != null && caster is Creature)
             {
                 var player = caster as Creature;
@@ -554,19 +549,19 @@ namespace ACE.Server.WorldObjects.Managers
             if (cooldownID == null)
                 return false;
 
-            var newEntry = new PropertiesEnchantmentRegistry();
-
-            // TODO: BiotaPropertiesEnchantmentRegistry.SpellId should be uint
-            newEntry.SpellId = (int)GetCooldownSpellID(cooldownID.Value);
-            newEntry.SpellCategory = (SpellCategory)SpellCategory_Cooldown;
-            newEntry.HasSpellSetId = true;
-            newEntry.Duration = item.CooldownDuration ?? 0.0f;
-            newEntry.CasterObjectId = item.Guid.Full;
-            newEntry.DegradeLimit = -666;
-            newEntry.StatModType = EnchantmentTypeFlags.Cooldown;
-            newEntry.EnchantmentCategory = (uint)EnchantmentMask.Cooldown;
-
-            newEntry.LayerId = 1;      // cooldown at layer 1, any spells at layer 2?
+            var newEntry = new PropertiesEnchantmentRegistry
+            {
+                // TODO: BiotaPropertiesEnchantmentRegistry.SpellId should be uint
+                SpellId = (int)GetCooldownSpellID(cooldownID.Value),
+                SpellCategory = (SpellCategory)SpellCategory_Cooldown,
+                HasSpellSetId = true,
+                Duration = item.CooldownDuration ?? 0.0f,
+                CasterObjectId = item.Guid.Full,
+                DegradeLimit = -666,
+                StatModType = EnchantmentTypeFlags.Cooldown,
+                EnchantmentCategory = (uint)EnchantmentMask.Cooldown,
+                LayerId = 1      // cooldown at layer 1, any spells at layer 2?
+            };
             WorldObject.Biota.PropertiesEnchantmentRegistry.AddEnchantment(newEntry, WorldObject.BiotaDatabaseLock);
             WorldObject.ChangesDetected = true;
 
@@ -783,7 +778,10 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public void DispelAllEnchantments()
         {
-            var enchantments = WorldObject.Biota.PropertiesEnchantmentRegistry.Clone(WorldObject.BiotaDatabaseLock);
+            var enchantments = WorldObject.Biota.PropertiesEnchantmentRegistry
+                .Clone(WorldObject.BiotaDatabaseLock)
+                .Where(e => e.Duration != -1) // Avoid indefinite enchantments (items, charms).
+                .ToList();
 
             Dispel(enchantments);
         }

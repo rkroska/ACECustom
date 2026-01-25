@@ -5,24 +5,15 @@ namespace ACE.Server.Entity
     // This handles a peculiar sequence sent by the client in certain scenarios
     // The client will double-send 0x19 PutItemInContainer for the same object
     // (swapping dual wield weapons, swapping ammo types in combat)
-    public class PutItemInContainerEvent
+    public class PutItemInContainerEvent(uint itemGuid, uint containerGuid, int placement)
     {
-        public uint ItemGuid;
-        public uint ContainerGuid;
-        public int Placement;
+        public uint ItemGuid = itemGuid;
+        public uint ContainerGuid = containerGuid;
+        public int Placement = placement;
 
-        public DateTime Timestamp;
+        public DateTime Timestamp = DateTime.UtcNow;
 
-        public static TimeSpan Threshold = TimeSpan.FromSeconds(0.5f);
-
-        public PutItemInContainerEvent(uint itemGuid, uint containerGuid, int placement)
-        {
-            ItemGuid = itemGuid;
-            ContainerGuid = containerGuid;
-            Placement = placement;
-
-            Timestamp = DateTime.UtcNow;
-        }
+        private static readonly TimeSpan Threshold = TimeSpan.FromSeconds(0.5f);
 
         public bool IsDoubleSend(PutItemInContainerEvent data)
         {

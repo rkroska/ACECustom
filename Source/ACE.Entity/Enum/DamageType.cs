@@ -33,5 +33,18 @@ namespace ACE.Entity.Enum
         {
             return EnumHelper.HasMultiple((uint)damageType);
         }
+
+        public static string DisplayName(this DamageType damageType)
+        {
+            switch (damageType)
+            {
+                case DamageType.Electric:
+                    return "Lightning";
+                case DamageType.Nether:
+                    return "Void";
+                default:
+                    return damageType.ToString();
+            }
+        }
     }
 }

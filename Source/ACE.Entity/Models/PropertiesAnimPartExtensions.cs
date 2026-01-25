@@ -22,7 +22,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesAnimPart> Clone(this IList<PropertiesAnimPart> value, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesAnimPart>? Clone(this IList<PropertiesAnimPart> value, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -30,7 +30,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return new List<PropertiesAnimPart>(value);
+                return [.. value];
             }
             finally
             {

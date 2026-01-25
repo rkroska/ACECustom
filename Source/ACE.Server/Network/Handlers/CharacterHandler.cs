@@ -45,8 +45,7 @@ namespace ACE.Server.Network.Handlers
 
         private static void CharacterCreateEx(ClientMessage message, Session session)
         {
-            var characterCreateInfo = new CharacterCreateInfo();
-            characterCreateInfo.Unpack(message.Payload);
+            CharacterCreateInfo characterCreateInfo = CharacterCreateInfo.Unpack(message.Payload);
             
             if (ServerConfig.taboo_table.Value && DatManager.PortalDat.TabooTable.ContainsBadWord(characterCreateInfo.Name.ToLowerInvariant()))
             {

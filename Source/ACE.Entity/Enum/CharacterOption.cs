@@ -180,12 +180,12 @@ namespace ACE.Entity.Enum
 
     public static class CharacterOptionExtensions
     {
-        public static CharacterOptions1Attribute GetCharacterOptions1Attribute(this CharacterOption val)
+        public static CharacterOptions1Attribute? GetCharacterOptions1Attribute(this CharacterOption val)
         {
             return val.GetAttributeOfType<CharacterOptions1Attribute>();
         }
 
-        public static CharacterOptions2Attribute GetCharacterOptions2Attribute(this CharacterOption val)
+        public static CharacterOptions2Attribute? GetCharacterOptions2Attribute(this CharacterOption val)
         {
             return val.GetAttributeOfType<CharacterOptions2Attribute>();
         }
@@ -198,10 +198,11 @@ namespace ACE.Entity.Enum
         public static uint GetCharacterOptions1Flag(this Dictionary<CharacterOption, bool> options)
         {
             uint flags = 0;
-            foreach (var option in options.Where(o => o.Key.GetCharacterOptions1Attribute() != null))
+            foreach (var option in options)
             {
-                if (option.Value)
-                    flags |= (uint)option.Key.GetCharacterOptions1Attribute().Option;
+                var attribute = option.Key.GetCharacterOptions1Attribute();
+                if (attribute == null) continue;
+                if (option.Value) flags |= (uint)attribute.Option;
             }
 
             return flags;
@@ -215,10 +216,11 @@ namespace ACE.Entity.Enum
         public static uint GetCharacterOptions2Flag(this Dictionary<CharacterOption, bool> options)
         {
             uint flags = 0;
-            foreach (var option in options.Where(o => o.Key.GetCharacterOptions2Attribute() != null))
+            foreach (var option in options)
             {
-                if (option.Value)
-                    flags |= (uint)option.Key.GetCharacterOptions2Attribute().Option;
+                var attribute = option.Key.GetCharacterOptions2Attribute();
+                if (attribute == null) continue;
+                if (option.Value) flags |= (uint)attribute.Option;
             }
 
             return flags;

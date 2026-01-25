@@ -1,17 +1,9 @@
 namespace ACE.Server.Entity
 {
-    public class BaseDamage
+    public class BaseDamage(int maxDamage, float variance)
     {
-        public int MaxDamage;
-
-        public float Variance;
-
+        public int MaxDamage = maxDamage;
+        public float Variance = variance;
         public float MinDamage => MaxDamage * (1.0f - Variance);
-
-        public BaseDamage(int maxDamage, float variance)
-        {
-            MaxDamage = maxDamage;
-            Variance = variance;
-        }
     }
 }

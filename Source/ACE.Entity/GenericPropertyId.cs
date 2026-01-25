@@ -2,16 +2,10 @@ using ACE.Entity.Enum.Properties;
 
 namespace ACE.Entity
 {
-    public struct GenericPropertyId
+    public struct GenericPropertyId(uint propertyId, PropertyType propertyType)
     {
-        public GenericPropertyId(uint propertyId, PropertyType propertyType)
-        {
-            PropertyId = propertyId;
-            PropertyType = propertyType;
-        }
+        public uint PropertyId { get; set; } = propertyId;
 
-        public uint PropertyId { get; set; }
-
-        public PropertyType PropertyType { get; set; }
+        public PropertyType PropertyType { get; set; } = propertyType;
     }
 }

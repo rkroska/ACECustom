@@ -66,6 +66,10 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<TransferMonitoringConfigDb> TransferMonitoringConfigs { get; set; }
         public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
         public virtual DbSet<CharTracker> CharTracker { get; set; }
+        public virtual DbSet<PetRegistry> PetRegistry { get; set; }
+        public virtual DbSet<CreatureBlacklist> CreatureBlacklist { get; set; }
+
+        private static readonly int[] zeroInts = [0, 0];
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -118,6 +122,21 @@ namespace ACE.Database.Models.Shard
                 entity.HasIndex(e => e.LoginTimestamp, "IX_char_tracker_LoginTimestamp");
             });
 
+            // Pet Registry - account-based creature collection tracking
+            modelBuilder.Entity<PetRegistry>(entity =>
+            {
+                entity.ToTable("pet_registry");
+                entity.HasKey(e => new { e.AccountId, e.Wcid, e.IsShiny });
+                entity.HasIndex(e => e.AccountId, "IX_pet_registry_AccountId");
+            });
+
+            // Creature Blacklist - blocks capture and/or shiny variants
+            modelBuilder.Entity<CreatureBlacklist>(entity =>
+            {
+                entity.ToTable("creature_blacklist");
+                entity.HasKey(e => e.Wcid);
+            });
+
             modelBuilder.HasCharSet("utf8")
                 .UseCollation("utf8_general_ci");
 
@@ -125,7 +144,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota");
 
-                entity.HasComment("Dynamic Weenies of a Shard/World");
+                entity.ToTable(t => t.HasComment("Dynamic Weenies of a Shard/World"));
 
                 entity.HasIndex(e => e.WeenieType, "biota_type_idx");
 
@@ -152,7 +171,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.AllegianceId, e.CharacterId })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_allegiance");
 
@@ -181,7 +200,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_anim_part");
 
-                entity.HasComment("Animation Part Changes (from PCAPs) of Weenies");
+                entity.ToTable(t => t.HasComment("Animation Part Changes (from PCAPs) of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_animpart_idx");
 
@@ -209,11 +228,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_attribute");
 
-                entity.HasComment("Attribute Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Attribute Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -245,11 +264,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_attribute_2nd");
 
-                entity.HasComment("Attribute2nd (Vital) Properties of Weenies");
+                    entity.ToTable(t => t.HasComment("Attribute2nd (Vital) Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -285,7 +304,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_body_part");
 
-                entity.HasComment("Body Part Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Body Part Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.Key }, "wcid_bodypart_type_uidx")
                     .IsUnique();
@@ -365,7 +384,7 @@ namespace ACE.Database.Models.Shard
 
                 entity.ToTable("biota_properties_book");
 
-                entity.HasComment("Book Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Book Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .ValueGeneratedNever()
@@ -390,7 +409,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_book_page_data");
 
-                entity.HasComment("Page Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Page Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.PageId }, "wcid_pageid_uidx")
                     .IsUnique();
@@ -445,11 +464,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_bool");
 
-                entity.HasComment("Bool Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Bool Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -473,7 +492,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_create_list");
 
-                entity.HasComment("CreateList Properties of Weenies");
+                entity.ToTable(t => t.HasComment("CreateList Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_createlist");
 
@@ -519,11 +538,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_d_i_d");
 
-                entity.HasComment("DataID Properties of Weenies");
+                entity.ToTable(t => t.HasComment("DataID Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -547,7 +566,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_emote");
 
-                entity.HasComment("Emote Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Emote Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_emote");
 
@@ -593,7 +612,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_emote_action");
 
-                entity.HasComment("EmoteAction Properties of Weenies");
+                entity.ToTable(t => t.HasComment("EmoteAction Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.EmoteId, e.Order }, "wcid_category_set_order_uidx")
                     .IsUnique();
@@ -722,7 +741,7 @@ namespace ACE.Database.Models.Shard
 
                 entity.ToTable("biota_properties_enchantment_registry");
 
-                entity.HasComment("Enchantment Registry Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Enchantment Registry Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.ObjectId, e.SpellId, e.LayerId }, "wcid_enchantmentregistry_objectId_spellId_layerId_uidx")
                     .IsUnique();
@@ -809,11 +828,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Event })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_event_filter");
 
-                entity.HasComment("EventFilter Properties of Weenies");
+                entity.ToTable(t => t.HasComment("EventFilter Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -833,11 +852,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_float");
 
-                entity.HasComment("Float Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Float Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -861,7 +880,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_generator");
 
-                entity.HasComment("Generator Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Generator Properties of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_generator");
 
@@ -938,11 +957,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_i_i_d");
 
-                entity.HasComment("InstanceID Properties of Weenies");
+                entity.ToTable(t => t.HasComment("InstanceID Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.Type, e.Value }, "type_value_idx");
 
@@ -968,11 +987,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_int");
 
-                entity.HasComment("Int Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Int Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -996,11 +1015,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_int64");
 
-                entity.HasComment("Int64 Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Int64 Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -1024,7 +1043,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_palette");
 
-                entity.HasComment("Palette Changes (from PCAPs) of Weenies");
+                entity.ToTable(t => t.HasComment("Palette Changes (from PCAPs) of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_palette_idx");
 
@@ -1054,11 +1073,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.PositionType })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_position");
 
-                entity.HasComment("Position Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Position Properties of Weenies"));
 
                 entity.HasIndex(e => new { e.PositionType, e.ObjCellId }, "type_cell_idx");
 
@@ -1098,11 +1117,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_skill");
 
-                entity.HasComment("Skill Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Skill Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -1146,11 +1165,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Spell })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_spell_book");
 
-                entity.HasComment("SpellBook Properties of Weenies");
+                entity.ToTable(t => t.HasComment("SpellBook Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -1174,11 +1193,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.ObjectId, e.Type })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("biota_properties_string");
 
-                entity.HasComment("String Properties of Weenies");
+                entity.ToTable(t => t.HasComment("String Properties of Weenies"));
 
                 entity.Property(e => e.ObjectId)
                     .HasColumnName("object_Id")
@@ -1204,7 +1223,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("biota_properties_texture_map");
 
-                entity.HasComment("Texture Map Changes (from PCAPs) of Weenies");
+                entity.ToTable(t => t.HasComment("Texture Map Changes (from PCAPs) of Weenies"));
 
                 entity.HasIndex(e => e.ObjectId, "wcid_texturemap_idx");
 
@@ -1234,7 +1253,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.ToTable("character");
 
-                entity.HasComment("Int Properties of Weenies");
+                entity.ToTable(t => t.HasComment("Int Properties of Weenies"));
 
                 entity.HasIndex(e => e.AccountId, "character_account_idx");
 
@@ -1291,7 +1310,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.ContractId })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_contract_registry");
 
@@ -1315,11 +1334,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.SpellComponentId })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_fill_comp_book");
 
-                entity.HasComment("FillCompBook Properties of Weenies");
+                entity.ToTable(t => t.HasComment("FillCompBook Properties of Weenies"));
 
                 entity.Property(e => e.CharacterId)
                     .HasColumnName("character_Id")
@@ -1343,11 +1362,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.FriendId })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_friend_list");
 
-                entity.HasComment("FriendList Properties of Weenies");
+                entity.ToTable(t => t.HasComment("FriendList Properties of Weenies"));
 
                 entity.Property(e => e.CharacterId)
                     .HasColumnName("character_Id")
@@ -1367,11 +1386,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.QuestName })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_quest_registry");
 
-                entity.HasComment("QuestBook Properties of Weenies");
+                entity.ToTable(t => t.HasComment("QuestBook Properties of Weenies"));
 
                 entity.Property(e => e.CharacterId)
                     .HasColumnName("character_Id")
@@ -1399,11 +1418,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.ShortcutBarIndex })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_shortcut_bar");
 
-                entity.HasComment("ShortcutBar Properties of Weenies");
+                entity.ToTable(t => t.HasComment("ShortcutBar Properties of Weenies"));
 
                 entity.HasIndex(e => e.CharacterId, "wcid_shortcutbar_idx");
 
@@ -1433,7 +1452,7 @@ namespace ACE.Database.Models.Shard
 
                 entity.ToTable("character_properties_spell_bar");
 
-                entity.HasComment("SpellBar Properties of Weenies");
+                entity.ToTable(t => t.HasComment("SpellBar Properties of Weenies"));
 
                 entity.HasIndex(e => e.SpellBarIndex, "spellBar_idx");
 
@@ -1463,7 +1482,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.SquelchCharacterId })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_squelch");
 
@@ -1485,11 +1504,11 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.CharacterId, e.TitleId })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("character_properties_title_book");
 
-                entity.HasComment("TitleBook Properties of Weenies");
+                entity.ToTable(t => t.HasComment("TitleBook Properties of Weenies"));
 
                 entity.Property(e => e.CharacterId)
                     .HasColumnName("character_Id")
@@ -1576,7 +1595,7 @@ namespace ACE.Database.Models.Shard
             {
                 entity.HasKey(e => new { e.HouseId, e.PlayerGuid })
                     .HasName("PRIMARY")
-                    .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                    .HasAnnotation("MySql:IndexPrefixLength", zeroInts);
 
                 entity.ToTable("house_permission");
 

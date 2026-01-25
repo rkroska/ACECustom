@@ -52,26 +52,10 @@ namespace ACE.Server.Entity
         public static BodyPart GetBodyPart(BodyPart bodyParts)
         {
             // get individual parts in bodyParts
-            var parts = GetFlags(bodyParts);
+            var parts = Enum.GetValues(typeof(BodyPart)).Cast<BodyPart>().Where(p => bodyParts.HasFlag(p)).ToList();
 
             // return a random part within list
             return parts.ToList()[ThreadSafeRandom.Next(0, parts.Count - 1)];
-        }
-
-        public static PropertiesBodyPart GetBodyPart(WorldObject target, AttackHeight height)
-        {
-            var creature = target as Creature;
-            if (creature == null) return null;
-
-            // get all of the body parts for this creature
-            // at this attack height
-            var heightParts = creature.Biota.PropertiesBodyPart.Values.Where(b => b.BH == (int)height).ToList();
-            if (heightParts.Count == 0) return null;
-
-            // get random body part
-            var rng = ThreadSafeRandom.Next(0, heightParts.Count - 1);
-            var part = heightParts[rng];
-            return part;
         }
 
         public static BodyPart GetBodyPart(AttackHeight attackHeight)
@@ -84,33 +68,6 @@ namespace ACE.Server.Entity
                 default: return GetBodyPart(Lower);
             }
         }
-
-        /*public static EquipMask GetEquipMask(BodyPart bodyPart)
-        {
-            switch (bodyPart)
-            {
-                case BodyPart.Abdomen:
-                    return EquipMask.AbdomenArmor | EquipMask.AbdomenWear;
-                case BodyPart.Chest:
-                    return EquipMask.ChestArmor | EquipMask.ChestWear;
-                case BodyPart.Foot:
-                    return EquipMask.FootWear;
-                case BodyPart.Hand:
-                    return EquipMask.HandWear;
-                case BodyPart.Head:
-                    return EquipMask.HeadWear;
-                case BodyPart.LowerArm:
-                    return EquipMask.LowerArmArmor | EquipMask.LowerArmWear;
-                case BodyPart.LowerLeg:
-                    return EquipMask.LowerLegArmor | EquipMask.LowerLegWear;
-                case BodyPart.UpperArm:
-                    return EquipMask.UpperArmArmor | EquipMask.UpperArmWear;
-                case BodyPart.UpperLeg:
-                    return EquipMask.UpperLegArmor | EquipMask.UpperLegWear;
-                default:
-                    return EquipMask.None;
-            }
-        }*/
 
         public static CoverageMask GetCoverageMask(BodyPart bodyPart)
         {
@@ -166,31 +123,10 @@ namespace ACE.Server.Entity
             }
         }
 
-        public static List<BodyPart> GetFlags(BodyPart bodyParts)
-        {
-            return Enum.GetValues(typeof(BodyPart)).Cast<BodyPart>().Where(p => bodyParts.HasFlag(p)).ToList();
-        }
-
-        /*public static List<EquipMask> GetFlags(EquipMask locations)
-        {
-            return Enum.GetValues(typeof(EquipMask)).Cast<EquipMask>().Where(p => p != EquipMask.None && locations.HasFlag(p)).ToList();
-        }*/
-
         public static List<CoverageMask> GetFlags(CoverageMask coverage)
         {
             return Enum.GetValues(typeof(CoverageMask)).Cast<CoverageMask>().Where(p => p != CoverageMask.Unknown && coverage.HasFlag(p)).ToList();
         }
-
-        /*public static bool HasAny(EquipMask? location, List<EquipMask> flags)
-        {
-            if (location == null)
-                return false;
-
-            foreach (var flag in flags)
-                if (location.Value.HasFlag(flag))
-                    return true;
-            return false;
-        }*/
 
         public static bool HasAny(CoverageMask? coverage, List<CoverageMask> flags)
         {

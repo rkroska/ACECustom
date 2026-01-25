@@ -79,7 +79,7 @@ namespace ACE.Entity.Models
             return null;
         }
 
-        public static string GetProperty(this Weenie weenie, PropertyString property)
+        public static string? GetProperty(this Weenie weenie, PropertyString property)
         {
             if (weenie.PropertiesString == null)
                 return null;
@@ -90,7 +90,7 @@ namespace ACE.Entity.Models
             return null;
         }
 
-        public static PropertiesPosition GetProperty(this Weenie weenie, PositionType property)
+        public static PropertiesPosition? GetProperty(this Weenie weenie, PositionType property)
         {
             if (weenie.PropertiesPosition == null)
                 return null;
@@ -101,7 +101,7 @@ namespace ACE.Entity.Models
             return null;
         }
 
-        public static Position GetPosition(this Weenie weenie, PositionType property)
+        public static Position? GetPosition(this Weenie weenie, PositionType property)
         {
             if (weenie.PropertiesPosition == null)
                 return null;
@@ -117,20 +117,17 @@ namespace ACE.Entity.Models
         // Utility
         // =====================================
 
-        public static string GetName(this Weenie weenie)
+        public static string? GetName(this Weenie weenie)
         {
             var name = weenie.GetProperty(PropertyString.Name);
 
             return name;
         }
 
-        public static string GetPluralName(this Weenie weenie)
+        public static string? GetPluralName(this Weenie weenie)
         {
             var pluralName = weenie.GetProperty(PropertyString.PluralName);
-
-            if (pluralName == null)
-                pluralName = weenie.GetProperty(PropertyString.Name).Pluralize();
-
+            pluralName ??= weenie.GetProperty(PropertyString.Name)?.Pluralize();
             return pluralName;
         }
 
@@ -153,7 +150,6 @@ namespace ACE.Entity.Models
             switch (weenie.WeenieType)
             {
                 case WeenieType.Stackable:
-
                 case WeenieType.Ammunition:
                 case WeenieType.Coin:
                 case WeenieType.CraftTool:

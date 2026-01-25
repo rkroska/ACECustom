@@ -572,14 +572,6 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns the current attack height as an enumerable string
-        /// </summary>
-        public string GetAttackHeight()
-        {
-            return AttackHeight?.GetString();
-        }
-
-        /// <summary>
         /// Returns the splatter height for the current attack height
         /// </summary>
         public string GetSplatterHeight()

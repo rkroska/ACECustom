@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 using System.Globalization;
 
 namespace ACE.Entity.Enum.Properties
@@ -47,7 +46,6 @@ namespace ACE.Entity.Enum.Properties
         [SendOnLogin]
         [AssessmentProperty]
         Level = 25,
-        [AssessmentProperty]
         AccountRequirements = 26,
         ArmorType = 27,
         [AssessmentProperty]
@@ -701,11 +699,23 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         SplitArrowCount                         = 9031,
 
+        // Monster Capture System - POC
+        CaptureCreatureType                     = 9032,
+        CapturedCreatureWCID                    = 9033,
+        CapturedPaletteTemplate                 = 9034,
+        VisualOverridePaletteTemplate           = 9035,
+        CrystalTier                             = 9036, // 1=Flawed, 2=Pristine, 3=Perfect
+        CapturedCreatureType                    = 9037, // Species of captured creature
+        
+        // Shiny Mobs System
+        CreatureVariant                         = 9038, // Shiny variant on live creature
+        CapturedCreatureVariant                 = 9039, // Shiny status copied to essence
+
     }
 
     public static class PropertyIntExtensions
     {
-        public static string GetValueEnumName(this PropertyInt property, int value)
+        public static string? GetValueEnumName(this PropertyInt property, int value)
         {
             switch (property)
             {

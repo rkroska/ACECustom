@@ -1,12 +1,9 @@
 using ACE.Database;
 using ACE.Database.Models.Shard;
-using Google.Protobuf.WellKnownTypes;
 using log4net;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -343,6 +340,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> world_closed { get; private set; } = new(false, "enable this to startup world as a closed to players world");
         public static ConfigProperty<bool> enl_removes_society { get; private set; } = new(true, "if true, enlightenment will remove society flags");
         public static ConfigProperty<bool> action_queue_tracking_enabled { get; private set; } = new(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled.");
+        public static ConfigProperty<bool> siphon_lens_enabled { get; private set; } = new(false, "if TRUE, enables siphon lens drops from all creature deaths. Use /modifybool siphon_lens_enabled true to activate.");
         public static ConfigProperty<long> char_delete_time { get; private set; } = new(3600, "the amount of time in seconds a deleted character can be restored");
         public static ConfigProperty<long> chat_requires_account_time_seconds { get; private set; } = new(0, "the amount of time in seconds an account is required to have existed for for global chat privileges");
         public static ConfigProperty<long> chat_requires_player_age { get; private set; } = new(0, "the amount of time in seconds a player is required to have played for global chat privileges");
@@ -429,6 +427,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> new_life_aug_curve_pct { get; private set; } = new(0.0, "a value between 0 and 1 representing the amount of the new curve to apply. 0 means the old curve will be used, 1 means the new curve will be used, and 0.5 means the midpoint between the curves will be used.");
         public static ConfigProperty<double> life_aug_prot_tuning_constant { get; private set; } = new(0.0034597, "the tuning constant r used in the  (1.0 - (1.0 - r)^a) life aug scaling formula - controls the size of step for each augmentation, relative to remaining cap (0.0034597 means every 200 augs halves the remaining bonus)");
         public static ConfigProperty<double> life_aug_prot_max_bonus { get; private set; } = new(0.32, "the maximum bonus that the life aug scaling can approach at infinite augs - T8 protection spells provide 68% base, so a bonus above 32% makes it possible to achieve full protection");
+        public static ConfigProperty<double> creature_variant_chance { get; private set; } = new(0.0001, "the chance that a creature variant (e.g. shiny) will spawn");
+        public static ConfigProperty<double> siphon_lens_flawed_rate { get; private set; } = new(0.002, "drop rate for Flawed Siphon Lens in mundane roll (0.002 = ~1 in 1,000 kills)");
+        public static ConfigProperty<double> siphon_lens_pristine_rate { get; private set; } = new(0.0008, "drop rate for Pristine Siphon Lens in mundane roll (0.0008 = ~1 in 2,500 kills)");
+        public static ConfigProperty<double> siphon_lens_perfect_rate { get; private set; } = new(0.000333, "drop rate for Perfect Siphon Lens in mundane roll (0.000333 = ~1 in 6,000 kills)");
         public static ConfigProperty<string> content_folder { get; private set; } = new("Content", "for content creators to live edit weenies. defaults to Content folder found in same directory as ACE.Server.dll");
         public static ConfigProperty<string> dat_older_warning_msg { get; private set; } = new("Your DAT files are incomplete.\nThis server does not support dynamic DAT updating at this time.\nPlease visit https://emulator.ac/how-to-play to download the complete DAT files.", "Warning message displayed (if show_dat_warning is true) to player if client attempts DAT download from server");
         public static ConfigProperty<string> dat_newer_warning_msg { get; private set; } = new("Your DAT files are newer than expected.\nPlease visit https://emulator.ac/how-to-play to download the correct DAT files.", "Warning message displayed (if show_dat_warning is true) to player if client connects to this server");
@@ -457,7 +459,7 @@ namespace ACE.Server.Managers
                 ServerConfig.SetValue("content_folder", "/ace/Content");
 
             // Subscribe the worker thread to  execute DoWork whenever it elapses.
-            _workerThread.Elapsed += (Object source, ElapsedEventArgs e) => DoWork();
+            _workerThread.Elapsed += (source, e) => DoWork();
             _workerThread.AutoReset = true;
             _workerThread.Start();
         }

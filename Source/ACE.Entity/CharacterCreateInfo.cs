@@ -11,9 +11,9 @@ namespace ACE.Entity
         public HeritageGroup Heritage { get; set; }
         public uint Gender { get; set; }
 
-        public Appearance Appearance { get; } = new Appearance();
+        public Appearance Appearance { get; init; }
 
-        public int TemplateOption { get; private set; }
+        public int TemplateOption { get; init; }
 
         public uint StrengthAbility { get; set; }
         public uint EnduranceAbility { get; set; }
@@ -22,49 +22,62 @@ namespace ACE.Entity
         public uint FocusAbility { get; set; }
         public uint SelfAbility { get; set; }
 
-        public uint CharacterSlot { get; private set; }
-        public uint ClassId { get; private set; }
+        public uint CharacterSlot { get; init; }
+        public uint ClassId { get; init; }
 
-        public List<SkillAdvancementClass> SkillAdvancementClasses = new List<SkillAdvancementClass>();
+        public List<SkillAdvancementClass> SkillAdvancementClasses;
 
         public string Name { get; set; }
 
-        public uint StartArea { get; private set; }
+        public uint StartArea { get; init; }
 
-        public bool IsAdmin { get; private set; }
-        public bool IsSentinel { get; private set; }
+        public bool IsAdmin { get; init; }
+        public bool IsSentinel { get; init; }
 
-        public void Unpack(BinaryReader reader)
+        public static CharacterCreateInfo Unpack(BinaryReader reader)
         {
             reader.BaseStream.Position += 4;   /* Unknown constant (1) */
-
-            Heritage    = (HeritageGroup)reader.ReadUInt32();
-            Gender      = reader.ReadUInt32();
-
-            Appearance.Unpack(reader);
-
-            TemplateOption = reader.ReadInt32();
-
-            StrengthAbility     = reader.ReadUInt32();
-            EnduranceAbility    = reader.ReadUInt32();
-            CoordinationAbility = reader.ReadUInt32();
-            QuicknessAbility    = reader.ReadUInt32();
-            FocusAbility        = reader.ReadUInt32();
-            SelfAbility         = reader.ReadUInt32();
-
-            CharacterSlot   = reader.ReadUInt32();
-            ClassId         = reader.ReadUInt32();
-
+            HeritageGroup heritage = (HeritageGroup)reader.ReadUInt32();
+            uint gender = reader.ReadUInt32();
+            Appearance Appearance = Appearance.Unpack(reader);
+            int templateOption = reader.ReadInt32();
+            uint strengthAbility = reader.ReadUInt32();
+            uint enduranceAbility = reader.ReadUInt32();
+            uint coordinationAbility = reader.ReadUInt32();
+            uint quicknessAbility = reader.ReadUInt32();
+            uint focusAbility = reader.ReadUInt32();
+            uint selfAbility = reader.ReadUInt32();
+            uint characterSlot = reader.ReadUInt32();
+            uint classId = reader.ReadUInt32();
             uint numOfSkills = reader.ReadUInt32();
+            List<SkillAdvancementClass> skillAdvancementClasses = [];
             for (uint i = 0; i < numOfSkills; i++)
-                SkillAdvancementClasses.Add((SkillAdvancementClass)reader.ReadUInt32());
+                skillAdvancementClasses.Add((SkillAdvancementClass)reader.ReadUInt32());
+            string name = reader.ReadString16L();
+            uint startArea = reader.ReadUInt32();
+            bool isAdmin = (reader.ReadUInt32() == 1);
+            bool isSentinel = (reader.ReadUInt32() == 1);
 
-            Name = reader.ReadString16L();
-
-            StartArea = reader.ReadUInt32();
-
-            IsAdmin = (reader.ReadUInt32() == 1);
-            IsSentinel = (reader.ReadUInt32() == 1);
+            return new CharacterCreateInfo()
+            {
+                Heritage = heritage,
+                Gender = gender,
+                Appearance = Appearance,
+                TemplateOption = templateOption,
+                StrengthAbility = strengthAbility,
+                EnduranceAbility = enduranceAbility,
+                CoordinationAbility = coordinationAbility,
+                QuicknessAbility = quicknessAbility,
+                FocusAbility = focusAbility,
+                SelfAbility = selfAbility,
+                CharacterSlot = characterSlot,
+                ClassId = classId,
+                SkillAdvancementClasses = skillAdvancementClasses,
+                Name = name,
+                StartArea = startArea,
+                IsAdmin = isAdmin,
+                IsSentinel = isSentinel,
+            };
         }
     }
 }

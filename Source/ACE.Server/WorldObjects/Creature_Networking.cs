@@ -8,6 +8,7 @@ using ACE.DatLoader.Entity;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
+using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
@@ -218,8 +219,20 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            if (coverage.Count == 0 && ClothingBase.HasValue)
+            {
+                // Even with no armor coverage, apply shiny variant textures before falling back
+                if (CreatureVariant.HasValue)
+                {
+                    var baseObjDesc = base.CalculateObjDesc();
+                    baseObjDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+                    return baseObjDesc;
+                }
+                return base.CalculateObjDesc();
+            }
+
             // Add the "naked" body parts. These are the ones not already covered.
-            // Note that this is the original SetupTableId, not thisSetupId.
+
             if (SetupTableId > 0)
             {
                 var baseSetup = DatManager.PortalDat.ReadFromDat<SetupModel>(SetupTableId);
@@ -227,12 +240,13 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!coverage.Contains(i) && i != 0x10) // Don't add body parts for those that are already covered. Also don't add the head, that was already covered by AddCharacterBaseModelData()
                         objDesc.AnimPartChanges.Add(new PropertiesAnimPart { Index = i, AnimationId = baseSetup.Parts[i] });
-                    //AddModel(i, baseSetup.Parts[i]);
                 }
             }
 
-            if (coverage.Count == 0 && ClothingBase.HasValue)
-                return base.CalculateObjDesc();
+            if (CreatureVariant.HasValue)
+            {
+                objDesc.TextureChanges.AddRange(CreatureVariantHelper.GetTextureChanges(this, coverage));
+            }
 
             return objDesc;
         }

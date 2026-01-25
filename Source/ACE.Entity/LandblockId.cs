@@ -31,36 +31,36 @@ namespace ACE.Entity
             Variation_Id = variationId;
         }
 
-        public LandblockId East => new LandblockId(Convert.ToByte(LandblockX + 1), LandblockY);
+        public readonly LandblockId East => new(Convert.ToByte(LandblockX + 1), LandblockY);
 
-        public LandblockId West => new LandblockId(Convert.ToByte(LandblockX - 1), LandblockY);
+        public readonly LandblockId West => new(Convert.ToByte(LandblockX - 1), LandblockY);
 
-        public LandblockId North => new LandblockId(LandblockX, Convert.ToByte(LandblockY + 1));
+        public readonly LandblockId North => new(LandblockX, Convert.ToByte(LandblockY + 1));
 
-        public LandblockId South => new LandblockId(LandblockX, Convert.ToByte(LandblockY - 1));
+        public readonly LandblockId South => new(LandblockX, Convert.ToByte(LandblockY - 1));
 
-        public LandblockId NorthEast => new LandblockId(Convert.ToByte(LandblockX + 1), Convert.ToByte(LandblockY + 1));
+        public readonly LandblockId NorthEast => new(Convert.ToByte(LandblockX + 1), Convert.ToByte(LandblockY + 1));
 
-        public LandblockId NorthWest => new LandblockId(Convert.ToByte(LandblockX - 1), Convert.ToByte(LandblockY + 1));
+        public readonly LandblockId NorthWest => new(Convert.ToByte(LandblockX - 1), Convert.ToByte(LandblockY + 1));
 
-        public LandblockId SouthEast => new LandblockId(Convert.ToByte(LandblockX + 1), Convert.ToByte(LandblockY - 1));
+        public readonly LandblockId SouthEast => new(Convert.ToByte(LandblockX + 1), Convert.ToByte(LandblockY - 1));
 
-        public LandblockId SouthWest => new LandblockId(Convert.ToByte(LandblockX - 1), Convert.ToByte(LandblockY - 1));
+        public readonly LandblockId SouthWest => new(Convert.ToByte(LandblockX - 1), Convert.ToByte(LandblockY - 1));
 
-        public ushort Landblock => (ushort)((Raw >> 16) & 0xFFFF);
+        public readonly ushort Landblock => (ushort)((Raw >> 16) & 0xFFFF);
 
-        public byte LandblockX => (byte)((Raw >> 24) & 0xFF);
+        public readonly byte LandblockX => (byte)((Raw >> 24) & 0xFF);
 
-        public byte LandblockY => (byte)((Raw >> 16) & 0xFF);
+        public readonly byte LandblockY => (byte)((Raw >> 16) & 0xFF);
 
         /// <summary>
         /// This is only used to calculate LandcellX and LandcellY - it has no other function.
         /// </summary>
-        public ushort Landcell => (byte)((Raw & 0x3F) - 1);
+        public readonly ushort Landcell => (byte)((Raw & 0x3F) - 1);
 
-        public byte LandcellX => Convert.ToByte((Landcell >> 3) & 0x7);
+        public readonly byte LandcellX => Convert.ToByte((Landcell >> 3) & 0x7);
 
-        public byte LandcellY => Convert.ToByte(Landcell & 0x7);
+        public readonly byte LandcellY => Convert.ToByte(Landcell & 0x7);
 
         // not sure where this logic came from, i don't think MapScope.IndoorsSmall and MapScope.IndoorsLarge was a thing?
         //public MapScope MapScope => (MapScope)((Raw & 0x0F00) >> 8);
@@ -82,7 +82,7 @@ namespace ACE.Entity
             }
         }*/
 
-        public bool Indoors => (Raw & 0xFFFF) >= 0x100;
+        public readonly bool Indoors => (Raw & 0xFFFF) >= 0x100;
 
         public static bool operator ==(LandblockId c1, LandblockId c2)
         {
@@ -94,12 +94,12 @@ namespace ACE.Entity
             return c1.Landblock != c2.Landblock;
         }
 
-        public bool IsAdjacentTo(LandblockId block)
+        public readonly bool IsAdjacentTo(LandblockId block)
         {
             return (Math.Abs(this.LandblockX - block.LandblockX) <= 1 && Math.Abs(this.LandblockY - block.LandblockY) <= 1);
         }
 
-        public LandblockId? TransitionX(int blockOffset)
+        public readonly LandblockId? TransitionX(int blockOffset)
         {
             var newX = LandblockX + blockOffset;
             if (newX < 0 || newX > 254)
@@ -108,7 +108,7 @@ namespace ACE.Entity
                 return new LandblockId((uint)newX << 24 | (uint)LandblockY << 16 | Raw & 0xFFFF);
         }
 
-        public LandblockId? TransitionY(int blockOffset)
+        public readonly LandblockId? TransitionY(int blockOffset)
         {
             var newY = LandblockY + blockOffset;
             if (newY < 0 || newY > 254)
@@ -117,20 +117,22 @@ namespace ACE.Entity
                 return new LandblockId((uint)LandblockX << 24 | (uint)newY << 16 | Raw & 0xFFFF);
         }
 
-        public override bool Equals(object obj)
+        public override readonly bool Equals(object? obj)
         {
+            if (obj == null)
+                return false;
             if (obj is LandblockId id)
                 return id == this;
 
             return false;
         }
 
-        public override int GetHashCode()
+        public override readonly int GetHashCode()
         {
             return base.GetHashCode();
         }
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             return Raw.ToString("X8");
         }

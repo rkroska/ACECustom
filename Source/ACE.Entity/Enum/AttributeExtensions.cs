@@ -2,7 +2,7 @@ namespace ACE.Entity.Enum
 {
     public static class AttributeExtensions
     {
-        public static T GetAttributeOfType<T>(this System.Enum enumVal) where T : System.Attribute
+        public static T? GetAttributeOfType<T>(this System.Enum enumVal) where T : System.Attribute
         {
             var type = enumVal.GetType();
             var memInfo = type.GetMember(enumVal.ToString());

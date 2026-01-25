@@ -98,8 +98,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (CombatTable == null) return null;
 
-                if (_attackHeights == null)
-                    _attackHeights = CombatTable.CMT.Select(m => m.AttackHeight).Distinct().ToList();
+                _attackHeights ??= CombatTable.CMT.Select(m => m.AttackHeight).Distinct().ToList();
 
                 return _attackHeights;
             }
@@ -189,8 +188,7 @@ namespace ACE.Server.WorldObjects
                 //CurrentSpell = GetRandomSpell();
                 if (CurrentSpell.IsProjectile)
                 {
-                    if (isVisible == null)
-                        isVisible = IsDirectVisible(AttackTarget);
+                    isVisible ??= IsDirectVisible(AttackTarget);
 
                     // ensure direct los
                     if (!isVisible.Value)
@@ -349,7 +347,7 @@ namespace ACE.Server.WorldObjects
             var percent = amount / Health.MaxValue;
             Strings.GetAttackVerb(notifyType, percent, ref verb, ref plural);
 
-            string msg = null;
+            string msg;
 
             var type = ChatMessageType.CombatSelf;
 
@@ -596,8 +594,10 @@ namespace ACE.Server.WorldObjects
 
             BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
 
-            var destination = new Position(this.Location);
-            destination.Rotation = targetPlayer.Location.Rotation;
+            var destination = new Position(this.Location)
+            {
+                Rotation = targetPlayer.Location.Rotation
+            };
 
             WorldManager.ThreadSafeTeleport(targetPlayer, destination);
 
@@ -802,7 +802,7 @@ namespace ACE.Server.WorldObjects
             set { if (value == 0) RemoveProperty(PropertyInt.AiAllowedCombatStyle); else SetProperty(PropertyInt.AiAllowedCombatStyle, (int)value); }
         }
 
-        private static readonly ConcurrentDictionary<uint, BodyPartTable> BPTableCache = new ConcurrentDictionary<uint, BodyPartTable>();
+        private static readonly ConcurrentDictionary<uint, BodyPartTable> BPTableCache = [];
 
         public static BodyPartTable GetBodyParts(uint wcid)
         {

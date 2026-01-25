@@ -470,6 +470,70 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* increments self's PropertyInt stat by some amount */
+                case EmoteType.IncrementMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var current = WorldObject.GetProperty(intProperty) ?? 0;
+                        current += emote.Amount ?? 1;
+                        WorldObject.SetProperty(intProperty, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, current));
+                    }
+                    break;
+
+                /* decrements self's PropertyInt stat by some amount */
+                case EmoteType.DecrementMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var current = WorldObject.GetProperty(intProperty) ?? 0;
+                        current -= emote.Amount ?? 1;
+                        WorldObject.SetProperty(intProperty, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, current));
+                    }
+                    break;
+
+                /* increments self's PropertyInt64 stat by some amount */
+                case EmoteType.IncrementMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var current = WorldObject.GetProperty(int64Property) ?? 0;
+                        current += emote.Amount64 ?? 1;
+                        WorldObject.SetProperty(int64Property, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(selfPlayer, int64Property, current));
+                    }
+                    break;
+
+                /* decrements self's PropertyInt64 stat by some amount */
+                case EmoteType.DecrementMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var current = WorldObject.GetProperty(int64Property) ?? 0;
+                        current -= emote.Amount64 ?? 1;
+                        WorldObject.SetProperty(int64Property, current);
+
+                        // Only send update if the creature executing this IS a player
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(selfPlayer, int64Property, current));
+                    }
+                    break;
+
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 
@@ -1430,21 +1494,65 @@ namespace ACE.Server.WorldObjects.Managers
 
                 case EmoteType.GrantRandomQuestStamp:
 
+                    log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp triggered. Player: {(player != null ? player.Name : "null")}");
+                    
                     if (player != null)
                     {
                         try
                         {
-                            // Parse the list of available quest stamps from emote.Message (comma-separated)
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: GrantRandomQuestStamp emote triggered for player {player.Name}.");
+                            
+                            // Parse the list of available quest stamps from emote.Message
+                            // Format: "stamp1,stamp2,..." or "REFUND:itemid|stamp1,stamp2,..."
                             if (string.IsNullOrWhiteSpace(emote.Message))
                             {
                                 log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp has no quest stamps specified in Message.");
                                 break;
                             }
 
-                            var availableStamps = emote.Message.Split(',')
+                            // Parse optional refund item ID from Message field
+                            uint? refundItemId = null;
+                            string stampList = emote.Message;
+                            
+                            if (emote.Message.StartsWith("REFUND:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var parts = emote.Message.Split('|', 2); // Limit to 2 parts to handle stamps with pipes
+                                if (parts.Length == 2)
+                                {
+                                    var refundPart = parts[0].Substring(7).Trim(); // Remove "REFUND:" prefix
+                                    if (!string.IsNullOrWhiteSpace(refundPart) && uint.TryParse(refundPart, out uint parsedRefundId) && parsedRefundId > 0)
+                                    {
+                                        refundItemId = parsedRefundId;
+                                        stampList = parts[1];
+                                        log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found refund item ID: {refundItemId}");
+                                    }
+                                    else
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Invalid refund item ID format: {refundPart}");
+                                    }
+                                    
+                                    // Validate that stamp list is not empty after parsing
+                                    if (string.IsNullOrWhiteSpace(stampList))
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: REFUND format found but stamp list is empty.");
+                                    }
+                                }
+                                else
+                                {
+                                    log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Invalid REFUND format. Expected 'REFUND:itemid|stamps'");
+                                }
+                            }
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Parsing quest stamps from Message: {stampList}");
+
+                            // Parse and deduplicate stamps (case-insensitive)
+                            var availableStamps = stampList.Split(',')
                                 .Select(q => q.Trim())
                                 .Where(q => !string.IsNullOrWhiteSpace(q))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
                                 .ToList();
+
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Found {availableStamps.Count} available quest stamps: {string.Join(", ", availableStamps)}");
 
                             if (availableStamps.Count == 0)
                             {
@@ -1454,30 +1562,187 @@ namespace ACE.Server.WorldObjects.Managers
 
                             // Get only the stamps from our available list that the player already has
                             // This is much more efficient than loading all player stamps
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Checking player's existing quest stamps...");
+                            
                             var playerExistingStamps = GetPlayerQuestStamps(player, availableStamps);
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Player has {playerExistingStamps.Count} existing stamps from available list: {string.Join(", ", playerExistingStamps)}");
 
                             // Filter out stamps the player already has
                             var eligibleStamps = availableStamps
                                 .Except(playerExistingStamps, StringComparer.OrdinalIgnoreCase)
                                 .ToList();
 
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: {eligibleStamps.Count} eligible stamps after filtering: {string.Join(", ", eligibleStamps)}");
+
                             if (eligibleStamps.Count == 0)
                             {
                                 // Player already has all available stamps
-                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("You already have all available quest stamps from this source.", ChatMessageType.Broadcast));
+                                log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Player already has all available stamps.");
+                                if (player.Session?.Network != null)
+                                {
+                                    player.Session.Network.EnqueueSend(new GameMessageSystemChat("You already have all available quest stamps from this source.", ChatMessageType.Broadcast));
+                                }
+                                
+                                // Optional: Refund item if specified in Message field (format: "REFUND:itemid|stamps")
+                                if (refundItemId.HasValue && refundItemId.Value > 0)
+                                {
+                                    log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Attempting to refund token {refundItemId.Value} to player.");
+                                    var refundItem = WorldObjectFactory.CreateNewWorldObject(refundItemId.Value);
+                                    if (refundItem != null)
+                                    {
+                                        if (player.TryCreateInInventoryWithNetworking(refundItem))
+                                        {
+                                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Successfully refunded token {refundItemId.Value} to player.");
+                                            if (player.Session?.Network != null)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your token has been returned to you.", ChatMessageType.Broadcast));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Clean up the item if we couldn't add it to inventory
+                                            refundItem.Destroy();
+                                            log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Failed to refund token {refundItemId.Value} to player - inventory may be full or item doesn't exist.");
+                                            if (player.Session?.Network != null)
+                                            {
+                                                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Warning: Could not return your token (inventory full?). Contact an admin.", ChatMessageType.Broadcast));
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Failed to create refund item {refundItemId.Value} - item does not exist.");
+                                        if (player.Session?.Network != null)
+                                        {
+                                            player.Session.Network.EnqueueSend(new GameMessageSystemChat("Warning: Could not return your token (invalid item). Contact an admin.", ChatMessageType.Broadcast));
+                                        }
+                                    }
+                                }
                                 break;
                             }
 
                             // Randomly select one from the remaining available stamps
-                            var randomIndex = ThreadSafeRandom.Next(0, eligibleStamps.Count);
+                            // ThreadSafeRandom.Next is inclusive on both ends, so we need Count - 1 for the max
+                            // When Count == 1, this evaluates to Next(0, 0) which correctly returns 0
+                            var randomIndex = eligibleStamps.Count == 1 ? 0 : ThreadSafeRandom.Next(0, eligibleStamps.Count - 1);
                             var selectedQuestStamp = eligibleStamps[randomIndex];
 
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Selected quest stamp: {selectedQuestStamp} (index {randomIndex})");
+
                             // Grant the selected stamp
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Granting quest stamp: {selectedQuestStamp}");
                             player.QuestManager.Stamp(selectedQuestStamp);
+                            
+                            log.Debug($"0x{WorldObject.Guid}:{WorldObject.Name}.EmoteManager.ExecuteEmote: Successfully granted quest stamp: {selectedQuestStamp}");
                         }
                         catch (Exception ex)
                         {
                             log.Error($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp encountered an error: {ex.Message}", ex);
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"0x{WorldObject.Guid}:{WorldObject.Name} ({WorldObject.WeenieClassId}).EmoteManager.ExecuteEmote: EmoteType.GrantRandomQuestStamp called but player is null.");
+                    }
+                    break;
+
+                case EmoteType.RegisterPetSkin:
+                    // Pet Registry - register captured essence to player's account
+                    // In emote context: player is the target, WorldObject is the NPC
+                    // The essence WCID is stored in emote.WeenieClassId
+                    if (player != null)
+                    {
+                        // Find the captured essence in player's inventory by WCID
+                        // The emote should be triggered with WeenieClassId matching the captured essence
+                        WorldObject essence = null;
+                        
+                        // 1. Strict Mode: Check if we have a specific handed item context (HIGHEST PRIORITY)
+                        if (player.LastGivenItemGuid != ObjectGuid.Invalid)
+                        {
+                            // Verify this item is still in possession and valid
+                            var givenItem = player.GetInventoryItem(player.LastGivenItemGuid);
+                            
+                            if (givenItem != null && MonsterCapture.IsCapturedAppearance(givenItem))
+                            {
+                                essence = givenItem;
+                            }
+                        }
+
+                        // 2. WCID Fallback: Try to find by emote's WCID if no strict item found
+                        if (essence == null && emote.WeenieClassId.HasValue && emote.WeenieClassId.Value > 0)
+                        {
+                            // Find by specific WCID (most reliable)
+                            essence = player.FindObject(
+                                player.GetInventoryItemsOfWCID((uint)emote.WeenieClassId.Value).FirstOrDefault()?.Guid.Full ?? 0,
+                                Player.SearchLocations.MyInventory,
+                                out _, out _, out _);
+                        }
+                        
+                        if (essence == null)
+                        {
+                            // 3. Smart Fallback: Prefer UNREGISTERED essence
+                            var allEssences = player.GetAllPossessions()
+                                .Where(wo => MonsterCapture.IsCapturedAppearance(wo))
+                                .ToList();
+
+                            // First try to find one we haven't registered yet
+                            essence = allEssences.FirstOrDefault(wo => 
+                            {
+                                var name = wo.GetProperty(PropertyString.CapturedCreatureName);
+                                return !string.IsNullOrEmpty(name) && !PetRegistryManager.IsPetRegistered(player.Account.AccountId, name);
+                            });
+
+                            // If all are registered, just pick the first one (will trigger "already registered" msg)
+                            if (essence == null)
+                                essence = allEssences.FirstOrDefault();
+                        }
+                        
+                        // Clear the ephemeral context after use
+                        player.LastGivenItemGuid = ObjectGuid.Invalid;
+                        
+                        if (essence != null)
+                        {
+                            PetRegistryManager.RegisterEssence(player, essence);
+                        }
+                        else
+                        {
+                            player.SendMessage("You need to show me a captured essence to register.");
+                        }
+                    }
+                    break;
+
+                case EmoteType.InqPetRegistryCount:
+                    // Pet Registry - check if player's pet registry count is within min/max range
+                    // Uses emote.Min and emote.Max for range, emote.Message for quest name
+                    // Branches to QuestSuccess if count is in range, QuestFailure otherwise
+                    if (player != null)
+                    {
+                        var petCount = PetRegistryManager.GetPetRegistryCount(player.Account.AccountId);
+                        var minCount = emote.Min ?? int.MinValue;
+                        var maxCount = emote.Max ?? int.MaxValue;
+                        
+                        var inRange = petCount >= minCount && petCount <= maxCount;
+                        
+                        log.Debug($"[InqPetRegistryCount] Player {player.Name}: count={petCount}, min={minCount}, max={maxCount}, inRange={inRange}");
+                        
+                        ExecuteEmoteSet(inRange ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
+                    }
+                    break;
+
+                case EmoteType.InqPetRegistryCreatureType:
+                    // Pet Registry - check if player has ANY pet of a specific creature type
+                    // Uses emote.Stat field for CreatureType (Drudge=2, Banderling=6, etc.)
+                    // Branches to QuestSuccess if has type, QuestFailure if first of type
+                    if (player != null)
+                    {
+                        var creatureType = emote.Stat;
+                        if (creatureType.HasValue)
+                        {
+                            var hasType = PetRegistryManager.HasCreatureType(player.Account.AccountId, (uint)creatureType.Value);
+                            
+                            log.Debug($"[InqPetRegistryCreatureType] Player {player.Name}: creatureType={creatureType}, hasType={hasType}");
+                            
+                            ExecuteEmoteSet(hasType ? EmoteCategory.QuestSuccess : EmoteCategory.QuestFailure, emote.Message, targetObject, true);
                         }
                     }
                     break;
@@ -1925,13 +2190,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3250)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2000)
                                         {
@@ -2009,13 +2274,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2092,13 +2357,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2175,13 +2440,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -2258,13 +2523,13 @@ namespace ACE.Server.WorldObjects.Managers
 
                                         // Apply cost multiplier based on augmentation threshold at THIS point
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 3500)
+                                        if (currentAugCount >= 3750)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3750
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 2750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
                                         else if (currentAugCount >= 2500)
                                         {
@@ -3410,63 +3675,67 @@ namespace ACE.Server.WorldObjects.Managers
         public bool AddEmote(Database.Models.World.WeeniePropertiesEmote emote)
         {
             //map the database emote to the biota object emote
-            ACE.Entity.Models.PropertiesEmote newEmote = new ACE.Entity.Models.PropertiesEmote();
-
-            newEmote.DatabaseRecordId = 1;
-            newEmote.Quest = emote.Quest;
-            newEmote.MaxHealth = emote.MaxHealth;
-            newEmote.MinHealth = emote.MinHealth;
-            newEmote.Style = (MotionStance?)emote.Style;
-            newEmote.Category = (EmoteCategory)emote.Category;
-            newEmote.VendorType = (VendorType?)emote.VendorType;
-            newEmote.Substyle = (MotionCommand?)emote.Substyle;
-            newEmote.Object = ACE.Database.Adapter.WeenieConverter.ConvertToEntityWeenie(emote.Object);
-            newEmote.Probability = emote.Probability;
-            newEmote.WeenieClassId = emote.WeenieClassId;
-            List<Database.Models.World.WeeniePropertiesEmoteAction> actions = emote.WeeniePropertiesEmoteAction.ToList();
-            for (int i = 0; i < actions.Count; i++)
+            PropertiesEmote newEmote = new()
             {
-                PropertiesEmoteAction newAction = new PropertiesEmoteAction();
+                DatabaseRecordId = 1,
+                Quest = emote.Quest,
+                MaxHealth = emote.MaxHealth,
+                MinHealth = emote.MinHealth,
+                Style = (MotionStance?)emote.Style,
+                Category = (EmoteCategory)emote.Category,
+                VendorType = (VendorType?)emote.VendorType,
+                Substyle = (MotionCommand?)emote.Substyle,
+                Object = Database.Adapter.WeenieConverter.ConvertToEntityWeenie(emote.Object),
+                Probability = emote.Probability,
+                WeenieClassId = emote.WeenieClassId,
+                PropertiesEmoteAction = [] // Will fill below
+            };
 
-                newAction.DatabaseRecordId = (uint)i + 1;
-                newAction.Amount = actions[i].Amount;
-                newAction.Amount64 = actions[i].Amount64;
-                newAction.AnglesW = actions[i].AnglesW;
-                newAction.AnglesX = actions[i].AnglesX;
-                newAction.AnglesY = actions[i].AnglesY;
-                newAction.AnglesZ = actions[i].AnglesZ;
-                newAction.Delay = actions[i].Delay;
-                newAction.DestinationType = actions[i].DestinationType;
-                newAction.Display = actions[i].Display;
-                newAction.Extent = actions[i].Extent;
-                newAction.HeroXP64 = actions[i].HeroXP64;
-                newAction.Max = actions[i].Max;
-                newAction.Max64 = actions[i].Max64;
-                newAction.Min = actions[i].Min;
-                newAction.MaxDbl = actions[i].MaxDbl;
-                newAction.Message = actions[i].Message;
-                newAction.Min64 = actions[i].Min64;
-                newAction.MinDbl = actions[i].MinDbl;
-                newAction.Motion = (MotionCommand?)actions[i].Motion;
-                newAction.ObjCellId = actions[i].ObjCellId;
-                newAction.OriginX = actions[i].OriginX;
-                newAction.OriginY = actions[i].OriginY;
-                newAction.OriginZ = actions[i].OriginZ;
-                newAction.Palette = actions[i].Palette;
-                newAction.Percent = actions[i].Percent;
-                newAction.PScript = (PlayScript?)actions[i].PScript;
-                newAction.Shade = actions[i].Shade;
-                newAction.Sound = (Sound?)actions[i].Sound;
-                newAction.SpellId = actions[i].SpellId;
-                newAction.StackSize = actions[i].StackSize;
-                newAction.TestString = actions[i].TestString;
-                newAction.TreasureClass = actions[i].TreasureClass;
-                newAction.TryToBond = actions[i].TryToBond;
-                newAction.Type = actions[i].Type;
-                newAction.WealthRating = actions[i].WealthRating;
-                newAction.WeenieClassId = actions[i].WeenieClassId;
-
-                newEmote.PropertiesEmoteAction.Add(newAction);
+            List<Database.Models.World.WeeniePropertiesEmoteAction> actions = [.. emote.WeeniePropertiesEmoteAction];
+            uint i = 0;
+            foreach (var action in actions)
+            {
+                ++i;
+                newEmote.PropertiesEmoteAction.Add(new PropertiesEmoteAction()
+                {
+                    DatabaseRecordId = (uint)i,
+                    Amount = action.Amount,
+                    Amount64 = action.Amount64,
+                    AnglesW = action.AnglesW,
+                    AnglesX = action.AnglesX,
+                    AnglesY = action.AnglesY,
+                    AnglesZ = action.AnglesZ,
+                    Delay = action.Delay,
+                    DestinationType = action.DestinationType,
+                    Display = action.Display,
+                    Extent = action.Extent,
+                    HeroXP64 = action.HeroXP64,
+                    Max = action.Max,
+                    Max64 = action.Max64,
+                    Min = action.Min,
+                    MaxDbl = action.MaxDbl,
+                    Message = action.Message,
+                    Min64 = action.Min64,
+                    MinDbl = action.MinDbl,
+                    Motion = (MotionCommand?)action.Motion,
+                    ObjCellId = action.ObjCellId,
+                    OriginX = action.OriginX,
+                    OriginY = action.OriginY,
+                    OriginZ = action.OriginZ,
+                    Palette = action.Palette,
+                    Percent = action.Percent,
+                    PScript = (PlayScript?)action.PScript,
+                    Shade = action.Shade,
+                    Sound = (Sound?)action.Sound,
+                    SpellId = action.SpellId,
+                    StackSize = action.StackSize,
+                    TestString = action.TestString,
+                    TreasureClass = action.TreasureClass,
+                    TryToBond = action.TryToBond,
+                    Type = action.Type,
+                    WealthRating = action.WealthRating,
+                    WeenieClassId = action.WeenieClassId,
+                });
 
             }
 

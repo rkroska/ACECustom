@@ -53,11 +53,10 @@ namespace ACE.Server.Factories
 
         private static CharacterCreateInfo CreateCharacterCreateInfo(string name, uint strength, uint endurance, uint coordination, uint quickness, uint focus, uint self, bool randomizeHeritageAndApperance = true)
         {
-            var characterCreateInfo = new CharacterCreateInfo();
-
+            CharacterCreateInfo characterCreateInfo;
             using (var memoryStream = new MemoryStream(baseGearKnight))
             using (var binaryReader = new BinaryReader(memoryStream))
-                characterCreateInfo.Unpack(binaryReader);
+                characterCreateInfo = CharacterCreateInfo.Unpack(binaryReader); 
 
             characterCreateInfo.Name = name;
 

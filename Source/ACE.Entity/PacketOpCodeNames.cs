@@ -4,7 +4,7 @@ namespace ACE.Entity
 {
     public static class PacketOpCodeNames
     {
-        public static readonly Dictionary<uint, string> Values = new Dictionary<uint, string>
+        public static readonly Dictionary<uint, string> Values = new()
         {
             {1,"Evt_Admin__CreateRare_ID"},
             {2,"NSP_NOTIFY_EVENT"},

@@ -1,17 +1,10 @@
 namespace ACE.Server.Entity
 {
-    public class VerifyXpResult
+    public class VerifyXpResult(OfflinePlayer player, long calculated, long current)
     {
-        public OfflinePlayer Player;
-        public long Calculated;
-        public long Current;
+        public OfflinePlayer Player = player;
+        public long Calculated = calculated;
+        public long Current = current;
         public long Diff => Current - Calculated;
-
-        public VerifyXpResult(OfflinePlayer player, long calculated, long current)
-        {
-            Player = player;
-            Calculated = calculated;
-            Current = current;
-        }
     }
 }

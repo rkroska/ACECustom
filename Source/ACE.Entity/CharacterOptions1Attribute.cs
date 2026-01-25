@@ -5,13 +5,8 @@ using ACE.Entity.Enum;
 namespace ACE.Entity
 {
     [AttributeUsage(AttributeTargets.Field)]
-    public class CharacterOptions1Attribute : Attribute
+    public class CharacterOptions1Attribute(CharacterOptions1 option) : Attribute
     {
-        public CharacterOptions1 Option { get; }
-
-        public CharacterOptions1Attribute(CharacterOptions1 option)
-        {
-            Option = option;
-        }
+        public CharacterOptions1 Option { get; } = option;
     }
 }

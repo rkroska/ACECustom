@@ -640,22 +640,24 @@ namespace ACE.Server.WorldObjects
 
             foreach (var link in LinkedInstances)
             {
-                var profile = new PropertiesGenerator();
-                profile.WeenieClassId = link.WeenieClassId;
-                profile.ObjCellId = link.ObjCellId;
-                profile.OriginX = link.OriginX;
-                profile.OriginY = link.OriginY;
-                profile.OriginZ = link.OriginZ;
-                profile.AnglesW = link.AnglesW;
-                profile.AnglesX = link.AnglesX;
-                profile.AnglesY = link.AnglesY;
-                profile.AnglesZ = link.AnglesZ;
-                profile.Delay = profileTemplate.Biota.Delay;
-                profile.Probability = profileTemplate.Biota.Probability;
-                profile.InitCreate = profileTemplate.Biota.InitCreate;
-                profile.MaxCreate = profileTemplate.Biota.MaxCreate;
-                profile.WhenCreate = profileTemplate.Biota.WhenCreate;
-                profile.WhereCreate = profileTemplate.Biota.WhereCreate;
+                var profile = new PropertiesGenerator
+                {
+                    WeenieClassId = link.WeenieClassId,
+                    ObjCellId = link.ObjCellId,
+                    OriginX = link.OriginX,
+                    OriginY = link.OriginY,
+                    OriginZ = link.OriginZ,
+                    AnglesW = link.AnglesW,
+                    AnglesX = link.AnglesX,
+                    AnglesY = link.AnglesY,
+                    AnglesZ = link.AnglesZ,
+                    Delay = profileTemplate.Biota.Delay,
+                    Probability = profileTemplate.Biota.Probability,
+                    InitCreate = profileTemplate.Biota.InitCreate,
+                    MaxCreate = profileTemplate.Biota.MaxCreate,
+                    WhenCreate = profileTemplate.Biota.WhenCreate,
+                    WhereCreate = profileTemplate.Biota.WhereCreate
+                };
 
                 GeneratorProfiles.Add(new GeneratorProfile(this, profile, link.Guid));
                 if (profile.Probability == -1)
