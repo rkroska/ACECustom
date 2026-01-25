@@ -422,9 +422,18 @@ namespace ACE.Server.Entity
         {
             using (var context = new ShardDbContext())
             {
-                return context.PetRegistry
+                // Retrieve all names first, then normalize in memory since SQL might not handle complex substring logic identically or easily
+                // OR use client-side evaluation if EF Core allows. 
+                // For simplicity and correctness with "Shiny " string logic, fetching names is safe if lists aren't massive.
+                // However, doing it in memory is safer for string manipulation.
+                
+                var allNames = context.PetRegistry
                     .Where(p => p.AccountId == accountId)
                     .Select(p => p.CreatureName)
+                    .ToList();
+
+                return allNames
+                    .Select(n => n.StartsWith("Shiny ") ? n.Substring(6) : n)
                     .Distinct()
                     .Count();
             }
@@ -438,11 +447,20 @@ namespace ACE.Server.Entity
         {
             using (var context = new ShardDbContext())
             {
-                // Count distinct creature names per account
-                var topAccounts = context.PetRegistry
-                    .GroupBy(p => new { p.AccountId, p.CreatureName })
-                    .Select(g => g.Key.AccountId)
-                    .GroupBy(accountId => accountId)
+                // We need to fetch data to normalize names before grouping
+                // Fetching (AccountId, CreatureName) pairs
+                var rawData = context.PetRegistry
+                    .Select(p => new { p.AccountId, p.CreatureName })
+                    .ToList();
+
+                var topAccounts = rawData
+                    .Select(x => new { 
+                        x.AccountId, 
+                        NormalizedName = x.CreatureName.StartsWith("Shiny ") ? x.CreatureName.Substring(6) : x.CreatureName 
+                    })
+                    .GroupBy(p => new { p.AccountId, p.NormalizedName }) // Group by Account + Species
+                    .Select(g => g.Key.AccountId)             // Get AccountIds from unique species entries
+                    .GroupBy(accountId => accountId)          // Group by AccountId to count species
                     .Select(g => new { AccountId = g.Key, Count = g.Count() })
                     .OrderByDescending(x => x.Count)
                     .Take(limit)

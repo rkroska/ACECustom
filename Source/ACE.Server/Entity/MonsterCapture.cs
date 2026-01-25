@@ -78,11 +78,11 @@ namespace ACE.Server.Entity
             var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
             var isDebugLens = crystalTier == 4;
             
-            // Health threshold check (must be below 20%) - DEBUG LENS BYPASSES THIS
+            // Health threshold check (must be below 20% OR under 20 HP) - DEBUG LENS BYPASSES THIS
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
-            if (!isDebugLens && healthPercent > 0.20f)
+            if (!isDebugLens && healthPercent > 0.20f && targetCreature.Health.Current >= 20)
             {
-                player.SendTransientError($"The creature is too strong! Weaken it below 20% health first. (Currently {healthPercent:P0})");
+                player.SendTransientError($"The creature is too strong! Weaken it below 20% health or 20 HP first. (Currently {healthPercent:P0})");
                 return;
             }
             

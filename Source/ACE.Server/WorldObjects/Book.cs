@@ -97,7 +97,7 @@ namespace ACE.Server.WorldObjects
             else
                 inscription = "";
 
-            if (WeenieClassId == 79790002) // Monster-Dex
+            if (WeenieClassId == 78780005) // Monster-Dex
             {
                 // Dynamic Monster-dex content
                 var dexPages = ACE.Server.Entity.PetRegistryManager.GenerateMonsterDexPages(player, maxChars);
