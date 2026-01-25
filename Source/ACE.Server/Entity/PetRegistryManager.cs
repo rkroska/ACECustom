@@ -306,8 +306,11 @@ namespace ACE.Server.Entity
             }
         }
 
-        public static List<PropertiesBookPageData> GenerateMonsterDexPages(Player player)
+        public static List<PropertiesBookPageData> GenerateMonsterDexPages(Player player, int maxChars)
         {
+            // Fallback if maxChars is invalid (e.g. 0 from empty property)
+            if (maxChars < 100) maxChars = 1000;
+
             var registry = GetFullPetRegistry(player.Account.AccountId);
             
             // Group by Species (CreatureType)
@@ -323,40 +326,49 @@ namespace ACE.Server.Entity
 
                 // Define Header and Legend
                 var headerText = new System.Text.StringBuilder();
-                headerText.Append($"Species: {speciesName}\n"); // Fixed header
+                headerText.Append($"Species: {speciesName}\n"); 
                 headerText.Append("-----------------------------\n");
-                headerText.Append("[X] Normal  [*] Shiny\n");   // Legend
+                headerText.Append("[X] Normal  [*] Shiny\n");
                 headerText.Append("-----------------------------\n\n");
  
                 // Initialize first page for this species
                 var pageText = new System.Text.StringBuilder();
                 pageText.Append(headerText);
 
-                // Get distinct variants (Normal/Shiny)
-                // Group by CreatureName to handle variants
+                int pageNumber = 1;
+
+                // Group by normalized name (remove "Shiny " prefix) to merge variants
                 var variants = group
-                    .GroupBy(r => r.CreatureName)
+                    .Select(r => new { 
+                        Original = r, 
+                        NormalizedName = r.CreatureName.StartsWith("Shiny ") ? r.CreatureName.Substring(6) : r.CreatureName 
+                    })
+                    .GroupBy(x => x.NormalizedName)
                     .OrderBy(v => v.Key)
                     .ToList();
 
                 foreach (var variant in variants)
                 {
-                    bool hasNormal = variant.Any(r => !r.IsShiny);
-                    bool hasShiny = variant.Any(r => r.IsShiny);
+                    // Check if we have any entry that is NOT shiny (Normal)
+                    bool hasNormal = variant.Any(x => !x.Original.IsShiny);
+                    // Check if we have any entry that IS shiny
+                    bool hasShiny = variant.Any(x => x.Original.IsShiny);
 
                     string normalIcon = hasNormal ? "[X]" : "[  ]";
                     string shinyIcon = hasShiny ? "[*]" : "[  ]";
 
                     string line = $"{normalIcon} {shinyIcon} {variant.Key}\n";
 
-                    // Check if adding this line would exceed the limit (1000 chars)
-                    if (pageText.Length + line.Length > 1000)
+                    // Check if adding this line would exceed the limit
+                    if (pageText.Length + line.Length > maxChars)
                     {
                         // Save current page
+                        string title = pageNumber == 1 ? speciesName : $"{speciesName} ({pageNumber})";
+                        
                         pages.Add(new PropertiesBookPageData
                         {
                             AuthorId = 0xFFFFFFFF,
-                            AuthorName = speciesName,
+                            AuthorName = title,
                             AuthorAccount = "",
                             IgnoreAuthor = true,
                             PageText = pageText.ToString()
@@ -364,8 +376,9 @@ namespace ACE.Server.Entity
 
                         // Start new page with header
                         pageText.Clear();
-                        // Optional: Add "(Cont.)" to header? User didn't ask, but good practice. keeping simple for now as per request "make a second page".
                         pageText.Append(headerText);
+                        
+                        pageNumber++;
                     }
 
                     pageText.Append(line);
@@ -374,10 +387,12 @@ namespace ACE.Server.Entity
                 // Add the final page for this species
                 if (pageText.Length > 0)
                 {
+                    string title = pageNumber == 1 ? speciesName : $"{speciesName} ({pageNumber})";
+
                     pages.Add(new PropertiesBookPageData
                     {
                         AuthorId = 0xFFFFFFFF, // System
-                        AuthorName = speciesName,
+                        AuthorName = title,
                         AuthorAccount = "",
                         IgnoreAuthor = true,
                         PageText = pageText.ToString()

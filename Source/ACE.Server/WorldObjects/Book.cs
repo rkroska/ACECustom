@@ -100,7 +100,7 @@ namespace ACE.Server.WorldObjects
             if (WeenieClassId == 79790002) // Monster-Dex
             {
                 // Dynamic Monster-dex content
-                var dexPages = ACE.Server.Entity.PetRegistryManager.GenerateMonsterDexPages(player);
+                var dexPages = ACE.Server.Entity.PetRegistryManager.GenerateMonsterDexPages(player, maxChars);
                 var dexResponse = new GameEventBookDataResponse(player.Session, Guid.Full, maxChars, dexPages.Count, dexPages, inscription, authorID, authorName, ignoreAuthor);
                 player.Session.Network.EnqueueSend(dexResponse);
                 return;
