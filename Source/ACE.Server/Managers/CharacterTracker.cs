@@ -23,12 +23,6 @@ namespace ACE.Server.Managers
 		private static volatile bool _databaseMigrated = false;
 		private static readonly object _migrationLock = new object();
 		
-		// Semaphore to limit concurrent database operations (max 20 at a time)
-		private static readonly SemaphoreSlim _dbSemaphore = new SemaphoreSlim(20, 20);
-		
-		// Per-character locks to ensure INSERT completes before UPDATE for same character
-		private static readonly ConcurrentDictionary<uint, SemaphoreSlim> _characterLocks = new ConcurrentDictionary<uint, SemaphoreSlim>();
-		
 		// Time window for matching login records on logout (prevents matching old crashed sessions)
 		// Set to 7 days to accommodate long play sessions while still filtering ancient crash records
 		private static readonly TimeSpan LoginRecordMatchWindow = TimeSpan.FromDays(7);
@@ -37,6 +31,8 @@ namespace ACE.Server.Managers
 		private static readonly int DataRetentionDays = 90;
 		private static DateTime _lastCleanupCheck = DateTime.MinValue;
 		private static readonly object _cleanupLock = new object();
+
+		private static IDbContextFactory<ShardDbContext> _contextFactory;
 
 		/// <summary>
 		/// Ensure the char_tracker table exists in the database
@@ -51,8 +47,8 @@ namespace ACE.Server.Managers
 
 				try
 				{
-					using (var context = new ShardDbContext())
-					{
+                    using (var context = _contextFactory.CreateDbContextAsync().Result)
+                    {
 						log.Info("Running database migration for char_tracker table...");
 						if (CreateCharTrackerTable(context))
 						{
@@ -144,14 +140,6 @@ namespace ACE.Server.Managers
 					return false;
 				}
 			}
-		}
-
-		/// <summary>
-		/// Get or create a per-character lock to ensure INSERT completes before UPDATE
-		/// </summary>
-		private static SemaphoreSlim GetCharacterLock(uint characterId)
-		{
-			return _characterLocks.GetOrAdd(characterId, _ => new SemaphoreSlim(1, 1));
 		}
 
 		/// <summary>
@@ -258,91 +246,59 @@ namespace ACE.Server.Managers
 			}
 		}
 
+		public static void Initialize(IDbContextFactory<ShardDbContext> factory)
+		{
+			_contextFactory = factory;
+		}
+
 		private static async Task SaveCharTrackerRecord(CharTracker record)
 		{
-			var characterLock = GetCharacterLock(record.CharacterId);
-			
-			// Acquire character-specific lock first to ensure ordering
-			await characterLock.WaitAsync().ConfigureAwait(false);
-			try
-			{
-				// Then acquire global semaphore to limit total concurrent operations
-				await _dbSemaphore.WaitAsync().ConfigureAwait(false);
-				try
-				{
-					using (var context = new ShardDbContext())
-					{
-						context.CharTracker.Add(record);
-						await context.SaveChangesAsync().ConfigureAwait(false);
-					}
-				}
-				catch (Exception ex)
-				{
-					log.Error($"Error saving char_tracker record: {ex.Message}");
-					log.Error($"Stack trace: {ex.StackTrace}");
-				}
-				finally
-				{
-					_dbSemaphore.Release();
-				}
-			}
-			finally
-			{
-				characterLock.Release();
-			}
+		    try
+		    {
+			    await using (var context = await _contextFactory.CreateDbContextAsync())
+			    {
+				    context.CharTracker.Add(record);
+				    await context.SaveChangesAsync().ConfigureAwait(false);
+			    }
+		    }
+		    catch (Exception ex)
+		    {
+			    log.Error($"Error saving char_tracker record: {ex.Message}");
+		    }
 		}
 
 		private static async Task UpdateCharTrackerRecord(uint characterId, int connectionDuration)
 		{
-			var characterLock = GetCharacterLock(characterId);
-			
-			// Acquire character-specific lock first to ensure INSERT has completed
-			await characterLock.WaitAsync().ConfigureAwait(false);
 			try
 			{
-				// Then acquire global semaphore to limit total concurrent operations
-				await _dbSemaphore.WaitAsync().ConfigureAwait(false);
-				try
-				{
-					using (var context = new ShardDbContext())
-					{
-						// Find the most recent login record for this character with duration still at 0
-						// Only match records within time window to avoid updating old crashed sessions
-						var cutoffTime = DateTime.UtcNow.Subtract(LoginRecordMatchWindow);
-						var record = context.CharTracker
-							.Where(c => c.CharacterId == characterId 
-								&& c.ConnectionDuration == 0 
-								&& c.LoginTimestamp > cutoffTime)
-							.OrderByDescending(c => c.LoginTimestamp)
-							.FirstOrDefault();
+                await using (var context = await _contextFactory.CreateDbContextAsync())
+                {
+					// Find the most recent login record for this character with duration still at 0
+					// Only match records within time window to avoid updating old crashed sessions
+					var cutoffTime = DateTime.UtcNow.Subtract(LoginRecordMatchWindow);
+					var record = context.CharTracker
+						.Where(c => c.CharacterId == characterId 
+							&& c.ConnectionDuration == 0 
+							&& c.LoginTimestamp > cutoffTime)
+						.OrderByDescending(c => c.LoginTimestamp)
+						.FirstOrDefault();
 
-						if (record != null)
-						{
-							record.ConnectionDuration = connectionDuration;
-							await context.SaveChangesAsync().ConfigureAwait(false);
-							log.Debug($"Updated char_tracker record ID {record.Id} with duration {connectionDuration}s");
-						}
-						else
-						{
-							log.Debug($"Could not find login record to update for character ID {characterId}");
-						}
+					if (record != null)
+					{
+						record.ConnectionDuration = connectionDuration;
+						await context.SaveChangesAsync().ConfigureAwait(false);
+						log.Debug($"Updated char_tracker record ID {record.Id} with duration {connectionDuration}s");
+					}
+					else
+					{
+						log.Debug($"Could not find login record to update for character ID {characterId}");
 					}
 				}
-				catch (Exception ex)
-				{
-					log.Error($"Error updating char_tracker record: {ex.Message}");
-					log.Error($"Stack trace: {ex.StackTrace}");
-				}
-				finally
-				{
-					_dbSemaphore.Release();
-				}
 			}
-			finally
+			catch (Exception ex)
 			{
-				characterLock.Release();
-				// Note: We don't cleanup the semaphore here to avoid race conditions with concurrent logins
-				// The memory impact is negligible (~48 bytes per unique character)
+				log.Error($"Error updating char_tracker record: {ex.Message}");
+				log.Error($"Stack trace: {ex.StackTrace}");
 			}
 		}
 
@@ -359,8 +315,8 @@ namespace ACE.Server.Managers
 
 				var cutoffDate = DateTime.UtcNow.AddDays(-olderThanDays);
 
-				using (var context = new ShardDbContext())
-				{
+                using (var context = _contextFactory.CreateDbContextAsync().Result)
+                {
 					var rowsAffected = context.Database.ExecuteSqlRaw(
 						"UPDATE char_tracker SET LoginIP = NULL WHERE LoginTimestamp < {0} AND LoginIP IS NOT NULL",
 						cutoffDate);
@@ -389,8 +345,8 @@ namespace ACE.Server.Managers
 
 				var cutoffDate = DateTime.UtcNow.AddDays(-olderThanDays);
 
-				using (var context = new ShardDbContext())
-				{
+                using (var context = _contextFactory.CreateDbContextAsync().Result)
+                {
 					var rowsAffected = context.Database.ExecuteSqlRaw(
 						"DELETE FROM char_tracker WHERE LoginTimestamp < {0}",
 						cutoffDate);
