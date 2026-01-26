@@ -793,8 +793,8 @@ namespace ACE.Server.Command.Handlers
             // 2. Grouped inventory queries (reduces multiple inventory scans)
             // 3. Simplified math calculations (eliminates redundant calculations)
             // 4. Single database save at the end (reduces database operations)
-            // 5. Future optimization potential: batch property update messages
-            
+            // 5. Future optimization potential: batch property update messages            
+
             if (session.Player == null)
                 return;
 
@@ -816,6 +816,8 @@ namespace ACE.Server.Command.Handlers
 
             session.LastClapCommandTime = currentTime;
             const long ClapCostPerUnit = 250000L;
+            //Server-side configuration to increase or decrease the coin production at runtime
+            var coinMult = ServerConfig.coin_clap_mult.Value;
 
 
             // OPTIMIZATION: Early exit if no materials available - prevents unnecessary processing
@@ -949,7 +951,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            session.Player.BankedEnlightenedCoins += redComboCount;
+            session.Player.BankedEnlightenedCoins += (long)(redComboCount * coinMult);
 
             // Blue Aetheria + Falatacot Trinkets
             int blueItemsToConsume = blueComboCount;
@@ -987,7 +989,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             // Award 3 Weakly Enlightened Coins per crafting unit
-            session.Player.BankedWeaklyEnlightenedCoins += blueComboCount * 3; // Replace with the actual property for Weakly Enlightened Coins
+            session.Player.BankedWeaklyEnlightenedCoins += (long)(blueComboCount * 3 * coinMult); // Replace with the actual property for Weakly Enlightened Coins
 
             // Deduct ClapCost for Coalesced Aetheria and Chunks
             session.Player.BankedPyreals -= totalClapCost;
