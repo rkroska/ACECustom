@@ -399,6 +399,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<double> ignore_magic_resist_pvp_scalar { get; private set; } = new(1.0, "Scales the effectiveness of IgnoreMagicResist (ie. hollow weapons) in pvp battles. 1.0 = full effectiveness / ignore all resistances from life enchantments (default), 0.5 = half effectiveness / use half resistances from life enchantments, 0.0 = no effectiveness / use full resistances from life enchantments");
         public static ConfigProperty<double> luminance_modifier { get; private set; } = new(1.0, "Scales the amount of luminance received by players");
         public static ConfigProperty<double> lum_passup_mult { get; private set; } = new(0.5, "Scales the amount of luminance passed up in the chain");
+        public static ConfigProperty<double> coin_clap_mult { get; private set; } = new(1.0, "Scales the amount of coins deposited during the clap command");
+        public static ConfigProperty<double> coin_reward_mult { get; private set; } = new(1.0, "Scales the amount of coins earned through the Give emote");
         public static ConfigProperty<double> nether_resist_rating_scalar { get; private set; } = new(0.25, "Multiplier for nether resistance rating effectiveness. 1.0 = normal effectiveness, 0.25 = 75% less effective (default), 0.5 = half as effective");
         public static ConfigProperty<double> melee_max_angle { get; private set; } = new(0.0, "for melee players, the maximum angle before a TurnTo is required. retail appeared to have required a TurnTo even for the smallest of angle offsets.");
         public static ConfigProperty<double> mob_awareness_range { get; private set; } = new(1.0, "Scales the distance the monsters become alerted and aggro the players");

@@ -415,10 +415,19 @@ namespace ACE.Server.WorldObjects.Managers
 
                     bool success = false;
 
-                    var stackSize = emote.StackSize ?? 1;
+                    var stackSize = emote.StackSize ?? 1;                        
 
                     if (player != null && emote.WeenieClassId != null)
                     {
+                        if (stackSize > 0 && (emote.WeenieClassId == 300004 || emote.WeenieClassId == 300003)) // coin WCIDs
+                        {
+                            var coinMult = ServerConfig.coin_reward_mult.Value;
+                            if (double.IsNaN(coinMult) || double.IsInfinity(coinMult))
+                                coinMult = 0;
+                            coinMult = Math.Max(0, coinMult);
+                            stackSize = (int)(stackSize * coinMult);
+                        }
+                            
                         var motionChain = new ActionChain();
 
                         if (!WorldObject.DontTurnOrMoveWhenGiving && creature != null && targetCreature != null)

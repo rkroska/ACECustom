@@ -793,8 +793,8 @@ namespace ACE.Server.Command.Handlers
             // 2. Grouped inventory queries (reduces multiple inventory scans)
             // 3. Simplified math calculations (eliminates redundant calculations)
             // 4. Single database save at the end (reduces database operations)
-            // 5. Future optimization potential: batch property update messages
-            
+            // 5. Future optimization potential: batch property update messages            
+
             if (session.Player == null)
                 return;
 
@@ -816,6 +816,11 @@ namespace ACE.Server.Command.Handlers
 
             session.LastClapCommandTime = currentTime;
             const long ClapCostPerUnit = 250000L;
+            //Server-side configuration to increase or decrease the coin production at runtime
+            var coinMult = ServerConfig.coin_clap_mult.Value;
+                        if (double.IsNaN(coinMult) || double.IsInfinity(coinMult))
+                          coinMult = 0;
+            coinMult = Math.Max(0, coinMult);
 
 
             // OPTIMIZATION: Early exit if no materials available - prevents unnecessary processing
@@ -949,7 +954,8 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            session.Player.BankedEnlightenedCoins += redComboCount;
+            var redCoinsAwarded = (long)Math.Round(redComboCount * coinMult, MidpointRounding.AwayFromZero);
+            session.Player.BankedEnlightenedCoins += redCoinsAwarded;
 
             // Blue Aetheria + Falatacot Trinkets
             int blueItemsToConsume = blueComboCount;
@@ -987,7 +993,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             // Award 3 Weakly Enlightened Coins per crafting unit
-            session.Player.BankedWeaklyEnlightenedCoins += blueComboCount * 3; // Replace with the actual property for Weakly Enlightened Coins
+            var blueCoinsAwarded = (long)Math.Round(blueComboCount * 3 * coinMult, MidpointRounding.AwayFromZero);
+            session.Player.BankedWeaklyEnlightenedCoins += blueCoinsAwarded; // Replace with the actual property for Weakly Enlightened Coins
+
 
             // Deduct ClapCost for Coalesced Aetheria and Chunks
             session.Player.BankedPyreals -= totalClapCost;
@@ -1001,7 +1009,7 @@ namespace ACE.Server.Command.Handlers
             // Future optimization: Could collect all property changes and send them in one batch
 
             // Notify the player
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redComboCount} Enlightened Coins and {blueComboCount * 3} Weakly Enlightened Coins! Total cost (Coalesced Aetheria and Chunks only): {totalClapCost} pyreals.", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Deposited {redCoinsAwarded} Enlightened Coins and {blueCoinsAwarded} Weakly Enlightened Coins! Total cost (Coalesced Aetheria and Chunks only): {totalClapCost} pyreals.", ChatMessageType.Broadcast));
 
             // OPTIMIZATION: Save to database only once at the end if we processed any items
             if (needsSave)
