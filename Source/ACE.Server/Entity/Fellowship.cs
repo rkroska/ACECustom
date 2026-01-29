@@ -24,7 +24,6 @@ namespace ACE.Server.Entity
         /// </summary>
         private static readonly int MaxFellows = 29;
 
-
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
 
