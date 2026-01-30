@@ -794,14 +794,66 @@ namespace ACE.Database
                                 && !r.IsLinkChild)
                     .FirstOrDefault();
 
-                if (result == null)
-                    return 0;
-
                 cachedBasementHouseGuids[landblock] = result.Guid;
 
                 return result.Guid;
             }
         }
+
+        public bool ClearCachedBasementHouseGuids(ushort landblock)
+        {
+            return cachedBasementHouseGuids.TryRemove(landblock, out _);
+        }
+
+        public int ClearLandblockCache(ushort landblockId, int? variationId)
+        {
+            int count = 0;
+
+            // 1. Clear Landblock Instances
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockId, Variant = variationId ?? 0 };
+            if (cachedLandblockInstances.TryRemove(cacheKey, out var instances))
+            {
+                count += instances.Count;
+            }
+
+            // The following caches are not variation-aware, so we only clear them if this is the base landblock (variation 0 or null)
+            // or if we decide that variations share these caches.
+            // Based on the code, Encounters, HousePortals, and BasementGuids do NOT use VariantCacheId.
+            // They are keyed by simple 'ushort Landblock' or 'uint Landblock'.
+            // Therefore, if we are unloading a specific *instance* (Variation 1), we should probably NOT clear the base caches
+            // unless we are sure they are specific to that variation.
+            // However, typically generic world data (encounters, portals) are shared or base-only.
+            // If the variationId is NOT null/0, we should be careful.
+            // But usually Unload is called for the whole landblock when it's empty.
+
+            if (variationId == null || variationId == 0)
+            {
+                // 2. Clear Encounters
+                if (cachedEncounters.TryRemove(landblockId, out var encounters))
+                {
+                    count += encounters.Count;
+                }
+
+                // 3. Clear House Portals
+                // note: cachedHousePortalsByLandblock uses 'uint' key but data is landblock?
+                // The GetCachedHousePortalsByLandblock takes 'uint landblockId'.
+                // Let's match the type exactly.
+                 if (cachedHousePortalsByLandblock.TryRemove(landblockId, out var portals))
+                {
+                    count += portals.Count;
+                }
+
+                // 4. Clear Basement Guids
+                if (cachedBasementHouseGuids.TryRemove(landblockId, out _))
+                {
+                    count++; // It's a single uint, not a list
+                }
+            }
+
+            return count;
+        }
+
+
 
 
         // =====================================
