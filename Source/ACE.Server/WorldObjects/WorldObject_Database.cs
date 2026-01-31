@@ -117,7 +117,7 @@ namespace ACE.Server.WorldObjects
 
 #if DEBUG
             string GetItemInfo() => this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-            log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
+            // log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
 #endif
             
             // For individual saves, check if this item belongs to a player with a batch save in progress
@@ -184,14 +184,14 @@ namespace ACE.Server.WorldObjects
                 var locationPos = positionCache.TryGetValue(PositionType.Location, out var loc) ? loc : null;
                 var locationProperty = Location; // Read through property getter
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
+                // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
 #endif
                 
                 // If Location property exists but isn't in cache, add it
                 if (locationProperty != null && locationPos == null)
                 {
 #if DEBUG
-                    log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location property exists but not in cache! Adding to cache...");
+                    // log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location property exists but not in cache! Adding to cache...");
 #endif
                     positionCache[PositionType.Location] = locationProperty;
                 }
@@ -205,7 +205,7 @@ namespace ACE.Server.WorldObjects
 #if DEBUG
                     if (this is Player && kvp.Key == PositionType.Location)
                     {
-                        log.Debug($"[SAVE DEBUG] {GetItemInfo()} Synced Location position to biota | Position={kvp.Value}");
+                        // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Synced Location position to biota | Position={kvp.Value}");
                     }
 #endif
                 }
@@ -235,7 +235,7 @@ namespace ACE.Server.WorldObjects
             {
                 ContainerId = expectedContainerId;
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
+                // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
 #endif
                 // Clear ChangesDetected if we just set it (we're already saving)
                 if (!hadChangesBeforeContainerId)
@@ -274,7 +274,7 @@ namespace ACE.Server.WorldObjects
                         finalBiotaContainerId = finalValue;
                     }
                     string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
-                    log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
+                    // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
                 }
                 finally
                 {
@@ -316,7 +316,7 @@ namespace ACE.Server.WorldObjects
                                 savedBiotaContainerId = savedValue;
                             }
                             var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                            log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
+                            // log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
                         }
                         finally
                         {
@@ -332,7 +332,7 @@ namespace ACE.Server.WorldObjects
                                 ChangesDetected = true;
 #if DEBUG
                                 var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                                log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+                                // log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
 #endif
                             }
                             
@@ -351,7 +351,7 @@ namespace ACE.Server.WorldObjects
                             ChangesDetected = true;
 #if DEBUG
                             var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                            log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
+                            // log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
 #endif
                         }
                         log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");

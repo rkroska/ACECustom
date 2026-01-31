@@ -727,7 +727,24 @@ namespace ACE.Server.Entity
                         IsDormant = true;
                     }
                     if (lastActiveTime + UnloadInterval < thisHeartBeat)
+                    {
+                        // log.Info($"[Landblock Unload] Landblock {Id.Raw:X8} queuing for destruction. (UnloadInterval: {UnloadInterval})");
                         LandblockManager.AddToDestructionQueue(this, this.VariationId);
+                    }
+                    else if (IsDormant && (DateTime.UtcNow.Second % 10 == 0)) // Log periodically if dormant but not unloading
+                    {
+                        // Debug logging to see why it's not unloading
+                        // log.Warn($"[Landblock Debug] {Id.Raw:X8} Dormant. Time until unload: {(lastActiveTime + UnloadInterval - thisHeartBeat).TotalSeconds:F1}s");
+                    }
+                }
+                else if (!Permaload && thisHeartBeat.Second % 15 == 0)
+                {
+                     // Debug logging to see why it's kept alive
+                     // log.Warn($"[Landblock Debug] {Id.Raw:X8} kept alive. Permaload: {Permaload}, NoKeepAlive: {HasNoKeepAliveObjects}, LastActive: {(thisHeartBeat - lastActiveTime).TotalSeconds:F1}s ago");
+                }
+                else if (Permaload && thisHeartBeat.Second % 30 == 0)
+                {
+                    // log.Warn($"[Landblock Debug] {Id.Raw:X8} is PERMALOAD.");
                 }
 
                 //log.Info($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_Heartbeat: thisHeartBeat: {thisHeartBeat.ToString()} | lastHeartBeat: {lastHeartBeat.ToString()} | worldObjects.Count: {worldObjects.Count()}");
