@@ -91,6 +91,13 @@ namespace ACE.Server.Entity
             if (player == null || essence == null)
                 return;
 
+            // Reject Hollow Essences (WCID 78780006) - they cannot be registered for QB
+            if (essence.WeenieClassId == 78780006)
+            {
+                player.SendMessage("This hollow essence has already been registered. You cannot turn it in again.");
+                return;
+            }
+
             // Validate it's a captured essence
             if (!MonsterCapture.IsCapturedAppearance(essence))
             {

@@ -3786,8 +3786,9 @@ namespace ACE.Server.WorldObjects
                     // if stacked item, only give 1, ignoring amount indicated, unless they are AiAcceptEverything in which case, take full amount indicated
                     if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive))
                     {
-                        // Track the actual transferred item GUID for emote handlers (may differ from original for stack splits)
+                        // Track the actual transferred item for emote handlers (may differ from original for stack splits)
                         LastGivenItemGuid = itemToGive.Guid;
+                        LastGivenItem = itemToGive; // Store the actual WorldObject reference
                         
                         if (item == itemToGive)
                             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, item, target));
