@@ -794,6 +794,9 @@ namespace ACE.Database
                                 && !r.IsLinkChild)
                     .FirstOrDefault();
 
+                if (result == null)
+                    return 0;
+
                 cachedBasementHouseGuids[landblock] = result.Guid;
 
                 return result.Guid;
