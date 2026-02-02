@@ -422,6 +422,110 @@ namespace ACE.Server.Entity
         }
         
         /// <summary>
+        /// Create a Hollow Essence (78780006) by cloning all properties from an Original Essence (78780004)
+        /// Hollow Essences cannot be turned in for QB but can be applied to crates and freely stored/traded
+        /// </summary>
+        public static WorldObject CreateHollowEssence(WorldObject originalEssence)
+        {
+            if (originalEssence == null || originalEssence.WeenieClassId != 78780004)
+            {
+                log.Warn($"[MonsterCapture] CreateHollowEssence called with invalid essence (WCID: {originalEssence?.WeenieClassId})");
+                return null;
+            }
+
+            // Create the hollow essence template
+            var hollowEssence = WorldObjectFactory.CreateNewWorldObject(78780006);
+            
+            if (hollowEssence == null)
+            {
+                log.Error("[MonsterCapture] Failed to create Hollow Essence (WCID 78780006)");
+                return null;
+            }
+
+            // Clone ALL captured properties from original essence
+            // PropertyInt properties
+            var capturedProps = new[] 
+            {
+                PropertyInt.CapturedCreatureWCID,
+                PropertyInt.CapturedCreatureType,
+                PropertyInt.CapturedCreatureVariant,
+                PropertyInt.CapturedPaletteTemplate
+            };
+
+            foreach (var prop in capturedProps)
+            {
+                var value = originalEssence.GetProperty(prop);
+                if (value.HasValue)
+                    hollowEssence.SetProperty(prop, value.Value);
+            }
+
+            // PropertyString properties
+            var capturedStringProps = new[]
+            {
+                PropertyString.CapturedCreatureName,
+                PropertyString.CapturedObjDescAnimParts,
+                PropertyString.CapturedObjDescPalettes,
+                PropertyString.CapturedObjDescTextures,
+                PropertyString.CapturedItems
+            };
+
+            foreach (var prop in capturedStringProps)
+            {
+                var value = originalEssence.GetProperty(prop);
+                if (!string.IsNullOrEmpty(value))
+                    hollowEssence.SetProperty(prop, value);
+            }
+
+            // PropertyDataId properties
+            var capturedDataIdProps = new[]
+            {
+                PropertyDataId.CapturedSetup,
+                PropertyDataId.CapturedMotionTable,
+                PropertyDataId.CapturedSoundTable,
+                PropertyDataId.CapturedPaletteBase,
+                PropertyDataId.CapturedClothingBase
+            };
+
+            foreach (var prop in capturedDataIdProps)
+            {
+                var value = originalEssence.GetProperty(prop);
+                if (value.HasValue)
+                    hollowEssence.SetProperty(prop, value.Value);
+            }
+
+            // PropertyFloat properties
+            var capturedFloatProps = new[]
+            {
+                PropertyFloat.CapturedShade,
+                PropertyFloat.CapturedScale
+            };
+
+            foreach (var prop in capturedFloatProps)
+            {
+                var value = originalEssence.GetProperty(prop);
+                if (value.HasValue)
+                    hollowEssence.SetProperty(prop, value.Value);
+            }
+
+            // Copy icon overlay (creature icon)
+            if (originalEssence.IconOverlayId.HasValue)
+                hollowEssence.IconOverlayId = originalEssence.IconOverlayId;
+
+            // Update the name to replace "Siphoned" with "Hollow"
+            var creatureName = originalEssence.GetProperty(PropertyString.CapturedCreatureName);
+            if (!string.IsNullOrEmpty(creatureName))
+            {
+                hollowEssence.Name = $"Hollow {creatureName} Essence";
+                hollowEssence.LongDesc = $"A hollow essence of a {creatureName}. This essence has already been registered and cannot be turned in again for Quest Bonus. " +
+                                        $"You can still use it on a pet summoning device to apply the appearance to your summoned pet, or trade/store it safely.";
+            }
+
+            log.Debug($"[MonsterCapture] Created Hollow Essence for {creatureName}");
+            
+            return hollowEssence;
+        }
+        
+        /// <summary>
         /// Normalize creature scale based on PHYSICAL HEIGHT
         /// Targets a standard pet size (~0.75m tall) regardless of original model size
         /// </summary>

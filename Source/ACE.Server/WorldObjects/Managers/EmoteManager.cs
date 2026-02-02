@@ -1661,14 +1661,18 @@ namespace ACE.Server.WorldObjects.Managers
                     // The essence WCID is stored in emote.WeenieClassId
                     if (player != null)
                     {
-                        // Find the captured essence in player's inventory by WCID
-                        // The emote should be triggered with WeenieClassId matching the captured essence
+                        // Find the captured essence
+                        // Priority: Use LastGivenItem since Give emotes remove item from inventory
                         WorldObject essence = null;
                         
-                        // 1. Strict Mode: Check if we have a specific handed item context (HIGHEST PRIORITY)
-                        if (player.LastGivenItemGuid != ObjectGuid.Invalid)
+                        // 1. Use the directly given item (HIGHEST PRIORITY - works with Give emotes)
+                        if (player.LastGivenItem != null && MonsterCapture.IsCapturedAppearance(player.LastGivenItem))
                         {
-                            // Verify this item is still in possession and valid
+                            essence = player.LastGivenItem;
+                        }
+                        // 2. Fallback: Check LastGivenItemGuid in inventory (for Refuse emotes)
+                        else if (player.LastGivenItemGuid != ObjectGuid.Invalid)
+                        {
                             var givenItem = player.GetInventoryItem(player.LastGivenItemGuid);
                             
                             if (givenItem != null && MonsterCapture.IsCapturedAppearance(givenItem))
@@ -1676,42 +1680,50 @@ namespace ACE.Server.WorldObjects.Managers
                                 essence = givenItem;
                             }
                         }
-
-                        // 2. WCID Fallback: Try to find by emote's WCID if no strict item found
-                        if (essence == null && emote.WeenieClassId.HasValue && emote.WeenieClassId.Value > 0)
+                        // 3. WCID Fallback: Try to find by emote's WCID
+                        else if (emote.WeenieClassId.HasValue && emote.WeenieClassId.Value > 0)
                         {
-                            // Find by specific WCID (most reliable)
                             essence = player.FindObject(
                                 player.GetInventoryItemsOfWCID((uint)emote.WeenieClassId.Value).FirstOrDefault()?.Guid.Full ?? 0,
                                 Player.SearchLocations.MyInventory,
                                 out _, out _, out _);
                         }
                         
-                        if (essence == null)
-                        {
-                            // 3. Smart Fallback: Prefer UNREGISTERED essence
-                            var allEssences = player.GetAllPossessions()
-                                .Where(wo => MonsterCapture.IsCapturedAppearance(wo))
-                                .ToList();
-
-                            // First try to find one we haven't registered yet
-                            essence = allEssences.FirstOrDefault(wo => 
-                            {
-                                var name = wo.GetProperty(PropertyString.CapturedCreatureName);
-                                return !string.IsNullOrEmpty(name) && !PetRegistryManager.IsPetRegistered(player.Account.AccountId, name);
-                            });
-
-                            // If all are registered, just pick the first one (will trigger "already registered" msg)
-                            if (essence == null)
-                                essence = allEssences.FirstOrDefault();
-                        }
-                        
-                        // Clear the ephemeral context after use
+                        // Clear ephemeral context after use
                         player.LastGivenItemGuid = ObjectGuid.Invalid;
+                        player.LastGivenItem = null;
                         
                         if (essence != null)
                         {
+                            // Create hollow essence BEFORE registering (in case registration already exists)
+                            // This ensures the player always gets a hollow essence back
+                            var hollowEssence = MonsterCapture.CreateHollowEssence(essence);
+                            
+                            // Register the essence (awards QB if not already registered)
                             PetRegistryManager.RegisterEssence(player, essence);
+                            
+                            // Give the hollow essence back to the player
+                            if (hollowEssence != null)
+                            {
+                                if (!player.TryCreateInInventoryWithNetworking(hollowEssence))
+                                {
+                                    // If inventory is full, drop it on the ground near the player
+                                    hollowEssence.Location = player.Location.InFrontOf(2f);
+                                    hollowEssence.Location.LandblockId = new LandblockId(hollowEssence.Location.GetCell());
+                                    hollowEssence.EnterWorld();
+                                    player.SendMessage("Your inventory is full. The hollow essence was placed on the ground.");
+                                }
+                                else
+                                {
+                                    player.SendMessage($"Prof. Ruggan returns a Hollow {essence.GetProperty(PropertyString.CapturedCreatureName)} Essence to you.");
+                                }
+                            }
+                            else
+                            {
+                                // Hollow essence creation failed - this shouldn't happen but log it
+                                player.SendMessage("Failed to create hollow essence. Please contact an administrator.");
+                                log.Error($"[MonsterCapture] Failed to create hollow essence for {player.Name} - essence was registered but hollow not returned");
+                            }
                         }
                         else
                         {
