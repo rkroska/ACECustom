@@ -787,7 +787,7 @@ namespace ACE.Server.Entity
                 return 1.0f;
 
             // Thaelaryn Island
-            if (earner.Location.Variation != null && earner.Location.Variation == fellow.Location.Variation)
+            if ((earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
             {
                 if (ThaelarynIslandLandblocks.Contains((ushort)earner.Location.Landblock) && ThaelarynIslandLandblocks.Contains((ushort)fellow.Location.Landblock))
                     return 1.0f;
