@@ -601,7 +601,14 @@ namespace ACE.Server.Entity
 
                         var fellowXpType = player == member ? xpType : XpType.Fellowship;
 
-                        member.GrantXP((long)playerTotal, fellowXpType, shareType);
+                        if (member.HasVitae && member.IsVPHardcore)
+                        {
+                            member.GrantXP(0, fellowXpType, shareType);
+                        }
+                        else
+                        {
+                            member.GrantXP((long)playerTotal, fellowXpType, shareType);
+                        }
                     }
                 }
             }
