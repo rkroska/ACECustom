@@ -47,6 +47,12 @@ namespace ACE.Server.WorldObjects
         public bool LastContact = true;
 
         public ObjectGuid LastGivenItemGuid { get; set; }
+        
+        /// <summary>
+        /// Temporary storage for the actual item given to NPC (used by emote handlers)
+        /// This is needed because Give emotes remove the item from inventory before the emote runs
+        /// </summary>
+        public WorldObject LastGivenItem { get; set; }
 
         public bool IsJumping
         {
