@@ -25,6 +25,29 @@ namespace ACE.Server.Entity
         /// </summary>
         private static readonly int MaxFellows = 29;
 
+        public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
+        {
+            // North Tip
+            0xF66C, 0xF76C, 0xF86C, 
+            
+            // Upper Body
+            0xF66B, 0xF76B, 0xF86B,
+            0xF76A, 0xF86A, 0xF96A,
+            0xF669, 0xF769, 0xF869, 0xF969,
+            0xF668, 0xF768, 0xF868, 0xF968,
+            // Middle / Widening
+            0xF467, 0xF567, 0xF667, 0xF767, 0xF867, 0xF967,
+            0xF666, 0xF766, 0xF866, 0xF966, // <--- Includes your ID 0xF866
+            // Lower Body
+            0xF565, 0xF665, 0xF765, 0xF865, 0xF965,
+            0xF564, 0xF664, 0xF764, 0xF864, 0xF964,
+            0xF563, 0xF663, 0xF763, 0xF863, 0xF963,
+            0xF462, 0xF562, 0xF662, 0xF762, 0xF862, 0xF962,
+            
+            // South Tip
+            0xF361, 0xF461, 0xF561, 0xF661, 0xF761
+        };
+
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
 
@@ -522,56 +545,71 @@ namespace ACE.Server.Entity
 
             // divides XP evenly to all the sharable fellows within level range,
             // but with a significant boost to the amount of xp, based on # of fellowship members
-            else if (EvenShare)
-            {
-                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
-
-                foreach (var member in fellowshipMembers.Values)
-                {
-                    if (member == player && ServerConfig.fellowship_additive.Value)
-                    {
-                        member.GrantXP((long)amount, xpType, shareType);
-                        continue;
-                    }
-                    var shareAmount = (ulong)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
-
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member.HasVitae && member.IsVPHardcore)
-                    {
-
-                        member.GrantXP(0, fellowXpType, shareType);
-                    }
-                    else
-                    {
-
-                        member.GrantXP((long)shareAmount, fellowXpType, shareType);
-                    }
-
-                }
-
-                return;
-            }
-
-            // divides XP to all sharable fellows within level range
-            // based on each fellowship member's level
             else
             {
-                var levelXPSum = fellowshipMembers.Values.Select(p => p.GetXPToNextLevel(p.Level.Value)).Sum();
+                var eligibleMembers = new List<(Player Member, double Scalar)>(fellowshipMembers.Count);
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && ServerConfig.fellowship_additive.Value)
+                    var scalar = GetDistanceScalar(player, member, xpType);
+                    if (scalar > 0)
+                        eligibleMembers.Add((member, scalar));
+                }
+
+                if (EvenShare)
+                {
+                    var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
+
+                    foreach (var (member, scalar) in eligibleMembers)
                     {
-                        member.GrantXP((long)amount, xpType, shareType);
-                        continue;
+                        if (member == player && ServerConfig.fellowship_additive.Value)
+                        {
+                            member.GrantXP((long)amount, xpType, shareType);
+                            continue;
+                        }
+                        var shareAmount = (ulong)Math.Round(totalAmount * scalar);
+
+                        var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                        if (member.HasVitae && member.IsVPHardcore)
+                        {
+                            member.GrantXP(0, fellowXpType, shareType);
+                        }
+                        else
+                        {
+                            member.GrantXP((long)shareAmount, fellowXpType, shareType);
+                        }
                     }
-                    var levelXPScale = (double)member.GetXPToNextLevel(member.Level.Value) / levelXPSum;
+                }
+                // divides XP to all sharable fellows within level range
+                // based on each fellowship member's level
+                else
+                {
+                    if (eligibleMembers.Count == 0) return;
 
-                    var playerTotal = (ulong)Math.Round(amount * levelXPScale * GetDistanceScalar(player, member, xpType));
+                    var levelXPSum = eligibleMembers.Select(p => p.Member.GetXPToNextLevel(p.Member.Level.Value)).Sum();
 
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                    foreach (var (member, scalar) in eligibleMembers)
+                    {
+                        if (member == player && ServerConfig.fellowship_additive.Value)
+                        {
+                            member.GrantXP((long)amount, xpType, shareType);
+                            continue;
+                        }
+                        var levelXPScale = (double)member.GetXPToNextLevel(member.Level.Value) / levelXPSum;
 
-                    member.GrantXP((long)playerTotal, fellowXpType, shareType);
+                        var playerTotal = (ulong)Math.Round(amount * levelXPScale * scalar);
+
+                        var fellowXpType = player == member ? xpType : XpType.Fellowship;
+
+                        if (member.HasVitae && member.IsVPHardcore)
+                        {
+                            member.GrantXP(0, fellowXpType, shareType);
+                        }
+                        else
+                        {
+                            member.GrantXP((long)playerTotal, fellowXpType, shareType);
+                        }
+                    }
                 }
             }
         }
@@ -604,10 +642,19 @@ namespace ACE.Server.Entity
                     return;
                 }
 
-                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
+                var eligibleMembers = new List<(Player Member, double Scalar)>(fellowshipMembers.Count);
+
+                foreach (var member in fellowshipMembers.Values)
+                {
+                    var scalar = GetDistanceScalar(player, member, xpType);
+                    if (scalar > 0)
+                        eligibleMembers.Add((member, scalar));
+                }
+
+                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
 
                 // Iterate fellowship members directly without .ToList() allocation
-                foreach (var member in fellowshipMembers.Values)
+                foreach (var (member, scalar) in eligibleMembers)
                 {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
                     if (member == player && ServerConfig.fellowship_additive.Value)
@@ -616,18 +663,17 @@ namespace ACE.Server.Entity
                         continue;
                     }
 
-                    var playerTotal = (long)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
+                    var playerTotal = (long)Math.Round(totalAmount * scalar);
 
                     member.GrantLuminance(playerTotal, fellowXpType, shareType);
                 }
             }
         }
 
-        internal double GetMemberSharePercent()
+        internal double GetMemberSharePercent(int memberCount)
         {
-            var fellowshipMembers = GetFellowshipMembers();
 
-            switch (fellowshipMembers.Count)
+            switch (memberCount)
             {
                 case 1:
                     return 1.0;
@@ -746,6 +792,13 @@ namespace ACE.Server.Entity
 
             if (xpType == XpType.Quest)
                 return 1.0f;
+
+            // Thaelaryn Island
+            if ((earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
+            {
+                if (ThaelarynIslandLandblocks.Contains((ushort)earner.Location.Landblock) && ThaelarynIslandLandblocks.Contains((ushort)fellow.Location.Landblock))
+                    return 1.0f;
+            }
 
             // https://asheron.fandom.com/wiki/Announcements_-_2004/01_-_Mirror,_Mirror#Rollout_Article
 
