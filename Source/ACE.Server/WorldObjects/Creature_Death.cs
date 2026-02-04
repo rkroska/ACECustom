@@ -459,7 +459,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected void CreateCorpse(DamageHistoryInfo killer, bool hadVitae = false)
         {
-            if (this is Player decedent && decedent.Session.AccessLevel >= AccessLevel.Admin)
+            if (this is Player decedent && (decedent.IsAdmin || (decedent.Session != null && decedent.Session.AccessLevel >= AccessLevel.Admin)))
             {
                 PlayerManager.BroadcastToAuditChannel(decedent, $"Admin {decedent.Name} has died. (Admin Death - No Corpse Created)");
                 return;
