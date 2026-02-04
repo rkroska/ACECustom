@@ -125,8 +125,13 @@ namespace ACE.Server.WorldObjects
                 if (topDamager.IsPlayer)
                 {
                     var topDamagerPlayer = topDamager.TryGetAttacker();
-                    if (topDamagerPlayer != null)
-                        topDamagerPlayer.CreatureKills = (topDamagerPlayer.CreatureKills ?? 0) + 1;
+                    if (topDamagerPlayer is Player playerKiller)
+                    {
+                        if (playerKiller.Session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(playerKiller, $"Admin {playerKiller.Name} killed {Name} (0x{Guid.Full:X8}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+
+                        playerKiller.CreatureKills = (playerKiller.CreatureKills ?? 0) + 1;
+                    }
                 }
             }
 
@@ -177,8 +182,8 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                OnDeath();
                 var smiterInfo = new DamageHistoryInfo(smiter);
+                OnDeath(smiterInfo, DamageType.Undef);
                 Die(smiterInfo, smiterInfo);
             }
         }
@@ -454,6 +459,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected void CreateCorpse(DamageHistoryInfo killer, bool hadVitae = false)
         {
+            if (this is Player decedent && decedent.Session.AccessLevel >= AccessLevel.Admin)
+            {
+                PlayerManager.BroadcastToAuditChannel(decedent, $"Admin {decedent.Name} has died. (Admin Death - No Corpse Created)");
+                return;
+            }
+
             if (NoCorpse)
             {
                 if (killer != null && killer.IsOlthoiPlayer) return;
