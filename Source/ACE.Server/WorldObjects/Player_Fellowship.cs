@@ -26,6 +26,9 @@ namespace ACE.Server.WorldObjects
             }
 
             Fellowship = new Fellowship(this, fellowshipName, shareXP);
+
+            if (Session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} created fellowship {fellowshipName}.");
             Session.Network.EnqueueSend(new GameEventFellowshipFullUpdate(Session));
             Session.Network.EnqueueSend(new GameEventFellowshipFellowUpdateDone(Session));
         }

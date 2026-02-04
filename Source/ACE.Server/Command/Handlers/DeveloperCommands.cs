@@ -1025,6 +1025,9 @@ namespace ACE.Server.Command.Handlers
 
                 session.Player.TryCreateInInventoryWithNetworking(loot);
             }
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} added {weenieIds.Count} items to their inventory using a bulk creation command.");
         }
 
         [CommandHandler("weapons", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Creates testing items in your inventory.")]
@@ -1102,6 +1105,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             var items = LootGenerationFactory.CreateRandomObjectsOfType(weenieType, numItems);
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created {numItems} random items of type {weenieType}.");
 
             var stuck = new List<WorldObject>();
 
@@ -1360,6 +1366,10 @@ namespace ACE.Server.Command.Handlers
                     {
                         player.ContractManager.Add(contractId);
                         session.Player.SendMessage($"Contract for \"{datContract.ContractName}\" ({contractId}) bestowed on {player.Name}");
+
+                        if (session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} bestowed contract \"{datContract.ContractName}\" ({contractId}) on {player.Name}.");
+
                         return;
                     }
                     else
@@ -1383,6 +1393,10 @@ namespace ACE.Server.Command.Handlers
                     {
                         player.ContractManager.EraseAll();
                         session.Player.SendMessage($"All contracts deleted for {player.Name}.");
+
+                        if (session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} erased all contracts for {player.Name}.");
+
                         return;
                     }
 
@@ -2383,6 +2397,9 @@ namespace ACE.Server.Command.Handlers
             var success = LootGenerationFactory.MutateItem(wo, profile, true);
 
             session.Player.TryCreateInInventoryWithNetworking(wo);
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} generated {wo.Name} (0x{wo.WeenieClassId:X8}) of tier {tier} using /lootgen.");
         }
 
         [CommandHandler("ciloot", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Generates randomized loot in player's inventory", "<tier> optional: <# items>")]
@@ -2409,10 +2426,17 @@ namespace ACE.Server.Command.Handlers
                 //var wo = LootGenerationFactory.CreateRandomLootObjects(profile, true);
                 var wo = LootGenerationFactory.CreateRandomLootObjects_New(profile, TreasureItemCategory.MagicItem);
                 if (wo != null)
+                {
                     session.Player.TryCreateInInventoryWithNetworking(wo);
+                    if (session.AccessLevel >= AccessLevel.Admin)
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} generated {wo.Name} (0x{wo.WeenieClassId:X8}) of tier {tier} using /ciloot.");
+                }
                 else
                     log.Error($"{session.Player.Name}.HandleCILoot: LootGenerationFactory.CreateRandomLootObjects({tier}) returned null");
             }
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} generated {numItems} items of tier {tier} using /ciloot.");
         }
 
         [CommandHandler("makeiou", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Make an IOU and put it in your inventory", "<wcid>")]
@@ -3218,6 +3242,8 @@ namespace ACE.Server.Command.Handlers
                 landblock.Init(variation, true);
             });
             actionChain.EnqueueChain();
+            
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} reloaded landblock 0x{landblockId:X8}, variation {variation ?? 0}.");
         }
 
         [CommandHandler("showvelocity", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the velocity of the last appraised object.")]
