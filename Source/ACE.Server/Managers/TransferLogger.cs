@@ -1048,7 +1048,7 @@ namespace ACE.Server.Managers
                 EnsureDatabaseMigrated();
 
                 // Recursively scan for tracked items (handles containers)
-                var trackedItems = GetTrackedItemsRecursive(item);
+                var trackedItems = GetTrackedItemsRecursive(item, "", quantity);
                 
                 if (trackedItems.Count == 0)
                 {

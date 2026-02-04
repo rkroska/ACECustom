@@ -90,7 +90,7 @@ namespace ACE.Server.WorldObjects
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
-                if (lastDamager is Player playerKiller)
+                if (lastDamager is Player playerKiller && playerKiller.Session != null)
                     playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
             }
             return deathMessage;
@@ -127,7 +127,7 @@ namespace ACE.Server.WorldObjects
                     var topDamagerPlayer = topDamager.TryGetAttacker();
                     if (topDamagerPlayer is Player playerKiller)
                     {
-                        if (playerKiller.Session.AccessLevel >= AccessLevel.Admin)
+                        if (playerKiller.Session != null && playerKiller.Session.AccessLevel >= AccessLevel.Admin)
                             PlayerManager.BroadcastToAuditChannel(playerKiller, $"Admin {playerKiller.Name} killed {Name} (0x{Guid.Full:X8}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
 
                         playerKiller.CreatureKills = (playerKiller.CreatureKills ?? 0) + 1;
