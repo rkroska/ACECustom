@@ -291,6 +291,7 @@ namespace ACE.Server.Entity
             //}
             var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
             var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
+            Console.WriteLine($"[Entity] Landblock {Id.Landblock:X4} (Var {variationId}): Loaded {objects.Count} World Objects, {shardObjects.Count} Shard Objects.");
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
@@ -1058,6 +1059,10 @@ namespace ACE.Server.Entity
             }
 
             wo.CurrentLandblock = this;
+            if (wo.WeenieClassId == 835)
+            {
+                Console.WriteLine($"[DEBUG-835] AddWorldObjectInternal: Spawning {wo.Name} ({wo.Guid:X8}) in Landblock {Id:X8} (Var:{VariationId}, WO-Var:{wo.Location.Variation})");
+            }
             //if (this.Id.ToString().StartsWith("019E"))
             //{
             //    Console.WriteLine($"{wo.Name}, {wo.WeenieClassId} is spawning in landblock {this.Id} v:{wo.CurrentLandblock.VariationId} wo.v:{wo.Location.Variation}");

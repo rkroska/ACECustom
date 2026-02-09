@@ -268,6 +268,7 @@ namespace ACE.Server.Entity
                 if (wo is Creature creature && creature.IsMonster && creature.Attackable)
                 {
                     CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
+                    PrestigeManager.ApplyPrestigeScaling(creature, Generator.Location.Variation);
                 }
 
                 if (Biota.PaletteId.HasValue && Biota.PaletteId > 0)

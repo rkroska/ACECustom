@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Linq;
 
 using ACE.Common;
 using ACE.Entity;
@@ -31,7 +32,7 @@ namespace ACE.Server.Physics.Common
             {
                 
                 var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
-                return lbmLandblock.PhysicsLandblock;
+                return lbmLandblock?.PhysicsLandblock;
             }
             VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
 
@@ -78,6 +79,7 @@ namespace ACE.Server.Physics.Common
                 return null;
 
             var cellID = blockCellID & 0xFFFF;
+            if (cellID == 0xFFFF) return null;
             var cacheKey = new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 };
             ObjCell cell;
 
@@ -90,7 +92,8 @@ namespace ACE.Server.Physics.Common
                 
                 if(!landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))
                 {
-                    Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - {variationId:X8}) failed to get from dictionary, cache miss");
+                    Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - {variationId:X8}) failed to get from dictionary, cache miss.");
+                    Console.WriteLine($"Landblock {landblock.ID:X8} keys: " + string.Join(", ", landblock.LandCells.Keys.Where(k => (k.Variant == (variationId ?? 0))).Select(k => $"{k.Landblock}:{k.Variant}").Take(10)));
                 }
             }
             // indoor cells
@@ -100,6 +103,7 @@ namespace ACE.Server.Physics.Common
                     return cell;
 
                 cell = DBObj.GetEnvCell(blockCellID, variationId);
+                if (cell == null) return null;
                 cell.CurLandblock = landblock;
                 cell.Pos.Variation = variationId; //todo - gross
                 cell.VariationId = variationId;

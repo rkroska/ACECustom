@@ -224,13 +224,22 @@ namespace ACE.Server.WorldObjects
 
                 var totalXP = (XpOverride ?? 0) * damagePercent;
 
-                playerDamager.EarnXP((long)Math.Round(totalXP), XpType.Kill);
+                // Prestige scaling
+                var monsterTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                var playerTier = playerDamager.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+
+                totalXP *= PrestigeManager.GetXPRewardModifier(monsterTier);
+
+                playerDamager.EarnXP((long)Math.Round(totalXP), XpType.Kill, ShareType.All, monsterTier);
 
                 // handle luminance
                 if (LuminanceAward != null)
                 {
-                    var totalLuminance = (long)Math.Round(LuminanceAward.Value * damagePercent);
-                    playerDamager.EarnLuminance(totalLuminance, XpType.Kill);
+                    var totalLuminance = LuminanceAward.Value * damagePercent;
+
+                    totalLuminance *= PrestigeManager.GetXPRewardModifier(monsterTier);
+
+                    playerDamager.EarnLuminance((long)Math.Round(totalLuminance), XpType.Kill, ShareType.All, monsterTier);
                 }
             }
         }
@@ -779,8 +788,15 @@ namespace ACE.Server.WorldObjects
             if (DeathTreasure != null)
             {
                 List<WorldObject> items = LootGenerationFactory.CreateRandomLootObjects(DeathTreasure);
+
+                // Prestige Scaling
+                var tier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+
                 foreach (WorldObject wo in items)
                 {
+                    if (tier > 0)
+                        PrestigeManager.ApplyLootScaling(wo, tier);
+
                     if (corpse != null)
                         corpse.TryAddToInventory(wo);
                     else
@@ -831,6 +847,7 @@ namespace ACE.Server.WorldObjects
                 var createList = Biota.PropertiesCreateList.Where(i => (i.DestinationType & DestinationType.Contain) != 0 ||
                                 (i.DestinationType & DestinationType.Treasure) != 0 && (i.DestinationType & DestinationType.Wield) == 0).ToList();
 
+                var tier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
                 var selected = CreateListSelect(createList);
 
                 foreach (var item in selected)
@@ -839,6 +856,9 @@ namespace ACE.Server.WorldObjects
 
                     if (wo != null)
                     {
+                        if (tier > 0)
+                            PrestigeManager.ApplyLootScaling(wo, tier);
+
                         if (corpse != null)
                             corpse.TryAddToInventory(wo);
                         else

@@ -587,7 +587,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void SetAdjacents(Landblock landblock, bool traverse = true, bool pSync = false)
         {
-            landblock.Adjacents = GetAdjacents(landblock);
+            landblock.Adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             if (pSync)
                 landblock.PhysicsLandblock.SetAdjacents(landblock.Adjacents);
@@ -714,7 +714,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void NotifyAdjacents(Landblock landblock)
         {
-            var adjacents = GetAdjacents(landblock);
+            var adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             foreach (var adjacent in adjacents)
                 SetAdjacents(adjacent, false, true);

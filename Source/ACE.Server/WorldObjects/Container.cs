@@ -692,7 +692,7 @@ namespace ACE.Server.WorldObjects
                                 return true;
                             }
                         }
-                        
+
                         // log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
                     }
                     else
@@ -727,7 +727,7 @@ namespace ACE.Server.WorldObjects
             var newContainerId = worldObject.ContainerId;
             var containerBiotaId = Biota.Id;
             // log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
-            
+
             // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
             if (worldObject.ContainerId != Biota.Id)
             {

@@ -480,13 +480,15 @@ namespace ACE.Server.Physics.Common
 
         public void Init(int? variationId)
         {
+            VariationId = variationId;
             TransDir = LandDefs.Direction.Unknown;
             WaterType = LandDefs.WaterType.NotWater;
             //BlockSurfaceIndex = -1;
 
             // init for landcell
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
-            for (uint i = 1; i <= 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId ?? 0}, new LandCell((i)));
+            LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
+            for (uint i = 0; i < 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId ?? 0}, new LandCell((i)));
         }
 
         /// <summary>

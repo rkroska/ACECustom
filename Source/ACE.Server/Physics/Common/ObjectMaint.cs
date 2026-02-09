@@ -393,7 +393,12 @@ namespace ACE.Server.Physics.Common
                 // and envcells seen from outside (all buildings)
                 var visibleObjs = PhysicsObj.CurLandblock.GetServerObjects(true);
 
-                return ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && (i.CurCell is not EnvCell indoors || indoors.SeenOutside)).ToList();
+                var results = ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && (i.CurCell is not EnvCell indoors || indoors.SeenOutside));
+
+                int targetVar = VariationId ?? 0;
+                results = results.Where(i => (i.Position.Variation ?? 0) == targetVar);
+
+                return results.ToList();
             }
             finally
             {
@@ -426,12 +431,10 @@ namespace ACE.Server.Physics.Common
                 visibleObjs.AddRange(outsideObjs);
             }
 
-            if (VariationId != null)
-            {
-                visibleObjs = ApplyFilter(visibleObjs, type).Where(i=> i.Position.Variation == VariationId).Distinct().ToList(); //TODO: Test if this actually works?
-            }
+            int targetVar = VariationId ?? 0;
+            var results = ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && !i.DatObject);
 
-            return ApplyFilter(visibleObjs, type).Where(i => !i.DatObject && i.ID != PhysicsObj.ID).Distinct().ToList();
+            return results.Where(i => (i.Position.Variation ?? 0) == targetVar).Distinct().ToList();
         }
 
         public enum VisibleObjectType

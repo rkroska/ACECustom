@@ -19,6 +19,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private WorldObjectInfo selectedTarget { get; set; }
 
+        public WorldObject SelectedTarget => selectedTarget?.TryGetWorldObject();
+
         /// <summary>
         /// This dictionary is used to keep track of the last use of any item that implemented shared cooldown.
         /// It is session specific.   I think (could be wrong) cooldowns reset if you logged out and back in.
@@ -58,6 +60,16 @@ namespace ACE.Server.WorldObjects
 
             if (worldObject == null || worldObject.Guid == Guid)
                 return;
+
+            // VARIATION CHECK (Network Boundary)
+            // This ensures we never tell the client to create an object from another variation.
+            var myVar = Location.Variation ?? 0;
+            var objVar = worldObject.Location.Variation ?? 0;
+            if (myVar != objVar)
+            {
+                log.Error($"{Name} (Var {myVar}) tried to TrackObject {worldObject.Name} (Var {objVar}) - BLOCKED network message to prevent client contamination.");
+                return;
+            }
 
             // If Visibility is true, do not send object to client, object is meant for server side only, unless Adminvision is true.
             if (worldObject.Visibility && !Adminvision)

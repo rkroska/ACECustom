@@ -197,6 +197,26 @@ namespace ACE.Server.Command.Handlers
             return first;
         }
 
+        [CommandHandler("prestige", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1, "Sets the Prestige level of your target.", "tier")]
+        public static void HandlePrestige(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1 || !int.TryParse(parameters[0], out var tier))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige <tier>");
+                return;
+            }
+
+            var target = session.Player.SelectedTarget;
+            if (target == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "You must select a target.");
+                return;
+            }
+
+            target.SetProperty(PropertyInt.PrestigeLevel, tier);
+            CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {target.Name} to {tier}.");
+        }
+
         private static void HandleTransferLog(Session session, string[] parameters)
         {
             if (parameters.Length < 1)
@@ -2418,6 +2438,40 @@ namespace ACE.Server.Command.Handlers
                     ChatPacket.SendServerMessage(session, "Select a target and use @smite, or use @smite all to kill all creatures in radar range or @smite [players' name].", ChatMessageType.Broadcast);
                 }
             }
+        }
+
+        // televariant variation (other /tele* live in TeleportCommands on master)
+        [CommandHandler("televariant", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Teleport yourself to the specified variation at your current location.",
+            "variation\n" +
+            "Example: @televariant 1")]
+        public static void HandleTelevariant(Session session, params string[] parameters)
+        {
+            if (!int.TryParse(parameters[0], out int variation))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID.");
+                return;
+            }
+
+            var currentPos = session.Player.Location;
+            // Create a completely new Position object to avoid any reference issues
+            // and ensure the LandblockId is correctly re-constructed with the new variation.
+            var newPos = new Position(currentPos.Cell, currentPos.PositionX, currentPos.PositionY, currentPos.PositionZ,
+                                        currentPos.RotationX, currentPos.RotationY, currentPos.RotationZ, currentPos.RotationW,
+                                        false, variation);
+
+            session.Player.Teleport(newPos);
+            CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variation}.");
+        }
+
+        // tv {variation} - Alias for televariant
+        [CommandHandler("tv", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Teleport yourself to the specified variation at your current location (alias for televariant).",
+            "variation\n" +
+            "Example: @tv 1")]
+        public static void HandleTV(Session session, params string[] parameters)
+        {
+            HandleTelevariant(session, parameters);
         }
 
         // time

@@ -37,7 +37,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="amount">The amount of XP being added</param>
         /// <param name="xpType">The source of XP being added</param>
         /// <param name="shareable">True if this XP can be shared with Fellowship</param>
-        public void EarnXP(long amount, XpType xpType, ShareType shareType = ShareType.All)
+        public void EarnXP(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
         {
             //Console.WriteLine($"{Name}.EarnXP({amount}, {sharable}, {fixedAmount})");
             if (IsMule)
@@ -77,7 +77,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            GrantXP(m_amount, xpType, shareType);
+            GrantXP(m_amount, xpType, shareType, monsterTier);
         }
 
         /// <summary>
@@ -86,7 +86,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="amount">The amount of XP to grant to the player</param>
         /// <param name="xpType">The source of the XP being granted</param>
         /// <param name="shareable">If TRUE, this XP can be shared with fellowship members</param>
-        public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All)
+        public void GrantXP(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
         {
             if (IsOlthoiPlayer || IsMule)
             {
@@ -100,12 +100,19 @@ namespace ACE.Server.WorldObjects
             {
                 // this will divy up the XP, and re-call this function
                 // with ShareType.Fellowship removed
-                Fellowship.SplitXp((ulong)amount, xpType, shareType, this);
+                Fellowship.SplitXp((ulong)amount, xpType, shareType, this, monsterTier);
                 return;
             }
 
+            var finalAmount = amount;
+            if (xpType == XpType.Kill && monsterTier > 0)
+            {
+                var playerTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                finalAmount = (long)Math.Round(finalAmount * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
+            }
+
             // Make sure UpdateXpAndLevel is done on this players thread
-            EnqueueAction(new ActionEventDelegate(ActionType.PlayerXp_UpdateXpAndLevel, () => UpdateXpAndLevel(amount, xpType)));
+            EnqueueAction(new ActionEventDelegate(ActionType.PlayerXp_UpdateXpAndLevel, () => UpdateXpAndLevel(finalAmount, xpType)));
 
             // for passing XP up the allegiance chain,
             // this function is only called at the very beginning, to start the process.

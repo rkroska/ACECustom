@@ -319,6 +319,10 @@ namespace ACE.Server.Factories
                         worldObject.Location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ,
                             instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, false, variationId);
                     }
+                    else if (variationId.HasValue)
+                    {
+                        worldObject.Location.Variation = variationId;
+                    }
                 }
 
                 if (worldObject != null)

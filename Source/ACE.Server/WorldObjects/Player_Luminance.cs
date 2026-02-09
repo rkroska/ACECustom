@@ -12,7 +12,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Applies luminance modifiers before adding luminance
         /// </summary>
-        public void EarnLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All)
+        public void EarnLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
         {
             if (IsOlthoiPlayer || IsMule)
                 return;
@@ -42,13 +42,13 @@ namespace ACE.Server.WorldObjects
                 m_amount = (long)Math.Round(amount * quest * enlightenment * enchantment * modifier);
             }           
 
-            GrantLuminance(m_amount, xpType, shareType);
+            GrantLuminance(m_amount, xpType, shareType, monsterTier);
         }
 
         /// <summary>
         /// Directly grants luminance to the player, without any additional luminance modifiers
         /// </summary>
-        public void GrantLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All)
+        public void GrantLuminance(long amount, XpType xpType, ShareType shareType = ShareType.All, int monsterTier = 0)
         {
             if (IsOlthoiPlayer)
                 return;
@@ -57,10 +57,18 @@ namespace ACE.Server.WorldObjects
             {
                 // this will divy up the luminance, and re-call this function
                 // with ShareType.Fellowship removed
-                Fellowship.SplitLuminance((ulong)amount, xpType, shareType, this);
+                Fellowship.SplitLuminance((ulong)amount, xpType, shareType, this, monsterTier);
             }
             else
-                AddLuminance(amount, xpType, shareType);
+            {
+                var finalAmount = amount;
+                if (xpType == XpType.Kill && monsterTier > 0)
+                {
+                    var playerTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                    finalAmount = (long)Math.Round(finalAmount * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
+                }
+                AddLuminance(finalAmount, xpType, shareType);
+            }
         }
 
         private void AddLuminance(long amount, XpType xpType, ShareType shareType)

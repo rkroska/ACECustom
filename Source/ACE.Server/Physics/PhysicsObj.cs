@@ -194,8 +194,16 @@ namespace ACE.Server.Physics
 
             if (cellID < 0x100)
             {
+                var originalID = position.ObjCellID;
+                var originalLoc = position.Frame.Origin;
                 LandDefs.AdjustToOutside(position);
-                return ObjCell.GetVisible(position.ObjCellID, position.Variation);
+                var cell = ObjCell.GetVisible(position.ObjCellID, position.Variation);
+
+                if (cell == null && (position.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                {
+                    Console.WriteLine($"[DEBUG-PHYS] AdjustPosition ({originalID:X8}) -> ({position.ObjCellID:X8}) - Loc: {originalLoc} -> {position.Frame.Origin} - GetVisible returned NULL (Var: {position.Variation})");
+                }
+                return cell;
             }
 
             var visibleCell = (EnvCell)ObjCell.GetVisible(position.ObjCellID, position.Variation);
@@ -968,6 +976,9 @@ namespace ACE.Server.Physics
         {
             if (CurCell == null) prepare_to_enter_world();
 
+            if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                 Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal ENTRY: pos.ObjCellID={pos.ObjCellID:X8} before AdjustPosition");
+
             var newCell = AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, true);
 
             if (newCell == null)
@@ -986,10 +997,19 @@ namespace ACE.Server.Physics
             //transition.CellArray.DoNotLoadCells = true;
 
             if (!CheckPositionInternal(newCell, pos, transition, setPos))
-                return handle_all_collisions(transition.CollisionInfo, false, false) ?
-                    SetPositionError.Collided : SetPositionError.NoValidPosition;
+            {
+                 bool success = handle_all_collisions(transition.CollisionInfo, false, false);
+                 if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                     Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: CheckPositionInternal FAILED. HandleAllCollisions={success}. Transition.CollisionInfo: {transition.CollisionInfo.CollideObject.Count} objs.");
+                 return success ? SetPositionError.Collided : SetPositionError.NoValidPosition;
+            }
 
-            if (transition.SpherePath.CurCell == null) return SetPositionError.NoCell;
+            if (transition.SpherePath.CurCell == null) 
+            {
+                if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                     Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: Transition.SpherePath.CurCell is NULL after CheckPositionInternal! NewCell was: {newCell?.ID:X8}");
+                return SetPositionError.NoCell;
+            }
 
             // custom:
             // test for non-ethereal spell projectile collision on world entry
@@ -1738,7 +1758,7 @@ namespace ACE.Server.Physics
                     foreach (var obj in newlyVisible)
                     {
                         var wo = obj.WeenieObj.WorldObject;
-                        if (wo != null)
+                        if (wo != null && (wo.Location.Variation ?? 0) == (player.Location.Variation ?? 0))
                             player.TrackObject(wo, true);
                     }
                 });
@@ -1751,6 +1771,9 @@ namespace ACE.Server.Physics
                     var wo = obj.WeenieObj.WorldObject;
 
                     if (wo == null)
+                        continue;
+
+                    if ((wo.Location.Variation ?? 0) != (player.Location.Variation ?? 0))
                         continue;
 
                     if (wo.Teleporting)
@@ -1774,6 +1797,9 @@ namespace ACE.Server.Physics
 
             var wo = newlyVisible.WeenieObj.WorldObject;
             if (wo == null)
+                return;
+
+            if ((wo.Location.Variation ?? 0) != (player.Location.Variation ?? 0))
                 return;
 
             if (DateTime.UtcNow - player.LastTeleportTime < TeleportCreateObjectDelay)
@@ -1800,7 +1826,12 @@ namespace ACE.Server.Physics
 
         public void enter_cell(ObjCell newCell)
         {
-            if (PartArray == null) return;
+            if (PartArray == null)
+            {
+                if (WeenieObj?.WorldObject?.WeenieClassId == 720 || WeenieObj?.WorldObject?.WeenieClassId == 835) // Door or Vendor
+                    Console.WriteLine($"[DEBUG-PHYS] enter_cell failed: PartArray is null for {Name} ({ID:X8})");
+                return;
+            }
             newCell.AddObject(this);
             foreach (var child in Children.Objects)
                 child.enter_cell(newCell);
@@ -2318,9 +2349,9 @@ namespace ACE.Server.Physics
 
         public bool IsSightObj;
 
-        public static PhysicsObj makeObject(uint dataDID, uint objectIID, bool dynamic, bool sightObj = false)
+        public static PhysicsObj makeObject(uint dataDID, uint objectIID, bool dynamic, int? VariationId = null, bool sightObj = false)
         {
-            var obj = new PhysicsObj(null);
+            var obj = new PhysicsObj(VariationId);
             obj.InitObjectBegin(objectIID, dynamic);
             obj.InitPartArrayObject(dataDID, true);
             obj.InitObjectEnd();
