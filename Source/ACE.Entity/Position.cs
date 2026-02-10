@@ -500,7 +500,7 @@ namespace ACE.Entity
             var str = $"0x{LandblockId.Raw:X8} [{PositionX:F6} {PositionY:F6} {PositionZ:F6}] {RotationW:F6} {RotationX:F6} {RotationY:F6} {RotationZ:F6}";
 
             if (Variation.HasValue)
-                str += $", v:{Variation:N0}";
+                str += $", v:{Variation}";
 
             return str;
         }

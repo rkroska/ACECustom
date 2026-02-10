@@ -2526,10 +2526,14 @@ namespace ACE.Server.Command.Handlers
                 if (pParams.Count > 0)
                 {
                     var lastParam = pParams.Last();
-                    if (lastParam.StartsWith("v:"))
+                    if (lastParam.StartsWith("v:", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (int.TryParse(lastParam.Substring(2), out int parsedVar))
-                            variation = parsedVar;
+                        if (!int.TryParse(lastParam.Substring(2), out var parsedVar) || parsedVar < 0)
+                        {
+                            ChatPacket.SendServerMessage(session, "Invalid variation value. Use v:<non-negative integer>.", ChatMessageType.Broadcast);
+                            return;
+                        }
+                        variation = parsedVar;
                         pParams.RemoveAt(pParams.Count - 1);
                     }
                 }
