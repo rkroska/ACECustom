@@ -1346,8 +1346,8 @@ namespace ACE.Server.Command.Handlers.Processors
             // Position.Z has some weird thresholds when moving around, but i guess the same logic doesn't apply when trying to spawn in...
             wo.Location.PositionZ += 0.05f;
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Creating new landblock instance {(isLinkChild ? "child object " : "")}@ {loc.ToLOCString()}\n{wo.WeenieClassId} - {wo.Name} ({nextStaticGuid:X8})", ChatMessageType.Broadcast));
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created a new landblock instance {(isLinkChild ? "child object " : "")}@ {loc.ToLOCString()}\n [WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: ({nextStaticGuid:X8})");
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Creating new landblock instance {(isLinkChild ? "child object " : "")}@ {loc}\n{wo.WeenieClassId} - {wo.Name} ({nextStaticGuid:X8})", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created a new landblock instance {(isLinkChild ? "child object " : "")}@ {loc}\n [WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: ({nextStaticGuid:X8})");
 
             if (!wo.EnterWorld())
             {
@@ -3551,7 +3551,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                     if (result != Physics.Common.SetPositionError.OK)
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to move {obj.Name} ({obj.Guid}) to home position {homePos.ToLOCString()}", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to move {obj.Name} ({obj.Guid}) to home position {homePos}", ChatMessageType.Broadcast));
                         return;
                     }
                 }
@@ -4015,7 +4015,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                         using (StreamWriter sw = File.AppendText(vlocFile))
                         {
-                            sw.WriteLine($"{name} - @teleloc {pos.ToLOCString()}");
+                            sw.WriteLine($"{name} - @teleloc {pos}");
                         }
                     }
                     catch (Exception)

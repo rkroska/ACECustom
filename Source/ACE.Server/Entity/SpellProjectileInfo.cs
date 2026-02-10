@@ -40,18 +40,18 @@ namespace ACE.Server.Entity
             var target = SpellProjectile.ProjectileTarget;
 
             var info = $"Caster: {caster.Name} ({caster.Guid})\n";
-            info += $"CasterPos: {CasterPos.ToLOCString()}\n";
+            info += $"CasterPos: {CasterPos}\n";
             info += $"Spell: {SpellProjectile.Spell.Id} - {SpellProjectile.Spell.Name}\n";
             info += $"Velocity: {SpellProjectile.Velocity}\n";
             info += $"CachedVelocity: {CachedVelocity}\n";
-            info += $"StartPos: {SpellProjectile.SpawnPos.ToLOCString()}\n";
+            info += $"StartPos: {SpellProjectile.SpawnPos}\n";
             info += $"ActualStartPos: {StartPos}\n";
-            info += $"EndPos: {SpellProjectile.Location.ToLOCString()}\n";
+            info += $"EndPos: {SpellProjectile.Location}\n";
 
             if (target != null)
             {
                 info += $"Target: {target.WeenieClassId} - {target.Name} ({target.Guid})\n";
-                info += $"TargetPos: {TargetPos.ToLOCString()}";
+                info += $"TargetPos: {TargetPos}";
             }
 
             return info;

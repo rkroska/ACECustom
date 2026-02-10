@@ -1794,7 +1794,7 @@ namespace ACE.Server.Command.Handlers
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentLandblock: {session.Player.CurrentLandblock.Id.Landblock:X4}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentVariation: {session.Player.CurrentLandblock.VariationId:N0} ", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {session.Player.Location.ToLOCString()}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {session.Player.Location}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics : {session.Player.PhysicsObj.Position}", ChatMessageType.Broadcast));
         }
 
@@ -2509,7 +2509,7 @@ namespace ACE.Server.Command.Handlers
                 var msg = $"Player {player.Name} (0x{player.Guid}) found in PlayerManager.onlinePlayers.\n";
                 msg += $"------- Session: {(player.Session != null ? $"{player.Session.EndPoint}" : "NULL")}\n";
                 msg += $"------- CurrentLandblock: {(player.CurrentLandblock != null ? $"0x{player.CurrentLandblock.Id:X4}" : "NULL")}\n";
-                msg += $"------- Location: {(player.Location != null ? $"{player.Location.ToLOCString()}" : "NULL")}\n";
+                msg += $"------- Location: {(player.Location != null ? $"{player.Location}" : "NULL")}\n";
                 msg += $"------- IsLoggingOut: {player.IsLoggingOut}\n";
                 msg += $"------- IsInDeathProcess: {player.IsInDeathProcess}\n";
                 var foundOnLandblock = false;
@@ -2853,7 +2853,7 @@ namespace ACE.Server.Command.Handlers
                                 if (spawnWO != null)
                                 {
                                     if (spawnWO.Location != null)
-                                        msg += $" LOC: {spawnWO.Location.ToLOCString()}\n";
+                                        msg += $" LOC: {spawnWO.Location}\n";
                                     else if (spawnWO.ContainerId == wo.Guid.Full)
                                         msg += $" Contained by Generator\n";
                                     else if (spawnWO.WielderId == wo.Guid.Full)
@@ -2958,7 +2958,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentLandblock: 0x{wo.CurrentLandblock?.Id.Landblock:X4}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {wo.Location?.ToLOCString()}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {wo.Location}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics : {wo.PhysicsObj?.Position}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurCell: 0x{wo.PhysicsObj?.CurCell?.ID:X8}", ChatMessageType.Broadcast));
         }

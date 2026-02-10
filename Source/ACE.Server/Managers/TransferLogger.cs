@@ -792,7 +792,7 @@ namespace ACE.Server.Managers
                     ToAccountCreatedDate = player.Account?.CreateTime,
                     FromCharacterCreatedDate = null, // Ground doesn't have character creation date
                     ToCharacterCreatedDate = GetCharacterCreationDate(player),
-                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
+                    AdditionalData = $"Location: {player.Location}",
                     FromPlayerIP = null, // Ground doesn't have IP
                     ToPlayerIP = GetPlayerIP(player)
                 };
@@ -898,7 +898,7 @@ namespace ACE.Server.Managers
                     ToAccountCreatedDate = null,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player),
                     ToCharacterCreatedDate = null,
-                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
+                    AdditionalData = $"Location: {player.Location}",
                     FromPlayerIP = GetPlayerIP(player),
                     ToPlayerIP = null
                 };
@@ -950,7 +950,7 @@ namespace ACE.Server.Managers
                     ToAccountCreatedDate = null,
                     FromCharacterCreatedDate = GetCharacterCreationDate(player),
                     ToCharacterCreatedDate = null,
-                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location?.ToLOCString()}",
+                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location}",
                     FromPlayerIP = GetPlayerIP(player),
                     ToPlayerIP = null
                 };
@@ -1007,7 +1007,7 @@ namespace ACE.Server.Managers
                     ToAccountCreatedDate = player.Account?.CreateTime,
                     FromCharacterCreatedDate = null,
                     ToCharacterCreatedDate = GetCharacterCreationDate(player),
-                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location?.ToLOCString()}",
+                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location}",
                     FromPlayerIP = null,
                     ToPlayerIP = GetPlayerIP(player)
                 };
