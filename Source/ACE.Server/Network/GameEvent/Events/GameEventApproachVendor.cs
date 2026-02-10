@@ -50,8 +50,7 @@ namespace ACE.Server.Network.GameEvent.Events
                 }
 
                 // Clamp to uint.MaxValue for the packet
-                uint finalCount = (uint)Math.Min(altCurrencyCount + altCurrencySpent, uint.MaxValue);
-                Writer.Write(finalCount);
+                Writer.Write((uint)Math.Min(altCurrencyCount, uint.MaxValue));
 
                 // the plural name of alt currency
                 Writer.WriteString16L(pluralName);
