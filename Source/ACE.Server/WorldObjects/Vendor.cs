@@ -1,20 +1,19 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server.Command.Handlers;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
-using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Managers;
+using ACE.Server.Network.GameEvent.Events;
+using log4net;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Server.WorldObjects
 {
@@ -465,6 +464,15 @@ namespace ACE.Server.WorldObjects
                 else if (itemsToReceive.PlayerOutOfContainerSlots)
                     player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, "You do not have enough container slots to buy that!"));
 
+                return false;
+            }
+
+            // We mainly care about preventing exploits where the user attempts to trigger a race where they send currency and then spend it.
+            // Failing to catch this type of race would still result in a negative balance for the player, but we still shorten the gap as much as possible.
+            var bankCommandLimit = ServerConfig.bank_command_limit.Value;
+            if ((DateTime.UtcNow - player.Session.LastBankCommandTime).TotalSeconds < bankCommandLimit)
+            {
+                player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, $"You cannot purchase items within {bankCommandLimit} seconds of using the bank."));
                 return false;
             }
 
