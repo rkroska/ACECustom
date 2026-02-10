@@ -1758,7 +1758,10 @@ namespace ACE.Server.WorldObjects
                 {
                     targetNewBalance = offlinePlayerNew.BankedPyreals ?? 0;
                 }
-                
+
+                // Update client-side coin value tracking after transferring pyreals.
+                UpdateCoinValue();
+
                 LogBankChange("TransferPyreals_Source", "Pyreals", Amount, oldBalance, newBalance, $"Transferred to {tarplayer.Name}");
                 LogBankChange("TransferPyreals_Target", "Pyreals", Amount, targetOldBalance, targetNewBalance, $"Received from {this.Name}");
                 LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, true, "Transfer completed successfully");

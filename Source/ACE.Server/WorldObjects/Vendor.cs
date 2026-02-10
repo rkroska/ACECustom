@@ -519,7 +519,20 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                var playerAltCurrency = player.GetNumInventoryItemsOfWCID(AlternateCurrency.Value);
+                var playerAltCurrency = (long)player.GetNumInventoryItemsOfWCID(AlternateCurrency.Value);
+
+                if (AlternateCurrency.Value == 20630) // MMD Note
+                {
+                    playerAltCurrency += (player.BankedPyreals ?? 0) / 250000;
+                }
+                else if (AlternateCurrency.Value == 300004) // Enlightened Coin
+                {
+                    playerAltCurrency += player.BankedEnlightenedCoins ?? 0;
+                }
+                else if (AlternateCurrency.Value == 300003) // Weakly Enlightened Coin
+                {
+                    playerAltCurrency += player.BankedWeaklyEnlightenedCoins ?? 0;
+                }
 
                 if (playerAltCurrency < totalPrice)
                 {

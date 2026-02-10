@@ -503,8 +503,6 @@ namespace ACE.Server.WorldObjects
 
             var numItemsDropped = GetNumItemsDropped(corpse);
 
-            var numCoinsDropped = GetNumCoinsDropped();
-
             var level = Level ?? 1;
             var canDropWielded = level >= 35;
 
@@ -528,14 +526,6 @@ namespace ACE.Server.WorldObjects
             var sorted = new DeathItems(inventory);
 
             var dropItems = new List<WorldObject>();
-
-            if (numCoinsDropped > 0)
-            {
-                // add pyreals to dropped items
-                var pyreals = SpendCurrency(coinStackWcid, (uint)numCoinsDropped);
-                dropItems.AddRange(pyreals);
-                //Console.WriteLine($"Dropping {numCoinsDropped} pyreals");
-            }
 
             // Remove the items from inventory
             for (var i = 0; i < numItemsDropped && i < sorted.Inventory.Count; i++)
@@ -611,6 +601,7 @@ namespace ACE.Server.WorldObjects
             dropItems.AddRange(destroyedItems);
 
             // send network messages
+            int numCoinsDropped = 0;
             var dropList = DropMessage(dropItems, numCoinsDropped);
             if (!string.IsNullOrWhiteSpace(dropList))
             {
@@ -690,18 +681,6 @@ namespace ACE.Server.WorldObjects
             }
 
             return numItemsDropped;
-        }
-
-        public int GetNumCoinsDropped()
-        {
-            // if level > 5, lose half coins
-            // (trade notes excluded)
-            var level = Level ?? 1;
-            var coins = CoinValue ?? 0;
-
-            var numCoinsDropped = level > 5 ? coins / 2 : 0;
-
-            return numCoinsDropped;
         }
 
         /// <summary>
