@@ -269,11 +269,11 @@ namespace ACE.Server.WorldObjects
         /// Sends the latest vendor inventory list to player, rotates vendor towards player, and performs the appropriate emote.
         /// </summary>
         /// <param name="action">The action performed by the player</param>
-        public void ApproachVendor(Player player, VendorType action = VendorType.Undef, uint altCurrencySpent = 0)
+        public void ApproachVendor(Player player, VendorType action = VendorType.Undef)
         {
             RotUniques();
 
-            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this, altCurrencySpent));
+            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this));
 
             var rotateTime = Rotate(player); // vendor rotates to player
 

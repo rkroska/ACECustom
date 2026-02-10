@@ -8,7 +8,7 @@ namespace ACE.Server.Network.GameEvent.Events
 {
     public class GameEventApproachVendor : GameEventMessage
     {
-        public GameEventApproachVendor(Session session, Vendor vendor, uint altCurrencySpent)
+        public GameEventApproachVendor(Session session, Vendor vendor)
             : base(GameEventType.ApproachVendor, GameMessageGroup.UIQueue, session)
         {        
             Writer.Write(vendor.Guid.Full);
@@ -33,23 +33,25 @@ namespace ACE.Server.Network.GameEvent.Events
                 var pluralName = altCurrency.GetPluralName();
 
                 // the total amount of alternate currency the player currently has
-                var altCurrencyCount = (uint)session.Player.GetNumInventoryItemsOfWCID(vendor.AlternateCurrency.Value);
+                long altCurrencyCount = (long)session.Player.GetNumInventoryItemsOfWCID(vendor.AlternateCurrency.Value);
 
                 // Add banked amounts for specific currencies
                 if (vendor.AlternateCurrency.Value == 20630) // MMD Note
                 {
-                    altCurrencyCount += (uint)((session.Player.BankedPyreals ?? 0) / 250000);
+                    altCurrencyCount += (session.Player.BankedPyreals ?? 0) / 250000;
                 }
                 else if (vendor.AlternateCurrency.Value == 300004) // Enlightened Coin
                 {
-                    altCurrencyCount += (uint)(session.Player.BankedEnlightenedCoins ?? 0);
+                    altCurrencyCount += (session.Player.BankedEnlightenedCoins ?? 0);
                 }
                 else if (vendor.AlternateCurrency.Value == 300003) // Weakly Enlightened Coin
                 {
-                    altCurrencyCount += (uint)(session.Player.BankedWeaklyEnlightenedCoins ?? 0);
+                    altCurrencyCount += (session.Player.BankedWeaklyEnlightenedCoins ?? 0);
                 }
 
-                Writer.Write(altCurrencyCount);
+                // Clamp to uint.MaxValue for the packet
+                uint finalCount = (uint)Math.Min(altCurrencyCount + altCurrencySpent, uint.MaxValue);
+                Writer.Write(finalCount);
 
                 // the plural name of alt currency
                 Writer.WriteString16L(pluralName);

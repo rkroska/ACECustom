@@ -103,9 +103,7 @@ namespace ACE.Server.WorldObjects
             if (ServerConfig.player_receive_immediate_save.Value)
                 RushNextPlayerSave(5);
 
-            var altCurrencySpent = vendor.AlternateCurrency != null ? cost : 0;
-
-            vendor.ApproachVendor(this, VendorType.Buy, altCurrencySpent);
+            vendor.ApproachVendor(this, VendorType.Buy);
         }
 
         // player selling items to vendor
