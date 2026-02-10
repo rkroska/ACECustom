@@ -5,7 +5,6 @@ using System.Linq;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
-using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -266,23 +265,6 @@ namespace ACE.Server.WorldObjects
             return verified;
         }
 
-        private List<WorldObject> CreatePayoutCoinStacks(int amount)
-        {
-            var coinStacks = new List<WorldObject>();
-
-            while (amount > 0)
-            {
-                var currencyStack = WorldObjectFactory.CreateNewWorldObject("coinstack");
-
-                var currentStackAmount = Math.Min(amount, currencyStack.MaxStackSize.Value);
-
-                currencyStack.SetStackSize(currentStackAmount);
-                coinStacks.Add(currencyStack);
-                amount -= currentStackAmount;
-            }
-            return coinStacks;
-        }
-
         private void UpdateCoinValue(bool sendUpdateMessageIfChanged = true)
         {
             long coins = 0;
@@ -382,49 +364,4 @@ namespace ACE.Server.WorldObjects
                 TryConsumeFromInventoryWithNetworking(currentWcid, (int)amount);
             }
         }
-
-        private List<WorldObject> CollectCurrencyStacks(uint currencyWcid, uint amount)
-        {
-            var currencyStacksCollected = new List<WorldObject>();
-
-            var currencyStacksInInventory = GetInventoryItemsOfWCID(currencyWcid);
-            //currencyStacksInInventory = currencyStacksInInventory.OrderBy(o => o.Value).ToList();
-
-            var remaining = (int)amount;
-
-            foreach (var stack in currencyStacksInInventory)
-            {
-                var amountToRemove = Math.Min(remaining, stack.StackSize ?? 1);
-
-                if (stack.StackSize == amountToRemove)
-                {
-                    currencyStacksCollected.Add(stack);
-                }
-                else
-                {
-                    // create new stack
-                    var newStack = WorldObjectFactory.CreateNewWorldObject(currencyWcid);
-                    newStack.SetStackSize(amountToRemove);
-                    currencyStacksCollected.Add(newStack);
-
-                    var stackToAdjust = FindObject(stack.Guid, SearchLocations.MyInventory, out var foundInContainer, out var rootContainer, out _);
-
-                    // adjust existing stack
-                    if (stackToAdjust != null)
-                    {
-                        AdjustStack(stackToAdjust, -amountToRemove, foundInContainer, rootContainer);
-                        Session.Network.EnqueueSend(new GameMessageSetStackSize(stackToAdjust));
-                        Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
-                    }
-                    // UpdateCoinValue removed -- already called upstream
-                }
-
-                remaining -= amountToRemove;
-
-                if (remaining <= 0)
-                    break;
-            }
-            return currencyStacksCollected;
-        }
-    }
 }
