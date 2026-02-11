@@ -364,4 +364,5 @@ namespace ACE.Server.WorldObjects
                 TryConsumeFromInventoryWithNetworking(currentWcid, (int)amount);
             }
         }
+    }
 }
