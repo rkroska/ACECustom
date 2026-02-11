@@ -284,7 +284,7 @@ namespace ACE.Server.Managers
                 // send to lifestone, or fallback location
                 var fixLoc = session.Player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
 
-                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc.ToLOCString()}");
+                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc}");
 
                 session.Player.Location = new Position(fixLoc);
                 LandblockManager.AddObject(session.Player, true);

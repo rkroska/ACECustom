@@ -16,7 +16,7 @@ namespace ACE.Server.Network.GameAction.Actions
             //Console.WriteLine($"{session.Player.Name}.AutoPos");
 
             var position = new Position(message.Payload, session.Player.Location.Variation);
-            //Console.WriteLine($"Client sent position: {position.ToLOCString()}");
+            //Console.WriteLine($"Client sent position: {position}");
 
             var instanceTimestamp = message.Payload.ReadUInt16();
             var serverControlTimestamp = message.Payload.ReadUInt16();
