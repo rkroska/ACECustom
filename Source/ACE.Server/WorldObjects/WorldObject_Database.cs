@@ -273,7 +273,12 @@ namespace ACE.Server.WorldObjects
                     {
                         finalBiotaContainerId = finalValue;
                     }
-                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
+                    
+                    uint? wielderId = null;
+                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Wielder, out var wielderVal))
+                        wielderId = wielderVal;
+                        
+                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (wielderId.HasValue ? $"Equipped (Wielder={wielderId} (0x{wielderId:X8}))" : "null");
                     // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
                 }
                 finally
@@ -315,7 +320,7 @@ namespace ACE.Server.WorldObjects
                             {
                                 savedBiotaContainerId = savedValue;
                             }
-                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
+                            var callbackItemInfo = this is Player ? $"{itemName}" : $"{itemName} (0x{itemGuid})";
                             // log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
                         }
                         finally

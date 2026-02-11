@@ -180,6 +180,12 @@ namespace ACE.Server.Entity
             FellowshipMembers.TryAdd(player.Guid.Full, new WeakReference<Player>(player));
             player.Fellowship = inviter.Fellowship;
 
+            if (player.Session.AccessLevel >= AccessLevel.Admin)
+            {
+                var leaderName = PlayerManager.GetOnlinePlayer(FellowshipLeaderGuid)?.Name ?? "Unknown";
+                PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} joined fellowship {FellowshipName} (Leader: {leaderName}).");
+            }
+
             CalculateXPSharing();
 
             var fellowshipMembers = GetFellowshipMembers();
@@ -244,6 +250,9 @@ namespace ACE.Server.Entity
             FellowshipMembers.Remove(player.Guid.Full);
             player.Fellowship = null;
 
+            if (player.Session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} was dismissed from fellowship {FellowshipName}.");
+
             CalculateXPSharing();
 
             UpdateAllMembers();
@@ -300,6 +309,9 @@ namespace ACE.Server.Entity
         public void QuitFellowship(Player player, bool disband)
         {
             if (player == null) return;
+
+            if (player.Session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} left fellowship {FellowshipName} (Disbanded: {disband}).");
 
             if (player.Guid.Full == FellowshipLeaderGuid)
             {

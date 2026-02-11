@@ -59,7 +59,7 @@ namespace ACE.Server.WorldObjects
             if (lastDamager != null)
                 nearbyMsg = string.Format(deathMessage.Broadcast, Name, lastDamager.Name);
             else
-                nearbyMsg = deathMessage.Broadcast;
+                nearbyMsg = string.Format(deathMessage.Broadcast, Name);
 
             var broadcastMsg = new GameMessagePlayerKilled(nearbyMsg, Guid, lastDamager?.Guid ?? ObjectGuid.Invalid);
 
