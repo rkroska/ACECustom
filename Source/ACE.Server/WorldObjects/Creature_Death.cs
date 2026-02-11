@@ -128,7 +128,7 @@ namespace ACE.Server.WorldObjects
                     if (topDamagerPlayer is Player playerKiller)
                     {
                         if (playerKiller.Session != null && playerKiller.Session.AccessLevel >= AccessLevel.Admin)
-                            PlayerManager.BroadcastToAuditChannel(playerKiller, $"Admin {playerKiller.Name} killed {Name} (0x{Guid.Full:X8}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                            PlayerManager.BroadcastToAuditChannel(playerKiller, $"Admin {playerKiller.Name} killed {Name} (0x{Guid.Full:X8}) at {Location?.ToString() ?? "Unknown Location"}.");
 
                         playerKiller.CreatureKills = (playerKiller.CreatureKills ?? 0) + 1;
                     }
