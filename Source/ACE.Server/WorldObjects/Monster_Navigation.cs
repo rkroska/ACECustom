@@ -411,7 +411,7 @@ namespace ACE.Server.WorldObjects
 
             if (DebugMove)
                 //Console.WriteLine($"{Name} ({Guid}) - UpdatePosition (velocity: {PhysicsObj.CachedVelocity.Length()})");
-                Console.WriteLine($"{Name} ({Guid}) - UpdatePosition: {Location.ToLOCString()}");
+                Console.WriteLine($"{Name} ({Guid}) - UpdatePosition: {Location}");
 
             if (PhysicsObj?.MovementManager?.MoveToManager != null)
             {

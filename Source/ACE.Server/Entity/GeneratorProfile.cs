@@ -319,7 +319,7 @@ namespace ACE.Server.Entity
                 // This object still may be returned in the spawned collection if FirstSpawn is true. This is to prevent retry spam.
                 if (!success)
                 {
-                    log.Debug($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to spawn {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) from profile {LinkId} at {RegenLocationType}{(obj.Location != null ? $"\n Gen LOC: {Generator.Location?.ToLOCString()}\n Obj LOC: {obj.Location.ToLOCString()}" : "")}");
+                    log.Debug($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to spawn {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) from profile {LinkId} at {RegenLocationType}{(obj.Location != null ? $"\n Gen LOC: {Generator.Location}\n Obj LOC: {obj.Location}" : "")}");
                     obj.Destroy();
                 }
             }

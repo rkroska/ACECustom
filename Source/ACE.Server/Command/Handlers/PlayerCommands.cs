@@ -2017,7 +2017,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            var l = session.Player.Location.ToLOCString();
+            var l = session.Player.Location.ToString();
 
             var issue = description;
 
@@ -3780,5 +3780,13 @@ namespace ACE.Server.Command.Handlers
                      Console.WriteLine($"Error in RemoveItemFromPlayer for player {player.Name}: {ex.Message}");
                  }
              }*/
+
+        // Returns a player's current location. This is distinct from `/loc`, which is client-side.
+        // This should generally mirror the client-side implementation but includes additional server details.
+        [CommandHandler("location", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Shows your current server-side location.")]
+        public static void HandleLocation(Session session, params string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Your location is: {session.Player.Location}", ChatMessageType.Broadcast));
+        }
     }
 }

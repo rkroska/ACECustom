@@ -536,31 +536,31 @@ namespace ACE.Server.WorldObjects
                         sb.AppendLine($"{prop.Name} = {obj.RadarColor}" + " (" + (uint)obj.RadarColor + ")");
                         break;
                     case "location":
-                        sb.AppendLine($"{prop.Name} = {obj.Location.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.Location}");
                         break;
                     case "destination":
-                        sb.AppendLine($"{prop.Name} = {obj.Destination.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.Destination}");
                         break;
                     case "instantiation":
-                        sb.AppendLine($"{prop.Name} = {obj.Instantiation.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.Instantiation}");
                         break;
                     case "sanctuary":
-                        sb.AppendLine($"{prop.Name} = {obj.Sanctuary.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.Sanctuary}");
                         break;
                     case "home":
-                        sb.AppendLine($"{prop.Name} = {obj.Home.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.Home}");
                         break;
                     case "portalsummonloc":
-                        sb.AppendLine($"{prop.Name} = {obj.PortalSummonLoc.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.PortalSummonLoc}");
                         break;
                     case "houseboot":
-                        sb.AppendLine($"{prop.Name} = {obj.HouseBoot.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.HouseBoot}");
                         break;
                     case "lastoutsidedeath":
-                        sb.AppendLine($"{prop.Name} = {obj.LastOutsideDeath.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.LastOutsideDeath}");
                         break;
                     case "linkedlifestone":
-                        sb.AppendLine($"{prop.Name} = {obj.LinkedLifestone.ToLOCString()}");
+                        sb.AppendLine($"{prop.Name} = {obj.LinkedLifestone}");
                         break;                    
                     case "channelsactive":
                         sb.AppendLine($"{prop.Name} = {(Channel)obj.GetProperty(PropertyInt.ChannelsActive)}" + " (" + (uint)obj.GetProperty(PropertyInt.ChannelsActive) + ")");

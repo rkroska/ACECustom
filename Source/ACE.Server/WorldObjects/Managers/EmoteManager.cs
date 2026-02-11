@@ -1217,7 +1217,7 @@ namespace ACE.Server.WorldObjects.Managers
                         }
 
                         if (Debug)
-                            Console.WriteLine(newPos.ToLOCString());
+                            Console.WriteLine(newPos);
 
                         // get new cell
                         newPos.LandblockId = new LandblockId(PositionExtensions.GetCell(newPos));
@@ -1251,7 +1251,7 @@ namespace ACE.Server.WorldObjects.Managers
                         else
                         {
                             if (Debug)
-                                Console.Write($" - {creature.Home.ToLOCString()}");
+                                Console.Write($" - {creature.Home}");
 
                             // how to get delay with this, callback required?
                             creature.MoveTo(creature.Home, creature.GetRunRate(), true, null, emote.Extent);

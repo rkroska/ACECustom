@@ -139,13 +139,13 @@ namespace ACE.Server.WorldObjects
                 {
                     if (profile.Biota.InitCreate > 1)
                     {
-                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.InitCreate({profile.Biota.InitCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location.ToLOCString()}");
+                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.InitCreate({profile.Biota.InitCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location}");
                         profile.Biota.InitCreate = 1;
                     }
 
                     if (profile.Biota.MaxCreate > 1)
                     {
-                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.MaxCreate({profile.Biota.MaxCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location.ToLOCString()}");
+                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.MaxCreate({profile.Biota.MaxCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location}");
                         profile.Biota.MaxCreate = 1;
                     }
                 }
@@ -727,7 +727,7 @@ namespace ACE.Server.WorldObjects
 
                         if (genLoopCount > 1000)
                         {
-                            log.Error($"[GENERATOR] 0x{Guid} {Name}.Generator_Generate(): genLoopCount > 1000, aborted init spawn. GenStopSelectProfileConditions: {GenStopSelectProfileConditions} | InitCreate: {InitCreate} | CurrentCreate: {CurrentCreate} | WCID: {WeenieClassId} - LOC: {Location.ToLOCString()}");
+                            log.Error($"[GENERATOR] 0x{Guid} {Name}.Generator_Generate(): genLoopCount > 1000, aborted init spawn. GenStopSelectProfileConditions: {GenStopSelectProfileConditions} | InitCreate: {InitCreate} | CurrentCreate: {CurrentCreate} | WCID: {WeenieClassId} - LOC: {Location}");
                             break;
                         }
                     }

@@ -591,7 +591,7 @@ namespace ACE.Server.WorldObjects
                     ChangesDetected = true;
                     //if (positionType == PositionType.Location && this is Player)
                     //{
-                    //    Console.WriteLine(Name + " moved to " + position.ToLOCString() + " t:" + Teleporting);
+                    //    Console.WriteLine(Name + " moved to " + position + " t:" + Teleporting);
                     //}
                 }
             }

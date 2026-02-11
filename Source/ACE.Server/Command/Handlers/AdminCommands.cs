@@ -2521,8 +2521,9 @@ namespace ACE.Server.Command.Handlers
         // teleloc cell x y z [qx qy qz qw]
         [CommandHandler("teleloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 4,
             "Teleport yourself to the specified location.",
-            "cell [x y z] (qw qx qy qz)\n" +
+            "cell [x y z] (qw qx qy qz) (v:variation)\n" +
             "@teleloc follows the same number order as displayed from @loc output\n" +
+            "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806 v:5\n" +
             "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806\n" +
             "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806\n" +
             "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000")]
@@ -2531,19 +2532,36 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 uint cell;
+                int? variation = null;
+                var pParams = parameters.ToList();
 
-                if (parameters[0].StartsWith("0x"))
+                if (pParams.Count > 0)
                 {
-                    string strippedcell = parameters[0].Substring(2);
+                    var lastParam = pParams.Last();
+                    if (lastParam.StartsWith("v:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!int.TryParse(lastParam.Substring(2), out var parsedVar) || parsedVar < 0)
+                        {
+                            ChatPacket.SendServerMessage(session, "Invalid variation value. Use v:<non-negative integer>.", ChatMessageType.Broadcast);
+                            return;
+                        }
+                        variation = parsedVar;
+                        pParams.RemoveAt(pParams.Count - 1);
+                    }
+                }
+
+                if (pParams[0].StartsWith("0x"))
+                {
+                    string strippedcell = pParams[0].Substring(2);
                     cell = (uint)int.Parse(strippedcell, System.Globalization.NumberStyles.HexNumber);
                 }
                 else
-                    cell = (uint)int.Parse(parameters[0], System.Globalization.NumberStyles.HexNumber);
+                    cell = (uint)int.Parse(pParams[0], System.Globalization.NumberStyles.HexNumber);
 
                 var positionData = new float[7];
                 for (uint i = 0u; i < 7u; i++)
                 {
-                    if (i > 2 && parameters.Length < 8)
+                    if (i > 2 && pParams.Count < 8)
                     {
                         positionData[3] = 1;
                         positionData[4] = 0;
@@ -2552,20 +2570,20 @@ namespace ACE.Server.Command.Handlers
                         break;
                     }
 
-                    if (!float.TryParse(parameters[i + 1].Trim(new Char[] { ' ', '[', ']' }), out var position))
+                    if (!float.TryParse(pParams[(int)i + 1].Trim(new Char[] { ' ', '[', ']', ',' }), out var position))
                         return;
 
                     positionData[i] = position;
                 }
 
-                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3]));
+                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3], false, variation));
             }
             catch (Exception)
             {
                 ChatPacket.SendServerMessage(session, "Invalid arguments for @teleloc", ChatMessageType.Broadcast);
                 ChatPacket.SendServerMessage(session, "Hint: @teleloc follows the same number order as displayed from @loc output", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Usage: @teleloc cell [x y z] (qw qx qy qz)", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Usage: @teleloc cell [x y z] (qw qx qy qz) (v:variation)", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806 v:5", ChatMessageType.Broadcast);
                 ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
                 ChatPacket.SendServerMessage(session, "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000", ChatMessageType.Broadcast);
             }
@@ -3118,7 +3136,7 @@ namespace ACE.Server.Command.Handlers
                 msg = $"House Dump for {wo.Name} (0x{wo.Guid})\n";
                 msg += $"===House=======================================\n";
                 msg += $"Name: {house.Name} | {house.WeenieClassName} | WCID: {house.WeenieClassId} | GUID: 0x{house.Guid}\n";
-                msg += $"Location: {house.Location.ToLOCString()}\n";
+                msg += $"Location: {house.Location.ToString()}\n";
                 msg += $"HouseID: {house.HouseId}\n";
                 msg += $"HouseType: {house.HouseType} ({(int)house.HouseType})\n";
                 msg += $"HouseStatus: {house.HouseStatus} ({(int)house.HouseStatus})\n";
@@ -3136,7 +3154,7 @@ namespace ACE.Server.Command.Handlers
                     foreach (var link in house.LinkedHouses)
                     {
                         msg += $"Name: {link.Name} | {link.WeenieClassName} | WCID: {link.WeenieClassId} | GUID: 0x{link.Guid}\n";
-                        msg += $"Location: {link.Location.ToLOCString()}\n";
+                        msg += $"Location: {link.Location}\n";
                     }
                     session.Player.SendMessage(msg, ChatMessageType.System);
                 }
@@ -3145,7 +3163,7 @@ namespace ACE.Server.Command.Handlers
                 msg += $"===SlumLord====================================\n";
                 var slumLord = house.SlumLord;
                 msg += $"Name: {slumLord.Name} | {slumLord.WeenieClassName} | WCID: {slumLord.WeenieClassId} | GUID: 0x{slumLord.Guid}\n";
-                msg += $"Location: {slumLord.Location.ToLOCString()}\n";
+                msg += $"Location: {slumLord.Location}\n";
                 msg += $"MinLevel: {slumLord.MinLevel}\n";
                 msg += $"AllegianceMinLevel: {slumLord.AllegianceMinLevel ?? 0}\n";
                 msg += $"HouseRequiresMonarch: {slumLord.HouseRequiresMonarch}\n";
@@ -3176,7 +3194,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     msg = "";
                     msg += $"===HouseData===================================\n";
-                    msg += $"Location: {houseData.Position.ToLOCString()}\n";
+                    msg += $"Location: {houseData.Position}\n";
                     msg += $"Type: {houseData.Type}\n";
                     msg += $"BuyTime: {(houseData.BuyTime > 0 ? $"{Time.GetDateTimeFromTimestamp(houseData.BuyTime).ToLocalTime()}" : "N/A")} ({houseData.BuyTime})\n";
                     msg += $"RentTime: {(houseData.RentTime > 0 ? $"{Time.GetDateTimeFromTimestamp(houseData.RentTime).ToLocalTime()}" : "N/A")} ({houseData.RentTime})\n";
@@ -3195,7 +3213,7 @@ namespace ACE.Server.Command.Handlers
                         msg = "";
                         msg += $"===Basement====================================\n";
                         msg += $"Name: {basement.Name} | {basement.WeenieClassName} | WCID: {basement.WeenieClassId} | GUID: 0x{basement.Guid}\n";
-                        msg += $"Location: {basement.Location.ToLOCString()}\n";
+                        msg += $"Location: {basement.Location}\n";
                         msg += $"HouseMaxHooksUsable: {basement.HouseMaxHooksUsable}\n";
                         msg += $"HouseCurrentHooksUsable: {basement.HouseCurrentHooksUsable}\n";
                         session.Player.SendMessage(msg, ChatMessageType.System);
@@ -3332,7 +3350,7 @@ namespace ACE.Server.Command.Handlers
                 foreach (var chest in house.Storage)
                 {
                     msg += $"Name: {chest.Name} | {chest.WeenieClassName} | WCID: {chest.WeenieClassId} | GUID: 0x{chest.Guid}\n";
-                    msg += $"Location: {chest.Location.ToLOCString()}\n";
+                    msg += $"Location: {chest.Location}\n";
                 }
             }
 
@@ -3349,7 +3367,7 @@ namespace ACE.Server.Command.Handlers
                 foreach (var hook in house.Hooks)
                 {
                     msg += $"Name: {hook.Name} | {hook.WeenieClassName} | WCID: {hook.WeenieClassId} | GUID: 0x{hook.Guid}\n";
-                    // msg += $"Location: {hook.Location.ToLOCString()}\n";
+                    // msg += $"Location: {hook.Location}\n";
                     msg += $"HookType: {(HookType)hook.HookType} ({hook.HookType}){(hook.HasItem ? $" | Item on Hook: {hook.Item.Name} (0x{hook.Item.Guid}:{hook.Item.WeenieClassId}:{hook.Item.WeenieType}) | HookGroup: {hook.Item.HookGroup ?? HookGroupType.Undef} ({(int)(hook.Item.HookGroup ?? 0)})" : "")}\n";
                 }
             }
@@ -3358,15 +3376,15 @@ namespace ACE.Server.Command.Handlers
             {
                 msg += $"===BootSpot for House 0x{house.Guid}===============\n";
                 msg += $"Name: {house.BootSpot.Name} | {house.BootSpot.WeenieClassName} | WCID: {house.BootSpot.WeenieClassId} | GUID: 0x{house.BootSpot.Guid}\n";
-                msg += $"Location: {house.BootSpot.Location.ToLOCString()}\n";
+                msg += $"Location: {house.BootSpot.Location}\n";
             }
 
             if (house.HousePortal != null)
             {
                 msg += $"===HousePortal for House 0x{house.Guid}============\n";
                 msg += $"Name: {house.HousePortal.Name} | {house.HousePortal.WeenieClassName} | WCID: {house.HousePortal.WeenieClassId} | GUID: 0x{house.HousePortal.Guid}\n";
-                msg += $"Location: {house.HousePortal.Location.ToLOCString()}\n";
-                msg += $"Destination: {house.HousePortal.Destination.ToLOCString()}\n";
+                msg += $"Location: {house.HousePortal.Location}\n";
+                msg += $"Destination: {house.HousePortal.Destination}\n";
             }
 
             return msg;
@@ -4142,9 +4160,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             if (numToSpawn > 1)
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {obj.Name} (0x{obj.Guid:X8}) near {obj.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {obj.Name} (0x{obj.Guid:X8}) near {obj.Location}.");
             else
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) at {obj.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) at {obj.Location}.");
         }
 
         public static Position LastSpawnPos;
@@ -4220,9 +4238,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             if (count == 1)
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {first.Name} (0x{first.Guid:X8}) at {first.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {first.Name} (0x{first.Guid:X8}) at {first.Location}.");
             else
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {count}x {first.Name} at {first.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {count}x {first.Name} at {first.Location}.");
         }
 
         /// <summary>
@@ -5624,15 +5642,6 @@ namespace ACE.Server.Command.Handlers
 
             // Since we only have one server, this command will just call the other one
             HandleGameCastEmote(session, parameters);
-        }
-
-        // location
-        [CommandHandler("location", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0)]
-        public static void HandleLocation(Session session, params string[] parameters)
-        {
-            // @location - Causes your current location to be continuously displayed on the screen.
-
-            // TODO: output
         }
 
         // morph

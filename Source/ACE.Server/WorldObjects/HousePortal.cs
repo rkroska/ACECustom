@@ -38,13 +38,13 @@ namespace ACE.Server.WorldObjects
         {
             if (House == null)
             {
-                log.Warn($"[HOUSE] HousePortal.SetLinkProperties({(wo != null ? $"{wo.Name}:0x{wo.Guid}:{wo.WeenieClassId}" : "null")}): House is null for HousePortal 0x{Guid} at {Location.ToLOCString()}");
+                log.Warn($"[HOUSE] HousePortal.SetLinkProperties({(wo != null ? $"{wo.Name}:0x{wo.Guid}:{wo.WeenieClassId}" : "null")}): House is null for HousePortal 0x{Guid} at {Location}");
                 return;
             }
 
             if (wo == null)
             {
-                log.Warn($"[HOUSE] HousePortal.SetLinkProperties(null): WorldObject is null for HousePortal 0x{Guid} at {Location.ToLOCString()} | {(House != null ? $"House = {House.Name}:0x{House.Guid}:{House.WeenieClassId}" : "House is null")}");
+                log.Warn($"[HOUSE] HousePortal.SetLinkProperties(null): WorldObject is null for HousePortal 0x{Guid} at {Location} | {(House != null ? $"House = {House.Name}:0x{House.Guid}:{House.WeenieClassId}" : "House is null")}");
                 return;
             }
 
@@ -105,7 +105,7 @@ namespace ACE.Server.WorldObjects
 
             if (activator == null || rootHouse == null)
             {
-                log.Warn($"HousePortal.CheckUseRequirements: 0x{Guid} - {Location.ToLOCString()}");
+                log.Warn($"HousePortal.CheckUseRequirements: 0x{Guid} - {Location}");
                 log.Warn($"HousePortal.CheckUseRequirements: activator is null - {activator == null} | House is null - {House == null} | RootHouse is null - {rootHouse == null}");
                 return new ActivationResult(false);
             }

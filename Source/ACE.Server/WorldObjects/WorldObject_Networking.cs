@@ -414,7 +414,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="adminMove">only used if admin is teleporting a non-player object</param>
         public void SendUpdatePosition(bool adminMove = false)
         {
-            //Console.WriteLine($"{Name}.SendUpdatePosition({Location.ToLOCString()})");
+            //Console.WriteLine($"{Name}.SendUpdatePosition({Location})");
 
             EnqueueBroadcast(new GameMessageUpdatePosition(this, adminMove));
 

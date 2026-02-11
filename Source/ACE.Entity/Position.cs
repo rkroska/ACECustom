@@ -497,12 +497,12 @@ namespace ACE.Entity
 
         public override string ToString()
         {
-            return $"{LandblockId.Raw:X8} [{PositionX} {PositionY} {PositionZ}] [v:{Variation:N0}]";
-        }
+            var str = $"0x{LandblockId.Raw:X8} [{PositionX:F6} {PositionY:F6} {PositionZ:F6}] {RotationW:F6} {RotationX:F6} {RotationY:F6} {RotationZ:F6}";
 
-        public string ToLOCString()
-        {
-            return $"0x{LandblockId.Raw:X8} [{PositionX:F6} {PositionY:F6} {PositionZ:F6}] {RotationW:F6} {RotationX:F6} {RotationY:F6} {RotationZ:F6}, v:{Variation:N0}";
+            if (Variation.HasValue)
+                str += $", v:{Variation}";
+
+            return str;
         }
 
         public static readonly int BlockLength = 192;

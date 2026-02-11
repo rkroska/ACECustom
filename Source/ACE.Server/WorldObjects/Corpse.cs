@@ -228,7 +228,7 @@ namespace ACE.Server.WorldObjects
             var success = base.EnterWorld();
             if (!success)
             {
-                log.Error($"{Name} ({Guid}) failed to spawn @ {Location?.ToLOCString()}");
+                log.Error($"{Name} ({Guid}) failed to spawn @ {Location?.ToString()}");
                 return false;
             }
 

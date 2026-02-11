@@ -242,7 +242,7 @@ namespace ACE.Server.WorldObjects
         public virtual void MoveTo(WorldObject target, float runRate = 1.0f)
         {
             if (DebugMove)
-                Console.WriteLine($"{Name}.MoveTo({target.Name}, {runRate}) - CurPos: {Location.ToLOCString()} - DestPos: {AttackTarget.Location.ToLOCString()} - TargetDist: {Vector3.Distance(Location.ToGlobal(), AttackTarget.Location.ToGlobal())}");
+                Console.WriteLine($"{Name}.MoveTo({target.Name}, {runRate}) - CurPos: {Location} - DestPos: {AttackTarget.Location} - TargetDist: {Vector3.Distance(Location.ToGlobal(), AttackTarget.Location.ToGlobal())}");
 
             var motion = GetMoveToMotion(target, runRate);
 
@@ -533,7 +533,7 @@ namespace ACE.Server.WorldObjects
 
                             if (blockDist <= 1)
                             {
-                                log.Warn($"z-pos hacking detected for {Name}, lastGroundPos: {player.LastGroundPos.ToLOCString()} - requestPos: {newPosition.ToLOCString()}");
+                                log.Warn($"z-pos hacking detected for {Name}, lastGroundPos: {player.LastGroundPos} - requestPos: {newPosition}");
                                 Location = new ACE.Entity.Position(player.LastGroundPos);
                                 //Sequences.GetNextSequence(SequenceType.ObjectForcePosition);
                                 SendUpdatePosition();
@@ -557,7 +557,7 @@ namespace ACE.Server.WorldObjects
             Location = new ACE.Entity.Position(newPosition);
 
             if (player != null && player.RecordCast.Enabled)
-                player.RecordCast.Log($"CurPos: {Location.ToLOCString()}");
+                player.RecordCast.Log($"CurPos: {Location}");
 
             if (player != null && (player.RequestedLocationBroadcast || DateTime.UtcNow - player.LastUpdatePosition >= Player.MoveToState_UpdatePosition_Threshold))
                 SendUpdatePosition();

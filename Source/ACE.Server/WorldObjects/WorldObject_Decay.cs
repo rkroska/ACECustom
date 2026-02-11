@@ -131,7 +131,7 @@ namespace ACE.Server.WorldObjects
                 if (pukedItems.EndsWith(", "))
                     pukedItems = pukedItems.Substring(0, pukedItems.Length - 2);
 
-                log.Debug($"[CORPSE] {corpse.Name} (0x{corpse.Guid.ToString()}) at {corpse.Location.ToLOCString()} has decayed{((pukedItems == "") ? "" : $" and placed the following items on the landblock: {pukedItems}")}.");
+                log.Debug($"[CORPSE] {corpse.Name} (0x{corpse.Guid.ToString()}) at {corpse.Location} has decayed{((pukedItems == "") ? "" : $" and placed the following items on the landblock: {pukedItems}")}.");
             }
 
             if (corpse != null)

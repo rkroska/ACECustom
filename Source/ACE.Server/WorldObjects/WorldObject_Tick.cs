@@ -363,7 +363,7 @@ namespace ACE.Server.WorldObjects
                         spellProjectile.DebugVelocity++;
 
                         if (spellProjectile.DebugVelocity == 30)
-                            log.Debug($"Spell projectile w/ zero velocity detected @ {spellProjectile.Location.ToLOCString()}, launched by {spellProjectile.ProjectileSource?.Name} ({spellProjectile.ProjectileSource?.Guid}), spell ID {spellProjectile.Spell?.Id} - {spellProjectile.Spell?.Name}");
+                            log.Debug($"Spell projectile w/ zero velocity detected @ {spellProjectile.Location}, launched by {spellProjectile.ProjectileSource?.Name} ({spellProjectile.ProjectileSource?.Guid}), spell ID {spellProjectile.Spell?.Id} - {spellProjectile.Spell?.Name}");
                     }
 
                     if (spellProjectile.SpellType == ProjectileSpellType.Ring)
