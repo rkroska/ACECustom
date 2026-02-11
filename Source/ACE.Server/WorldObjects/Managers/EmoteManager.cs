@@ -3116,13 +3116,10 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public void ExecuteEmoteSet(EmoteCategory category, string quest = null, WorldObject targetObject = null, bool nested = false)
         {
-            //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.ExecuteEmoteSet({category}, {quest}, {targetObject}, {nested})");
-
             var emoteSet = GetEmoteSet(category, quest);
 
             if (emoteSet == null) return;
 
-            // TODO: revisit if nested chains need to propagate timers
             try
             {
                 ExecuteEmoteSet(emoteSet, targetObject, nested);
@@ -3641,6 +3638,14 @@ namespace ACE.Server.WorldObjects.Managers
         public void OnHearChat(Player player, string message)
         {
             ExecuteEmoteSet(EmoteCategory.HearChat, message, player);
+        }
+
+        /// <summary>
+        /// Called when this NPC receives a quest stamp
+        /// </summary>
+        public void OnReceiveStamp(string questName)
+        {
+            ExecuteEmoteSet(EmoteCategory.ReceiveStamp, questName, WorldObject);
         }
 
         //public bool HasAntennas => WorldObject.Biota.BiotaPropertiesEmote.Count(x => x.Category == (int)EmoteCategory.ReceiveLocalSignal) > 0;
