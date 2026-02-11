@@ -794,6 +794,11 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (target != null && target is Player targetPlayer && Session.AccessLevel >= AccessLevel.Admin)
+            {
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} cast {spell.Name} (ID: {spell.Id}) on {targetPlayer.Name}.");
+            }
+
             DoCastSpell_Inner(spell, casterItem, manaUsed, target, castingPreCheckStatus);
         }
 

@@ -246,6 +246,12 @@ namespace ACE.Server.WorldObjects
             if (removeFromInventoryAction == RemoveFromInventoryAction.GiveItem || removeFromInventoryAction == RemoveFromInventoryAction.SpendItem || removeFromInventoryAction == RemoveFromInventoryAction.ToCorpseOnDeath)
                 Session.Network.EnqueueSend(new GameMessageInventoryRemoveObject(item));
 
+            if (Session.AccessLevel >= AccessLevel.Admin)
+            {
+                if (removeFromInventoryAction == RemoveFromInventoryAction.DropItem)
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+            }
+
             if (removeFromInventoryAction != RemoveFromInventoryAction.ToWieldedSlot)
             {
                 // The item has gone off-player, so we must do some additional work
@@ -410,6 +416,10 @@ namespace ACE.Server.WorldObjects
                 new GameMessagePublicUpdatePropertyInt(item, PropertyInt.CurrentWieldedLocation, 0),
                 new GameMessagePickupEvent(item),
                 new GameMessageSound(Guid, Sound.UnwieldObject));
+
+            if (Session.AccessLevel >= AccessLevel.Admin && dequipObjectAction == DequipObjectAction.DropItem)
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) from equipped at {Location?.ToLOCString() ?? "Unknown Location"}.");
+
 
             // handle equipment sets
             if (item.HasItemSet)
@@ -1483,6 +1493,18 @@ namespace ACE.Server.WorldObjects
 #endif
 
             OnPutItemInContainer(item.Guid.Full, container.Guid.Full, placement);
+
+            if (Session.AccessLevel >= AccessLevel.Admin && containerRootOwner == this)
+            {
+                if (item.CurrentLandblock != null)
+                {
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {item.Name} ({item.Guid}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                }
+                else if (itemRootOwner != null && itemRootOwner != this)
+                {
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} took {item.Name} ({item.Guid}) from {itemRootOwner.Name} ({itemRootOwner.Guid}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                }
+            }
 
             if (item.CurrentLandblock != null) // Movement is an item pickup off the landblock
             {
@@ -2743,6 +2765,13 @@ namespace ACE.Server.WorldObjects
                 try
                 {
                     TransferLogger.LogGroundPickup(this, newStack, amount);
+                    
+                    // Admin audit logging
+                    if (Session.AccessLevel >= AccessLevel.Admin)
+                    {
+                        var stackMsg = amount != 1 ? $"{amount} " : "";
+                        PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {stackMsg}{newStack.Name} at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -3731,6 +3760,17 @@ namespace ACE.Server.WorldObjects
                 target.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} gives you {stackMsg}{itemName}.", ChatMessageType.Broadcast));
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
+
+                // Admin audit logging
+                if (Session.AccessLevel >= AccessLevel.Admin)
+                {
+                    var itemDesc = $"{stackMsg}{itemName}";
+                    if (itemToGive is Container container && container.Inventory.Count > 0)
+                    {
+                        itemDesc += " (Container with items)";
+                    }
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} gave {itemDesc} (0x{itemToGive.Guid:X8}) to {target.Name}.");
+                }
 
                 // Log the direct give for transfer monitoring
                 try

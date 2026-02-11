@@ -271,6 +271,51 @@ namespace ACE.Server.WorldObjects
                 // Log the trade
                 TransferLogger.LogTrade(this, target, targetEscrow, myEscrow);
 
+                // Admin audit logging with full item details
+                if (Session.AccessLevel >= AccessLevel.Admin || target.Session.AccessLevel >= AccessLevel.Admin)
+                {
+                    var adminName = Session.AccessLevel >= AccessLevel.Admin ? Name : target.Name;
+                    var otherName = Session.AccessLevel >= AccessLevel.Admin ? target.Name : Name;
+                    
+                    // Coalesce items given by admin
+                    var itemsGiven = Session.AccessLevel >= AccessLevel.Admin ? targetEscrow : myEscrow;
+                    var givenSummary = itemsGiven
+                        .GroupBy(item => item.Name)
+                        .Select(g => {
+                            var totalQuantity = g.Sum(item => (long)(item.StackSize ?? 1));
+                            var stackCount = g.Count();
+                            
+                            if (stackCount > 1)
+                                return $"{totalQuantity:N0}x {g.Key} ({stackCount} stacks)";
+                            
+                            return totalQuantity > 1 ? $"{totalQuantity:N0}x {g.Key}" : g.Key;
+                        })
+                        .ToList();
+                    
+                    // Coalesce items received by admin  
+                    var itemsReceived = Session.AccessLevel >= AccessLevel.Admin ? myEscrow : targetEscrow;
+                    var receivedSummary = itemsReceived
+                        .GroupBy(item => item.Name)
+                        .Select(g => {
+                            var totalQuantity = g.Sum(item => (long)(item.StackSize ?? 1));
+                            var stackCount = g.Count();
+                            
+                            if (stackCount > 1)
+                                return $"{totalQuantity:N0}x {g.Key} ({stackCount} stacks)";
+                            
+                            return totalQuantity > 1 ? $"{totalQuantity:N0}x {g.Key}" : g.Key;
+                        })
+                        .ToList();
+                    
+                    var givenItems = givenSummary.Any() ? string.Join(", ", givenSummary) : "nothing";
+                    var receivedItems = receivedSummary.Any() ? string.Join(", ", receivedSummary) : "nothing";
+                    
+                    var sender = Session.AccessLevel >= AccessLevel.Admin ? this : target;
+
+                    PlayerManager.BroadcastToAuditChannel(sender, 
+                        $"Admin {adminName} traded with {otherName}. Gave: {givenItems}. Received: {receivedItems}.");
+                }
+
                 HandleActionResetTrade(Guid);
                 target.HandleActionResetTrade(target.Guid);
             });
