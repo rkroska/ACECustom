@@ -495,6 +495,11 @@ namespace ACE.Entity
             return new Vector3(dx, dy, dz);
         }
 
+        public string ToLOCString()
+        {
+            return ToString();
+        }
+
         public override string ToString()
         {
             var str = $"0x{LandblockId.Raw:X8} [{PositionX:F6} {PositionY:F6} {PositionZ:F6}] {RotationW:F6} {RotationX:F6} {RotationY:F6} {RotationZ:F6}";
