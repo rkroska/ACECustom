@@ -1664,6 +1664,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleClearDynamicEmotes(Session session, params string[] parameters)
         {
             QuestManager.ClearDynamicQuestEmotes();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared dynamic emotes cache.");
         }
 
         // adminui
@@ -2350,7 +2351,11 @@ namespace ACE.Server.Command.Handlers
                     {
                         player.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {player.Name}");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used smite on {player.Name}");
+                        
+                        // Global broadcast when smiting a player
+                        PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{player.Name} was smited.", ChatMessageType.Broadcast));
+                        
                         return;
                     }
 
@@ -2372,7 +2377,13 @@ namespace ACE.Server.Command.Handlers
                     {
                         wo.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
+
+                        if (wo is Player smitedPlayer)
+                        {
+                            // Global broadcast when smiting a player
+                            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{smitedPlayer.Name} was smited.", ChatMessageType.Broadcast));
+                        }
                     }
                 }
                 else
@@ -2417,7 +2428,8 @@ namespace ACE.Server.Command.Handlers
             player.SetPosition(PositionType.TeleportedCharacter, currentPos);
             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you.", ChatMessageType.Magic));
 
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {player.Name} to them.");
+            var locationStr = session.Player.Location?.ToLOCString() ?? "Unknown Location";
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {player.Name} to them at {locationStr}.");
         }
 
         /// <summary>
@@ -2674,6 +2686,21 @@ namespace ACE.Server.Command.Handlers
             // @unlock - Cleans the SQL lock on either everyone or the given player.
 
             // TODO: output
+            if (session.AccessLevel >= AccessLevel.Admin && parameters.Length >= 1)
+            {
+                WorldObject target = null;
+                if (parameters[0].Length > 2 && parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) && uint.TryParse(parameters[0].Substring(2), System.Globalization.NumberStyles.HexNumber, null, out var guid))
+                    target = CommandHandlerHelper.GetWorldObjectByGuid(session, guid);
+                else if (uint.TryParse(parameters[0], out var decimalGuid))
+                    target = CommandHandlerHelper.GetWorldObjectByGuid(session, decimalGuid);
+                else
+                    target = PlayerManager.GetOnlinePlayer(parameters[0]);
+
+                if (target != null)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used /unlock on {target.Name}:{target.Guid} at {target.Location}");
+                }
+            }
         }
 
         // gamecast <message>
@@ -3831,6 +3858,9 @@ namespace ACE.Server.Command.Handlers
             if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _))
             {
                 TryCreateObject(session, weenie, numToSpawn, palette, shade);
+
+                if (session.AccessLevel >= AccessLevel.Admin)
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created {numToSpawn}x {weenie.ClassName} ({weenie.WeenieClassId}) using /create.");
             }
         }
 
@@ -3856,12 +3886,14 @@ namespace ACE.Server.Command.Handlers
         public static void HandleQuestClear(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearCachedQuest(parameters[0]);
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared quest cache for '{parameters[0]}'.");
         }
 
         [CommandHandler("clearallquests", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
         public static void HandleQuestClearAll(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearAllCachedQuests();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all quest caches.");
         }
 
         [CommandHandler("clearevent", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Clears a cached event by name", "<eventname>")]
@@ -3869,7 +3901,10 @@ namespace ACE.Server.Command.Handlers
         {
             var cleared = DatabaseManager.World.ClearCachedEvent(parameters[0]);
             if (cleared)
+            {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' cleared from cache");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared event cache for '{parameters[0]}'.");
+            }
             else
                 CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' was not in cache");
         }
@@ -3879,12 +3914,14 @@ namespace ACE.Server.Command.Handlers
         {
             DatabaseManager.World.ClearAllCachedEvents();
             CommandHandlerHelper.WriteOutputInfo(session, "All events cleared from cache");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all event caches.");
         }
 
         [CommandHandler("clearspellcache", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
         public static void HandleClearSpellCache(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearSpellCache();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared the spell cache.");
         }
 
         [CommandHandler("testdynamic", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1)]
@@ -4320,6 +4357,18 @@ namespace ACE.Server.Command.Handlers
             }
             else notOK = true;
             if (notOK) ChatPacket.SendServerMessage(session, "Appraise a locked target before using @crack", ChatMessageType.Broadcast);
+            else 
+            {
+                 // Audit log for successful crack execution logic (even if it failed to unlock due to mechanics, the admin tried it)
+                 // Re-locate object to log it correctly as we established it exists in the if/else logic above
+                 if (session.AccessLevel >= AccessLevel.Admin && session.Player.CurrentAppraisalTarget.HasValue)
+                 {
+                     var objectId = new ObjectGuid((uint)session.Player.CurrentAppraisalTarget);
+                     var wo = session.Player.CurrentLandblock?.GetObject(objectId);
+                     if (wo != null)
+                         PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used /crack on {wo.Name}:{wo.Guid} at {wo.Location}");
+                 }
+            }
         }
 
         /// <summary>
@@ -4436,10 +4485,18 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length > 0)
             {
                 var player = PlayerManager.GetOnlinePlayer(parameters[0]);
+                if (player == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {parameters[0]} not found.", ChatMessageType.Broadcast));
+                    return;
+                }
+                
                 player.EnchantmentManager.DispelAllEnchantments();
                 // remove all enchantments from equipped items for now
                 foreach (var item in player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
+                
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {player.Name}.");
             }
             else
             {
@@ -4447,6 +4504,8 @@ namespace ACE.Server.Command.Handlers
                 // remove all enchantments from equipped items for now
                 foreach (var item in session.Player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
+                
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from themselves.");
             }
 
 
@@ -5825,6 +5884,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         creature.QuestManager.EraseAll();
                         session.Player.SendMessage($"All quests erased.");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} erased all quests for {creature.Name}.");
                         return;
                     }
 
@@ -5835,6 +5895,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     creature.QuestManager.Erase(questName);
                     session.Player.SendMessage($"{questName} erased.");
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} erased quest stamp {questName} for {creature.Name}.");
                     return;
                 }
 
@@ -6795,6 +6856,9 @@ namespace ACE.Server.Command.Handlers
             salvageBag.NumItemsInMaterial = numItemsInMaterial;
 
             session.Player.TryCreateInInventoryWithNetworking(salvageBag);
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created a salvage bag of type {materialType} (Structure: {structure}, Workmanship: {workmanship}, NumItems: {numItemsInMaterial}).");
         }
 
         [CommandHandler("setlbenviron", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
