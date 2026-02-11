@@ -207,6 +207,7 @@ namespace ACE.Server.Managers
                 quest.CharacterId = IDtoUseForQuestRegistry;
 
                 if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): added quest");
+                Creature.EmoteManager?.OnReceiveStamp(questName);
 
                 if (Creature is Player player)
                 {
@@ -238,6 +239,7 @@ namespace ACE.Server.Managers
                 quest.NumTimesCompleted++;
 
                 if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): updated quest ({quest.NumTimesCompleted})");
+                Creature.EmoteManager?.OnReceiveStamp(questName);
 
                 if (Creature is Player player)
                 {
