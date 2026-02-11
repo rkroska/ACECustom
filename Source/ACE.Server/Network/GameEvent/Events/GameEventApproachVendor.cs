@@ -8,7 +8,7 @@ namespace ACE.Server.Network.GameEvent.Events
 {
     public class GameEventApproachVendor : GameEventMessage
     {
-        public GameEventApproachVendor(Session session, Vendor vendor, uint altCurrencySpent)
+        public GameEventApproachVendor(Session session, Vendor vendor)
             : base(GameEventType.ApproachVendor, GameMessageGroup.UIQueue, session)
         {        
             Writer.Write(vendor.Guid.Full);
@@ -33,8 +33,24 @@ namespace ACE.Server.Network.GameEvent.Events
                 var pluralName = altCurrency.GetPluralName();
 
                 // the total amount of alternate currency the player currently has
-                var altCurrencyInInventory = (uint)session.Player.GetNumInventoryItemsOfWCID(vendor.AlternateCurrency.Value);
-                Writer.Write(altCurrencyInInventory + altCurrencySpent);
+                long altCurrencyCount = (long)session.Player.GetNumInventoryItemsOfWCID(vendor.AlternateCurrency.Value);
+
+                // Add banked amounts for specific currencies
+                if (vendor.AlternateCurrency.Value == 20630) // MMD Note
+                {
+                    altCurrencyCount += (session.Player.BankedPyreals ?? 0) / 250000;
+                }
+                else if (vendor.AlternateCurrency.Value == 300004) // Enlightened Coin
+                {
+                    altCurrencyCount += (session.Player.BankedEnlightenedCoins ?? 0);
+                }
+                else if (vendor.AlternateCurrency.Value == 300003) // Weakly Enlightened Coin
+                {
+                    altCurrencyCount += (session.Player.BankedWeaklyEnlightenedCoins ?? 0);
+                }
+
+                // Clamp to uint.MaxValue for the packet
+                Writer.Write((uint)Math.Min(altCurrencyCount, uint.MaxValue));
 
                 // the plural name of alt currency
                 Writer.WriteString16L(pluralName);

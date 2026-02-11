@@ -5,7 +5,6 @@ using System.Linq;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
-using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -58,7 +57,7 @@ namespace ACE.Server.WorldObjects
 
             var currencyWcid = vendor.AlternateCurrency ?? coinStackWcid;
 
-            SpendCurrency(currencyWcid, cost, true);
+            ConsumeCurrency(currencyWcid, cost);
 
             vendor.MoneyIncome += (int)cost;
 
@@ -103,9 +102,7 @@ namespace ACE.Server.WorldObjects
             if (ServerConfig.player_receive_immediate_save.Value)
                 RushNextPlayerSave(5);
 
-            var altCurrencySpent = vendor.AlternateCurrency != null ? cost : 0;
-
-            vendor.ApproachVendor(this, VendorType.Buy, altCurrencySpent);
+            vendor.ApproachVendor(this, VendorType.Buy);
         }
 
         // player selling items to vendor
@@ -168,25 +165,6 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // verify player has enough pack slots / burden to receive these pyreals
-            var itemsToReceive = new ItemsToReceive(this);
-
-            itemsToReceive.Add((uint)ACE.Entity.Enum.WeenieClassName.W_COINSTACK_CLASS, payoutCoinAmount);
-
-            if (itemsToReceive.PlayerExceedsLimits)
-            {
-                if (itemsToReceive.PlayerExceedsAvailableBurden)
-                    Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You are too encumbered to sell that!"));
-                else if (itemsToReceive.PlayerOutOfInventorySlots)
-                    Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You do not have enough free pack space to sell that!"));
-
-                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, Guid.Full));
-                SendUseDoneEvent();     // WeenieError.FullInventoryLocation?
-                return;
-            }
-
-            var payoutCoinStacks = CreatePayoutCoinStacks(payoutCoinAmount);
-
             vendor.MoneyOutflow += payoutCoinAmount;
 
             // remove sell items from player inventory
@@ -202,17 +180,11 @@ namespace ACE.Server.WorldObjects
             // for the vendor to determine what to do with each item (resell, destroy)
             vendor.ProcessItemsForPurchase(this, sellList);
 
-            // add coins to player inventory
-            foreach (var item in payoutCoinStacks)
-            {
-                if (!TryCreateInInventoryWithNetworking(item))  // this shouldn't happen because of pre-validations in itemsToReceive
-                {
-                    log.WarnFormat("[VENDOR] Payout 0x{0:X8}:{1} for player {2} failed to add to inventory HandleActionSellItem.", item.Guid.Full, item.Name, Name);
-                    item.Destroy();
-                }
-            }
-
-            // UpdateCoinValue removed -- already handled in TryCreateInInventoryWithNetworking
+            // Deposit to bank.
+            BankedPyreals ??= 0;
+            BankedPyreals += payoutCoinAmount;
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"Sold items for {payoutCoinAmount:N0} pyreals (deposited to bank).", ChatMessageType.System));
+            UpdateCoinValue();
 
             Session.Network.EnqueueSend(new GameMessageSound(Guid, Sound.PickUpItem));
 
@@ -293,110 +265,103 @@ namespace ACE.Server.WorldObjects
             return verified;
         }
 
-        private List<WorldObject> CreatePayoutCoinStacks(int amount)
-        {
-            var coinStacks = new List<WorldObject>();
-
-            while (amount > 0)
-            {
-                var currencyStack = WorldObjectFactory.CreateNewWorldObject("coinstack");
-
-                var currentStackAmount = Math.Min(amount, currencyStack.MaxStackSize.Value);
-
-                currencyStack.SetStackSize(currentStackAmount);
-                coinStacks.Add(currencyStack);
-                amount -= currentStackAmount;
-            }
-            return coinStacks;
-        }
-
         private void UpdateCoinValue(bool sendUpdateMessageIfChanged = true)
         {
-            int coins = 0;
+            long coins = 0;
 
             foreach (var coinStack in GetInventoryItemsOfTypeWeenieType(WeenieType.Coin))
                 coins += coinStack.Value ?? 0;
 
-            if (sendUpdateMessageIfChanged && CoinValue == coins)
+            // Include banked pyreals for total wealth display
+            coins += BankedPyreals ?? 0;
+
+            // Clamp for safe display as int
+            if (coins > int.MaxValue)
+                coins = int.MaxValue;
+
+            if (sendUpdateMessageIfChanged && CoinValue == (int)coins)
                 sendUpdateMessageIfChanged = false;
 
-            CoinValue = coins;
+            CoinValue = (int)coins;
 
             if (sendUpdateMessageIfChanged)
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.CoinValue, CoinValue ?? 0));
         }
 
-        private List<WorldObject> SpendCurrency(uint currentWcid, uint amount, bool destroy = false)
+        private void ConsumeCurrency(uint currentWcid, uint amount)
         {
-            if (currentWcid == 0 || amount == 0)
-                return null;
+            if (currentWcid == 0 || amount == 0) return;
 
-            var cost = new List<WorldObject>();
+            long inventoryAmount = 0;
 
             if (currentWcid == coinStackWcid)
             {
-                if (amount > CoinValue)
-                    return null;
+                foreach (var coinStack in GetInventoryItemsOfWCID(coinStackWcid)) inventoryAmount += coinStack.Value ?? 0;
+                long takeFromInventory = Math.Min(amount, inventoryAmount);
+                long takeFromBank = amount - takeFromInventory;
+
+                if (takeFromInventory > 0)
+                    TryConsumeFromInventoryWithNetworking(currentWcid, (int)takeFromInventory);
+
+                if (takeFromBank > 0)
+                {
+                    BankedPyreals ??= 0;
+                    BankedPyreals -= takeFromBank;
+                    UpdateCoinValue();
+                }
             }
-            if (destroy)
+            else if (currentWcid == 20630) // MMD Note
             {
-                TryConsumeFromInventoryWithNetworking(currentWcid, (int)amount);
+                inventoryAmount = GetNumInventoryItemsOfWCID(currentWcid);
+                long takeFromInventory = Math.Min(amount, inventoryAmount);
+                long takeFromBank = amount - takeFromInventory;
+
+                if (takeFromInventory > 0)
+                    TryConsumeFromInventoryWithNetworking(currentWcid, (int)takeFromInventory);
+
+                if (takeFromBank > 0)
+                {
+                    // Each MMD is worth 250,000 pyreals
+                    long pyrealsNeeded = takeFromBank * 250000;
+                    BankedPyreals ??= 0;
+                    BankedPyreals -= pyrealsNeeded;
+                    UpdateCoinValue();
+                }
+            }
+            else if (currentWcid == 300004) // Enlightened Coin
+            {
+                inventoryAmount = GetNumInventoryItemsOfWCID(currentWcid);
+                long takeFromInventory = Math.Min(amount, inventoryAmount);
+                long takeFromBank = amount - takeFromInventory;
+
+                if (takeFromInventory > 0)
+                    TryConsumeFromInventoryWithNetworking(currentWcid, (int)takeFromInventory);
+
+                if (takeFromBank > 0)
+                {
+                    BankedEnlightenedCoins ??= 0;
+                    BankedEnlightenedCoins -= takeFromBank;
+                }
+            }
+            else if (currentWcid == 300003) // Weakly Enlightened Coin
+            {
+                inventoryAmount = GetNumInventoryItemsOfWCID(currentWcid);
+                long takeFromInventory = Math.Min(amount, inventoryAmount);
+                long takeFromBank = amount - takeFromInventory;
+
+                if (takeFromInventory > 0)
+                    TryConsumeFromInventoryWithNetworking(currentWcid, (int)takeFromInventory);
+
+                if (takeFromBank > 0)
+                {
+                    BankedWeaklyEnlightenedCoins ??= 0;
+                    BankedWeaklyEnlightenedCoins -= takeFromBank;
+                }
             }
             else
             {
-                cost = CollectCurrencyStacks(currentWcid, amount);
-
-                foreach (var stack in cost)
-                {
-                    if (!TryRemoveFromInventoryWithNetworking(stack.Guid, out _, RemoveFromInventoryAction.SpendItem))
-                        UpdateCoinValue(); // this coinstack was created by spliting up an existing one, and not actually added to the players inventory. The existing stack was already adjusted down but we need to update the player's CoinValue, so we do that now.
-                }
+                // Anything else just gets consumed from inventory.
+                TryConsumeFromInventoryWithNetworking(currentWcid, (int)amount);
             }
-            return cost;
         }
-
-        private List<WorldObject> CollectCurrencyStacks(uint currencyWcid, uint amount)
-        {
-            var currencyStacksCollected = new List<WorldObject>();
-
-            var currencyStacksInInventory = GetInventoryItemsOfWCID(currencyWcid);
-            //currencyStacksInInventory = currencyStacksInInventory.OrderBy(o => o.Value).ToList();
-
-            var remaining = (int)amount;
-
-            foreach (var stack in currencyStacksInInventory)
-            {
-                var amountToRemove = Math.Min(remaining, stack.StackSize ?? 1);
-
-                if (stack.StackSize == amountToRemove)
-                {
-                    currencyStacksCollected.Add(stack);
-                }
-                else
-                {
-                    // create new stack
-                    var newStack = WorldObjectFactory.CreateNewWorldObject(currencyWcid);
-                    newStack.SetStackSize(amountToRemove);
-                    currencyStacksCollected.Add(newStack);
-
-                    var stackToAdjust = FindObject(stack.Guid, SearchLocations.MyInventory, out var foundInContainer, out var rootContainer, out _);
-
-                    // adjust existing stack
-                    if (stackToAdjust != null)
-                    {
-                        AdjustStack(stackToAdjust, -amountToRemove, foundInContainer, rootContainer);
-                        Session.Network.EnqueueSend(new GameMessageSetStackSize(stackToAdjust));
-                        Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.EncumbranceVal, EncumbranceVal ?? 0));
-                    }
-                    // UpdateCoinValue removed -- already called upstream
-                }
-
-                remaining -= amountToRemove;
-
-                if (remaining <= 0)
-                    break;
-            }
-            return currencyStacksCollected;
-        }
-    }
 }

@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Database;
 using ACE.Entity;
@@ -13,8 +7,12 @@ using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
-using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Managers;
+using ACE.Server.Network.GameEvent.Events;
+using log4net;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ACE.Server.WorldObjects
 {
@@ -269,11 +267,11 @@ namespace ACE.Server.WorldObjects
         /// Sends the latest vendor inventory list to player, rotates vendor towards player, and performs the appropriate emote.
         /// </summary>
         /// <param name="action">The action performed by the player</param>
-        public void ApproachVendor(Player player, VendorType action = VendorType.Undef, uint altCurrencySpent = 0)
+        public void ApproachVendor(Player player, VendorType action = VendorType.Undef)
         {
             RotUniques();
 
-            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this, altCurrencySpent));
+            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this));
 
             var rotateTime = Rotate(player); // vendor rotates to player
 
@@ -468,6 +466,15 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
+            // We mainly care about preventing exploits where the user attempts to trigger a race where they send currency and then spend it.
+            // Failing to catch this type of race would still result in a negative balance for the player, but we still shorten the gap as much as possible.
+            var bankCommandLimit = ServerConfig.bank_command_limit.Value;
+            if ((DateTime.UtcNow - player.Session.LastBankCommandTime).TotalSeconds < bankCommandLimit)
+            {
+                player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, $"You cannot purchase items within {bankCommandLimit} seconds of using the bank."));
+                return false;
+            }
+
             // ideally the creation of the wo's would be delayed even further,
             // and all validations would be performed on weenies beforehand
             // this would require:
@@ -519,7 +526,20 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                var playerAltCurrency = player.GetNumInventoryItemsOfWCID(AlternateCurrency.Value);
+                var playerAltCurrency = (long)player.GetNumInventoryItemsOfWCID(AlternateCurrency.Value);
+
+                if (AlternateCurrency.Value == 20630) // MMD Note
+                {
+                    playerAltCurrency += (player.BankedPyreals ?? 0) / 250000;
+                }
+                else if (AlternateCurrency.Value == 300004) // Enlightened Coin
+                {
+                    playerAltCurrency += player.BankedEnlightenedCoins ?? 0;
+                }
+                else if (AlternateCurrency.Value == 300003) // Weakly Enlightened Coin
+                {
+                    playerAltCurrency += player.BankedWeaklyEnlightenedCoins ?? 0;
+                }
 
                 if (playerAltCurrency < totalPrice)
                 {
