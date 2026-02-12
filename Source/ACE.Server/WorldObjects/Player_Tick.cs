@@ -103,6 +103,8 @@ namespace ACE.Server.WorldObjects
                 else if (houseRentWarnTimestamp == 0)
                     houseRentWarnTimestamp = Time.GetFutureUnixTime(houseRentWarnInterval);
             }
+            
+            CheckPrestigeBoundary();
         }
 
         private static readonly TimeSpan MaximumTeleportTime = TimeSpan.FromMinutes(5);
@@ -432,6 +434,45 @@ namespace ACE.Server.WorldObjects
                 }
             }
             return true;
+        }
+
+        private double _lastPrestigeBoundaryCheck;
+
+        private void CheckPrestigeBoundary()
+        {
+            // Throttle to every 2 seconds
+            if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck < 2.0)
+                return;
+
+            _lastPrestigeBoundaryCheck = Time.GetUnixTime();
+
+            if (!PrestigeManager.IsLandblockAllowed(Location.Variation, (ushort)(Location.Cell >> 16)))
+            {
+                // 1. Visuals: Portal Storm (Dimming) + Void Particles
+                Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventPortalStorm(Session));
+                Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
+
+                // 2. Text: Center Screen (Yellow) + Chat (Red)
+                Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                    Session, 
+                    "⚠ YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! ⚠"));
+                
+                Session.Network.EnqueueSend(new GameMessageSystemChat(
+                    "⚠ YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! ⚠", 
+                    ChatMessageType.Help));
+
+                // 3. Damage: Force update vital (Direct HP reduction)
+                var dmg = (int)(Health.MaxValue * 0.05f);
+                if (dmg < 10) dmg = 10;
+                
+                UpdateVitalDelta(Health, -dmg);
+
+                if (Health.Current <= 0)
+                {
+                    OnDeath(new DamageHistoryInfo(null), DamageType.Nether, false);
+                    Die(); 
+                }
+            }
         }
 
 

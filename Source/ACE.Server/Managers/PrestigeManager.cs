@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects;
@@ -10,6 +11,44 @@ namespace ACE.Server.Managers
         // Tier 1 starts at Variation 11
         // Retail is 0-10 (technically 0 is main world, others are specialized)
         public const int PRESTIGE_VAR_OFFSET = 10;
+
+        /// <summary>
+        /// Defines allowed landblocks for each prestige tier.
+        /// Prevents players from exploring undesigned areas of the map.
+        /// Empty HashSet = no restrictions for that tier (allows free exploration).
+        /// </summary>
+        private static readonly Dictionary<int, HashSet<ushort>> _tierAllowedLandblocks = new()
+        {
+            // Test configuration: Landblock 0xEAEA for all tiers during development
+            // Expand these lists as content is designed for each tier
+            [1] = new HashSet<ushort> { 0xEAEA },
+            [2] = new HashSet<ushort> { 0xEAEA },
+            [3] = new HashSet<ushort> { 0xEAEA },
+            [4] = new HashSet<ushort> { 0xEAEA },
+            [5] = new HashSet<ushort> { 0xEAEA },
+            [6] = new HashSet<ushort> { 0xEAEA },
+            [7] = new HashSet<ushort> { 0xEAEA },
+            [8] = new HashSet<ushort> { 0xEAEA },
+            [9] = new HashSet<ushort> { 0xEAEA },
+            [10] = new HashSet<ushort> { 0xEAEA },
+        };
+
+        /// <summary>
+        /// Checks if a landblock is allowed for the given variation.
+        /// Returns true if no restrictions configured or variation is retail (0-10).
+        /// </summary>
+        public static bool IsLandblockAllowed(int? variation, ushort landblockId)
+        {
+            var tier = GetTier(variation);
+            if (tier <= 0) return true; // Retail zones unrestricted
+            
+            if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+                return true; // No restrictions configured for this tier
+            
+            if (allowed.Count == 0) return true; // Empty list = no restrictions
+            
+            return allowed.Contains(landblockId);
+        }
 
         /// <summary>
         /// Converts a Variation ID to a Prestige Tier.
