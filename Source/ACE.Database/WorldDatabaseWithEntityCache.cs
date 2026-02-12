@@ -939,7 +939,7 @@ namespace ACE.Database
 
             using (var context = new WorldDbContext())
             {
-                quest = context.Quest.FirstOrDefault(q => q.Name.Equals(questName));
+                quest = context.Quest.AsNoTracking().FirstOrDefault(q => q.Name.Equals(questName));
                 cachedQuest[questName] = quest;
 
                 return quest;
