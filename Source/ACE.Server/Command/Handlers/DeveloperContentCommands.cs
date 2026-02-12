@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -2223,7 +2224,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
-        public static void HandleDiscordImport(Session session, params string[] parameters)
+        public static async void HandleDiscordImport(Session session, params string[] parameters)
         {
             try
             {
@@ -2234,7 +2235,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     return;
                 }
 
-                string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, identifier);
+                string sql = await DiscordChatManager.GetSqlFromDiscordMessageAsync(20, identifier);
 
                 if (string.IsNullOrEmpty(sql))
                 {
@@ -2262,7 +2263,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         [CommandHandler("import-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports JSON content from Discord to the server folder", "<filename>")]
-        public static void HandleDiscordJsonImport(Session session, params string[] parameters)
+        public static async void HandleDiscordJsonImport(Session session, params string[] parameters)
         {
             try
             {
@@ -2274,7 +2275,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
 
                 // Get the JSON file content from Discord
-                string jsonContent = DiscordChatManager.GetJsonFromDiscordMessage(20, identifier);
+                string jsonContent = await DiscordChatManager.GetJsonFromDiscordMessageAsync(20, identifier);
 
                 if (string.IsNullOrEmpty(jsonContent))
                 {
@@ -2323,7 +2324,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         [CommandHandler("export-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports a ClothingBase entry to JSON and sends it to Discord.")]
-        public static void HandleExportClothingToDiscord(Session session, params string[] parameters)
+        public static async void HandleExportClothingToDiscord(Session session, params string[] parameters)
         {
             if (parameters == null || parameters.Length < 1)
             {
@@ -2365,7 +2366,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         sw.WriteLine(json); // Write the JSON content to the memory stream
 
                         // Send the JSON content to Discord as a file
-                        DiscordChatManager.SendDiscordFile(session.Player.Name, $"ClothingBase {clothingBaseId:X8}.json", (long)ConfigManager.Config.Chat.ClothingModExportChannelId, new Discord.FileAttachment(mem, $"{clothingBaseId:X8}.json"));
+                        await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, $"ClothingBase {clothingBaseId:X8}.json", (long)ConfigManager.Config.Chat.ClothingModExportChannelId, new Discord.FileAttachment(mem, $"{clothingBaseId:X8}.json"));
 
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported ClothingBase {clothingBaseId:X8} to Discord.");
                     }
