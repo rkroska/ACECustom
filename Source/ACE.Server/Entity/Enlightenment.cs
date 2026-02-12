@@ -52,7 +52,6 @@ namespace ACE.Server.Entity
             enlChain.AddAction(player, ActionType.Enlightenment_DoEnlighten, () =>
             {
                 player.IsBusy = false;
-                player.ApplyVisualEffects(PlayScript.LevelUp);
                 var endPos = new ACE.Entity.Position(player.Location);
                 if (startPos.SquaredDistanceTo(endPos) > Player.RecallMoveThresholdSq)
                 {
@@ -85,6 +84,7 @@ namespace ACE.Server.Entity
                 {
                     DequipAllItems(player);
                 }
+                player.ApplyVisualEffects(PlayScript.LevelUp);
                 player.SaveBiotaToDatabase();
             });
 
@@ -410,20 +410,20 @@ namespace ACE.Server.Entity
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetEnlightenmentRatingBonus(int enlightenmentAmt)
         {
-            // For enl 0-10: +1 per enl 
+            // From 1-10: 1 Damage Rating per Enlightenment (Total of 10)
             if (enlightenmentAmt <= 10)
                 return enlightenmentAmt;
-            
-            // For enl 11-20: 10 base from above +1 per 2 enl
-            if (enlightenmentAmt <= 20)
-                return 10 + (enlightenmentAmt - 10 + 1) / 2;
-            
-            // For enl 21-50: 15 base from above +1 per 5 enl
-            if (enlightenmentAmt <= 50)
-                return 15 + (enlightenmentAmt - 20 + 4) / 5;
 
-            // For enl 51+: 21 base from above +1 per 10 enl
-            return 21 + (enlightenmentAmt - 50 + 9) / 10;
+            // From 11-20: 1 Damage Rating per 2 Enlightenments (Total of 5)
+            if (enlightenmentAmt <= 20)
+                return 10 + (enlightenmentAmt - 10) / 2;
+
+            // From 21-50: 1 Damage Rating per 5 Enlightenments (Total of 6)
+            if (enlightenmentAmt <= 50)
+                return 15 + (enlightenmentAmt - 20) / 5;
+
+            // From 50 and beyond: 1 Damage Rating per 10 Enlightenments
+            return 21 + (enlightenmentAmt - 50) / 10;
         }
 
         public static void AddPerks(Player player)
