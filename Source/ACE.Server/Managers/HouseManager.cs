@@ -332,6 +332,10 @@ namespace ACE.Server.Managers
                 return;
 
             var currentTime = DateTime.UtcNow;
+            var startTime = currentTime;
+            var maxProcessingTime = TimeSpan.FromSeconds(5); // Prevent indefinite blocking
+            var maxIterations = 100; // Prevent infinite loops
+            var iterations = 0;
 
             while (currentTime > nextEntry.RentDue)
             {
@@ -345,6 +349,20 @@ namespace ACE.Server.Managers
                     return;
 
                 currentTime = DateTime.UtcNow;
+                iterations++;
+
+                // Safety check to prevent indefinite blocking of UpdateWorld
+                if (iterations >= maxIterations)
+                {
+                    log.Warn($"HouseManager.Tick() processed {iterations} entries and hit iteration limit. Breaking to prevent hang. Remaining queue: {RentQueue.Count}");
+                    return;
+                }
+
+                if (currentTime - startTime > maxProcessingTime)
+                {
+                    log.Warn($"HouseManager.Tick() exceeded {maxProcessingTime.TotalSeconds}s processing time after {iterations} entries. Breaking to prevent hang. Remaining queue: {RentQueue.Count}");
+                    return;
+                }
             }
         }
 

@@ -384,6 +384,8 @@ namespace ACE.Server.Managers
 
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
+            var slowTickThreshold = TimeSpan.FromSeconds(10); // Log if a tick takes longer than this
+            var hangDetectionThreshold = TimeSpan.FromSeconds(30); // Warning threshold for potential hang
 
             while (!pendingWorldStop)
             {
@@ -461,6 +463,17 @@ namespace ACE.Server.Managers
                     Thread.Sleep(sessionCount == 0 ? 10 : 1); // Relax the CPU more if no sessions are connected
 
                 Timers.PortalYearTicks += worldTickTimer.Elapsed.TotalSeconds;
+
+                // Log slow ticks to help diagnose hangs
+                var tickDuration = worldTickTimer.Elapsed;
+                if (tickDuration > hangDetectionThreshold)
+                {
+                    log.Error($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - possible hang detected!");
+                }
+                else if (tickDuration > slowTickThreshold)
+                {
+                    log.Warn($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - slower than expected");
+                }
             }
 
             // World has finished operations and concedes the thread to garbage collection

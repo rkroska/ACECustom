@@ -366,7 +366,9 @@ namespace ACE.Server.Network.Managers
             {
                 // The session tick outbound processes pending actions and handles outgoing messages
                 ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
-                Parallel.ForEach(sessionMap, s => s?.TickOutbound());
+                // Limit parallel degree to prevent thread pool exhaustion and hanging
+                var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2 };
+                Parallel.ForEach(sessionMap, options, s => s?.TickOutbound());
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
 
                 // Removes sessions in the NetworkTimeout state, including sessions that have reached a timeout limit.
