@@ -4283,12 +4283,44 @@ namespace ACE.Server.WorldObjects
             // fixes any 'invisible' equipped items, where CurrentWieldedLocation is None
             // not sure how items could have gotten into this state, possibly from legacy bugs
 
-            var dequipItems = EquippedObjects.Values.Where(i => i.CurrentWieldedLocation == EquipMask.None);
+            var dequipItems = EquippedObjects.Values.Where(i => i.CurrentWieldedLocation == EquipMask.None).ToList();
 
             foreach (var dequipItem in dequipItems)
             {
                 log.Warn($"{Name}.AuditEquippedItems() - dequipping {dequipItem.Name} ({dequipItem.Guid})");
                 HandleActionPutItemInContainer(dequipItem.Guid.Full, Guid.Full);
+            }
+
+            // Fix duplicate weapons in same hand slot after crash
+            // Group weapons by their ParentLocation (RightHand, LeftHand, LeftWeapon, Shield)
+            var weaponSlots = new[] { 
+                ACE.Entity.Enum.ParentLocation.RightHand,
+                ACE.Entity.Enum.ParentLocation.LeftHand,
+                ACE.Entity.Enum.ParentLocation.LeftWeapon,
+                ACE.Entity.Enum.ParentLocation.Shield
+            };
+
+            foreach (var slot in weaponSlots)
+            {
+                // Get all weapons/items in this slot (excluding missile ammo)
+                var itemsInSlot = EquippedObjects.Values
+                    .Where(i => i.ParentLocation == slot && i.CurrentWieldedLocation != EquipMask.MissileAmmo)
+                    .ToList();
+
+                // If multiple items in same slot, keep only the newest one
+                if (itemsInSlot.Count > 1)
+                {
+                    // Sort by CreationTimestamp descending (newest first)
+                    var sortedItems = itemsInSlot.OrderByDescending(i => i.CreationTimestamp ?? 0).ToList();
+                    
+                    // Keep the first (newest), dequip the rest
+                    for (int i = 1; i < sortedItems.Count; i++)
+                    {
+                        var oldItem = sortedItems[i];
+                        log.Warn($"{Name}.AuditEquippedItems() - detected duplicate weapon in {slot} slot, dequipping older {oldItem.Name} ({oldItem.Guid}) created at {oldItem.CreationTimestamp}");
+                        HandleActionPutItemInContainer(oldItem.Guid.Full, Guid.Full);
+                    }
+                }
             }
         }
 
