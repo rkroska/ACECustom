@@ -2640,7 +2640,7 @@ namespace ACE.Server.Command.Handlers
             var lastParam = pParams.Last();
 
             int? variant = null;
-            if (lastParam != "null")
+            if (!string.Equals(lastParam, "null", StringComparison.OrdinalIgnoreCase))
             {
                 if (!int.TryParse(lastParam, out int intVariant) || intVariant < 0) {
                     ChatPacket.SendServerMessage(session, "Invalid variation value. Must be 'null' or a non-negative integer.", ChatMessageType.Broadcast);

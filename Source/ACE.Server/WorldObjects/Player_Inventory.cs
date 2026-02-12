@@ -2770,7 +2770,7 @@ namespace ACE.Server.WorldObjects
                     if (Session.AccessLevel >= AccessLevel.Admin)
                     {
                         var stackMsg = amount != 1 ? $"{amount} " : "";
-                        PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {stackMsg}{newStack.Name} at {Location}.");
+                        PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {stackMsg}{newStack.Name} at {Location?.ToString() ?? "Unknown Location"}.");
                     }
                 }
                 catch (Exception ex)
