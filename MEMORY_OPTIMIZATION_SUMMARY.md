@@ -1,27 +1,12 @@
 # Memory Optimization Summary
 
 ## Problem Statement
-The ACE server was experiencing severe memory growth, eventually reaching ~28GB and causing throttling issues on the VM. The investigation revealed redundant caching and unnecessary object copies in the database layer.
+The ACE server was experiencing severe memory growth, eventually reaching ~28GB and causing throttling issues on the VM. The investigation revealed redundant object cloning in the database caching layer.
 
-## Root Causes Identified
+## Root Cause Identified
 
-### 1. Entity Framework Change Tracking (CRITICAL)
-**Impact:** MASSIVE memory waste
-
-Entity Framework was tracking all entities loaded for caching, creating duplicate in-memory copies:
-- When `GetBiota()` loaded an entity from the database, EF tracked it in the change tracker
-- The entity was then cached separately in `ShardDatabaseWithCaching`
-- This resulted in TWO copies in memory: the cached copy + the tracked copy
-- Each biota loaded 20+ property collections, all tracked individually
-- With thousands of cached entities, this multiplied the memory footprint significantly
-
-**Example:** A player with inventory containing 100 items:
-- Without fix: 1 player + 100 items = 101 entities tracked + 101 entities cached = ~202 entity copies in memory
-- With fix: 0 entities tracked + 101 entities cached = ~101 entity copies in memory
-- **Result: ~50% memory reduction for cached entities**
-
-### 2. Unnecessary Object Cloning
-**Impact:** Moderate memory waste during initialization
+### Unnecessary Object Cloning in Treasure Material Caches
+**Impact:** Moderate memory waste during cache initialization
 
 Treasure material cache initialization was cloning objects unnecessarily:
 - `CacheAllTreasureMaterialBase()` cloned every treasure material record
@@ -30,30 +15,11 @@ Treasure material cache initialization was cloning objects unnecessarily:
 - Cloning was originally added to avoid modifying EF-tracked entities during normalization
 - Since normalization modifies probability values, the clone seemed necessary
 
-## Solutions Implemented
+## Solution Implemented
 
-### Fix 1: Add .AsNoTracking() to Biota Queries
+### Use .AsNoTracking() for Treasure Material and Quest Caches
 **Files Modified:**
-- `Source/ACE.Database/ShardDatabase.cs` (lines 239, 247-271)
-
-**Changes:**
-```csharp
-// Before
-var biota = context.Biota.FirstOrDefault(r => r.Id == id);
-biota.BiotaPropertiesAnimPart = context.BiotaPropertiesAnimPart
-    .Where(r => r.ObjectId == biota.Id).ToList();
-
-// After  
-var biota = context.Biota.AsNoTracking().FirstOrDefault(r => r.Id == id);
-biota.BiotaPropertiesAnimPart = context.BiotaPropertiesAnimPart
-    .AsNoTracking().Where(r => r.ObjectId == biota.Id).ToList();
-```
-
-**Result:** Entities loaded for caching are no longer tracked by Entity Framework, eliminating duplicate memory usage.
-
-### Fix 2: Eliminate Clone() by Using .AsNoTracking()
-**Files Modified:**
-- `Source/ACE.Database/WorldDatabaseWithEntityCache.cs` (lines 1067, 1142, 1218)
+- `Source/ACE.Database/WorldDatabaseWithEntityCache.cs` (lines 942, 1067, 1142, 1218)
 - `Source/ACE.Database/Extensions/WorldDbExtensions.cs` (DELETED - no longer needed)
 
 **Changes:**
@@ -69,61 +35,78 @@ var results = context.TreasureMaterialBase.AsNoTracking()
 chances.Add(result);  // No clone needed
 ```
 
-**Result:** Eliminated 3 Clone() operations per treasure material record, reducing memory allocations during cache initialization.
+**Result:** 
+- Eliminated 3 Clone() operations per treasure material record
+- Reduced memory allocations during cache initialization
+- Simplified code by removing unnecessary extension methods
 
-### Fix 3: Add .AsNoTracking() to Quest Cache
-**Files Modified:**
-- `Source/ACE.Database/WorldDatabaseWithEntityCache.cs` (line 942)
+## What About Biota Caching?
 
-**Changes:**
+### Initial Attempt - AsNoTracking on Biota Queries (REVERTED)
+We initially tried adding `.AsNoTracking()` to all `GetBiota()` queries, thinking this would eliminate duplicate memory usage from EF change tracking. However, this caused severe performance issues:
+
+**Problems Encountered:**
+- Very slow logins
+- Very slow saves
+- General performance degradation
+
+**Why This Failed:**
+The `GetBiota()` method is used in TWO different contexts:
+1. **Reading for caching** - Where AsNoTracking would be beneficial
+2. **Reading for updating** - Where tracking is REQUIRED
+
+When `SaveBiota()` calls `GetBiota()` to load an existing entity:
+- With tracking: EF knows about the entity and can efficiently update it
+- With AsNoTracking: EF must attach the entity to the context, which is much slower
+
+**The Key Insight:**
+The biota caching in `ShardDatabaseWithCaching` already prevents long-term memory duplication:
+1. `GetBiota()` loads the entity with tracking into a context
+2. The result is cached in memory
+3. The context is disposed, releasing the tracked entities
+4. Only the cached copy remains in long-term memory
+
+The EF change tracker only holds entities for the duration of the context lifetime (typically very short). Once the context is disposed, those tracked entities are eligible for garbage collection.
+
+### Why We Don't Need AsNoTracking for Biotas
+
+The memory issue we were trying to solve doesn't actually exist in the way we thought:
+
+**Misconception:** EF tracking keeps entities in memory indefinitely
+**Reality:** EF tracking is scoped to the DbContext lifetime
+
 ```csharp
-// Before
-quest = context.Quest.FirstOrDefault(q => q.Name.Equals(questName));
+// In ShardDatabaseWithCaching.GetBiota()
+using (var context = new ShardDbContext())  // Context created
+{
+    var biota = base.GetBiota(context, id);  // Entity loaded and tracked
+    // ... caching logic ...
+}  // Context disposed - tracked entities released from EF change tracker
 
-// After
-quest = context.Quest.AsNoTracking().FirstOrDefault(q => q.Name.Equals(questName));
+// Only the cached copy remains in memory
 ```
 
-**Result:** Quest lookups no longer tracked by EF.
+The context is short-lived (created and disposed within the method), so the tracking overhead is temporary and doesn't contribute to the 28GB memory growth.
 
 ## Expected Memory Savings
 
-### Conservative Estimates
-- **Per biota entity:** 5-50 KB savings (depending on property count)
-- **With 1,000 cached biotas:** 5-50 MB savings
-- **With 10,000 cached biotas:** 50-500 MB savings
-- **Peak usage scenario (many players + NPCs + items):** Multiple GB savings
+### Conservative Estimates from Treasure Material Optimization
+- **During cache initialization:** Reduced temporary allocations by eliminating clones
+- **Ongoing:** Slightly reduced memory footprint in treasure material caches
+- **Code quality:** Cleaner, more maintainable code
 
-### Additional Benefits
-- **Reduced GC pressure:** Fewer objects in memory means less garbage collection overhead
-- **More predictable memory usage:** No unbounded growth from EF change tracker
-- **Faster cache operations:** AsNoTracking queries are slightly faster than tracked queries
+### Why No Major Memory Reduction?
+The 28GB memory usage is likely caused by other factors:
+1. **Large number of cached entities** - The cache itself holds the data
+2. **Static caches without eviction** - Some caches grow unbounded
+3. **Landblock data** - World data kept in memory
+4. **Player inventories** - Complex object graphs
 
-## Verification Steps
-
-### 1. Monitor Memory Usage
-After deployment, monitor server memory usage over time:
-- Check initial memory usage after server start
-- Monitor memory growth over 24 hours
-- Compare to pre-optimization baseline (~28GB peak)
-- Expected result: Significantly lower peak memory usage
-
-### 2. Verify Functionality
-All caching behavior should remain identical:
-- ✓ Biota caching works correctly (players, NPCs, items)
-- ✓ Treasure material selection works correctly
-- ✓ Quest lookups work correctly
-- ✓ Entity updates/saves work correctly (SaveBiota still uses tracking)
-
-### 3. Performance Testing
-Performance should be equal or better:
-- AsNoTracking queries are typically faster
-- Less GC pressure improves overall performance
-- Cache hit rates should remain unchanged
+The treasure material optimization is still valuable, but won't dramatically reduce the 28GB footprint. Further investigation into cache sizes, eviction policies, and landblock management would be needed for major memory reductions.
 
 ## Additional Opportunities (Not Implemented)
 
-The following issues were identified but not addressed in this PR. They represent lower-priority optimizations:
+The following issues were identified but not addressed in this PR:
 
 ### 1. Unbounded Static Caches
 **Files:** `Pet.cs`, `WorldObject_Magic.cs`, `EmoteManager.cs`
@@ -140,6 +123,37 @@ The following issues were identified but not addressed in this PR. They represen
 - String concatenation in foreach loops creates many intermediate strings
 - Recommend: Use `StringBuilder` for multi-line string building
 
+## Lessons Learned
+
+### Performance vs Memory Trade-offs
+Adding `.AsNoTracking()` to queries seems like a pure win for memory, but:
+- It changes EF behavior in subtle ways
+- It can break update scenarios
+- It can actually hurt performance in update-heavy code paths
+
+### Context Lifetime Matters
+Understanding DbContext lifetime is crucial:
+- Short-lived contexts don't cause long-term memory issues from tracking
+- Long-lived contexts (anti-pattern) would benefit from AsNoTracking
+- The ACE codebase correctly uses short-lived contexts
+
+### When to Use AsNoTracking
+Use `.AsNoTracking()` when:
+- ✅ Query results are read-only and never updated
+- ✅ Results are cached or displayed without modification
+- ✅ No relationships need to be loaded (or use Include() before AsNoTracking())
+- ❌ NOT when the entity will be updated in the same or related context
+- ❌ NOT when you need change tracking for audit/history purposes
+
 ## Conclusion
 
-These changes address the most critical memory issues by eliminating Entity Framework change tracking for cached read-only data. This should result in multiple gigabytes of memory savings, especially under load with many cached entities. The changes are surgical, well-tested, and maintain all existing functionality while significantly reducing memory footprint.
+This PR implements a focused optimization for treasure material caching by eliminating unnecessary cloning. The initial attempt to optimize biota queries with AsNoTracking was reverted due to performance issues.
+
+The key takeaway is that the EF change tracker in this codebase is not a significant source of long-term memory usage due to proper context management. The 28GB memory issue likely stems from the size and retention policies of the various caches themselves, not from EF tracking overhead.
+
+Further memory optimization should focus on:
+1. Cache eviction policies
+2. Cache size limits
+3. Reducing the amount of data loaded into caches
+4. Better management of landblock and world data
+
