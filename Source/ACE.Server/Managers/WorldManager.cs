@@ -384,6 +384,12 @@ namespace ACE.Server.Managers
 
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
+            // Normal ticks should complete in under 100ms. Log warning if tick exceeds 10s as it indicates
+            // potential performance issues (high load, slow database, or blocking operations).
+            var slowTickThreshold = TimeSpan.FromSeconds(10);
+            // If a tick takes 30+ seconds, it's likely a hang scenario (deadlock, infinite loop, or thread exhaustion).
+            // This helps identify the root cause of server freezes by logging before complete hang occurs.
+            var hangDetectionThreshold = TimeSpan.FromSeconds(30);
 
             while (!pendingWorldStop)
             {
@@ -460,7 +466,19 @@ namespace ACE.Server.Managers
                 if (!gameWorldUpdated)
                     Thread.Sleep(sessionCount == 0 ? 10 : 1); // Relax the CPU more if no sessions are connected
 
-                Timers.PortalYearTicks += worldTickTimer.Elapsed.TotalSeconds;
+                // Capture tick duration before updating PortalYearTicks for accurate measurement
+                var tickDuration = worldTickTimer.Elapsed;
+                Timers.PortalYearTicks += tickDuration.TotalSeconds;
+
+                // Log slow ticks to help diagnose hangs
+                if (tickDuration > hangDetectionThreshold)
+                {
+                    log.Error($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - possible hang detected!");
+                }
+                else if (tickDuration > slowTickThreshold)
+                {
+                    log.Warn($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - slower than expected");
+                }
             }
 
             // World has finished operations and concedes the thread to garbage collection
