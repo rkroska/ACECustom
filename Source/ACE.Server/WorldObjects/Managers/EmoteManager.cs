@@ -3645,7 +3645,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public void OnReceiveStamp(string questName)
         {
-            ExecuteEmoteSet(EmoteCategory.ReceiveStamp, questName, WorldObject);
+            //ExecuteEmoteSet(EmoteCategory.ReceiveStamp, questName, WorldObject);
         }
 
         //public bool HasAntennas => WorldObject.Biota.BiotaPropertiesEmote.Count(x => x.Category == (int)EmoteCategory.ReceiveLocalSignal) > 0;

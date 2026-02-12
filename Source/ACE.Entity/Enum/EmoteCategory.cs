@@ -48,6 +48,6 @@ namespace ACE.Entity.Enum
         NumCharacterTitlesFailure = 36,
         ReceiveLocalSignal        = 37,
         ReceiveTalkDirect         = 38,
-        ReceiveStamp              = 39
+        //ReceiveStamp              = 39
     }
 }
