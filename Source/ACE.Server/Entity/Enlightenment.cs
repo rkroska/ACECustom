@@ -15,39 +15,25 @@ namespace ACE.Server.Entity
 {
     public class Enlightenment
     {
-        // https://asheron.fandom.com/wiki/Enlightenment
-
-        // Reset your character to level 1, losing all experience and luminance but gaining a title, two points in vitality and one point in all of your skills.
-        // In order to be eligible for enlightenment, you must be level 275, Master rank in a Society, and have all luminance auras with the exception of the skill credit auras.
-
-        // As stated in the Spring 2014 patch notes, Enlightenment is a process for the most devoted players of Asheron's Call to continue enhancing characters which have been "maxed out" in terms of experience and abilities.
-        // It was not intended to be a quest that every player would undertake or be interested in.
-
         // Requirements:
-        // - Level 275
-        // - Have all luminance auras (crafting aura included) except the 2 skill credit auras. (20 million total luminance)
-        // - Have mastery rank in a society
-        // - Have 25 unused pack spaces
-        // - Max # of times for enlightenment: 5
-
+        // - Level 275 + 1 per previous enlightenment
+        // - Have all luminance auras (crafting aura included) except the skill credit auras.
+        // - Have mastery rank in a Society.
+        // - Inventory space requirements.
+        //
         // You lose:
-        // - All experience, reverting to level 1.
-        // - All luminance, and luminance auras with the exception of the skill credit auras.
-        // - The ability to use aetheria (until you attain sufficient level and re-open aetheria slots).
-        // - The ability to gain luminance (until you attain level 200 and re-complete Nalicana's Test).
-        // - The ability to equip and use items which have skill and level requirements beyond those of a level 1 character.
-        //   Any equipped items are moved to your pack automatically.
-
-        // You keep:
-        // - All augmentations obtained through Augmentation Gems.
-        // - Skill credits from luminance auras, Aun Ralirea, and Chasing Oswald quests.
-        // - All quest flags with the exception of aetheria and luminance.
-
-        // You gain:
-        // - A new title each time you enlighten
-        // - +2 to vitality
-        // - +1 to all of your skills
-        // - An attribute reset certificate
+        // - Your level, which reverts to 1.
+        // - Any items that are required for enlightenment, as per tier requirements. 
+        //
+        // You KEEP:
+        // - All unspent experience.
+        // - All skills and augmentations.
+        // - Buffs and spells.
+        //
+        // You GAIN:
+        // - +1 to enlightenment property (used for calculating dynamic bonuses).
+        // - +2 Vitality (via enlightenment property calculation).
+        // - +1 to all skills (via enlightenment property calculation).
 
         public static void HandleEnlightenment(Player player)
         {
@@ -56,19 +42,17 @@ namespace ACE.Server.Entity
 
             DequipAllItems(player);
 
-            RemoveFromFellowships(player);
-
             player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
             var startPos = new ACE.Entity.Position(player.Location);
-            ActionChain enlChain = new ActionChain();
+            ActionChain enlChain = new();
             enlChain.AddDelaySeconds(14);
 
-            // Then do teleport
             player.IsBusy = true;
             enlChain.AddAction(player, ActionType.Enlightenment_DoEnlighten, () =>
             {
                 player.IsBusy = false;
+                player.ApplyVisualEffects(PlayScript.LevelUp);
                 var endPos = new ACE.Entity.Position(player.Location);
                 if (startPos.SquaredDistanceTo(endPos) > Player.RecallMoveThresholdSq)
                 {
@@ -76,7 +60,6 @@ namespace ACE.Server.Entity
                     return;
                 }
 
-                player.ThreadSafeTeleportOnDeath();
                 if (!SpendLuminance(player))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
@@ -308,11 +291,6 @@ namespace ACE.Server.Entity
             return lumAugCredits == 65;
         }
 
-        public static void RemoveFromFellowships(Player player)
-        {
-            player.FellowshipQuit(false);
-        }
-
         public static void DequipAllItems(Player player)
         {
             var equippedObjects = player.EquippedObjects.Keys.ToList();
@@ -321,18 +299,11 @@ namespace ACE.Server.Entity
                 player.HandleActionPutItemInContainer(equippedObject.Full, player.Guid.Full, 0);
         }
 
-        public static void RemoveAllSpells(Player player)
-        {
-            player.EnchantmentManager.DispelAllEnchantments();
-        }
-
         public static void RemoveAbility(Player player)
         {
             RemoveSociety(player);
-            //RemoveLuminance(player);
             RemoveSkills(player);
             RemoveLevel(player);
-            RemoveAllSpells(player);
         }
 
         public static void RemoveTokens(Player player)
@@ -401,12 +372,6 @@ namespace ACE.Server.Entity
 
                 player.Faction1Bits = null;
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Faction1Bits, 0));
-                //player.SocietyRankCelhan = null;
-                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankCelhan, 0));
-                //player.SocietyRankEldweb = null;
-                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankEldweb, 0));
-                //player.SocietyRankRadblo = null;
-                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankRadblo, 0));
             }
         }
 
@@ -414,75 +379,18 @@ namespace ACE.Server.Entity
         {
             player.TotalExperience = 0; player.TotalExperienceDouble = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TotalExperience, player.TotalExperience ?? 0));
-            //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyFloat(player, PropertyFloat.TotalExperienceDouble, player.TotalExperienceDouble ?? 0));
-
+            
             player.Level = 1;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, player.Level ?? 0));
         }
 
-        public static void RemoveAetheria(Player player)
-        {
-            player.QuestManager.Erase("EFULNorthManaFieldUsed");
-            player.QuestManager.Erase("EFULSouthManaFieldUsed");
-            player.QuestManager.Erase("EFULEastManaFieldUsed");
-            player.QuestManager.Erase("EFULWestManaFieldUsed");
-            player.QuestManager.Erase("EFULCenterManaFieldUsed");
-
-            player.QuestManager.Erase("EFMLNorthManaFieldUsed");
-            player.QuestManager.Erase("EFMLSouthManaFieldUsed");
-            player.QuestManager.Erase("EFMLEastManaFieldUsed");
-            player.QuestManager.Erase("EFMLWestManaFieldUsed");
-            player.QuestManager.Erase("EFMLCenterManaFieldUsed");
-
-            player.QuestManager.Erase("EFLLNorthManaFieldUsed");
-            player.QuestManager.Erase("EFLLSouthManaFieldUsed");
-            player.QuestManager.Erase("EFLLEastManaFieldUsed");
-            player.QuestManager.Erase("EFLLWestManaFieldUsed");
-            player.QuestManager.Erase("EFLLCenterManaFieldUsed");
-
-            player.AetheriaFlags = AetheriaBitfield.None;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AetheriaBitfield, 0));
-
-            player.SendMessage("Your mastery of Aetheric magics fades.", ChatMessageType.Broadcast);
-        }
-
-        public static void RemoveAttributes(Player player)
-        {
-            var propertyCount = Enum.GetNames(typeof(PropertyAttribute)).Length;
-            for (var i = 1; i < propertyCount; i++)
-            {
-                var attribute = (PropertyAttribute)i;
-
-                player.Attributes[attribute].Ranks = 0;
-                player.Attributes[attribute].ExperienceSpent = 0;
-                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Attributes[attribute]));
-            }
-
-            propertyCount = Enum.GetNames(typeof(PropertyAttribute2nd)).Length;
-            for (var i = 1; i < propertyCount; i += 2)
-            {
-                var attribute = (PropertyAttribute2nd)i;
-
-                player.Vitals[attribute].Ranks = 0;
-                player.Vitals[attribute].ExperienceSpent = 0;
-                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateVital(player, player.Vitals[attribute]));
-            }
-
-            player.SendMessage("Your attribute training fades.", ChatMessageType.Broadcast);
-        }
-
         public static void RemoveSkills(Player player)
         {
-            var propertyCount = Enum.GetNames(typeof(Skill)).Length;
-            for (var i = 1; i < propertyCount; i++)
+            foreach (Skill skill in Enum.GetValues<Skill>())
             {
-                var skill = (Skill)i;
-
+                if (skill == Skill.None) continue;
                 player.ResetSkill(skill, false);
             }
-
-            player.AvailableExperience = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableExperience, 0));
 
             var heritageGroup = DatManager.PortalDat.CharGen.HeritageGroups[(uint)player.Heritage];
             var availableSkillCredits = 0;
@@ -498,49 +406,24 @@ namespace ACE.Server.Entity
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
         }
 
-        public static void RemoveLuminance(Player player)
-        {
-            player.AvailableLuminance = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableLuminance, 0));
-
-            player.SendMessage("Your Luminance fades from your spirit.", ChatMessageType.Broadcast);
-        }
-
-        public static uint AttributeResetCertificate => 46421;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetEnlightenmentRatingBonus(int EnlightenmentAmt)
+        public static int GetEnlightenmentRatingBonus(int enlightenmentAmt)
         {
-            int bonus = 0;
-            for (int x = 0; x < EnlightenmentAmt; x++)
-            {
-                if (x < 10)
-                {
-                    bonus++;
-                }
-                else if (x < 20)
-                {
-                    if (x % 2 == 0)
-                    {
-                        bonus++;
-                    }
-                }
-                else if (x < 50)
-                {
-                    if (x % 5 == 0)
-                    {
-                        bonus++;
-                    }
-                }
-                else
-                {
-                    if (x % 10 == 0)
-                    {
-                        bonus++;
-                    }
-                }
-            }
-            return bonus;
+            // For enl 0-10: +1 per enl 
+            if (enlightenmentAmt <= 10)
+                return enlightenmentAmt;
+            
+            // For enl 11-20: 10 base from above +1 per 2 enl
+            if (enlightenmentAmt <= 20)
+                return 10 + (enlightenmentAmt - 10 + 1) / 2;
+            
+            // For enl 21-50: 15 base from above +1 per 5 enl
+            if (enlightenmentAmt <= 50)
+                return 15 + (enlightenmentAmt - 20 + 4) / 5;
+
+            // For enl 51+: 21 base from above +1 per 10 enl
+            return 21 + (enlightenmentAmt - 50 + 9) / 10;
         }
 
         public static void AddPerks(Player player)
