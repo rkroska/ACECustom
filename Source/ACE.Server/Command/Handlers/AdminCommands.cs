@@ -2428,7 +2428,7 @@ namespace ACE.Server.Command.Handlers
             player.SetPosition(PositionType.TeleportedCharacter, currentPos);
             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you.", ChatMessageType.Magic));
 
-            var locationStr = session.Player.Location?.ToLOCString() ?? "Unknown Location";
+            var locationStr = session.Player.Location?.ToString() ?? "Unknown Location";
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {player.Name} to them at {locationStr}.");
         }
 
@@ -2520,13 +2520,11 @@ namespace ACE.Server.Command.Handlers
 
         // teleloc cell x y z [qx qy qz qw]
         [CommandHandler("teleloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 4,
-            "Teleport yourself to the specified location.",
-            "cell [x y z] (qw qx qy qz) (v:variation)\n" +
+            "Teleport yourself or another player to the specified location.",
+            "[player] cell [x y z] (qw qx qy qz) (v:variation)\n" +
             "@teleloc follows the same number order as displayed from @loc output\n" +
-            "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806 v:5\n" +
-            "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806\n" +
-            "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806\n" +
-            "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000")]
+            "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] v:5\n" +
+            "Example: @teleloc OtherPlayer 0x7F0401AD [12.319900 -28.482000 0.005000]")]
         public static void HandleTeleportLOC(Session session, params string[] parameters)
         {
             try
@@ -2534,7 +2532,9 @@ namespace ACE.Server.Command.Handlers
                 uint cell;
                 int? variation = null;
                 var pParams = parameters.ToList();
+                Player target = session.Player;
 
+                // 1. Parsing and stripping optional v: parameter
                 if (pParams.Count > 0)
                 {
                     var lastParam = pParams.Last();
@@ -2548,6 +2548,33 @@ namespace ACE.Server.Command.Handlers
                         variation = parsedVar;
                         pParams.RemoveAt(pParams.Count - 1);
                     }
+                }
+
+                // 2. Logic to determine if a player name is present based on parameter count
+                // Valid coord counts are 4 (cell + 3 pos) or 8 (cell + 3 pos + 4 rot - but code checks for > 2 and breaks at 7, so 1+3+4=8 coords)
+                // Actually the code loop:
+                // pParams[0] = cell
+                // loop 0 to 6 (7 iterations).
+                // if i > 2 (so i=3, 4th iteration) && pParams.Count < 8 => break.
+                // So if only 4 params (cell, x, y, z), it breaks after z.
+                // So valid coord-only params are 4 or 8.
+                // If a player is included, it would be 5 or 9.
+                
+                if (pParams.Count == 5 || pParams.Count == 9)
+                {
+                    var playerName = pParams[0];
+                    target = PlayerManager.GetOnlinePlayer(playerName);
+                    if (target == null)
+                    {
+                        ChatPacket.SendServerMessage(session, $"Player '{playerName}' not found.", ChatMessageType.Broadcast);
+                        return;
+                    }
+                    pParams.RemoveAt(0);
+                }
+
+                if (pParams.Count < 4)
+                {
+                     throw new Exception("Not enough arguments");
                 }
 
                 if (pParams[0].StartsWith("0x"))
@@ -2569,6 +2596,9 @@ namespace ACE.Server.Command.Handlers
                         positionData[6] = 0;
                         break;
                     }
+                    
+                    // Allow params to be larger than required (though loop limits to 7), usage says "cell [x y z] ..."
+                    if ((int)i + 1 >= pParams.Count) break;
 
                     if (!float.TryParse(pParams[(int)i + 1].Trim(new Char[] { ' ', '[', ']', ',' }), out var position))
                         return;
@@ -2576,16 +2606,82 @@ namespace ACE.Server.Command.Handlers
                     positionData[i] = position;
                 }
 
-                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3], false, variation));
+                var newPos = new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3], false, variation);
+                target.Teleport(newPos);
+                if (target != session.Player)
+                {
+                    ChatPacket.SendServerMessage(session, $"Teleported {target.Name} to {newPos}", ChatMessageType.Broadcast);
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {target.Name} to {newPos}.");
+                }
+                else
+                {
+                    ChatPacket.SendServerMessage(session, $"Teleported to {newPos}.", ChatMessageType.Broadcast);
+                }
             }
             catch (Exception)
             {
                 ChatPacket.SendServerMessage(session, "Invalid arguments for @teleloc", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Hint: @teleloc follows the same number order as displayed from @loc output", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Usage: @teleloc cell [x y z] (qw qx qy qz) (v:variation)", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806 v:5", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Usage: @teleloc [player] cell [x y z] (qw qx qy qz) (v:variation)", ChatMessageType.Broadcast);
+            }
+        }
+
+        [CommandHandler("televariant", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "Teleport yourself or a target to a specific variant of the current location.",
+            "[player] <variant>")]
+        public static void HandleTeleVariant(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                ChatPacket.SendServerMessage(session, "Usage: @televariant [player] <variant>", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var pParams = parameters.ToList();
+            var lastParam = pParams.Last();
+
+            int? variant = null;
+            if (lastParam != "null")
+            {
+                if (!int.TryParse(lastParam, out int intVariant) || intVariant < 0) {
+                    ChatPacket.SendServerMessage(session, "Invalid variation value. Must be 'null' or a non-negative integer.", ChatMessageType.Broadcast);
+                    return;
+                }
+                variant = intVariant;
+            }
+            pParams.RemoveAt(pParams.Count - 1);
+
+            Player target = session.Player;
+
+            if (pParams.Count > 0)
+            {
+                var playerName = string.Join(" ", pParams);
+                target = PlayerManager.GetOnlinePlayer(playerName);
+                if (target == null)
+                {
+                    ChatPacket.SendServerMessage(session, $"Player '{playerName}' not found.", ChatMessageType.Broadcast);
+                    return;
+                }
+            }
+
+            if (target.Location.Variation == variant)
+            {
+                ChatPacket.SendServerMessage(session, $"Player is already in the requested variant.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var newPos = new Position(target.Location);
+            newPos.Variation = variant;
+            target.Teleport(newPos);
+
+            string variantDescription = variant.HasValue ? $"variant {variant}" : $"base variant";
+            if (target != session.Player)
+            {
+                ChatPacket.SendServerMessage(session, $"Teleported {target.Name} to {variantDescription}.", ChatMessageType.Broadcast);
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {target.Name} to {newPos}.");
+            }
+            else
+            {
+                ChatPacket.SendServerMessage(session, $"Teleported to {variantDescription}.", ChatMessageType.Broadcast);
             }
         }
 

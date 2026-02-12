@@ -249,7 +249,7 @@ namespace ACE.Server.WorldObjects
             if (Session.AccessLevel >= AccessLevel.Admin)
             {
                 if (removeFromInventoryAction == RemoveFromInventoryAction.DropItem)
-                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) at {Location}.");
             }
 
             if (removeFromInventoryAction != RemoveFromInventoryAction.ToWieldedSlot)
@@ -418,7 +418,7 @@ namespace ACE.Server.WorldObjects
                 new GameMessageSound(Guid, Sound.UnwieldObject));
 
             if (Session.AccessLevel >= AccessLevel.Admin && dequipObjectAction == DequipObjectAction.DropItem)
-                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) from equipped at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) from equipped at {Location}.");
 
 
             // handle equipment sets
@@ -1498,11 +1498,11 @@ namespace ACE.Server.WorldObjects
             {
                 if (item.CurrentLandblock != null)
                 {
-                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {item.Name} ({item.Guid}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {item.Name} ({item.Guid}) at {Location}.");
                 }
                 else if (itemRootOwner != null && itemRootOwner != this)
                 {
-                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} took {item.Name} ({item.Guid}) from {itemRootOwner.Name} ({itemRootOwner.Guid}) at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} took {item.Name} ({item.Guid}) from {itemRootOwner.Name} ({itemRootOwner.Guid}) at {Location}.");
                 }
             }
 
@@ -2770,7 +2770,7 @@ namespace ACE.Server.WorldObjects
                     if (Session.AccessLevel >= AccessLevel.Admin)
                     {
                         var stackMsg = amount != 1 ? $"{amount} " : "";
-                        PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {stackMsg}{newStack.Name} at {Location?.ToLOCString() ?? "Unknown Location"}.");
+                        PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {stackMsg}{newStack.Name} at {Location}.");
                     }
                 }
                 catch (Exception ex)
