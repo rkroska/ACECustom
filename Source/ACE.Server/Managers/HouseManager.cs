@@ -333,8 +333,13 @@ namespace ACE.Server.Managers
 
             var startTime = DateTime.UtcNow; // Track when processing begins
             var currentTime = startTime;
-            var maxProcessingTime = TimeSpan.FromSeconds(5); // Prevent indefinite blocking
-            var maxIterations = 100; // Prevent infinite loops
+            // Limit processing time to 5 seconds to prevent blocking UpdateWorld loop.
+            // With typical processing of ~50ms per house, this allows ~100 houses to be processed.
+            // If this limit is hit, remaining houses will be processed on next tick (1 minute later).
+            var maxProcessingTime = TimeSpan.FromSeconds(5);
+            // Safety limit: prevent processing more than 100 houses in a single tick.
+            // This protects against unexpected scenarios where ProcessRent() is very fast but queue is huge.
+            var maxIterations = 100;
             var iterations = 0;
 
             while (currentTime > nextEntry.RentDue)

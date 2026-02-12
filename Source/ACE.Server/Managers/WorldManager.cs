@@ -384,8 +384,12 @@ namespace ACE.Server.Managers
 
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
-            var slowTickThreshold = TimeSpan.FromSeconds(10); // Log if a tick takes longer than this
-            var hangDetectionThreshold = TimeSpan.FromSeconds(30); // Warning threshold for potential hang
+            // Normal ticks should complete in under 100ms. Log warning if tick exceeds 10s as it indicates
+            // potential performance issues (high load, slow database, or blocking operations).
+            var slowTickThreshold = TimeSpan.FromSeconds(10);
+            // If a tick takes 30+ seconds, it's likely a hang scenario (deadlock, infinite loop, or thread exhaustion).
+            // This helps identify the root cause of server freezes by logging before complete hang occurs.
+            var hangDetectionThreshold = TimeSpan.FromSeconds(30);
 
             while (!pendingWorldStop)
             {

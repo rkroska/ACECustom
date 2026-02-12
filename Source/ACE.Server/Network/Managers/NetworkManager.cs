@@ -366,7 +366,10 @@ namespace ACE.Server.Network.Managers
             {
                 // The session tick outbound processes pending actions and handles outgoing messages
                 ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
-                // Limit parallel degree to prevent thread pool exhaustion and hanging
+                // Limit parallel degree to prevent thread pool exhaustion and hanging.
+                // ProcessorCount * 2 balances concurrency (for I/O-bound network operations) with thread pool safety.
+                // This prevents unbounded parallelism that could starve the thread pool and hang UpdateWorld.
+                // Adjust multiplier up (3-4x) for more sessions or down (1x) for CPU-bound workloads.
                 var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2 };
                 Parallel.ForEach(sessionMap, options, s => s?.TickOutbound());
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
