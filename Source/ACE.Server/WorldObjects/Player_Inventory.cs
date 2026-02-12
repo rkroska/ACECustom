@@ -4302,7 +4302,8 @@ namespace ACE.Server.WorldObjects
 
             foreach (var slot in weaponSlots)
             {
-                // Get all weapons/items in this slot (excluding missile ammo)
+                // Get all weapons/items in this slot
+                // Exclude MissileAmmo as it can coexist with other items in the same hand
                 var itemsInSlot = EquippedObjects.Values
                     .Where(i => i.ParentLocation == slot && i.CurrentWieldedLocation != EquipMask.MissileAmmo)
                     .ToList();
@@ -4310,8 +4311,12 @@ namespace ACE.Server.WorldObjects
                 // If multiple items in same slot, keep only the newest one
                 if (itemsInSlot.Count > 1)
                 {
-                    // Sort by CreationTimestamp descending (newest first)
-                    var sortedItems = itemsInSlot.OrderByDescending(i => i.CreationTimestamp ?? 0).ToList();
+                    // Sort by CreationTimestamp descending (newest first), then by Guid for deterministic ordering
+                    // Use Guid as fallback when CreationTimestamp is null or equal to ensure consistent behavior
+                    var sortedItems = itemsInSlot
+                        .OrderByDescending(i => i.CreationTimestamp ?? 0)
+                        .ThenByDescending(i => i.Guid.Full)
+                        .ToList();
                     
                     // Keep the first (newest), dequip the rest
                     for (int i = 1; i < sortedItems.Count; i++)
