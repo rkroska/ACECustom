@@ -249,7 +249,7 @@ namespace ACE.Server.WorldObjects
             if (Session.AccessLevel >= AccessLevel.Admin)
             {
                 if (removeFromInventoryAction == RemoveFromInventoryAction.DropItem)
-                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) at {Location}.");
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) at {Location?.ToString() ?? "Unknown Location"}.");
             }
 
             if (removeFromInventoryAction != RemoveFromInventoryAction.ToWieldedSlot)
@@ -418,7 +418,7 @@ namespace ACE.Server.WorldObjects
                 new GameMessageSound(Guid, Sound.UnwieldObject));
 
             if (Session.AccessLevel >= AccessLevel.Admin && dequipObjectAction == DequipObjectAction.DropItem)
-                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) from equipped at {Location}.");
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) from equipped at {Location?.ToString() ?? "Unknown Location"}.");
 
 
             // handle equipment sets
@@ -1498,11 +1498,11 @@ namespace ACE.Server.WorldObjects
             {
                 if (item.CurrentLandblock != null)
                 {
-                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {item.Name} ({item.Guid}) at {Location}.");
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {item.Name} ({item.Guid}) at {Location?.ToString() ?? "Unknown Location"}.");
                 }
                 else if (itemRootOwner != null && itemRootOwner != this)
                 {
-                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} took {item.Name} ({item.Guid}) from {itemRootOwner.Name} ({itemRootOwner.Guid}) at {Location}.");
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} took {item.Name} ({item.Guid}) from {itemRootOwner.Name} ({itemRootOwner.Guid}) at {Location?.ToString() ?? "Unknown Location"}.");
                 }
             }
 
