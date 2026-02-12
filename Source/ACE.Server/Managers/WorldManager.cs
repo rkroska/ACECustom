@@ -462,10 +462,11 @@ namespace ACE.Server.Managers
                 if (!gameWorldUpdated)
                     Thread.Sleep(sessionCount == 0 ? 10 : 1); // Relax the CPU more if no sessions are connected
 
-                Timers.PortalYearTicks += worldTickTimer.Elapsed.TotalSeconds;
+                // Capture tick duration before updating PortalYearTicks for accurate measurement
+                var tickDuration = worldTickTimer.Elapsed;
+                Timers.PortalYearTicks += tickDuration.TotalSeconds;
 
                 // Log slow ticks to help diagnose hangs
-                var tickDuration = worldTickTimer.Elapsed;
                 if (tickDuration > hangDetectionThreshold)
                 {
                     log.Error($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - possible hang detected!");

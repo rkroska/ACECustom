@@ -331,8 +331,8 @@ namespace ACE.Server.Managers
             if (nextEntry == null)
                 return;
 
-            var currentTime = DateTime.UtcNow;
-            var startTime = currentTime;
+            var startTime = DateTime.UtcNow; // Track when processing begins
+            var currentTime = startTime;
             var maxProcessingTime = TimeSpan.FromSeconds(5); // Prevent indefinite blocking
             var maxIterations = 100; // Prevent infinite loops
             var iterations = 0;
