@@ -332,7 +332,6 @@ namespace ACE.Server.Managers
                 return;
 
             var startTime = DateTime.UtcNow; // Track when processing begins
-            var currentTime = startTime;
             // Limit processing time to 5 seconds to prevent blocking UpdateWorld loop.
             // With typical processing of ~50ms per house, this allows ~100 houses to be processed.
             // If this limit is hit, remaining houses will be processed on next tick (1 minute later).
@@ -342,7 +341,7 @@ namespace ACE.Server.Managers
             var maxIterations = 100;
             var iterations = 0;
 
-            while (currentTime > nextEntry.RentDue)
+            while (DateTime.UtcNow > nextEntry.RentDue)
             {
                 RentQueue.Remove(nextEntry);
 
@@ -353,7 +352,6 @@ namespace ACE.Server.Managers
                 if (nextEntry == null)
                     return;
 
-                currentTime = DateTime.UtcNow;
                 iterations++;
 
                 // Safety check to prevent indefinite blocking of UpdateWorld
@@ -363,6 +361,7 @@ namespace ACE.Server.Managers
                     return;
                 }
 
+                var currentTime = DateTime.UtcNow;
                 if (currentTime - startTime > maxProcessingTime)
                 {
                     log.Warn($"HouseManager.Tick() exceeded {maxProcessingTime.TotalSeconds}s processing time after {iterations} entries. Breaking to prevent hang. Remaining queue: {RentQueue.Count}");
