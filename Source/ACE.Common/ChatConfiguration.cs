@@ -30,5 +30,47 @@ namespace ACE.Common
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public long PerformanceAlertsChannelId { get; set; }
 
+        public enum DiscordLogLevel
+        {
+            None = 0,
+            Info = 1,     // Standard/Important messages only
+            Verbose = 2   // Everything including spammy logs
+        }
+
+        [System.ComponentModel.DefaultValue(DiscordLogLevel.Info)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public DiscordLogLevel DiscordPerformanceLevel { get; set; }
+
+        [System.ComponentModel.DefaultValue(DiscordLogLevel.Info)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public DiscordLogLevel DiscordBroadcastLevel { get; set; }
+
+        [System.ComponentModel.DefaultValue(DiscordLogLevel.Info)] // Default to Info (Bans/Gags only)
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public DiscordLogLevel DiscordAuditLevel { get; set; }
+
+        [System.ComponentModel.DefaultValue(true)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool EnableDiscordChatMirroring { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long LFGChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long RoleplayChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyCelheardtChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyEldrytchWebChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyRadiantBloodChannelId { get; set; }
     }
 }

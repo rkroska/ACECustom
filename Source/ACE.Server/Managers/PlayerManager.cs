@@ -729,17 +729,19 @@ namespace ACE.Server.Managers
                 player.Session.Network.EnqueueSend(msg);
         }
 
-        public static void BroadcastToAuditChannel(Player issuer, string message)
+        public static void BroadcastToAuditChannel(Player issuer, string message, ACE.Common.ChatConfiguration.DiscordLogLevel requiredLevel = ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
         {
             if (issuer != null)
             { 
                 BroadcastToChannel(Channel.Audit, issuer, message, true, true);
-                DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
+                if (ConfigManager.Config.Chat.DiscordAuditLevel >= requiredLevel)
+                    DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
             }
             else
             {
                 BroadcastToChannelFromConsole(Channel.Audit, message);
-                DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
+                if (ConfigManager.Config.Chat.DiscordAuditLevel >= requiredLevel)
+                    DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
             }
                 
 

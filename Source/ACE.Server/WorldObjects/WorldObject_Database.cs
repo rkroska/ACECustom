@@ -561,9 +561,9 @@ namespace ACE.Server.WorldObjects
                 // Reset counter every minute and send summary
                 if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
                 {
-                    // Check Discord is configured
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && 
-                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    // Send to Discord if configured
+                    if (ACE.Common.ConfigManager.Config.Chat.DiscordPerformanceLevel >= ACE.Common.ChatConfiguration.DiscordLogLevel.Info && 
+                        ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
@@ -606,8 +606,8 @@ namespace ACE.Server.WorldObjects
                     return;  // Drop alert to prevent Discord API spam
                 
                 // Check Discord is configured
-                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                if (ACE.Common.ConfigManager.Config.Chat.DiscordPerformanceLevel < ACE.Common.ChatConfiguration.DiscordLogLevel.Verbose || 
+                    ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                     return;
                 
                 try
@@ -653,8 +653,8 @@ namespace ACE.Server.WorldObjects
                     return;
                 
                 // Check Discord is configured
-                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                if (ACE.Common.ConfigManager.Config.Chat.DiscordPerformanceLevel < ACE.Common.ChatConfiguration.DiscordLogLevel.Info || 
+                    ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                     return;
                 
                 try

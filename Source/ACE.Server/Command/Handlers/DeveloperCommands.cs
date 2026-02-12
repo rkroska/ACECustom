@@ -3243,7 +3243,7 @@ namespace ACE.Server.Command.Handlers
             });
             actionChain.EnqueueChain();
             
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} reloaded landblock 0x{landblockId:X8}, variation {variation ?? 0}.");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} reloaded landblock 0x{landblockId:X8}, variation {variation ?? 0}.", Common.ChatConfiguration.DiscordLogLevel.Verbose);
         }
 
         [CommandHandler("showvelocity", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the velocity of the last appraised object.")]
