@@ -1,5 +1,6 @@
 using ACE.Database;
 using ACE.Database.Models.World;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -368,7 +369,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 else if (targetName.Equals("target", StringComparison.OrdinalIgnoreCase) || targetName.Equals("selected", StringComparison.OrdinalIgnoreCase))
                 {
-                    var wo = CommandHandlerHelper.GetLastAppraisedObject(session);
+                    var wo = CommandHandlerHelper.GetSelected(session);
                     // TODO: could feasibly support teleporting world objects, need to move teleport method up to WorldObject first.
                     if (wo != null && wo is Creature creature && creature.Location != null)
                     {
@@ -500,7 +501,7 @@ namespace ACE.Server.Command.Handlers
             pos = null;
             name = "";
 
-            var wo = CommandHandlerHelper.GetLastAppraisedObject(session);
+            var wo = CommandHandlerHelper.GetSelected(session);
             if (wo == null)
             {
                 if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat("No previously selected item.", ChatMessageType.System));
