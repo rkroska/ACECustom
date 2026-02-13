@@ -1193,23 +1193,27 @@ namespace ACE.Server.WorldObjects
         private void UpdateCharms(bool adding, WorldObject item)
         {
             if (GetRootOwner() is not Player player) return;
-            ProcessCharmRecursively(player, item, adding);
+            ProcessCharmRecursively(player, item, adding, 0);
         }
 
-        private static void ProcessCharmRecursively(Player player,  WorldObject item, bool adding) { 
+        private static void ProcessCharmRecursively(Player player, WorldObject item, bool adding, int depth)
+        {
+            // Safety guard: Prevent infinite recursion stack overflow
+            if (depth > 50) return;
+
             bool isCharm = item.GetProperty(PropertyBool.IsCharm) ?? false;
             if (isCharm)
             {
                 List<uint> spells = [];
                 if (item.SpellDID.HasValue) spells.Add(item.SpellDID.Value);
                 List<int> knownSpells = item.Biota.GetKnownSpellsIds(item.BiotaDatabaseLock);
-                foreach(int spellId in knownSpells) spells.Add((uint)spellId);
+                foreach (int spellId in knownSpells) spells.Add((uint)spellId);
 
                 foreach (uint spellId in spells)
                 {
                     if (adding)
                     {
-                        if(player.EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
+                        if (player.EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
                             player.CreateItemSpell(item, spellId);
                     }
                     else
@@ -1221,7 +1225,7 @@ namespace ACE.Server.WorldObjects
 
             if (item is not Container container) return;
             List<WorldObject> children = [.. container.Inventory.Values];
-            foreach (var child in children) ProcessCharmRecursively(player, child, adding);
+            foreach (var child in children) ProcessCharmRecursively(player, child, adding, depth + 1);
         }
 
         /// <summary>
