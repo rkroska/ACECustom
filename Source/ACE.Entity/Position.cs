@@ -510,5 +510,95 @@ namespace ACE.Entity
         {
             return Cell == p.Cell && Pos.Equals(p.Pos) && Rotation.Equals(p.Rotation) && p.Variation == Variation;
         }
+
+        public static bool TryParse(string input, out Position position)
+        {
+            position = null;
+            if (string.IsNullOrWhiteSpace(input)) return false;
+
+            // Formats:
+            // 0x12345678 [x y z] qw qx qy qz
+            // 0x12345678 [x y z] qw qx qy qz v:variation
+            // 0x12345678 [x y z] (default rotation)
+
+            try
+            {
+                var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 4) return false;
+
+                // 1. Cell
+                uint cell;
+                string cellStr = parts[0];
+                if (cellStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                    cell = Convert.ToUInt32(cellStr, 16);
+                else
+                    cell = Convert.ToUInt32(cellStr, 16); // force hex as per standard loc output
+
+                // 2. Position [x y z]
+                // We expect parts[1] to start with [ and parts[3] to end with ]
+                // Or simply iterating to find the bracketed section if strict validation is tricky with split
+                
+                // Let's re-parse simply finding the bracketed section
+                int openBracket = input.IndexOf('[');
+                int closeBracket = input.IndexOf(']');
+
+                if (openBracket == -1 || closeBracket == -1 || closeBracket < openBracket) return false;
+
+                var posStr = input.Substring(openBracket + 1, closeBracket - openBracket - 1);
+                var posParts = posStr.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (posParts.Length != 3) return false;
+
+                float x = float.Parse(posParts[0]);
+                float y = float.Parse(posParts[1]);
+                float z = float.Parse(posParts[2]);
+
+                // 3. Rotation
+                // Everything after ]
+                var afterPos = input.Substring(closeBracket + 1).Trim();
+                var afterParts = afterPos.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
+                int? variation = null;
+
+                // If we have rotation parts
+                int rotIdx = 0;
+                if (afterParts.Length >= 4)
+                {
+                    // Check if the first 4 look like floats
+                    if (float.TryParse(afterParts[0], out var t1) && 
+                        float.TryParse(afterParts[1], out var t2) &&
+                        float.TryParse(afterParts[2], out var t3) &&
+                        float.TryParse(afterParts[3], out var t4))
+                    {
+                        qw = t1;
+                        qx = t2;
+                        qy = t3;
+                        qz = t4;
+                        rotIdx = 4;
+                    }
+                }
+
+                // 4. Variation
+                // Look for v: in remaining parts
+                for (int i = rotIdx; i < afterParts.Length; i++)
+                {
+                    if (afterParts[i].StartsWith("v:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var vStr = afterParts[i].Substring(2);
+                        if (int.TryParse(vStr, out var vVal))
+                        {
+                            variation = vVal;
+                        }
+                    }
+                }
+
+                position = new Position(cell, x, y, z, qx, qy, qz, qw, false, variation);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

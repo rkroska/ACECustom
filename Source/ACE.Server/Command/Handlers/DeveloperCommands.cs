@@ -102,7 +102,7 @@ namespace ACE.Server.Command.Handlers
             {
                 pos.PositionZ += 0.005000f;
                 var posReadable = PostionAsLandblocksGoogleSpreadsheetFormat(pos);
-                AdminCommands.HandleTeleportLOC(session, posReadable.Split(' '));
+                TeleportCommands.HandleTeleLocation(session, posReadable.Split(' '));
                 var positionMessage = new GameMessageSystemChat($"Nudge player to {posReadable}", ChatMessageType.Broadcast);
                 session.Network.EnqueueSend(positionMessage);
             }
@@ -648,51 +648,7 @@ namespace ACE.Server.Command.Handlers
         }
 
 
-        // ==================================
-        // Teleport + Positions/Locations
-        // ==================================
 
-        /// <summary>
-        /// telexyz cell x y z qx qy qz qw
-        /// </summary>
-        [CommandHandler("telexyz", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 8, "Teleport to a location.", "cell x y z qx qy qz qw\n" + "all parameters must be specified and cell must be in decimal form")]
-        public static void HandleDebugTeleportXYZ(Session session, params string[] parameters)
-        {
-            if (!uint.TryParse(parameters[0], out var cell))
-                return;
-
-            var positionData = new float[7];
-
-            for (uint i = 0u; i < 7u; i++)
-            {
-                if (!float.TryParse(parameters[i + 1], out var position))
-                    return;
-
-                positionData[i] = position;
-            }
-
-            session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6]));
-        }
-
-        /// <summary>
-        /// Debug command to teleport a player to a saved position, if the position type exists within the database.
-        /// </summary>
-        [CommandHandler("teletype", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Teleport to a saved character position.", "uint 0-22\n" + "@teletype 1")]
-        public static void HandleTeleType(Session session, params string[] parameters)
-        {
-            if (parameters?.Length > 0)
-            {
-                string parsePositionString = parameters[0].Length > 3 ? parameters[0].Substring(0, 3) : parameters[0];
-
-                if (Enum.TryParse(parsePositionString, true, out PositionType positionType))
-                {
-                    if (session.Player.TeleToPosition(positionType))
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"{PositionType.Location} {session.Player.Location}", ChatMessageType.Broadcast));
-                    else
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Error finding saved character position: {positionType}", ChatMessageType.Broadcast));
-                }
-            }
-        }
 
         /// <summary>
         /// Debug command to print out all of the saved character positions.
@@ -2129,120 +2085,6 @@ namespace ACE.Server.Command.Handlers
         public static void HandleDebugBoard(Session session, params string[] parameters)
         {
             session.Player.ChessMatch?.Logic?.DebugBoard();
-        }
-
-        /// <summary>
-        /// Teleports directly to a dungeon by name or landblock
-        /// </summary>
-        [CommandHandler("teledungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Teleport to a dungeon", "<dungeon name or landblock>")]
-        public static void HandleTeleDungeon(Session session, params string[] parameters)
-        {
-            var isBlock = true;
-            var param = parameters[0];
-            uint? variation = null;
-            if (parameters.Length > 2)
-            {
-                isBlock = false;
-            }
-            else if (parameters.Length == 2)
-            {
-                if (UInt32.TryParse(parameters[1], out var tempVal))
-                {
-                    variation = tempVal;
-                }
-                else
-                {
-                    isBlock = false;
-                }
-            }
-
-            var landblock = 0u;
-            if (isBlock)
-            {
-                try
-                {
-                    landblock = Convert.ToUInt32(param, 16);
-
-                    if (landblock >= 0xFFFF)
-                        landblock = landblock >> 16;
-                }
-                catch (Exception)
-                {
-                    isBlock = false;
-                }
-            }
-
-            // teleport to dungeon landblock
-            if (isBlock)
-                HandleTeleDungeonBlock(session, landblock, variation);
-
-            // teleport to dungeon by name
-            else
-                HandleTeleDungeonName(session, parameters);
-        }
-
-        public static void HandleTeleDungeonBlock(Session session, uint landblock, uint? variation)
-        {
-            using (var ctx = new WorldDbContext())
-            {
-                var query = from weenie in ctx.Weenie
-                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                            where weenie.Type == (int)WeenieType.Portal && wpos.PositionType == (int)PositionType.Destination
-                            select new
-                            {
-                                Weenie = weenie,
-                                Dest = wpos
-                            };
-
-                var results = query.ToList();
-
-                var dest = results.Where(i => i.Dest.ObjCellId >> 16 == landblock && (i.Dest.VariationId == variation || variation == null) ).Select(i => i.Dest).FirstOrDefault();
-
-                if (dest == null)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon {landblock:X4} {variation}", ChatMessageType.Broadcast));
-                    return;
-                }
-
-                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, false, dest.VariationId);
-                WorldObject.AdjustDungeon(pos);
-
-                session.Player.Teleport(pos);
-            }
-        }
-
-        public static void HandleTeleDungeonName(Session session, params string[] parameters)
-        {
-            var searchName = string.Join(" ", parameters);
-
-            using (var ctx = new WorldDbContext())
-            {
-                var query = from weenie in ctx.Weenie
-                            join wstr in ctx.WeeniePropertiesString on weenie.ClassId equals wstr.ObjectId
-                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                            where weenie.Type == (int)WeenieType.Portal && wstr.Type == (int)PropertyString.Name && wpos.PositionType == (int)PositionType.Destination
-                            select new
-                            {
-                                Weenie = weenie,
-                                Name = wstr,
-                                Dest = wpos
-                            };
-
-                var results = query.ToList();
-
-                var dest = results.Where(i => i.Name.Value.Contains(searchName, StringComparison.OrdinalIgnoreCase)).Select(i => i.Dest).FirstOrDefault();
-
-                if (dest == null)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon name {searchName}", ChatMessageType.Broadcast));
-                    return;
-                }
-
-                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, false, dest.VariationId);
-                WorldObject.AdjustDungeon(pos);
-
-                session.Player.Teleport(pos);
-            }
         }
 
         /// <summary>
