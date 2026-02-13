@@ -626,14 +626,10 @@ namespace ACE.Server.Entity
                         // Send to Discord if configured
                         if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                             {
-                                var msg = $"[High Load] Landblock {Id:X8} slow actions: {slowActions.Count} > 50ms. Top offender: {topOffender.Key} ({topOffender.Count} calls).";
+                                var msg = $"[High Load] Landblock {Id:X8} Monster_Tick throttle saturated for {monsterTickThrottleWarningCount} consecutive ticks! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain.";
                                 _ = Managers.DiscordChatManager.SendDiscordMessage("ServerMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                             }
-                            catch (Exception ex)
-                            {
-                                log.Error($"Failed to send Monster_Tick throttle warning to Discord: {ex.Message}");
-                            }
-                        }
+
                         
                         lastMonsterThrottleWarning = DateTime.UtcNow;
                         // Don't reset counter here - let it continue tracking consecutive saturations

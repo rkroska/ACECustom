@@ -729,7 +729,7 @@ namespace ACE.Server.Managers
                 player.Session.Network.EnqueueSend(msg);
         }
 
-        public static void BroadcastToAuditChannel(Player issuer, string message, ACE.Common.ChatConfiguration.DiscordLogLevel requiredLevel = ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
+        public static void BroadcastToAuditChannel(Player issuer, string message, ACE.Common.DiscordLogLevel requiredLevel = ACE.Common.DiscordLogLevel.Info)
         {
             if (issuer != null)
             { 

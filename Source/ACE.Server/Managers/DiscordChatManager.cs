@@ -34,6 +34,14 @@ namespace ACE.Server.Managers
                         {
                             await channel.SendMessageAsync(player + " : " + message);
                         }
+                        else
+                        {
+                            log.Warn($"[Discord] Failed to find channel {channelId} in guild {guild.Name}");
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"[Discord] Failed to find guild {ConfigManager.Config.Chat.ServerId}");
                     }
                 }
                 catch (Exception ex)
