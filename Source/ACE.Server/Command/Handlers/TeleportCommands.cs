@@ -1,6 +1,5 @@
 using ACE.Database;
 using ACE.Database.Models.World;
-using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -78,25 +77,24 @@ namespace ACE.Server.Command.Handlers
 
             if (!ParseNaturalLanguageArgs(session, parameters, out Creature target, out string type, out string[] args)) return;
             if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
-            if (LScape.get_landblock(destPos.LandblockId.Raw, null).WaterType == LandDefs.WaterType.EntirelyWater) {
-                ChatPacket.SendServerMessage(session, $"Landblock 0x{destPos.LandblockId.Landblock:X4} is entirely filled with water, and is impassable", ChatMessageType.System);
-                return;
-            }
-            if (target.Location.Equals(destPos))
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Current and target location are the same, skipping teleport.", ChatMessageType.System));
-                return;
-            }
+            if (!ValidateDestination(session, destPos)) return;
             target.SetPosition(PositionType.TeleportedCharacter, target.Location);
             target.Teleport(destPos);
 
-            if (target != session.Player && target is Player targetPlayer)
+            if (target is Player targetPlayer)
             {
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} teleported {target.Name} to {destName}.");
-                targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you to {destName}.", ChatMessageType.System));
+                if (target != session.Player)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} teleported {target.Name} to {destName}.");
+                    targetPlayer.Session?.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you to {destName}.", ChatMessageType.System));
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Teleporting to {destName}.", ChatMessageType.System));
+                }
             }
             else
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Teleporting to {destName}.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Teleporting {target.Name} to {destName}.", ChatMessageType.System));
         }
 
 
@@ -113,11 +111,7 @@ namespace ACE.Server.Command.Handlers
 
             if (!ParseNaturalLanguageArgs(session, parameters, out var target, out var type, out var args)) return;
             if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
-            if (LScape.get_landblock(destPos.LandblockId.Raw, null).WaterType == LandDefs.WaterType.EntirelyWater)
-            {
-                ChatPacket.SendServerMessage(session, $"Landblock 0x{destPos.LandblockId.Landblock:X4} is entirely filled with water, and is impassable", ChatMessageType.Broadcast);
-                return;
-            }
+            if (!ValidateDestination(session, destPos)) return;
             SpawnPortal(session, target, destPos, $"Portal to {destName}");
             PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned a portal to {destName} at {target.Location}.");
         }
@@ -294,15 +288,27 @@ namespace ACE.Server.Command.Handlers
             target = session.Player;
             args = parameters;
 
-            if (parameters.Length > 0)
+            for (int i = parameters.Length; i > 0; i--)
             {
-                var p = PlayerManager.GetOnlinePlayer(parameters[0]);
+                var p = PlayerManager.GetOnlinePlayer(string.Join(" ", parameters.Take(i)));
                 if (p != null)
                 {
                     target = p;
-                    args = parameters.Skip(1).ToArray();
+                    args = [.. parameters.Skip(i)];
+                    return;
                 }
             }
+        }
+
+        private static bool ValidateDestination(Session session, Position dest)
+        {
+            var waterType = LScape.get_landblock(dest.LandblockId.Raw, null)?.WaterType ?? LandDefs.WaterType.EntirelyWater;
+            if (waterType == LandDefs.WaterType.EntirelyWater)
+            {
+                ChatPacket.SendServerMessage(session, $"Landblock 0x{dest.LandblockId.Landblock:X4} is entirely filled with water, and is impassable", ChatMessageType.System);
+                return false;
+            }
+            return true;
         }
 
         private static void ForwardCommand(Session session, string[] parameters, string type, bool useResolve)
