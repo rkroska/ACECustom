@@ -80,6 +80,9 @@ namespace ACE.Server.Command.Handlers
             if (!ValidateDestination(session, destPos)) return;
             target.SetPosition(PositionType.TeleportedCharacter, target.Location);
             target.Teleport(destPos);
+            // A moved mob needs its home cleared or it will immediately run home.
+            if (target is not Player) target.Home = destPos;
+            target.OnTeleportComplete();
 
             if (target is Player targetPlayer)
             {
@@ -460,7 +463,7 @@ namespace ACE.Server.Command.Handlers
                     if (ResolveLocation(session, args, out destPos, out destName, /*suppressErrors=*/true)) return true;
                     if (ResolvePoi(session, args, out destPos, out destName, /*suppressErrors=*/true)) return true;
                     if (ResolveDungeon(session, args, out destPos, out destName, /*suppressErrors=*/true)) return true;
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid command.", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid parameters. See /tele help or /portal help.", ChatMessageType.System));
                     return false;
             }
         }
@@ -481,9 +484,14 @@ namespace ACE.Server.Command.Handlers
                     name = $"{ns}, {ew}";
                     return true;
                 }
+                else
+                {
+                    if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid X/Y coordinates: {errorMessage}", ChatMessageType.System));
+                    return false;
+                }
             }
 
-            if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat("Invalid X/Y coordinates.", ChatMessageType.System));
+            if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat($"Could not find X/Y coordinates in the form of '23.0N, 45.5W'", ChatMessageType.System));
             return false;
         }
 
