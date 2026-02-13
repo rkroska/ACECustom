@@ -8,11 +8,13 @@ using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Physics.Common;
 using ACE.Server.WorldObjects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Position = ACE.Entity.Position;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -76,6 +78,10 @@ namespace ACE.Server.Command.Handlers
 
             if (!ParseNaturalLanguageArgs(session, parameters, out Creature target, out string type, out string[] args)) return;
             if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
+            if (LScape.get_landblock(destPos.LandblockId.Raw, null).WaterType == LandDefs.WaterType.EntirelyWater) {
+                ChatPacket.SendServerMessage(session, $"Landblock 0x{destPos.LandblockId.Landblock:X4} is entirely filled with water, and is impassable", ChatMessageType.System);
+                return;
+            }
             if (target.Location.Equals(destPos))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Current and target location are the same, skipping teleport.", ChatMessageType.System));
@@ -107,6 +113,11 @@ namespace ACE.Server.Command.Handlers
 
             if (!ParseNaturalLanguageArgs(session, parameters, out var target, out var type, out var args)) return;
             if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
+            if (LScape.get_landblock(destPos.LandblockId.Raw, null).WaterType == LandDefs.WaterType.EntirelyWater)
+            {
+                ChatPacket.SendServerMessage(session, $"Landblock 0x{destPos.LandblockId.Landblock:X4} is entirely filled with water, and is impassable", ChatMessageType.Broadcast);
+                return;
+            }
             SpawnPortal(session, target, destPos, $"Portal to {destName}");
             PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned a portal to {destName} at {target.Location}.");
         }
