@@ -109,16 +109,30 @@ namespace ACE.Server.Network.Handlers
                 var gameMessageTurbineChat = new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_EVENT_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, adjustedChannelID, session.Player.Name, message, senderID, adjustedchatType);
 
                 //TODO: Discord pulse goes here
-                if (adjustedchatType == ChatType.General)
+                if (ACE.Server.Managers.ServerConfig.discord_mirror_enabled.Value)
                 {
-                    DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.GeneralChannelId);
-                }
+                    if (adjustedchatType == ChatType.General && ConfigManager.Config.Chat.GeneralChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.GeneralChannelId);
+                    else if (adjustedchatType == ChatType.Trade && ConfigManager.Config.Chat.TradeChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.TradeChannelId);
+                    else if (adjustedchatType == ChatType.LFG && ConfigManager.Config.Chat.LFGChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.LFGChannelId);
+                    else if (adjustedchatType == ChatType.Roleplay && ConfigManager.Config.Chat.RoleplayChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.RoleplayChannelId);
+                    else if (adjustedchatType == ChatType.Society)
+                    {
+                        long societyChannel = 0;
+                        if (session.Player.Society == FactionBits.CelestialHand)
+                            societyChannel = ConfigManager.Config.Chat.SocietyCelHanChannelId;
+                        else if (session.Player.Society == FactionBits.EldrytchWeb)
+                            societyChannel = ConfigManager.Config.Chat.SocietyEldrytchWebChannelId;
+                        else if (session.Player.Society == FactionBits.RadiantBlood)
+                            societyChannel = ConfigManager.Config.Chat.SocietyRadiantBloodChannelId;
 
-                if (adjustedchatType == ChatType.Trade)
-                {
-                    DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.TradeChannelId);
+                        if (societyChannel != 0)
+                            _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, societyChannel);
+                    }
                 }
-
                 if (adjustedChannelID > TurbineChatChannel.Olthoi || adjustedChannelID == TurbineChatChannel.Allegiance) // Channel must be an allegiance channel
                 {
                     //var allegiance = AllegianceManager.FindAllegiance(channelID);

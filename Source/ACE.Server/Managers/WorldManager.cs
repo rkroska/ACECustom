@@ -115,12 +115,13 @@ namespace ACE.Server.Managers
                     var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
                     log.Error($"[LOGIN BLOCK] {character.Name} REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}");
                     
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && 
+                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
-                            var msg = $"🔴 **CRITICAL**: `{character.Name}` login blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}";
-                            DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            var msg = $"[Login Block] {character.Name} rejected. Save stuck {stuckTime:N1}s. Queue: {DatabaseManager.Shard.QueueCount}";
+                            _ = DiscordChatManager.SendDiscordMessage("LoginMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                         }
                         catch { }
                     }
@@ -524,7 +525,7 @@ namespace ACE.Server.Managers
             if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
                 return;
             
-            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Info || 
                 ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                 return;
             
