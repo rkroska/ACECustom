@@ -624,11 +624,10 @@ namespace ACE.Server.Entity
                         log.Warn(warningMsg);
                         
                         // Send to Discord if configured
-                        if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
-                        {
-                            try
+                        if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                             {
-                                Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                                var msg = $"[High Load] Landblock {Id:X8} slow actions: {slowActions.Count} > 50ms. Top offender: {topOffender.Key} ({topOffender.Count} calls).";
+                                _ = Managers.DiscordChatManager.SendDiscordMessage("ServerMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                             }
                             catch (Exception ex)
                             {

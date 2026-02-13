@@ -20,7 +20,7 @@ namespace ACE.Server.Managers
         private static DiscordSocketClient _discordSocketClient;
         private static readonly HttpClient _httpClient = new HttpClient();
 
-        public static async void SendDiscordMessage(string player, string message, long channelId)
+        public static async Task SendDiscordMessage(string player, string message, long channelId)
         {
             if (ConfigManager.Config.Chat.EnableDiscordConnection)
             {

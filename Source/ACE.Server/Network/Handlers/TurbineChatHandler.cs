@@ -111,31 +111,26 @@ namespace ACE.Server.Network.Handlers
                 //TODO: Discord pulse goes here
                 if (ACE.Server.Managers.ServerConfig.discord_mirror_enabled.Value)
                 {
-                    try
+                    if (adjustedchatType == ChatType.General && ConfigManager.Config.Chat.GeneralChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.GeneralChannelId);
+                    else if (adjustedchatType == ChatType.Trade && ConfigManager.Config.Chat.TradeChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.TradeChannelId);
+                    else if (adjustedchatType == ChatType.LFG && ConfigManager.Config.Chat.LFGChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.LFGChannelId);
+                    else if (adjustedchatType == ChatType.Roleplay && ConfigManager.Config.Chat.RoleplayChannelId != 0)
+                        _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.RoleplayChannelId);
+                    else if (adjustedchatType == ChatType.Society)
                     {
-                        if (adjustedchatType == ChatType.General && ConfigManager.Config.Chat.GeneralChannelId != 0)
-                            DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.GeneralChannelId);
-                        else if (adjustedchatType == ChatType.Trade && ConfigManager.Config.Chat.TradeChannelId != 0)
-                            DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.TradeChannelId);
-                        else if (adjustedchatType == ChatType.LFG && ConfigManager.Config.Chat.LFGChannelId != 0)
-                            DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.LFGChannelId);
-                        else if (adjustedchatType == ChatType.Roleplay && ConfigManager.Config.Chat.RoleplayChannelId != 0)
-                            DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.RoleplayChannelId);
-                        else if (adjustedchatType == ChatType.Society)
-                        {
-                            var societyChannel = ConfigManager.Config.Chat.SocietyCelheardtChannelId;
-                            if (session.Player.Society == FactionBits.EldrytchWeb)
-                                societyChannel = ConfigManager.Config.Chat.SocietyEldrytchWebChannelId;
-                            else if (session.Player.Society == FactionBits.RadiantBlood)
-                                societyChannel = ConfigManager.Config.Chat.SocietyRadiantBloodChannelId;
+                        long societyChannel = 0;
+                        if (session.Player.Society == FactionBits.CelestialHand)
+                            societyChannel = ConfigManager.Config.Chat.SocietyCelHanChannelId;
+                        else if (session.Player.Society == FactionBits.EldrytchWeb)
+                            societyChannel = ConfigManager.Config.Chat.SocietyEldrytchWebChannelId;
+                        else if (session.Player.Society == FactionBits.RadiantBlood)
+                            societyChannel = ConfigManager.Config.Chat.SocietyRadiantBloodChannelId;
 
-                            if (societyChannel != 0)
-                                DiscordChatManager.SendDiscordMessage(session.Player.Name, message, societyChannel);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Failed to mirror chat to Discord: {ex.Message}");
+                        if (societyChannel != 0)
+                            _ = DiscordChatManager.SendDiscordMessage(session.Player.Name, message, societyChannel);
                     }
                 }
                 if (adjustedChannelID > TurbineChatChannel.Olthoi || adjustedChannelID == TurbineChatChannel.Allegiance) // Channel must be an allegiance channel

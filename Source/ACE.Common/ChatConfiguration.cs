@@ -30,12 +30,7 @@ namespace ACE.Common
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public long PerformanceAlertsChannelId { get; set; }
 
-        public enum DiscordLogLevel
-        {
-            None = 0,
-            Info = 1,     // Standard/Important messages only
-            Verbose = 2   // Everything including spammy logs
-        }
+
 
         [System.ComponentModel.DefaultValue(0)]
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
@@ -46,8 +41,8 @@ namespace ACE.Common
         public long RoleplayChannelId { get; set; }
 
         [System.ComponentModel.DefaultValue(0)]
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
-        public long SocietyCelheardtChannelId { get; set; }
+        [JsonProperty("SocietyCelheardtChannelId", DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyCelHanChannelId { get; set; }
 
         [System.ComponentModel.DefaultValue(0)]
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
