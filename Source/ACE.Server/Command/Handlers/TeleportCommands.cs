@@ -230,7 +230,7 @@ namespace ACE.Server.Command.Handlers
                 if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.System));
                 return false;
             }
-            pos = player.Location;
+            pos = new Position(player.Location);
             name = $"player {player.Name}";
             return true;
         }
@@ -412,7 +412,7 @@ namespace ACE.Server.Command.Handlers
             switch (type.ToLower())
             {
                 case "me":
-                    destPos = session.Player.Location;
+                    destPos = new Position(session.Player.Location);
                     destName = session.Player.Name;
                     return true;
 
@@ -511,7 +511,7 @@ namespace ACE.Server.Command.Handlers
                 if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat("Selected item must have a valid world location.", ChatMessageType.System));
                 return false;
             }
-            pos = wo.Location;
+            pos = new Position(wo.Location);
             name = $"{wo.Name}";
             return true;
         }
