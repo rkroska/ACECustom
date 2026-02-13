@@ -30,5 +30,26 @@ namespace ACE.Common
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public long PerformanceAlertsChannelId { get; set; }
 
+
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long LFGChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long RoleplayChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty("SocietyCelheardtChannelId", DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyCelHanChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyEldrytchWebChannelId { get; set; }
+
+        [System.ComponentModel.DefaultValue(0)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long SocietyRadiantBloodChannelId { get; set; }
     }
 }

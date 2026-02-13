@@ -187,11 +187,12 @@ namespace ACE.Server.Entity.Actions
                     log.Warn(warningMsg);
                     
                     // Send to Discord if configured
-                    if (ACE.Common.ConfigManager.Config.Chat.EnableDiscordConnection && ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && 
+                        ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
-                            ACE.Server.Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            _ = DiscordChatManager.SendDiscordMessage("ServerMonitor", warningMsg, ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                         }
                         catch (Exception ex)
                         {
@@ -357,7 +358,7 @@ namespace ACE.Server.Entity.Actions
                 return;
             
             // Check Discord is configured
-            if (!ACE.Common.ConfigManager.Config.Chat.EnableDiscordConnection || 
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Verbose || 
                 ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                 return;
             

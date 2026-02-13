@@ -2816,8 +2816,11 @@ namespace ACE.Server.Command.Handlers
 
             var msg = $"Broadcast from {(session != null ? session.Player.Name : "System")}> {string.Join(" ", parameters)}";
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+            {
+                _ = DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
+                _ = DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+            }
             PlayerManager.BroadcastToAll(sysMessage);
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, session?.Player, msg);
         }
@@ -6537,8 +6540,11 @@ namespace ACE.Server.Command.Handlers
             //session.Player.HandleActionWorldBroadcast($"{msg}", ChatMessageType.WorldBroadcast);
 
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
-            DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.GeneralChannelId);
-            DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.EventsChannelId);
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+            {
+                _ = DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.GeneralChannelId);
+                _ = DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.EventsChannelId);
+            }
             PlayerManager.BroadcastToAll(sysMessage);
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, session?.Player, msg);
         }
@@ -7112,9 +7118,12 @@ namespace ACE.Server.Command.Handlers
             var roll = new Random().Next(1, 100);
             var msg = $"-=Tonight's raffle number is {roll}. Congratz to tonight's winner!=-";
             PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+            {
+                DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
+                DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+                DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
+            }
         }
 
         [CommandHandler("sqc", AccessLevel.Developer, CommandHandlerFlag.None, "Shortcut for serverquestcompletions", "")]

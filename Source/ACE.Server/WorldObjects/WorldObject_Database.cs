@@ -561,9 +561,9 @@ namespace ACE.Server.WorldObjects
                 // Reset counter every minute and send summary
                 if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
                 {
-                    // Check Discord is configured
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && 
-                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    // Send to Discord if configured
+                    if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && 
+                        ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
@@ -606,15 +606,15 @@ namespace ACE.Server.WorldObjects
                     return;  // Drop alert to prevent Discord API spam
                 
                 // Check Discord is configured
-                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Verbose || 
+                    ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                     return;
                 
                 try
                 {
                     var msg = $"🔴 **DB SLOW**: `{itemName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
                     
-                    DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                    _ = DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
                         ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                     
                     dbSlowAlertsThisMinute++;
@@ -653,8 +653,8 @@ namespace ACE.Server.WorldObjects
                     return;
                 
                 // Check Discord is configured
-                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Info || 
+                    ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                     return;
                 
                 try
