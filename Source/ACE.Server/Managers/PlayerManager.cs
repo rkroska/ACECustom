@@ -734,13 +734,13 @@ namespace ACE.Server.Managers
             if (issuer != null)
             { 
                 BroadcastToChannel(Channel.Audit, issuer, message, true, true);
-                if (ConfigManager.Config.Chat.DiscordAuditLevel >= requiredLevel)
+                if (ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel)
                     DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
             }
             else
             {
                 BroadcastToChannelFromConsole(Channel.Audit, message);
-                if (ConfigManager.Config.Chat.DiscordAuditLevel >= requiredLevel)
+                if (ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel)
                     DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
             }
                 

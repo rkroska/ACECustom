@@ -187,7 +187,7 @@ namespace ACE.Server.Entity.Actions
                     log.Warn(warningMsg);
                     
                     // Send to Discord if configured
-                    if (ACE.Common.ConfigManager.Config.Chat.DiscordPerformanceLevel >= ACE.Common.ChatConfiguration.DiscordLogLevel.Info && 
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info && 
                         ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
@@ -358,7 +358,7 @@ namespace ACE.Server.Entity.Actions
                 return;
             
             // Check Discord is configured
-            if (ACE.Common.ConfigManager.Config.Chat.DiscordPerformanceLevel < ACE.Common.ChatConfiguration.DiscordLogLevel.Verbose || 
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Verbose || 
                 ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                 return;
             

@@ -109,7 +109,7 @@ namespace ACE.Server.Network.Handlers
                 var gameMessageTurbineChat = new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_EVENT_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, adjustedChannelID, session.Player.Name, message, senderID, adjustedchatType);
 
                 //TODO: Discord pulse goes here
-                if (ConfigManager.Config.Chat.EnableDiscordChatMirroring)
+                if (ACE.Server.Managers.ServerConfig.discord_mirror_enabled.Value)
                 {
                     if (adjustedchatType == ChatType.General)
                         DiscordChatManager.SendDiscordMessage(session.Player.Name, message, ConfigManager.Config.Chat.GeneralChannelId);

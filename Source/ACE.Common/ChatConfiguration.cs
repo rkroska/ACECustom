@@ -37,21 +37,13 @@ namespace ACE.Common
             Verbose = 2   // Everything including spammy logs
         }
 
-        [System.ComponentModel.DefaultValue(DiscordLogLevel.Info)]
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
-        public DiscordLogLevel DiscordPerformanceLevel { get; set; }
 
-        [System.ComponentModel.DefaultValue(DiscordLogLevel.Info)]
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
-        public DiscordLogLevel DiscordBroadcastLevel { get; set; }
 
-        [System.ComponentModel.DefaultValue(DiscordLogLevel.Info)] // Default to Info (Bans/Gags only)
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
-        public DiscordLogLevel DiscordAuditLevel { get; set; }
 
-        [System.ComponentModel.DefaultValue(true)]
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
-        public bool EnableDiscordChatMirroring { get; set; }
+
+
+
+
 
         [System.ComponentModel.DefaultValue(0)]
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]

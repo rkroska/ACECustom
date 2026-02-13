@@ -611,7 +611,7 @@ namespace ACE.Server.Entity
             var msg = $"{player.Name} has achieved the {lvl} level of Enlightenment!";
             PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
             
-            if (ConfigManager.Config.Chat.DiscordBroadcastLevel >= ChatConfiguration.DiscordLogLevel.Info)
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
                 DiscordChatManager.SendDiscordMessage(player.Name, msg, ConfigManager.Config.Chat.GeneralChannelId);
             
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, null, msg);

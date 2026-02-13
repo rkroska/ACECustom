@@ -624,7 +624,7 @@ namespace ACE.Server.Entity
                         log.Warn(warningMsg);
                         
                         // Send to Discord if configured
-                        if (ConfigManager.Config.Chat.DiscordPerformanceLevel >= ChatConfiguration.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                        if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                         {
                             try
                             {

@@ -1985,7 +1985,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                     PlayerManager.BroadcastToAll(new GameMessageSystemChat(message, ChatMessageType.WorldBroadcast));
 
-                    if (ConfigManager.Config.Chat.DiscordBroadcastLevel >= ChatConfiguration.DiscordLogLevel.Info)
+                    if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
                     DiscordChatManager.SendDiscordMessage("BROADCAST", message, ConfigManager.Config.Chat.GeneralChannelId);
 
                     PlayerManager.LogBroadcastChat(Channel.AllBroadcast, WorldObject, message);

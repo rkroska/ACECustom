@@ -2720,7 +2720,7 @@ namespace ACE.Server.Command.Handlers
 
             var msg = $"Broadcast from {(session != null ? session.Player.Name : "System")}> {string.Join(" ", parameters)}";
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
-            if (ConfigManager.Config.Chat.DiscordBroadcastLevel >= ChatConfiguration.DiscordLogLevel.Info)
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
             {
                 DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
                 DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
@@ -6444,7 +6444,7 @@ namespace ACE.Server.Command.Handlers
             //session.Player.HandleActionWorldBroadcast($"{msg}", ChatMessageType.WorldBroadcast);
 
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
-            if (ConfigManager.Config.Chat.DiscordBroadcastLevel >= ChatConfiguration.DiscordLogLevel.Info)
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
             {
                 DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.GeneralChannelId);
                 DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.EventsChannelId);
@@ -7022,7 +7022,7 @@ namespace ACE.Server.Command.Handlers
             var roll = new Random().Next(1, 100);
             var msg = $"-=Tonight's raffle number is {roll}. Congratz to tonight's winner!=-";
             PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
-            if (ConfigManager.Config.Chat.DiscordBroadcastLevel >= ChatConfiguration.DiscordLogLevel.Info)
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.ChatConfiguration.DiscordLogLevel.Info)
             {
                 DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
                 DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
