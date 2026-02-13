@@ -512,7 +512,7 @@ namespace ACE.Server.Command.Handlers
                 return false;
             }
             pos = wo.Location;
-            name = $"to {wo.Name}";
+            name = $"{wo.Name}";
             return true;
         }
 
