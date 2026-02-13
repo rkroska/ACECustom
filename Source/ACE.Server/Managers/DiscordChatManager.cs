@@ -149,10 +149,23 @@ namespace ACE.Server.Managers
 
         public static void Initialize()
         {
+            _httpClient.Timeout = TimeSpan.FromSeconds(10); // CodeRabbit: Prevent long hangs if Discord is down
+
             _discordSocketClient = new DiscordSocketClient();
-            _discordSocketClient.LoginAsync(Discord.TokenType.Bot, ConfigManager.Config.Chat.DiscordToken);
-            _discordSocketClient.StartAsync();
             
+            // CodeRabbit: Handle fire-and-forget async failures
+            Task.Run(async () => 
+            {
+                try
+                {
+                    await _discordSocketClient.LoginAsync(Discord.TokenType.Bot, ConfigManager.Config.Chat.DiscordToken);
+                    await _discordSocketClient.StartAsync();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to initialize Discord client: {ex.Message}");
+                }
+            });
         }
     }
 }

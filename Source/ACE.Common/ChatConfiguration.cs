@@ -37,14 +37,6 @@ namespace ACE.Common
             Verbose = 2   // Everything including spammy logs
         }
 
-
-
-
-
-
-
-
-
         [System.ComponentModel.DefaultValue(0)]
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public long LFGChannelId { get; set; }
