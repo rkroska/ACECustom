@@ -302,8 +302,8 @@ namespace ACE.Server.Command.Handlers
 
         private static bool ValidateDestination(Session session, Position dest)
         {
-            var waterType = LScape.get_landblock(dest.LandblockId.Raw, null)?.WaterType ?? LandDefs.WaterType.EntirelyWater;
-            if (waterType == LandDefs.WaterType.EntirelyWater)
+            var lb = LScape.get_landblock(dest.LandblockId.Raw, null);
+            if (lb != null && lb.WaterType == LandDefs.WaterType.EntirelyWater && !lb.IsDungeon)
             {
                 ChatPacket.SendServerMessage(session, $"Landblock 0x{dest.LandblockId.Landblock:X4} is entirely filled with water, and is impassable", ChatMessageType.System);
                 return false;
