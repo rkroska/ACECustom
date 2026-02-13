@@ -76,7 +76,7 @@ namespace ACE.Server.Command.Handlers
 
             if (!ParseNaturalLanguageArgs(session, parameters, out Creature target, out string type, out string[] args)) return;
             if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
-            if (target.Location == destPos)
+            if (target.Location.Equals(destPos))
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Current and target location are the same, skipping teleport.", ChatMessageType.System));
                 return;
@@ -176,7 +176,7 @@ namespace ACE.Server.Command.Handlers
             Player destinationPlayer = null;
 
             if (parameters.Length > 0)
-                destinationPlayer = PlayerManager.GetOnlinePlayer(parameters[0]);
+                destinationPlayer = PlayerManager.GetOnlinePlayer(string.Join(" ", parameters));
 
             destinationPlayer ??= session.Player;
 
@@ -190,7 +190,7 @@ namespace ACE.Server.Command.Handlers
                 player.Teleport(new Position(destinationPlayer.Location));
             }
 
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported all online players to their location.");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported all online players to {destinationPlayer.Name}'s location.");
         }
 
 
@@ -372,6 +372,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             // Parse Type & Input (After "to")
+            // This is a best effort, and may be part of the param if the param type was omitted for brevity. We will correct this later in the default case catch.
             if (toIndex + 1 < paramsList.Count)
             {
                 type = paramsList[toIndex + 1].ToLower();
@@ -463,9 +464,9 @@ namespace ACE.Server.Command.Handlers
                     name = $"{ns}, {ew}";
                     return true;
                 }
-
-                
             }
+
+            if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat("Invalid X/Y coordinates.", ChatMessageType.System));
             return false;
         }
 
@@ -578,12 +579,18 @@ namespace ACE.Server.Command.Handlers
         {
             pos = null;
             name = "";
+
+            if (parameters.Length == 0)
+            {
+                if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat("Usage: ... to dungeon <dungeon> [block] [variation]", ChatMessageType.System));
+                return false;
+            }
             
             var isBlock = true;
             var param = parameters[0];
             uint? variation = null;
             
-             if (parameters.Length > 2)
+            if (parameters.Length > 2)
             {
                 isBlock = false;
             }
@@ -605,7 +612,7 @@ namespace ACE.Server.Command.Handlers
                 try
                 {
                     landblock = Convert.ToUInt32(param, 16);
-                    if (landblock >= 0xFFFF)
+                    if (landblock > 0xFFFF)
                         landblock = landblock >> 16;
                 }
                 catch
@@ -618,7 +625,7 @@ namespace ACE.Server.Command.Handlers
             {
                  using (var ctx = new WorldDbContext())
                  {
-                     var query = from weenie in ctx.Weenie
+                    var query = from weenie in ctx.Weenie
                                 join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
                                 where weenie.Type == (int)WeenieType.Portal && wpos.PositionType == (int)PositionType.Destination
                                 select new
@@ -627,9 +634,11 @@ namespace ACE.Server.Command.Handlers
                                     Dest = wpos
                                 };
 
-                    var results = query.ToList();
-                    var dest = results.Where(i => i.Dest.ObjCellId >> 16 == landblock && (i.Dest.VariationId == variation || variation == null) ).Select(i => i.Dest).FirstOrDefault();
 
+                    var filteredQuery = query.Where(i => (i.Dest.ObjCellId >> 16) == landblock);
+                    if (variation != null)
+                        filteredQuery = filteredQuery.Where(i => i.Dest.VariationId == variation);
+                    var dest = filteredQuery.Select(i => i.Dest).FirstOrDefault();
                     if (dest != null)
                     {
                         pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, false, dest.VariationId);
@@ -669,10 +678,10 @@ namespace ACE.Server.Command.Handlers
                         if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon name {searchName}", ChatMessageType.System));
                         return false;
                     }
-
+                    
                     var dest = dungeon.Dest;
                     pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, false, dest.VariationId);
-                    name = $"{dungeon.Name} destination ({pos})";
+                    name = $"{dungeon.Name}{(dungeon.Name.EndsWith("Portal") ? " destination" : "")} ({pos})";
                     return true;
                 }
             }
@@ -689,9 +698,11 @@ namespace ACE.Server.Command.Handlers
                 var weenie = DatabaseManager.World.GetCachedWeenie(teleportPOI.WeenieClassId);
                 if (weenie != null)
                 {
-                    pos = new Position(weenie.GetPosition(PositionType.Destination));
-                    name = $"{teleportPOI.Name} ({pos})"; 
-                    return true;
+                    pos = weenie.GetPosition(PositionType.Destination);
+                    if (pos != null) {
+                        name = $"{teleportPOI.Name} ({pos})"; 
+                        return true;
+                    }
                 }
             }
             if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find POI {name}", ChatMessageType.System));

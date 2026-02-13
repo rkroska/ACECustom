@@ -1,7 +1,8 @@
+using ACE.Entity.Enum;
 using System;
+using System.Globalization;
 using System.IO;
 using System.Numerics;
-using ACE.Entity.Enum;
 
 namespace ACE.Entity
 {
@@ -527,12 +528,8 @@ namespace ACE.Entity
                 if (parts.Length < 4) return false;
 
                 // 1. Cell
-                uint cell;
                 string cellStr = parts[0];
-                if (cellStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                    cell = Convert.ToUInt32(cellStr, 16);
-                else
-                    cell = Convert.ToUInt32(cellStr, 16); // force hex as per standard loc output
+                uint cell = Convert.ToUInt32(cellStr, 16);
 
                 // 2. Position [x y z]
                 // We expect parts[1] to start with [ and parts[3] to end with ]
@@ -548,9 +545,9 @@ namespace ACE.Entity
                 var posParts = posStr.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (posParts.Length != 3) return false;
 
-                float x = float.Parse(posParts[0]);
-                float y = float.Parse(posParts[1]);
-                float z = float.Parse(posParts[2]);
+                float x = float.Parse(posParts[0], CultureInfo.InvariantCulture);
+                float y = float.Parse(posParts[1], CultureInfo.InvariantCulture);
+                float z = float.Parse(posParts[2], CultureInfo.InvariantCulture);
 
                 // 3. Rotation
                 // Everything after ]
@@ -565,10 +562,10 @@ namespace ACE.Entity
                 if (afterParts.Length >= 4)
                 {
                     // Check if the first 4 look like floats
-                    if (float.TryParse(afterParts[0], out var t1) && 
-                        float.TryParse(afterParts[1], out var t2) &&
-                        float.TryParse(afterParts[2], out var t3) &&
-                        float.TryParse(afterParts[3], out var t4))
+                    if (float.TryParse(afterParts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var t1) && 
+                        float.TryParse(afterParts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var t2) &&
+                        float.TryParse(afterParts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var t3) &&
+                        float.TryParse(afterParts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var t4))
                     {
                         qw = t1;
                         qx = t2;

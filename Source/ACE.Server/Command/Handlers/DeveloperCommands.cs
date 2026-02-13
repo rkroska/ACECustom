@@ -101,9 +101,8 @@ namespace ACE.Server.Command.Handlers
             if (WorldObject.AdjustDungeonCells(pos))
             {
                 pos.PositionZ += 0.005000f;
-                var posReadable = PostionAsLandblocksGoogleSpreadsheetFormat(pos);
-                TeleportCommands.HandleTeleLocation(session, posReadable.Split(' '));
-                var positionMessage = new GameMessageSystemChat($"Nudge player to {posReadable}", ChatMessageType.Broadcast);
+                TeleportCommands.HandleTeleLocation(session, pos.ToString());
+                var positionMessage = new GameMessageSystemChat($"Nudge player to {pos}", ChatMessageType.Broadcast);
                 session.Network.EnqueueSend(positionMessage);
             }
         }
