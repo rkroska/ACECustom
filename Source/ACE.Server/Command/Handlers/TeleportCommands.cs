@@ -1,6 +1,5 @@
 using ACE.Database;
 using ACE.Database.Models.World;
-using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
@@ -76,13 +75,13 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (!ParseNaturalLanguageArgs(session, parameters, out Creature target, out string type, out string[] args)) return;
-            if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
+            if (!ParseNaturalLanguageArgs(session, parameters, out WorldObject target, out string type, out string[] args)) return;
+            if (!ResolveDestination(session, target, type, args, out Position destPos, out string destName)) return;
             if (!ValidateDestination(session, destPos)) return;
             target.SetPosition(PositionType.TeleportedCharacter, target.Location);
             target.Teleport(destPos);
             // A moved mob needs its home cleared or it will immediately run home.
-            if (target is not Player) target.Home = destPos;
+            if (target is not Player && target is Creature) target.Home = destPos;
             target.OnTeleportComplete();
 
             if (target is Player targetPlayer)
@@ -113,8 +112,8 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (!ParseNaturalLanguageArgs(session, parameters, out var target, out var type, out var args)) return;
-            if (!ResolveDestination(session, target, type, args, out var destPos, out var destName)) return;
+            if (!ParseNaturalLanguageArgs(session, parameters, out WorldObject target, out string type, out var args)) return;
+            if (!ResolveDestination(session, target, type, args, out Position destPos, out string destName)) return;
             if (!ValidateDestination(session, destPos)) return;
             SpawnPortal(session, target, destPos, $"Portal to {destName}");
             PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} spawned a portal to {destName} at {target.Location}.");
@@ -339,7 +338,7 @@ namespace ACE.Server.Command.Handlers
             HandleTele(session, newArgs.ToArray());
         }
 
-        private static bool ParseNaturalLanguageArgs(Session session, string[] parameters, out Creature target, out string type, out string[] inputArgs)
+        private static bool ParseNaturalLanguageArgs(Session session, string[] parameters, out WorldObject target, out string type, out string[] inputArgs)
         {
             target = session.Player;
             type = "";
@@ -371,14 +370,14 @@ namespace ACE.Server.Command.Handlers
                 {
                     var wo = CommandHandlerHelper.GetSelected(session);
                     // TODO: could feasibly support teleporting world objects, need to move teleport method up to WorldObject first.
-                    if (wo != null && wo is Creature creature && creature.Location != null)
+                    if (wo != null && wo.Location != null)
                     {
-                        target = creature;
+                        target = wo;
                     }
                     else
                     {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"No valid entity selected.", ChatMessageType.System));
-                            return false;
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"No valid entity selected.", ChatMessageType.System));
+                        return false;
                     }
                 }
                 else

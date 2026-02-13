@@ -82,7 +82,8 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Returns the last appraised WorldObject
+        /// Returns the currently selected WorldObject, checking health/mana query targets
+        /// before falling back to appraisal targets.
         /// </summary>
         public static WorldObject GetSelected(Session session)
         {
