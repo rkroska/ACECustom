@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 
 using ACE.Common;
-using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
@@ -51,14 +50,11 @@ namespace ACE.Server.Entity
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
 
-        public bool DesiredShareXP;     // determined by the leader's 'ShareFellowshipExpAndLuminance' client option when fellowship is created
-        public bool ShareLoot;          // determined by the leader's 'ShareFellowshipLoot' client option when fellowship is created
+        public bool ShareXP;   // determined by the leader's 'ShareFellowshipExpAndLuminance' client option when fellowship is created
+        public bool ShareLoot; // determined by the leader's 'ShareFellowshipLoot' client option when fellowship is created
 
-        public bool ShareXP;            // whether or not XP sharing is currently enabled, as determined by DesiredShareXP && level restrictions
-        public bool EvenShare;          // true if all fellows are >= level 50, or all fellows are within 5 levels of the leader
-
-        public bool Open;               // indicates if non-leaders can invite new fellowship members
-        public bool IsLocked;           // only set through emotes. if a fellowship is locked, new fellowship members cannot be added
+        public bool Open;      // indicates if non-leaders can invite new fellowship members
+        public bool IsLocked;  // only set through emotes. if a fellowship is locked, new fellowship members cannot be added
 
         public Dictionary<uint, WeakReference<Player>> FellowshipMembers;
 
@@ -73,7 +69,6 @@ namespace ACE.Server.Entity
         /// </summary>
         public Fellowship(Player leader, string fellowshipName, bool shareXP)
         {
-            DesiredShareXP = shareXP;
             ShareXP = shareXP;
 
             // get loot sharing from leader's character options
@@ -81,7 +76,6 @@ namespace ACE.Server.Entity
 
             FellowshipLeaderGuid = leader.Guid.Full;
             FellowshipName = fellowshipName;
-            EvenShare = false;
 
             FellowshipMembers = new Dictionary<uint, WeakReference<Player>>() { { leader.Guid.Full, new WeakReference<Player>(leader) } };
 
@@ -186,8 +180,6 @@ namespace ACE.Server.Entity
                 PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} joined fellowship {FellowshipName} (Leader: {leaderName}).");
             }
 
-            CalculateXPSharing();
-
             var fellowshipMembers = GetFellowshipMembers();
 
             foreach (var member in fellowshipMembers.Values)
@@ -252,8 +244,6 @@ namespace ACE.Server.Entity
 
             if (player.Session.AccessLevel >= AccessLevel.Admin)
                 PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} was dismissed from fellowship {FellowshipName}.");
-
-            CalculateXPSharing();
 
             UpdateAllMembers();
         }
@@ -364,8 +354,6 @@ namespace ACE.Server.Entity
                         }
                     }
                     AssignNewLeader(null, null);
-
-                    CalculateXPSharing();
                 }
             }
             else if (!disband)
@@ -396,8 +384,6 @@ namespace ACE.Server.Entity
                 }
 
                 player.Fellowship = null;
-
-                CalculateXPSharing();
             }
         }
 
@@ -475,52 +461,6 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Calculates fellowship XP sharing (ShareXP, EvenShare) from fellow levels
-        /// </summary>
-        private void CalculateXPSharing()
-        {
-            // - If all members of the fellowship are level 50 or above, all members will share XP equally
-
-            // - If all members of the fellowship are within 5 levels of the founder, XP will be shared equally
-
-            // - If members are all within ten levels of the founder, XP will be shared proportionally.
-
-            var fellows = GetFellowshipMembers();
-
-            var allEvenShareLevel = ServerConfig.fellowship_even_share_level.Value;
-            var allOverEvenShareLevel = !fellows.Values.Any(f => (f.Level ?? 1) < allEvenShareLevel);
-
-            if (allOverEvenShareLevel)
-            {
-                ShareXP = DesiredShareXP;
-                EvenShare = true;
-                return;
-            }
-
-            var leader = PlayerManager.GetOnlinePlayer(FellowshipLeaderGuid);
-            if (leader == null)
-                return;
-
-            var maxLevelDiff = fellows.Values.Max(f => Math.Abs((leader.Level ?? 1) - (f.Level ?? 1)));
-
-            if (maxLevelDiff <= 5)
-            {
-                ShareXP = DesiredShareXP;
-                EvenShare = true;
-            }
-            else if (maxLevelDiff <= 10)
-            {
-                ShareXP = DesiredShareXP;
-                EvenShare = false;
-            }
-            else
-            {
-                ShareXP = false;
-                EvenShare = false;
-            }
-        }
-
-        /// <summary>
         /// Splits XP amongst fellowship members, depending on XP type and fellow settings
         /// </summary>
         /// <param name="amount">The input amount of XP</param>
@@ -568,59 +508,25 @@ namespace ACE.Server.Entity
                         eligibleMembers.Add((member, scalar));
                 }
 
-                if (EvenShare)
+                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
+
+                foreach (var (member, scalar) in eligibleMembers)
                 {
-                    var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
-
-                    foreach (var (member, scalar) in eligibleMembers)
+                    if (member == player && ServerConfig.fellowship_additive.Value)
                     {
-                        if (member == player && ServerConfig.fellowship_additive.Value)
-                        {
-                            member.GrantXP((long)amount, xpType, shareType);
-                            continue;
-                        }
-                        var shareAmount = (ulong)Math.Round(totalAmount * scalar);
-
-                        var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                        if (member.HasVitae && member.IsVPHardcore)
-                        {
-                            member.GrantXP(0, fellowXpType, shareType);
-                        }
-                        else
-                        {
-                            member.GrantXP((long)shareAmount, fellowXpType, shareType);
-                        }
+                        member.GrantXP((long)amount, xpType, shareType);
+                        continue;
                     }
-                }
-                // divides XP to all sharable fellows within level range
-                // based on each fellowship member's level
-                else
-                {
-                    if (eligibleMembers.Count == 0) return;
+                    var shareAmount = (ulong)Math.Round(totalAmount * scalar);
 
-                    var levelXPSum = eligibleMembers.Select(p => p.Member.GetXPToNextLevel(p.Member.Level.Value)).Sum();
-
-                    foreach (var (member, scalar) in eligibleMembers)
+                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                    if (member.HasVitae && member.IsVPHardcore)
                     {
-                        if (member == player && ServerConfig.fellowship_additive.Value)
-                        {
-                            member.GrantXP((long)amount, xpType, shareType);
-                            continue;
-                        }
-                        var levelXPScale = (double)member.GetXPToNextLevel(member.Level.Value) / levelXPSum;
-
-                        var playerTotal = (ulong)Math.Round(amount * levelXPScale * scalar);
-
-                        var fellowXpType = player == member ? xpType : XpType.Fellowship;
-
-                        if (member.HasVitae && member.IsVPHardcore)
-                        {
-                            member.GrantXP(0, fellowXpType, shareType);
-                        }
-                        else
-                        {
-                            member.GrantXP((long)playerTotal, fellowXpType, shareType);
-                        }
+                        member.GrantXP(0, fellowXpType, shareType);
+                    }
+                    else
+                    {
+                        member.GrantXP((long)shareAmount, fellowXpType, shareType);
                     }
                 }
             }
@@ -895,8 +801,6 @@ namespace ACE.Server.Entity
         /// </summary>
         public void OnFellowLevelUp(Player player)
         {
-            CalculateXPSharing();
-
             var fellowshipMembers = GetFellowshipMembers();
 
             foreach (var fellow in fellowshipMembers.Values)
@@ -970,7 +874,6 @@ namespace ACE.Server.Entity
             if (fellowGuids.Contains(FellowshipLeaderGuid))
                 AssignNewLeader(null, null);
 
-            CalculateXPSharing();
             UpdateAllMembers();
         }
     }

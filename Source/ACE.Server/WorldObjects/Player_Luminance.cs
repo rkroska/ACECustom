@@ -85,7 +85,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool SpendLuminance(long amount)
         {
-
+            if (amount == 0) return true;
             if (!BankedLuminance.HasValue) { BankedLuminance = 0; }
             if (!AvailableLuminance.HasValue) { AvailableLuminance = 0; }
 
