@@ -939,7 +939,7 @@ namespace ACE.Database
 
             using (var context = new WorldDbContext())
             {
-                quest = context.Quest.FirstOrDefault(q => q.Name.Equals(questName));
+                quest = context.Quest.AsNoTracking().FirstOrDefault(q => q.Name.Equals(questName));
                 cachedQuest[questName] = quest;
 
                 return quest;
@@ -1064,7 +1064,7 @@ namespace ACE.Database
             {
                 var table = new Dictionary<int, Dictionary<int, List<TreasureMaterialBase>>>();
 
-                var results = context.TreasureMaterialBase.Where(i => i.Probability > 0).ToList();
+                var results = context.TreasureMaterialBase.AsNoTracking().Where(i => i.Probability > 0).ToList();
 
                 foreach (var result in results)
                 {
@@ -1078,7 +1078,7 @@ namespace ACE.Database
                         chances = new List<TreasureMaterialBase>();
                         materialCode.Add((int)result.Tier, chances);
                     }
-                    chances.Add(result.Clone());
+                    chances.Add(result);
                 }
                 TreasureMaterialBase_Normalize(table);
 
@@ -1139,7 +1139,7 @@ namespace ACE.Database
             {
                 var table = new Dictionary<int, Dictionary<int, List<TreasureMaterialColor>>>();
 
-                var results = context.TreasureMaterialColor.ToList();
+                var results = context.TreasureMaterialColor.AsNoTracking().ToList();
 
                 foreach (var result in results)
                 {
@@ -1153,7 +1153,7 @@ namespace ACE.Database
                         list = new List<TreasureMaterialColor>();
                         colorCodes.Add((int)result.ColorCode, list);
                     }
-                    list.Add(result.Clone());
+                    list.Add(result);
                 }
 
                 TreasureMaterialColor_Normalize(table);
@@ -1215,7 +1215,7 @@ namespace ACE.Database
             {
                 var table = new Dictionary<int, Dictionary<int, List<TreasureMaterialGroups>>>();
 
-                var results = context.TreasureMaterialGroups.ToList();
+                var results = context.TreasureMaterialGroups.AsNoTracking().ToList();
 
                 foreach (var result in results)
                 {
@@ -1229,7 +1229,7 @@ namespace ACE.Database
                         list = new List<TreasureMaterialGroups>();
                         tiers.Add((int)result.Tier, list);
                     }
-                    list.Add(result.Clone());
+                    list.Add(result);
                 }
                 TreasureMaterialGroups_Normalize(table);
 

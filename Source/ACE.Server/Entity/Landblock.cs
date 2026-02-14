@@ -1372,6 +1372,14 @@ namespace ACE.Server.Entity
             LScape.unload_landblock(landblockID, VariationId);
 
             PhysicsLandblock.release_shadow_objs();
+
+            // Clear collections to release memory and break reference cycles
+            sortedCreaturesByNextTick.Clear();
+            sortedWorldObjectsByNextHeartbeat.Clear();
+            sortedGeneratorsByNextGeneratorUpdate.Clear();
+            sortedGeneratorsByNextRegeneration.Clear();
+            players.Clear();
+            Adjacents.Clear();
         }
 
         public void DestroyAllNonPlayerObjects()
