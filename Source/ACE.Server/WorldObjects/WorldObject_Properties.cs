@@ -2651,7 +2651,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     SetProperty(PropertyFloat.TimeToRot, value.Value);
-                    LastTimeToRotUpdate = DateTime.Now;
+                    LastTimeToRotUpdate = DateTime.UtcNow;
                 }
             }
         }

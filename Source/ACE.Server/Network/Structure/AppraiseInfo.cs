@@ -165,6 +165,18 @@ namespace ACE.Server.Network.Structure
 
             if (wo is Corpse)
             {
+                var timeToRot = wo.TimeToRot;
+                if (timeToRot.HasValue && wo.Value != -1)
+                {
+                    TimeSpan tsSinceLastUpdate = DateTime.Now - (wo.LastTimeToRotUpdate ?? DateTime.Now);
+                    TimeSpan tsToRot = TimeSpan.FromSeconds(wo.TimeToRot.Value) - tsSinceLastUpdate;
+                    var msg = tsToRot.Seconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
+
                 PropertiesBool.Clear();
                 PropertiesDID.Clear();
                 PropertiesFloat.Clear();
@@ -182,29 +194,29 @@ namespace ACE.Server.Network.Structure
 
             if (wo is Portal portal)
             {
-                PropertiesInt.Remove(PropertyInt.EncumbranceVal);
-
                 var useCount = portal.PortalUseCount;
                 if (useCount.HasValue)
                 {
                     var msg = $"Remaining Uses: {useCount.Value}";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                        PropertiesString[PropertyString.LongDesc] += $"\n{msg}";
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
                         PropertiesString[PropertyString.LongDesc] = msg;
                 }
 
                 var timeToRot = portal.TimeToRot;
-                if (timeToRot.HasValue && timeToRot.Value != -1)
+                if (timeToRot.HasValue && timeToRot.Value != -1) // -1 is a special value meaning "Never"
                 {
-                    TimeSpan tsSinceLastUpdate = DateTime.Now - (portal.LastTimeToRotUpdate ?? DateTime.Now);
+                    TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (portal.LastTimeToRotUpdate ?? DateTime.UtcNow);
                     TimeSpan tsToRot = TimeSpan.FromSeconds(portal.TimeToRot.Value) - tsSinceLastUpdate;
-                    var msg = $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    var msg = tsToRot.Seconds < 5 ? "Portal is about to fade." : $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
-                        PropertiesString[PropertyString.LongDesc] += $"\n{msg}";
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
                         PropertiesString[PropertyString.LongDesc] = msg;
                 }
+
+                PropertiesInt.Remove(PropertyInt.EncumbranceVal);
             }
 
             if (wo is SlumLord slumLord)

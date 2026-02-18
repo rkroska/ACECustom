@@ -342,20 +342,18 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
-            if (PortalUseCount.HasValue)
+            lock (this)
             {
-                lock (this)
+                var useCount = PortalUseCount;
+                if (useCount.HasValue)
                 {
-                    if (PortalUseCount.HasValue)
+                    if (useCount.Value <= 0)
                     {
-                        if (PortalUseCount.Value <= 0)
-                        {
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
-                            return;
-                        }
-
-                        PortalUseCount--;
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
+                        return;
                     }
+
+                    PortalUseCount = useCount.Value - 1;
                 }
             }
 
