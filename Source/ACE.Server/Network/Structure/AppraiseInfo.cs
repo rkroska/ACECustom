@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -179,9 +180,31 @@ namespace ACE.Server.Network.Structure
                 PropertiesInt[PropertyInt.Value] = 0;
             }
 
-            if (wo is Portal)
+            if (wo is Portal portal)
             {
                 PropertiesInt.Remove(PropertyInt.EncumbranceVal);
+
+                var useCount = portal.PortalUseCount;
+                if (useCount.HasValue)
+                {
+                    var msg = $"Remaining Uses: {useCount.Value}";
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
+
+                var timeToRot = portal.TimeToRot;
+                if (timeToRot.HasValue && timeToRot.Value != -1)
+                {
+                    TimeSpan tsSinceLastUpdate = DateTime.Now - (portal.LastTimeToRotUpdate ?? DateTime.Now);
+                    TimeSpan tsToRot = TimeSpan.FromSeconds(portal.TimeToRot.Value) - tsSinceLastUpdate;
+                    var msg = $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
             }
 
             if (wo is SlumLord slumLord)

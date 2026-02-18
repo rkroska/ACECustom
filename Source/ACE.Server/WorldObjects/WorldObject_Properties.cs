@@ -2644,8 +2644,18 @@ namespace ACE.Server.WorldObjects
         public double? TimeToRot
         {
             get => GetProperty(PropertyFloat.TimeToRot);
-            set { if (!value.HasValue) RemoveProperty(PropertyFloat.TimeToRot); else SetProperty(PropertyFloat.TimeToRot, value.Value); }
+            set
+            {
+                if (!value.HasValue)
+                    RemoveProperty(PropertyFloat.TimeToRot);
+                else
+                {
+                    SetProperty(PropertyFloat.TimeToRot, value.Value);
+                    LastTimeToRotUpdate = DateTime.Now;
+                }
+            }
         }
+        public DateTime? LastTimeToRotUpdate {get; set;}
 
         public uint? AllowedActivator
         {
