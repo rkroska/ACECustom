@@ -166,11 +166,11 @@ namespace ACE.Server.Network.Structure
             if (wo is Corpse)
             {
                 var timeToRot = wo.TimeToRot;
-                if (timeToRot.HasValue && wo.Value != -1)
+                if (timeToRot.HasValue && timeToRot.Value != -1)
                 {
                     TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (wo.LastTimeToRotUpdate ?? DateTime.UtcNow);
                     TimeSpan tsToRot = TimeSpan.FromSeconds(wo.TimeToRot.Value) - tsSinceLastUpdate;
-                    var msg = tsToRot.Seconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    var msg = tsToRot.TotalSeconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
                         PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
@@ -209,7 +209,7 @@ namespace ACE.Server.Network.Structure
                 {
                     TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (portal.LastTimeToRotUpdate ?? DateTime.UtcNow);
                     TimeSpan tsToRot = TimeSpan.FromSeconds(portal.TimeToRot.Value) - tsSinceLastUpdate;
-                    var msg = tsToRot.Seconds < 5 ? "Portal is about to fade." : $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    var msg = tsToRot.TotalSeconds < 5 ? "Portal is about to fade." : $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
                         PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
