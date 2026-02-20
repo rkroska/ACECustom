@@ -16,6 +16,7 @@ using ACE.Server.Network.Structure;
 using ACE.Server.Physics;
 using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Common;
+using ACE.Database;
 
 namespace ACE.Server.WorldObjects
 {
@@ -104,6 +105,9 @@ namespace ACE.Server.WorldObjects
                     houseRentWarnTimestamp = Time.GetFutureUnixTime(houseRentWarnInterval);
             }
             
+            
+            // Fix: Sync Location with Physics before checking boundary logic to ensure coordinates are fresh
+            SyncLocationWithPhysics();
             CheckPrestigeBoundary();
         }
 
@@ -438,6 +442,8 @@ namespace ACE.Server.WorldObjects
 
         private double _lastPrestigeBoundaryCheck;
 
+        private bool IsDebugTarget => Name != null && Name.Contains("Schneeblytest");
+
         private void CheckPrestigeBoundary()
         {
             // Throttle to every 2 seconds
@@ -446,35 +452,433 @@ namespace ACE.Server.WorldObjects
 
             _lastPrestigeBoundaryCheck = Time.GetUnixTime();
 
-            if (!PrestigeManager.IsLandblockAllowed(Location.Variation, (ushort)(Location.Cell >> 16)))
+            var variation = Location.Variation;
+            var currentLBVal = (ushort)(Location.Cell >> 16);
+
+            if (currentLBVal == 0)
             {
-                // 1. Visuals: Portal Storm (Dimming) + Void Particles
-                Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventPortalStorm(Session));
-                Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
+                if (IsDebugTarget) log.Warn($"[Prestige-DBG] {Name}: CheckPrestigeBoundary ABORTED due to invalid LB 0000. Cell={Location.Cell:X8}");
+                return;
+            }
+            
+            // if (IsDebugTarget)
+            //    log.Warn($"[Prestige-DBG] CheckPrestigeBoundary TICK for {Name}. Cell={Location.Cell:X8} LB={currentLBVal:X4} Var={variation} Pos=({Location.Pos.X:F1},{Location.Pos.Y:F1},{Location.Pos.Z:F1}) Markers={_boundaryMarkers.Count} WispAlive={_guideWisp != null} IsAllowed={PrestigeManager.IsLandblockAllowed(variation, currentLBVal)}");
 
-                // 2. Text: Center Screen (Yellow) + Chat (Red)
-                Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
-                    Session, 
-                    "⚠ YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! ⚠"));
-                
-                Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    "⚠ YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! ⚠", 
-                    ChatMessageType.Help));
+            if (!PrestigeManager.IsLandblockAllowed(variation, currentLBVal))
+            {
+                // PUNISHMENT ZONE
+                if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = Time.GetUnixTime();
 
-                // 3. Damage: Force update vital (Direct HP reduction)
-                var dmg = (int)(Health.MaxValue * 0.05f);
-                if (dmg < 10) dmg = 10;
-                
-                UpdateVitalDelta(Health, -dmg);
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: IN PUNISHMENT ZONE. LB={currentLBVal:X4} Var={variation} OOBTime={Time.GetUnixTime() - _outOfBoundsEntryTime:F1}s");
 
-                if (Health.Current <= 0)
+                // Enqueue everything to ensure thread safety (AddWorldObjectInternal must be main thread)
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                 {
-                    OnDeath(new DamageHistoryInfo(null), DamageType.Nether, false);
-                    Die(); 
+                    if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck >= 10.0) // Throttle logs
+                    {
+                       log.Info($"Player {Name} ({Guid}) is in FORBIDDEN landblock {currentLBVal:X4} (Var: {variation})");
+                    }
+
+                    // 1. Visuals: Void Particles + Fog (Removed PortalStorm to avoid chat spam)
+                    Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
+                    SetFogColor(EnvironChangeType.RedFog);
+
+                    // 2. Text: Center Screen (Yellow) ONLY
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, 
+                        "!!! YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! !!!"));
+
+                    // 3. Damage: Force update vital (Direct HP reduction)
+                    var dmg = (int)(Health.MaxValue * 0.05f);
+                    if (dmg < 10) dmg = 10;
+                    
+                    UpdateVitalDelta(Health, -dmg);
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
+
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: PUNISHMENT calling UpdateBoundaryMarkers(var={variation}, isPunishment=true)");
+                    UpdateBoundaryMarkers(variation, true);
+
+                    // Spawn Wisp after ~2 seconds in the danger zone
+                    if (Time.GetUnixTime() - _outOfBoundsEntryTime > 2.0)
+                    {
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: PUNISHMENT calling UpdateGuideWisp(danger=true)");
+                        UpdateGuideWisp(true, variation);
+                    }
+                    
+                    if (Health.Current <= 0)
+                    {
+                        OnDeath(new DamageHistoryInfo(this), DamageType.Nether, false);
+                        Die(); 
+                        CleanupPrestigeEffects();
+                    }
+                }));
+            }
+            else
+            {
+                _outOfBoundsEntryTime = 0;
+
+                // PROXIMITY CHECK (Safe but near edge?)
+                var lbId = new ACE.Entity.LandblockId(Location.Cell);
+                var pos = Location.Pos;
+                bool danger = false;
+
+                // Check 20m buffer from edges (0..192)
+                // Fix: Check bounds before accessing West/East/North/South to avoid OverflowException at map edge
+                string dangerEdge = "none";
+                if (pos.X > 182.0f && lbId.LandblockX < 254 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) { danger = true; dangerEdge = $"East(LB={lbId.East.Landblock:X4})"; }
+                else if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock)) { danger = true; dangerEdge = $"West(LB={lbId.West.Landblock:X4})"; }
+                else if (pos.Y > 182.0f && lbId.LandblockY < 254 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) { danger = true; dangerEdge = $"North(LB={lbId.North.Landblock:X4})"; }
+                else if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock)) { danger = true; dangerEdge = $"South(LB={lbId.South.Landblock:X4})"; }
+
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: SAFE ZONE proximity check. danger={danger} dangerEdge={dangerEdge} Pos=({pos.X:F1},{pos.Y:F1}) LB={lbId.Landblock:X4}");
+
+                if (danger)
+                {
+                    SetFogColor(EnvironChangeType.WhiteFog);
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, "!!! PRESTIGE BOUNDARY NEARBY !!!"));
+                }
+                else
+                {
+                    SetFogColor(EnvironChangeType.Clear);
+                }
+
+                // Check if we are fully inside a bad landblock (not just near edge)
+                bool inForbiddenLandblock = !PrestigeManager.IsLandblockAllowed(variation, lbId.Landblock);
+                if (inForbiddenLandblock)
+                {
+                    danger = true;
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: inForbiddenLandblock=true (current LB not allowed), overriding danger=true");
+                }
+
+                // Track when we last had danger (for wisp persistence)
+                if (danger)
+                {
+                    _lastDangerTime = Time.GetUnixTime();
+                }
+
+                if (IsDebugTarget)
+                {
+                    var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
+                    log.Warn($"[Prestige-DBG] {Name}: calling UpdateGuideWisp(danger={danger}). WispAlive={_guideWisp != null} timeSinceDanger={timeSinceDanger:F1}s lastDangerTime={_lastDangerTime:F1}");
+                }
+                // Wisp with 5s persistence after reaching safety
+                UpdateGuideWisp(inForbiddenLandblock, variation);
+
+                // ALWAYS check markers on landblock entry - NOT based on danger!
+                bool needMarkers = _boundaryMarkers.Count == 0 || _boundaryMarkers[0].Location.Cell != Location.Cell;
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: Marker check: needMarkers={needMarkers} markerCount={_boundaryMarkers.Count} inForbiddenLB={inForbiddenLandblock} firstMarkerCell={(_boundaryMarkers.Count > 0 ? _boundaryMarkers[0].Location.Cell.ToString("X8") : "N/A")} myCell={Location.Cell:X8}");
+
+                if (needMarkers)
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: ENQUEUEING UpdateBoundaryMarkers(var={variation}, isPunishment={inForbiddenLandblock})");
+                    WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () => UpdateBoundaryMarkers(variation, inForbiddenLandblock)));
+                }
+            }
+        }
+        
+        private List<WorldObject> _boundaryMarkers = new List<WorldObject>();
+        private Creature _guideWisp;
+        private double _outOfBoundsEntryTime;
+        private double _lastDangerTime;
+
+        public void CleanupPrestigeEffects()
+        {
+            DestroyBoundaryMarkers();
+            
+            if (_guideWisp != null)
+            {
+                _guideWisp.Destroy();
+                _guideWisp = null;
+            }
+        }
+
+        private void DestroyBoundaryMarkers()
+        {
+            if (_boundaryMarkers != null)
+            {
+                foreach (var marker in _boundaryMarkers)
+                {
+                    if (marker != null) marker.Destroy();
+                }
+                _boundaryMarkers.Clear();
+            }
+        }
+
+        private void UpdateGuideWisp(bool danger, int? variation)
+        {
+            if (danger)
+            {
+                if (_guideWisp == null)
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN REQUESTED. danger=true, wisp=null. Fetching weenie...");
+
+                    // Spawn Wisp
+                    var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_WISPETHEREAL_CLASS);
+                    if (weenie != null)
+                    {
+                        // Capture state for thread safety
+                        var playerPos = Location.Pos; // Exact player position
+                        var cell = Location.Cell;
+                        var lbId = new ACE.Entity.LandblockId(cell);
+                        
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: WISP enqueuing spawn. PlayerPos=({playerPos.X:F1},{playerPos.Y:F1},{playerPos.Z:F1}) Cell={cell:X8} LB={lbId.Landblock:X4}");
+
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                        {
+                            // Double check inside queue
+                            if (_guideWisp != null)
+                            {
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP spawn aborted inside queue - wisp already exists (Guid={_guideWisp.Guid})");
+                                return;
+                            }
+
+                            var wisp = Factories.WorldObjectFactory.CreateNewWorldObject(weenie) as Creature;
+                            if (wisp != null)
+                            {
+                                wisp.Name = "Prestige Guide";
+                                wisp.SetProperty(PropertyBool.Invincible, true);
+                                wisp.SetProperty(PropertyBool.IgnoreCollisions, true);
+                                wisp.SetProperty(PropertyBool.Attackable, false);
+                                wisp.SetProperty(PropertyBool.NeverAttack, true);
+                                
+                                var spawnPos = playerPos + (Vector3.UnitZ * 0.2f);
+                                wisp.Location = new ACE.Entity.Position(cell, spawnPos.X, spawnPos.Y, spawnPos.Z, 0, 0, 0, 0, false, variation);
+                                
+                                wisp.EnterWorld();
+                                _guideWisp = wisp;
+                                
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP SPAWNED. Guid={wisp.Guid} SpawnPos=({spawnPos.X:F1},{spawnPos.Y:F1},{spawnPos.Z:F1}) Cell={cell:X8}");
+
+                                // Calculate "Smart" Safe Spot
+                                uint targetCell = cell;
+                                float targetX = 96.0f;
+                                float targetY = 96.0f;
+                                string safeDir = "None";
+
+                                // Check cardinal neighbors for safety
+                                bool eAllowed = lbId.LandblockX < 254 && PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock);
+                                bool wAllowed = lbId.LandblockX > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock);
+                                bool nAllowed = lbId.LandblockY < 254 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
+                                bool sAllowed = lbId.LandblockY > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock);
+
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP neighbor safety: E={eAllowed}({(lbId.LandblockX < 254 ? lbId.East.Landblock.ToString("X4") : "EDGE")}) W={wAllowed}({(lbId.LandblockX > 0 ? lbId.West.Landblock.ToString("X4") : "EDGE")}) N={nAllowed}({(lbId.LandblockY < 254 ? lbId.North.Landblock.ToString("X4") : "EDGE")}) S={sAllowed}({(lbId.LandblockY > 0 ? lbId.South.Landblock.ToString("X4") : "EDGE")})");
+
+                                if (eAllowed)
+                                {
+                                    targetCell = lbId.East.Raw;
+                                    targetX = 5.0f; 
+                                    targetY = playerPos.Y;
+                                    safeDir = "East";
+                                }
+                                else if (wAllowed)
+                                {
+                                    targetCell = lbId.West.Raw;
+                                    targetX = 187.0f;
+                                    targetY = playerPos.Y;
+                                    safeDir = "West";
+                                }
+                                else if (nAllowed)
+                                {
+                                    targetCell = lbId.North.Raw;
+                                    targetX = playerPos.X;
+                                    targetY = 5.0f;
+                                    safeDir = "North";
+                                }
+                                else if (sAllowed)
+                                {
+                                    targetCell = lbId.South.Raw;
+                                    targetX = playerPos.X;
+                                    targetY = 187.0f;
+                                    safeDir = "South";
+                                }
+                                else
+                                {
+                                    safeDir = "Fallback(Center)";
+                                }
+
+                                var safePos = new ACE.Entity.Position(targetCell, targetX, targetY, spawnPos.Z, 0, 0, 0, 0, false, variation);
+                                
+                                log.Warn($"[Prestige] Wisp: Spawned at {lbId}. Found Safe Direction: {safeDir}.");
+                                log.Warn($"[Prestige] Wisp: Moving to Target: {safePos} (Cell: {targetCell:X8}, X:{targetX}, Y:{targetY})");
+
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP MOVE: From ({spawnPos.X:F1},{spawnPos.Y:F1}) -> ({targetX:F1},{targetY:F1}) targetCell={targetCell:X8} dir={safeDir}");
+
+                                wisp.MoveToPosition(safePos);
+                                
+                                Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    "Follow the Wisp to safety!", ChatMessageType.Broadcast));
+                            }
+                            else
+                            {
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN FAILED - CreateNewWorldObject returned null or not Creature");
+                            }
+                        }));
+                    }
+                    else
+                    {
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN FAILED - weenie not found in cache");
+                    }
+                }
+                else
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: WISP already alive (Guid={_guideWisp.Guid}), danger=true, no action. WispPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
+                }
+            }
+            else
+            {
+                // Only destroy wisp if we've been safe for 5+ seconds
+                if (_guideWisp != null)
+                {
+                    var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWN CHECK. danger=false, timeSinceDanger={timeSinceDanger:F1}s (need 10.0s). WispGuid={_guideWisp.Guid} WispPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
+
+                    if (timeSinceDanger >= 10.0)
+                    {
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWNING NOW (5s elapsed). Enqueuing destroy.");
+
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                        {
+                            if (_guideWisp != null)
+                            {
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP DESTROYED inside queue. FinalPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
+
+                                var msg = new GameMessageHearSpeech("Do try to stay on the path next time...", _guideWisp.Name, _guideWisp.Guid.Full, ChatMessageType.Speech);
+                                Session.Network.EnqueueSend(msg);
+
+                                _guideWisp.Destroy();
+                                _guideWisp = null;
+                            }
+                        }));
+                    }
+                }
+                else
+                {
+                    // No wisp, no danger - nothing to do (don't log this, too spammy)
                 }
             }
         }
 
+        private void UpdateBoundaryMarkers(int? variation, bool isPunishmentZone = false)
+        {
+            if (IsDebugTarget)
+                log.Warn($"[Prestige-DBG] {Name}: UpdateBoundaryMarkers ENTERED. var={variation} isPunishment={isPunishmentZone} existingMarkers={_boundaryMarkers.Count} myCell={Location.Cell:X8}");
+
+            // 1. Check for Stale Markers (from previous landblock)
+            if (_boundaryMarkers.Count > 0)
+            {
+                if ((_boundaryMarkers[0].Location.Cell >> 16) != (Location.Cell >> 16))
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: STALE MARKERS detected. MarkerCell={_boundaryMarkers[0].Location.Cell:X8} vs MyCell={Location.Cell:X8}. Destroying {_boundaryMarkers.Count} markers.");
+                    DestroyBoundaryMarkers();
+                }
+                else
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: Markers already exist for current cell ({_boundaryMarkers.Count} markers). Returning early.");
+                    return;
+                }
+            }
+
+            var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_SHOLANTERN_CLASS); 
+            if (weenie == null)
+            {
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: MARKER SPAWN FAILED - W_SHOLANTERN_CLASS weenie not found!");
+                return;
+            }
+
+            var lbId = new ACE.Entity.LandblockId(Location.Cell);
+            int markersSpawned = 0;
+
+            void SpawnMarker(float x, float y, string edgeName)
+            {
+                var marker = Factories.WorldObjectFactory.CreateNewWorldObject(weenie);
+                if (marker != null)
+                {
+                    marker.Name = $"Boundary Marker {edgeName}";
+                    marker.SetProperty(PropertyBool.Invincible, true);
+                    marker.SetProperty(PropertyBool.IgnoreCollisions, true);
+                    marker.SetProperty(PropertyBool.GravityStatus, false); 
+                    marker.SetProperty(PropertyFloat.DefaultScale, 5.0f);
+                    
+                    var spawnPos = new ACE.Entity.Position(Location.Cell, x, y, Location.Pos.Z + 1.5f, 0, 0, 0, 0, false, variation);
+                    
+                    marker.Location = spawnPos;
+                    marker.EnterWorld();
+                    _boundaryMarkers.Add(marker);
+                    markersSpawned++;
+
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: MARKER SPAWNED #{markersSpawned}: '{edgeName}' at ({x:F1},{y:F1},{Location.Pos.Z + 1.5f:F1}) Cell={Location.Cell:X8}");
+                }
+            }
+
+            var offsets = new float[] { 32.0f, 96.0f, 160.0f };
+
+            bool ShouldSpawnMarker(ushort neighborLB, string dir)
+            {
+                bool neighborAllowed = PrestigeManager.IsLandblockAllowed(variation, neighborLB);
+                bool shouldSpawn;
+                
+                if (isPunishmentZone)
+                    shouldSpawn = neighborAllowed; // In Bad Zone? Show Safe Neighbors
+                else
+                    shouldSpawn = !neighborAllowed; // In Safe Zone? Show Bad Neighbors
+
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: ShouldSpawnMarker({dir}): neighborLB={neighborLB:X4} neighborAllowed={neighborAllowed} isPunishment={isPunishmentZone} => shouldSpawn={shouldSpawn}");
+
+                return shouldSpawn;
+            }
+
+            // East Edge (X = 192) -> No Inset
+            if (lbId.LandblockX < 254 && ShouldSpawnMarker(lbId.East.Landblock, "East"))
+            {
+                foreach (var y in offsets) SpawnMarker(192.0f, y, "East"); 
+            }
+
+            // West Edge (X = 0) -> No Inset
+            if (lbId.LandblockX > 0 && ShouldSpawnMarker(lbId.West.Landblock, "West"))
+            {
+                foreach (var y in offsets) SpawnMarker(0.0f, y, "West"); 
+            }
+
+            // North Edge (Y = 192) -> No Inset
+            if (lbId.LandblockY < 254 && ShouldSpawnMarker(lbId.North.Landblock, "North"))
+            {
+                foreach (var x in offsets) SpawnMarker(x, 192.0f, "North"); 
+            }
+
+            // South Edge (Y = 0) -> No Inset
+            if (lbId.LandblockY > 0 && ShouldSpawnMarker(lbId.South.Landblock, "South"))
+            {
+                foreach (var x in offsets) SpawnMarker(x, 0.0f, "South"); 
+            }
+
+            if (IsDebugTarget)
+                log.Warn($"[Prestige-DBG] {Name}: UpdateBoundaryMarkers DONE. Total markers spawned this call: {markersSpawned}. Total markers now: {_boundaryMarkers.Count}");
+        }
 
         public bool SyncLocationWithPhysics()
         {

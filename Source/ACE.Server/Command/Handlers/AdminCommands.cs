@@ -2447,9 +2447,20 @@ namespace ACE.Server.Command.Handlers
             "Example: @televariant 1")]
         public static void HandleTelevariant(Session session, params string[] parameters)
         {
-            if (!int.TryParse(parameters[0], out int variation))
+            int? variation = null;
+            var param = parameters[0].ToLower();
+
+            if (param == "retail" || param == "null" || param == "default" || param == "0")
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID.");
+                variation = null;
+            }
+            else if (int.TryParse(parameters[0], out int varId))
+            {
+                variation = varId;
+            }
+            else
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'null', '0', or an integer ID.");
                 return;
             }
 

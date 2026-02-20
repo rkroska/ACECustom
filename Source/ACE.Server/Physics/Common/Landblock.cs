@@ -33,6 +33,22 @@ namespace ACE.Server.Physics.Common
         //public List<LandCell> DrawArray;
         //public List<PhysicsObj> Scenery;
         public List<PhysicsObj> ServerObjects { get; set; }
+        private readonly object _serverObjectsLock = new object();
+
+        public int ServerObjectsCount
+        {
+            get
+            {
+                lock (_serverObjectsLock)
+                    return ServerObjects.Count;
+            }
+        }
+
+        public void CopyServerObjectsTo(List<PhysicsObj> target)
+        {
+            lock (_serverObjectsLock)
+                target.AddRange(ServerObjects);
+        }
 
 
         private static bool UseSceneFiles = true;
@@ -84,12 +100,15 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool add_server_object(PhysicsObj obj)
         {
-            if (!ServerObjects.Contains(obj))
+            lock (_serverObjectsLock)
             {
-                ServerObjects.Add(obj);
-                return true;
+                if (!ServerObjects.Contains(obj))
+                {
+                    ServerObjects.Add(obj);
+                    return true;
+                }
+                return false;
             }
-            return false;
         }
 
         /// <summary>
@@ -98,7 +117,8 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool remove_server_object(PhysicsObj obj)
         {
-            return ServerObjects.Remove(obj);
+            lock (_serverObjectsLock)
+                return ServerObjects.Remove(obj);
         }
 
         public void adjust_scene_obj_height()
@@ -659,12 +679,18 @@ namespace ACE.Server.Physics.Common
 
         public List<PhysicsObj> GetServerObjects(bool includeAdjacents)
         {
-            var results = new List<PhysicsObj>(ServerObjects);
+            // Lock access to this landblock's server objects
+            var results = new List<PhysicsObj>();
+            lock (_serverObjectsLock)
+                results.AddRange(ServerObjects);
 
             if (includeAdjacents && adjacents?.Count > 0)
             {
                 foreach (var adjacent in adjacents)
-                    results.AddRange(adjacent.ServerObjects);
+                {
+                    // Use thread-safe copy from adjacent landblock
+                    adjacent.CopyServerObjectsTo(results);
+                }
             }
 
             return results;
@@ -696,7 +722,8 @@ namespace ACE.Server.Physics.Common
 
         public void SortObjects()
         {
-            ServerObjects = ServerObjects.OrderBy(i => i.Order).ToList();
+            lock (_serverObjectsLock)
+                ServerObjects = ServerObjects.OrderBy(i => i.Order).ToList();
         }
     }
 }

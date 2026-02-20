@@ -47,6 +47,8 @@ namespace ACE.Server.Managers
             
             if (allowed.Count == 0) return true; // Empty list = no restrictions
             
+
+
             return allowed.Contains(landblockId);
         }
 
@@ -65,6 +67,15 @@ namespace ACE.Server.Managers
         {
             if (!variation.HasValue) return 0;
             return GetTier(variation.Value);
+        }
+
+        public static HashSet<ushort> GetAllowedLandblocks(int? variation)
+        {
+            var tier = GetTier(variation);
+            if (tier <= 0 || !_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+                return null;
+            
+            return allowed;
         }
 
         /// <summary>

@@ -115,7 +115,7 @@ namespace ACE.Server.Entity
         { get
             {
                 if (PhysicsLandblock != null)
-                    return PhysicsLandblock.ServerObjects.Count;
+                    return PhysicsLandblock.ServerObjectsCount;
                 else
                     return 0;
             }
