@@ -1,5 +1,6 @@
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using System;
 
 namespace ACE.Server.WorldObjects
 {
@@ -56,6 +57,29 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyBool.AdvocateQuest);
             set { if (value == null) RemoveProperty(PropertyBool.AdvocateQuest); else SetProperty(PropertyBool.AdvocateQuest, value.Value); }
+        }
+
+        public int? PortalUseCount
+        {
+            get
+            {
+                var val = GetProperty(PropertyInt.PortalUseCount);
+                if (val.HasValue && val.Value == 0) FadeOutAndDestroy();
+                return val;
+            }
+            set
+            {
+                if (value.HasValue)
+                {
+                    var clamped = Math.Max(0, value.Value);
+                    SetProperty(PropertyInt.PortalUseCount, clamped);
+                    if (clamped == 0) FadeOutAndDestroy();
+                }
+                else
+                {
+                    RemoveProperty(PropertyInt.PortalUseCount);
+                }
+            }
         }
     }
 }
