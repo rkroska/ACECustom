@@ -711,6 +711,8 @@ namespace ACE.Entity.Enum.Properties
         CreatureVariant                         = 9038, // Shiny variant on live creature
         CapturedCreatureVariant                 = 9039, // Shiny status copied to essence
 
+        // Portal
+        PortalUseCount                          = 9040, // Number of times a portal may be used before destroying itself
     }
 
     public static class PropertyIntExtensions
