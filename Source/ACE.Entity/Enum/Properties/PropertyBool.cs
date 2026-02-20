@@ -208,5 +208,22 @@ namespace ACE.Entity.Enum.Properties
         // Monster Capture System - POC
         IsCaptureCrystal                 = 9037,
         IsCapturedAppearance             = 9038,
+        /// <summary>
+        /// PURPOSE:
+        /// This property is designed for scenarios where precise damage control is needed.
+        /// This is useful for retail quests such as Gerraine or capturing monsters below 20% health
+        /// 
+        /// WHAT IT DOES:
+        /// - Only works for melee attacks
+        /// - When enabled, this weapon is unaffected by damage calculations, modifiers, crits, and buffs
+        /// - The damage range is fixed to the visible damage on the item
+        /// - For example, a weapon with damage range 1-500 will always deal between 1-500 
+        ///     damage, regardless of player stats, buffs, or target defenses.
+        /// 
+        /// WHEN TO USE:
+        /// - On weapons specifically designed for monster capture/retail quests. Use sparingly.
+        /// </summary>
+        [AssessmentProperty]
+        UseDamageCap                      = 9039,
     }
 }

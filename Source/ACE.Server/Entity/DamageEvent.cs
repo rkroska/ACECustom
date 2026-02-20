@@ -19,7 +19,7 @@ namespace ACE.Server.Entity
     public class DamageEvent
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-        
+
         private const float DefaultSplitArrowDamageMultiplier = 0.6f;
 
         // factors:
@@ -114,7 +114,7 @@ namespace ACE.Server.Entity
         // creature defender
         public Quadrant Quadrant;
 
-        public bool IgnoreMagicArmor =>  (Weapon?.IgnoreMagicArmor ?? false) || (Attacker?.IgnoreMagicArmor ?? false);      // ignores impen / banes
+        public bool IgnoreMagicArmor => (Weapon?.IgnoreMagicArmor ?? false) || (Attacker?.IgnoreMagicArmor ?? false);      // ignores impen / banes
 
         public bool IgnoreMagicResist => (Weapon?.IgnoreMagicResist ?? false) || (Attacker?.IgnoreMagicResist ?? false);    // ignores life armor / prots
 
@@ -197,7 +197,65 @@ namespace ACE.Server.Entity
                 }
             }
 
-            // get base damage
+            // DAMAGE CAP ROLL - Special handling for fixed damage melee weapons (property 9039)
+            // Check early to avoid unnecessary GetBaseDamage() calculation when enabled
+            // 
+            // PURPOSE: This feature exists to make monster capture feasible and retail quests such as Gerraine easier. 
+            // Effectively this helps strong players control damage for specialized scenarios
+            //
+            // WHAT HAPPENS: If UseDamageCap is enabled on a melee weapon, we completely bypass ALL damage
+            // calculations (crits, modifiers, mitigation, buffs, etc.) and return a simple random roll 
+            // between the weapon's base MinDamage and MaxDamage (without enchantments). This gives predictable, 
+            // controlled damage that makes it possible to whittle a monster down to capture range.
+            // EXAMPLE: A weapon with base damage 100-140 will always deal 100-140 damage, regardless of 
+            // player damage rating, crits, enchantments, or target defenses.
+            if (CombatType == CombatType.Melee && Weapon?.GetProperty(PropertyBool.UseDamageCap) == true)
+            {
+                // Use weapon's base damage (raw property, no enchantments) - roll between MinDamage and MaxDamage
+                // Return immediately, bypassing all damage modifiers, mitigation, and buffs below
+                var baseMaxDamage = Weapon.GetProperty(PropertyInt.Damage);
+                var baseVariance = (float)(Weapon.GetProperty(PropertyFloat.DamageVariance) ?? 0.0);
+
+                if (baseMaxDamage.HasValue && baseMaxDamage.Value > 0)
+                {
+                    // Initialize DamageType to match regular melee behavior
+                    if (playerAttacker != null)
+                        DamageType = attacker.GetDamageType(false, CombatType.Melee);
+                    else
+                    {
+                        // Check Weapon first, then DamageSource, with explicit Undef guard
+                        var weaponDamageType = Weapon?.W_DamageType ?? DamageType.Undef;
+                        if (weaponDamageType != DamageType.Undef)
+                            DamageType = weaponDamageType;
+                        else
+                        {
+                            var sourceDamageType = DamageSource?.W_DamageType ?? DamageType.Undef;
+                            DamageType = sourceDamageType != DamageType.Undef ? sourceDamageType : DamageType.Bludgeon;
+                        }
+                    }
+
+                    // Calculate base minimum damage: MinDamage = MaxDamage * (1.0f - Variance)
+                    // This matches how BaseDamage.MinDamage is calculated
+                    float baseMaxDamageFloat = (float)baseMaxDamage.Value;
+                    float baseMinDamage = baseMaxDamageFloat * (1.0f - baseVariance);
+                    float baseMinDamageFloat = baseMinDamage < 1.0f ? 1.0f : baseMinDamage; // Ensure at least 1
+
+                    // Use float overload to match standard non-crit damage roll behavior (exclusive upper bound)
+                    Damage = (float)ThreadSafeRandom.Next(baseMinDamageFloat, baseMaxDamageFloat);
+
+                    // Apply optional multiplier — read from weapon, default 1.0 if missing/invalid.
+                    // Applied before BaseDamage is set so ShowInfo() reflects the true final value.
+                    var rawCapMultiplier = Weapon.GetProperty(PropertyFloat.DamageCapMultiplier) ?? 1.0;
+                    var damageCapMultiplier = (float)(rawCapMultiplier > 0 && !double.IsNaN(rawCapMultiplier) && !double.IsInfinity(rawCapMultiplier) ? rawCapMultiplier : 1.0);
+                    Damage *= damageCapMultiplier;
+
+                    BaseDamage = Damage; // Set after multiplier so ShowInfo() is consistent
+                    DamageMitigated = 0.0f; // Intentional — nothing was mitigated in this path
+                    return Damage;
+                }
+            }
+
+            // get base damage (needed for normal damage calculation)
             if (playerAttacker != null)
                 GetBaseDamage(playerAttacker);
             else
@@ -208,7 +266,7 @@ namespace ACE.Server.Entity
             {
                 var enrageMultiplier = attacker.EnrageDamageMultiplier ?? 1.0f;
                 BaseDamage *= enrageMultiplier;
-               // Console.WriteLine($"[DEBUG] Mob Attacker Enrage Multiplier Applied: {enrageMultiplier}, Updated Base Damage: {BaseDamage}");
+                // Console.WriteLine($"[DEBUG] Mob Attacker Enrage Multiplier Applied: {enrageMultiplier}, Updated Base Damage: {BaseDamage}");
             }
 
             if (DamageType == DamageType.Undef)
@@ -226,7 +284,7 @@ namespace ACE.Server.Entity
             var isMissile = Weapon != null && Weapon.IsMissileWeapon;
             long? cachedLuminanceAugmentCount = null;
             long damageBonus = 0;
-            
+
             if (isMissile)
             {
                 if (attacker.LuminanceAugmentMissileCount > 0)
@@ -264,7 +322,7 @@ namespace ACE.Server.Entity
 
             // damage before mitigation
             DamageBeforeMitigation = BaseDamage * AttributeMod * PowerMod * SlayerMod * DamageRatingMod;
-            
+
 
             //Console.WriteLine($"[DEBUG] Damage Before Mitigation: {DamageBeforeMitigation}");
 
@@ -417,7 +475,7 @@ namespace ACE.Server.Entity
             // Apply split arrow damage multiplier if this is a split arrow
             if (DamageSource.GetProperty(PropertyBool.IsSplitArrow) == true)
             {
-                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? 
+                var splitMultiplier = (float)(DamageSource.ProjectileLauncher?.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ??
                                              DefaultSplitArrowDamageMultiplier);
                 Damage *= splitMultiplier;
             }
