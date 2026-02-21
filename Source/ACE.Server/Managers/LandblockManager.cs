@@ -745,7 +745,7 @@ namespace ACE.Server.Managers
                     else
                     {
                         var clearedCount = DatabaseManager.World.ClearLandblockCache(landblock.Id.Landblock, cacheKey.Variant);
-                        log.Info($"[Cache Cleanup] Unloaded Landblock {landblock.Id.Raw:X8}. Cleared {clearedCount} cached entities.");
+                        log.Debug($"[Cache Cleanup] Unloaded Landblock {landblock.Id.Raw:X8}. Cleared {clearedCount} cached entities.");
 
                         // Validation Check
                         if (DatabaseManager.World.GetLandblockInstancesCacheCount() > 0)
