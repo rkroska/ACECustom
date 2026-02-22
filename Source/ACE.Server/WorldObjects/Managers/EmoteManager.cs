@@ -3554,11 +3554,17 @@ namespace ACE.Server.WorldObjects.Managers
         public void OnDamage(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.WoundedTaunt, null, attacker);
+            OnReceiveDamage(attacker);
         }
 
         public void OnReceiveCritical(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.ReceiveCritical, null, attacker);
+        }
+
+        public void OnReceiveDamage(Creature attacker)
+        {
+            ExecuteEmoteSet(EmoteCategory.OnReceiveDamage, null, attacker);
         }
 
         public void OnResistSpell(Creature attacker)
