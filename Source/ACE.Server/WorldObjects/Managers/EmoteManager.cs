@@ -3583,16 +3583,17 @@ namespace ACE.Server.WorldObjects.Managers
             ExecuteEmoteSet(EmoteCategory.ReceiveDamage, null, attacker, nested: true);
         }
 
+        /// <summary>
+        /// Called when this creature receives a critical hit from an attacker
+        /// </summary>
         public void OnReceiveCritical(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.ReceiveCritical, null, attacker);
         }
 
-        public void OnReceiveDamage(Creature attacker)
-        {
-            ExecuteEmoteSet(EmoteCategory.ReceiveDamage, null, attacker);
-        }
-
+        /// <summary>
+        /// Called when this creature resists a spell from an attacker
+        /// </summary>
         public void OnResistSpell(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.ResistSpell, null, attacker);
