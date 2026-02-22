@@ -3167,6 +3167,12 @@ namespace ACE.Server.WorldObjects.Managers
             if (Nested > 100)
             {
                 log.Error($"[EMOTE] {WorldObject.Name}.EmoteManager.Enqueue(): Nested > 100 possible Infinite loop detected and aborted on 0x{WorldObject.Guid}:{WorldObject.WeenieClassId}");
+                
+                Nested--;
+
+                if (Nested == 0)
+                    IsBusy = false;
+
                 return;
             }
 
@@ -3551,16 +3557,43 @@ namespace ACE.Server.WorldObjects.Managers
             ExecuteEmoteSet(EmoteCategory.Taunt, null, target);
         }
 
+        /// <summary>
+        /// Called when this creature takes damage from an attacker
+        /// </summary>
+        /// <remarks>
+        /// This method triggers both WoundedTaunt and ReceiveDamage emotes concurrently.
+        /// ReceiveDamage uses nested: true to allow execution even when WoundedTaunt sets IsBusy = true,
+        /// following the same pattern as DoVendorEmote.
+        /// 
+        /// CONCURRENT EXECUTION LIMITATIONS:
+        /// - Both emote sets execute simultaneously, which may cause:
+        ///   * Duplicate quest stamps if both emotes stamp the same quest (mitigated by quest cache checks)
+        ///   * Motion/animation conflicts if both emotes play animations
+        ///   * Multiple messages being sent simultaneously
+        ///   * Item operations (Give/Take) from both emotes executing concurrently
+        /// 
+        /// These limitations are acceptable as:
+        /// 1. Quest stamping has built-in cache checks to prevent duplicate stamps
+        /// 2. ActionChains serialize execution within each emote set
+        /// 3. Content creators should design emotes to avoid conflicts
+        /// </remarks>
         public void OnDamage(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.WoundedTaunt, null, attacker);
+            ExecuteEmoteSet(EmoteCategory.ReceiveDamage, null, attacker, nested: true);
         }
 
+        /// <summary>
+        /// Called when this creature receives a critical hit from an attacker
+        /// </summary>
         public void OnReceiveCritical(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.ReceiveCritical, null, attacker);
         }
 
+        /// <summary>
+        /// Called when this creature resists a spell from an attacker
+        /// </summary>
         public void OnResistSpell(Creature attacker)
         {
             ExecuteEmoteSet(EmoteCategory.ResistSpell, null, attacker);
