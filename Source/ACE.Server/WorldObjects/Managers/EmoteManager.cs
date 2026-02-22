@@ -3575,7 +3575,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// These limitations are acceptable as:
         /// 1. Quest stamping has built-in cache checks to prevent duplicate stamps
         /// 2. ActionChains serialize execution within each emote set
-        /// 3 Content creators should design emotes to avoid conflicts
+        /// 3. Content creators should design emotes to avoid conflicts
         /// </remarks>
         public void OnDamage(Creature attacker)
         {
