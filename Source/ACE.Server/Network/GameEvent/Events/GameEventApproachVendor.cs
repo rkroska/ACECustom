@@ -8,7 +8,7 @@ namespace ACE.Server.Network.GameEvent.Events
 {
     public class GameEventApproachVendor : GameEventMessage
     {
-        public GameEventApproachVendor(Session session, Vendor vendor)
+        public GameEventApproachVendor(Session session, Vendor vendor, long justSpentAmount)
             : base(GameEventType.ApproachVendor, GameMessageGroup.UIQueue, session)
         {        
             Writer.Write(vendor.Guid.Full);
@@ -48,6 +48,12 @@ namespace ACE.Server.Network.GameEvent.Events
                 {
                     altCurrencyCount += (session.Player.BankedWeaklyEnlightenedCoins ?? 0);
                 }
+
+                // The amount of alt currency that was just spent on a transaction that led to this call.
+                // We need to re-add this amount, since the client will subtract the amount locally as well.
+                // If we don't re-add it, the vendor UI will show an incorrect total reflecting a double
+                // debit of the spent amount (which can be corrected by re-opening the vendor).
+                altCurrencyCount += justSpentAmount;
 
                 // Clamp to uint.MaxValue for the packet
                 Writer.Write((uint)Math.Min(altCurrencyCount, uint.MaxValue));

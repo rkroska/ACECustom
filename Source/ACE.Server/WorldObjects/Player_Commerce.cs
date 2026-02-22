@@ -102,7 +102,7 @@ namespace ACE.Server.WorldObjects
             if (ServerConfig.player_receive_immediate_save.Value)
                 RushNextPlayerSave(5);
 
-            vendor.ApproachVendor(this, VendorType.Buy);
+            vendor.ApproachVendor(this, VendorType.Buy, /*justSpentAmount=*/cost);
         }
 
         // player selling items to vendor
