@@ -55,13 +55,20 @@ namespace ACE.Server.WorldObjects
 
             if (SaveStartTime == DateTime.MinValue)
             {
-                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {itemName} (0x{itemGuid})");
+                // SaveInProgress is set but SaveStartTime is uninitialized — this is a bug state
+                // (something set SaveInProgress=true without going through SaveBiotaToDatabase).
+                // Reset the flag so future saves aren't permanently blocked.
+                log.Debug($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {itemName} (0x{itemGuid}) — resetting flag");
                 SaveInProgress = false;
-                SaveStartTime = DateTime.UtcNow;
                 return;
             }
             
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+            
+            // Sub-50ms in-flight almost always means a batch player save just marked this item as
+            // SaveInProgress but hasn't actually dispatched the DB call yet. Not a real race.
+            if (timeInFlight < 50)
+                return;
             var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{itemGuid}";
             
             var currentStack = StackSize;
@@ -71,15 +78,14 @@ namespace ACE.Server.WorldObjects
             var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
             log.Warn($"[DB RACE] {severityMarker} {playerInfo} {itemName} | In-flight: {timeInFlight:N0}ms{stackInfo}");
             
-            if (stackChanged || timeInFlight > 50)
-            {
-                var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                  (this.Container is Player owner ? $"[{owner.Name}] " : "");
-                var raceInfo = stackChanged 
-                    ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
-                SendAggregatedDbRaceAlert(raceInfo);
-            }
+            // Any race that reaches here is >= 50ms in-flight (sub-50ms returns early above).
+            // Always send to aggregated alert — stackChanged races are highest severity.
+            var ownerContext = this is Player p ? $"[{p.Name}] " : 
+                              (this.Container is Player owner ? $"[{owner.Name}] " : "");
+            var raceInfo = stackChanged 
+                ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
+            SendAggregatedDbRaceAlert(raceInfo);
         }
 
         /// <summary>
