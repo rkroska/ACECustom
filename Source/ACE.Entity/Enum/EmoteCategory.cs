@@ -49,6 +49,6 @@ namespace ACE.Entity.Enum
         ReceiveLocalSignal        = 37,
         ReceiveTalkDirect         = 38,
         //ReceiveStamp              = 39
-        ReceiveDamage             = 39,
+        ReceiveDamage             = 40,
     }
 }
