@@ -3167,6 +3167,12 @@ namespace ACE.Server.WorldObjects.Managers
             if (Nested > 100)
             {
                 log.Error($"[EMOTE] {WorldObject.Name}.EmoteManager.Enqueue(): Nested > 100 possible Infinite loop detected and aborted on 0x{WorldObject.Guid}:{WorldObject.WeenieClassId}");
+                
+                Nested--;
+
+                if (Nested == 0)
+                    IsBusy = false;
+
                 return;
             }
 
