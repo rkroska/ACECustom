@@ -48,6 +48,38 @@ namespace ACE.Server.Entity
             0xF361, 0xF461, 0xF561, 0xF661, 0xF761
         };
 
+        public static readonly HashSet<ushort> ValleyOfDeathLandblocks = new()
+        {
+            // Row 0x4A
+            0x284A, 0x294A, 0x2A4A, 0x2B4A, 0x2C4A, 0x2D4A, 0x2E4A, 0x2F4A, 0x304A, 0x314A, 0x324A,
+            // Row 0x4B
+            0x274B, 0x284B, 0x294B, 0x2A4B, 0x2B4B, 0x2C4B, 0x2D4B, 0x2E4B, 0x2F4B, 0x304B, 0x314B, 0x324B,
+            // Row 0x4C
+            0x284C, 0x294C, 0x2A4C, 0x2B4C, 0x2C4C, 0x2D4C, 0x2E4C, 0x2F4C, 0x304C, 0x314C, 0x324C,
+            // Row 0x4D
+            0x254D, 0x264D, 0x274D, 0x284D, 0x294D, 0x2A4D, 0x2B4D, 0x2C4D, 0x2D4D, 0x2E4D, 0x2F4D, 0x304D, 0x314D, 0x324D,
+            // Row 0x4E
+            0x254E, 0x274E, 0x284E, 0x294E, 0x2A4E, 0x2B4E, 0x2C4E, 0x2D4E, 0x2E4E, 0x2F4E, 0x304E, 0x314E, 0x324E,
+            // Row 0x4F
+            0x254F, 0x264F, 0x284F, 0x294F, 0x2A4F, 0x2B4F, 0x2C4F, 0x2D4F, 0x2E4F, 0x2F4F, 0x304F, 0x314F, 0x324F,
+            // Row 0x50
+            0x2550, 0x2650, 0x2850, 0x2950, 0x2A50, 0x2B50, 0x2C50, 0x2D50, 0x2E50, 0x2F50, 0x3050, 0x3150, 0x3250,
+            // Row 0x51
+            0x2651, 0x2851, 0x2951, 0x2A51, 0x2B51, 0x2C51, 0x2D51, 0x2E51, 0x2F51, 0x3051, 0x3151, 0x3251,
+            // Row 0x52
+            0x2752, 0x2852, 0x2952, 0x2A52, 0x2B52, 0x2C52, 0x2D52, 0x2E52, 0x2F52, 0x3052, 0x3152, 0x3252,
+            // Row 0x53
+            0x2753, 0x2853, 0x2953, 0x2A53, 0x2B53, 0x2C53, 0x2D53, 0x2E53, 0x2F53, 0x3053, 0x3153, 0x3253, 0x3353,
+            // Row 0x54
+            0x2754, 0x2854, 0x2954, 0x2A54, 0x2B54, 0x2C54, 0x2D54, 0x2E54, 0x2F54, 0x3054, 0x3154, 0x3254,
+            // Row 0x55
+            0x2755, 0x2855, 0x2955, 0x2A55, 0x2B55, 0x2C55, 0x2D55, 0x2E55, 0x2F55, 0x3055, 0x3155, 0x3255, 0x3355,
+            // Row 0x56
+            0x2856, 0x2956, 0x2A56, 0x2B56, 0x2C56, 0x2D56, 0x2E56, 0x2F56, 0x3056, 0x3156, 0x3256,
+            // Row 0x57
+            0x2857, 0x2957, 0x2A57, 0x2B57, 0x2C57, 0x2D57, 0x2E57, 0x2F57, 0x3057, 0x3157, 0x3257,
+        };
+
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
 
@@ -551,7 +583,7 @@ namespace ACE.Server.Entity
                     {
                         member.GrantXP(perAmount, fellowXpType, shareType);
                     }
-                    
+
                 }
             }
 
@@ -771,24 +803,24 @@ namespace ACE.Server.Entity
                 var sameLB = System.Threading.Interlocked.Exchange(ref _sameLandblockSkips, 0);
                 var indoorOutdoor = System.Threading.Interlocked.Exchange(ref _indoorOutdoorMismatches, 0);
                 var diffLBIndoor = System.Threading.Interlocked.Exchange(ref _differentLandblockIndoor, 0);
-                
+
                 var elapsed = (now - _lastLogTime).TotalSeconds;
                 var total = distCalcs + sameLB + indoorOutdoor + diffLBIndoor;
-                
+
                 if (total > 0 && ServerConfig.fellowship_xp_debug_logging.Value)
                 {
                     var optimizedChecks = sameLB + indoorOutdoor + diffLBIndoor;
                     var optimizationPct = (optimizedChecks * 100.0 / total);
-                    
+
                     log.Info($"[FELLOWSHIP XP] Stats for last {elapsed:F1}s:");
-                    log.Info($"  Total checks: {total} ({total/elapsed:F1}/sec)");
+                    log.Info($"  Total checks: {total} ({total / elapsed:F1}/sec)");
                     log.Info($"  - Same LB (optimized): {sameLB} ({sameLB * 100.0 / total:F1}%)");
                     log.Info($"  - Distance calcs: {distCalcs} ({distCalcs * 100.0 / total:F1}%)");
                     log.Info($"  - Indoor/outdoor mismatch: {indoorOutdoor} ({indoorOutdoor * 100.0 / total:F1}%)");
                     log.Info($"  - Diff LB indoor: {diffLBIndoor} ({diffLBIndoor * 100.0 / total:F1}%)");
                     log.Info($"  Optimization effectiveness: {optimizationPct:F1}% of checks skipped expensive Distance2D()");
                 }
-                
+
                 _lastLogTime = now;
             }
         }
@@ -805,10 +837,17 @@ namespace ACE.Server.Entity
             if (xpType == XpType.Quest)
                 return 1.0f;
 
-            // Thaelaryn Island
+            // Thaelaryn Island - full share if both players are in a thaelaryn island landblock
             if ((earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
             {
                 if (ThaelarynIslandLandblocks.Contains((ushort)earner.Location.Landblock) && ThaelarynIslandLandblocks.Contains((ushort)fellow.Location.Landblock))
+                    return 1.0f;
+            }
+
+            // Valley of Death - full share if both players are in a valley of death landblock
+            if ((earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
+            {
+                if (ValleyOfDeathLandblocks.Contains((ushort)earner.Location.Landblock) && ValleyOfDeathLandblocks.Contains((ushort)fellow.Location.Landblock))
                     return 1.0f;
             }
 
@@ -817,7 +856,7 @@ namespace ACE.Server.Entity
             // OPTIMIZATION: Check if both players are in the same landblock
             // Landblock max distance (corner to corner) is ~271 units, well under the 600 unit XP sharing range
             // This skips expensive Distance2D calculations for the majority of fellowship grinding
-            if (earner.Location.Landblock == fellow.Location.Landblock 
+            if (earner.Location.Landblock == fellow.Location.Landblock
                 && (earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
             {
                 // Same landblock but one is indoor and one is outdoor - can't share
@@ -827,7 +866,7 @@ namespace ACE.Server.Entity
                     LogDistanceStats();
                     return 0.0f;
                 }
-                
+
                 // Same landblock and both indoor or both outdoor - guaranteed in range
                 System.Threading.Interlocked.Increment(ref _sameLandblockSkips);
                 LogDistanceStats();
@@ -835,7 +874,7 @@ namespace ACE.Server.Entity
             }
 
             // DIFFERENT LANDBLOCKS
-            
+
             // If either player is indoors, they can't share XP across landblocks
             if (earner.Location.Indoors || fellow.Location.Indoors)
             {
@@ -846,7 +885,7 @@ namespace ACE.Server.Entity
 
             // Both players are outdoor in different landblocks - need distance check
             // This handles cases like players at adjacent landblock boundaries.
-            
+
             // Track distance calculation rate (debug logging)
             System.Threading.Interlocked.Increment(ref _distanceCalcCount);
             LogDistanceStats();
