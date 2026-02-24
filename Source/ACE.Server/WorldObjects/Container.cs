@@ -640,14 +640,14 @@ namespace ACE.Server.WorldObjects
         {
             var containerInfo = this is Player p ? $"Player {p.Name}" : $"{Name} (0x{Guid})";
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
-            log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
+            // log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
             // bug: should be root owner
             if (this is Player player && burdenCheck)
             {
                 if (!player.HasEnoughBurdenToAddToInventory(worldObject))
                 {
-                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
+                    // log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - insufficient burden in {containerInfo}");
                     container = null;
                     return false;
                 }
@@ -661,7 +661,7 @@ namespace ACE.Server.WorldObjects
 
                 if ((ContainerCapacity ?? 0) <= containerItems.Count)
                 {
-                    log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - container capacity full in {containerInfo} ({containerItems.Count}/{ContainerCapacity ?? 0})");
+                    // log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - container capacity full in {containerInfo} ({containerItems.Count}/{ContainerCapacity ?? 0})");
                     container = null;
                     return false;
                 }
@@ -678,26 +678,26 @@ namespace ACE.Server.WorldObjects
                         var containers = Inventory.Values.OfType<Container>().ToList();
                         containers.Sort((a, b) => (a.Placement ?? 0).CompareTo(b.Placement ?? 0));
                         
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory main pack full for {itemInfo} in {containerInfo} ({containerItems.Count}/{ItemCapacity ?? 0}), trying {containers.Count} side packs");
+                        // log.Debug($"[SAVE DEBUG] TryAddToInventory main pack full for {itemInfo} in {containerInfo} ({containerItems.Count}/{ItemCapacity ?? 0}), trying {containers.Count} side packs");
 
                         foreach (var sidePack in containers)
                         {
-                            log.Debug($"[SAVE DEBUG] TryAddToInventory trying side pack {sidePack.Name} (0x{sidePack.Guid}) for {itemInfo}");
+                            // log.Debug($"[SAVE DEBUG] TryAddToInventory trying side pack {sidePack.Name} (0x{sidePack.Guid}) for {itemInfo}");
                             if (sidePack.TryAddToInventory(worldObject, out container, placementPosition, true))
                             {
                                 EncumbranceVal += (worldObject.EncumbranceVal ?? 0);
                                 Value += (worldObject.Value ?? 0);
                                 
-                                log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
+                                // log.Debug($"[SAVE DEBUG] TryAddToInventory SUCCESS - {itemInfo} added to side pack {sidePack.Name} (0x{sidePack.Guid})");
                                 return true;
                             }
                         }
                         
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
+                        // log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
                     }
                     else
                     {
-                        log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - main pack full and limitToMainPackOnly=true in {containerInfo}");
+                        // log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - main pack full and limitToMainPackOnly=true in {containerInfo}");
                     }
 
                     container = null;
@@ -726,12 +726,12 @@ namespace ACE.Server.WorldObjects
             // Verify ContainerId was set correctly
             var newContainerId = worldObject.ContainerId;
             var containerBiotaId = Biota.Id;
-            log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
+            // log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
             
             // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
             if (worldObject.ContainerId != Biota.Id)
             {
-                log.Warn($"[SAVE DEBUG] TryAddToInventory ContainerId mismatch detected for {itemInfo} | ContainerId property={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Container.Biota.Id={Biota.Id} (0x{Biota.Id:X8}) | Fixing...");
+                // log.Warn($"[SAVE DEBUG] TryAddToInventory ContainerId mismatch detected for {itemInfo} | ContainerId property={worldObject.ContainerId} (0x{(worldObject.ContainerId ?? 0):X8}) | Container.Biota.Id={Biota.Id} (0x{Biota.Id:X8}) | Fixing...");
                 worldObject.ContainerId = Biota.Id;
             }
 
@@ -1193,23 +1193,27 @@ namespace ACE.Server.WorldObjects
         private void UpdateCharms(bool adding, WorldObject item)
         {
             if (GetRootOwner() is not Player player) return;
-            ProcessCharmRecursively(player, item, adding);
+            ProcessCharmRecursively(player, item, adding, 0);
         }
 
-        private static void ProcessCharmRecursively(Player player,  WorldObject item, bool adding) { 
+        private static void ProcessCharmRecursively(Player player, WorldObject item, bool adding, int depth)
+        {
+            // Safety guard: Prevent infinite recursion stack overflow
+            if (depth > 50) return;
+
             bool isCharm = item.GetProperty(PropertyBool.IsCharm) ?? false;
             if (isCharm)
             {
                 List<uint> spells = [];
                 if (item.SpellDID.HasValue) spells.Add(item.SpellDID.Value);
                 List<int> knownSpells = item.Biota.GetKnownSpellsIds(item.BiotaDatabaseLock);
-                foreach(int spellId in knownSpells) spells.Add((uint)spellId);
+                foreach (int spellId in knownSpells) spells.Add((uint)spellId);
 
                 foreach (uint spellId in spells)
                 {
                     if (adding)
                     {
-                        if(player.EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
+                        if (player.EnchantmentManager.GetEnchantment(spellId, item.Guid.Full) == null)
                             player.CreateItemSpell(item, spellId);
                     }
                     else
@@ -1221,7 +1225,7 @@ namespace ACE.Server.WorldObjects
 
             if (item is not Container container) return;
             List<WorldObject> children = [.. container.Inventory.Values];
-            foreach (var child in children) ProcessCharmRecursively(player, child, adding);
+            foreach (var child in children) ProcessCharmRecursively(player, child, adding, depth + 1);
         }
 
         /// <summary>

@@ -120,7 +120,7 @@ namespace ACE.Server.WorldObjects
         {
             // fix hermetic void?
             if (!spell.IsResistable && spell.Category != SpellCategory.ManaConversionModLowering || spell.IsSelfTargeted)
-            //if (!spell.IsResistable || spell.IsSelfTargeted)
+                //if (!spell.IsResistable || spell.IsSelfTargeted)
                 return false;
 
             if (spell.MetaSpellType == SpellType.Dispel && spell.Align == DispelType.Negative && !ServerConfig.allow_negative_dispel_resist.Value)
@@ -489,7 +489,37 @@ namespace ACE.Server.WorldObjects
             var resistanceType = minBoostValue > 0 ? GetBoostResistanceType(spell.VitalDamageType) : GetDrainResistanceType(spell.VitalDamageType);
 
             int tryBoost = ThreadSafeRandom.Next(minBoostValue, maxBoostValue);
-            tryBoost = (int)Math.Round(tryBoost * targetCreature.GetResistanceMod(resistanceType));
+
+            // HARM CAP - Fixed damage for Harm life magic spells (reuses PropertyBool.UseDamageCap = 9039)
+            // Normally, Harm spells apply the target's HealthDrain resistance modifier, which reduces
+            // damage based on Life Magic Defense skill and any resistance buffs on the target.
+            // When UseDamageCap is set on the equipped wand, we skip this modifier entirely so the
+            // damage is a fixed random roll between the spell's raw Boost/MaxBoost values — no matter
+            // how buffed or resistant the target is. This mirrors the melee UseDamageCap behavior
+            // in DamageEvent.cs, which bypasses all damage modifiers for weapons with this property.
+            var equippedWand = (this as Creature)?.GetEquippedWand();
+            var useHarmCap = minBoostValue < 0
+                && spell.VitalDamageType == DamageType.Health
+                && equippedWand?.GetProperty(PropertyBool.UseDamageCap) == true;
+
+            // Always calculate resistanceMod so it can be logged, but only apply it when useHarmCap is false.
+            var rawRoll = tryBoost; // captured before any multiplier, so the debug log shows the true raw roll
+
+            if (useHarmCap)
+            {
+                // equippedWand is guaranteed non-null here — useHarmCap requires equippedWand?.GetProperty(UseDamageCap) == true
+                var rawCapMultiplier = equippedWand.GetProperty(PropertyFloat.DamageCapMultiplier) ?? 1.0;
+                var damageCapMultiplier = (float)(rawCapMultiplier > 0 && !double.IsNaN(rawCapMultiplier) && !double.IsInfinity(rawCapMultiplier) ? rawCapMultiplier : 1.0);
+                tryBoost = (int)Math.Round(tryBoost * damageCapMultiplier);
+            }
+
+            var resistanceMod = targetCreature.GetResistanceMod(resistanceType);
+
+            if (!useHarmCap)
+                tryBoost = (int)Math.Round(tryBoost * resistanceMod);
+
+            if (player != null && minBoostValue < 0 && spell.VitalDamageType == DamageType.Health)
+                log.Debug($"[HARM_CAP] {player.Name} cast {spell.Name} | range: {minBoostValue} to {maxBoostValue} | roll: {rawRoll} | resistanceMod: {resistanceMod:F4} ({resistanceType}) | useHarmCap: {useHarmCap} | tryBoost: {tryBoost}");
 
             int boost = tryBoost;
 
@@ -509,16 +539,21 @@ namespace ACE.Server.WorldObjects
                     tryBoost = boost = reduced;
                 }
             }
-            if (player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost > 0)
+            // Normally, LuminanceAugmentLifeCount adds a flat bonus to all Boost spell damage/healing.
+            // When useHarmCap is active, we skip this so the damage stays within the spell's fixed raw range.
+            if (!useHarmCap && player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost > 0)
             {
                 tryBoost += (int)player.LuminanceAugmentLifeCount;
             }
-            if (player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost < 0)
+            if (!useHarmCap && player != null && player.LuminanceAugmentLifeCount.HasValue && tryBoost < 0)
             {
                 tryBoost -= (int)player.LuminanceAugmentLifeCount;
             }
-           
+
             string srcVital;
+
+            // Capture tryBoost after LuminanceAugment for debug (may have changed above)
+            var tryBoostAfterAugment = tryBoost;
 
             switch (spell.VitalDamageType)
             {
@@ -540,9 +575,15 @@ namespace ACE.Server.WorldObjects
                         targetCreature.DamageHistory.Add(this, DamageType.Health, (uint)-boost);
 
                     //if (targetPlayer != null && targetPlayer.Fellowship != null)
-                        //targetPlayer.Fellowship.OnVitalUpdate(targetPlayer);
+                    //targetPlayer.Fellowship.OnVitalUpdate(targetPlayer);
 
                     break;
+            }
+
+            if (player != null && minBoostValue < 0 && spell.VitalDamageType == DamageType.Health)
+            {
+                var lumBonus = !useHarmCap && player.LuminanceAugmentLifeCount.HasValue ? (int)player.LuminanceAugmentLifeCount.Value : 0;
+                log.Debug($"[HARM_CAP] {player.Name} -> {targetCreature.Name} | spell: {spell.Name} | lumBonus: {lumBonus} | tryBoost: {tryBoostAfterAugment} | finalBoost: {boost} | targetHP: {targetCreature.Health.Current}/{targetCreature.Health.MaxValue}");
             }
 
             if (player != null)
@@ -814,7 +855,7 @@ namespace ACE.Server.WorldObjects
 
                     //var sourcePlayer = source as Player;
                     //if (sourcePlayer != null && sourcePlayer.Fellowship != null)
-                        //sourcePlayer.Fellowship.OnVitalUpdate(sourcePlayer);
+                    //sourcePlayer.Fellowship.OnVitalUpdate(sourcePlayer);
 
                     break;
             }
@@ -838,7 +879,7 @@ namespace ACE.Server.WorldObjects
 
                     //var destPlayer = destination as Player;
                     //if (destPlayer != null && destPlayer.Fellowship != null)
-                        //destPlayer.Fellowship.OnVitalUpdate(destPlayer);
+                    //destPlayer.Fellowship.OnVitalUpdate(destPlayer);
 
                     break;
             }
@@ -948,7 +989,7 @@ namespace ACE.Server.WorldObjects
                     damageType = DamageType.Health;
 
                     //if (player != null && player.Fellowship != null)
-                        //player.Fellowship.OnVitalUpdate(player);
+                    //player.Fellowship.OnVitalUpdate(player);
                 }
             }
 
@@ -1303,7 +1344,7 @@ namespace ACE.Server.WorldObjects
 
 
             gateway.UpdatePortalDestination(new Position(portal.Destination));
-            //Console.WriteLine($"SummonPortal: {location.ToLOCString()}");
+            //Console.WriteLine($"SummonPortal: {location}");
             gateway.TimeToRot = portalLifetime;
 
             gateway.MinLevel = portal.MinLevel;
@@ -1787,7 +1828,7 @@ namespace ACE.Server.WorldObjects
             for (var i = 0; i < origins.Count; i++)
             {
                 var origin = origins[i];
-                
+
                 if (WorldObjectFactory.CreateNewWorldObject(spell.Wcid) is not SpellProjectile sp)
                 {
                     log.Error($"{Name} ({Guid}).LaunchSpellProjectiles({spell.Id} - {spell.Name}) - failed to create spell projectile from wcid {spell.Wcid}");
@@ -1989,7 +2030,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (spell.School == MagicSchool.VoidMagic)
                 {
-                    lumAug += player.LuminanceAugmentVoidCount ?? 0f; 
+                    lumAug += player.LuminanceAugmentVoidCount ?? 0f;
                 }
                 if (spell.School == MagicSchool.WarMagic)
                 {

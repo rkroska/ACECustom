@@ -293,14 +293,18 @@ namespace ACE.Server.WorldObjects
                     pet.Biota.PropertiesTextureMap?.Clear();
                 }
                 
-                // Remove equipped clothing/armor items from the base pet weenie's CreateList
-                // These override our ObjDesc since CalculateObjDesc() prioritizes equipped items
-                var clothingToRemove = pet.EquippedObjects.Values
+                // Remove ALL equipped items that affect visual appearance (weapons, armor, clothing)
+                // This prevents the base pet weenie's equipment from conflicting with captured appearance
+                var equipmentToRemove = pet.EquippedObjects.Values
                     .Where(x => x.ItemType == ACE.Entity.Enum.ItemType.Armor || 
-                                x.ItemType == ACE.Entity.Enum.ItemType.Clothing)
+                                x.ItemType == ACE.Entity.Enum.ItemType.Clothing ||
+                                x.ItemType == ACE.Entity.Enum.ItemType.MeleeWeapon ||
+                                x.ItemType == ACE.Entity.Enum.ItemType.MissileWeapon ||
+                                x.ItemType == ACE.Entity.Enum.ItemType.Caster ||
+                                x.ItemType == ACE.Entity.Enum.ItemType.Jewelry)  // Jewelry can have visual effects
                     .ToList();
                 
-                foreach (var item in clothingToRemove)
+                foreach (var item in equipmentToRemove)
                 {
                     // Directly remove from dictionaries and destroy
                     pet.EquippedObjects.Remove(item.Guid);

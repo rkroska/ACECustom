@@ -624,17 +624,12 @@ namespace ACE.Server.Entity
                         log.Warn(warningMsg);
                         
                         // Send to Discord if configured
-                        if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
-                        {
-                            try
+                        if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                             {
-                                Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                                var msg = $"[High Load] Landblock {Id:X8} Monster_Tick throttle saturated for {monsterTickThrottleWarningCount} consecutive ticks! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain.";
+                                _ = Managers.DiscordChatManager.SendDiscordMessage("ServerMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                             }
-                            catch (Exception ex)
-                            {
-                                log.Error($"Failed to send Monster_Tick throttle warning to Discord: {ex.Message}");
-                            }
-                        }
+
                         
                         lastMonsterThrottleWarning = DateTime.UtcNow;
                         // Don't reset counter here - let it continue tracking consecutive saturations
@@ -727,7 +722,24 @@ namespace ACE.Server.Entity
                         IsDormant = true;
                     }
                     if (lastActiveTime + UnloadInterval < thisHeartBeat)
+                    {
+                        // log.Info($"[Landblock Unload] Landblock {Id.Raw:X8} queuing for destruction. (UnloadInterval: {UnloadInterval})");
                         LandblockManager.AddToDestructionQueue(this, this.VariationId);
+                    }
+                    else if (IsDormant && (DateTime.UtcNow.Second % 10 == 0)) // Log periodically if dormant but not unloading
+                    {
+                        // Debug logging to see why it's not unloading
+                        // log.Warn($"[Landblock Debug] {Id.Raw:X8} Dormant. Time until unload: {(lastActiveTime + UnloadInterval - thisHeartBeat).TotalSeconds:F1}s");
+                    }
+                }
+                else if (!Permaload && thisHeartBeat.Second % 15 == 0)
+                {
+                     // Debug logging to see why it's kept alive
+                     // log.Warn($"[Landblock Debug] {Id.Raw:X8} kept alive. Permaload: {Permaload}, NoKeepAlive: {HasNoKeepAliveObjects}, LastActive: {(thisHeartBeat - lastActiveTime).TotalSeconds:F1}s ago");
+                }
+                else if (Permaload && thisHeartBeat.Second % 30 == 0)
+                {
+                    // log.Warn($"[Landblock Debug] {Id.Raw:X8} is PERMALOAD.");
                 }
 
                 //log.Info($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_Heartbeat: thisHeartBeat: {thisHeartBeat.ToString()} | lastHeartBeat: {lastHeartBeat.ToString()} | worldObjects.Count: {worldObjects.Count()}");
@@ -1067,13 +1079,13 @@ namespace ACE.Server.Entity
 
                     if (wo.Generator != null)
                     {
-                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
+                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
                         wo.NotifyOfEvent(RegenerationType.PickUp); // Notify generator the generated object is effectively destroyed, use Pickup to catch both cases.
                     }
                     else if (wo.IsGenerator) // Some generators will fail random spawns if they're circumference spans over water or cliff edges
-                        log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
+                        log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location}");
                     else if (wo.ProjectileTarget == null && wo is not SpellProjectile)
-                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
+                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location}");
 
                     return false;
                 }
@@ -1360,6 +1372,14 @@ namespace ACE.Server.Entity
             LScape.unload_landblock(landblockID, VariationId);
 
             PhysicsLandblock.release_shadow_objs();
+
+            // Clear collections to release memory and break reference cycles
+            sortedCreaturesByNextTick.Clear();
+            sortedWorldObjectsByNextHeartbeat.Clear();
+            sortedGeneratorsByNextGeneratorUpdate.Clear();
+            sortedGeneratorsByNextRegeneration.Clear();
+            players.Clear();
+            Adjacents.Clear();
         }
 
         public void DestroyAllNonPlayerObjects()

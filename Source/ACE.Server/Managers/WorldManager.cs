@@ -115,12 +115,13 @@ namespace ACE.Server.Managers
                     var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
                     log.Error($"[LOGIN BLOCK] {character.Name} REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}");
                     
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && 
+                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
-                            var msg = $"🔴 **CRITICAL**: `{character.Name}` login blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}";
-                            DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            var msg = $"[Login Block] {character.Name} rejected. Save stuck {stuckTime:N1}s. Queue: {DatabaseManager.Shard.QueueCount}";
+                            _ = DiscordChatManager.SendDiscordMessage("LoginMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                         }
                         catch { }
                     }
@@ -284,7 +285,7 @@ namespace ACE.Server.Managers
                 // send to lifestone, or fallback location
                 var fixLoc = session.Player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
 
-                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc.ToLOCString()}");
+                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc}");
 
                 session.Player.Location = new Position(fixLoc);
                 LandblockManager.AddObject(session.Player, true);
@@ -384,6 +385,12 @@ namespace ACE.Server.Managers
 
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
+            // Normal ticks should complete in under 100ms. Log warning if tick exceeds 10s as it indicates
+            // potential performance issues (high load, slow database, or blocking operations).
+            var slowTickThreshold = TimeSpan.FromSeconds(10);
+            // If a tick takes 30+ seconds, it's likely a hang scenario (deadlock, infinite loop, or thread exhaustion).
+            // This helps identify the root cause of server freezes by logging before complete hang occurs.
+            var hangDetectionThreshold = TimeSpan.FromSeconds(30);
 
             while (!pendingWorldStop)
             {
@@ -460,7 +467,19 @@ namespace ACE.Server.Managers
                 if (!gameWorldUpdated)
                     Thread.Sleep(sessionCount == 0 ? 10 : 1); // Relax the CPU more if no sessions are connected
 
-                Timers.PortalYearTicks += worldTickTimer.Elapsed.TotalSeconds;
+                // Capture tick duration before updating PortalYearTicks for accurate measurement
+                var tickDuration = worldTickTimer.Elapsed;
+                Timers.PortalYearTicks += tickDuration.TotalSeconds;
+
+                // Log slow ticks to help diagnose hangs
+                if (tickDuration > hangDetectionThreshold)
+                {
+                    log.Error($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - possible hang detected!");
+                }
+                else if (tickDuration > slowTickThreshold)
+                {
+                    log.Warn($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - slower than expected");
+                }
             }
 
             // World has finished operations and concedes the thread to garbage collection
@@ -506,7 +525,7 @@ namespace ACE.Server.Managers
             if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
                 return;
             
-            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Info || 
                 ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                 return;
             

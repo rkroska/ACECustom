@@ -147,7 +147,7 @@ namespace ACE.Server.Entity
             {
                 Player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Cast #: {CastNum}", ChatMessageType.Broadcast));
                 Player.RecordCast.Log($"MagicState.OnCastStart({CastNum})");
-                Player.RecordCast.Log($"Player Location: {Player.Location.ToLOCString()}");
+                Player.RecordCast.Log($"Player Location: {Player.Location}");
             }
         }
 
@@ -173,9 +173,9 @@ namespace ACE.Server.Entity
             if (Player.RecordCast.Enabled)
             {
                 Player.RecordCast.Log($"MagicState.OnCastDone()");
-                Player.RecordCast.Log($"Player Location: {Player.Location.ToLOCString()}");
+                Player.RecordCast.Log($"Player Location: {Player.Location}");
                 if (CastSpellParams?.Target != null)
-                    Player.RecordCast.Log($"Target Location: {CastSpellParams.Target.Location.ToLOCString()}");
+                    Player.RecordCast.Log($"Target Location: {CastSpellParams.Target.Location}");
                 Player.RecordCast.Log("================================================================================");
                 Player.RecordCast.Flush();
             }
@@ -189,7 +189,7 @@ namespace ACE.Server.Entity
             CastSpellParams = new CastSpellParams(spell, casterItem, magicSkill, manaUsed, target, status);
 
             if (Player.RecordCast.Enabled && CastSpellParams.Target != null)
-                Player.RecordCast.Log($"Target Location: {CastSpellParams.Target.Location.ToLOCString()}");
+                Player.RecordCast.Log($"Target Location: {CastSpellParams.Target.Location}");
         }
 
         public void SetWindupParams(uint targetGuid, uint spellId, WorldObject casterItem)

@@ -90,7 +90,7 @@ namespace ACE.Server.WorldObjects
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
-                if (lastDamager is Player playerKiller)
+                if (lastDamager is Player playerKiller && playerKiller.Session != null)
                     playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
             }
             return deathMessage;
@@ -125,8 +125,13 @@ namespace ACE.Server.WorldObjects
                 if (topDamager.IsPlayer)
                 {
                     var topDamagerPlayer = topDamager.TryGetAttacker();
-                    if (topDamagerPlayer != null)
-                        topDamagerPlayer.CreatureKills = (topDamagerPlayer.CreatureKills ?? 0) + 1;
+                    if (topDamagerPlayer is Player playerKiller)
+                    {
+                        if (playerKiller.Session != null && playerKiller.Session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(playerKiller, $"Admin {playerKiller.Name} killed {Name} (0x{Guid.Full:X8}) at {Location?.ToString() ?? "Unknown Location"}.");
+
+                        playerKiller.CreatureKills = (playerKiller.CreatureKills ?? 0) + 1;
+                    }
                 }
             }
 
@@ -177,8 +182,8 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                OnDeath();
                 var smiterInfo = new DamageHistoryInfo(smiter);
+                OnDeath(smiterInfo, DamageType.Undef);
                 Die(smiterInfo, smiterInfo);
             }
         }
@@ -454,6 +459,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected void CreateCorpse(DamageHistoryInfo killer, bool hadVitae = false)
         {
+            if (this is Player decedent && (decedent.IsAdmin || (decedent.Session != null && decedent.Session.AccessLevel >= AccessLevel.Admin)))
+            {
+                PlayerManager.BroadcastToAuditChannel(decedent, $"Admin {decedent.Name} has died. (Admin Death - No Corpse Created)");
+                return;
+            }
+
             if (NoCorpse)
             {
                 if (killer != null && killer.IsOlthoiPlayer) return;
@@ -700,7 +711,7 @@ namespace ACE.Server.WorldObjects
             if (player != null)
             {
                 if (corpse.PhysicsObj == null || corpse.PhysicsObj.Position == null)
-                    log.Debug($"[CORPSE] {Name}'s corpse (0x{corpse.Guid}) failed to spawn! Tried at {player.Location.ToLOCString()}");
+                    log.Debug($"[CORPSE] {Name}'s corpse (0x{corpse.Guid}) failed to spawn! Tried at {player.Location}");
                 else
                     log.Debug($"[CORPSE] {Name}'s corpse (0x{corpse.Guid}) is located at {corpse.PhysicsObj.Position}");
             }

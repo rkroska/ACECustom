@@ -51,7 +51,7 @@ namespace ACE.Server.WorldObjects
 
             if (!success)
             {
-                log.Error($"{Name} ({Guid}) failed to spawn @ {Location?.ToLOCString()}");
+                log.Error($"{Name} ({Guid}) failed to spawn @ {Location}");
                 return false;
             }
 
@@ -267,6 +267,12 @@ namespace ACE.Server.WorldObjects
                 EmoteManager.OnQuest(player);
             }
 
+            if (PortalUseCount.HasValue && PortalUseCount.Value <= 0)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
+                return new ActivationResult(false);
+            }
+
             return new ActivationResult(true);
         }
 
@@ -336,11 +342,22 @@ namespace ACE.Server.WorldObjects
             var player = activator as Player;
             if (player == null) return;
 
+            lock (this)
+            {
+                var useCount = PortalUseCount;
+                if (useCount.HasValue)
+                {
+                    if (useCount.Value <= 0)
+                    {
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat("The portal's energy has faded.", ChatMessageType.System));
+                        return;
+                    }
+
+                    PortalUseCount = useCount.Value - 1;
+                }
+            }
+
             var portalDest = new Position(Destination);
-#if DEBUG
-            //player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
-            //Console.WriteLine($"Player sending to v: {portalDest.Variation}");
-#endif
             AdjustDungeon(portalDest);
 
 
