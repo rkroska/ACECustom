@@ -1514,6 +1514,45 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
+        /// Displays the player's Shiny Pet collection log.
+        /// </summary>
+        /// <param name="session">The player's network session.</param>
+        /// <param name="parameters">Command parameters (unused).</param>
+        [CommandHandler("shinies", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "View your Shiny Pet collection")]
+        public static void HandleShinies(Session session, params string[] parameters)
+        {
+            try
+            {
+                var player = session.Player;
+                var accountId = player.Account.AccountId;
+
+                var entries = PetRegistryManager.GetShinyRegistry(accountId);
+                var count = entries.Count;
+
+                if (count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("=== Your Shiny Log ===", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Your Shiny Log is empty.", ChatMessageType.Broadcast));
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Capture and register Shiny creatures to fill it!", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat($"=== Your Shiny Log ({count} shinies) ===", ChatMessageType.Broadcast));
+
+                var i = 1;
+                foreach (var (wcid, name, date) in entries)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{i++}. {name}", ChatMessageType.Broadcast));
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error in shinies command: {ex.Message}", ex);
+                session.Network.EnqueueSend(new GameMessageSystemChat("An error occurred. Please try again.", ChatMessageType.Broadcast));
+            }
+        }
+
+        /// <summary>
         /// Rate limiter for /passwd command
         /// </summary>
         private static readonly TimeSpan MyQuests = TimeSpan.FromSeconds(60);
