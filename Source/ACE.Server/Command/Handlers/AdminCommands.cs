@@ -1888,9 +1888,15 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Initiating UCM check on {targetPlayer.Name}.", ChatMessageType.System));
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
-            targetPlayer.UCMChecker.Start(targetPlayer);
+            bool started = targetPlayer.UCMChecker.Start(targetPlayer);
+            if (started)
+            {
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"UCM check on {targetPlayer.Name} failed to start.", ChatMessageType.System));
+            }
         }
 
         // gag < char name >

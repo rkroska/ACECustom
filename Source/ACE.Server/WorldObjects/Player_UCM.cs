@@ -21,13 +21,15 @@ namespace ACE.Server.WorldObjects
         private Position CheckLocation { get; set; }
         private Random random { get; } = new();
 
-        public void Start(Player player)
+        // Returns true if the UCM check was started.
+        public bool Start(Player player)
         {
-            if (IsChecking) return;
+            if (IsChecking) return false;
 
             IsChecking = true;
             CheckLocation = new Position(player.Location);
-            Timeout = DateTime.UtcNow.AddSeconds(ServerConfig.ucmCheckTimeoutSeconds.Value);
+            long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
+            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
 
             // N, E, S, W relative or absolute doesn't matter too much, we'll use absolute cardinal offsets
             // Assuming Location.Position.X/Y are coordinates
@@ -45,6 +47,9 @@ namespace ACE.Server.WorldObjects
             {
                 var statue = WorldObjectFactory.CreateNewWorldObject(UCMStatueWcid);
                 if (statue == null) continue;
+
+                // Ensure the statues will clean up themselves as a backstop.
+                statue.TimeToRot = secondsUntilTimeout + 10;
 
                 var spawnLoc = new Position(CheckLocation);
                 spawnLoc.PositionX += offsets[i].X;
@@ -80,17 +85,18 @@ namespace ACE.Server.WorldObjects
 
             if (Statues.Count < 4 || CorrectStatue == null || CorrectStatue.IsDestroyed)
             {
-                CleanupUCMCheck();
-                return;
+                Stop();
+                return false;
             }
 
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat("Your focus is being tested. Use the statue looking AWAY from you within 60 seconds or suffer consequences!", ChatMessageType.Broadcast));
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your focus is being tested. Use the statue looking AWAY from you within {secondsUntilTimeout} seconds or suffer consequences!", ChatMessageType.Broadcast));
+            return true;
         }
 
         private void HandleSuccess(Player player)
         {
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
-            CleanupUCMCheck();
+            Stop();
 
         }
         private void HandleFailure(Player player, bool timeout = false)
@@ -99,8 +105,8 @@ namespace ACE.Server.WorldObjects
             string reason = timeout ? "timed out" : "selected incorrectly";
             string auditMessage = $"[UCM Check] Player {player.Name} failed UCM check ({reason}).";
             PlayerManager.BroadcastToAuditChannel(player, auditMessage);
-            CleanupUCMCheck();
-            if (Position.TryParse(ServerConfig.ucmCheckFailTeleportLocation.Value, out Position failTeleLoc))
+            Stop();
+            if (Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
             {
                 player.Teleport(failTeleLoc);
             }
@@ -147,7 +153,7 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        private void CleanupUCMCheck()
+        public void Stop()
         {
             IsChecking = false;
             CheckLocation = null;
