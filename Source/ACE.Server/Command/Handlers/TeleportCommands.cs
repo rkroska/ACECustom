@@ -143,10 +143,8 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("telepoi", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to a named Point of Interest",
-            "[POI|list]\n" +
-            "@telepoi Arwic\n" +
-            "Get the list of POIs\n" +
-            "@telepoi list")]
+             "Usage: /telepoi \"<poi string>\"\n" +
+             "Example: /telepoi \"Arwic\"")]
         public static void HandleTeleportPoi(Session session, params string[] parameters) => ForwardCommand(session, parameters, "poi", false);
 
         [CommandHandler("teledungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
