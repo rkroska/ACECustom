@@ -1872,6 +1872,27 @@ namespace ACE.Server.Command.Handlers
             // TODO: output
         }
 
+        [CommandHandler("ucmcheck", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Initiates a UCM check on the selected player.")]
+        public static void HandleUCMCheck(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetSelected(session);
+            if (target == null || !(target is Player targetPlayer))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You must select a player to use this command.", ChatMessageType.System));
+                return;
+            }
+
+            if (targetPlayer.UCMChecker.IsChecking)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{targetPlayer.Name} is already undergoing a UCM check.", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Initiating UCM check on {targetPlayer.Name}.", ChatMessageType.System));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
+            targetPlayer.UCMChecker.Start(targetPlayer);
+        }
+
         // gag < char name >
         [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
             "Prevents a character from talking.",

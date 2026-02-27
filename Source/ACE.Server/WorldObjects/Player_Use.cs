@@ -1,5 +1,5 @@
 using System;
-
+using System.Linq;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
@@ -193,6 +193,13 @@ namespace ACE.Server.WorldObjects
             {
                 SendUseDoneEvent(WeenieError.TradeItemBeingTraded);
                 //SendWeenieError(WeenieError.TradeItemBeingTraded);
+                return;
+            }
+
+            if (UCMChecker.HandleActionUseItem(this, itemGuid))
+            {
+                // The statue belonged to the UCMChecker, so exit regardless.
+                SendUseDoneEvent();
                 return;
             }
 
