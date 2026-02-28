@@ -13,13 +13,28 @@ namespace ACE.Server.WorldObjects
 
     public class UCMChecker()
     {
-        private const uint UCMStatueWcid = 79790003;
+        private const float UCMStatueSpawnDistance = 1.5f;
         public bool IsChecking { get; private set; } = false;
         private DateTime Timeout { get; set; }
         private List<WorldObject> Statues { get; } = [];
         private WorldObject CorrectStatue { get; set; }
         private Position CheckLocation { get; set; }
         private Random random { get; } = new();
+
+        private static WorldObject MakeStatue()
+        {
+            WorldObject statue = WorldObjectFactory.CreateNewWorldObject((uint)ServerConfig.ucm_check_statue_wcid.Value);
+            if (statue == null) return statue;
+
+            statue.ItemType = ItemType.Misc;
+            statue.ItemUseable = Usable.RemoteNeverWalk;
+            statue.RadarColor = RadarColor.Yellow;
+            statue.Stuck = true;
+            statue.Ethereal = true;
+            statue.Attackable = false;
+            statue.Name = "Arcane Test Statue";
+            return statue;
+        }
 
         // Returns true if the UCM check was started.
         public bool Start(Player player)
@@ -33,7 +48,6 @@ namespace ACE.Server.WorldObjects
 
             // N, E, S, W relative or absolute doesn't matter too much, we'll use absolute cardinal offsets
             // Assuming Location.Position.X/Y are coordinates
-            const float UCMStatueSpawnDistance = 1.0f;
             var offsets = new[]
             {
                 new { X = 0.0f, Y = UCMStatueSpawnDistance }, // North
@@ -45,7 +59,7 @@ namespace ACE.Server.WorldObjects
             int correctIndex = random.Next(4);
             for (int i = 0; i < 4; i++)
             {
-                var statue = WorldObjectFactory.CreateNewWorldObject(UCMStatueWcid);
+                var statue = MakeStatue();
                 if (statue == null) continue;
 
                 // Ensure the statues will clean up themselves as a backstop.
@@ -144,7 +158,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (CheckLocation != null && player.Location.Distance2D(CheckLocation) > 1.0f)
+            if (CheckLocation != null && player.Location.Distance2D(CheckLocation) > UCMStatueSpawnDistance)
             {
                 // Increment ForcePosition sequence to make client accept the move without a portal screen
                 player.UpdatePosition(CheckLocation, true);
