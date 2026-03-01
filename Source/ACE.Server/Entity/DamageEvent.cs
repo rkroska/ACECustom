@@ -518,7 +518,9 @@ namespace ACE.Server.Entity
 
             EffectiveDefenseSkill = defender.GetEffectiveDefenseSkill(CombatType);
 
-            var evadeChance = 1.0f - SkillCheck.GetSkillChance(EffectiveAttackSkill, EffectiveDefenseSkill);
+            var evadeChance = CombatType == CombatType.Missile
+                ? 1.0f - SkillCheck.GetMissileCombatSkillChance(EffectiveAttackSkill, EffectiveDefenseSkill)
+                : 1.0f - SkillCheck.GetMeleeCombatSkillChance(EffectiveAttackSkill, EffectiveDefenseSkill);
             return (float)evadeChance;
         }
 
