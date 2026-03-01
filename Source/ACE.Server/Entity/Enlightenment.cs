@@ -65,17 +65,16 @@ namespace ACE.Server.Entity
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
                     return;
                 }
-                if (player.Enlightenment + 1 > 5 && player.Enlightenment < 150)
+                var targetEnlightenment = player.Enlightenment + 1;
+                if (targetEnlightenment > 5 && targetEnlightenment <= 150)
                 {
                     RemoveTokens(player);
                 }
-                else if
-                (player.Enlightenment >= 150 && player.Enlightenment < 300)
+                else if (targetEnlightenment > 150 && targetEnlightenment <= 300)
                 {
                     RemoveMedallion(player);
                 }
-                else if
-                (player.Enlightenment >= 300)
+                else if (targetEnlightenment > 300)
                 {
                     RemoveSigil(player);
                 }
@@ -185,7 +184,7 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (targetEnlightenment > 150 && targetEnlightenment < 300)
+            if (targetEnlightenment > 150 && targetEnlightenment <= 300)
             {
                 var count2 = player.GetNumInventoryItemsOfWCID(90000217); //magic number - EnlightenmentToken
                 if (count2 < player.Enlightenment + 1 - 5)
