@@ -295,6 +295,24 @@ namespace ACE.Server.Entity
             }
         }
 
+
+        /// <summary>
+        /// Get only shiny pets for a specific account, ordered by registration date.
+        /// </summary>
+        /// <param name="accountId">The account ID to retrieve shiny pets for.</param>
+        /// <returns>A list of tuples containing WCID, creature name, and registration timestamp.</returns>
+        public static List<(uint Wcid, string Name, DateTime RegisteredAt)> GetShinyRegistry(uint accountId)
+        {
+            using (var context = new ShardDbContext())
+            {
+                return context.PetRegistry
+                    .Where(p => p.AccountId == accountId && p.IsShiny)
+                    .OrderBy(p => p.RegisteredAt)
+                    .Select(p => new ValueTuple<uint, string, DateTime>(p.Wcid, p.CreatureName, p.RegisteredAt))
+                    .ToList();
+            }
+        }
+
         public static List<PetRegistryEntry> GetFullPetRegistry(uint accountId)
         {
              using (var context = new ShardDbContext())
