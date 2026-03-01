@@ -358,7 +358,7 @@ namespace ACE.Server.Network
             uint bottom = desiredSeq + 1;
             if (rcvdSeq < bottom || rcvdSeq - bottom > CryptoSystem.MaximumEffortLevel)
             {
-                log.Warn($"[{session.LoggingIdentifier}] Session for {session?.Player.Name ?? "Unknown Player"} terminated for AbnormalSequenceReceived in DoRequestForRetransmission. rcvdSeq: {rcvdSeq}, bottom: {bottom}, diff: {(rcvdSeq >= bottom ? (rcvdSeq - bottom).ToString() : "negative")}, MaximumEffortLevel: {CryptoSystem.MaximumEffortLevel}");
+                log.Warn($"[{session.LoggingIdentifier}] Session for {session.Player?.Name ?? "Unknown Player"} terminated for AbnormalSequenceReceived in DoRequestForRetransmission. rcvdSeq: {rcvdSeq}, bottom: {bottom}, diff: {(rcvdSeq >= bottom ? (rcvdSeq - bottom).ToString() : "negative")}, MaximumEffortLevel: {CryptoSystem.MaximumEffortLevel}");
                 session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
                 return;
             }
