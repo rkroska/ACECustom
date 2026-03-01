@@ -13,6 +13,7 @@ using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Common;
 using ACE.Server.WorldObjects;
+using ACE.Server.Physics;
 
 namespace ACE.Server.Entity
 {
@@ -264,6 +265,10 @@ namespace ACE.Server.Entity
                     log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to create wcid {Biota.WeenieClassId}");
                     return null;
                 }
+                if (wo is Creature creature && creature.IsMonster && creature.Attackable)
+                {
+                    CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
+                }
 
                 if (Biota.PaletteId.HasValue && Biota.PaletteId > 0)
                     wo.PaletteTemplate = (int)Biota.PaletteId;
@@ -314,7 +319,7 @@ namespace ACE.Server.Entity
                 // This object still may be returned in the spawned collection if FirstSpawn is true. This is to prevent retry spam.
                 if (!success)
                 {
-                    log.Debug($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to spawn {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) from profile {LinkId} at {RegenLocationType}{(obj.Location != null ? $"\n Gen LOC: {Generator.Location?.ToLOCString()}\n Obj LOC: {obj.Location.ToLOCString()}" : "")}");
+                    log.Debug($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to spawn {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) from profile {LinkId} at {RegenLocationType}{(obj.Location != null ? $"\n Gen LOC: {Generator.Location}\n Obj LOC: {obj.Location}" : "")}");
                     obj.Destroy();
                 }
             }
@@ -334,7 +339,7 @@ namespace ACE.Server.Entity
             // offset from generator location
             else
             {
-                if (PropertyManager.GetBool("use_generator_rotation_offset"))
+                if (ServerConfig.use_generator_rotation_offset.Value)
                 {
                     var offset = Vector3.Transform(new Vector3(Biota.OriginX ?? 0, Biota.OriginY ?? 0, Biota.OriginZ ?? 0), Generator.Location.Rotation);
 
@@ -365,7 +370,7 @@ namespace ACE.Server.Entity
             // Skipping using same offset code above for offsetting scatter pos due to issues with rotation that were not expected at time content was rebuilt (Colo, others)
             // perhaps it should be same or similar but not able to spend time on verifying it out and making rotational adjustments at this time.
 
-            //if (PropertyManager.GetBool("use_generator_rotation_offset"))
+            //if (ServerConfig.use_generator_rotation_offset.Value)
             //{
             //    var offset = Vector3.Transform(new Vector3(Biota.OriginX ?? 0, Biota.OriginY ?? 0, Biota.OriginZ ?? 0), Generator.Location.Rotation);
 

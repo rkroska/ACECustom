@@ -24,8 +24,6 @@ namespace ACE.Server.Network.Handlers
     public static class CharacterHandler
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterCreate, SessionState.AuthConnected)]
         public static void CharacterCreate(ClientMessage message, Session session)
         {
             string clientString = message.Payload.ReadString16L();
@@ -47,16 +45,15 @@ namespace ACE.Server.Network.Handlers
 
         private static void CharacterCreateEx(ClientMessage message, Session session)
         {
-            var characterCreateInfo = new CharacterCreateInfo();
-            characterCreateInfo.Unpack(message.Payload);
+            CharacterCreateInfo characterCreateInfo = CharacterCreateInfo.Unpack(message.Payload);
             
-            if (PropertyManager.GetBool("taboo_table") && DatManager.PortalDat.TabooTable.ContainsBadWord(characterCreateInfo.Name.ToLowerInvariant()))
+            if (ServerConfig.taboo_table.Value && DatManager.PortalDat.TabooTable.ContainsBadWord(characterCreateInfo.Name.ToLowerInvariant()))
             {
                 SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.NameBanned);
                 return;
             }
 
-            if (PropertyManager.GetBool("creature_name_check") && DatabaseManager.World.IsCreatureNameInWorldDatabase(characterCreateInfo.Name))
+            if (ServerConfig.creature_name_check.Value && DatabaseManager.World.IsCreatureNameInWorldDatabase(characterCreateInfo.Name))
             {
                 SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.NameBanned);
                 return;
@@ -71,7 +68,7 @@ namespace ACE.Server.Network.Handlers
                 }
             });
 
-            if ((characterCreateInfo.Heritage == HeritageGroup.Olthoi || characterCreateInfo.Heritage == HeritageGroup.OlthoiAcid) && PropertyManager.GetBool("olthoi_play_disabled"))
+            if ((characterCreateInfo.Heritage == HeritageGroup.Olthoi || characterCreateInfo.Heritage == HeritageGroup.OlthoiAcid) && ServerConfig.olthoi_play_disabled.Value)
             {
                 SendCharacterCreateResponse(session, CharacterGenerationVerificationResponse.Pending);
                 return;
@@ -182,7 +179,6 @@ namespace ACE.Server.Network.Handlers
         }
 
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterEnterWorldRequest, SessionState.AuthConnected)]
         public static void CharacterEnterWorldRequest(ClientMessage message, Session session)
         {
             if (ServerManager.ShutdownInProgress)
@@ -196,8 +192,7 @@ namespace ACE.Server.Network.Handlers
             else
                 session.SendCharacterError(CharacterError.LogonServerFull);
         }
-
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterEnterWorld, SessionState.AuthConnected)]
+        
         public static void CharacterEnterWorld(ClientMessage message, Session session)
         {
             var guid = message.Payload.ReadUInt32();
@@ -251,7 +246,7 @@ namespace ACE.Server.Network.Handlers
                 return;
             }
 
-            if ((offlinePlayer.Heritage == (int)HeritageGroup.Olthoi || offlinePlayer.Heritage == (int)HeritageGroup.OlthoiAcid) && PropertyManager.GetBool("olthoi_play_disabled"))
+            if ((offlinePlayer.Heritage == (int)HeritageGroup.Olthoi || offlinePlayer.Heritage == (int)HeritageGroup.OlthoiAcid) && ServerConfig.olthoi_play_disabled.Value)
             {
                 session.SendCharacterError(CharacterError.EnterGameCouldntPlaceCharacter);
                 return;
@@ -265,14 +260,12 @@ namespace ACE.Server.Network.Handlers
         }
 
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterLogOff, SessionState.WorldConnected)]
         public static void CharacterLogOff(ClientMessage message, Session session)
         {
             session.LogOffPlayer();
         }
 
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterDelete, SessionState.AuthConnected)]
         public static void CharacterDelete(ClientMessage message, Session session)
         {
             string clientString = message.Payload.ReadString16L();
@@ -315,7 +308,7 @@ namespace ACE.Server.Network.Handlers
 
                 session.Network.EnqueueSend(new GameMessageCharacterDelete());
 
-                var charRestoreTime = PropertyManager.GetLong("char_delete_time", 3600);
+                var charRestoreTime = ServerConfig.char_delete_time.Value;
                 character.DeleteTime = (ulong)(Time.GetUnixTime() + charRestoreTime);
                 character.IsDeleted = false;
 
@@ -340,7 +333,6 @@ namespace ACE.Server.Network.Handlers
             
         }
 
-        [InboundGameMessage(InboundGameMessageOpcode.CharacterRestore, SessionState.AuthConnected)]
         public static void CharacterRestore(ClientMessage message, Session session)
         {
             var guid = message.Payload.ReadUInt32();

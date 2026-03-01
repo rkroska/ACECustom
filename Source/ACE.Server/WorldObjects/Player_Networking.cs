@@ -59,7 +59,7 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("You may not leave Olthoi Island until your account and this character have been active on this game world for 15 days.", ChatMessageType.Broadcast));
             }
 
-            if (PlayerKillerStatus == PlayerKillerStatus.PKLite && !PropertyManager.GetBool("pkl_server"))
+            if (PlayerKillerStatus == PlayerKillerStatus.PKLite && !ServerConfig.pkl_server.Value)
             {
                 PlayerKillerStatus = PlayerKillerStatus.NPK;
 
@@ -84,7 +84,7 @@ namespace ACE.Server.WorldObjects
 
             //SendPropertyUpdatesAndOverrides();
 
-            if (PropertyManager.GetBool("use_turbine_chat"))
+            if (ServerConfig.use_turbine_chat.Value)
             {
                 // Init the client with the chat channel ID's, and then notify the player that they've joined the associated channels.
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TurbineChatIsEnabled));
@@ -247,7 +247,7 @@ namespace ACE.Server.WorldObjects
 
         public void SendPropertyUpdatesAndOverrides()
         {
-            if (!PropertyManager.GetBool("require_spell_comps"))
+            if (!ServerConfig.require_spell_comps.Value)
                 Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyBool(this, PropertyBool.SpellComponentsRequired, false));
         }
 
@@ -255,28 +255,67 @@ namespace ACE.Server.WorldObjects
         /// This method iterates through your main pack, any packs and finds all the items contained
         /// It also iterates over your wielded items - it sends create object messages needed by the login process
         /// it is called from SendSelf as part of the login message traffic.   Og II
+        /// Refactored to use ActionChain for pagination to prevent packet floods.
         /// </summary>
         public void SendInventoryAndWieldedItems()
         {
-            foreach (var item in Inventory.Values)
-            {
-                Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+            var actionChain = new ActionChain();
+            int itemCount = 0;
+            int batchSize = 25;
+            float batchDelay = 0.1f;
 
-                // Was the item I just send a container? If so, we need to send the items in the container as well. Og II
-                if (item is Container container)
-                {
-                    Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
-
-                    foreach (var itemsInContainer in container.Inventory.Values)
-                        Session.Network.EnqueueSend(new GameMessageCreateObject(itemsInContainer));
-                }
-            }
-
+            // 1. Equipped Items (Priority: Immediate, send first)
             foreach (var item in EquippedObjects.Values)
             {
-                item.Wielder = this;
-                Session.Network.EnqueueSend(new GameMessageCreateObject(item));                
+                actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                {
+                    if (Session?.Network == null) return;
+                    item.Wielder = this;
+                    Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+                });
+                itemCount++;
             }
+
+            // 2. Inventory Items
+            foreach (var item in Inventory.Values)
+            {
+                // Batching check
+                if (itemCount > 0 && itemCount % batchSize == 0)
+                    actionChain.AddDelaySeconds(batchDelay);
+
+                actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                {
+                    if (Session?.Network == null) return;
+                    Session.Network.EnqueueSend(new GameMessageCreateObject(item));
+                });
+                itemCount++;
+
+                // Container contents
+                if (item is Container container)
+                {
+                    actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                    {
+                        if (Session?.Network == null) return;
+                        Session.Network.EnqueueSend(new GameEventViewContents(Session, container));
+                    });
+
+                    foreach (var itemsInContainer in container.Inventory.Values)
+                    {
+                        // Batching check
+                        if (itemCount > 0 && itemCount % batchSize == 0)
+                            actionChain.AddDelaySeconds(batchDelay);
+
+                        actionChain.AddAction(this, ActionType.PlayerNetworking_EnqueueSend, () =>
+                        {
+                            if (Session?.Network == null) return;
+                            Session.Network.EnqueueSend(new GameMessageCreateObject(itemsInContainer));
+                        });
+                        itemCount++;
+                    }
+                }
+            }
+            
+            actionChain.EnqueueChain();
         }
 
         public void SendContractTrackerTable()
@@ -391,6 +430,10 @@ namespace ACE.Server.WorldObjects
 
         private EnvironChangeType? currentFogColor;
 
+        /// <summary>
+        /// Updates the player's current fog color and sends an environment change update to the client.
+        /// Respects global fog override if active.
+        /// </summary>
         public void SetFogColor(EnvironChangeType fogColor)
         {
             if (fogColor == EnvironChangeType.Clear && !currentFogColor.HasValue)
@@ -411,9 +454,28 @@ namespace ACE.Server.WorldObjects
                 currentFogColor = null;
         }
 
-        public void ClearFogColor()
+        /// <summary>
+        /// Handles fog logic before teleporting. 
+        /// Returns true if the teleport was intercepted and delayed to clear fog.
+        /// Returns false if teleport should proceed immediately.
+        /// </summary>
+        public bool HandleFogBeforeTeleport(Position dest)
         {
-            SetFogColor(EnvironChangeType.Clear);
+            // Check currentFogColor set for player. If LandblockManager.GlobalFogColor is set, don't bother checking, dungeons didn't clear like this on retail worlds.
+            // if not clear, reset to clear before portaling in case portaling to dungeon (no current way to fast check unloaded landblock for IsDungeon or current FogColor)
+            // client doesn't respond to any change inside dungeons, and only queues for change if in dungeon, executing change upon next teleport
+            // so if we delay teleport long enough to ensure clear arrives before teleport, we don't get fog carrying over into dungeon.
+
+            if (currentFogColor.HasValue && currentFogColor != EnvironChangeType.Clear && !LandblockManager.GlobalFogColor.HasValue)
+            {
+                var delayTeleport = new ActionChain();
+                delayTeleport.AddAction(this, ActionType.PlayerLocation_ClearFogColor, () => SetFogColor(EnvironChangeType.Clear));
+                delayTeleport.AddDelaySeconds(1);
+                delayTeleport.AddAction(this, ActionType.WorldManager_ThreadSafeTeleport, () => WorldManager.ThreadSafeTeleport(this, dest));
+                delayTeleport.EnqueueChain();
+                return true;
+            }
+            return false;
         }
 
         public void SendEnvironChange(EnvironChangeType environChangeType)
@@ -474,7 +536,7 @@ namespace ACE.Server.WorldObjects
 
         public void HandlePreOrderItems()
         {
-            var subscriptionStatus = (SubscriptionStatus)PropertyManager.GetLong("default_subscription_level");
+            var subscriptionStatus = (SubscriptionStatus)ServerConfig.default_subscription_level.Value;
 
             string status;
             bool success;
@@ -493,7 +555,7 @@ namespace ACE.Server.WorldObjects
 
             var msg = $"Thank you for {status} the Throne of Destiny expansion! A special gift has been placed in your backpack.";
 
-            if (PropertyManager.GetBool("show_first_login_gift") && success)
+            if (ServerConfig.show_first_login_gift.Value && success)
                 Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Magic));
 
             AccountRequirements = subscriptionStatus;

@@ -1072,26 +1072,25 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Starting database migration for all transfer monitoring tables...", ChatMessageType.System));
-                
-                using (var context = new ShardModels.ShardDbContext())
-                {
-                    // Create transfer_logs table
-                    CreateTransferLogsTableForMigration(context, session);
-                    
-                    // Create transfer_summaries table
-                    CreateTransferSummariesTableForMigration(context, session);
-                    
-                    // Create tracked_items table
-                    CreateTrackedItemsTableForMigration(context, session);
-                    
-                    // Create transfer_monitoring_configs table
-                    CreateTransferMonitoringConfigsTableForMigration(context, session);
-                    
-                    // Create transfer_blacklist table
-                    CreateTransferBlacklistTableForMigration(context, session);
-                    
-                    session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
-                }
+
+                using var context = new ShardModels.ShardDbContext();
+
+                // Create transfer_logs table
+                CreateTransferLogsTableForMigration(context, session);
+
+                // Create transfer_summaries table
+                CreateTransferSummariesTableForMigration(context, session);
+
+                // Create tracked_items table
+                CreateTrackedItemsTableForMigration(context, session);
+
+                // Create transfer_monitoring_configs table
+                CreateTransferMonitoringConfigsTableForMigration(context, session);
+
+                // Create transfer_blacklist table
+                CreateTransferBlacklistTableForMigration(context, session);
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("All transfer monitoring tables migration completed successfully!", ChatMessageType.System));
             }
             catch (Exception ex)
             {
@@ -1104,41 +1103,41 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("Fixing duplicate transfer summaries...", ChatMessageType.System));
-                
-                using (var context = new ShardModels.ShardDbContext())
+
+                using var context = new ShardModels.ShardDbContext();
+
+                // First, check if the unique index exists
+                var indexExists = false;
+                try
                 {
-                    // First, check if the unique index exists
-                    var indexExists = false;
-                    try
+                    using (var command = context.Database.GetDbConnection().CreateCommand())
                     {
-                        using (var command = context.Database.GetDbConnection().CreateCommand())
-                        {
-                            command.CommandText = @"
+                        command.CommandText = @"
                                 SELECT COUNT(*) FROM information_schema.statistics 
                                 WHERE table_schema = DATABASE() 
                                 AND table_name = 'transfer_summaries' 
                                 AND index_name = 'idx_transfer_summary_unique'";
-                            context.Database.OpenConnection();
-                            var count = Convert.ToInt32(command.ExecuteScalar());
-                            indexExists = count > 0;
-                        }
+                        context.Database.OpenConnection();
+                        var count = Convert.ToInt32(command.ExecuteScalar());
+                        indexExists = count > 0;
                     }
-                    catch
-                    {
-                        // If query fails, assume index doesn't exist
-                        indexExists = false;
-                    }
-                    finally
-                    {
-                        context.Database.CloseConnection();
-                    }
+                }
+                catch
+                {
+                    // If query fails, assume index doesn't exist
+                    indexExists = false;
+                }
+                finally
+                {
+                    context.Database.CloseConnection();
+                }
 
-                    if (!indexExists)
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("Unique index does not exist. Cleaning up duplicates and creating index...", ChatMessageType.System));
-                        
-                        // Clean up any duplicate data first by keeping the record with the latest LastTransfer
-                        var deletedCount = context.Database.ExecuteSqlRaw(@"
+                if (!indexExists)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Unique index does not exist. Cleaning up duplicates and creating index...", ChatMessageType.System));
+
+                    // Clean up any duplicate data first by keeping the record with the latest LastTransfer
+                    var deletedCount = context.Database.ExecuteSqlRaw(@"
                             DELETE t1 FROM transfer_summaries t1
                             INNER JOIN transfer_summaries t2
                                 ON t1.FromPlayerName = t2.FromPlayerName
@@ -1146,22 +1145,21 @@ namespace ACE.Server.Command.Handlers
                                AND t1.TransferType   = t2.TransferType
                                AND t1.Id             > t2.Id");
 
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {deletedCount} duplicate summary records", ChatMessageType.System));
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed {deletedCount} duplicate summary records", ChatMessageType.System));
 
-                        // Now create the unique index
-                        context.Database.ExecuteSqlRaw(@"
+                    // Now create the unique index
+                    context.Database.ExecuteSqlRaw(@"
                             CREATE UNIQUE INDEX `idx_transfer_summary_unique`
                             ON `transfer_summaries` (`FromPlayerName`,`ToPlayerName`,`TransferType`)");
-                        
-                        session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index created successfully", ChatMessageType.System));
-                    }
-                    else
-                    {
-                        session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index already exists", ChatMessageType.System));
-                    }
-                    
-                    session.Network.EnqueueSend(new GameMessageSystemChat("Transfer summaries fix completed successfully!", ChatMessageType.System));
+
+                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index created successfully", ChatMessageType.System));
                 }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("✓ Unique index already exists", ChatMessageType.System));
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Transfer summaries fix completed successfully!", ChatMessageType.System));
             }
             catch (Exception ex)
             {
@@ -1666,6 +1664,7 @@ namespace ACE.Server.Command.Handlers
         public static void HandleClearDynamicEmotes(Session session, params string[] parameters)
         {
             QuestManager.ClearDynamicQuestEmotes();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared dynamic emotes cache.");
         }
 
         // adminui
@@ -1679,10 +1678,11 @@ namespace ACE.Server.Command.Handlers
         }
 
         // delete
-        [CommandHandler("delete", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Deletes the selected object.", "Players may not be deleted this way.")]
+        [CommandHandler("delete", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Deletes the selected object.", "Players and their corpses may not be deleted this way.")]
         public static void HandleDeleteSelected(Session session, params string[] parameters)
         {
-            // @delete - Deletes the selected object. Players may not be deleted this way.
+
+            // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
 
             var objectId = ObjectGuid.Invalid;
 
@@ -1707,6 +1707,12 @@ namespace ACE.Server.Command.Handlers
             if (wo == null)
             {
                 ChatPacket.SendServerMessage(session, "Delete failed. Object not found.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            if (wo is Corpse corpse && !corpse.IsMonster)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
                 return;
             }
 
@@ -1829,14 +1835,14 @@ namespace ACE.Server.Command.Handlers
                     {
                         message += "-------------------\n";
                         foreach (var character in pendingDeletedCharacters)
-                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id.ToString("X8")} -- Will be deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
+                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id:X8} -- Will be deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
                     }
                     message += "-------------------\n";
                     var deletedCharacters = characters.Where(x => x.IsDeleted).ToList();
                     if (deletedCharacters.Count > 0)
                     {
                         foreach (var character in deletedCharacters)
-                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id.ToString("X8")} -- Deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
+                            message += $"\"{(character.IsPlussed ? "+" : "")}{character.Name}\", ID 0x{character.Id:X8} -- Deleted at server time {new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(character.DeleteTime).ToLocalTime().ToString("MMM d yyyy h:mm tt")}\n";
                     }
                     else
                         message += "No deleted characters.\n";
@@ -1864,6 +1870,33 @@ namespace ACE.Server.Command.Handlers
             // @unfreeze - Unfreezes the selected target.
 
             // TODO: output
+        }
+
+        [CommandHandler("ucmcheck", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Initiates a UCM check on the selected player.")]
+        public static void HandleUCMCheck(Session session, params string[] parameters)
+        {
+            var target = CommandHandlerHelper.GetSelected(session);
+            if (target == null || !(target is Player targetPlayer))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("You must select a player to use this command.", ChatMessageType.System));
+                return;
+            }
+
+            if (targetPlayer.UCMChecker.IsChecking)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{targetPlayer.Name} is already undergoing a UCM check.", ChatMessageType.System));
+                return;
+            }
+
+            bool started = targetPlayer.UCMChecker.Start(targetPlayer);
+            if (started)
+            {
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"UCM check on {targetPlayer.Name} failed to start.", ChatMessageType.System));
+            }
         }
 
         // gag < char name >
@@ -1944,7 +1977,7 @@ namespace ACE.Server.Command.Handlers
             {
                 // parsedPositionInt value should be limited too a value from, 0-9
                 // Create a new position from the current player location
-                PositionType positionType = new PositionType();
+                PositionType positionType = new();
                 // Transform too the correct PositionType, based on the "Saved Positions" subset:
                 switch (parsedPositionInt)
                 {
@@ -2071,7 +2104,7 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length == 0)
             {
                 //player.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(player, PropertyInt.PlayerKillerStatus, (int)player.PlayerKillerStatus));
-                var message = $"Your current PK state is: {session.Player.PlayerKillerStatus.ToString()}\n"
+                var message = $"Your current PK state is: {session.Player.PlayerKillerStatus}\n"
                     + "You can change it to the following:\n"
                     + "NPK      = Non-Player Killer\n"
                     + "PK       = Player Killer\n"
@@ -2101,9 +2134,9 @@ namespace ACE.Server.Command.Handlers
                         break;
                 }
                 session.Player.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(session.Player, PropertyInt.PlayerKillerStatus, (int)session.Player.PlayerKillerStatus));
-                CommandHandlerHelper.WriteOutputInfo(session, $"Your current PK state is now set to: {session.Player.PlayerKillerStatus.ToString()}", ChatMessageType.Broadcast);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Your current PK state is now set to: {session.Player.PlayerKillerStatus}", ChatMessageType.Broadcast);
 
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed their PK state to {session.Player.PlayerKillerStatus.ToString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed their PK state to {session.Player.PlayerKillerStatus}.");
             }
         }
 
@@ -2309,7 +2342,7 @@ namespace ACE.Server.Command.Handlers
                         if (wo is Player) // I don't recall if @smite all would kill players in range, assuming it didn't
                             continue;
 
-                        var useTakeDamage = PropertyManager.GetBool("smite_uses_takedamage");
+                        var useTakeDamage = ServerConfig.smite_uses_takedamage.Value;
 
                         if (wo is Creature creature && creature.Attackable)
                             creature.Smite(session.Player, useTakeDamage);
@@ -2343,9 +2376,13 @@ namespace ACE.Server.Command.Handlers
                     // playerSession will be null when the character is not found
                     if (player != null)
                     {
-                        player.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage"));
+                        player.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {player.Name}");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used smite on {player.Name}");
+                        
+                        // Global broadcast when smiting a player
+                        PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{player.Name} was smited.", ChatMessageType.Broadcast));
+                        
                         return;
                     }
 
@@ -2365,192 +2402,21 @@ namespace ACE.Server.Command.Handlers
 
                     if (wo != null)
                     {
-                        wo.Smite(session.Player, PropertyManager.GetBool("smite_uses_takedamage"));
+                        wo.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
-                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
+
+                        if (wo is Player smitedPlayer)
+                        {
+                            // Global broadcast when smiting a player
+                            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{smitedPlayer.Name} was smited.", ChatMessageType.Broadcast));
+                        }
                     }
                 }
                 else
                 {
                     ChatPacket.SendServerMessage(session, "Select a target and use @smite, or use @smite all to kill all creatures in radar range or @smite [players' name].", ChatMessageType.Broadcast);
                 }
-            }
-        }
-
-        // teleto [char]
-        [CommandHandler("teleto", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
-            "Teleport yourself to a player",
-            "[Player's Name]\n")]
-        public static void HandleTeleto(Session session, params string[] parameters)
-        {
-            // @teleto - Teleports you to the specified character.
-            var playerName = string.Join(" ", parameters);
-            // Lookup the player in the world
-            var player = PlayerManager.GetOnlinePlayer(playerName);
-            // If the player is found, teleport the admin to the Player's location
-            if (player != null)
-                session.Player.Teleport(player.Location);
-            else
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.Broadcast));
-        }
-
-        /// <summary>
-        /// Teleports a player to your current location
-        /// </summary>
-        [CommandHandler("teletome", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1, "Teleports a player to your current location.", "PlayerName")]
-        public static void HandleTeleToMe(Session session, params string[] parameters)
-        {
-            var playerName = string.Join(" ", parameters);
-            var player = PlayerManager.GetOnlinePlayer(playerName);
-            if (player == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.Broadcast));
-                return;
-            }
-            var currentPos = new Position(player.Location);
-            player.Teleport(session.Player.Location);
-            player.SetPosition(PositionType.TeleportedCharacter, currentPos);
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you.", ChatMessageType.Magic));
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported {player.Name} to them.");
-        }
-
-        /// <summary>
-        /// Teleports a player to their previous position
-        /// </summary>
-        [CommandHandler("telereturn", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1, "Return a player to their previous location.", "PlayerName")]
-        public static void HandleTeleReturn(Session session, params string[] parameters)
-        {
-            var playerName = string.Join(" ", parameters);
-            var player = PlayerManager.GetOnlinePlayer(playerName);
-            if (player == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.Broadcast));
-                return;
-            }
-
-            if (player.TeleportedCharacter == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} does not have a return position saved.", ChatMessageType.Broadcast));
-                return;
-            }
-
-            player.Teleport(new Position(player.TeleportedCharacter));
-            player.SetPosition(PositionType.TeleportedCharacter, null);
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has returned you to your previous location.", ChatMessageType.Magic));
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has returned {player.Name} to their previous location.");
-        }
-
-        // teleallto [char]
-        [CommandHandler("teleallto", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Teleports all players to a player. If no target is specified, all players will be teleported to you.", "[Player's Name]\n")]
-        public static void HandleTeleAllTo(Session session, params string[] parameters)
-        {
-            Player destinationPlayer = null;
-
-            if (parameters.Length > 0)
-                destinationPlayer = PlayerManager.GetOnlinePlayer(parameters[0]);
-
-            destinationPlayer ??= session.Player;
-
-            foreach (var player in PlayerManager.GetAllOnline())
-            {
-                if (player == destinationPlayer)
-                    continue;
-
-                player.SetPosition(PositionType.TeleportedCharacter, new Position(player.Location));
-
-                player.Teleport(new Position(destinationPlayer.Location));
-            }
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported all online players to their location.");
-        }
-
-        // telepoi location
-        [CommandHandler("telepoi", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
-            "Teleport yourself to a named Point of Interest",
-            "[POI|list]\n" +
-            "@telepoi Arwic\n" +
-            "Get the list of POIs\n" +
-            "@telepoi list")]
-        public static void HandleTeleportPoi(Session session, params string[] parameters)
-        {
-            var poi = String.Join(" ", parameters);
-
-            if (poi.ToLower() == "list")
-            {
-                DatabaseManager.World.CacheAllPointsOfInterest();
-                var pois = DatabaseManager.World.GetPointsOfInterestCache();
-                var list = pois
-                    .Select(k => k.Key)
-                    .OrderBy(k => k)
-                    .DefaultIfEmpty()
-                    .Aggregate((a, b) => a + ", " + b);
-                session.Network.EnqueueSend(new GameMessageSystemChat($"All POIs: {list}", ChatMessageType.Broadcast));
-            }
-            else
-            {
-                var teleportPOI = DatabaseManager.World.GetCachedPointOfInterest(poi);
-                if (teleportPOI == null)
-                    return;
-                var weenie = DatabaseManager.World.GetCachedWeenie(teleportPOI.WeenieClassId);
-                var portalDest = new Position(weenie.GetPosition(PositionType.Destination));
-                portalDest.Variation = null;
-                WorldObject.AdjustDungeon(portalDest);
-                session.Player.Teleport(portalDest);
-            }
-        }
-
-        // teleloc cell x y z [qx qy qz qw]
-        [CommandHandler("teleloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 4,
-            "Teleport yourself to the specified location.",
-            "cell [x y z] (qw qx qy qz)\n" +
-            "@teleloc follows the same number order as displayed from @loc output\n" +
-            "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806\n" +
-            "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806\n" +
-            "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000")]
-        public static void HandleTeleportLOC(Session session, params string[] parameters)
-        {
-            try
-            {
-                uint cell;
-
-                if (parameters[0].StartsWith("0x"))
-                {
-                    string strippedcell = parameters[0].Substring(2);
-                    cell = (uint)int.Parse(strippedcell, System.Globalization.NumberStyles.HexNumber);
-                }
-                else
-                    cell = (uint)int.Parse(parameters[0], System.Globalization.NumberStyles.HexNumber);
-
-                var positionData = new float[7];
-                for (uint i = 0u; i < 7u; i++)
-                {
-                    if (i > 2 && parameters.Length < 8)
-                    {
-                        positionData[3] = 1;
-                        positionData[4] = 0;
-                        positionData[5] = 0;
-                        positionData[6] = 0;
-                        break;
-                    }
-
-                    if (!float.TryParse(parameters[i + 1].Trim(new Char[] { ' ', '[', ']' }), out var position))
-                        return;
-
-                    positionData[i] = position;
-                }
-
-                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3]));
-            }
-            catch (Exception)
-            {
-                ChatPacket.SendServerMessage(session, "Invalid arguments for @teleloc", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Hint: @teleloc follows the same number order as displayed from @loc output", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Usage: @teleloc cell [x y z] (qw qx qy qz)", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000", ChatMessageType.Broadcast);
             }
         }
 
@@ -2651,6 +2517,21 @@ namespace ACE.Server.Command.Handlers
             // @unlock - Cleans the SQL lock on either everyone or the given player.
 
             // TODO: output
+            if (session.AccessLevel >= AccessLevel.Admin && parameters.Length >= 1)
+            {
+                WorldObject target = null;
+                if (parameters[0].Length > 2 && parameters[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) && uint.TryParse(parameters[0].Substring(2), System.Globalization.NumberStyles.HexNumber, null, out var guid))
+                    target = CommandHandlerHelper.GetWorldObjectByGuid(session, guid);
+                else if (uint.TryParse(parameters[0], out var decimalGuid))
+                    target = CommandHandlerHelper.GetWorldObjectByGuid(session, decimalGuid);
+                else
+                    target = PlayerManager.GetOnlinePlayer(parameters[0]);
+
+                if (target != null)
+                {
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used /unlock on {target.Name}:{target.Guid} at {target.Location}");
+                }
+            }
         }
 
         // gamecast <message>
@@ -2670,8 +2551,11 @@ namespace ACE.Server.Command.Handlers
 
             var msg = $"Broadcast from {(session != null ? session.Player.Name : "System")}> {string.Join(" ", parameters)}";
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+            {
+                _ = DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
+                _ = DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+            }
             PlayerManager.BroadcastToAll(sysMessage);
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, session?.Player, msg);
         }
@@ -3086,7 +2970,7 @@ namespace ACE.Server.Command.Handlers
                 msg = $"House Dump for {wo.Name} (0x{wo.Guid})\n";
                 msg += $"===House=======================================\n";
                 msg += $"Name: {house.Name} | {house.WeenieClassName} | WCID: {house.WeenieClassId} | GUID: 0x{house.Guid}\n";
-                msg += $"Location: {house.Location.ToLOCString()}\n";
+                msg += $"Location: {house.Location.ToString()}\n";
                 msg += $"HouseID: {house.HouseId}\n";
                 msg += $"HouseType: {house.HouseType} ({(int)house.HouseType})\n";
                 msg += $"HouseStatus: {house.HouseStatus} ({(int)house.HouseStatus})\n";
@@ -3104,7 +2988,7 @@ namespace ACE.Server.Command.Handlers
                     foreach (var link in house.LinkedHouses)
                     {
                         msg += $"Name: {link.Name} | {link.WeenieClassName} | WCID: {link.WeenieClassId} | GUID: 0x{link.Guid}\n";
-                        msg += $"Location: {link.Location.ToLOCString()}\n";
+                        msg += $"Location: {link.Location}\n";
                     }
                     session.Player.SendMessage(msg, ChatMessageType.System);
                 }
@@ -3113,7 +2997,7 @@ namespace ACE.Server.Command.Handlers
                 msg += $"===SlumLord====================================\n";
                 var slumLord = house.SlumLord;
                 msg += $"Name: {slumLord.Name} | {slumLord.WeenieClassName} | WCID: {slumLord.WeenieClassId} | GUID: 0x{slumLord.Guid}\n";
-                msg += $"Location: {slumLord.Location.ToLOCString()}\n";
+                msg += $"Location: {slumLord.Location}\n";
                 msg += $"MinLevel: {slumLord.MinLevel}\n";
                 msg += $"AllegianceMinLevel: {slumLord.AllegianceMinLevel ?? 0}\n";
                 msg += $"HouseRequiresMonarch: {slumLord.HouseRequiresMonarch}\n";
@@ -3144,7 +3028,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     msg = "";
                     msg += $"===HouseData===================================\n";
-                    msg += $"Location: {houseData.Position.ToLOCString()}\n";
+                    msg += $"Location: {houseData.Position}\n";
                     msg += $"Type: {houseData.Type}\n";
                     msg += $"BuyTime: {(houseData.BuyTime > 0 ? $"{Time.GetDateTimeFromTimestamp(houseData.BuyTime).ToLocalTime()}" : "N/A")} ({houseData.BuyTime})\n";
                     msg += $"RentTime: {(houseData.RentTime > 0 ? $"{Time.GetDateTimeFromTimestamp(houseData.RentTime).ToLocalTime()}" : "N/A")} ({houseData.RentTime})\n";
@@ -3163,7 +3047,7 @@ namespace ACE.Server.Command.Handlers
                         msg = "";
                         msg += $"===Basement====================================\n";
                         msg += $"Name: {basement.Name} | {basement.WeenieClassName} | WCID: {basement.WeenieClassId} | GUID: 0x{basement.Guid}\n";
-                        msg += $"Location: {basement.Location.ToLOCString()}\n";
+                        msg += $"Location: {basement.Location}\n";
                         msg += $"HouseMaxHooksUsable: {basement.HouseMaxHooksUsable}\n";
                         msg += $"HouseCurrentHooksUsable: {basement.HouseCurrentHooksUsable}\n";
                         session.Player.SendMessage(msg, ChatMessageType.System);
@@ -3300,7 +3184,7 @@ namespace ACE.Server.Command.Handlers
                 foreach (var chest in house.Storage)
                 {
                     msg += $"Name: {chest.Name} | {chest.WeenieClassName} | WCID: {chest.WeenieClassId} | GUID: 0x{chest.Guid}\n";
-                    msg += $"Location: {chest.Location.ToLOCString()}\n";
+                    msg += $"Location: {chest.Location}\n";
                 }
             }
 
@@ -3317,7 +3201,7 @@ namespace ACE.Server.Command.Handlers
                 foreach (var hook in house.Hooks)
                 {
                     msg += $"Name: {hook.Name} | {hook.WeenieClassName} | WCID: {hook.WeenieClassId} | GUID: 0x{hook.Guid}\n";
-                    // msg += $"Location: {hook.Location.ToLOCString()}\n";
+                    // msg += $"Location: {hook.Location}\n";
                     msg += $"HookType: {(HookType)hook.HookType} ({hook.HookType}){(hook.HasItem ? $" | Item on Hook: {hook.Item.Name} (0x{hook.Item.Guid}:{hook.Item.WeenieClassId}:{hook.Item.WeenieType}) | HookGroup: {hook.Item.HookGroup ?? HookGroupType.Undef} ({(int)(hook.Item.HookGroup ?? 0)})" : "")}\n";
                 }
             }
@@ -3326,15 +3210,15 @@ namespace ACE.Server.Command.Handlers
             {
                 msg += $"===BootSpot for House 0x{house.Guid}===============\n";
                 msg += $"Name: {house.BootSpot.Name} | {house.BootSpot.WeenieClassName} | WCID: {house.BootSpot.WeenieClassId} | GUID: 0x{house.BootSpot.Guid}\n";
-                msg += $"Location: {house.BootSpot.Location.ToLOCString()}\n";
+                msg += $"Location: {house.BootSpot.Location}\n";
             }
 
             if (house.HousePortal != null)
             {
                 msg += $"===HousePortal for House 0x{house.Guid}============\n";
                 msg += $"Name: {house.HousePortal.Name} | {house.HousePortal.WeenieClassName} | WCID: {house.HousePortal.WeenieClassId} | GUID: 0x{house.HousePortal.Guid}\n";
-                msg += $"Location: {house.HousePortal.Location.ToLOCString()}\n";
-                msg += $"Destination: {house.HousePortal.Destination.ToLOCString()}\n";
+                msg += $"Location: {house.HousePortal.Location}\n";
+                msg += $"Destination: {house.HousePortal.Destination}\n";
             }
 
             return msg;
@@ -3485,7 +3369,7 @@ namespace ACE.Server.Command.Handlers
                 DoCopyChar(session, existingCharName, existingPlayer.Guid.Full, false, newCharName, account.AccountId);
                 return;
             }
-            else if ( session.Characters.Count >= PropertyManager.GetLong("max_chars_per_account"))
+            else if ( session.Characters.Count >= ServerConfig.max_chars_per_account.Value)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Account is out of free character slots.", ChatMessageType.Broadcast);
                 return;
@@ -3808,6 +3692,9 @@ namespace ACE.Server.Command.Handlers
             if (ParseCreateParameters(session, parameters, false, out Weenie weenie, out int numToSpawn, out int? palette, out float? shade, out _))
             {
                 TryCreateObject(session, weenie, numToSpawn, palette, shade);
+
+                if (session.AccessLevel >= AccessLevel.Admin)
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created {numToSpawn}x {weenie.ClassName} ({weenie.WeenieClassId}) using /create.");
             }
         }
 
@@ -3833,12 +3720,14 @@ namespace ACE.Server.Command.Handlers
         public static void HandleQuestClear(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearCachedQuest(parameters[0]);
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared quest cache for '{parameters[0]}'.");
         }
 
         [CommandHandler("clearallquests", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
         public static void HandleQuestClearAll(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearAllCachedQuests();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all quest caches.");
         }
 
         [CommandHandler("clearevent", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Reloads an event from database", "<eventname>")]
@@ -3850,6 +3739,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var state = Managers.EventManager.GetEventStatus(eventName);
                 CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' reloaded from database (State: {state})");
+              PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared event cache for '{parameters[0]}'.");
             }
             else
                 CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' not found in database");
@@ -3860,12 +3750,14 @@ namespace ACE.Server.Command.Handlers
         {
             Managers.EventManager.ReloadAllEvents();
             CommandHandlerHelper.WriteOutputInfo(session, $"All events reloaded from database ({Managers.EventManager.Events.Count} events)");
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all event caches.");
         }
 
         [CommandHandler("clearspellcache", AccessLevel.Admin, CommandHandlerFlag.None, 0)]
         public static void HandleClearSpellCache(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearSpellCache();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared the spell cache.");
         }
 
         [CommandHandler("testdynamic", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1)]
@@ -4104,9 +3996,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             if (numToSpawn > 1)
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {obj.Name} (0x{obj.Guid:X8}) near {obj.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {numToSpawn} {obj.Name} (0x{obj.Guid:X8}) near {obj.Location}.");
             else
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) at {obj.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {obj.Name} (0x{obj.Guid:X8}) at {obj.Location}.");
         }
 
         public static Position LastSpawnPos;
@@ -4182,9 +4074,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             if (count == 1)
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {first.Name} (0x{first.Guid:X8}) at {first.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {first.Name} (0x{first.Guid:X8}) at {first.Location}.");
             else
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {count}x {first.Name} at {first.Location.ToLOCString()}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {count}x {first.Name} at {first.Location}.");
         }
 
         /// <summary>
@@ -4301,6 +4193,18 @@ namespace ACE.Server.Command.Handlers
             }
             else notOK = true;
             if (notOK) ChatPacket.SendServerMessage(session, "Appraise a locked target before using @crack", ChatMessageType.Broadcast);
+            else 
+            {
+                 // Audit log for successful crack execution logic (even if it failed to unlock due to mechanics, the admin tried it)
+                 // Re-locate object to log it correctly as we established it exists in the if/else logic above
+                 if (session.AccessLevel >= AccessLevel.Admin && session.Player.CurrentAppraisalTarget.HasValue)
+                 {
+                     var objectId = new ObjectGuid((uint)session.Player.CurrentAppraisalTarget);
+                     var wo = session.Player.CurrentLandblock?.GetObject(objectId);
+                     if (wo != null)
+                         PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used /crack on {wo.Name}:{wo.Guid} at {wo.Location}");
+                 }
+            }
         }
 
         /// <summary>
@@ -4417,10 +4321,18 @@ namespace ACE.Server.Command.Handlers
             if (parameters.Length > 0)
             {
                 var player = PlayerManager.GetOnlinePlayer(parameters[0]);
+                if (player == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {parameters[0]} not found.", ChatMessageType.Broadcast));
+                    return;
+                }
+                
                 player.EnchantmentManager.DispelAllEnchantments();
                 // remove all enchantments from equipped items for now
                 foreach (var item in player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
+                
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {player.Name}.");
             }
             else
             {
@@ -4428,6 +4340,8 @@ namespace ACE.Server.Command.Handlers
                 // remove all enchantments from equipped items for now
                 foreach (var item in session.Player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
+                
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from themselves.");
             }
 
 
@@ -5566,15 +5480,6 @@ namespace ACE.Server.Command.Handlers
             HandleGameCastEmote(session, parameters);
         }
 
-        // location
-        [CommandHandler("location", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0)]
-        public static void HandleLocation(Session session, params string[] parameters)
-        {
-            // @location - Causes your current location to be continuously displayed on the screen.
-
-            // TODO: output
-        }
-
         // morph
         [CommandHandler("morph", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Morphs your bodily form into that of the specified creature. Be careful with this one!",
@@ -5815,6 +5720,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         creature.QuestManager.EraseAll();
                         session.Player.SendMessage($"All quests erased.");
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} erased all quests for {creature.Name}.");
                         return;
                     }
 
@@ -5825,6 +5731,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     creature.QuestManager.Erase(questName);
                     session.Player.SendMessage($"{questName} erased.");
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} erased quest stamp {questName} for {creature.Name}.");
                     return;
                 }
 
@@ -6370,8 +6277,11 @@ namespace ACE.Server.Command.Handlers
             //session.Player.HandleActionWorldBroadcast($"{msg}", ChatMessageType.WorldBroadcast);
 
             GameMessageSystemChat sysMessage = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
-            DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.GeneralChannelId);
-            DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.EventsChannelId);
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+            {
+                _ = DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.GeneralChannelId);
+                _ = DiscordChatManager.SendDiscordMessage("BROADCAST", msg, ConfigManager.Config.Chat.EventsChannelId);
+            }
             PlayerManager.BroadcastToAll(sysMessage);
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, session?.Player, msg);
         }
@@ -6467,7 +6377,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("showprops", AccessLevel.Admin, CommandHandlerFlag.None, 0, "Displays the name of all properties configurable via the modify commands")]
         public static void HandleDisplayProps(Session session, params string[] parameters)
         {
-            CommandHandlerHelper.WriteOutputInfo(session, PropertyManager.ListProperties());
+            CommandHandlerHelper.WriteOutputInfo(session, ServerConfig.DebugString());
         }
 
         [CommandHandler("modifybool", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a bool", "modifybool (string) (bool)")]
@@ -6476,7 +6386,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 var boolVal = bool.Parse(parameters[1]);
-                if (PropertyManager.ModifyBool(parameters[0], boolVal))
+                if (ServerConfig.SetValue(parameters[0], boolVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Bool property successfully updated!");
                     PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server bool property {parameters[0]} to {boolVal}");
@@ -6495,11 +6405,16 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchbool", "showbool (string)")]
         [CommandHandler("fetchbool", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a bool", "fetchbool (string)")]
         public static void HandleFetchServerBoolProperty(Session session, params string[] parameters)
         {
-            var boolVal = PropertyManager.GetBool(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {boolVal}");
+            ConfigProperty<bool>? boolProp = ServerConfig.GetConfigProperty<bool>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                boolProp != null ?
+                    $"{parameters[0]}: {boolProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifylong", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a long", "modifylong (string) (long)")]
@@ -6508,7 +6423,7 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 var longVal = long.Parse(paramters[1]);
-                if (PropertyManager.ModifyLong(paramters[0], longVal))
+                if (ServerConfig.SetValue(paramters[0], longVal))
                 {
                     CommandHandlerHelper.WriteOutputInfo(session, "Long property successfully updated!");
                     PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server long property {paramters[0]} to {longVal}");
@@ -6522,11 +6437,16 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchlong", "showlong (string)")]
         [CommandHandler("fetchlong", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a long", "fetchlong (string)")]
         public static void HandleFetchServerLongProperty(Session session, params string[] parameters)
         {
-            var intVal = PropertyManager.GetLong(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {intVal}");
+            ConfigProperty<long>? intProp = ServerConfig.GetConfigProperty<long>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                intProp != null ?
+                    $"{parameters[0]}: {intProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifydouble", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a double", "modifyfloat (string) (double)")]
@@ -6534,9 +6454,22 @@ namespace ACE.Server.Command.Handlers
         {
             try
             {
+                string key = parameters[0];
                 var doubleVal = double.Parse(parameters[1]);
-                if (PropertyManager.ModifyDouble(parameters[0], doubleVal))
+                if (ServerConfig.SetValue(key, doubleVal))
                 {
+                    switch (key)
+                    {
+                        case "cantrip_drop_rate":
+                            Factories.Tables.CantripChance.ApplyNumCantripsMod();
+                            break;
+                        case "minor_cantrip_drop_rate":
+                        case "major_cantrip_drop_rate":
+                        case "epic_cantrip_drop_rate":
+                        case "legendary_cantrip_drop_rate":
+                            Factories.Tables.CantripChance.ApplyCantripLevelsMod();
+                            break;
+                    }
                     CommandHandlerHelper.WriteOutputInfo(session, "Double property successfully updated!");
                     PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server double property {parameters[0]} to {doubleVal}");
                 }
@@ -6549,17 +6482,22 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("showdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchdouble", "showdouble (string)")]
         [CommandHandler("fetchdouble", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a double", "fetchdouble (string)")]
         public static void HandleFetchServerFloatProperty(Session session, params string[] parameters)
         {
-            var floatVal = PropertyManager.GetDouble(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {floatVal}");
+            ConfigProperty<double>? floatProp = ServerConfig.GetConfigProperty<double>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                floatProp != null ?
+                    $"{parameters[0]}: {floatProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("modifystring", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a string", "modifystring (string) (string)")]
         public static void HandleModifyServerStringProperty(Session session, params string[] parameters)
         {
-            if (PropertyManager.ModifyString(parameters[0], parameters[1]))
+            if (ServerConfig.SetValue(parameters[0], parameters[1]))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "String property successfully updated!");
                 PlayerManager.BroadcastToAuditChannel(session?.Player, $"Successfully changed server string property {parameters[0]} to {parameters[1]}");
@@ -6568,37 +6506,16 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, "Unknown string property was not updated. Type showprops for a list of properties.");
         }
 
+        [CommandHandler("showstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Alias for fetchstring", "showstring (string)")]
         [CommandHandler("fetchstring", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Fetches a server property that is a string", "fetchstring (string)")]
         public static void HandleFetchServerStringProperty(Session session, params string[] parameters)
         {
-            var stringVal = PropertyManager.GetString(parameters[0], cacheFallback: false);
-            CommandHandlerHelper.WriteOutputInfo(session, $"{parameters[0]}: {stringVal}");
-        }
-
-        [CommandHandler("modifypropertydesc", AccessLevel.Admin, CommandHandlerFlag.None, 3, "Modifies a server property's description", "modifypropertydesc <STRING|BOOL|DOUBLE|LONG> (string) (string)")]
-        public static void HandleModifyPropertyDescription(Session session, params string[] parameters)
-        {
-            var isSession = session != null;
-            switch (parameters[0])
-            {
-                case "STRING":
-                    PropertyManager.ModifyStringDescription(parameters[1], parameters[2]);
-                    break;
-                case "BOOL":
-                    PropertyManager.ModifyBoolDescription(parameters[1], parameters[2]);
-                    break;
-                case "DOUBLE":
-                    PropertyManager.ModifyDoubleDescription(parameters[1], parameters[2]);
-                    break;
-                case "LONG":
-                    PropertyManager.ModifyLongDescription(parameters[1], parameters[2]);
-                    break;
-                default:
-                    CommandHandlerHelper.WriteOutputInfo(session, "Please pick from STRING, BOOL, DOUBLE, or LONG", ChatMessageType.Help);
-                    return;
-            }
-
-            CommandHandlerHelper.WriteOutputInfo(session, "Successfully updated property description!", ChatMessageType.Help);
+            ConfigProperty<string>? stringProp = ServerConfig.GetConfigProperty<string>(parameters[0]);
+            CommandHandlerHelper.WriteOutputInfo(
+                session,
+                stringProp != null ?
+                    $"{parameters[0]}: {stringProp.Value}" :
+                    $"{parameters[0]} not found.  Type /showprops for a list of properties.");
         }
 
         [CommandHandler("resyncproperties", AccessLevel.Admin, CommandHandlerFlag.None, "Resync the properties database")]
@@ -6778,6 +6695,9 @@ namespace ACE.Server.Command.Handlers
             salvageBag.NumItemsInMaterial = numItemsInMaterial;
 
             session.Player.TryCreateInInventoryWithNetworking(salvageBag);
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created a salvage bag of type {materialType} (Structure: {structure}, Workmanship: {workmanship}, NumItems: {numItemsInMaterial}).");
         }
 
         [CommandHandler("setlbenviron", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
@@ -6880,7 +6800,7 @@ namespace ACE.Server.Command.Handlers
 
             if (obj is Player)
             {
-                HandleTeleToMe(session, new string[] { obj.Name });
+                TeleportCommands.HandleTeleToMe(session, [obj.Name]);
                 return;
             }
 
@@ -6935,9 +6855,12 @@ namespace ACE.Server.Command.Handlers
             var roll = new Random().Next(1, 100);
             var msg = $"-=Tonight's raffle number is {roll}. Congratz to tonight's winner!=-";
             PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
-            DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+            {
+                DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.GeneralChannelId);
+                DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.EventsChannelId);
+                DiscordChatManager.SendDiscordMessage("", msg, ConfigManager.Config.Chat.RaffleChannelId);
+            }
         }
 
         [CommandHandler("sqc", AccessLevel.Developer, CommandHandlerFlag.None, "Shortcut for serverquestcompletions", "")]
@@ -6997,6 +6920,331 @@ namespace ACE.Server.Command.Handlers
             else
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You must specify a quest name.", ChatMessageType.Broadcast));
+            }
+        }
+
+        // blacklist {subcommand} {parameters}
+        [CommandHandler("blacklist", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Manage creature capture and shiny blacklists.",
+            "add <wcid> capture|shiny|both [reason] - Add WCID to blacklist\n" +
+            "remove <wcid> [capture|shiny] - Remove WCID from blacklist\n" +
+            "list [capture|shiny] - Show blacklisted WCIDs\n" +
+            "check <wcid> - Check blacklist status of a WCID\n" +
+            "reload - Reload cache from database")]
+        public static void HandleBlacklist(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist <add|remove|list|check|reload>", ChatMessageType.Help));
+                return;
+            }
+
+            var subcommand = parameters[0].ToLower();
+
+            switch (subcommand)
+            {
+                case "add":
+                    HandleBlacklistAdd(session, parameters.Skip(1).ToArray());
+                    break;
+                case "remove":
+                    HandleBlacklistRemove(session, parameters.Skip(1).ToArray());
+                    break;
+                case "list":
+                    HandleBlacklistList(session, parameters.Skip(1).ToArray());
+                    break;
+                case "check":
+                    HandleBlacklistCheck(session, parameters.Skip(1).ToArray());
+                    break;
+                case "reload":
+                    BlacklistManager.ReloadCache();
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Blacklist cache reloaded from database.", ChatMessageType.System));
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown subcommand: {subcommand}", ChatMessageType.Help));
+                    break;
+            }
+        }
+
+        private static void HandleBlacklistAdd(Session session, string[] parameters)
+        {
+            if (parameters.Length < 2)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist add <wcid> <capture|shiny|both> [reason]", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            var type = parameters[1].ToLower();
+            var reason = parameters.Length > 2 ? string.Join(" ", parameters.Skip(2)) : null;
+            var addedBy = session.Player?.Name ?? "Unknown";
+
+            bool noCapture = false, noShiny = false;
+            switch (type)
+            {
+                case "capture":
+                    noCapture = true;
+                    break;
+                case "shiny":
+                    noShiny = true;
+                    break;
+                case "both":
+                    noCapture = true;
+                    noShiny = true;
+                    break;
+                default:
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'capture', 'shiny', or 'both'.", ChatMessageType.Help));
+                    return;
+            }
+
+            if (BlacklistManager.AddBlacklist(wcid, noCapture, noShiny, reason, addedBy))
+            {
+                var flags = new List<string>();
+                if (noCapture) flags.Add("capture");
+                if (noShiny) flags.Add("shiny");
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Added WCID {wcid} to blacklist: {string.Join(", ", flags)}" + 
+                    (reason != null ? $" (Reason: {reason})" : ""), ChatMessageType.System));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to add WCID {wcid} to blacklist.", ChatMessageType.System));
+            }
+        }
+
+        private static void HandleBlacklistRemove(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist remove <wcid> [capture|shiny]", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            if (parameters.Length > 1)
+            {
+                var type = parameters[1].ToLower();
+                var addedBy = session.Player?.Name ?? "Unknown";
+                var status = BlacklistManager.CheckStatus(wcid);
+                
+                if (!status.Exists)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
+                    return;
+                }
+
+                if (type == "capture")
+                {
+                    // Check if disabling this would leave both false
+                    if (!status.NoShiny)
+                    {
+                        // Both will be false, remove entirely
+                        if (BlacklistManager.RemoveBlacklist(wcid))
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                        else
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        BlacklistManager.SetNoCapture(wcid, false, status.Reason, addedBy);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed capture blacklist from WCID {wcid}.", ChatMessageType.System));
+                    }
+                }
+                else if (type == "shiny")
+                {
+                    // Check if disabling this would leave both false
+                    if (!status.NoCapture)
+                    {
+                        // Both will be false, remove entirely
+                        if (BlacklistManager.RemoveBlacklist(wcid))
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                        else
+                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                    }
+                    else
+                    {
+                        BlacklistManager.SetNoShiny(wcid, false, status.Reason, addedBy);
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Removed shiny blacklist from WCID {wcid}.", ChatMessageType.System));
+                    }
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Type must be 'capture' or 'shiny'.", ChatMessageType.Help));
+                }
+            }
+            else
+            {
+                if (BlacklistManager.RemoveBlacklist(wcid))
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely.", ChatMessageType.System));
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                }
+            }
+        }
+
+        private static void HandleBlacklistList(Session session, string[] parameters)
+        {
+            var entries = BlacklistManager.GetAllEntries();
+            
+            if (entries.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("No creatures are blacklisted.", ChatMessageType.System));
+                return;
+            }
+
+            var filter = parameters.Length > 0 ? parameters[0].ToLower() : null;
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat("Creature Blacklist:", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
+
+            foreach (var entry in entries)
+            {
+                if (filter == "capture" && !entry.NoCapture) continue;
+                if (filter == "shiny" && !entry.NoShiny) continue;
+
+                var flags = new List<string>();
+                if (entry.NoCapture) flags.Add("No Capture");
+                if (entry.NoShiny) flags.Add("No Shiny");
+
+                var message = $"WCID {entry.Wcid}: {string.Join(", ", flags)}";
+                if (!string.IsNullOrEmpty(entry.Reason))
+                    message += $" - {entry.Reason}";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        private static void HandleBlacklistCheck(Session session, string[] parameters)
+        {
+            if (parameters.Length < 1)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /blacklist check <wcid>", ChatMessageType.Help));
+                return;
+            }
+
+            if (!uint.TryParse(parameters[0], out var wcid))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Invalid WCID. Must be a number.", ChatMessageType.Help));
+                return;
+            }
+
+            var status = BlacklistManager.CheckStatus(wcid);
+            
+            if (!status.Exists)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
+            }
+            else
+            {
+                var flags = new List<string>();
+                if (status.NoCapture) flags.Add("No Capture");
+                if (status.NoShiny) flags.Add("No Shiny");
+
+                var message = $"WCID {wcid}: {string.Join(", ", flags)}";
+                if (!string.IsNullOrEmpty(status.Reason))
+                    message += $" (Reason: {status.Reason})";
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
+            }
+        }
+
+        // ========================================
+        // Shiny / Monster Capture Testing Commands
+        // ========================================
+
+        /// <summary>
+        /// Spawns a creature with the shiny variant applied for testing purposes.
+        /// </summary>
+        [CommandHandler("spawnshiny", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "Spawns a shiny version of a creature for testing.",
+            "<wcid or classname> [count]")]
+        public static void HandleSpawnShiny(Session session, params string[] parameters)
+        {
+            var param = parameters[0];
+            int count = 1;
+
+            if (parameters.Length > 1 && int.TryParse(parameters[1], out var parsedCount))
+            {
+                count = Math.Clamp(parsedCount, 1, 10); // Limit to 10 max to prevent spam
+            }
+
+            ACE.Database.Models.World.Weenie weenie = null;
+
+            if (uint.TryParse(param, out var wcid))
+                weenie = DatabaseManager.World.GetWeenie(wcid);   // wcid
+            else
+                weenie = DatabaseManager.World.GetWeenie(param);  // classname
+
+            if (weenie == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find weenie {param}", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // Verify it's a creature
+            if (weenie.Type != (int)WeenieType.Creature)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Weenie {param} is not a creature (WeenieType: {(WeenieType)weenie.Type})", ChatMessageType.Broadcast));
+                return;
+            }
+
+            int spawned = 0;
+            for (int i = 0; i < count; i++)
+            {
+                var entityWeenie = Database.Adapter.WeenieConverter.ConvertToEntityWeenie(weenie);
+                var wo = WorldObjectFactory.CreateNewWorldObject(entityWeenie);
+
+                if (wo == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create object for {weenie.ClassId} - {weenie.ClassName}", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                var creature = wo as Creature;
+                if (creature == null)
+                {
+                    wo.Destroy();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Object {weenie.ClassId} - {weenie.ClassName} is not a Creature", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                // Apply shiny variant
+                CreatureVariantHelper.ApplyVariant(creature, CreatureVariant.Shiny);
+
+                // Position in front of player, in a line
+                float distance = 2.0f + (i * 1.0f);
+                var loc = session.Player.Location.InFrontOf(distance);
+
+                creature.Location = new Position(loc);
+                creature.Location.LandblockId = new LandblockId(creature.Location.GetCell());
+
+                if (!creature.EnterWorld())
+                {
+                    creature.Destroy();
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to spawn shiny {creature.Name} at this location", ChatMessageType.Broadcast));
+                    continue;
+                }
+
+                spawned++;
+            }
+
+            if (spawned > 0)
+            {
+                var weenieInfo = $"{weenie.ClassId} - {weenie.ClassName}";
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})", 
+                    ChatMessageType.Broadcast));
             }
         }
 

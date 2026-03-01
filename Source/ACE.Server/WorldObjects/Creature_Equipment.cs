@@ -506,7 +506,7 @@ namespace ACE.Server.WorldObjects
 
             GetPlacementLocation(item, item.CurrentWieldedLocation ?? 0, out var placement, out var parentLocation);
 
-            Children.Add(new HeldItem(item.Guid.Full, (int)parentLocation, (EquipMask)item.CurrentWieldedLocation));
+            Children.Add(new HeldItem(item.Guid.Full, (int)parentLocation));
 
             item.Placement = placement;
             item.ParentLocation = parentLocation;
@@ -638,7 +638,7 @@ namespace ACE.Server.WorldObjects
 
         public static List<PropertiesCreateList> CreateListSelect(List<PropertiesCreateList> createList)
         {
-            var trophy_drop_rate = PropertyManager.GetDouble("trophy_drop_rate");
+            var trophy_drop_rate = ServerConfig.trophy_drop_rate.Value;
             if (trophy_drop_rate != 1.0)
                 return CreateListSelect(createList, (float)trophy_drop_rate);
 

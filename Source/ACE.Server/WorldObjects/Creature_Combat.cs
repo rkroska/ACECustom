@@ -415,28 +415,28 @@ namespace ACE.Server.WorldObjects
 
             if (isBow)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("missile_attribute_multiplier");
+                var attributeMultiplier = ServerConfig.missile_attribute_multiplier.Value;
                 return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
 
             if (weapon?.WeaponSkill == Skill.FinesseWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("finesse_attribute_multiplier");
+                var attributeMultiplier = ServerConfig.finesse_attribute_multiplier.Value;
                 return SkillFormula.GetAttributeMod((int)Math.Round(Coordination.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.TwoHandedCombat)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("twohanded_attribute_multiplier");
+                var attributeMultiplier = ServerConfig.twohanded_attribute_multiplier.Value;
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.LightWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("light_attribute_multiplier");
+                var attributeMultiplier = ServerConfig.light_attribute_multiplier.Value;
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
             if (weapon?.WeaponSkill == Skill.HeavyWeapons)
             {
-                var attributeMultiplier = PropertyManager.GetDouble("heavy_attribute_multiplier");
+                var attributeMultiplier = ServerConfig.heavy_attribute_multiplier.Value;
                 return SkillFormula.GetAttributeMod((int)Math.Round(Strength.Current * attributeMultiplier), isBow);
             }
 
@@ -520,7 +520,7 @@ namespace ACE.Server.WorldObjects
             }
             else if (combatType == CombatType.Missile)
             {
-                lumAugDefense = this.LuminanceAugmentMissleDefenseCount ?? 0;
+                lumAugDefense = this.LuminanceAugmentMissileDefenseCount ?? 0;
             }
 
             //if (this is Player)
@@ -569,14 +569,6 @@ namespace ACE.Server.WorldObjects
         public virtual void OnDamageTarget(WorldObject target, CombatType attackType, bool critical)
         {
             // empty base for non-player creatures?
-        }
-
-        /// <summary>
-        /// Returns the current attack height as an enumerable string
-        /// </summary>
-        public string GetAttackHeight()
-        {
-            return AttackHeight?.GetString();
         }
 
         /// <summary>
@@ -1065,8 +1057,12 @@ namespace ACE.Server.WorldObjects
 
         public virtual bool CanDamage(Creature target)
         {
-            if (target is Player)
+            if (target is Player player)
             {
+                // Skip players with CloakStatus.Creature - monsters should not attack them
+                if (player.CloakStatus == CloakStatus.Creature)
+                    return false;
+
                 // monster attacking player
                 return true;    // other checks handled elsewhere
             }
@@ -1146,6 +1142,10 @@ namespace ACE.Server.WorldObjects
             // Player_Monster.CheckMonsters() - player movement
             // Monster_Awareness.CheckTargets_Inner() - monster spawning in
             // Monster_Awareness.FactionMob_CheckMonsters() - faction mob scanning
+
+            // If this is a player cloaked as creature, don't alert monsters
+            if (this is Player player && player.CloakStatus == CloakStatus.Creature)
+                return false;
 
             // non-attackable creatures do not get aggroed,
             // unless they have a TargetingTactic, such as the invisible archers in Oswald's Dirk Quest

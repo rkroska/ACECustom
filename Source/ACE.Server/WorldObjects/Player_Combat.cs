@@ -432,7 +432,7 @@ namespace ACE.Server.WorldObjects
                 //Fellowship.OnVitalUpdate(this);
 
             // send damage text message
-            //if (PropertyManager.GetBool("show_dot_messages").Item)
+            //if (ServerConfig.show_dot_messages.Value.Item)
             //{
                 var nether = damageType == DamageType.Nether ? "nether " : "";
                 var chatMessageType = damageType == DamageType.Nether ? ChatMessageType.Magic : ChatMessageType.Combat;
@@ -1009,7 +1009,7 @@ namespace ACE.Server.WorldObjects
             defender.UpdatePKTimer();
         }
 
-        public bool PKTimerActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PropertyManager.GetLong("pk_timer");
+        public bool PKTimerActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < ServerConfig.pk_timer.Value;
 
         public bool PKLogoutActive => IsPKType && Time.GetUnixTime() - LastPkAttackTimestamp < PKLogoffTimer.TotalSeconds;
 
@@ -1136,9 +1136,21 @@ namespace ACE.Server.WorldObjects
                     return DamageType.Slash;
             }
 
-            var powerLevel = combatType == CombatType.Melee ? (float?)PowerLevel : null;
+            float? powerLevel = combatType == CombatType.Melee ? PowerLevel : null;
 
-            return damageType.SelectDamageType(powerLevel);
+            var filteredTypes = damageType;
+            if (powerLevel.HasValue)
+            {
+                filteredTypes = powerLevel < 0.33f
+                    ? damageType & DamageType.Physical   // Prefer physical damage types under 33% power
+                    : damageType & ~DamageType.Physical; // Prefer elemental damage types over 33% power
+
+                // If we filtered everything out, restore the old value.
+                if (filteredTypes == DamageType.Undef) filteredTypes = damageType;
+            }
+
+            // Choose one of the remaining damage types at random.
+            return EnumFlagRandom.SelectRandomFlag(filteredTypes, DamageType.Physical);
         }
 
         public WorldObject HandArmor => EquippedObjects.Values.FirstOrDefault(i => (i.ClothingPriority & CoverageMask.Hands) > 0);
@@ -1169,7 +1181,14 @@ namespace ACE.Server.WorldObjects
 
             var targetPlayer = target as Player;
 
-            if (targetPlayer != null)
+            // Cache CloakStatus to avoid multiple property reads (thread-safe via BiotaDatabaseLock)
+            CloakStatus? targetCloakStatus = targetPlayer?.CloakStatus;
+            bool isCloakedAsCreature = targetCloakStatus == CloakStatus.Creature || targetCloakStatus == CloakStatus.Hybrid;
+
+            // If the target is a player who is cloaked as a creature or hybrid, treat them as a creature for PK rules so that normal players can attack them just like any other monster.
+            // This allows cloaked admins to be freely attackable without requiring PK status.
+            // Both Creature and Hybrid are treated as creatures (CloakStatus < CloakStatus.Creature checks confirm this).
+            if (targetPlayer != null && !isCloakedAsCreature)
             {
                 if (spell == null || spell.IsHarmful)
                 {
@@ -1196,14 +1215,17 @@ namespace ACE.Server.WorldObjects
                         return new List<WeenieErrorWithString>() { WeenieErrorWithString.YouFailToAffect_NotSamePKType, WeenieErrorWithString._FailsToAffectYou_NotSamePKType };
                 }
             }
-            else
+
+            // For non-player targets, or players cloaked as creatures/hybrid, use creature PK rules.
+            // If the target creature has a non-default PK status, ensure PK types match up.
+            
+            if ((!(targetCreature is Player) || isCloakedAsCreature) &&
+                targetCreature.PlayerKillerStatus != PlayerKillerStatus.NPK &&
+                PlayerKillerStatus != targetCreature.PlayerKillerStatus)
             {
-                // if monster has a non-default pk status, ensure pk types match up
-                if (targetCreature.PlayerKillerStatus != PlayerKillerStatus.NPK && PlayerKillerStatus != targetCreature.PlayerKillerStatus)
-                {
-                    return new List<WeenieErrorWithString>() { WeenieErrorWithString.YouFailToAffect_NotSamePKType, WeenieErrorWithString._FailsToAffectYou_NotSamePKType };
-                }
+                return new List<WeenieErrorWithString>() { WeenieErrorWithString.YouFailToAffect_NotSamePKType, WeenieErrorWithString._FailsToAffectYou_NotSamePKType };
             }
+
             return null;
         }
     }

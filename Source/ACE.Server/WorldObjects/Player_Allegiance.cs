@@ -122,7 +122,8 @@ namespace ACE.Server.WorldObjects
 
                 UpdateProperty(PropertyInstanceId.Monarch, monarchGuid, true);
 
-                ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
+                // Removed level requirement - ExistedBeforeAllegianceXpChanges now defaults to true
+                //ExistedBeforeAllegianceXpChanges = (patron.Level ?? 1) >= (Level ?? 1);
 
                 // handle special case: monarch swearing into another allegiance
                 if (Allegiance != null && Allegiance.MonarchId == Guid.Full)
@@ -136,6 +137,9 @@ namespace ACE.Server.WorldObjects
                 // send message to patron:
                 // %vassal% has sworn Allegiance to you.
                 patron.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has sworn Allegiance to you.", ChatMessageType.Broadcast));
+
+                if (Session.AccessLevel >= AccessLevel.Admin)
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} swore allegiance to {patron.Name}.");
 
                 // send message to vassal:
                 // %patron% has accepted your oath of Allegiance!
@@ -292,6 +296,14 @@ namespace ACE.Server.WorldObjects
 
             // move this to function below?
             Session.Network.EnqueueSend(new GameEventAllegianceUpdate(Session, Allegiance, AllegianceNode), new GameEventAllegianceAllegianceUpdateDone(Session));
+
+            if (Session?.AccessLevel >= AccessLevel.Admin)
+            {
+                if (isVassal)
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} kicked {target.Name} from their allegiance.");
+                else
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} broke allegiance from {target.Name}.");
+            }
         }
 
         public static void CheckAllegianceHouse(ObjectGuid playerGuid)
@@ -1522,6 +1534,9 @@ namespace ACE.Server.WorldObjects
             // update allegiance ui panels?
 
             Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} has been removed from the allegiance.", ChatMessageType.Broadcast));
+
+            if (Session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} booted {player.Name} from the allegiance.");
 
             var onlinePlayer = PlayerManager.GetOnlinePlayer(player.Guid);
             if (onlinePlayer != null)

@@ -193,11 +193,13 @@ namespace ACE.Server.WorldObjects
             {
                 // Clear save flags
                 item.SaveInProgress = false;
+                item.SaveStartTime = DateTime.MinValue; // Reset for next save
                 if (item is Container container)
                 {
                     foreach (var subItem in container.Inventory.Values)
                     {
                         subItem.SaveInProgress = false;
+                        subItem.SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 }
             }, this.Guid.ToString());
@@ -243,6 +245,12 @@ namespace ACE.Server.WorldObjects
 
             if (removeFromInventoryAction == RemoveFromInventoryAction.GiveItem || removeFromInventoryAction == RemoveFromInventoryAction.SpendItem || removeFromInventoryAction == RemoveFromInventoryAction.ToCorpseOnDeath)
                 Session.Network.EnqueueSend(new GameMessageInventoryRemoveObject(item));
+
+            if (Session.AccessLevel >= AccessLevel.Admin)
+            {
+                if (removeFromInventoryAction == RemoveFromInventoryAction.DropItem)
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) at {Location?.ToString() ?? "Unknown Location"}.");
+            }
 
             if (removeFromInventoryAction != RemoveFromInventoryAction.ToWieldedSlot)
             {
@@ -408,6 +416,10 @@ namespace ACE.Server.WorldObjects
                 new GameMessagePublicUpdatePropertyInt(item, PropertyInt.CurrentWieldedLocation, 0),
                 new GameMessagePickupEvent(item),
                 new GameMessageSound(Guid, Sound.UnwieldObject));
+
+            if (Session.AccessLevel >= AccessLevel.Admin && dequipObjectAction == DequipObjectAction.DropItem)
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} dropped {item.Name} ({item.Guid}) from equipped at {Location?.ToString() ?? "Unknown Location"}.");
+
 
             // handle equipment sets
             if (item.HasItemSet)
@@ -684,7 +696,7 @@ namespace ACE.Server.WorldObjects
             // this crouch down motion exited the animation queue immediately
 
             // here we are just skipping the animation if the player is jumping
-            if (IsJumping && PropertyManager.GetBool("allow_jump_loot"))
+            if (IsJumping && ServerConfig.allow_jump_loot.Value)
                 return MotionCommand.Invalid;
 
             MotionCommand pickupMotion;
@@ -905,7 +917,7 @@ namespace ACE.Server.WorldObjects
 
             if (container is Hook hook)
             {
-                if (PropertyManager.GetBool("house_hook_limit"))
+                if (ServerConfig.house_hook_limit.Value)
                 {
                     if (hook.House.HouseMaxHooksUsable != -1 && hook.House.HouseCurrentHooksUsable <= 0)
                     {
@@ -914,7 +926,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (PropertyManager.GetBool("house_hookgroup_limit"))
+                if (ServerConfig.house_hookgroup_limit.Value)
                 {
                     var itemHookGroup = item.HookGroup ?? HookGroupType.Undef;
                     var houseHookGroupMax = hook.House.GetHookGroupMaxCount(itemHookGroup);
@@ -1369,7 +1381,7 @@ namespace ACE.Server.WorldObjects
                                 }
                             }
 
-                            if (PropertyManager.GetBool("house_hook_limit"))
+                            if (ServerConfig.house_hook_limit.Value)
                             {
                                 if (container is Hook toHook && toHook.House.HouseMaxHooksUsable != -1 && toHook.House.HouseCurrentHooksUsable <= 0)
                                 {
@@ -1381,7 +1393,7 @@ namespace ACE.Server.WorldObjects
                                 }
                             }
 
-                            if (PropertyManager.GetBool("house_hookgroup_limit"))
+                            if (ServerConfig.house_hookgroup_limit.Value)
                             {
                                 if (container is Hook toHook)
                                 {
@@ -1481,6 +1493,18 @@ namespace ACE.Server.WorldObjects
 #endif
 
             OnPutItemInContainer(item.Guid.Full, container.Guid.Full, placement);
+
+            if (Session.AccessLevel >= AccessLevel.Admin && containerRootOwner == this)
+            {
+                if (item.CurrentLandblock != null)
+                {
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {item.Name} ({item.Guid}) at {Location?.ToString() ?? "Unknown Location"}.");
+                }
+                else if (itemRootOwner != null && itemRootOwner != this)
+                {
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} took {item.Name} ({item.Guid}) from {itemRootOwner.Name} ({itemRootOwner.Guid}) at {Location?.ToString() ?? "Unknown Location"}.");
+                }
+            }
 
             if (item.CurrentLandblock != null) // Movement is an item pickup off the landblock
             {
@@ -2290,7 +2314,7 @@ namespace ACE.Server.WorldObjects
 
         private WeenieError CheckWieldRequirements(WorldObject item)
         {
-            if (!PropertyManager.GetBool("use_wield_requirements"))
+            if (!ServerConfig.use_wield_requirements.Value)
                 return WeenieError.None;
 
             var heritageSpecificArmor = item.GetProperty(PropertyInt.HeritageSpecificArmor);
@@ -2741,6 +2765,13 @@ namespace ACE.Server.WorldObjects
                 try
                 {
                     TransferLogger.LogGroundPickup(this, newStack, amount);
+                    
+                    // Admin audit logging
+                    if (Session.AccessLevel >= AccessLevel.Admin)
+                    {
+                        var stackMsg = amount != 1 ? $"{amount} " : "";
+                        PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} picked up {stackMsg}{newStack.Name} at {Location?.ToString() ?? "Unknown Location"}.");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -3610,7 +3641,10 @@ namespace ACE.Server.WorldObjects
                 if (target is Player targetAsPlayer)
                     GiveObjectToPlayer(targetAsPlayer, item, itemFoundInContainer, itemRootOwner, itemWasEquipped, amount);
                 else
+                {
+                    // LastGivenItemGuid is set inside GiveObjectToNPC after stack split is determined
                     GiveObjectToNPC(target, item, itemFoundInContainer, itemRootOwner, itemWasEquipped, amount);
+                }
 
             });    // if player is within UseRadius of moveToTarget, perform rotation?
         }
@@ -3727,6 +3761,17 @@ namespace ACE.Server.WorldObjects
 
                 target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
+                // Admin audit logging
+                if (Session.AccessLevel >= AccessLevel.Admin)
+                {
+                    var itemDesc = $"{stackMsg}{itemName}";
+                    if (itemToGive is Container container && container.Inventory.Count > 0)
+                    {
+                        itemDesc += " (Container with items)";
+                    }
+                    PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} gave {itemDesc} (0x{itemToGive.Guid:X8}) to {target.Name}.");
+                }
+
                 // Log the direct give for transfer monitoring
                 try
                 {
@@ -3781,6 +3826,10 @@ namespace ACE.Server.WorldObjects
                     // if stacked item, only give 1, ignoring amount indicated, unless they are AiAcceptEverything in which case, take full amount indicated
                     if (RemoveItemForGive(item, itemFoundInContainer, itemWasEquipped, itemRootOwner, acceptAll ? amount : 1, out WorldObject itemToGive))
                     {
+                        // Track the actual transferred item for emote handlers (may differ from original for stack splits)
+                        LastGivenItemGuid = itemToGive.Guid;
+                        LastGivenItem = itemToGive; // Store the actual WorldObject reference
+                        
                         if (item == itemToGive)
                             Session.Network.EnqueueSend(new GameEventItemServerSaysContainId(Session, item, target));
 
@@ -3803,6 +3852,9 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {item.NameWithMaterial}.", ChatMessageType.Broadcast));
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full, WeenieError.TradeAiRefuseEmote));
 
+                    // Track the item for emote handlers (RegisterPetSkin needs this to find the essence)
+                    LastGivenItemGuid = item.Guid;
+                    
                     target.EmoteManager.ExecuteEmoteSet(emoteResult, this);
                 }
                 else
@@ -3839,7 +3891,7 @@ namespace ACE.Server.WorldObjects
             Session.Network.EnqueueSend(new GameMessageSystemChat($"You allow {target.Name} to examine your {iouToTurnIn.NameWithMaterial}.", ChatMessageType.Broadcast));
             Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, iouToTurnIn.Guid.Full, WeenieError.TradeAiRefuseEmote));
 
-            if (!PropertyManager.GetBool("iou_trades"))
+            if (!ServerConfig.iou_trades.Value)
             {
                 Session.Network.EnqueueSend(new GameEventTell(target, "Sorry! I'm not taking IOUs right now, but if you do wish to discard them, drop them in to the garbage barrels found at the Mana Forges in Hebian-To, Zaikhal, and Cragstone.", this, ChatMessageType.Tell));
                 //Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, (WeenieErrorWithString)WeenieError.TradeAiDoesntWant, target.Name));
@@ -3889,7 +3941,7 @@ namespace ACE.Server.WorldObjects
                                     Session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} gives you {item.Name}.", ChatMessageType.Broadcast));
                                     target.EnqueueBroadcast(new GameMessageSound(target.Guid, Sound.ReceiveItem));
 
-                                    if (PropertyManager.GetBool("player_receive_immediate_save"))
+                                    if (ServerConfig.player_receive_immediate_save.Value)
                                         RushNextPlayerSave(5);
 
                                     log.Debug($"[IOU] {Name} (0x{Guid}) traded in a IOU (0x{iouToTurnIn.Guid}) for {wcid} which became {item.Name} (0x{item.Guid}).");
@@ -4147,7 +4199,7 @@ namespace ACE.Server.WorldObjects
             {
                 log.Warn($"Player.GiveFromEmote: itemStacks <= 0: emoter: {emoter.Name} (0x{emoter.Guid}) - {emoter.WeenieClassId} | weenieClassId: {weenieClassId} | amount: {amount}");
 
-                if (PropertyManager.GetBool("iou_trades"))
+                if (ServerConfig.iou_trades.Value)
                 {
                     var item = PlayerFactory.CreateIOU(weenieClassId);
                     TryCreateForGive(emoter, item);
@@ -4175,7 +4227,7 @@ namespace ACE.Server.WorldObjects
                 EnqueueBroadcast(new GameMessageSound(Guid, Sound.ReceiveItem));
             }
 
-            if (PropertyManager.GetBool("player_receive_immediate_save"))
+            if (ServerConfig.player_receive_immediate_save.Value)
                 RushNextPlayerSave(5);
 
             return true;
@@ -4231,12 +4283,49 @@ namespace ACE.Server.WorldObjects
             // fixes any 'invisible' equipped items, where CurrentWieldedLocation is None
             // not sure how items could have gotten into this state, possibly from legacy bugs
 
-            var dequipItems = EquippedObjects.Values.Where(i => i.CurrentWieldedLocation == EquipMask.None);
+            var dequipItems = EquippedObjects.Values.Where(i => i.CurrentWieldedLocation == EquipMask.None).ToList();
 
             foreach (var dequipItem in dequipItems)
             {
                 log.Warn($"{Name}.AuditEquippedItems() - dequipping {dequipItem.Name} ({dequipItem.Guid})");
                 HandleActionPutItemInContainer(dequipItem.Guid.Full, Guid.Full);
+            }
+
+            // Fix duplicate weapons in same hand slot after crash
+            // Group weapons by their ParentLocation (RightHand, LeftHand, LeftWeapon, Shield)
+            var weaponSlots = new[] { 
+                ACE.Entity.Enum.ParentLocation.RightHand,
+                ACE.Entity.Enum.ParentLocation.LeftHand,
+                ACE.Entity.Enum.ParentLocation.LeftWeapon,
+                ACE.Entity.Enum.ParentLocation.Shield
+            };
+
+            foreach (var slot in weaponSlots)
+            {
+                // Get all weapons/items in this slot
+                // Exclude MissileAmmo as it can coexist with other items in the same hand
+                var itemsInSlot = EquippedObjects.Values
+                    .Where(i => i.ParentLocation == slot && i.CurrentWieldedLocation != EquipMask.MissileAmmo)
+                    .ToList();
+
+                // If multiple items in same slot, keep only the newest one
+                if (itemsInSlot.Count > 1)
+                {
+                    // Sort by CreationTimestamp descending (newest first), then by Guid for deterministic ordering
+                    // Use Guid as fallback when CreationTimestamp is null or equal to ensure consistent behavior
+                    var sortedItems = itemsInSlot
+                        .OrderByDescending(i => i.CreationTimestamp ?? 0)
+                        .ThenByDescending(i => i.Guid.Full)
+                        .ToList();
+                    
+                    // Keep the first (newest), dequip the rest
+                    for (int i = 1; i < sortedItems.Count; i++)
+                    {
+                        var oldItem = sortedItems[i];
+                        log.Warn($"{Name}.AuditEquippedItems() - detected duplicate weapon in {slot} slot, dequipping older {oldItem.Name} ({oldItem.Guid}) created at {oldItem.CreationTimestamp}");
+                        HandleActionPutItemInContainer(oldItem.Guid.Full, Guid.Full);
+                    }
+                }
             }
         }
 

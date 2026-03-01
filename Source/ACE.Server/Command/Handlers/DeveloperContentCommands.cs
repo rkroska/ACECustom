@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -473,7 +474,7 @@ namespace ACE.Server.Command.Handlers.Processors
         /// </summary>
         private static DirectoryInfo VerifyContentFolder(Session session, bool showError = true)
         {
-            var content_folder = PropertyManager.GetString("content_folder");
+            var content_folder = ServerConfig.content_folder.Value;
 
             var sep = Path.DirectorySeparatorChar;
 
@@ -1348,8 +1349,8 @@ namespace ACE.Server.Command.Handlers.Processors
             // Position.Z has some weird thresholds when moving around, but i guess the same logic doesn't apply when trying to spawn in...
             wo.Location.PositionZ += 0.05f;
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Creating new landblock instance {(isLinkChild ? "child object " : "")}@ {loc.ToLOCString()}\n{wo.WeenieClassId} - {wo.Name} ({nextStaticGuid:X8})", ChatMessageType.Broadcast));
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created a new landblock instance {(isLinkChild ? "child object " : "")}@ {loc.ToLOCString()}\n [WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: ({nextStaticGuid:X8})");
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Creating new landblock instance {(isLinkChild ? "child object " : "")}@ {loc}\n{wo.WeenieClassId} - {wo.Name} ({nextStaticGuid:X8})", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created a new landblock instance {(isLinkChild ? "child object " : "")}@ {loc}\n [WeenieID]: {wo.WeenieClassId} - {wo.Name} [GUID]: ({nextStaticGuid:X8})");
 
             if (!wo.EnterWorld())
             {
@@ -1820,9 +1821,9 @@ namespace ACE.Server.Command.Handlers.Processors
                 return null;
             }
 
-            if (PropertyManager.GetBool("override_encounter_spawn_rates"))
+            if (ServerConfig.override_encounter_spawn_rates.Value)
             {
-                wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval");
+                wo.RegenerationInterval = ServerConfig.encounter_regen_interval.Value;
 
                 wo.ReinitializeHeartbeats();
 
@@ -2225,7 +2226,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
-        public static void HandleDiscordImport(Session session, params string[] parameters)
+        public static async void HandleDiscordImport(Session session, params string[] parameters)
         {
             try
             {
@@ -2236,7 +2237,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     return;
                 }
 
-                string sql = DiscordChatManager.GetSQLFromDiscordMessage(20, identifier);
+                string sql = await DiscordChatManager.GetSqlFromDiscordMessageAsync(20, identifier);
 
                 if (string.IsNullOrEmpty(sql))
                 {
@@ -2286,7 +2287,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         [CommandHandler("import-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports JSON content from Discord to the server folder", "<filename>")]
-        public static void HandleDiscordJsonImport(Session session, params string[] parameters)
+        public static async void HandleDiscordJsonImport(Session session, params string[] parameters)
         {
             try
             {
@@ -2298,7 +2299,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
 
                 // Get the JSON file content from Discord
-                string jsonContent = DiscordChatManager.GetJsonFromDiscordMessage(20, identifier);
+                string jsonContent = await DiscordChatManager.GetJsonFromDiscordMessageAsync(20, identifier);
 
                 if (string.IsNullOrEmpty(jsonContent))
                 {
@@ -2347,7 +2348,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         [CommandHandler("export-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports a ClothingBase entry to JSON and sends it to Discord.")]
-        public static void HandleExportClothingToDiscord(Session session, params string[] parameters)
+        public static async void HandleExportClothingToDiscord(Session session, params string[] parameters)
         {
             if (parameters == null || parameters.Length < 1)
             {
@@ -2389,7 +2390,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         sw.WriteLine(json); // Write the JSON content to the memory stream
 
                         // Send the JSON content to Discord as a file
-                        DiscordChatManager.SendDiscordFile(session.Player.Name, $"ClothingBase {clothingBaseId:X8}.json", (long)ConfigManager.Config.Chat.ClothingModExportChannelId, new Discord.FileAttachment(mem, $"{clothingBaseId:X8}.json"));
+                        await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, $"ClothingBase {clothingBaseId:X8}.json", (long)ConfigManager.Config.Chat.ClothingModExportChannelId, new Discord.FileAttachment(mem, $"{clothingBaseId:X8}.json"));
 
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported ClothingBase {clothingBaseId:X8} to Discord.");
                     }
@@ -2626,7 +2627,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
-        public static void ExportDiscordWeenie(Session session, string param)
+        public static async void ExportDiscordWeenie(Session session, string param)
         {            
             Weenie weenie = null;
             if (uint.TryParse(param, out var wcid))
@@ -2670,14 +2671,14 @@ namespace ACE.Server.Command.Handlers.Processors
                     String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
 
                     //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-                    DiscordChatManager.SendDiscordFile(session.Player.Name, wcid.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, wcid.ToString() + ".sql"));
+                    await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, wcid.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, wcid.ToString() + ".sql"));
                     sw.Close();
                     CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
                 }
             }                                    
         }
 
-        public static void ExportDiscordRecipe(Session session, string param)
+        public static async void ExportDiscordRecipe(Session session, string param)
         {
             if (!uint.TryParse(param, out var recipeId))
             {
@@ -2736,7 +2737,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
 
                     //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-                    DiscordChatManager.SendDiscordFile(session.Player.Name, recipeId.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, recipeId.ToString() + ".sql"));
+                    await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, recipeId.ToString() + ".sql", ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, recipeId.ToString() + ".sql"));
                     sw.Close();
                     CommandHandlerHelper.WriteOutputInfo(session, $"Exported recipe {recipe.Id} to Discord");
                 }
@@ -2877,7 +2878,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
-        public static void ExportDiscordLandblock(Session session, string param)
+        public static async void ExportDiscordLandblock(Session session, string param)
         {
             var variationId = session.Player.Location.Variation;
             ushort landblockId = 0;
@@ -2939,7 +2940,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
 
                         //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename, ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
+                        await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, sql_filename, ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
                         sw.Close();
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
                     }
@@ -2955,7 +2956,7 @@ namespace ACE.Server.Command.Handlers.Processors
             //CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename}");
         }
 
-        public static void ExportDiscordQuest(Session session, string questName)
+        public static async void ExportDiscordQuest(Session session, string questName)
         {
 
             var quest = DatabaseManager.World.GetCachedQuest(questName);
@@ -2987,7 +2988,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
 
                         //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename,
+                        await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, sql_filename,
                             ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
                         sw.Close();
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
@@ -3004,7 +3005,7 @@ namespace ACE.Server.Command.Handlers.Processors
             //CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
-        public static void ExportDiscordEvent(Session session, string eventName)
+        public static async void ExportDiscordEvent(Session session, string eventName)
         {
             // Get the event from the database by name
             var events = DatabaseManager.World.GetAllEvents();
@@ -3036,7 +3037,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                         String result = System.Text.Encoding.UTF8.GetString(mem.ToArray(), 0, (int)mem.Length);
 
-                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename,
+                        await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, sql_filename,
                             ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
                         sw.Close();
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
@@ -3147,7 +3148,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
-        public static void ExportDiscordSpell(Session session, string param)
+        public static async void ExportDiscordSpell(Session session, string param)
         {
             if (!uint.TryParse(param, out var spellId))
             {
@@ -3184,7 +3185,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         sw.WriteLine();
 
                         //DiscordChatManager.SendDiscordMessage(session.Player.Name,"```" + result + "```", ConfigManager.Config.Chat.ExportsChannelId);
-                        DiscordChatManager.SendDiscordFile(session.Player.Name, sql_filename,
+                        await DiscordChatManager.SendDiscordFileAsync(session.Player.Name, sql_filename,
                             ConfigManager.Config.Chat.ExportsChannelId, new Discord.FileAttachment(mem, sql_filename));
                         sw.Close();
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported spell {sql_filename} to Discord");
@@ -3301,16 +3302,20 @@ namespace ACE.Server.Command.Handlers.Processors
                     mode = CacheType.DeathTreasure;
             }
 
+            var clearedCaches = new List<string>();
+            
             if (mode.HasFlag(CacheType.Landblock))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing landblock instance cache");
                 DatabaseManager.World.ClearCachedLandblockInstances();
+                clearedCaches.Add("landblock");
             }
 
             if (mode.HasFlag(CacheType.Recipe))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing recipe cache");
                 DatabaseManager.World.ClearCookbookCache();
+                clearedCaches.Add("recipe");
             }
 
             if (mode.HasFlag(CacheType.Spell))
@@ -3318,30 +3323,41 @@ namespace ACE.Server.Command.Handlers.Processors
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing spell cache");
                 DatabaseManager.World.ClearSpellCache();
                 WorldObject.ClearSpellCache();
+                clearedCaches.Add("spell");
             }
 
             if (mode.HasFlag(CacheType.Weenie))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing weenie cache");
                 DatabaseManager.World.ClearWeenieCache();
+                clearedCaches.Add("weenie");
             }
 
             if (mode.HasFlag(CacheType.DeathTreasure))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing treasure death cache");
                 DatabaseManager.World.ClearDeathTreasureCache();
+                clearedCaches.Add("death treasure");
             }
 
             if (mode.HasFlag(CacheType.WieldedTreasure))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing wielded treasure cache");
                 DatabaseManager.World.ClearWieldedTreasureCache();
+                clearedCaches.Add("wielded treasure");
             }
 
             if (mode.HasFlag(CacheType.Quests))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing quest cache");
                 DatabaseManager.World.ClearAllCachedQuests();
+                clearedCaches.Add("quests");
+            }
+            
+            if (clearedCaches.Count > 0)
+            {
+                var cacheList = string.Join(", ", clearedCaches);
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared cache(s): {cacheList}.");
             }
         }
 
@@ -3575,7 +3591,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                     if (result != Physics.Common.SetPositionError.OK)
                     {
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to move {obj.Name} ({obj.Guid}) to home position {homePos.ToLOCString()}", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to move {obj.Name} ({obj.Guid}) to home position {homePos}", ChatMessageType.Broadcast));
                         return;
                     }
                 }
@@ -4039,7 +4055,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                         using (StreamWriter sw = File.AppendText(vlocFile))
                         {
-                            sw.WriteLine($"{name} - @teleloc {pos.ToLOCString()}");
+                            sw.WriteLine($"{name} - @teleloc {pos}");
                         }
                     }
                     catch (Exception)

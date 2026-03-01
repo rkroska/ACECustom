@@ -16,8 +16,6 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
-        public static readonly long DefaultPlayerSaveIntervalSecs = 300; // default to 5 minutes
-
         public DateTime CharacterLastRequestedDatabaseSave { get; protected set; }
 
         /// <summary>
@@ -41,7 +39,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public long PlayerSaveIntervalSecs
         {
-            get => PropertyManager.GetLong("player_save_interval", DefaultPlayerSaveIntervalSecs);
+            get => ServerConfig.player_save_interval.Value;
         }
 
         /// <summary>
@@ -54,7 +52,7 @@ namespace ACE.Server.WorldObjects
         /// The critical thing is that the collections are not added to or removed from while Entity Framework is iterating over them.<para />
         /// Mag-nus 2018-08-19
         /// </summary>
-        public readonly ReaderWriterLockSlim CharacterDatabaseLock = new ReaderWriterLockSlim();
+        public readonly ReaderWriterLockSlim CharacterDatabaseLock = new();
 
         private void SetPropertiesAtLogOut()
         {
@@ -131,6 +129,7 @@ namespace ACE.Server.WorldObjects
                     clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_SaveBiotasInParallelCallback, () =>
                     {
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                         // Re-fetch possessions to avoid stale references, but only process items in batch
                         var currentPossessions = GetAllPossessions();
                         
@@ -140,6 +139,7 @@ namespace ACE.Server.WorldObjects
                             if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                             {
                                 possession.SaveInProgress = false;
+                                possession.SaveStartTime = DateTime.MinValue; // Reset for next save
                                 if (result)
                                     possession.ChangesDetected = false;
                                 else
@@ -184,6 +184,7 @@ namespace ACE.Server.WorldObjects
                 clearFlagsAction.AddAction(WorldManager.ActionQueue, ActionType.PlayerDatabase_SaveBiotasInParallelCallback, () =>
                 {
                     SaveInProgress = false;
+                    SaveStartTime = DateTime.MinValue; // Reset for next save
                     // Re-fetch possessions to avoid stale references, but only process items in batch
                     var currentPossessions = GetAllPossessions();
                     
@@ -193,6 +194,7 @@ namespace ACE.Server.WorldObjects
                         if (!possession.IsDestroyed && itemsInBatch.Contains(possession.Guid.Full))
                         {
                             possession.SaveInProgress = false;
+                            possession.SaveStartTime = DateTime.MinValue; // Reset for next save
                             if (result)
                                 // Item was in the batch - clear ChangesDetected since it was successfully saved
                                 // Items that weren't in the batch but have ChangesDetected=true are newer changes that should be preserved

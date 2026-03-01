@@ -68,9 +68,6 @@ namespace ACE.Server.WorldObjects
 
             if (!IsAwake)
             {
-                if (MonsterState == State.Return)
-                    MonsterState = State.Idle;
-
                 if (IsFactionMob || HasFoeType)
                     FactionMob_CheckMonsters();
 
@@ -96,11 +93,11 @@ namespace ACE.Server.WorldObjects
 
             HandleFindTarget();
 
-            CheckMissHome();    // tickrate?
+            CheckMissHome();
 
             if (AttackTarget == null && MonsterState != State.Return)
             {
-                Sleep();
+                MoveToHome();
                 return;
             }
 
@@ -113,6 +110,18 @@ namespace ACE.Server.WorldObjects
             var combatPet = this as CombatPet;
 
             var creatureTarget = AttackTarget as Creature;
+
+            // Drop invalid target if it's a player with CloakStatus.Creature
+            if (creatureTarget is Player playerTarget && playerTarget.CloakStatus == CloakStatus.Creature)
+            {
+                // Stop considering this player as a valid target
+                AttackTarget = null;
+
+                // Try to acquire a new target (or return home).
+                FindNextTarget();
+
+                return;
+            }
 
             if (creatureTarget != null && (creatureTarget.IsDead || (combatPet == null && !IsVisibleTarget(creatureTarget))))
             {
@@ -166,7 +175,7 @@ namespace ACE.Server.WorldObjects
                 //MaxRange = MaxMeleeRange;   // FIXME: server position sync
             }
 
-            if (PhysicsObj.IsSticky)
+            if (PhysicsObj?.IsSticky == true)
                 UpdatePosition(false);
 
             // get distance to target

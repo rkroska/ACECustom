@@ -252,7 +252,7 @@ namespace ACE.Server.Managers
             }
 
 
-            if (PropertyManager.GetBool("house_per_char"))
+            if (ServerConfig.house_per_char.Value)
             {
                 var results = playerHouses.Where(i => i.Value.Count > 1).OrderByDescending(i => i.Value.Count);
 
@@ -331,9 +331,17 @@ namespace ACE.Server.Managers
             if (nextEntry == null)
                 return;
 
-            var currentTime = DateTime.UtcNow;
+            var startTime = DateTime.UtcNow; // Track when processing begins
+            // Limit processing time to 5 seconds to prevent blocking UpdateWorld loop.
+            // With typical processing of ~50ms per house, this allows ~100 houses to be processed.
+            // If this limit is hit, remaining houses will be processed on next tick (1 minute later).
+            var maxProcessingTime = TimeSpan.FromSeconds(5);
+            // Safety limit: prevent processing more than 100 houses in a single tick.
+            // This protects against unexpected scenarios where ProcessRent() is very fast but queue is huge.
+            var maxIterations = 100;
+            var iterations = 0;
 
-            while (currentTime > nextEntry.RentDue)
+            while (DateTime.UtcNow > nextEntry.RentDue)
             {
                 RentQueue.Remove(nextEntry);
 
@@ -344,7 +352,21 @@ namespace ACE.Server.Managers
                 if (nextEntry == null)
                     return;
 
-                currentTime = DateTime.UtcNow;
+                iterations++;
+
+                // Safety check to prevent indefinite blocking of UpdateWorld
+                if (iterations >= maxIterations)
+                {
+                    log.Warn($"HouseManager.Tick() processed {iterations} entries and hit iteration limit. Breaking to prevent hang. Remaining queue: {RentQueue.Count}");
+                    return;
+                }
+
+                var currentTime = DateTime.UtcNow;
+                if (currentTime - startTime > maxProcessingTime)
+                {
+                    log.Warn($"HouseManager.Tick() exceeded {maxProcessingTime.TotalSeconds}s processing time after {iterations} entries. Breaking to prevent hang. Remaining queue: {RentQueue.Count}");
+                    return;
+                }
             }
         }
 
@@ -440,7 +462,7 @@ namespace ACE.Server.Managers
 
             var player = PlayerManager.FindByGuid(playerGuid, out bool isOnline);
 
-            if (!PropertyManager.GetBool("house_rent_enabled", true) && !multihouse && !force)
+            if (!ServerConfig.house_rent_enabled.Value && !multihouse && !force)
             {
                 // rent disabled, push forward
                 var purchaseTime = (uint)(player.HousePurchaseTimestamp ?? 0);
@@ -562,14 +584,14 @@ namespace ACE.Server.Managers
         /// </summary>
         private static bool HasRequirements(PlayerHouse playerHouse)
         {
-            if (!PropertyManager.GetBool("house_purchase_requirements"))
+            if (!ServerConfig.house_purchase_requirements.Value)
                 return true;
 
             var slumlord = playerHouse.House.SlumLord;
             if (slumlord.AllegianceMinLevel == null)
                 return true;
 
-            var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+            var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
             if (allegianceMinLevel == -1)
                 allegianceMinLevel = slumlord.AllegianceMinLevel.Value;
 

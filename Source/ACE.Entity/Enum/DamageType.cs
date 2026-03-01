@@ -29,51 +29,22 @@ namespace ACE.Entity.Enum
 
     public static class DamageTypeExtensions
     {
-        public static string GetName(this DamageType damageType)
-        {
-            switch (damageType)
-            {
-                case DamageType.Undef:    return "Undefined";
-                case DamageType.Slash:    return "Slashing";
-                case DamageType.Pierce:   return "Piercing";
-                case DamageType.Bludgeon: return "Bludgeoning";
-                case DamageType.Cold:     return "Cold";
-                case DamageType.Fire:     return "Fire";
-                case DamageType.Acid:     return "Acid";
-                case DamageType.Electric: return "Electric";
-                case DamageType.Health:   return "Health";
-                case DamageType.Stamina:  return "Stamina";
-                case DamageType.Mana:     return "Mana";
-                case DamageType.Nether:   return "Nether";
-                case DamageType.Base:     return "Base";
-                default:
-                    return null;
-            }
-        }
-
         public static bool IsMultiDamage(this DamageType damageType)
         {
             return EnumHelper.HasMultiple((uint)damageType);
         }
 
-        public static DamageType SelectDamageType(this DamageType damageType, float? powerLevel = null)
+        public static string DisplayName(this DamageType damageType)
         {
-            if (powerLevel == null)
+            switch (damageType)
             {
-                // select random damage type
-                var damageTypes = EnumHelper.GetFlags(damageType);
-
-                var rng = ThreadSafeRandom.Next(1, damageTypes.Count - 1);
-
-                return (DamageType)damageTypes[rng];
+                case DamageType.Electric:
+                    return "Lightning";
+                case DamageType.Nether:
+                    return "Void";
+                default:
+                    return damageType.ToString();
             }
-
-            var playerTypes = powerLevel < 0.33f ? damageType & DamageType.Physical : damageType & ~DamageType.Physical;
-
-            if (playerTypes == DamageType.Undef)
-                playerTypes = damageType;
-
-            return playerTypes.SelectDamageType();
         }
     }
 }

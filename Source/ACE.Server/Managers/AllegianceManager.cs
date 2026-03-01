@@ -21,12 +21,12 @@ namespace ACE.Server.Managers
         /// <summary>
         /// A mapping of all loaded Allegiance GUIDs => their Allegiances
         /// </summary>
-        public static readonly Dictionary<ObjectGuid, Allegiance> Allegiances = new Dictionary<ObjectGuid, Allegiance>();
+        public static readonly Dictionary<ObjectGuid, Allegiance> Allegiances = [];
 
         /// <summary>
         /// A mapping of all Players on the server => their AllegianceNodes
         /// </summary>
-        public static readonly Dictionary<ObjectGuid, AllegianceNode> Players = new Dictionary<ObjectGuid, AllegianceNode>();
+        public static readonly Dictionary<ObjectGuid, AllegianceNode> Players = [];
 
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -63,7 +63,7 @@ namespace ACE.Server.Managers
             var allegianceID = DatabaseManager.Shard.BaseDatabase.GetAllegianceID(monarch.Guid.Full);
             var biota = allegianceID != null ? DatabaseManager.Shard.BaseDatabase.GetBiota(allegianceID.Value) : null;
 
-            Allegiance allegiance = null;
+            Allegiance allegiance;
 
             if (biota != null)
             {
@@ -187,17 +187,17 @@ namespace ACE.Server.Managers
         /// <summary>
         /// The maximum amount of leadership / loyalty
         /// </summary>
-        public static float SkillCap = 291.0f;
+        private const float SkillCap = 291.0f;
 
         /// <summary>
         /// The maximum amount of realtime hours sworn to patron
         /// </summary>
-        public static float RealCap = 730.0f;
+        private const float RealCap = 730.0f;
 
         /// <summary>
         /// The maximum amount of in-game hours sworn to patron
         /// </summary>
-        public static float GameCap = 720.0f;
+        private const float GameCap = 720.0f;
 
         // This function can be called from multi-threaded operations
         // We must add thread safety to prevent AllegianceManager corruption
@@ -269,8 +269,9 @@ namespace ACE.Server.Managers
             var vassal = vassalNode.Player;
             var patron = patronNode.Player;
 
-            if (!vassal.ExistedBeforeAllegianceXpChanges)
-                return;
+            // Removed level requirement check - patrons can now receive passup regardless of level
+            //if (!vassal.ExistedBeforeAllegianceXpChanges)
+            //    return;
 
             if (patron.GetProperty(PropertyBool.IsMule).HasValue && patron.GetProperty(PropertyBool.IsMule).Value == true)
             {
@@ -306,7 +307,7 @@ namespace ACE.Server.Managers
 
             if (luminance)
             {
-                var lumMult = PropertyManager.GetDouble("lum_passup_mult", 0.5);
+                var lumMult = ServerConfig.lum_passup_mult.Value;
                 generatedAmount = (uint)(generatedAmount * lumMult);
                 passupAmount = (uint)(passupAmount * lumMult);
             }
@@ -329,10 +330,7 @@ namespace ACE.Server.Managers
 
                 patron.AllegianceLumCached += passupAmount;
                 var onlinePatron = PlayerManager.GetOnlinePlayer(patron.Guid);
-                if (onlinePatron != null)
-                {
-                    onlinePatron.AddAllegianceLum();
-                }
+                onlinePatron?.AddAllegianceLum();
                 // call recursively
                 DoPassXP(patronNode, passupAmount, false, luminance);
             }
@@ -345,14 +343,13 @@ namespace ACE.Server.Managers
 
                 vassal.AllegianceXPGenerated += generatedAmount;
 
-                if (PropertyManager.GetBool("offline_xp_passup_limit"))
+                if (ServerConfig.offline_xp_passup_limit.Value)
                     patron.AllegianceXPCached = Math.Min(patron.AllegianceXPCached + passupAmount, uint.MaxValue);
                 else
                     patron.AllegianceXPCached += passupAmount;
 
                 var onlinePatron = PlayerManager.GetOnlinePlayer(patron.Guid);
-                if (onlinePatron != null)
-                    onlinePatron.AddAllegianceXP();
+                onlinePatron?.AddAllegianceXP();
 
                 // call recursively
                 DoPassXP(patronNode, passupAmount, false, luminance);
@@ -427,8 +424,7 @@ namespace ACE.Server.Managers
             {
                 player.AllegianceRank = null;
 
-                if (onlinePlayer != null)
-                    onlinePlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(onlinePlayer, PropertyInt.AllegianceRank, 0));
+                onlinePlayer?.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(onlinePlayer, PropertyInt.AllegianceRank, 0));
 
                 updated = true;
             }
@@ -436,8 +432,7 @@ namespace ACE.Server.Managers
             if (updated)
                 player.SaveBiotaToDatabase();
 
-            if (onlinePlayer != null)
-                onlinePlayer.Session.Network.EnqueueSend(new GameEventAllegianceUpdate(onlinePlayer.Session, onlinePlayer.Allegiance, onlinePlayer.AllegianceNode), new GameEventAllegianceAllegianceUpdateDone(onlinePlayer.Session));
+            onlinePlayer?.Session.Network.EnqueueSend(new GameEventAllegianceUpdate(onlinePlayer.Session, onlinePlayer.Allegiance, onlinePlayer.AllegianceNode), new GameEventAllegianceAllegianceUpdateDone(onlinePlayer.Session));
         }
 
         public static Allegiance FindAllegiance(uint allegianceID)
@@ -522,10 +517,7 @@ namespace ACE.Server.Managers
             foreach (var p in players)
             {
                 Player.CheckAllegianceHouse(p.Guid);
-
-                var newAllegiance = GetAllegiance(p);
-                if (newAllegiance != null)
-                    newAllegiance.Monarch.Walk((node) => Player.CheckAllegianceHouse(node.PlayerGuid), false);
+                GetAllegiance(p)?.Monarch.Walk((node) => Player.CheckAllegianceHouse(node.PlayerGuid), false);
             }
         }
     }

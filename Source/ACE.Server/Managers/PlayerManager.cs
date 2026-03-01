@@ -729,17 +729,19 @@ namespace ACE.Server.Managers
                 player.Session.Network.EnqueueSend(msg);
         }
 
-        public static void BroadcastToAuditChannel(Player issuer, string message)
+        public static void BroadcastToAuditChannel(Player issuer, string message, ACE.Common.DiscordLogLevel requiredLevel = ACE.Common.DiscordLogLevel.Info)
         {
             if (issuer != null)
             { 
                 BroadcastToChannel(Channel.Audit, issuer, message, true, true);
-                DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
+                if (ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel)
+                    _ = DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
             }
             else
             {
                 BroadcastToChannelFromConsole(Channel.Audit, message);
-                DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
+                if (ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel)
+                    _ = DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
             }
                 
 
@@ -772,58 +774,58 @@ namespace ACE.Server.Managers
             switch (channel)
             {
                 case Channel.Abuse:
-                    if (!PropertyManager.GetBool("chat_log_abuse"))
+                    if (!ServerConfig.chat_log_abuse.Value)
                         return;
                     break;
                 case Channel.Admin:
-                    if (!PropertyManager.GetBool("chat_log_admin"))
+                    if (!ServerConfig.chat_log_admin.Value)
                         return;
                     break;
                 case Channel.AllBroadcast: // using this to sub in for a WorldBroadcast channel which isn't technically a channel
-                    if (!PropertyManager.GetBool("chat_log_global"))
+                    if (!ServerConfig.chat_log_global.Value)
                         return;
                     break;
                 case Channel.Audit:
-                    if (!PropertyManager.GetBool("chat_log_audit"))
+                    if (!ServerConfig.chat_log_audit.Value)
                         return;
                     break;
                 case Channel.Advocate1:
                 case Channel.Advocate2:
                 case Channel.Advocate3:
-                    if (!PropertyManager.GetBool("chat_log_advocate"))
+                    if (!ServerConfig.chat_log_advocate.Value)
                         return;
                     break;
                 case Channel.Debug:
-                    if (!PropertyManager.GetBool("chat_log_debug"))
+                    if (!ServerConfig.chat_log_debug.Value)
                         return;
                     break;
                 case Channel.Fellow:
                 case Channel.FellowBroadcast:
-                    if (!PropertyManager.GetBool("chat_log_fellow"))
+                    if (!ServerConfig.chat_log_fellow.Value)
                         return;
                     break;
                 case Channel.Help:
-                    if (!PropertyManager.GetBool("chat_log_help"))
+                    if (!ServerConfig.chat_log_help.Value)
                         return;
                     break;
                 case Channel.Olthoi:
-                    if (!PropertyManager.GetBool("chat_log_olthoi"))
+                    if (!ServerConfig.chat_log_olthoi.Value)
                         return;
                     break;
                 case Channel.QA1:
                 case Channel.QA2:
-                    if (!PropertyManager.GetBool("chat_log_qa"))
+                    if (!ServerConfig.chat_log_qa.Value)
                         return;
                     break;
                 case Channel.Sentinel:
-                    if (!PropertyManager.GetBool("chat_log_sentinel"))
+                    if (!ServerConfig.chat_log_sentinel.Value)
                         return;
                     break;
 
                 case Channel.SocietyCelHanBroadcast:
                 case Channel.SocietyEldWebBroadcast:
                 case Channel.SocietyRadBloBroadcast:
-                    if (!PropertyManager.GetBool("chat_log_society"))
+                    if (!ServerConfig.chat_log_society.Value)
                         return;
                     break;
 
@@ -832,7 +834,7 @@ namespace ACE.Server.Managers
                 case Channel.Monarch:
                 case Channel.Patron:
                 case Channel.Vassals:
-                    if (!PropertyManager.GetBool("chat_log_allegiance"))
+                    if (!ServerConfig.chat_log_allegiance.Value)
                         return;
                     break;
 
@@ -845,7 +847,7 @@ namespace ACE.Server.Managers
                 case Channel.Shoushi:
                 case Channel.Yanshi:
                 case Channel.Yaraq:
-                    if (!PropertyManager.GetBool("chat_log_townchans"))
+                    if (!ServerConfig.chat_log_townchans.Value)
                         return;
                     break;
 
@@ -939,7 +941,7 @@ namespace ACE.Server.Managers
                             player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
                         }
 
-                        var msg = $"This world has been changed to a Player Killer world. All players will become Player Killers in {PropertyManager.GetDouble("pk_respite_timer")} seconds.";
+                        var msg = $"This world has been changed to a Player Killer world. All players will become Player Killers in {ServerConfig.pk_respite_timer.Value} seconds.";
                         BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
                         LogBroadcastChat(Channel.AllBroadcast, null, msg);
                     }
@@ -960,7 +962,7 @@ namespace ACE.Server.Managers
                     }
                     break;
                 case "pkl_server":
-                    if (PropertyManager.GetBool("pk_server"))
+                    if (ServerConfig.pk_server.Value)
                         return;
                     if (enabled)
                     {
@@ -973,7 +975,7 @@ namespace ACE.Server.Managers
                             player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
                         }
 
-                        var msg = $"This world has been changed to a Player Killer Lite world. All players will become Player Killer Lites in {PropertyManager.GetDouble("pk_respite_timer")} seconds.";
+                        var msg = $"This world has been changed to a Player Killer Lite world. All players will become Player Killer Lites in {ServerConfig.pk_respite_timer.Value} seconds.";
                         BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
                         LogBroadcastChat(Channel.AllBroadcast, null, msg);
                     }
@@ -998,7 +1000,7 @@ namespace ACE.Server.Managers
 
         public static bool IsAccountAtMaxCharacterSlots(string accountName)
         {
-            var slotsAvailable = (int)PropertyManager.GetLong("max_chars_per_account");
+            var slotsAvailable = (int)ServerConfig.max_chars_per_account.Value;
             var onlinePlayersTotal = 0;
             var offlinePlayersTotal = 0;
 

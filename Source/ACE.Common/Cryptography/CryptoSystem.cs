@@ -5,7 +5,7 @@ namespace ACE.Common.Cryptography
 {
     public class CryptoSystem : ISAAC
     {
-        public const int MaximumEffortLevel = 256;
+        public const int MaximumEffortLevel = 1024;
         public HashSet<uint> xors = new HashSet<uint>();
         public uint CurrentKey;
         public CryptoSystem(uint seed) : base(BitConverter.GetBytes(seed))

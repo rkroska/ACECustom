@@ -81,6 +81,26 @@ namespace ACE.Server.Command.Handlers
             return target;
         }
 
+        /// <summary>
+        /// Returns the currently selected WorldObject, checking health/mana query targets
+        /// before falling back to appraisal targets.
+        /// </summary>
+        public static WorldObject GetSelected(Session session)
+        {
+            uint? targetID;
+            if (session.Player.HealthQueryTarget.HasValue)
+                targetID = session.Player.HealthQueryTarget;
+            else if (session.Player.ManaQueryTarget.HasValue)
+                targetID = session.Player.ManaQueryTarget;
+            else if (session.Player.CurrentAppraisalTarget.HasValue)
+                targetID = session.Player.CurrentAppraisalTarget;
+            else 
+                targetID = session.Player.RequestedAppraisalTarget;
+
+            if (targetID == null) return null;
+            return session.Player.FindObject(targetID.Value, Player.SearchLocations.Everywhere, out _, out _, out _);
+        }
+
         public static WorldObject GetWorldObjectByGuid(Session session, uint guid)
         {
             var target = session.Player.FindObject(guid, Player.SearchLocations.Everywhere, out _, out _, out _);

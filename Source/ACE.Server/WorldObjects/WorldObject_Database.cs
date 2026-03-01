@@ -35,7 +35,7 @@ namespace ACE.Server.WorldObjects
             get => _saveInProgress;
             set => _saveInProgress = value;
         }
-        private DateTime SaveStartTime { get; set; }
+        internal DateTime SaveStartTime { get; set; }
         private int? LastSavedStackSize { get; set; }  // Track last saved value to detect corruption
 
         /// <summary>
@@ -55,13 +55,20 @@ namespace ACE.Server.WorldObjects
 
             if (SaveStartTime == DateTime.MinValue)
             {
-                log.Error($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {itemName} (0x{itemGuid})");
+                // SaveInProgress is set but SaveStartTime is uninitialized — this is a bug state
+                // (something set SaveInProgress=true without going through SaveBiotaToDatabase).
+                // Reset the flag so future saves aren't permanently blocked.
+                log.Debug($"[DB RACE] SaveInProgress set but SaveStartTime uninitialized for {itemName} (0x{itemGuid}) — resetting flag");
                 SaveInProgress = false;
-                SaveStartTime = DateTime.UtcNow;
                 return;
             }
             
             var timeInFlight = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
+            
+            // Sub-50ms in-flight almost always means a batch player save just marked this item as
+            // SaveInProgress but hasn't actually dispatched the DB call yet. Not a real race.
+            if (timeInFlight < 50)
+                return;
             var playerInfo = this is Player player ? $"{player.Name} (0x{player.Guid})" : $"Object 0x{itemGuid}";
             
             var currentStack = StackSize;
@@ -71,15 +78,14 @@ namespace ACE.Server.WorldObjects
             var stackInfo = currentStack.HasValue ? $" | Stack: {LastSavedStackSize ?? 0}→{currentStack}" : "";
             log.Warn($"[DB RACE] {severityMarker} {playerInfo} {itemName} | In-flight: {timeInFlight:N0}ms{stackInfo}");
             
-            if (stackChanged || timeInFlight > 50)
-            {
-                var ownerContext = this is Player p ? $"[{p.Name}] " : 
-                                  (this.Container is Player owner ? $"[{owner.Name}] " : "");
-                var raceInfo = stackChanged 
-                    ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
-                    : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
-                SendAggregatedDbRaceAlert(raceInfo);
-            }
+            // Any race that reaches here is >= 50ms in-flight (sub-50ms returns early above).
+            // Always send to aggregated alert — stackChanged races are highest severity.
+            var ownerContext = this is Player p ? $"[{p.Name}] " : 
+                              (this.Container is Player owner ? $"[{owner.Name}] " : "");
+            var raceInfo = stackChanged 
+                ? $"{ownerContext}{itemName} Stack:{LastSavedStackSize}→{currentStack} 🔴" 
+                : $"{ownerContext}{itemName} ({timeInFlight:N0}ms)";
+            SendAggregatedDbRaceAlert(raceInfo);
         }
 
         /// <summary>
@@ -117,7 +123,7 @@ namespace ACE.Server.WorldObjects
 
 #if DEBUG
             string GetItemInfo() => this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-            log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
+            // log.Debug($"[SAVE DEBUG] SaveBiotaToDatabase called for {GetItemInfo()} | enqueueSave={enqueueSave} | ChangesDetected={ChangesDetected} | SaveInProgress={SaveInProgress}");
 #endif
             
             // For individual saves, check if this item belongs to a player with a batch save in progress
@@ -184,14 +190,14 @@ namespace ACE.Server.WorldObjects
                 var locationPos = positionCache.TryGetValue(PositionType.Location, out var loc) ? loc : null;
                 var locationProperty = Location; // Read through property getter
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
+                // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Position cache sync | Location in cache={locationPos != null} | Location property={locationProperty} | Cache count={positionCache.Count} | Match={locationPos == locationProperty}");
 #endif
                 
                 // If Location property exists but isn't in cache, add it
                 if (locationProperty != null && locationPos == null)
                 {
 #if DEBUG
-                    log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location property exists but not in cache! Adding to cache...");
+                    // log.Warn($"[SAVE DEBUG] {GetItemInfo()} Location property exists but not in cache! Adding to cache...");
 #endif
                     positionCache[PositionType.Location] = locationProperty;
                 }
@@ -205,7 +211,7 @@ namespace ACE.Server.WorldObjects
 #if DEBUG
                     if (this is Player && kvp.Key == PositionType.Location)
                     {
-                        log.Debug($"[SAVE DEBUG] {GetItemInfo()} Synced Location position to biota | Position={kvp.Value}");
+                        // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Synced Location position to biota | Position={kvp.Value}");
                     }
 #endif
                 }
@@ -235,7 +241,7 @@ namespace ACE.Server.WorldObjects
             {
                 ContainerId = expectedContainerId;
 #if DEBUG
-                log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
+                // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Set ContainerId property | Container={Container?.Name ?? (WielderId.HasValue ? $"Equipped (Wielder={WielderId:X8})" : "null")} | ContainerId={expectedContainerId} (0x{(expectedContainerId ?? 0):X8})");
 #endif
                 // Clear ChangesDetected if we just set it (we're already saving)
                 if (!hadChangesBeforeContainerId)
@@ -273,8 +279,13 @@ namespace ACE.Server.WorldObjects
                     {
                         finalBiotaContainerId = finalValue;
                     }
-                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (WielderId.HasValue ? $"Equipped (Wielder={WielderId} (0x{WielderId:X8}))" : "null");
-                    log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
+                    
+                    uint? wielderId = null;
+                    if (Biota.PropertiesIID != null && Biota.PropertiesIID.TryGetValue(PropertyInstanceId.Wielder, out var wielderVal))
+                        wielderId = wielderVal;
+                        
+                    string containerInfo = Container != null ? $"{Container.Name} (0x{Container.Guid})" : (wielderId.HasValue ? $"Equipped (Wielder={wielderId} (0x{wielderId:X8}))" : "null");
+                    // log.Debug($"[SAVE DEBUG] {GetItemInfo()} Queuing individual save | Final biota ContainerId={finalBiotaContainerId} (0x{(finalBiotaContainerId ?? 0):X8}) | Container={containerInfo}");
                 }
                 finally
                 {
@@ -295,7 +306,7 @@ namespace ACE.Server.WorldObjects
                         }
                         
                         var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
+                        var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
@@ -315,8 +326,8 @@ namespace ACE.Server.WorldObjects
                             {
                                 savedBiotaContainerId = savedValue;
                             }
-                            var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                            log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
+                            var callbackItemInfo = this is Player ? $"{itemName}" : $"{itemName} (0x{itemGuid})";
+                            // log.Debug($"[SAVE DEBUG] {callbackItemInfo} Individual save completed | Result={result} | Saved biota ContainerId={savedBiotaContainerId} (0x{(savedBiotaContainerId ?? 0):X8}) | Time={saveTime:N0}ms");
                         }
                         finally
                         {
@@ -332,7 +343,7 @@ namespace ACE.Server.WorldObjects
                                 ChangesDetected = true;
 #if DEBUG
                                 var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                                log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
+                                // log.Warn($"[SAVE DEBUG] {callbackItemInfo} Individual save FAILED - restored ChangesDetected to prevent data loss");
 #endif
                             }
                             
@@ -351,7 +362,7 @@ namespace ACE.Server.WorldObjects
                             ChangesDetected = true;
 #if DEBUG
                             var callbackItemInfo = this is Player p ? $"{p.Name}" : $"{itemName} (0x{itemGuid})";
-                            log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
+                            // log.Warn($"[SAVE DEBUG] {callbackItemInfo} Exception in save callback - restored ChangesDetected to prevent data loss: {ex.Message}");
 #endif
                         }
                         log.Error($"Exception in save callback for {itemName} (0x{itemGuid}): {ex.Message}");
@@ -360,6 +371,7 @@ namespace ACE.Server.WorldObjects
                     {
                         // ALWAYS clear SaveInProgress, even if callback throws
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
             }
@@ -413,7 +425,7 @@ namespace ACE.Server.WorldObjects
                         }
                         
                         var saveTime = (DateTime.UtcNow - SaveStartTime).TotalMilliseconds;
-                        var slowThreshold = PropertyManager.GetLong("db_slow_threshold_ms", 1000);
+                        var slowThreshold = ServerConfig.db_slow_threshold_ms.Value;
                         if (saveTime > slowThreshold && this is not Player)
                         {
                             var ownerInfo = this.Container is Player owner ? $" | Owner: {owner.Name}" : "";
@@ -435,6 +447,7 @@ namespace ACE.Server.WorldObjects
                     finally
                     {
                         SaveInProgress = false;
+                        SaveStartTime = DateTime.MinValue; // Reset for next save
                     }
                 });
             }
@@ -554,9 +567,9 @@ namespace ACE.Server.WorldObjects
                 // Reset counter every minute and send summary
                 if ((now - lastDbRaceAlert).TotalMinutes >= 1 && dbRacesThisMinute.Count > 0)
                 {
-                    // Check Discord is configured
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && 
-                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    // Send to Discord if configured
+                    if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && 
+                        ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
@@ -594,20 +607,20 @@ namespace ACE.Server.WorldObjects
                 }
                 
                 // Check rate limit (configurable via /modifylong db_slow_discord_max_alerts_per_minute)
-                var maxAlerts = PropertyManager.GetLong("db_slow_discord_max_alerts_per_minute", 5);
+                var maxAlerts = ServerConfig.db_slow_discord_max_alerts_per_minute.Value;
                 if (maxAlerts <= 0 || dbSlowAlertsThisMinute >= maxAlerts)
                     return;  // Drop alert to prevent Discord API spam
                 
                 // Check Discord is configured
-                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Verbose || 
+                    ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                     return;
                 
                 try
                 {
                     var msg = $"🔴 **DB SLOW**: `{itemName}` (Stack: {stackSize}) took **{saveTime:N0}ms** to save{ownerInfo}";
                     
-                    DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
+                    _ = DiscordChatManager.SendDiscordMessage("DB DIAGNOSTICS", msg, 
                         ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                     
                     dbSlowAlertsThisMinute++;
@@ -622,7 +635,7 @@ namespace ACE.Server.WorldObjects
         
         private static void CheckDatabaseQueueSize()
         {
-            var queueThreshold = PropertyManager.GetLong("db_queue_alert_threshold", 100);
+            var queueThreshold = ServerConfig.db_queue_alert_threshold.Value;
             if (queueThreshold <= 0)
                 return;  // Monitoring disabled
             
@@ -639,15 +652,15 @@ namespace ACE.Server.WorldObjects
                 {
                     dbQueueAlertsThisMinute = 0;
                 }
-                
+
                 // Check rate limit (configurable via /modifylong db_queue_discord_max_alerts_per_minute)
-                var maxAlerts = PropertyManager.GetLong("db_queue_discord_max_alerts_per_minute", 2);
+                var maxAlerts = ServerConfig.db_queue_discord_max_alerts_per_minute.Value;
                 if (maxAlerts <= 0 || dbQueueAlertsThisMinute >= maxAlerts)
                     return;
                 
                 // Check Discord is configured
-                if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
-                    ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
+                if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Info || 
+                    ACE.Common.ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                     return;
                 
                 try

@@ -11,23 +11,26 @@ namespace ACE.Server.Entity
     /// <summary>
     /// Tracks the recent damage sources for Players / Creatures
     /// </summary>
-    public class DamageHistory
+    /// <remarks>
+    /// Constructs a new DamageHistory for a Player / Creature
+    /// </remarks>
+    public class DamageHistory(Creature creature)
     {
         /// <summary>
         /// The player or creature this Damage History is tracking
         /// </summary>
-        public readonly Creature Creature;
+        public readonly Creature Creature = creature;
 
         /// <summary>
         /// A list of damage sources, amounts, and timestamps
         /// </summary>
-        public readonly List<DamageHistoryEntry> Log = new List<DamageHistoryEntry>();
+        public readonly List<DamageHistoryEntry> Log = [];
 
         /// <summary>
         /// A lookup table of WorldObjects that have damaged this WorldObject,
         /// and the total amount of damage they have inflicted
         /// </summary>
-        public readonly Dictionary<ObjectGuid, DamageHistoryInfo> TotalDamage = new Dictionary<ObjectGuid, DamageHistoryInfo>();
+        public readonly Dictionary<ObjectGuid, DamageHistoryInfo> TotalDamage = [];
 
         /// <summary>
         /// Returns the list of players or creatures who inflicted damage.
@@ -79,14 +82,6 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Constructs a new DamageHistory for a Player / Creature
-        /// </summary>
-        public DamageHistory(Creature creature)
-        {
-            Creature = creature;
-        }
-
-        /// <summary>
         /// Logs a damaging event for this player or creature
         /// </summary>
         /// <param name="source">The attacker or source of damage</param>
@@ -123,8 +118,8 @@ namespace ACE.Server.Entity
         {
             // todo: investigate, this shouldn't happen?
             // key 0 from BuildTotalDamage()
-            if (TotalDamage.ContainsKey(attacker))      
-                TotalDamage[attacker].TotalDamage += amount;
+            if (TotalDamage.TryGetValue(attacker, out DamageHistoryInfo value))
+                value.TotalDamage += amount;
         }
 
         /// <summary>

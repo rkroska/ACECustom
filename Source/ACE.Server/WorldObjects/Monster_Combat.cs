@@ -98,8 +98,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (CombatTable == null) return null;
 
-                if (_attackHeights == null)
-                    _attackHeights = CombatTable.CMT.Select(m => m.AttackHeight).Distinct().ToList();
+                _attackHeights ??= CombatTable.CMT.Select(m => m.AttackHeight).Distinct().ToList();
 
                 return _attackHeights;
             }
@@ -189,8 +188,7 @@ namespace ACE.Server.WorldObjects
                 //CurrentSpell = GetRandomSpell();
                 if (CurrentSpell.IsProjectile)
                 {
-                    if (isVisible == null)
-                        isVisible = IsDirectVisible(AttackTarget);
+                    isVisible ??= IsDirectVisible(AttackTarget);
 
                     // ensure direct los
                     if (!isVisible.Value)
@@ -301,19 +299,12 @@ namespace ACE.Server.WorldObjects
 
         public DamageType GetDamageType(PropertiesBodyPart attackPart, CombatType? combatType = null)
         {
+            // If there is a weapon equipped, get the damage type from that weapon.
             var weapon = GetEquippedWeapon();
+            if (weapon != null) return GetDamageType(false, combatType);
 
-            if (weapon != null)
-                return GetDamageType(false, combatType);
-            else
-            {
-                var damageType = attackPart.DType;
-
-                if (damageType.IsMultiDamage())
-                    damageType = damageType.SelectDamageType();
-
-                return damageType;
-            }
+            // Otherwise, choose a random damage type from the bodypart, falling back to one of the physical options if none is set.
+            return EnumFlagRandom.SelectRandomFlag(attackPart.DType, DamageType.Physical);
         }
 
         /// <summary>
@@ -345,7 +336,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void TakeDamageOverTime_NotifySource(Player source, DamageType damageType, float amount, bool aetheria = false)
         {
-            if (!PropertyManager.GetBool("show_dot_messages"))
+            if (!ServerConfig.show_dot_messages.Value)
                 return;
 
             var iAmount = (uint)Math.Round(amount);
@@ -356,7 +347,7 @@ namespace ACE.Server.WorldObjects
             var percent = amount / Health.MaxValue;
             Strings.GetAttackVerb(notifyType, percent, ref verb, ref plural);
 
-            string msg = null;
+            string msg;
 
             var type = ChatMessageType.CombatSelf;
 
@@ -603,8 +594,10 @@ namespace ACE.Server.WorldObjects
 
             BroadcastMessage($"Get Over Here {targetPlayer.Name}!", 250.0f);
 
-            var destination = new Position(this.Location);
-            destination.Rotation = targetPlayer.Location.Rotation;
+            var destination = new Position(this.Location)
+            {
+                Rotation = targetPlayer.Location.Rotation
+            };
 
             WorldManager.ThreadSafeTeleport(targetPlayer, destination);
 
@@ -809,7 +802,7 @@ namespace ACE.Server.WorldObjects
             set { if (value == 0) RemoveProperty(PropertyInt.AiAllowedCombatStyle); else SetProperty(PropertyInt.AiAllowedCombatStyle, (int)value); }
         }
 
-        private static readonly ConcurrentDictionary<uint, BodyPartTable> BPTableCache = new ConcurrentDictionary<uint, BodyPartTable>();
+        private static readonly ConcurrentDictionary<uint, BodyPartTable> BPTableCache = [];
 
         public static BodyPartTable GetBodyParts(uint wcid)
         {

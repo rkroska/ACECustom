@@ -69,9 +69,9 @@ namespace ACE.Server.WorldObjects
         }
 
         // Split arrow constants
-        private const int DEFAULT_SPLIT_ARROW_COUNT = 3;
-        private const float DEFAULT_SPLIT_ARROW_RANGE = 8f;
-        private const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
+        public const int DEFAULT_SPLIT_ARROW_COUNT = 3;
+        public const float DEFAULT_SPLIT_ARROW_RANGE = 8f;
+        public const float DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER = 0.6f;
         
         // Split arrow validation constants
         private const int SPLIT_ARROW_COUNT_MIN = 0;
@@ -221,6 +221,12 @@ namespace ACE.Server.WorldObjects
 
             var setup = DatManager.PortalDat.ReadFromDat<SetupModel>(setupId);
 
+            if (setup.Spheres.Count == 0)
+            {
+                log.Error($"Creature_Missile.GetProjectileRadius(): SetupId for {weenie.WeenieClassId} - {weenie.ClassName} is invalid for a projectile, as it has no Spheres defined");
+                return 0.0f;
+            }
+
             if (!weenie.PropertiesFloat.TryGetValue(PropertyFloat.DefaultScale, out var scale))
                 scale = 1.0f;
 
@@ -249,7 +255,7 @@ namespace ACE.Server.WorldObjects
 
             if (this is Player player && player.GetCharacterOption(CharacterOption.UseFastMissiles))
             {
-                maxVelocity *= PropertyManager.GetDouble("fast_missile_modifier");
+                maxVelocity *= ServerConfig.fast_missile_modifier.Value;
             }
 
             // hard cap in physics engine
@@ -349,7 +355,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     // use movement quartic solver
-                    if (!PropertyManager.GetBool("trajectory_alt_solver"))
+                    if (!ServerConfig.trajectory_alt_solver.Value)
                     {
                         var numSolutions = Trajectory.solve_ballistic_arc(origin, speed, dest, targetVelocity, gravity, out s0, out _, out time);
 
@@ -362,7 +368,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // use stationary solver
-            if (!PropertyManager.GetBool("trajectory_alt_solver"))
+            if (!ServerConfig.trajectory_alt_solver.Value)
             {
                 Trajectory.solve_ballistic_arc(origin, speed, dest, gravity, out s0, out _, out t0, out _);
 

@@ -73,7 +73,7 @@ namespace ACE.Server.Managers
             log.DebugFormat("ServerTime initialized to {0}", Timers.WorldStartLoreTime);
             log.DebugFormat($"Current maximum allowed sessions: {ConfigManager.Config.Server.Network.MaximumAllowedSessions}");
 
-            log.Info($"World started and is currently {WorldStatus.ToString()}{(PropertyManager.GetBool("world_closed", false) ? "" : " and will open automatically when server startup is complete.")}");
+            log.Info($"World started and is currently {WorldStatus.ToString()}{(ServerConfig.world_closed.Value ? "" : " and will open automatically when server startup is complete.")}");
             if (WorldStatus == WorldStatusState.Closed)
                 log.Info($"To open world to players, use command: world open");
         }
@@ -115,12 +115,13 @@ namespace ACE.Server.Managers
                     var stuckTime = (DateTime.UtcNow - offlinePlayer.LastRequestedDatabaseSave).TotalSeconds;
                     log.Error($"[LOGIN BLOCK] {character.Name} REJECTED after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB queue: {DatabaseManager.Shard.QueueCount}");
                     
-                    if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
+                    if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && 
+                        ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                     {
                         try
                         {
-                            var msg = $"🔴 **CRITICAL**: `{character.Name}` login blocked after {MAX_LOGIN_RETRIES} retries. Save stuck {stuckTime:N1}s. DB Queue: {DatabaseManager.Shard.QueueCount}";
-                            DiscordChatManager.SendDiscordMessage("CRITICAL ALERT", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                            var msg = $"[Login Block] {character.Name} rejected. Save stuck {stuckTime:N1}s. Queue: {DatabaseManager.Shard.QueueCount}";
+                            _ = DiscordChatManager.SendDiscordMessage("LoginMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                         }
                         catch { }
                     }
@@ -152,7 +153,7 @@ namespace ACE.Server.Managers
                 DatabaseManager.Shard.GetPossessedBiotasInParallel(character.Id, biotas =>
                 {
                     log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms, Queue Size: {DatabaseManager.Shard.QueueCount}");
-                    ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas)));
+                    ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_DoPlayerEnterWorld, () => DoPlayerEnterWorld(session, fullCharacter, offlinePlayer.Biota, biotas), ActionPriority.High));
                 });
             });            
         }
@@ -284,7 +285,7 @@ namespace ACE.Server.Managers
                 // send to lifestone, or fallback location
                 var fixLoc = session.Player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
 
-                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc.ToLOCString()}");
+                log.Error($"WorldManager.DoPlayerEnterWorld: failed to spawn {session.Player.Name}, relocating to {fixLoc}");
 
                 session.Player.Location = new Position(fixLoc);
                 LandblockManager.AddObject(session.Player, true);
@@ -300,16 +301,16 @@ namespace ACE.Server.Managers
             }
 
             // These warnings are set by DDD_InterrogationResponse
-            if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && PropertyManager.GetBool("show_dat_warning"))
+            if ((session.DatWarnCell || session.DatWarnLanguage || session.DatWarnPortal) && ServerConfig.show_dat_warning.Value)
             {
-                var msg = PropertyManager.GetString("dat_older_warning_msg");
+                var msg = ServerConfig.dat_older_warning_msg.Value;
                 var chatMsg = new GameMessageSystemChat(msg, ChatMessageType.System);
                 session.Network.EnqueueSend(chatMsg);
             }
 
-            var popup_header = PropertyManager.GetString("popup_header");
-            var popup_motd = PropertyManager.GetString("popup_motd");
-            var popup_welcome = player.IsOlthoiPlayer ? PropertyManager.GetString("popup_welcome_olthoi") : PropertyManager.GetString("popup_welcome");
+            var popup_header = ServerConfig.popup_header.Value;
+            var popup_motd = ServerConfig.popup_motd.Value;
+            var popup_welcome = player.IsOlthoiPlayer ? ServerConfig.popup_welcome_olthoi.Value : ServerConfig.popup_welcome.Value;
 
             if (character.TotalLogins <= 1)
             {
@@ -326,7 +327,7 @@ namespace ACE.Server.Managers
             var info = "Welcome to Asheron's Call\n  powered by ACEmulator\n\nFor more information on commands supported by this server, type @acehelp\n";
             session.Network.EnqueueSend(new GameMessageSystemChat(info, ChatMessageType.Broadcast));
 
-            var server_motd = PropertyManager.GetString("server_motd");
+            var server_motd = ServerConfig.server_motd.Value;
             if (!string.IsNullOrEmpty(server_motd))
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{server_motd}\n", ChatMessageType.Broadcast));
 
@@ -353,11 +354,11 @@ namespace ACE.Server.Managers
         /// Note that this work will be done on the next tick, not immediately, so be careful about your order of operations.
         /// If you must ensure order, pass your follow up work in with the argument actionToFollowUpWith. That work will be enqueued onto the Player.
         /// </summary>
-        public static void ThreadSafeTeleport(Player player, Position newPosition, IAction actionToFollowUpWith = null, bool fromPortal = false)
+        public static void ThreadSafeTeleport(Creature creature, Position newPosition, IAction actionToFollowUpWith = null, bool fromPortal = false)
         {
             EnqueueAction(new ActionEventDelegate(ActionType.WorldManager_ThreadSafeTeleport, () =>
             {
-                player.Teleport(newPosition, fromPortal);
+                creature.Teleport(newPosition, fromPortal);
 
                     if (actionToFollowUpWith != null)
                         EnqueueAction(actionToFollowUpWith);
@@ -384,6 +385,12 @@ namespace ACE.Server.Managers
 
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
+            // Normal ticks should complete in under 100ms. Log warning if tick exceeds 10s as it indicates
+            // potential performance issues (high load, slow database, or blocking operations).
+            var slowTickThreshold = TimeSpan.FromSeconds(10);
+            // If a tick takes 30+ seconds, it's likely a hang scenario (deadlock, infinite loop, or thread exhaustion).
+            // This helps identify the root cause of server freezes by logging before complete hang occurs.
+            var hangDetectionThreshold = TimeSpan.FromSeconds(30);
 
             while (!pendingWorldStop)
             {
@@ -460,7 +467,19 @@ namespace ACE.Server.Managers
                 if (!gameWorldUpdated)
                     Thread.Sleep(sessionCount == 0 ? 10 : 1); // Relax the CPU more if no sessions are connected
 
-                Timers.PortalYearTicks += worldTickTimer.Elapsed.TotalSeconds;
+                // Capture tick duration before updating PortalYearTicks for accurate measurement
+                var tickDuration = worldTickTimer.Elapsed;
+                Timers.PortalYearTicks += tickDuration.TotalSeconds;
+
+                // Log slow ticks to help diagnose hangs
+                if (tickDuration > hangDetectionThreshold)
+                {
+                    log.Error($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - possible hang detected!");
+                }
+                else if (tickDuration > slowTickThreshold)
+                {
+                    log.Warn($"UpdateWorld tick took {tickDuration.TotalSeconds:F2}s - slower than expected");
+                }
             }
 
             // World has finished operations and concedes the thread to garbage collection
@@ -502,11 +521,11 @@ namespace ACE.Server.Managers
             if ((now - lastLoginBlockAlert).TotalMinutes >= 1)
                 loginBlockAlertsThisMinute = 0;
             
-            var maxAlerts = PropertyManager.GetLong("login_block_discord_max_alerts_per_minute", 3);
+            var maxAlerts = ServerConfig.login_block_discord_max_alerts_per_minute.Value;
             if (maxAlerts <= 0 || loginBlockAlertsThisMinute >= maxAlerts)
                 return;
             
-            if (!ConfigManager.Config.Chat.EnableDiscordConnection || 
+            if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value < (long)ACE.Common.DiscordLogLevel.Info || 
                 ConfigManager.Config.Chat.PerformanceAlertsChannelId <= 0)
                 return;
             

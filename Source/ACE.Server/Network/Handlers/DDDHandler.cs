@@ -7,7 +7,6 @@ using ACE.Entity.Enum;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
-using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 
@@ -20,8 +19,7 @@ namespace ACE.Server.Network.Handlers
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static bool Debug = false;
-
-        [InboundGameMessage(InboundGameMessageOpcode.DDD_InterrogationResponse, SessionState.AuthConnected)]
+        
         public static void DDD_InterrogationResponse(ClientMessage message, Session session)
         {
             var clientIsMissingIterations = false;
@@ -32,7 +30,7 @@ namespace ACE.Server.Network.Handlers
             var clientCellDatIntSet = new CMostlyConsecutiveIntSet();
             var clientLanguageDatIntSet = new CMostlyConsecutiveIntSet();
 
-            var showDatWarning = PropertyManager.GetBool("show_dat_warning");
+            var showDatWarning = ServerConfig.show_dat_warning.Value;
 
             message.Payload.ReadUInt32(); // m_ClientLanguage
 
@@ -116,7 +114,7 @@ namespace ACE.Server.Network.Handlers
 
             if (clientHasExtraIterations)
             {
-                var msg = PropertyManager.GetString("dat_newer_warning_msg");
+                var msg = ServerConfig.dat_newer_warning_msg.Value;
                 session.Terminate(SessionTerminationReason.DATsNewerThanServer, new GameMessageBootAccount($" because {msg[..^1]}"));
             }
             else if (clientIsMissingIterations && enableDATpatching)
@@ -164,7 +162,7 @@ namespace ACE.Server.Network.Handlers
             }
             else if (clientIsMissingIterations && !enableDATpatching)
             {
-                var msg = PropertyManager.GetString("dat_older_warning_msg");
+                var msg = ServerConfig.dat_older_warning_msg.Value;
                 session.Terminate(SessionTerminationReason.DATsPatchingDisabled, new GameMessageBootAccount($" because {msg.TrimEnd('.')}"));
             }
             else // client dat files are up to date
@@ -173,7 +171,6 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        [InboundGameMessage(InboundGameMessageOpcode.DDD_EndDDD, SessionState.AuthConnected)]
         public static void DDD_EndDDD(ClientMessage message, Session session)
         {
             // We don't need to reply to this message unless GameMessageDDDBeginDDD was sent.
@@ -192,11 +189,10 @@ namespace ACE.Server.Network.Handlers
             }
         }
 
-        [InboundGameMessage(InboundGameMessageOpcode.DDD_RequestDataMessage, SessionState.WorldConnected)]
         public static void DDD_RequestDataMessage(ClientMessage message, Session session)
         {
             var enableDATpatching = ConfigManager.Config.DDD.EnableDATPatching;
-            var showDatWarning = PropertyManager.GetBool("show_dat_warning");
+            var showDatWarning = ServerConfig.show_dat_warning.Value;
 
             var qdid_type = (DatFileType)message.Payload.ReadUInt32();
             var qdid_ID = message.Payload.ReadUInt32();
@@ -207,7 +203,7 @@ namespace ACE.Server.Network.Handlers
             {
                 if (showDatWarning)
                 {
-                    var msg = PropertyManager.GetString("dat_older_warning_msg");
+                    var msg = ServerConfig.dat_older_warning_msg.Value;
                     var popupMsg = new GameEventPopupString(session, msg);
                     var chatMsg = new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast);
                     var transientMsg = new GameEventCommunicationTransientString(session, msg);

@@ -461,7 +461,7 @@ namespace ACE.Server.WorldObjects
             // verify target type for item enchantment
             if (spell.School == MagicSchool.ItemEnchantment && !VerifyNonComponentTargetType(spell, target))
             {
-                if (spell.DispelSchool != MagicSchool.ItemEnchantment || !PropertyManager.GetBool("item_dispel"))
+                if (spell.DispelSchool != MagicSchool.ItemEnchantment || !ServerConfig.item_dispel.Value)
                     return true;
             }
 
@@ -734,7 +734,7 @@ namespace ACE.Server.WorldObjects
             }
 
             //Console.WriteLine($"Angle: " + angle);
-            var maxAngle = PropertyManager.GetDouble("spellcast_max_angle");
+            var maxAngle = ServerConfig.spellcast_max_angle.Value;
 
             if (RecordCast.Enabled)
                 RecordCast.Log($"DoCastSpell(angle={angle} vs. {maxAngle})");
@@ -794,6 +794,11 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (target != null && target is Player targetPlayer && Session.AccessLevel >= AccessLevel.Admin)
+            {
+                PlayerManager.BroadcastToAuditChannel(this, $"Admin {Name} cast {spell.Name} (ID: {spell.Id}) on {targetPlayer.Name}.");
+            }
+
             DoCastSpell_Inner(spell, casterItem, manaUsed, target, castingPreCheckStatus);
         }
 
@@ -809,7 +814,7 @@ namespace ACE.Server.WorldObjects
 
             if (FastTick)
             {
-                if (PropertyManager.GetDouble("spellcast_max_angle") > 5.0f && IsWithinAngle(target))
+                if (ServerConfig.spellcast_max_angle.Value > 5.0f && IsWithinAngle(target))
                 {
                     // emulate current gdle TurnTo - doesn't match retail, but some players may prefer this
                     OnMoveComplete_Magic(WeenieError.None);
@@ -945,14 +950,14 @@ namespace ACE.Server.WorldObjects
 
             IsBusy = true;
 
-            var queue = PropertyManager.GetBool("spellcast_recoil_queue");
+            var queue = ServerConfig.spellcast_recoil_queue.Value;
 
             if (queue)
                 MagicState.CanQueue = true;
 
             if (FastTick)
             {
-                var fastbuff = selfTarget && PropertyManager.GetBool("fastbuff");
+                var fastbuff = selfTarget && ServerConfig.fastbuff.Value;
 
                 // return to magic ready stance
                 var actionChain = new ActionChain();
@@ -1179,7 +1184,7 @@ namespace ACE.Server.WorldObjects
 
         public void TryBurnComponents(Spell spell)
         {
-            if (SafeSpellComponents || PropertyManager.GetBool("safe_spell_comps"))
+            if (SafeSpellComponents || ServerConfig.safe_spell_comps.Value)
                 return;
 
             var burned = spell.TryBurnComponents(this);
@@ -1202,7 +1207,7 @@ namespace ACE.Server.WorldObjects
                 var item = GetInventoryItemsOfWCID(wcid).FirstOrDefault();
                 if (item == null)
                 {
-                    if (SpellComponentsRequired && PropertyManager.GetBool("require_spell_comps"))
+                    if (SpellComponentsRequired && ServerConfig.require_spell_comps.Value)
                         log.Warn($"{Name}.TryBurnComponents({spellComponent.Name}): not found in inventory");
                     else
                         burned.RemoveAt(i);
@@ -1227,7 +1232,7 @@ namespace ACE.Server.WorldObjects
         {
             spell.Formula.GetPlayerFormula(this);
 
-            if (!SpellComponentsRequired || !PropertyManager.GetBool("require_spell_comps"))
+            if (!SpellComponentsRequired || !ServerConfig.require_spell_comps.Value)
                 return true;
 
             var requiredComps = spell.Formula.GetRequiredComps();

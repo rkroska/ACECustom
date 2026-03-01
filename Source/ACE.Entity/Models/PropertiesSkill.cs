@@ -7,7 +7,7 @@ namespace ACE.Entity.Models
     public class PropertiesSkill
     {
         public ushort LevelFromPP { get; set; }
-        public SkillAdvancementClass SAC { get; set; }
+        public SkillAdvancementClass SAC { get; set; } = SkillAdvancementClass.Untrained;
         public uint PP { get; set; }
         public uint InitLevel { get; set; }
         public uint ResistanceAtLastCheck { get; set; }

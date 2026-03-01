@@ -8,12 +8,12 @@ namespace ACE.Server.Entity
     /// <summary>
     /// Fast chugging state variables
     /// </summary>
-    public class FoodState
+    public class FoodState(Player player)
     {
         /// <summary>
         /// A reference to the Player for this FoodState
         /// </summary>
-        public Player Player { get; set; }
+        public Player Player { get; set; } = player;
 
         /// <summary>
         /// This is set to true when a FastTick player is consuming food / drink
@@ -40,11 +40,6 @@ namespace ACE.Server.Entity
         /// For returning to combat state after consuming
         /// </summary>
         public MotionStance PrevStance { get; set; }
-
-        public FoodState(Player player)
-        {
-            Player = player;
-        }
 
         /// <summary>
         /// Called when a player starts performing the motion to apply a consumable
