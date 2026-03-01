@@ -13,6 +13,8 @@ namespace ACE.Server.Managers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static readonly object _eventsLock = new object();
+
         public static Dictionary<string, Event> Events;
 
         public static bool Debug = false;
@@ -49,15 +51,16 @@ namespace ACE.Server.Managers
             Database.DatabaseManager.World.ClearCachedEvent(normalizedName);
 
             var evnt = Database.DatabaseManager.World.GetCachedEvent(normalizedName);
-            if (evnt != null)
+
+            lock (_eventsLock)
             {
-                Events[evnt.Name] = evnt;
-                log.Debug($"[EventManager] Reloaded event '{evnt.Name}' from database (State: {(GameEventState)evnt.State})");
-                return true;
-            }
-            else
-            {
-                // Event doesn't exist in DB, remove from dictionary if present
+                if (evnt != null)
+                {
+                    Events[evnt.Name] = evnt;
+                    log.Debug($"[EventManager] Reloaded event '{evnt.Name}' from database (State: {(GameEventState)evnt.State})");
+                    return true;
+                }
+
                 if (Events.Remove(normalizedName))
                     log.Debug($"[EventManager] Removed event '{normalizedName}' (not found in database)");
                 return false;
@@ -72,15 +75,16 @@ namespace ACE.Server.Managers
             // Clear database cache
             Database.DatabaseManager.World.ClearAllCachedEvents();
 
-            // Build new dictionary and swap atomically to avoid race conditions
-            var newEvents = new Dictionary<string, Event>(StringComparer.OrdinalIgnoreCase);
+            // Build new dictionary
             var events = Database.DatabaseManager.World.GetAllEvents();
+            var reloaded = new Dictionary<string, Event>(StringComparer.OrdinalIgnoreCase);
             foreach (var evnt in events)
-            {
-                newEvents.Add(evnt.Name, evnt);
-            }
-            Events = newEvents;
-            log.Debug($"[EventManager] Reloaded {Events.Count} events from database");
+                reloaded[evnt.Name] = evnt;
+
+            lock (_eventsLock)
+                Events = reloaded;
+
+            log.Debug($"[EventManager] Reloaded {reloaded.Count} events from database");
         }
 
         public static bool StartEvent(string e, WorldObject source, WorldObject target)
@@ -90,25 +94,28 @@ namespace ACE.Server.Managers
             if (eventName.Equals("EventIsPKWorld", StringComparison.OrdinalIgnoreCase)) // special event
                 return false;
 
-            if (!Events.TryGetValue(eventName, out Event evnt))
-                return false;
-
-            var state = (GameEventState)evnt.State;
-
-            if (state == GameEventState.Disabled)
-                return false;
-
-            if (state == GameEventState.Enabled || state == GameEventState.Off)
+            lock (_eventsLock)
             {
-                evnt.State = (int)GameEventState.On;
+                if (!Events.TryGetValue(eventName, out Event evnt))
+                    return false;
 
-                if (Debug)
-                    Console.WriteLine($"Starting event {evnt.Name}");
+                var state = (GameEventState)evnt.State;
+
+                if (state == GameEventState.Disabled)
+                    return false;
+
+                if (state == GameEventState.Enabled || state == GameEventState.Off)
+                {
+                    evnt.State = (int)GameEventState.On;
+
+                    if (Debug)
+                        Console.WriteLine($"Starting event {evnt.Name}");
+                }
+
+                log.Debug($"[EVENT] {(source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})")}{(target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),")} started an event: {evnt.Name}{((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been started.") : "")}");
+
+                return true;
             }
-
-            log.Debug($"[EVENT] {(source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})")}{(target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),")} started an event: {evnt.Name}{((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been started.") : "")}");
-
-            return true;
         }
 
         public static bool StopEvent(string e, WorldObject source, WorldObject target)
@@ -118,25 +125,28 @@ namespace ACE.Server.Managers
             if (eventName.Equals("EventIsPKWorld", StringComparison.OrdinalIgnoreCase)) // special event
                 return false;
 
-            if (!Events.TryGetValue(eventName, out Event evnt))
-                return false;
-
-            var state = (GameEventState)evnt.State;
-
-            if (state == GameEventState.Disabled)
-                return false;
-
-            if (state == GameEventState.Enabled || state == GameEventState.On)
+            lock (_eventsLock)
             {
-                evnt.State = (int)GameEventState.Off;
+                if (!Events.TryGetValue(eventName, out Event evnt))
+                    return false;
 
-                if (Debug)
-                    Console.WriteLine($"Stopping event {evnt.Name}");
+                var state = (GameEventState)evnt.State;
+
+                if (state == GameEventState.Disabled)
+                    return false;
+
+                if (state == GameEventState.Enabled || state == GameEventState.On)
+                {
+                    evnt.State = (int)GameEventState.Off;
+
+                    if (Debug)
+                        Console.WriteLine($"Stopping event {evnt.Name}");
+                }
+
+                log.Debug($"[EVENT] {(source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})")}{(target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),")} stopped an event: {evnt.Name}{((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been stopped.") : "")}");
+
+                return true;
             }
-
-            log.Debug($"[EVENT] {(source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})")}{(target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),")} stopped an event: {evnt.Name}{((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been stopped.") : "")}");
-
-            return true;
         }
 
         public static bool IsEventStarted(string e, WorldObject source, WorldObject target)
@@ -150,42 +160,51 @@ namespace ACE.Server.Managers
                 return serverPkState;
             }
 
-            if (!Events.TryGetValue(eventName, out Event evnt))
-                return false;
-
-            if (evnt.State != (int)GameEventState.Disabled && (evnt.StartTime != -1 || evnt.EndTime != -1))
+            lock (_eventsLock)
             {
-                var prevState = (GameEventState)evnt.State;
+                if (!Events.TryGetValue(eventName, out Event evnt))
+                    return false;
 
-                var now = (int)Time.GetUnixTime();
+                if (evnt.State != (int)GameEventState.Disabled && (evnt.StartTime != -1 || evnt.EndTime != -1))
+                {
+                    var prevState = (GameEventState)evnt.State;
 
-                var start = (now > evnt.StartTime) && (evnt.StartTime > -1);
-                var end = (now > evnt.EndTime) && (evnt.EndTime > -1);
+                    var now = (int)Time.GetUnixTime();
 
-                if (prevState == GameEventState.On && end)
-                    return !StopEvent(evnt.Name, source, target);
-                else if ((prevState == GameEventState.Off || prevState == GameEventState.Enabled) && start && !end)
-                    return StartEvent(evnt.Name, source, target);
+                    var start = (now > evnt.StartTime) && (evnt.StartTime > -1);
+                    var end = (now > evnt.EndTime) && (evnt.EndTime > -1);
+
+                    if (prevState == GameEventState.On && end)
+                        return !StopEvent(evnt.Name, source, target);
+                    else if ((prevState == GameEventState.Off || prevState == GameEventState.Enabled) && start && !end)
+                        return StartEvent(evnt.Name, source, target);
+                }
+
+                return evnt.State == (int)GameEventState.On;
             }
-
-            return evnt.State == (int)GameEventState.On;
         }
 
         public static bool IsEventEnabled(string e)
         {
             var eventName = GetEventName(e);
 
-            if (!Events.TryGetValue(eventName, out Event evnt))
-                return false;
+            lock (_eventsLock)
+            {
+                if (!Events.TryGetValue(eventName, out Event evnt))
+                    return false;
 
-            return evnt.State != (int)GameEventState.Disabled;
+                return evnt.State != (int)GameEventState.Disabled;
+            }
         }
 
         public static bool IsEventAvailable(string e)
         {
             var eventName = GetEventName(e);
 
-            return Events.ContainsKey(eventName);
+            lock (_eventsLock)
+            {
+                return Events.ContainsKey(eventName);
+            }
         }
 
         public static GameEventState GetEventStatus(string e)
@@ -200,10 +219,13 @@ namespace ACE.Server.Managers
                     return GameEventState.Off;
             }
 
-            if (!Events.TryGetValue(eventName, out Event evnt))
-                return GameEventState.Undef;
+            lock (_eventsLock)
+            {
+                if (!Events.TryGetValue(eventName, out Event evnt))
+                    return GameEventState.Undef;
 
-            return (GameEventState)evnt.State;
+                return (GameEventState)evnt.State;
+            }
         }
 
         /// <summary>
