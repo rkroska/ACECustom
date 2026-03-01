@@ -262,14 +262,20 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Retrieves the best loaction to teleport a player to on death.
+        /// </summary>
+        public Position GetDeathLocation()
+        {
+            // teleport to sanctuary or best location
+            return Sanctuary ?? Instantiation ?? Location;
+        }
+
+        /// <summary>
         /// Called when the player enters portal space after dying
         /// </summary>
         public void ThreadSafeTeleportOnDeath()
         {
-            // teleport to sanctuary or best location
-            var newPosition = Sanctuary ?? Instantiation ?? Location;
-
-            WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(ActionType.PlayerDeath_EnqueueTeleport, () =>
+            WorldManager.ThreadSafeTeleport(this, GetDeathLocation(), new ActionEventDelegate(ActionType.PlayerDeath_EnqueueTeleport, () =>
             {
                 // Stand back up
                 SetCombatMode(CombatMode.NonCombat);

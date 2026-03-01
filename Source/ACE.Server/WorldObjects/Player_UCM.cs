@@ -3,6 +3,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
+using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
 using System.Collections.Generic;
@@ -20,6 +21,8 @@ namespace ACE.Server.WorldObjects
         private WorldObject CorrectStatue { get; set; }
         private Position CheckLocation { get; set; }
         private Random random { get; } = new();
+        public DateTime LastTickTime { get; set; } = DateTime.UtcNow;
+        public DateTime LastUCMCheckTime { get; set; } = DateTime.UnixEpoch;
 
         private static WorldObject MakeStatue()
         {
@@ -29,9 +32,12 @@ namespace ACE.Server.WorldObjects
             statue.ItemType = ItemType.Misc;
             statue.ItemUseable = Usable.RemoteNeverWalk;
             statue.RadarColor = RadarColor.Yellow;
-            statue.Stuck = true;
             statue.Ethereal = true;
             statue.Attackable = false;
+            statue.Invincible = true;
+            statue.AllowEdgeSlide = false;
+            statue.Static = true;
+            statue.IsFrozen = true;
             statue.Name = "Arcane Test Statue";
             return statue;
         }
@@ -44,6 +50,7 @@ namespace ACE.Server.WorldObjects
             IsChecking = true;
             CheckLocation = new Position(player.Location);
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
+            LastUCMCheckTime = DateTime.UtcNow;
             Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
 
             // N, E, S, W relative or absolute doesn't matter too much, we'll use absolute cardinal offsets
@@ -68,7 +75,7 @@ namespace ACE.Server.WorldObjects
                 var spawnLoc = new Position(CheckLocation);
                 spawnLoc.PositionX += offsets[i].X;
                 spawnLoc.PositionY += offsets[i].Y;
-                spawnLoc.PositionZ += 1;
+                // We don't set Z - our static will pop onto the landblock surface +/- a few units.
 
                 if (i == correctIndex)
                 {
@@ -103,7 +110,9 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your focus is being tested. Use the statue looking AWAY from you within {secondsUntilTimeout} seconds or suffer consequences!", ChatMessageType.Broadcast));
+            string message = $"Your focus is being tested. Use the statue looking AWAY from you within {secondsUntilTimeout} seconds or suffer consequences!";
+            player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
             return true;
         }
 
@@ -115,19 +124,24 @@ namespace ACE.Server.WorldObjects
         }
         private void HandleFailure(Player player, bool timeout = false)
         {
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat("You failed the focus test!", ChatMessageType.Broadcast));
+            string message = "You failed the focus test and have been punished!";
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
+            player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
+
             string reason = timeout ? "timed out" : "selected incorrectly";
-            string auditMessage = $"[UCM Check] Player {player.Name} failed UCM check ({reason}).";
+            string auditMessage = $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.";
             PlayerManager.BroadcastToAuditChannel(player, auditMessage);
             Stop();
+
+            // Try teleporting the player to the configured location.
             if (Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
             {
                 player.Teleport(failTeleLoc);
+                return;
             }
-            else if (player.Sanctuary != null)
-            {
-                player.Teleport(player.Sanctuary);
-            }
+
+            // Fallback to what would happen if the player died.
+            player.Teleport(player.GetDeathLocation());
         }
 
         // Returns true if the GUID belongs to an active statue, and false otherwise.
@@ -150,9 +164,32 @@ namespace ACE.Server.WorldObjects
 
         public void Tick(Player player)
         {
-            if (!IsChecking) return;
+            DateTime now = DateTime.UtcNow;
+            TimeSpan sinceLastTick = now - LastTickTime;
+            LastTickTime = now;
 
-            if (DateTime.UtcNow > Timeout)
+            if (!IsChecking)
+            {
+                // If player jumping or teleporting, don't start a check!
+                if (player.IsJumping || player.Teleporting) return;
+
+                // If not in a valid landblock, not eligible for a check.
+                ushort landblockId = (ushort)player.Location.Landblock;
+                if (!LandblockCollections.ValleyOfDeathLandblocks.Contains(landblockId) && !LandblockCollections.ThaelarynIslandLandblocks.Contains(landblockId)) return;
+
+                // If not past the cooldown period since the last check, not eligible for a check.
+                if (now < LastUCMCheckTime.AddSeconds(ServerConfig.ucm_check_cooldown_seconds.Value)) return;
+
+                // Calculate the true probability of at least one trigger occurring over the elapsed time.
+                // Formula: 1 - (1 - chancePerSecond)^TotalSeconds.
+                // Note: ucm_check_spawn_chance is configured as a percentage between 0 and 1.
+                double chancePerSec = ServerConfig.ucm_check_spawn_chance.Value;
+                double probOverElapsed = 1.0 - Math.Pow(1.0 - chancePerSec, sinceLastTick.TotalSeconds);
+                if (random.NextDouble() < probOverElapsed) Start(player);
+                return;
+            }
+
+            if (now > Timeout)
             {
                 HandleFailure(player, true);
                 return;
