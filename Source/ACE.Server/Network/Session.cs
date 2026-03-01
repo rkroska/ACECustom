@@ -54,6 +54,8 @@ namespace ACE.Server.Network
 
         public DateTime lastMyQuestsCommandTime;
 
+        public bool IsTerminated = false;
+
         public SessionTerminationDetails PendingTermination { get; set; } = null;
 
         public string BootSessionReason { get; private set; }
@@ -308,7 +310,8 @@ namespace ACE.Server.Network
 
         public void Terminate(SessionTerminationReason reason, OutboundGameMessage message = null, ServerPacket packet = null, string extraReason = "")
         {
-            // TODO: graceful SessionTerminationReason.AccountBooted handling
+            if (IsTerminated) return;
+            IsTerminated = true;
 
             if (packet != null)
             {

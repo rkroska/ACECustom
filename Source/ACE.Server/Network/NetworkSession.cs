@@ -352,13 +352,13 @@ namespace ACE.Server.Network
         /// <param name="rcvdSeq">the sequence of the packet that was just received.</param>
         private void DoRequestForRetransmission(uint rcvdSeq)
         {
+            if (session.IsTerminated) return;
             var desiredSeq = lastReceivedPacketSequence + 1;
-            List<uint> needSeq = new List<uint>();
-            needSeq.Add(desiredSeq);
+            List<uint> needSeq = [desiredSeq];
             uint bottom = desiredSeq + 1;
             if (rcvdSeq < bottom || rcvdSeq - bottom > CryptoSystem.MaximumEffortLevel)
             {
-                log.Warn($"[{session.LoggingIdentifier}] Session terminated for AbnormalSequenceReceived in DoRequestForRetransmission. rcvdSeq: {rcvdSeq}, bottom: {bottom}, diff: {(rcvdSeq >= bottom ? (rcvdSeq - bottom).ToString() : "negative")}, MaximumEffortLevel: {CryptoSystem.MaximumEffortLevel}");
+                log.Warn($"[{session.LoggingIdentifier}] Session for {session?.Player.Name ?? "Unknown Player"} terminated for AbnormalSequenceReceived in DoRequestForRetransmission. rcvdSeq: {rcvdSeq}, bottom: {bottom}, diff: {(rcvdSeq >= bottom ? (rcvdSeq - bottom).ToString() : "negative")}, MaximumEffortLevel: {CryptoSystem.MaximumEffortLevel}");
                 session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
                 return;
             }
