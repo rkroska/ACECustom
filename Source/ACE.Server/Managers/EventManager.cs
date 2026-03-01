@@ -42,10 +42,13 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool ReloadEvent(string eventName)
         {
-            // Clear from database cache first so we get fresh data
-            Database.DatabaseManager.World.ClearCachedEvent(eventName);
+            // Normalize event name (strip @comment if present)
+            var normalizedName = GetEventName(eventName);
 
-            var evnt = Database.DatabaseManager.World.GetCachedEvent(eventName);
+            // Clear from database cache first so we get fresh data
+            Database.DatabaseManager.World.ClearCachedEvent(normalizedName);
+
+            var evnt = Database.DatabaseManager.World.GetCachedEvent(normalizedName);
             if (evnt != null)
             {
                 Events[evnt.Name] = evnt;
@@ -55,8 +58,8 @@ namespace ACE.Server.Managers
             else
             {
                 // Event doesn't exist in DB, remove from dictionary if present
-                if (Events.Remove(eventName))
-                    log.Debug($"[EventManager] Removed event '{eventName}' (not found in database)");
+                if (Events.Remove(normalizedName))
+                    log.Debug($"[EventManager] Removed event '{normalizedName}' (not found in database)");
                 return false;
             }
         }
@@ -69,13 +72,14 @@ namespace ACE.Server.Managers
             // Clear database cache
             Database.DatabaseManager.World.ClearAllCachedEvents();
 
-            // Clear and reload Events dictionary
-            Events.Clear();
+            // Build new dictionary and swap atomically to avoid race conditions
+            var newEvents = new Dictionary<string, Event>(StringComparer.OrdinalIgnoreCase);
             var events = Database.DatabaseManager.World.GetAllEvents();
             foreach (var evnt in events)
             {
-                Events.Add(evnt.Name, evnt);
+                newEvents.Add(evnt.Name, evnt);
             }
+            Events = newEvents;
             log.Debug($"[EventManager] Reloaded {Events.Count} events from database");
         }
 
