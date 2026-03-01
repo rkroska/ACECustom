@@ -149,7 +149,7 @@ namespace ACE.Server.Entity
 
             var targetEnlightenment = player.Enlightenment + 1;
             long lumCost = CalculateLuminanceCost(targetEnlightenment);
-            if (!VerifyLuminance(player, lumCost))
+            if (player.GetTotalLuminance() < lumCost)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {lumCost:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
                 return false;
@@ -220,12 +220,6 @@ namespace ACE.Server.Entity
                 }
             }
             return true;
-        }
-
-        private static bool VerifyLuminance(Player player, long reqLum)
-        {
-            if (reqLum <= 0) return true;
-            return player.BankedLuminance >= reqLum;
         }
 
         private static bool VerifySocietyMaster(Player player)
