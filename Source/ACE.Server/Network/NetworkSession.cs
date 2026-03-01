@@ -358,6 +358,7 @@ namespace ACE.Server.Network
             uint bottom = desiredSeq + 1;
             if (rcvdSeq < bottom || rcvdSeq - bottom > CryptoSystem.MaximumEffortLevel)
             {
+                log.Warn($"[{session.LoggingIdentifier}] Session terminated for AbnormalSequenceReceived in DoRequestForRetransmission. rcvdSeq: {rcvdSeq}, bottom: {bottom}, diff: {(rcvdSeq >= bottom ? (rcvdSeq - bottom).ToString() : "negative")}, MaximumEffortLevel: {CryptoSystem.MaximumEffortLevel}");
                 session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
                 return;
             }
@@ -667,11 +668,11 @@ namespace ACE.Server.Network
             // If this session is attached to a player log them off to avoid retransmit floods
             if (session.Player != null)
             {
-                ForceLogOff($"NetworkSession error: client and server are out of sync", $"{session.Player.Name} - disconnected to prevent retransmit flood");
+                ForceLogOff($"NetworkSession error: client and server are out of sync", $"{session.Player.Name} - disconnected to prevent retransmit flood (Requested sequence: {sequence})");
             }
             else
             {
-                log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}) - disconnected to prevent retransmit flood.");
+                log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}) - disconnected to prevent retransmit flood (Requested sequence: {sequence}).");
                 session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
             }
 
