@@ -95,10 +95,13 @@ namespace ACE.Server.Network
                 return null;
             }
 
-            // Read data starting at position reading dataToSend bytes
-            Message.Data.Seek(position, SeekOrigin.Begin);
+            // Thread-safe read: use GetBuffer() + offset instead of Seek/Read.
+            // MemoryStream.Seek() mutates shared stream state, which is unsafe when
+            // Parallel.ForEach in DoSessionWork sends the same GameMessage to multiple
+            // sessions concurrently. Buffer.BlockCopy reads at a fixed offset with no
+            // stream state mutation, making it safe for concurrent access.
             byte[] data = new byte[dataToSend];
-            Message.Data.Read(data, 0, dataToSend);
+            Buffer.BlockCopy(Message.Data.GetBuffer(), position, data, 0, dataToSend);
 
             // Build ServerPacketFragment structure
             ServerPacketFragment fragment = new ServerPacketFragment(data);
