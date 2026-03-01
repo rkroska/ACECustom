@@ -141,6 +141,12 @@ namespace ACE.Server.Command.Handlers
              "Example: /teleloc \"0x12345678 [10.0 20.0 0.0] 1.0 0.0 0.0 0.0\"")]
         public static void HandleTeleLocation(Session session, params string[] parameters) => ForwardCommand(session, parameters, "loc", false);
 
+        [CommandHandler("telepoi", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "Teleport yourself to a named Point of Interest",
+             "Usage: /telepoi \"<poi string>\"\n" +
+             "Example: /telepoi \"Arwic\"")]
+        public static void HandleTeleportPoi(Session session, params string[] parameters) => ForwardCommand(session, parameters, "poi", false);
+
         [CommandHandler("teledungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport to a dungeon by name or landblock.",
             "Usage: /teledungeon <Name|Landblock>\n" +
