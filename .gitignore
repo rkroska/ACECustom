@@ -303,3 +303,7 @@ Source/ACE.Server/log4net.config
 docker.env
 docker-compose.yml
 /httplocalhost8000contentuser=rudy&p.txt
+
+# Generated AI documentation
+.agent/workflows/*.md
+docs/*.md

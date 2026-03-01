@@ -49,7 +49,7 @@ namespace ACE.Server.Managers
                     log.Error("Error sending discord message, " + ex.Message);
                 }
             }
-            
+
         }
 
         public static async Task SendDiscordFileAsync(string player, string message, long channelId, FileAttachment fileContent)
@@ -71,10 +71,17 @@ namespace ACE.Server.Managers
             {
                 log.Error("Error sending discord message, " + ex.Message);
             }
-            
+
 
         }
 
+        /// <summary>
+        /// Retrieves the SQL content from the most recent Discord message matching the given identifier.
+        /// Searches the last <paramref name="topN"/> messages, sorted by timestamp descending.
+        /// </summary>
+        /// <param name="topN">The maximum number of recent messages to search.</param>
+        /// <param name="identifier">The filename or ID used to find the correct message.</param>
+        /// <returns>The SQL text extracted from the message attachment, or null if not found.</returns>
         public static async Task<string> GetSqlFromDiscordMessageAsync(int topN, string identifier)
         {
             string res = "";
@@ -89,11 +96,12 @@ namespace ACE.Server.Managers
 
                 var messages = await channel.GetMessagesAsync(limit: topN).FlattenAsync();
 
-                foreach (var x in messages)
+                // Ensure we are looking at the newest messages first
+                foreach (var x in messages.OrderByDescending(m => m.Timestamp))
                 {
-                    if(x.Content == identifier)
+                    if (x.Content == identifier)
                     {
-                        if(x.Attachments.Count == 1)
+                        if (x.Attachments.Count == 1)
                         {
                             IAttachment attachment = x.Attachments.First();
                             if (attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
@@ -102,7 +110,7 @@ namespace ACE.Server.Managers
                                 return res;
                             }
                         }
-                    }    
+                    }
                 }
             }
             catch (Exception ex)
@@ -110,7 +118,7 @@ namespace ACE.Server.Managers
 
                 log.Error("Error getting discord messages, " + ex.Message);
             }
-            
+
 
             return res;
         }
@@ -129,7 +137,8 @@ namespace ACE.Server.Managers
 
                 var messages = await channel.GetMessagesAsync(limit: topN).FlattenAsync();
 
-                foreach (var x in messages)
+                // Ensure we are looking at the newest messages first
+                foreach (var x in messages.OrderByDescending(m => m.Timestamp))
                 {
                     if (x.Content == identifier)
                     {
@@ -160,9 +169,9 @@ namespace ACE.Server.Managers
             _httpClient.Timeout = TimeSpan.FromSeconds(10); // CodeRabbit: Prevent long hangs if Discord is down
 
             _discordSocketClient = new DiscordSocketClient();
-            
+
             // CodeRabbit: Handle fire-and-forget async failures
-            Task.Run(async () => 
+            Task.Run(async () =>
             {
                 try
                 {

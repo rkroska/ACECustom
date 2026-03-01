@@ -39,7 +39,7 @@ namespace ACE.Server.Command.Handlers
     public static class AdminCommands
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-        
+
         private const int MaxTransferLogDisplayCount = 20;
         private const int DefaultTransferPatternDays = 7;
         private const int SeparatorLineLength = 80;
@@ -145,9 +145,9 @@ namespace ACE.Server.Command.Handlers
         {
             days = 7;
             daysSpecified = false;
-            
+
             string playerName;
-            
+
             // Check if last parameter is a number (days)
             if (parameters.Length > 1 && int.TryParse(parameters[parameters.Length - 1], out var parsedDays))
             {
@@ -161,7 +161,7 @@ namespace ACE.Server.Command.Handlers
                 // Join all parameters for the player name
                 playerName = string.Join(" ", parameters);
             }
-            
+
             // Trim whitespace and surrounding quotes
             return playerName.Trim().Trim('"', '\'');
         }
@@ -217,7 +217,7 @@ namespace ACE.Server.Command.Handlers
             // Clamp days to prevent ArgumentOutOfRangeException
             days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var transfers = TransferLogger.GetTransferHistory(playerName, days);
-            
+
             if (transfers.Count == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"No transfers found for {playerName} in the last {days} days.", ChatMessageType.System));
@@ -233,7 +233,7 @@ namespace ACE.Server.Command.Handlers
                 var toAccountAge = transfer.ToAccountCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 var fromCharAge = transfer.FromCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 var toCharAge = transfer.ToCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
-                
+
                 var message = $"{transfer.Timestamp:MM/dd HH:mm} | {transfer.TransferType} | {transfer.FromPlayerName} ({transfer.FromPlayerAccount}) -> {transfer.ToPlayerName} ({transfer.ToPlayerAccount}) | {transfer.ItemName} x{transfer.Quantity} | From: Acc({fromAccountAge}) Char({fromCharAge}) | To: Acc({toAccountAge}) Char({toCharAge})";
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
             }
@@ -255,7 +255,7 @@ namespace ACE.Server.Command.Handlers
             // Clamp days to prevent ArgumentOutOfRangeException
             days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var transfers = TransferLogger.GetRecentTransfers(days);
-            
+
             if (transfers.Count == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"No suspicious transfers found in the last {days} days.", ChatMessageType.System));
@@ -291,7 +291,7 @@ namespace ACE.Server.Command.Handlers
             // Clamp days to prevent ArgumentOutOfRangeException
             days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
             var patterns = TransferLogger.GetTransferPatterns(playerName, days);
-            
+
             if (patterns.Count == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"No transfer patterns found for {playerName} in the last {days} days.", ChatMessageType.System));
@@ -307,7 +307,7 @@ namespace ACE.Server.Command.Handlers
                 var toAccountAge = pattern.ToAccountCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 var fromCharAge = pattern.FromCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
                 var toCharAge = pattern.ToCharacterCreatedDate?.ToString("yyyy-MM-dd") ?? "Unknown";
-                
+
                 var message = $"{pattern.Timestamp:MM/dd HH:mm} | {pattern.TransferType} | {pattern.FromPlayerName} ({pattern.FromPlayerAccount}) -> {pattern.ToPlayerName} ({pattern.ToPlayerAccount}) | {pattern.ItemName} x{pattern.Quantity} | From: Acc({fromAccountAge}) Char({fromCharAge}) | To: Acc({toAccountAge}) Char({toCharAge})";
                 session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.System));
             }
@@ -333,8 +333,8 @@ namespace ACE.Server.Command.Handlers
             try
             {
                 switch (setting)
-            {
-                case "threshold":
+                {
+                    case "threshold":
                         if (int.TryParse(value, out var threshold))
                         {
                             TransferLogger.UpdateSuspiciousTransferThreshold(threshold);
@@ -344,9 +344,9 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Invalid threshold value. Must be a number.", ChatMessageType.System));
                         }
-                    break;
+                        break;
 
-                case "timewindow":
+                    case "timewindow":
                         if (int.TryParse(value, out var hours))
                         {
                             TransferLogger.UpdateTimeWindowHours(hours);
@@ -356,9 +356,9 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Invalid time window value. Must be a number.", ChatMessageType.System));
                         }
-                    break;
+                        break;
 
-                case "patternthreshold":
+                    case "patternthreshold":
                         if (int.TryParse(value, out var patternThreshold))
                         {
                             TransferLogger.UpdatePatternDetectionThreshold(patternThreshold);
@@ -368,7 +368,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Invalid pattern threshold value. Must be a number.", ChatMessageType.System));
                         }
-                    break;
+                        break;
 
                     case "trackall":
                         if (bool.TryParse(value, out var trackAll) || value.ToLower() == "on" || value.ToLower() == "off")
@@ -422,10 +422,10 @@ namespace ACE.Server.Command.Handlers
                         }
                         break;
 
-                default:
+                    default:
                         session.Network.EnqueueSend(new GameMessageSystemChat($"Unknown setting: {setting}", ChatMessageType.System));
                         session.Network.EnqueueSend(new GameMessageSystemChat("Available settings: threshold, timewindow, patternthreshold, trackall, enabled, transferlogging, adminnotifications", ChatMessageType.System));
-                    break;
+                        break;
                 }
             }
             catch (Exception ex)
@@ -537,16 +537,16 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"Suspicious Transfer Threshold: {TransferLogger.SuspiciousTransferThreshold}", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Time Window: {TransferLogger.SuspiciousTransferTimeWindowHours} hours", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Pattern Detection Threshold: {TransferLogger.PatternDetectionThreshold}", ChatMessageType.System));
-            
+
             var blacklistedPlayers = TransferLogger.GetBlacklistedPlayers();
             var blacklistedAccounts = TransferLogger.GetBlacklistedAccounts();
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat($"Blacklisted Players: {blacklistedPlayers.Count}", ChatMessageType.System));
             if (blacklistedPlayers.Count > 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  {string.Join(", ", blacklistedPlayers)}", ChatMessageType.System));
             }
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat($"Blacklisted Accounts: {blacklistedAccounts.Count}", ChatMessageType.System));
             if (blacklistedAccounts.Count > 0)
             {
@@ -560,21 +560,21 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("Bank Transfer Audit Commands:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("Use /bankaudit or /ba (short alias)", ChatMessageType.System));
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("AUDIT COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit log <player> [days] - Show transfer history for a player", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit patterns <player> [days] - Show transfer patterns (repeated transfers)", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit suspicious [days] - Show flagged suspicious transfers", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit status - Show current configuration and blacklist", ChatMessageType.System));
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("NEW FEATURES:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit summaries <player> [days] - Show transfer summaries for a player", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit alerts - Show recent transfer alerts", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit monitor - Show real-time monitoring stats", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit cleanup [days] - Clean up old transfer data", ChatMessageType.System));
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("CONFIGURATION COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat($"/bankaudit config threshold <number> - Set transfer threshold (current: {TransferLogger.SuspiciousTransferThreshold})", ChatMessageType.System));
@@ -584,7 +584,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config adminnotifications <on|off> - Enable/disable admin notifications", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config trackall <on|off> - Track all items or only listed items", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit config enabled <on|off> - Enable/disable item tracking", ChatMessageType.System));
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("ITEM TRACKING COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit items add <itemname> - Add item to tracking list", ChatMessageType.System));
@@ -594,7 +594,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit top [days] - Show most active transfer participants", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit migrate - Create/update all transfer monitoring tables", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit fixsummaries - Fix duplicate transfer summaries and create unique index", ChatMessageType.System));
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("BLACKLIST COMMANDS:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist add player <name> - Add player to blacklist", ChatMessageType.System));
@@ -603,7 +603,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist remove account <name> - Remove account from blacklist", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist list player - Show blacklisted players", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit blacklist list account - Show blacklisted accounts", ChatMessageType.System));
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("BANK COMMAND BLACKLIST:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("/bankaudit bankban add player <name> <reason> [days] - Ban player from using /bank commands", ChatMessageType.System));
@@ -838,7 +838,7 @@ namespace ACE.Server.Command.Handlers
             days = Math.Max(1, Math.Min(days, 36500)); // ~100 years safety window
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Cleaning up transfer data older than {days} days...", ChatMessageType.System));
-            
+
             try
             {
                 DatabaseManager.Shard.BaseDatabase.CleanupOldTransferLogs(days);
@@ -864,10 +864,10 @@ namespace ACE.Server.Command.Handlers
                 // Clamp days to prevent ArgumentOutOfRangeException
                 days = Math.Max(0, Math.Min(days, 3650)); // ~10 years safety window
                 var cutoffDate = DateTime.UtcNow.AddDays(-days);
-                
+
                 // Get most active players by transfer count
                 var topPlayers = DatabaseManager.Shard.BaseDatabase.GetTopTransferParticipants(cutoffDate, 20);
-                
+
                 if (topPlayers.Count == 0)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"No transfer activity found in the last {days} days.", ChatMessageType.System));
@@ -876,7 +876,7 @@ namespace ACE.Server.Command.Handlers
 
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Top Transfer Participants (Last {days} days):", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(SeparatorLineLength, '='), ChatMessageType.System));
-                
+
                 int rank = 1;
                 foreach (var player in topPlayers)
                 {
@@ -1025,9 +1025,9 @@ namespace ACE.Server.Command.Handlers
                 var toIP = ipGroup.Key.ToIP ?? "Unknown";
                 var count = ipGroup.Count();
                 var transfersList = ipGroup.OrderByDescending(t => t.Timestamp).Take(3);
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  {count} transfers: {fromIP} -> {toIP}", ChatMessageType.System));
-                
+
                 foreach (var transfer in transfersList)
                 {
                     var message = $"    {transfer.Timestamp:MM-dd HH:mm} | {transfer.TransferType} | {transfer.ItemName} x{transfer.Quantity} | From: {transfer.FromPlayerName} ({transfer.FromPlayerAccount ?? "Unknown"}) | To: {transfer.ToPlayerName} ({transfer.ToPlayerAccount ?? "Unknown"})";
@@ -1036,9 +1036,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             // Show different IP patterns (alt account detection)
-            var differentIPTransfers = transfers.Where(t => 
-                !string.IsNullOrEmpty(t.FromPlayerIP) && 
-                !string.IsNullOrEmpty(t.ToPlayerIP) && 
+            var differentIPTransfers = transfers.Where(t =>
+                !string.IsNullOrEmpty(t.FromPlayerIP) &&
+                !string.IsNullOrEmpty(t.ToPlayerIP) &&
                 t.FromPlayerIP != t.ToPlayerIP).ToList();
 
             if (differentIPTransfers.Count > 0)
@@ -1046,11 +1046,11 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"DIFFERENT IP TRANSFERS (Alt Account Detection):", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{differentIPTransfers.Count} transfers to players on different IPs", ChatMessageType.System));
-                
+
                 var groupedByTarget = differentIPTransfers.GroupBy(t => t.ToPlayerName)
                                                          .OrderByDescending(g => g.Count())
                                                          .Take(5);
-                
+
                 foreach (var group in groupedByTarget)
                 {
                     var targetPlayer = group.Key;
@@ -1173,17 +1173,17 @@ namespace ACE.Server.Command.Handlers
             {
                 context.Database.ExecuteSqlRaw("SELECT 1 FROM transfer_logs LIMIT 1");
                 session.Network.EnqueueSend(new GameMessageSystemChat("transfer_logs table exists - checking for missing columns...", ChatMessageType.System));
-                
+
                 // Check and add missing columns individually (MySQL-safe approach)
                 var connection = context.Database.GetDbConnection();
                 try
                 {
                     context.Database.OpenConnection();
                     using var command = connection.CreateCommand();
-                
-                // Check if columns exist and add them individually
-                var columnsToAdd = new[]
-                {
+
+                    // Check if columns exist and add them individually
+                    var columnsToAdd = new[]
+                    {
                     ("FromAccountCreatedDate", "datetime(6) DEFAULT NULL"),
                     ("ToAccountCreatedDate", "datetime(6) DEFAULT NULL"),
                     ("FromCharacterCreatedDate", "datetime(6) DEFAULT NULL"),
@@ -1192,40 +1192,40 @@ namespace ACE.Server.Command.Handlers
                     ("FromPlayerIP", "varchar(45) DEFAULT NULL"),
                     ("ToPlayerIP", "varchar(45) DEFAULT NULL")
                 };
-                
-                foreach (var (columnName, columnType) in columnsToAdd)
-                {
-                    command.CommandText = $@"
+
+                    foreach (var (columnName, columnType) in columnsToAdd)
+                    {
+                        command.CommandText = $@"
                         SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
                         WHERE TABLE_SCHEMA = DATABASE() 
                         AND TABLE_NAME = 'transfer_logs' 
                         AND COLUMN_NAME = '{columnName}'";
-                    
-                    var exists = Convert.ToInt32(command.ExecuteScalar()) > 0;
-                    if (!exists)
-                    {
-                        command.CommandText = $"ALTER TABLE `transfer_logs` ADD COLUMN `{columnName}` {columnType}";
-                        command.ExecuteNonQuery();
+
+                        var exists = Convert.ToInt32(command.ExecuteScalar()) > 0;
+                        if (!exists)
+                        {
+                            command.CommandText = $"ALTER TABLE `transfer_logs` ADD COLUMN `{columnName}` {columnType}";
+                            command.ExecuteNonQuery();
+                        }
                     }
-                }
-                
-                // Check and modify Quantity column to bigint
-                command.CommandText = @"
+
+                    // Check and modify Quantity column to bigint
+                    command.CommandText = @"
                     SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
                     WHERE TABLE_SCHEMA = DATABASE() 
                     AND TABLE_NAME = 'transfer_logs' 
                     AND COLUMN_NAME = 'Quantity'";
-                
-                var quantityType = command.ExecuteScalar()?.ToString();
-                if (quantityType != "bigint")
-                {
-                    command.CommandText = "ALTER TABLE `transfer_logs` MODIFY COLUMN `Quantity` bigint(20) NOT NULL";
-                    command.ExecuteNonQuery();
-                }
-                
-                // Check and create missing indexes
-                var indexesToAdd = new[]
-                {
+
+                    var quantityType = command.ExecuteScalar()?.ToString();
+                    if (quantityType != "bigint")
+                    {
+                        command.CommandText = "ALTER TABLE `transfer_logs` MODIFY COLUMN `Quantity` bigint(20) NOT NULL";
+                        command.ExecuteNonQuery();
+                    }
+
+                    // Check and create missing indexes
+                    var indexesToAdd = new[]
+                    {
                     ("IX_transfer_logs_FromPlayerIP", "FromPlayerIP"),
                     ("IX_transfer_logs_ToPlayerIP", "ToPlayerIP"),
                     ("IX_transfer_logs_FromAccountCreatedDate", "FromAccountCreatedDate"),
@@ -1233,23 +1233,23 @@ namespace ACE.Server.Command.Handlers
                     ("IX_transfer_logs_FromCharacterCreatedDate", "FromCharacterCreatedDate"),
                     ("IX_transfer_logs_ToCharacterCreatedDate", "ToCharacterCreatedDate")
                 };
-                
-                foreach (var (indexName, columnName) in indexesToAdd)
-                {
-                    command.CommandText = $@"
+
+                    foreach (var (indexName, columnName) in indexesToAdd)
+                    {
+                        command.CommandText = $@"
                         SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
                         WHERE TABLE_SCHEMA = DATABASE() 
                         AND TABLE_NAME = 'transfer_logs' 
                         AND INDEX_NAME = '{indexName}'";
-                    
-                    var indexExists = Convert.ToInt32(command.ExecuteScalar()) > 0;
-                    if (!indexExists)
-                    {
-                        command.CommandText = $"ALTER TABLE `transfer_logs` ADD KEY `{indexName}` (`{columnName}`)";
-                        command.ExecuteNonQuery();
+
+                        var indexExists = Convert.ToInt32(command.ExecuteScalar()) > 0;
+                        if (!indexExists)
+                        {
+                            command.CommandText = $"ALTER TABLE `transfer_logs` ADD KEY `{indexName}` (`{columnName}`)";
+                            command.ExecuteNonQuery();
+                        }
                     }
-                }
-                
+
                     session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs updated with missing columns, Quantity bigint migration, and indexes", ChatMessageType.System));
                 }
                 finally
@@ -1291,7 +1291,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_transfer_logs_FromCharacterCreatedDate` (`FromCharacterCreatedDate`),
                         KEY `IX_transfer_logs_ToCharacterCreatedDate` (`ToCharacterCreatedDate`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_logs table created", ChatMessageType.System));
             }
         }
@@ -1330,7 +1330,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_transfer_summaries_LastTransfer` (`LastTransfer`),
                         KEY `IX_transfer_summaries_IsSuspicious` (`IsSuspicious`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_summaries table created", ChatMessageType.System));
             }
         }
@@ -1358,7 +1358,7 @@ namespace ACE.Server.Command.Handlers
                         UNIQUE KEY `IX_tracked_items_ItemName` (`ItemName`),
                         KEY `IX_tracked_items_IsActive` (`IsActive`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat("✓ tracked_items table created", ChatMessageType.System));
             }
         }
@@ -1390,9 +1390,9 @@ namespace ACE.Server.Command.Handlers
                         `UpdatedDate` datetime(6) NOT NULL,
                         PRIMARY KEY (`Id`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_monitoring_configs table created", ChatMessageType.System));
-                
+
                 // Insert default configuration
                 context.Database.ExecuteSqlRaw(@"
                     INSERT INTO `transfer_monitoring_configs` (
@@ -1403,7 +1403,7 @@ namespace ACE.Server.Command.Handlers
                     ) VALUES (
                         100000, 24, 10, 1, 1, 1, 1, 1, 1, 0, NOW(), NOW()
                     )");
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat("✓ Default configuration inserted", ChatMessageType.System));
             }
         }
@@ -1434,7 +1434,7 @@ namespace ACE.Server.Command.Handlers
                         KEY `IX_transfer_blacklist_IsActive` (`IsActive`),
                         KEY `IX_transfer_blacklist_ExpiryDate` (`ExpiryDate`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                
+
                 session.Network.EnqueueSend(new GameMessageSystemChat("✓ transfer_blacklist table created", ChatMessageType.System));
             }
         }
@@ -1470,13 +1470,13 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     var type = parameters[1].ToLower();
-                    
+
                     // Handle multi-word names and reasons
                     var remainingParams = parameters.Skip(2).ToArray();
                     var name = "";
                     var reason = "";
                     var days = 0;
-                    
+
                     // Find the last parameter that could be a number (days)
                     var lastParam = remainingParams[remainingParams.Length - 1];
                     if (int.TryParse(lastParam, out var parsedDays))
@@ -1484,7 +1484,7 @@ namespace ACE.Server.Command.Handlers
                         days = parsedDays;
                         remainingParams = remainingParams.Take(remainingParams.Length - 1).ToArray();
                     }
-                    
+
                     if (remainingParams.Length >= 2)
                     {
                         var tokens = new List<string>(remainingParams);
@@ -1524,7 +1524,7 @@ namespace ACE.Server.Command.Handlers
                             // This handles new/offline players not yet in cache
                             name = ConsumeName(tokens);
                             reasonTokens = tokens;
-                            
+
                             // If ConsumeName only got the first word and there are more tokens, join them all
                             if (tokens.Count > 0 && !name.Contains(" "))
                             {
@@ -1603,7 +1603,7 @@ namespace ACE.Server.Command.Handlers
 
                 case "list":
                     var blacklistedPlayers = TransferLogger.GetBankBlacklistedPlayers();
-                    
+
                     if (blacklistedPlayers.Count == 0)
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("No players are currently blacklisted from bank commands.", ChatMessageType.System));
@@ -1682,19 +1682,59 @@ namespace ACE.Server.Command.Handlers
         public static void HandleDeleteSelected(Session session, params string[] parameters)
         {
 
-            // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
+            var wo = CommandHandlerHelper.GetSelected(session);
 
-            var objectId = ObjectGuid.Invalid;
-
-            if (session.Player.HealthQueryTarget.HasValue)
-                objectId = new ObjectGuid(session.Player.HealthQueryTarget.Value);
-            else if (session.Player.ManaQueryTarget.HasValue)
-                objectId = new ObjectGuid(session.Player.ManaQueryTarget.Value);
-            else if (session.Player.CurrentAppraisalTarget.HasValue)
-                objectId = new ObjectGuid(session.Player.CurrentAppraisalTarget.Value);
-
-            if (objectId == ObjectGuid.Invalid)
+            if (wo == null)
+            {
                 ChatPacket.SendServerMessage(session, "Delete failed. Please identify the object you wish to delete first.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var objectId = wo.Guid;
+
+            // Safety check: Explicitly block deletion of players or player corpses to avoid catastrophic errors.
+            if (wo is Player)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Players cannot be deleted.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            if (wo is Corpse corpse && !corpse.IsMonster)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
+                return;
+            }
+
+            // If parameters are provided (Direct Mode), we proceed immediately ONLY if it matches an identifier
+            if (parameters.Length > 0)
+            {
+                var match = parameters[0].Equals(wo.Name, StringComparison.OrdinalIgnoreCase) ||
+                            parameters[0].Equals(wo.Guid.Full.ToString("X8"), StringComparison.OrdinalIgnoreCase) ||
+                            parameters[0].Equals(wo.GetType().Name, StringComparison.OrdinalIgnoreCase) ||
+                            parameters[0].Equals(wo.WeenieType.ToString(), StringComparison.OrdinalIgnoreCase);
+
+                if (match)
+                {
+                    HandleDeleteInternal(session, objectId, parameters);
+                    return;
+                }
+            }
+
+            // No parameters or no match: Trigger confirmation
+            var name = wo.Name;
+            var msg = $"Are you sure you want to delete {name} (0x{objectId.Full:X8})?";
+
+            if (!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => HandleDeleteInternal(session, objectId, new string[] { "confirm" })), msg))
+                ChatPacket.SendServerMessage(session, "Delete failed. A confirmation is already in progress.", ChatMessageType.Broadcast);
+        }
+
+        private static void HandleDeleteInternal(Session session, ObjectGuid objectId, params string[] parameters)
+        {
+            if (objectId == ObjectGuid.Invalid)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Please identify the object you wish to delete first.", ChatMessageType.Broadcast);
+                return;
+            }
 
             if (objectId.IsPlayer())
             {
@@ -1720,7 +1760,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var objectType = parameters[0].ToLower();
 
-                if (objectType != wo.GetType().Name.ToLower() && objectType != wo.WeenieType.ToString().ToLower())
+                if (objectType != "confirm" && objectType != wo.GetType().Name.ToLower() && objectType != wo.WeenieType.ToString().ToLower())
                 {
                     ChatPacket.SendServerMessage(session, $"Delete failed. Object type specified ({parameters[0]}) does not match object type ({wo.GetType().Name}) or weenie type ({wo.WeenieType.ToString()}) for 0x{wo.Guid}:{wo.Name}.", ChatMessageType.Broadcast);
                     return;
@@ -2352,10 +2392,10 @@ namespace ACE.Server.Command.Handlers
                         player.Smite(session.Player, ServerConfig.smite_uses_takedamage.Value);
 
                         PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used smite on {player.Name}");
-                        
+
                         // Global broadcast when smiting a player
                         PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{player.Name} was smited.", ChatMessageType.Broadcast));
-                        
+
                         return;
                     }
 
@@ -2720,13 +2760,13 @@ namespace ACE.Server.Command.Handlers
                 else if (parameters.Length > 1 && parameters[1] == "summary")
                 {
                     var apartmentsTotal = 3000d;
-                    var cottagesTotal   = 2600d;
-                    var villasTotal     = 570d;
-                    var mansionsTotal   = 80d;
+                    var cottagesTotal = 2600d;
+                    var villasTotal = 570d;
+                    var mansionsTotal = 80d;
 
-                    var cottages   = 0;
-                    var villas     = 0;
-                    var mansions   = 0;
+                    var cottages = 0;
+                    var villas = 0;
+                    var mansions = 0;
                     var apartments = 0;
 
                     for (var i = 1u; i < 6251; i++)
@@ -2755,9 +2795,9 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     var apartmentsAvail = (apartmentsTotal - apartments) / apartmentsTotal;
-                    var cottagesAvail   = (cottagesTotal - cottages) / cottagesTotal;
-                    var villasAvail     = (villasTotal - villas) / villasTotal;
-                    var mansionsAvail   = (mansionsTotal - mansions) / mansionsTotal;
+                    var cottagesAvail = (cottagesTotal - cottages) / cottagesTotal;
+                    var villasAvail = (villasTotal - villas) / villasTotal;
+                    var mansionsAvail = (mansionsTotal - mansions) / mansionsTotal;
 
                     var msg = "HUD Report:\n";
                     msg += "=========================================================\n";
@@ -3342,7 +3382,7 @@ namespace ACE.Server.Command.Handlers
                 DoCopyChar(session, existingCharName, existingPlayer.Guid.Full, false, newCharName, account.AccountId);
                 return;
             }
-            else if ( session.Characters.Count >= ServerConfig.max_chars_per_account.Value)
+            else if (session.Characters.Count >= ServerConfig.max_chars_per_account.Value)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Failed to copy the character \"{existingCharName}\" to a new character \"{newCharName}\" for the account \"{session.Account}\"! Account is out of free character slots.", ChatMessageType.Broadcast);
                 return;
@@ -4164,17 +4204,17 @@ namespace ACE.Server.Command.Handlers
             }
             else notOK = true;
             if (notOK) ChatPacket.SendServerMessage(session, "Appraise a locked target before using @crack", ChatMessageType.Broadcast);
-            else 
+            else
             {
-                 // Audit log for successful crack execution logic (even if it failed to unlock due to mechanics, the admin tried it)
-                 // Re-locate object to log it correctly as we established it exists in the if/else logic above
-                 if (session.AccessLevel >= AccessLevel.Admin && session.Player.CurrentAppraisalTarget.HasValue)
-                 {
-                     var objectId = new ObjectGuid((uint)session.Player.CurrentAppraisalTarget);
-                     var wo = session.Player.CurrentLandblock?.GetObject(objectId);
-                     if (wo != null)
-                         PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used /crack on {wo.Name}:{wo.Guid} at {wo.Location}");
-                 }
+                // Audit log for successful crack execution logic (even if it failed to unlock due to mechanics, the admin tried it)
+                // Re-locate object to log it correctly as we established it exists in the if/else logic above
+                if (session.AccessLevel >= AccessLevel.Admin && session.Player.CurrentAppraisalTarget.HasValue)
+                {
+                    var objectId = new ObjectGuid((uint)session.Player.CurrentAppraisalTarget);
+                    var wo = session.Player.CurrentLandblock?.GetObject(objectId);
+                    if (wo != null)
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} used /crack on {wo.Name}:{wo.Guid} at {wo.Location}");
+                }
             }
         }
 
@@ -4297,12 +4337,12 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Player {parameters[0]} not found.", ChatMessageType.Broadcast));
                     return;
                 }
-                
+
                 player.EnchantmentManager.DispelAllEnchantments();
                 // remove all enchantments from equipped items for now
                 foreach (var item in player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
-                
+
                 PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {player.Name}.");
             }
             else
@@ -4311,7 +4351,7 @@ namespace ACE.Server.Command.Handlers
                 // remove all enchantments from equipped items for now
                 foreach (var item in session.Player.EquippedObjects.Values)
                     item.EnchantmentManager.DispelAllEnchantments();
-                
+
                 PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from themselves.");
             }
 
@@ -4504,13 +4544,13 @@ namespace ACE.Server.Command.Handlers
             // Get augmentation values directly from the pet's stored state (not from owner)
             // Get summon aug count directly from pet (stored at Init)
             var summonAugCount = (int)(combatPet.LuminanceAugmentSummonCount ?? 0);
-            
+
             // Get item augmentation values directly from pet (stored at Init)
             var itemAugAttackMod = combatPet.ItemAugAttackMod;
             var itemAugDefenseMod = combatPet.ItemAugDefenseMod;
             var itemAugDamageBonus = combatPet.ItemAugDamageBonus;
             var itemAugArmorBonus = combatPet.ItemAugArmorBonus;
-            
+
             // Get life augmentation protection rating directly from pet (stored at Init)
             var lifeAugProtectionRating = combatPet.LifeAugProtectionRating;
 
@@ -4577,7 +4617,7 @@ namespace ACE.Server.Command.Handlers
                 var attackAug = weaponAttackMod - attackBase;
                 var defenseBase = 0.20f;
                 var defenseAug = weaponDefenseMod - defenseBase;
-                
+
                 // Damage bonus: base is 20, then scaling
                 var damageBase = 20;
                 var damageAug = weaponDamageBonus - damageBase;
@@ -4586,7 +4626,7 @@ namespace ACE.Server.Command.Handlers
                 // Get pet's melee, missile augmentation bonuses (only melee/missile apply to physical damage)
                 var meleeAugBonus = (long)(combatPet.LuminanceAugmentMeleeCount ?? 0);
                 var missileAugBonus = (long)(combatPet.LuminanceAugmentMissileCount ?? 0);
-                
+
                 // Determine which aug applies based on combat type (default to melee for weapons)
                 var currentCombatType = combatPet.CurrentAttack ?? CombatType.Melee;
                 var applicableAugBonus = currentCombatType == CombatType.Missile ? missileAugBonus : meleeAugBonus;
@@ -4627,15 +4667,15 @@ namespace ACE.Server.Command.Handlers
                     output.AppendLine($"Attack Mod: {weaponAttackMod:F2} (No Item Augs)");
                     output.AppendLine($"Defense Mod: {weaponDefenseMod:F2} (No Item Augs)");
                 }
-                
+
                 // Get pet's melee, missile augmentation bonuses (only melee/missile apply to physical damage)
                 var meleeAugBonus = (long)(combatPet.LuminanceAugmentMeleeCount ?? 0);
                 var missileAugBonus = (long)(combatPet.LuminanceAugmentMissileCount ?? 0);
-                
+
                 // Determine which aug applies based on combat type (default to melee for body parts)
                 var currentCombatType = combatPet.CurrentAttack ?? CombatType.Melee;
                 var applicableAugBonus = currentCombatType == CombatType.Missile ? missileAugBonus : meleeAugBonus;
-                
+
                 if (applicableAugBonus > 0)
                 {
                     output.AppendLine($"Pet Aug ({currentCombatType}): +{applicableAugBonus}");
@@ -4646,7 +4686,7 @@ namespace ACE.Server.Command.Handlers
                 if (weenie.PropertiesBodyPart != null && combatPet.Biota.PropertiesBodyPart != null)
                 {
                     var bodyPartsWithDamage = new List<(CombatBodyPart part, PropertiesBodyPart weeniePart, PropertiesBodyPart biotaPart)>();
-                    
+
                     foreach (var weenieBodyPart in weenie.PropertiesBodyPart)
                     {
                         if (weenieBodyPart.Value.DVal > 0)
@@ -4666,7 +4706,7 @@ namespace ACE.Server.Command.Handlers
                             var weenieDType = weeniePart.DType;
 
                             var baseDamage = weenieDVal;
-                            
+
                             // Calculate total damage bonus (item augs + melee/missile augs)
                             var totalDamageBonus = weaponDamageBonus + applicableAugBonus;
                             var totalDamage = baseDamage + totalDamageBonus;
@@ -4677,24 +4717,24 @@ namespace ACE.Server.Command.Handlers
 
                             output.AppendLine($"  {part} ({weenieDType}):");
                             output.AppendLine($"    Base Damage: {baseDamage} (Variance: {weenieDVar:F2})");
-                            
+
                             // Only show item aug breakdown if item augs are present
                             if (weaponDamageBonus > 0)
                             {
                                 // Item augs have a base of 20, then scaling
                                 var damageBase = 20;
                                 var damageAug = weaponDamageBonus - damageBase; // Scaling part only
-                                
+
                                 output.AppendLine($"    Item Aug - Base Mod: +{damageBase}");
                                 output.AppendLine($"    Item Aug - Scaling: +{damageAug}");
                                 output.AppendLine($"    Item Aug - Total: +{weaponDamageBonus}");
                             }
-                            
+
                             if (applicableAugBonus > 0)
                             {
                                 output.AppendLine($"    Pet Aug ({currentCombatType}): +{applicableAugBonus}");
                             }
-                            
+
                             output.AppendLine($"    Total Bonus: +{totalDamageBonus}");
                             output.AppendLine($"    Total Damage: {totalDamage} (Range: {minDamage:F1} - {maxDamage:F1})");
                         }
@@ -4707,13 +4747,13 @@ namespace ACE.Server.Command.Handlers
             output.AppendLine("=== IMBUED EFFECTS ===");
             var weaponForImbues = combatPet.GetEquippedMeleeWeapon();
             WorldObject targetForImbues = weaponForImbues ?? (WorldObject)combatPet;
-            
+
             var imbuedEffects = RecipeManager.GetImbuedEffects(targetForImbues);
             if (imbuedEffects != ImbuedEffectType.Undef)
             {
                 output.AppendLine($"Applied to: {(weaponForImbues != null ? "Weapon" : "Creature (Body Parts)")}");
                 output.AppendLine("Imbued Effects:");
-                
+
                 var effectNames = new List<string>();
                 if (imbuedEffects.HasFlag(ImbuedEffectType.CriticalStrike))
                     effectNames.Add("Critical Strike");
@@ -4746,7 +4786,7 @@ namespace ACE.Server.Command.Handlers
                     effectNames.Add("Always Critical");
                 if (imbuedEffects.HasFlag(ImbuedEffectType.IgnoreAllArmor))
                     effectNames.Add("Ignore All Armor");
-                
+
                 if (effectNames.Count > 0)
                 {
                     foreach (var effectName in effectNames)
@@ -4768,7 +4808,7 @@ namespace ACE.Server.Command.Handlers
             // Armor
             output.AppendLine("=== ARMOR ===");
             // itemAugArmorBonus already declared at method scope
-            
+
             // Get base armor from weenie data - average across all body parts with armor > 0
             uint weenieBaseArmor = 0;
             var bodyPartsWithArmor = new List<(CombatBodyPart part, uint armor)>();
@@ -4781,7 +4821,7 @@ namespace ACE.Server.Command.Handlers
                         bodyPartsWithArmor.Add((weenieBodyPart.Key, (uint)weenieBodyPart.Value.BaseArmor));
                     }
                 }
-                
+
                 if (bodyPartsWithArmor.Count > 0)
                 {
                     // Calculate average armor across all body parts
@@ -4789,9 +4829,9 @@ namespace ACE.Server.Command.Handlers
                     weenieBaseArmor = (uint)(armorSum / bodyPartsWithArmor.Count);
                 }
             }
-            
+
             var totalArmor = weenieBaseArmor + itemAugArmorBonus;
-            
+
             if (bodyPartsWithArmor.Count > 0)
             {
                 output.AppendLine($"Base Armor (Weenie - Average): {weenieBaseArmor} (from {bodyPartsWithArmor.Count} body part(s))");
@@ -4808,7 +4848,7 @@ namespace ACE.Server.Command.Handlers
             {
                 output.AppendLine($"Base Armor (Weenie): {weenieBaseArmor}");
             }
-            
+
             if (itemAugArmorBonus > 0)
             {
                 var armorBase = 200;
@@ -4847,18 +4887,18 @@ namespace ACE.Server.Command.Handlers
                 var naturalResistMod = combatPet.GetNaturalResistance(damageType);
                 var existingProtectionMod = combatPet.EnchantmentManager.GetProtectionResistanceMod(damageType);
                 var vulnMod = combatPet.EnchantmentManager.GetVulnerabilityResistanceMod(damageType);
-                
+
                 // Protection mod becomes either life protection or natural resistance, whichever is more powerful
                 var baseProtectionMod = existingProtectionMod;
                 if (baseProtectionMod > naturalResistMod)
                     baseProtectionMod = naturalResistMod;
-                
+
                 // Base resistance mod (without life augs)
                 var baseResistanceMod = baseProtectionMod * vulnMod;
-                
+
                 // Get actual current resistance mod from the pet (includes life aug protection)
                 var currentResistanceMod = combatPet.GetResistanceMod(damageType, null, null);
-                
+
                 // Calculate life aug protection (how much protection is being applied)
                 // Protection reduces the resistance mod, so we show it as a positive protection value
                 var lifeAugProtection = baseResistanceMod - currentResistanceMod;
@@ -5156,7 +5196,7 @@ namespace ACE.Server.Command.Handlers
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Exception ( { e.Source } - {e.Message} ) caught while {currentPlayer.Name} was attempting to return to normal from godmode.");
+                    Console.WriteLine($"Exception ( {e.Source} - {e.Message} ) caught while {currentPlayer.Name} was attempting to return to normal from godmode.");
                     ChatPacket.SendServerMessage(session, "Error returning to mortal state, defaulting to godmode.", ChatMessageType.Broadcast);
                     DoGodMode(true, session, true);
                     return;
@@ -6516,7 +6556,7 @@ namespace ACE.Server.Command.Handlers
 
                 var a = AllegianceManager.GetAllegiance(p);
 
-                
+
             }
         }
 
@@ -6977,7 +7017,7 @@ namespace ACE.Server.Command.Handlers
                 var flags = new List<string>();
                 if (noCapture) flags.Add("capture");
                 if (noShiny) flags.Add("shiny");
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Added WCID {wcid} to blacklist: {string.Join(", ", flags)}" + 
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Added WCID {wcid} to blacklist: {string.Join(", ", flags)}" +
                     (reason != null ? $" (Reason: {reason})" : ""), ChatMessageType.System));
             }
             else
@@ -7005,7 +7045,7 @@ namespace ACE.Server.Command.Handlers
                 var type = parameters[1].ToLower();
                 var addedBy = session.Player?.Name ?? "Unknown";
                 var status = BlacklistManager.CheckStatus(wcid);
-                
+
                 if (!status.Exists)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
@@ -7019,9 +7059,9 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Both will be false, remove entirely
                         if (BlacklistManager.RemoveBlacklist(wcid))
-                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
                         else
-                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
                     }
                     else
                     {
@@ -7036,9 +7076,9 @@ namespace ACE.Server.Command.Handlers
                     {
                         // Both will be false, remove entirely
                         if (BlacklistManager.RemoveBlacklist(wcid))
-                             session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Removed WCID {wcid} from blacklist entirely (No flags remaining).", ChatMessageType.System));
                         else
-                             session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to remove WCID {wcid} from blacklist.", ChatMessageType.System));
                     }
                     else
                     {
@@ -7067,7 +7107,7 @@ namespace ACE.Server.Command.Handlers
         private static void HandleBlacklistList(Session session, string[] parameters)
         {
             var entries = BlacklistManager.GetAllEntries();
-            
+
             if (entries.Count == 0)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("No creatures are blacklisted.", ChatMessageType.System));
@@ -7075,7 +7115,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             var filter = parameters.Length > 0 ? parameters[0].ToLower() : null;
-            
+
             session.Network.EnqueueSend(new GameMessageSystemChat("Creature Blacklist:", ChatMessageType.System));
             session.Network.EnqueueSend(new GameMessageSystemChat("=".PadRight(50, '='), ChatMessageType.System));
 
@@ -7111,7 +7151,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             var status = BlacklistManager.CheckStatus(wcid);
-            
+
             if (!status.Exists)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"WCID {wcid} is not blacklisted.", ChatMessageType.System));
@@ -7214,7 +7254,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var weenieInfo = $"{weenie.ClassId} - {weenie.ClassName}";
                 session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})", 
+                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})",
                     ChatMessageType.Broadcast));
             }
         }

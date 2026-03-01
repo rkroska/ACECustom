@@ -292,7 +292,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         break;
                 }
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 CommandHandlerHelper.WriteOutputError(session, $"There was an error importing the SQL:\n\n{e.Message}");
             }
@@ -326,7 +326,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             foreach (var file in files)
                 ImportSQLWeenie(session, file.DirectoryName + sep, file.Name);
-                
+
         }
 
         public static void ImportSQLRecipe(Session session, string recipeId)
@@ -1417,7 +1417,7 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 sqlFilename = $"{folder.FullName}{sep}{landblock:X4}.sql";
             }
-            
+
 
             if (instances.Count > 0)
             {
@@ -2066,7 +2066,7 @@ namespace ACE.Server.Command.Handlers.Processors
             {
                 json_folder = $"{di.FullName}{sep}json{sep}weenies{sep}";
             }
-            
+
             di = new DirectoryInfo(json_folder);
 
             if (!di.Exists)
@@ -2223,7 +2223,7 @@ namespace ACE.Server.Command.Handlers.Processors
             ExportSQLWeenie(session, param, true);
         }
 
-        [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
+        [CommandHandler("import-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports content from discord to database and automatically refreshes the weenie cache.", "<wcid> or <questname>")]
         public static async void HandleDiscordImport(Session session, params string[] parameters)
         {
             try
@@ -2247,22 +2247,26 @@ namespace ACE.Server.Command.Handlers.Processors
                     ctx.Database.ExecuteSqlRaw(sql);
 
                 CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord.");
+
+                // Automatically refresh the weenie cache after import
+                CommandHandlerHelper.WriteOutputInfo(session, $"Refreshing weenie {identifier}...");
+                HandleRefreshWeenie(session, identifier);
             }
             catch (Exception e)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Error importing from discord: {e.Message}");
             }
-            
+
         }
 
         // Alias for import-discord
-        [CommandHandler("id", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for import-discord - Imports content from discord to database", "<wcid> or <questname> etc. It should match the name of the file without the .sql extension")]
+        [CommandHandler("id", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for import-discord - Imports content from discord to database", "<wcid> or <questname>")]
         public static void HandleDiscordImportAlias(Session session, params string[] parameters)
         {
             HandleDiscordImport(session, parameters);
         }
 
-        [CommandHandler("import-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports JSON content from Discord to the server folder", "<filename>")]
+        [CommandHandler("import-discord-clothing", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Imports JSON content from Discord to the server folder", "<filename> [ccc]")]
         public static async void HandleDiscordJsonImport(Session session, params string[] parameters)
         {
             try
@@ -2302,6 +2306,13 @@ namespace ACE.Server.Command.Handlers.Processors
                 File.WriteAllText(filePath, jsonContent);
 
                 CommandHandlerHelper.WriteOutputInfo(session, $"Successfully imported JSON file {identifier} to {filePath}");
+
+                // Check for optional "ccc" (clear clothing cache) parameter
+                if (parameters.Length > 1 && parameters[1].Equals("ccc", StringComparison.OrdinalIgnoreCase))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Clearing clothing cache...");
+                    HandleClearClothingCacheAlias(session, new string[] { });
+                }
             }
             catch (Exception e)
             {
@@ -2310,7 +2321,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         // Alias for import-discord-clothing
-        [CommandHandler("idc", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for import-discord-clothing - Imports JSON content from Discord to the server folder", "<filename>")]
+        [CommandHandler("idc", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Alias for import-discord-clothing - Imports JSON content from Discord to the server folder", "<filename> [ccc]")]
         public static void HandleDiscordJsonImportAlias(Session session, params string[] parameters)
         {
             HandleDiscordJsonImport(session, parameters);
@@ -2388,7 +2399,7 @@ namespace ACE.Server.Command.Handlers.Processors
         [CommandHandler("export-discord", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Exports content from database to SQL file and load to Discord", "<wcid> [content-type]")]
         public static void HandleExportSqlToDiscord(Session session, params string[] parameters)
         {
-            var param = parameters[0];            
+            var param = parameters[0];
             var contentType = FileType.Weenie;
 
             if (parameters[0].ToLower().Contains("landblock"))
@@ -2604,7 +2615,7 @@ namespace ACE.Server.Command.Handlers.Processors
         }
 
         public static async void ExportDiscordWeenie(Session session, string param)
-        {            
+        {
             Weenie weenie = null;
             if (uint.TryParse(param, out var wcid))
                 weenie = DatabaseManager.World.GetWeenie(wcid);
@@ -2651,7 +2662,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     sw.Close();
                     CommandHandlerHelper.WriteOutputInfo(session, $"Exported {weenie.ClassName} to Discord");
                 }
-            }                                    
+            }
         }
 
         public static async void ExportDiscordRecipe(Session session, string param)
@@ -2825,7 +2836,7 @@ namespace ACE.Server.Command.Handlers.Processors
             else
             {
                 sql_filename = $"{landblockId:X4}.sql";
-            }            
+            }
 
             try
             {
@@ -2875,7 +2886,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     return;
                 }
             }
-            
+
 
             var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, variationId);
             if (instances == null)
@@ -2920,7 +2931,7 @@ namespace ACE.Server.Command.Handlers.Processors
                         sw.Close();
                         CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_filename} to Discord");
                     }
-                }                
+                }
             }
             catch (Exception e)
             {
@@ -3279,7 +3290,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             var clearedCaches = new List<string>();
-            
+
             if (mode.HasFlag(CacheType.Landblock))
             {
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing landblock instance cache");
@@ -3329,7 +3340,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 DatabaseManager.World.ClearAllCachedQuests();
                 clearedCaches.Add("quests");
             }
-            
+
             if (clearedCaches.Count > 0)
             {
                 var cacheList = string.Join(", ", clearedCaches);
@@ -3359,15 +3370,15 @@ namespace ACE.Server.Command.Handlers.Processors
         [Flags]
         public enum CacheType
         {
-            None            = 0x0,
-            Landblock       = 0x1,
-            Recipe          = 0x2,
-            Spell           = 0x4,
-            Weenie          = 0x8,
+            None = 0x0,
+            Landblock = 0x1,
+            Recipe = 0x2,
+            Spell = 0x4,
+            Weenie = 0x8,
             WieldedTreasure = 0x10,
-            Quests          = 0x20,
-            DeathTreasure   = 0x40,
-            All             = 0xFFFF
+            Quests = 0x20,
+            DeathTreasure = 0x40,
+            All = 0xFFFF
         };
 
         public static FileType GetFileType(string filename)
@@ -4013,12 +4024,12 @@ namespace ACE.Server.Command.Handlers.Processors
                     {
                         CommandHandlerHelper.WriteOutputInfo(session, $"Unable to parse X ({strX}) value from line {i} in vlocDB: {vlocs[i]}");
                         continue;
-                    }    
+                    }
                     if (!float.TryParse(strY, out var y))
                     {
                         CommandHandlerHelper.WriteOutputInfo(session, $"Unable to parse Y ({strY}) value from line {i} in vlocDB: {vlocs[i]}");
                         continue;
-                    }    
+                    }
 
                     if ((objCellId >> 16) != lbid) continue;
 

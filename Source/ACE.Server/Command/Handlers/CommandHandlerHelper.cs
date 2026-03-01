@@ -94,7 +94,7 @@ namespace ACE.Server.Command.Handlers
                 targetID = session.Player.ManaQueryTarget;
             else if (session.Player.CurrentAppraisalTarget.HasValue)
                 targetID = session.Player.CurrentAppraisalTarget;
-            else 
+            else
                 targetID = session.Player.RequestedAppraisalTarget;
 
             if (targetID == null) return null;
