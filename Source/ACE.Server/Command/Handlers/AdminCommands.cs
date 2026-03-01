@@ -3703,7 +3703,7 @@ namespace ACE.Server.Command.Handlers
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all quest caches.");
         }
 
-        [CommandHandler("clearevent", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Clears a cached event by name", "<eventname>")]
+        [CommandHandler("clearevent", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Clears a cached event by name", "<eventname>")]
         public static void HandleEventClear(Session session, params string[] parameters)
         {
             var cleared = DatabaseManager.World.ClearCachedEvent(parameters[0]);
@@ -3716,7 +3716,7 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' was not in cache");
         }
 
-        [CommandHandler("clearallevents", AccessLevel.Admin, CommandHandlerFlag.None, 0, "Clears all cached events")]
+        [CommandHandler("clearallevents", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Clears all cached events")]
         public static void HandleEventClearAll(Session session, params string[] parameters)
         {
             DatabaseManager.World.ClearAllCachedEvents();
