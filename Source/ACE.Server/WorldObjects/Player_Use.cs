@@ -1,5 +1,4 @@
 using System;
-
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
@@ -196,6 +195,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            if (UCMChecker.HandleActionUseItem(this, itemGuid))
+            {
+                // The statue belonged to the UCMChecker, so exit regardless.
+                SendUseDoneEvent();
+                return;
+            }
+
             if (item != null)
             {
                 if (item.CurrentLandblock != null && !item.Visibility && item.Guid != LastOpenedContainerId)
@@ -277,7 +283,7 @@ namespace ACE.Server.WorldObjects
 
         public void ApplyConsumable(MotionCommand useMotion, Action action, float animMod = 1.0f)
         {
-            if (PropertyManager.GetBool("allow_fast_chug") && FastTick)
+            if (ServerConfig.allow_fast_chug.Value && FastTick)
             {
                 ApplyConsumableWithAnimationCallbacks(useMotion, action);
                 return;

@@ -10,8 +10,6 @@ namespace ACE.Server.Entity
         public float Max;
         public float Avg;
 
-        public Range() { }
-
         public Range(float min, float max)
         {
             Min = min;

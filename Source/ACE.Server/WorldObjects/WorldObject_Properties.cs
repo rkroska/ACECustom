@@ -591,7 +591,7 @@ namespace ACE.Server.WorldObjects
                     ChangesDetected = true;
                     //if (positionType == PositionType.Location && this is Player)
                     //{
-                    //    Console.WriteLine(Name + " moved to " + position.ToLOCString() + " t:" + Teleporting);
+                    //    Console.WriteLine(Name + " moved to " + position + " t:" + Teleporting);
                     //}
                 }
             }
@@ -690,6 +690,15 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyDataId.Setup) ?? 0;
             set => SetProperty(PropertyDataId.Setup, value);
+        }
+
+        /// <summary>
+        /// The variant, found in CreatureVariant.cs
+        /// </summary>
+        public CreatureVariant? CreatureVariant
+        {
+            get => (CreatureVariant?)GetProperty(PropertyInt.CreatureVariant);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CreatureVariant); else SetProperty(PropertyInt.CreatureVariant, (int)value.Value); }
         }
 
         // PhysicsDescriptionFlag.Parent is pulled from WielderId
@@ -2635,8 +2644,18 @@ namespace ACE.Server.WorldObjects
         public double? TimeToRot
         {
             get => GetProperty(PropertyFloat.TimeToRot);
-            set { if (!value.HasValue) RemoveProperty(PropertyFloat.TimeToRot); else SetProperty(PropertyFloat.TimeToRot, value.Value); }
+            set
+            {
+                if (!value.HasValue)
+                    RemoveProperty(PropertyFloat.TimeToRot);
+                else
+                {
+                    SetProperty(PropertyFloat.TimeToRot, value.Value);
+                    LastTimeToRotUpdate = DateTime.UtcNow;
+                }
+            }
         }
+        public DateTime? LastTimeToRotUpdate {get; set;}
 
         public uint? AllowedActivator
         {

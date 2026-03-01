@@ -127,8 +127,8 @@ namespace ACE.Server.WorldObjects
                         player.TryCreateInInventoryWithNetworking(useCreateItem);
                 }
 
-                if (PropertyManager.GetBool("advocate_fane_auto_bestow"))
-                    Advocate.Bestow(player, (int)PropertyManager.GetDouble("advocate_fane_auto_bestow_level"));
+                if (ServerConfig.advocate_fane_auto_bestow.Value)
+                    Advocate.Bestow(player, (int)ServerConfig.advocate_fane_auto_bestow_level.Value);
             });
 
             faneTimer.AddAction(player, ActionType.AdvocateFane_Reset, () =>

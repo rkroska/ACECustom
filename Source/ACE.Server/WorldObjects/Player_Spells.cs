@@ -14,6 +14,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.Structure;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Entity.Enum.Properties;
 
 namespace ACE.Server.WorldObjects
 {
@@ -592,7 +593,7 @@ namespace ACE.Server.WorldObjects
             // unsure if spell hook was here in retail,
             // but this has the potential to take the client out of autorun mode
             // which causes them to stop if they hit a turn key afterwards
-            if (PropertyManager.GetBool("runrate_add_hooks"))
+            if (ServerConfig.runrate_add_hooks.Value)
                 HandleRunRateUpdate(spell);
         }
 
@@ -644,9 +645,13 @@ namespace ACE.Server.WorldObjects
 
             foreach (var enchantment in enchantments)
             {
-                var table = enchantment.HasSpellSetId ? allPossessions : EquippedObjects;
+                var isCharm = false;
+                if (allPossessions.TryGetValue(new ObjectGuid(enchantment.CasterObjectId), out var casterItem))
+                    isCharm = casterItem.GetProperty(PropertyBool.IsCharm) ?? false;
 
-                // if this item is not equipped, remove enchantment
+                var table = (enchantment.HasSpellSetId || isCharm) ? allPossessions : EquippedObjects;
+
+                // if this item is not present, remove enchantment
                 if (!table.TryGetValue(new ObjectGuid(enchantment.CasterObjectId), out var item))
                 {
                     var spell = new Spell(enchantment.SpellId, false);
@@ -661,6 +666,8 @@ namespace ACE.Server.WorldObjects
                     continue;
 
                 // get all of the equipped items in this set
+                // TODO: if we want sets to be compatible with charms, we need to check EquippedObjects AND charms in allPossessions.
+                // This isn't something we want to support now, but it could be added later.
                 var setItems = EquippedObjects.Values.Where(i => i.HasItemSet && i.EquipmentSetId == item.EquipmentSetId).ToList();
 
                 // get all of the spells currently active from this set

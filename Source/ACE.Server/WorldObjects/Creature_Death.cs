@@ -90,7 +90,7 @@ namespace ACE.Server.WorldObjects
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
-                if (lastDamager is Player playerKiller)
+                if (lastDamager is Player playerKiller && playerKiller.Session != null)
                     playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
             }
             return deathMessage;
@@ -125,8 +125,13 @@ namespace ACE.Server.WorldObjects
                 if (topDamager.IsPlayer)
                 {
                     var topDamagerPlayer = topDamager.TryGetAttacker();
-                    if (topDamagerPlayer != null)
-                        topDamagerPlayer.CreatureKills = (topDamagerPlayer.CreatureKills ?? 0) + 1;
+                    if (topDamagerPlayer is Player playerKiller)
+                    {
+                        if (playerKiller.Session != null && playerKiller.Session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(playerKiller, $"Admin {playerKiller.Name} killed {Name} (0x{Guid.Full:X8}) at {Location?.ToString() ?? "Unknown Location"}.");
+
+                        playerKiller.CreatureKills = (playerKiller.CreatureKills ?? 0) + 1;
+                    }
                 }
             }
 
@@ -140,6 +145,9 @@ namespace ACE.Server.WorldObjects
             // broadcast death animation
             var motionDeath = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
             var deathAnimLength = ExecuteMotion(motionDeath);
+
+            // Try to generate Siphon Lens before death emotes (which might destroy the creature)
+            GenerateSiphonLens(topDamager);
 
             if (EmoteManager != null)
             {
@@ -174,8 +182,8 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                OnDeath();
                 var smiterInfo = new DamageHistoryInfo(smiter);
+                OnDeath(smiterInfo, DamageType.Undef);
                 Die(smiterInfo, smiterInfo);
             }
         }
@@ -257,14 +265,14 @@ namespace ACE.Server.WorldObjects
             // this is to prevent ordering bugs, such as a player being processed after a summon,
             // and already being at the 1 cap for players
 
-            var summon_credit_cap = (int)PropertyManager.GetLong("summoning_killtask_multicredit_cap") - 1;
+            var summon_credit_cap = (int)ServerConfig.summoning_killtask_multicredit_cap.Value - 1;
 
             var playerCredits = new Dictionary<ObjectGuid, int>();
             var summonCredits = new Dictionary<ObjectGuid, int>();
 
             // this option isn't really needed anymore, but keeping it around for compatibility
             // it is now synonymous with summoning_killtask_multicredit_cap <= 1
-            if (!PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
+            if (!ServerConfig.allow_summoning_killtask_multicredit.Value)
                 summon_credit_cap = 0;
 
             foreach (var kvp in DamageHistory.TotalDamage)
@@ -303,7 +311,7 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!PropertyManager.GetBool("fellow_kt_killer"))   
+                else if (!ServerConfig.fellow_kt_killer.Value)   
                 {
                     continue;
                 }
@@ -370,7 +378,7 @@ namespace ACE.Server.WorldObjects
                     if (playerDamager != null && playerDamager.QuestManager.HasQuest(questName))
                     {
                         // only add combat pet to eligible receivers if player has quest, and allow_summoning_killtask_multicredit = true (default, retail)
-                        if (DamageHistory.HasDamager(playerDamager, true) && PropertyManager.GetBool("allow_summoning_killtask_multicredit"))
+                        if (DamageHistory.HasDamager(playerDamager, true) && ServerConfig.allow_summoning_killtask_multicredit.Value)
                             receivers[kvp.Value.Guid] = kvp.Value;  // add CombatPet
                         else
                             receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);   // add dummy profile for PetOwner
@@ -400,7 +408,7 @@ namespace ACE.Server.WorldObjects
                     // just add a fake DamageHistoryInfo for reference
                     receivers[playerDamager.Guid] = new DamageHistoryInfo(playerDamager);
                 }
-                else if (PropertyManager.GetBool("fellow_kt_killer"))
+                else if (ServerConfig.fellow_kt_killer.Value)
                 {
                     // if this option is enabled (retail default), the killer is required to have kill task
                     // for it to share with fellowship
@@ -451,6 +459,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected void CreateCorpse(DamageHistoryInfo killer, bool hadVitae = false)
         {
+            if (this is Player decedent && (decedent.IsAdmin || (decedent.Session != null && decedent.Session.AccessLevel >= AccessLevel.Admin)))
+            {
+                PlayerManager.BroadcastToAuditChannel(decedent, $"Admin {decedent.Name} has died. (Admin Death - No Corpse Created)");
+                return;
+            }
+
             if (NoCorpse)
             {
                 if (killer != null && killer.IsOlthoiPlayer) return;
@@ -570,37 +584,87 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var dropped = player.CalculateDeathItems(corpse);
-
-                    corpse.RecalculateDecayTime(player);
-
-                    if (dropped.Count > 0)
-                        saveCorpse = true;
-
-                    if ((player.Location.Cell & 0xFFFF) < 0x100)
+                    // If player is cloaked as creature, handle creature death mechanics
+                    if (player.CloakStatus == CloakStatus.Creature)
                     {
-                        player.SetPosition(PositionType.LastOutsideDeath, new Position(corpse.Location));
-                        player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePosition(player, PositionType.LastOutsideDeath, corpse.Location));
+                        // Mark corpse as monster for creature rot timer
+                        corpse.IsMonster = true;
+
+                        // Try to get the creature weenie from WeenieClassId (if morphed)
+                        var creatureWeenie = DatabaseManager.World.GetCachedWeenie(player.WeenieClassId);
+                        if (creatureWeenie != null)
+                        {
+                            // Check if this is a creature weenie
+                            var isCreatureWeenie = creatureWeenie.WeenieType == WeenieType.Creature ||
+                                                  creatureWeenie.WeenieType == WeenieType.Cow ||
+                                                  creatureWeenie.WeenieType == WeenieType.Pet ||
+                                                  creatureWeenie.WeenieType == WeenieType.CombatPet;
+
+                            if (isCreatureWeenie)
+                            {
+                                // Set TimeToRot from creature weenie (use creature rot timer, not player rot timer)
+                                var creatureTimeToRot = creatureWeenie.GetProperty(PropertyFloat.TimeToRot);
+                                if (creatureTimeToRot.HasValue)
+                                    corpse.TimeToRot = creatureTimeToRot.Value;
+                                else
+                                    // Default creature rot time if not specified (5 minutes)
+                                    corpse.TimeToRot = 300;
+
+                                // Get DeathTreasureType from the creature weenie
+                                var deathTreasureType = creatureWeenie.GetProperty(PropertyDataId.DeathTreasureType);
+                                if (deathTreasureType.HasValue)
+                                {
+                                    var deathTreasure = DatabaseManager.World.GetCachedDeathTreasure(deathTreasureType.Value);
+                                    if (deathTreasure != null)
+                                    {
+                                        // Generate creature loot
+                                        var lootItems = LootGenerationFactory.CreateRandomLootObjects(deathTreasure);
+                                        foreach (var item in lootItems)
+                                        {
+                                            corpse.TryAddToInventory(item);
+                                            DoCantripLogging(killer, item);
+                                        }
+                                    }
+                                }
+                                // Even if no loot, corpse is still created (empty)
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Normal player death handling
+                        var dropped = player.CalculateDeathItems(corpse);
+
+                        corpse.RecalculateDecayTime(player);
 
                         if (dropped.Count > 0)
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your corpse is located at ({corpse.Location.GetMapCoordStr()}).", ChatMessageType.Broadcast));
+                            saveCorpse = true;
+
+                        if ((player.Location.Cell & 0xFFFF) < 0x100)
+                        {
+                            player.SetPosition(PositionType.LastOutsideDeath, new Position(corpse.Location));
+                            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePosition(player, PositionType.LastOutsideDeath, corpse.Location));
+
+                            if (dropped.Count > 0)
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your corpse is located at ({corpse.Location.GetMapCoordStr()}).", ChatMessageType.Broadcast));
+                        }
+
+                        var isPKdeath = player.IsPKDeath(killer);
+                        var isPKLdeath = player.IsPKLiteDeath(killer);
+
+                        if (isPKdeath)
+                            corpse.PkLevel = PKLevel.PK;
+
+                        if (!isPKdeath && !isPKLdeath)
+                        {
+                            var miserAug = player.AugmentationLessDeathItemLoss * 5;
+                            if (miserAug > 0)
+                                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your augmentation has reduced the number of items you can lose by {miserAug}!", ChatMessageType.Broadcast));
+                        }
+
+                        if (dropped.Count == 0 && !isPKLdeath)
+                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have retained all your items. You do not need to recover your corpse!", ChatMessageType.Broadcast));
                     }
-
-                    var isPKdeath = player.IsPKDeath(killer);
-                    var isPKLdeath = player.IsPKLiteDeath(killer);
-
-                    if (isPKdeath)
-                        corpse.PkLevel = PKLevel.PK;
-
-                    if (!isPKdeath && !isPKLdeath)
-                    {
-                        var miserAug = player.AugmentationLessDeathItemLoss * 5;
-                        if (miserAug > 0)
-                            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your augmentation has reduced the number of items you can lose by {miserAug}!", ChatMessageType.Broadcast));
-                    }
-
-                    if (dropped.Count == 0 && !isPKLdeath)
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have retained all your items. You do not need to recover your corpse!", ChatMessageType.Broadcast));
                 }
             }
             else
@@ -647,7 +711,7 @@ namespace ACE.Server.WorldObjects
             if (player != null)
             {
                 if (corpse.PhysicsObj == null || corpse.PhysicsObj.Position == null)
-                    log.Debug($"[CORPSE] {Name}'s corpse (0x{corpse.Guid}) failed to spawn! Tried at {player.Location.ToLOCString()}");
+                    log.Debug($"[CORPSE] {Name}'s corpse (0x{corpse.Guid}) failed to spawn! Tried at {player.Location}");
                 else
                     log.Debug($"[CORPSE] {Name}'s corpse (0x{corpse.Guid}) is located at {corpse.PhysicsObj.Position}");
             }
@@ -681,7 +745,10 @@ namespace ACE.Server.WorldObjects
                             foreach (var wo in savedObjects)
                             {
                                 if (!wo.IsDestroyed)
+                                {
                                     wo.SaveInProgress = false;
+                                    wo.SaveStartTime = DateTime.MinValue; // Reset for next save
+                                }
                             }
 
                             if (!result)
@@ -725,7 +792,7 @@ namespace ACE.Server.WorldObjects
 
             // move wielded treasure over, which also should include Wielded objects not marked for destroy on death.
             // allow server operators to configure this behavior due to errors in createlist post 16py data
-            var dropFlags = PropertyManager.GetBool("creatures_drop_createlist_wield") ? DestinationType.WieldTreasure : DestinationType.Treasure;
+            var dropFlags = ServerConfig.creatures_drop_createlist_wield.Value ? DestinationType.WieldTreasure : DestinationType.Treasure;
 
             // Build list of items to move (optimized from Concat + Where + ToList)
             var itemsToMove = new List<WorldObject>();
@@ -780,6 +847,8 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+
+
             return droppedItems;
         }
 
@@ -818,6 +887,44 @@ namespace ACE.Server.WorldObjects
                 spells.Add(new Server.Entity.Spell(kvp.Key, false));
 
             return string.Join(", ", spells.Select(i => i.Name));
+        }
+
+        /// <summary>
+        /// Generates a Siphon Lens and attempts to give it to the killer, or drops it to the ground.
+        /// This is separate from normal treasure generation to ensure it happens even if the creature
+        /// is destroyed by a death emote (DeleteSelf) before a corpse is created.
+        /// </summary>
+        private void GenerateSiphonLens(DamageHistoryInfo killer)
+        {
+            if (killer == null) return;
+
+            var lens = LootGenerationFactory.TryRollSiphonLensForCreature((uint)(Level ?? 1));
+            if (lens == null) return;
+
+            bool lensDelivered = false;
+            var killerPlayer = killer?.TryGetPetOwnerOrAttacker() as Player;
+            
+            if (killerPlayer != null)
+            {
+                if (killerPlayer.TryCreateInInventoryWithNetworking(lens))
+                {
+                    killerPlayer.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You find a {lens.Name} on the creature!", ChatMessageType.Broadcast));
+                    lensDelivered = true;
+                }
+                else
+                {
+                    killerPlayer.Session.Network.EnqueueSend(
+                        new GameMessageSystemChat($"You found a {lens.Name}, but your inventory is full! It fell to the ground.", ChatMessageType.Broadcast));
+                }
+            }
+            
+            // Fallback: killer is null, not a player, or inventory full - drop to ground
+            if (!lensDelivered)
+            {
+                lens.Location = new Position(Location);
+                LandblockManager.AddObject(lens);
+            }
         }
 
         public bool IsOnNoDeathXPLandblock => Location != null ? NoDeathXP_Landblocks.Contains(Location.LandblockId.Landblock) : false;

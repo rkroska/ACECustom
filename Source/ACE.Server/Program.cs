@@ -15,6 +15,7 @@ using ACE.Server.Command;
 using ACE.Server.Managers;
 using ACE.Server.Network.Managers;
 using ACE.Server.Mods;
+using ACE.Server.Entity;
 
 namespace ACE.Server
 {
@@ -131,12 +132,18 @@ namespace ACE.Server
             var configConfigContainer = Path.Combine(containerConfigDirectory, "Config.js");
 
             if (IsRunningInContainer && File.Exists(configConfigContainer))
+            {
+                log.Info($"Copying {configConfigContainer} to {configFile}");
                 File.Copy(configConfigContainer, configFile, true);
+            }
 
             if (!File.Exists(configFile))
             {
                 if (!IsRunningInContainer)
+                {
+                    log.Info($"Running out-of-box setup.");
                     DoOutOfBoxSetup(configFile);
+                }
                 else
                 {
                     if (!File.Exists(configConfigContainer))
@@ -145,12 +152,14 @@ namespace ACE.Server
                         File.Copy(configFile, configConfigContainer);
                     }
                     else
+                    {
                         File.Copy(configConfigContainer, configFile);
+                    }
                 }
             }
 
-            log.Info("Initializing ConfigManager...");
-            ConfigManager.Initialize();
+            log.Info($"Initializing ConfigManager with {configFile}...");
+            ConfigManager.Initialize(configFile);
 
             log.Info("Initializing ModManager...");
             ModManager.Initialize();
@@ -230,6 +239,28 @@ namespace ACE.Server
                 Environment.Exit(0);
             }
 
+            // Check if metrics are enabled in Config.js
+            if (ConfigManager.Config.Metrics.Enabled)
+            {
+                try
+                {
+                    MetricsManager.StartMetricsPipeline(
+                        ConfigManager.Config.Metrics.Endpoint,
+                        ConfigManager.Config.Metrics.InstanceId,
+                        ConfigManager.Config.Metrics.ApiToken
+                    );
+                    log.Info($"MetricsManager initialized successfully, pushing to {ConfigManager.Config.Metrics.Endpoint}");
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to initialize MetricsManager: {ex.Message}");
+                }
+            }
+            else
+            {
+                log.Info("Metrics are disabled in Config.js.");
+            }
+
             log.Info("Initializing ServerManager...");
             ServerManager.Initialize();
 
@@ -263,12 +294,17 @@ namespace ACE.Server
             log.Info("Initializing Character Tracker...");
             CharacterTracker.EnsureDatabaseMigrated();
 
+            log.Info("Initializing Pet Registry...");
+            PetRegistryManager.EnsureTableCreated();
+
+            log.Info("Initializing Creature Blacklist...");
+            BlacklistManager.Initialize();
+
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
-
             
             if (!string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
             {
@@ -351,7 +387,7 @@ namespace ACE.Server
             DateTime buildDate = new FileInfo(Assembly.GetExecutingAssembly().Location).LastWriteTime;
             log.Info($"Server Build Date: {buildDate}");
 
-            if (!PropertyManager.GetBool("world_closed", false))
+            if (!ServerConfig.world_closed.Value)
             {
                 WorldManager.Open(null);
             }
@@ -369,9 +405,11 @@ namespace ACE.Server
                 if (!ServerManager.ShutdownInitiated)
                     log.Warn("Unsafe server shutdown detected! Data loss is possible!");
 
+
                 PropertyManager.StopUpdating();
                 //ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                MetricsManager.Shutdown();
 
                 // Do system specific cleanup here
                 try
@@ -390,6 +428,7 @@ namespace ACE.Server
             {
                 ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
+                MetricsManager.Shutdown();
             }
         }
     }

@@ -59,7 +59,7 @@ namespace ACE.Server.WorldObjects
             if (lastDamager != null)
                 nearbyMsg = string.Format(deathMessage.Broadcast, Name, lastDamager.Name);
             else
-                nearbyMsg = deathMessage.Broadcast;
+                nearbyMsg = string.Format(deathMessage.Broadcast, Name);
 
             var broadcastMsg = new GameMessagePlayerKilled(nearbyMsg, Guid, lastDamager?.Guid ?? ObjectGuid.Invalid);
 
@@ -74,8 +74,10 @@ namespace ACE.Server.WorldObjects
             if (Fellowship != null)
                 Fellowship.OnDeath(this);
 
+            UCMChecker.Stop();
+
             // if the player's lifestone is in a different landblock, also broadcast their demise to that landblock
-            if (PropertyManager.GetBool("lifestone_broadcast_death") && Sanctuary != null && Location.Landblock != Sanctuary.Landblock)
+            if (ServerConfig.lifestone_broadcast_death.Value && Sanctuary != null && Location.Landblock != Sanctuary.Landblock)
             {
                 // ActionBroadcastKill might not work if other players around lifestone aren't aware of this player yet...
                 // this existing broadcast method is also based on the current visible objects to the player,
@@ -255,7 +257,8 @@ namespace ACE.Server.WorldObjects
         public int CalculateVitaePenalty()
         {
             int lvl = Level ?? 1;
-            return (int)(lvl / PropertyManager.GetLong("vitae_per_level", 5));
+            long perLevel = Math.Max(1, ServerConfig.vitae_per_level.Value);
+            return (int)(lvl / perLevel);
         }
 
         /// <summary>
@@ -326,7 +329,7 @@ namespace ACE.Server.WorldObjects
 
             suicideInProgress = true;
 
-            if (PropertyManager.GetBool("suicide_instant_death"))
+            if (ServerConfig.suicide_instant_death.Value)
                 Die(new DamageHistoryInfo(this), DamageHistory.TopDamager);
             else
                 HandleSuicide(NumDeaths);
@@ -361,6 +364,10 @@ namespace ACE.Server.WorldObjects
 
         public List<WorldObject> CalculateDeathItems(Corpse corpse)
         {
+            // If cloaked as a creature, do not drop player items
+            if (CloakStatus == CloakStatus.Creature)
+                return new List<WorldObject>();
+
             // https://web.archive.org/web/20140712134108/http://support.turbine.com/link/portal/24001/24001/Article/464/How-do-death-items-work-in-Asheron-s-Call-Could-you-explain-how-the-game-decides-what-you-drop-when-you-die-in-Asheron-s-Call
 
             // Original formula:
@@ -498,8 +505,6 @@ namespace ACE.Server.WorldObjects
 
             var numItemsDropped = GetNumItemsDropped(corpse);
 
-            var numCoinsDropped = GetNumCoinsDropped();
-
             var level = Level ?? 1;
             var canDropWielded = level >= 35;
 
@@ -523,14 +528,6 @@ namespace ACE.Server.WorldObjects
             var sorted = new DeathItems(inventory);
 
             var dropItems = new List<WorldObject>();
-
-            if (numCoinsDropped > 0)
-            {
-                // add pyreals to dropped items
-                var pyreals = SpendCurrency(coinStackWcid, (uint)numCoinsDropped);
-                dropItems.AddRange(pyreals);
-                //Console.WriteLine($"Dropping {numCoinsDropped} pyreals");
-            }
 
             // Remove the items from inventory
             for (var i = 0; i < numItemsDropped && i < sorted.Inventory.Count; i++)
@@ -581,7 +578,7 @@ namespace ACE.Server.WorldObjects
                     dropItems.Add(item);
             }
 
-            var destroyCoins = PropertyManager.GetBool("corpse_destroy_pyreals");
+            var destroyCoins = ServerConfig.corpse_destroy_pyreals.Value;
 
             // add items to corpse
             foreach (var dropItem in dropItems)
@@ -606,6 +603,7 @@ namespace ACE.Server.WorldObjects
             dropItems.AddRange(destroyedItems);
 
             // send network messages
+            int numCoinsDropped = 0;
             var dropList = DropMessage(dropItems, numCoinsDropped);
             if (!string.IsNullOrWhiteSpace(dropList))
             {
@@ -625,7 +623,7 @@ namespace ACE.Server.WorldObjects
             var msg = $"[CORPSE] {Name} dropped items on corpse (0x{corpse.Guid}): ";
 
             foreach (var dropItem in dropItems)
-                msg += $"{(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? dropItem.StackSize.Value.ToString("N0") + " " + dropItem.GetPluralName() : dropItem.Name)} (0x{dropItem.Guid}){(dropItem.WeenieClassId == 273 && PropertyManager.GetBool("corpse_destroy_pyreals") ? $" which {(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? "were" : "was")} destroyed" : "")}, ";
+                msg += $"{(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? dropItem.StackSize.Value.ToString("N0") + " " + dropItem.GetPluralName() : dropItem.Name)} (0x{dropItem.Guid}){(dropItem.WeenieClassId == 273 && ServerConfig.corpse_destroy_pyreals.Value ? $" which {(dropItem.StackSize.HasValue && dropItem.StackSize > 1 ? "were" : "was")} destroyed" : "")}, ";
 
             msg = msg.Substring(0, msg.Length - 2);
 
@@ -685,18 +683,6 @@ namespace ACE.Server.WorldObjects
             }
 
             return numItemsDropped;
-        }
-
-        public int GetNumCoinsDropped()
-        {
-            // if level > 5, lose half coins
-            // (trade notes excluded)
-            var level = Level ?? 1;
-            var coins = CoinValue ?? 0;
-
-            var numCoinsDropped = level > 5 ? coins / 2 : 0;
-
-            return numCoinsDropped;
         }
 
         /// <summary>
@@ -990,10 +976,10 @@ namespace ACE.Server.WorldObjects
 
         public void PK_DeathTick()
         {
-            if (MinimumTimeSincePk == null || (PropertyManager.GetBool("pk_server_safe_training_academy") && RecallsDisabled))
+            if (MinimumTimeSincePk == null || (ServerConfig.pk_server_safe_training_academy.Value && RecallsDisabled))
                 return;
 
-            if (PkLevel == PKLevel.NPK && !PropertyManager.GetBool("pk_server") && !PropertyManager.GetBool("pkl_server"))
+            if (PkLevel == PKLevel.NPK && !ServerConfig.pk_server.Value && !ServerConfig.pkl_server.Value)
             {
                 MinimumTimeSincePk = null;
                 return;
@@ -1001,7 +987,7 @@ namespace ACE.Server.WorldObjects
 
             MinimumTimeSincePk += CachedHeartbeatInterval;
 
-            if (MinimumTimeSincePk < PropertyManager.GetDouble("pk_respite_timer"))
+            if (MinimumTimeSincePk < ServerConfig.pk_respite_timer.Value)
                 return;
 
             MinimumTimeSincePk = null;
@@ -1009,9 +995,9 @@ namespace ACE.Server.WorldObjects
             var werror = WeenieError.None;
             var pkLevel = PkLevel;
 
-            if (PropertyManager.GetBool("pk_server"))
+            if (ServerConfig.pk_server.Value)
                 pkLevel = PKLevel.PK;
-            else if (PropertyManager.GetBool("pkl_server"))
+            else if (ServerConfig.pkl_server.Value)
                 pkLevel = PKLevel.PKLite;
 
             switch (pkLevel)

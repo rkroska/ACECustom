@@ -25,6 +25,61 @@ namespace ACE.Server.Entity
         /// </summary>
         private static readonly int MaxFellows = 29;
 
+        public static readonly HashSet<ushort> ThaelarynIslandLandblocks = new()
+        {
+            // North Tip
+            0xF66C, 0xF76C, 0xF86C, 
+            
+            // Upper Body
+            0xF66B, 0xF76B, 0xF86B,
+            0xF76A, 0xF86A, 0xF96A,
+            0xF669, 0xF769, 0xF869, 0xF969,
+            0xF668, 0xF768, 0xF868, 0xF968,
+            // Middle / Widening
+            0xF467, 0xF567, 0xF667, 0xF767, 0xF867, 0xF967,
+            0xF666, 0xF766, 0xF866, 0xF966, // <--- Includes your ID 0xF866
+            // Lower Body
+            0xF565, 0xF665, 0xF765, 0xF865, 0xF965,
+            0xF564, 0xF664, 0xF764, 0xF864, 0xF964,
+            0xF563, 0xF663, 0xF763, 0xF863, 0xF963,
+            0xF462, 0xF562, 0xF662, 0xF762, 0xF862, 0xF962,
+            
+            // South Tip
+            0xF361, 0xF461, 0xF561, 0xF661, 0xF761
+        };
+
+        public static readonly HashSet<ushort> ValleyOfDeathLandblocks = new()
+        {
+            // Row 0x4A
+            0x284A, 0x294A, 0x2A4A, 0x2B4A, 0x2C4A, 0x2D4A, 0x2E4A, 0x2F4A, 0x304A, 0x314A, 0x324A,
+            // Row 0x4B
+            0x274B, 0x284B, 0x294B, 0x2A4B, 0x2B4B, 0x2C4B, 0x2D4B, 0x2E4B, 0x2F4B, 0x304B, 0x314B, 0x324B,
+            // Row 0x4C
+            0x284C, 0x294C, 0x2A4C, 0x2B4C, 0x2C4C, 0x2D4C, 0x2E4C, 0x2F4C, 0x304C, 0x314C, 0x324C,
+            // Row 0x4D
+            0x254D, 0x264D, 0x274D, 0x284D, 0x294D, 0x2A4D, 0x2B4D, 0x2C4D, 0x2D4D, 0x2E4D, 0x2F4D, 0x304D, 0x314D, 0x324D,
+            // Row 0x4E
+            0x254E, 0x274E, 0x284E, 0x294E, 0x2A4E, 0x2B4E, 0x2C4E, 0x2D4E, 0x2E4E, 0x2F4E, 0x304E, 0x314E, 0x324E,
+            // Row 0x4F
+            0x254F, 0x264F, 0x284F, 0x294F, 0x2A4F, 0x2B4F, 0x2C4F, 0x2D4F, 0x2E4F, 0x2F4F, 0x304F, 0x314F, 0x324F,
+            // Row 0x50
+            0x2550, 0x2650, 0x2850, 0x2950, 0x2A50, 0x2B50, 0x2C50, 0x2D50, 0x2E50, 0x2F50, 0x3050, 0x3150, 0x3250,
+            // Row 0x51
+            0x2651, 0x2851, 0x2951, 0x2A51, 0x2B51, 0x2C51, 0x2D51, 0x2E51, 0x2F51, 0x3051, 0x3151, 0x3251,
+            // Row 0x52
+            0x2752, 0x2852, 0x2952, 0x2A52, 0x2B52, 0x2C52, 0x2D52, 0x2E52, 0x2F52, 0x3052, 0x3152, 0x3252,
+            // Row 0x53
+            0x2753, 0x2853, 0x2953, 0x2A53, 0x2B53, 0x2C53, 0x2D53, 0x2E53, 0x2F53, 0x3053, 0x3153, 0x3253, 0x3353,
+            // Row 0x54
+            0x2754, 0x2854, 0x2954, 0x2A54, 0x2B54, 0x2C54, 0x2D54, 0x2E54, 0x2F54, 0x3054, 0x3154, 0x3254,
+            // Row 0x55
+            0x2755, 0x2855, 0x2955, 0x2A55, 0x2B55, 0x2C55, 0x2D55, 0x2E55, 0x2F55, 0x3055, 0x3155, 0x3255, 0x3355,
+            // Row 0x56
+            0x2856, 0x2956, 0x2A56, 0x2B56, 0x2C56, 0x2D56, 0x2E56, 0x2F56, 0x3056, 0x3156, 0x3256,
+            // Row 0x57
+            0x2857, 0x2957, 0x2A57, 0x2B57, 0x2C57, 0x2D57, 0x2E57, 0x2F57, 0x3057, 0x3157, 0x3257,
+        };
+
         public string FellowshipName;
         public uint FellowshipLeaderGuid;
 
@@ -111,7 +166,7 @@ namespace ACE.Server.Entity
             }
             else
             {
-                if (PropertyManager.GetBool("fellow_busy_no_recruit") && newMember.IsBusy)
+                if (ServerConfig.fellow_busy_no_recruit.Value && newMember.IsBusy)
                 {
                     inviter.Session.Network.EnqueueSend(new GameMessageSystemChat($"{newMember.Name} is busy.", ChatMessageType.Broadcast));
                     return;
@@ -156,6 +211,12 @@ namespace ACE.Server.Entity
 
             FellowshipMembers.TryAdd(player.Guid.Full, new WeakReference<Player>(player));
             player.Fellowship = inviter.Fellowship;
+
+            if (player.Session.AccessLevel >= AccessLevel.Admin)
+            {
+                var leaderName = PlayerManager.GetOnlinePlayer(FellowshipLeaderGuid)?.Name ?? "Unknown";
+                PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} joined fellowship {FellowshipName} (Leader: {leaderName}).");
+            }
 
             CalculateXPSharing();
 
@@ -221,6 +282,9 @@ namespace ACE.Server.Entity
             FellowshipMembers.Remove(player.Guid.Full);
             player.Fellowship = null;
 
+            if (player.Session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} was dismissed from fellowship {FellowshipName}.");
+
             CalculateXPSharing();
 
             UpdateAllMembers();
@@ -277,6 +341,9 @@ namespace ACE.Server.Entity
         public void QuitFellowship(Player player, bool disband)
         {
             if (player == null) return;
+
+            if (player.Session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(player, $"Admin {player.Name} left fellowship {FellowshipName} (Disbanded: {disband}).");
 
             if (player.Guid.Full == FellowshipLeaderGuid)
             {
@@ -452,7 +519,7 @@ namespace ACE.Server.Entity
 
             var fellows = GetFellowshipMembers();
 
-            var allEvenShareLevel = PropertyManager.GetLong("fellowship_even_share_level");
+            var allEvenShareLevel = ServerConfig.fellowship_even_share_level.Value;
             var allOverEvenShareLevel = !fellows.Values.Any(f => (f.Level ?? 1) < allEvenShareLevel);
 
             if (allOverEvenShareLevel)
@@ -500,7 +567,7 @@ namespace ACE.Server.Entity
             shareType &= ~ShareType.Fellowship;
 
             // quest turn-ins: flat share (retail default)
-            if (xpType == XpType.Quest && !PropertyManager.GetBool("fellow_quest_bonus"))
+            if (xpType == XpType.Quest && !ServerConfig.fellow_quest_bonus.Value)
             {
                 var perAmount = (long)amount / fellowshipMembers.Count;
 
@@ -516,62 +583,77 @@ namespace ACE.Server.Entity
                     {
                         member.GrantXP(perAmount, fellowXpType, shareType);
                     }
-                    
+
                 }
             }
 
             // divides XP evenly to all the sharable fellows within level range,
             // but with a significant boost to the amount of xp, based on # of fellowship members
-            else if (EvenShare)
-            {
-                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
-
-                foreach (var member in fellowshipMembers.Values)
-                {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
-                    {
-                        member.GrantXP((long)amount, xpType, shareType);
-                        continue;
-                    }
-                    var shareAmount = (ulong)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
-
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member.HasVitae && member.IsVPHardcore)
-                    {
-
-                        member.GrantXP(0, fellowXpType, shareType);
-                    }
-                    else
-                    {
-
-                        member.GrantXP((long)shareAmount, fellowXpType, shareType);
-                    }
-
-                }
-
-                return;
-            }
-
-            // divides XP to all sharable fellows within level range
-            // based on each fellowship member's level
             else
             {
-                var levelXPSum = fellowshipMembers.Values.Select(p => p.GetXPToNextLevel(p.Level.Value)).Sum();
+                var eligibleMembers = new List<(Player Member, double Scalar)>(fellowshipMembers.Count);
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
+                    var scalar = GetDistanceScalar(player, member, xpType);
+                    if (scalar > 0)
+                        eligibleMembers.Add((member, scalar));
+                }
+
+                if (EvenShare)
+                {
+                    var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
+
+                    foreach (var (member, scalar) in eligibleMembers)
                     {
-                        member.GrantXP((long)amount, xpType, shareType);
-                        continue;
+                        if (member == player && ServerConfig.fellowship_additive.Value)
+                        {
+                            member.GrantXP((long)amount, xpType, shareType);
+                            continue;
+                        }
+                        var shareAmount = (ulong)Math.Round(totalAmount * scalar);
+
+                        var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                        if (member.HasVitae && member.IsVPHardcore)
+                        {
+                            member.GrantXP(0, fellowXpType, shareType);
+                        }
+                        else
+                        {
+                            member.GrantXP((long)shareAmount, fellowXpType, shareType);
+                        }
                     }
-                    var levelXPScale = (double)member.GetXPToNextLevel(member.Level.Value) / levelXPSum;
+                }
+                // divides XP to all sharable fellows within level range
+                // based on each fellowship member's level
+                else
+                {
+                    if (eligibleMembers.Count == 0) return;
 
-                    var playerTotal = (ulong)Math.Round(amount * levelXPScale * GetDistanceScalar(player, member, xpType));
+                    var levelXPSum = eligibleMembers.Select(p => p.Member.GetXPToNextLevel(p.Member.Level.Value)).Sum();
 
-                    var fellowXpType = player == member ? xpType : XpType.Fellowship;
+                    foreach (var (member, scalar) in eligibleMembers)
+                    {
+                        if (member == player && ServerConfig.fellowship_additive.Value)
+                        {
+                            member.GrantXP((long)amount, xpType, shareType);
+                            continue;
+                        }
+                        var levelXPScale = (double)member.GetXPToNextLevel(member.Level.Value) / levelXPSum;
 
-                    member.GrantXP((long)playerTotal, fellowXpType, shareType);
+                        var playerTotal = (ulong)Math.Round(amount * levelXPScale * scalar);
+
+                        var fellowXpType = player == member ? xpType : XpType.Fellowship;
+
+                        if (member.HasVitae && member.IsVPHardcore)
+                        {
+                            member.GrantXP(0, fellowXpType, shareType);
+                        }
+                        else
+                        {
+                            member.GrantXP((long)playerTotal, fellowXpType, shareType);
+                        }
+                    }
                 }
             }
         }
@@ -604,30 +686,38 @@ namespace ACE.Server.Entity
                     return;
                 }
 
-                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent());
+                var eligibleMembers = new List<(Player Member, double Scalar)>(fellowshipMembers.Count);
 
-                // Iterate fellowship members directly without .ToList() allocation
                 foreach (var member in fellowshipMembers.Values)
                 {
+                    var scalar = GetDistanceScalar(player, member, xpType);
+                    if (scalar > 0)
+                        eligibleMembers.Add((member, scalar));
+                }
+
+                var totalAmount = (ulong)Math.Round(amount * GetMemberSharePercent(eligibleMembers.Count));
+
+                // Iterate fellowship members directly without .ToList() allocation
+                foreach (var (member, scalar) in eligibleMembers)
+                {
                     var fellowXpType = player == member ? xpType : XpType.Fellowship;
-                    if (member == player && PropertyManager.GetBool("fellowship_additive"))
+                    if (member == player && ServerConfig.fellowship_additive.Value)
                     {
                         player.GrantLuminance((long)amount, fellowXpType, shareType);
                         continue;
                     }
-                    
-                    var playerTotal = (long)Math.Round(totalAmount * GetDistanceScalar(player, member, xpType));
+
+                    var playerTotal = (long)Math.Round(totalAmount * scalar);
 
                     member.GrantLuminance(playerTotal, fellowXpType, shareType);
                 }
             }
         }
 
-        internal double GetMemberSharePercent()
+        internal double GetMemberSharePercent(int memberCount)
         {
-            var fellowshipMembers = GetFellowshipMembers();
 
-            switch (fellowshipMembers.Count)
+            switch (memberCount)
             {
                 case 1:
                     return 1.0;
@@ -713,24 +803,24 @@ namespace ACE.Server.Entity
                 var sameLB = System.Threading.Interlocked.Exchange(ref _sameLandblockSkips, 0);
                 var indoorOutdoor = System.Threading.Interlocked.Exchange(ref _indoorOutdoorMismatches, 0);
                 var diffLBIndoor = System.Threading.Interlocked.Exchange(ref _differentLandblockIndoor, 0);
-                
+
                 var elapsed = (now - _lastLogTime).TotalSeconds;
                 var total = distCalcs + sameLB + indoorOutdoor + diffLBIndoor;
-                
-                if (total > 0 && PropertyManager.GetBool("fellowship_xp_debug_logging", false))
+
+                if (total > 0 && ServerConfig.fellowship_xp_debug_logging.Value)
                 {
                     var optimizedChecks = sameLB + indoorOutdoor + diffLBIndoor;
                     var optimizationPct = (optimizedChecks * 100.0 / total);
-                    
+
                     log.Info($"[FELLOWSHIP XP] Stats for last {elapsed:F1}s:");
-                    log.Info($"  Total checks: {total} ({total/elapsed:F1}/sec)");
+                    log.Info($"  Total checks: {total} ({total / elapsed:F1}/sec)");
                     log.Info($"  - Same LB (optimized): {sameLB} ({sameLB * 100.0 / total:F1}%)");
                     log.Info($"  - Distance calcs: {distCalcs} ({distCalcs * 100.0 / total:F1}%)");
                     log.Info($"  - Indoor/outdoor mismatch: {indoorOutdoor} ({indoorOutdoor * 100.0 / total:F1}%)");
                     log.Info($"  - Diff LB indoor: {diffLBIndoor} ({diffLBIndoor * 100.0 / total:F1}%)");
                     log.Info($"  Optimization effectiveness: {optimizationPct:F1}% of checks skipped expensive Distance2D()");
                 }
-                
+
                 _lastLogTime = now;
             }
         }
@@ -747,12 +837,26 @@ namespace ACE.Server.Entity
             if (xpType == XpType.Quest)
                 return 1.0f;
 
+            // Thaelaryn Island - full share if both players are in a thaelaryn island landblock
+            if ((earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
+            {
+                if (ThaelarynIslandLandblocks.Contains((ushort)earner.Location.Landblock) && ThaelarynIslandLandblocks.Contains((ushort)fellow.Location.Landblock))
+                    return 1.0f;
+            }
+
+            // Valley of Death - full share if both players are in a valley of death landblock
+            if ((earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
+            {
+                if (ValleyOfDeathLandblocks.Contains((ushort)earner.Location.Landblock) && ValleyOfDeathLandblocks.Contains((ushort)fellow.Location.Landblock))
+                    return 1.0f;
+            }
+
             // https://asheron.fandom.com/wiki/Announcements_-_2004/01_-_Mirror,_Mirror#Rollout_Article
 
             // OPTIMIZATION: Check if both players are in the same landblock
             // Landblock max distance (corner to corner) is ~271 units, well under the 600 unit XP sharing range
             // This skips expensive Distance2D calculations for the majority of fellowship grinding
-            if (earner.Location.Landblock == fellow.Location.Landblock 
+            if (earner.Location.Landblock == fellow.Location.Landblock
                 && (earner.Location.Variation ?? 0) == (fellow.Location.Variation ?? 0))
             {
                 // Same landblock but one is indoor and one is outdoor - can't share
@@ -762,7 +866,7 @@ namespace ACE.Server.Entity
                     LogDistanceStats();
                     return 0.0f;
                 }
-                
+
                 // Same landblock and both indoor or both outdoor - guaranteed in range
                 System.Threading.Interlocked.Increment(ref _sameLandblockSkips);
                 LogDistanceStats();
@@ -770,7 +874,7 @@ namespace ACE.Server.Entity
             }
 
             // DIFFERENT LANDBLOCKS
-            
+
             // If either player is indoors, they can't share XP across landblocks
             if (earner.Location.Indoors || fellow.Location.Indoors)
             {
@@ -781,7 +885,7 @@ namespace ACE.Server.Entity
 
             // Both players are outdoor in different landblocks - need distance check
             // This handles cases like players at adjacent landblock boundaries.
-            
+
             // Track distance calculation rate (debug logging)
             System.Threading.Interlocked.Increment(ref _distanceCalcCount);
             LogDistanceStats();
@@ -806,7 +910,7 @@ namespace ACE.Server.Entity
         {
             var fellows = GetFellowshipMembers();
 
-            var landblockRange = PropertyManager.GetBool("fellow_kt_landblock");
+            var landblockRange = ServerConfig.fellow_kt_landblock.Value;
 
             var results = new List<Player>();
 

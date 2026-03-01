@@ -305,7 +305,7 @@ namespace ACE.Server.WorldObjects
                 physicsState &= ~PhysicsState.Cloaked;
             }
 
-            if (this is SpellProjectile && PropertyManager.GetBool("spell_projectile_ethereal"))
+            if (this is SpellProjectile && ServerConfig.spell_projectile_ethereal.Value)
                 physicsState |= PhysicsState.Ethereal;
 
             writer.Write((uint)physicsState);
@@ -414,7 +414,7 @@ namespace ACE.Server.WorldObjects
         /// <param name="adminMove">only used if admin is teleporting a non-player object</param>
         public void SendUpdatePosition(bool adminMove = false)
         {
-            //Console.WriteLine($"{Name}.SendUpdatePosition({Location.ToLOCString()})");
+            //Console.WriteLine($"{Name}.SendUpdatePosition({Location})");
 
             EnqueueBroadcast(new GameMessageUpdatePosition(this, adminMove));
 
@@ -829,7 +829,7 @@ namespace ACE.Server.WorldObjects
             {
                 var openable = !IsLocked;
 
-                if (WeenieType == WeenieType.Chest && !openable && PropertyManager.GetBool("fix_chest_missing_inventory_window"))
+                if (WeenieType == WeenieType.Chest && !openable && ServerConfig.fix_chest_missing_inventory_window.Value)
                     openable = true;
 
                 UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Openable, openable);
@@ -1134,7 +1134,7 @@ namespace ACE.Server.WorldObjects
 
         public float EnqueueMotionPersist(ActionChain actionChain, MotionStance stance, MotionCommand motionCommand, float speed = 1.0f)
         {
-            if (!PropertyManager.GetBool("persist_movement"))
+            if (!ServerConfig.persist_movement.Value)
             {
                 return EnqueueMotion(actionChain, stance, motionCommand, speed);
             }
@@ -1167,7 +1167,7 @@ namespace ACE.Server.WorldObjects
 
         public float EnqueueMotionPersist(ActionChain actionChain, MotionCommand motionCommand, float speed = 1.0f, bool useStance = true, MotionCommand? prevCommand = null, bool castGesture = false, bool half = false)
         {
-            if (!PropertyManager.GetBool("persist_movement"))
+            if (!ServerConfig.persist_movement.Value)
             {
                 return EnqueueMotion(actionChain, motionCommand, speed, useStance, prevCommand, castGesture, half);
             }

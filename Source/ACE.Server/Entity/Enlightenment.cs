@@ -194,7 +194,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 50 && targetEnlightenment <= 150)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost");
+                var baseLumCost = ServerConfig.enl_50_base_lum_cost.Value;
                 long reqLum = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum))
                 {
@@ -205,7 +205,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 150 && targetEnlightenment < 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost");
+                var baseLumCost = ServerConfig.enl_150_base_lum_cost.Value;
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 if (!VerifyLuminance(player, reqLum150))
                 {
@@ -227,7 +227,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 300)
             {
-                var baseLumCost = (decimal)PropertyManager.GetLong("enl_300_base_lum_cost");
+                var baseLumCost = (decimal)ServerConfig.enl_300_base_lum_cost.Value;
 
                 // how far past 300 we’re going
                 int over = targetEnlightenment - 300;
@@ -354,7 +354,7 @@ namespace ACE.Server.Entity
         {
             if (player.Enlightenment + 1 > 50 && player.Enlightenment < 150)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_50_base_lum_cost");
+                var baseLumCost = ServerConfig.enl_50_base_lum_cost.Value;
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum);
@@ -362,7 +362,7 @@ namespace ACE.Server.Entity
 
             else if (player.Enlightenment + 1 > 150 && player.Enlightenment < 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_150_base_lum_cost");
+                var baseLumCost = ServerConfig.enl_150_base_lum_cost.Value;
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum150 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum150);
@@ -370,7 +370,7 @@ namespace ACE.Server.Entity
 
             else if (player.Enlightenment + 1 > 300)
             {
-                var baseLumCost = PropertyManager.GetLong("enl_300_base_lum_cost");
+                var baseLumCost = ServerConfig.enl_300_base_lum_cost.Value;
                 var targetEnlightenment = player.Enlightenment + 1;
                 long reqLum300 = targetEnlightenment * baseLumCost;
                 return player.SpendLuminance(reqLum300);
@@ -382,7 +382,7 @@ namespace ACE.Server.Entity
         public static void RemoveSociety(Player player)
         {
             // Leave society alone if server prop is false
-            if (PropertyManager.GetBool("enl_removes_society"))
+            if (ServerConfig.enl_removes_society.Value)
             {
                 player.QuestManager.Erase("SocietyMember");
                 player.QuestManager.Erase("CelestialHandMember");
@@ -610,7 +610,10 @@ namespace ACE.Server.Entity
 
             var msg = $"{player.Name} has achieved the {lvl} level of Enlightenment!";
             PlayerManager.BroadcastToAll(new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
-            DiscordChatManager.SendDiscordMessage(player.Name, msg, ConfigManager.Config.Chat.GeneralChannelId);
+            
+            if (ACE.Server.Managers.ServerConfig.discord_broadcast_level.Value >= (long)ACE.Common.DiscordLogLevel.Info)
+                _ = DiscordChatManager.SendDiscordMessage(player.Name, msg, ConfigManager.Config.Chat.GeneralChannelId);
+            
             PlayerManager.LogBroadcastChat(Channel.AllBroadcast, null, msg);
 
             // +2 vitality

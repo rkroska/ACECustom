@@ -1748,17 +1748,21 @@ namespace ACE.Server.WorldObjects
                 }
                 long newBalance = BankedPyreals ?? 0;
                 long targetNewBalance = 0;
-                
+
                 // Get target player's new balance
+                // Also update the recipient's coin value if they are online
                 if (tarplayer is Player onlinePlayerNew)
                 {
                     targetNewBalance = onlinePlayerNew.BankedPyreals ?? 0;
+                    onlinePlayerNew.UpdateCoinValue();
                 }
                 else if (tarplayer is OfflinePlayer offlinePlayerNew)
                 {
                     targetNewBalance = offlinePlayerNew.BankedPyreals ?? 0;
                 }
-                
+
+                // Update client-side coin value tracking after transferring pyreals.
+                UpdateCoinValue();
                 LogBankChange("TransferPyreals_Source", "Pyreals", Amount, oldBalance, newBalance, $"Transferred to {tarplayer.Name}");
                 LogBankChange("TransferPyreals_Target", "Pyreals", Amount, targetOldBalance, targetNewBalance, $"Received from {this.Name}");
                 LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, true, "Transfer completed successfully");

@@ -10,20 +10,20 @@ namespace ACE.Entity.Models
         /// <summary>
         /// This is only used to tie this property back to a specific database row
         /// </summary>
-        public uint DatabaseRecordId { get; set; }
+        public uint? DatabaseRecordId { get; set; }
 
-        public EmoteCategory Category { get; set; }
-        public float Probability { get; set; }
+        public required EmoteCategory Category { get; set; }
+        public required float Probability { get; set; }
         public uint? WeenieClassId { get; set; }
         public MotionStance? Style { get; set; }
         public MotionCommand? Substyle { get; set; }
-        public string Quest { get; set; }
+        public required string Quest { get; set; }
         public VendorType? VendorType { get; set; }
         public float? MinHealth { get; set; }
         public float? MaxHealth { get; set; }
 
-        public Weenie Object { get; set; }
-        public IList<PropertiesEmoteAction> PropertiesEmoteAction { get; set; } = new List<PropertiesEmoteAction>();
+        public Weenie? Object { get; set; }
+        public IList<PropertiesEmoteAction> PropertiesEmoteAction { get; set; } = [];
 
         public PropertiesEmote Clone()
         {

@@ -53,7 +53,7 @@ namespace ACE.Server.Entity
 
         public override bool Equals(object obj)
         {
-            return base.Equals(obj) && this.VariationId == ((Landblock)obj).VariationId;
+            return base.Equals(obj) && VariationId == ((Landblock)obj).VariationId;
         }
 
         /// <summary>
@@ -101,7 +101,7 @@ namespace ACE.Server.Entity
 
         public List<Landblock> Adjacents = new List<Landblock>();
 
-        private readonly ActionQueue actionQueue = new ActionQueue();
+        private readonly ActionQueue actionQueue = new();
 
         public int WorldObjectCount
         { get
@@ -155,19 +155,10 @@ namespace ACE.Server.Entity
         public CellLandblock CellLandblock { get; }
         public LandblockInfo LandblockInfo { get; }
 
-        /// <summary>
-        /// The landblock static meshes for
-        /// collision detection and physics simulation
-        /// </summary>
-        public LandblockMesh LandblockMesh { get; private set; }
-
-        public List<ModelMesh> Buildings { get; private set; }
-
-
-        public readonly RateMonitor Monitor5m = new RateMonitor();
+        public readonly RateMonitor Monitor5m = new();
         private readonly TimeSpan last5mClearInteval = TimeSpan.FromMinutes(5);
         private DateTime last5mClear;
-        public readonly RateMonitor Monitor1h = new RateMonitor();
+        public readonly RateMonitor Monitor1h = new();
         private readonly TimeSpan last1hClearInteval = TimeSpan.FromHours(1);
         private DateTime last1hClear;
         private bool monitorsRequireEventStart = true;
@@ -342,7 +333,7 @@ namespace ACE.Server.Entity
                 CreateWorldObjectsCompleted = true;
 
                 PhysicsLandblock.SortObjects();
-            }));
+            }, ActionPriority.Low));
         }
 
         /// <summary>
@@ -358,7 +349,7 @@ namespace ACE.Server.Entity
             {
                 foreach (var fso in factoryShardObjects)
                     AddWorldObject(fso, VariationId);
-            }));
+            }, ActionPriority.Low));
         }
 
         /// <summary>
@@ -398,9 +389,9 @@ namespace ACE.Server.Entity
                         return;
                     }
 
-                    if (PropertyManager.GetBool("override_encounter_spawn_rates"))
+                    if (ServerConfig.override_encounter_spawn_rates.Value)
                     {
-                        wo.RegenerationInterval = PropertyManager.GetDouble("encounter_regen_interval");
+                        wo.RegenerationInterval = ServerConfig.encounter_regen_interval.Value;
 
                         wo.ReinitializeHeartbeats();
 
@@ -419,13 +410,13 @@ namespace ACE.Server.Entity
                             }
 
                             foreach (var profile in wo.Biota.PropertiesGenerator)
-                                profile.Delay = (float)PropertyManager.GetDouble("encounter_delay");
+                                profile.Delay = (float)ServerConfig.encounter_delay.Value;
                         }
                     }
 
                     if (!AddWorldObject(wo, VariationId))
                         wo.Destroy();
-                }));
+                }, ActionPriority.Low));
             }
         }
 
@@ -567,13 +558,20 @@ namespace ACE.Server.Entity
                 // Increased from 50 to 75 based on production saturation warnings
                 // Configurable via: /modifylong monster_tick_throttle_limit <value> (min: 50, recommended: 75-125)
                 int monstersProcessed = 0;
-                var throttleValue = (int)PropertyManager.GetLong("monster_tick_throttle_limit", 75);
+                var throttleValue = (int)ServerConfig.monster_tick_throttle_limit.Value;
                 var maxMonstersPerTick = Math.Max(50, throttleValue); // Enforce minimum of 50 to prevent server lockup
                 
                 if (throttleValue < 50 && throttleValue != maxMonstersPerTick)
                     log.Warn($"[PERFORMANCE] monster_tick_throttle_limit set to {throttleValue}, enforcing minimum of 50. This value is too low and may cause server performance issues.");
 
                 
+                // Time Slicing: Budget 15ms per tick for monster processing
+                // This prevents server lockup (lag/rubberbanding) when hundreds of monsters are active.
+                // Monsters that miss this slice will remain at the front of the priority queue for the next tick.
+                long monsterProcessingBudgetMs = 15;
+                if (ServerConfig.monster_tick_throttle_limit.Value > 500) // Increase budget if they really want tons of monsters
+                     monsterProcessingBudgetMs = 30;
+
                 while (sortedCreaturesByNextTick.Count > 0 && monstersProcessed < maxMonstersPerTick) // Monster_Tick()
                 {
                     var monster = sortedCreaturesByNextTick.First.Value;
@@ -587,6 +585,10 @@ namespace ACE.Server.Entity
                         monster.Monster_Tick(currentUnixTime);
                         sortedCreaturesByNextTick.AddLast(monster); // All creatures tick at a fixed interval
                         monstersProcessed++;
+
+                        // Check time budget (every 5 monsters to avoid excessive stopwatch overhead)
+                        if (monstersProcessed % 5 == 0 && stopwatch.ElapsedMilliseconds > monsterProcessingBudgetMs)
+                            break;
                     }
                     else
                     {
@@ -622,17 +624,12 @@ namespace ACE.Server.Entity
                         log.Warn(warningMsg);
                         
                         // Send to Discord if configured
-                        if (ConfigManager.Config.Chat.EnableDiscordConnection && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
-                        {
-                            try
+                        if (ACE.Server.Managers.ServerConfig.discord_performance_level.Value >= (long)ACE.Common.DiscordLogLevel.Info && ConfigManager.Config.Chat.PerformanceAlertsChannelId > 0)
                             {
-                                Managers.DiscordChatManager.SendDiscordMessage("⚠️ SERVER", warningMsg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
+                                var msg = $"[High Load] Landblock {Id:X8} Monster_Tick throttle saturated for {monsterTickThrottleWarningCount} consecutive ticks! Processed {monstersProcessed}, {remainingDueCount} overdue creatures remain.";
+                                _ = Managers.DiscordChatManager.SendDiscordMessage("ServerMonitor", msg, ConfigManager.Config.Chat.PerformanceAlertsChannelId);
                             }
-                            catch (Exception ex)
-                            {
-                                log.Error($"Failed to send Monster_Tick throttle warning to Discord: {ex.Message}");
-                            }
-                        }
+
                         
                         lastMonsterThrottleWarning = DateTime.UtcNow;
                         // Don't reset counter here - let it continue tracking consecutive saturations
@@ -725,7 +722,24 @@ namespace ACE.Server.Entity
                         IsDormant = true;
                     }
                     if (lastActiveTime + UnloadInterval < thisHeartBeat)
+                    {
+                        // log.Info($"[Landblock Unload] Landblock {Id.Raw:X8} queuing for destruction. (UnloadInterval: {UnloadInterval})");
                         LandblockManager.AddToDestructionQueue(this, this.VariationId);
+                    }
+                    else if (IsDormant && (DateTime.UtcNow.Second % 10 == 0)) // Log periodically if dormant but not unloading
+                    {
+                        // Debug logging to see why it's not unloading
+                        // log.Warn($"[Landblock Debug] {Id.Raw:X8} Dormant. Time until unload: {(lastActiveTime + UnloadInterval - thisHeartBeat).TotalSeconds:F1}s");
+                    }
+                }
+                else if (!Permaload && thisHeartBeat.Second % 15 == 0)
+                {
+                     // Debug logging to see why it's kept alive
+                     // log.Warn($"[Landblock Debug] {Id.Raw:X8} kept alive. Permaload: {Permaload}, NoKeepAlive: {HasNoKeepAliveObjects}, LastActive: {(thisHeartBeat - lastActiveTime).TotalSeconds:F1}s ago");
+                }
+                else if (Permaload && thisHeartBeat.Second % 30 == 0)
+                {
+                    // log.Warn($"[Landblock Debug] {Id.Raw:X8} is PERMALOAD.");
                 }
 
                 //log.Info($"Landblock {Id.ToString()}.Tick({currentUnixTime}).Landblock_Tick_Heartbeat: thisHeartBeat: {thisHeartBeat.ToString()} | lastHeartBeat: {lastHeartBeat.ToString()} | worldObjects.Count: {worldObjects.Count()}");
@@ -1065,13 +1079,13 @@ namespace ACE.Server.Entity
 
                     if (wo.Generator != null)
                     {
-                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
+                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
                         wo.NotifyOfEvent(RegenerationType.PickUp); // Notify generator the generated object is effectively destroyed, use Pickup to catch both cases.
                     }
                     else if (wo.IsGenerator) // Some generators will fail random spawns if they're circumference spans over water or cliff edges
-                        log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
+                        log.Debug($"AddWorldObjectInternal: couldn't spawn generator 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location}");
                     else if (wo.ProjectileTarget == null && wo is not SpellProjectile)
-                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location.ToLOCString()}");
+                        Console.WriteLine($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location}");
 
                     return false;
                 }
@@ -1094,7 +1108,7 @@ namespace ACE.Server.Entity
             // more than corpse_spam_limit corpses on a single landblock.
             else if (wo is Corpse new_corpse && !new_corpse.IsMonster)
             {
-                long perPlayerCorpseLimit = PropertyManager.GetLong("corpse_spam_limit");
+                long perPlayerCorpseLimit = ServerConfig.corpse_spam_limit.Value;
                 int corpsesForThisPlayer = 0;
 
                 Corpse oldestCorpseNotDecayingSoon = null;
@@ -1358,6 +1372,14 @@ namespace ACE.Server.Entity
             LScape.unload_landblock(landblockID, VariationId);
 
             PhysicsLandblock.release_shadow_objs();
+
+            // Clear collections to release memory and break reference cycles
+            sortedCreaturesByNextTick.Clear();
+            sortedWorldObjectsByNextHeartbeat.Clear();
+            sortedGeneratorsByNextGeneratorUpdate.Clear();
+            sortedGeneratorsByNextRegeneration.Clear();
+            players.Clear();
+            Adjacents.Clear();
         }
 
         public void DestroyAllNonPlayerObjects()

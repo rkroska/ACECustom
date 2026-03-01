@@ -31,10 +31,8 @@ namespace ACE.Server.WorldObjects
 
         private void InitializePropertyDictionaries()
         {
-            if (Biota.PropertiesBook == null)
-                Biota.PropertiesBook = new PropertiesBook();
-            if (Biota.PropertiesBookPageData == null)
-                Biota.PropertiesBookPageData = new List<PropertiesBookPageData>();
+            Biota.PropertiesBook ??= new PropertiesBook();
+            Biota.PropertiesBookPageData ??= [];
         }
 
         private void SetEphemeralValues()
@@ -96,6 +94,15 @@ namespace ACE.Server.WorldObjects
                 inscription = Inscription;
             else
                 inscription = "";
+
+            if (WeenieClassId == 78780005) // Monster-Dex
+            {
+                // Dynamic Monster-dex content
+                var dexPages = ACE.Server.Entity.PetRegistryManager.GenerateMonsterDexPages(player, maxChars);
+                var dexResponse = new GameEventBookDataResponse(player.Session, Guid.Full, maxChars, dexPages.Count, dexPages, inscription, authorID, authorName, ignoreAuthor);
+                player.Session.Network.EnqueueSend(dexResponse);
+                return;
+            }
 
             var bookDataResponse = new GameEventBookDataResponse(player.Session, Guid.Full, maxChars, maxPages, pages, inscription, authorID, authorName, ignoreAuthor);
             player.Session.Network.EnqueueSend(bookDataResponse);

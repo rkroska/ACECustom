@@ -22,7 +22,7 @@ namespace ACE.Entity.Models
             }
         }
 
-        public static List<PropertiesBookPageData> Clone(this IList<PropertiesBookPageData> value, ReaderWriterLockSlim rwLock)
+        public static List<PropertiesBookPageData>? Clone(this IList<PropertiesBookPageData> value, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;
@@ -30,7 +30,7 @@ namespace ACE.Entity.Models
             rwLock.EnterReadLock();
             try
             {
-                return new List<PropertiesBookPageData>(value);
+                return [.. value];
             }
             finally
             {
@@ -39,7 +39,7 @@ namespace ACE.Entity.Models
         }
 
 
-        public static PropertiesBookPageData GetPage(this IList<PropertiesBookPageData> value, int index, ReaderWriterLockSlim rwLock)
+        public static PropertiesBookPageData? GetPage(this IList<PropertiesBookPageData> value, int index, ReaderWriterLockSlim rwLock)
         {
             if (value == null)
                 return null;

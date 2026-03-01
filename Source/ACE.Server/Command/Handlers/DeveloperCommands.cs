@@ -101,9 +101,8 @@ namespace ACE.Server.Command.Handlers
             if (WorldObject.AdjustDungeonCells(pos))
             {
                 pos.PositionZ += 0.005000f;
-                var posReadable = PostionAsLandblocksGoogleSpreadsheetFormat(pos);
-                AdminCommands.HandleTeleportLOC(session, posReadable.Split(' '));
-                var positionMessage = new GameMessageSystemChat($"Nudge player to {posReadable}", ChatMessageType.Broadcast);
+                TeleportCommands.HandleTeleLocation(session, pos.ToString());
+                var positionMessage = new GameMessageSystemChat($"Nudge player to {pos}", ChatMessageType.Broadcast);
                 session.Network.EnqueueSend(positionMessage);
             }
         }
@@ -648,51 +647,7 @@ namespace ACE.Server.Command.Handlers
         }
 
 
-        // ==================================
-        // Teleport + Positions/Locations
-        // ==================================
 
-        /// <summary>
-        /// telexyz cell x y z qx qy qz qw
-        /// </summary>
-        [CommandHandler("telexyz", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 8, "Teleport to a location.", "cell x y z qx qy qz qw\n" + "all parameters must be specified and cell must be in decimal form")]
-        public static void HandleDebugTeleportXYZ(Session session, params string[] parameters)
-        {
-            if (!uint.TryParse(parameters[0], out var cell))
-                return;
-
-            var positionData = new float[7];
-
-            for (uint i = 0u; i < 7u; i++)
-            {
-                if (!float.TryParse(parameters[i + 1], out var position))
-                    return;
-
-                positionData[i] = position;
-            }
-
-            session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6]));
-        }
-
-        /// <summary>
-        /// Debug command to teleport a player to a saved position, if the position type exists within the database.
-        /// </summary>
-        [CommandHandler("teletype", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Teleport to a saved character position.", "uint 0-22\n" + "@teletype 1")]
-        public static void HandleTeleType(Session session, params string[] parameters)
-        {
-            if (parameters?.Length > 0)
-            {
-                string parsePositionString = parameters[0].Length > 3 ? parameters[0].Substring(0, 3) : parameters[0];
-
-                if (Enum.TryParse(parsePositionString, true, out PositionType positionType))
-                {
-                    if (session.Player.TeleToPosition(positionType))
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"{PositionType.Location} {session.Player.Location}", ChatMessageType.Broadcast));
-                    else
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"Error finding saved character position: {positionType}", ChatMessageType.Broadcast));
-                }
-            }
-        }
 
         /// <summary>
         /// Debug command to print out all of the saved character positions.
@@ -1025,6 +980,9 @@ namespace ACE.Server.Command.Handlers
 
                 session.Player.TryCreateInInventoryWithNetworking(loot);
             }
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} added {weenieIds.Count} items to their inventory using a bulk creation command.");
         }
 
         [CommandHandler("weapons", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Creates testing items in your inventory.")]
@@ -1102,6 +1060,9 @@ namespace ACE.Server.Command.Handlers
             }
 
             var items = LootGenerationFactory.CreateRandomObjectsOfType(weenieType, numItems);
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} created {numItems} random items of type {weenieType}.");
 
             var stuck = new List<WorldObject>();
 
@@ -1360,6 +1321,10 @@ namespace ACE.Server.Command.Handlers
                     {
                         player.ContractManager.Add(contractId);
                         session.Player.SendMessage($"Contract for \"{datContract.ContractName}\" ({contractId}) bestowed on {player.Name}");
+
+                        if (session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} bestowed contract \"{datContract.ContractName}\" ({contractId}) on {player.Name}.");
+
                         return;
                     }
                     else
@@ -1383,6 +1348,10 @@ namespace ACE.Server.Command.Handlers
                     {
                         player.ContractManager.EraseAll();
                         session.Player.SendMessage($"All contracts deleted for {player.Name}.");
+
+                        if (session.AccessLevel >= AccessLevel.Admin)
+                            PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} erased all contracts for {player.Name}.");
+
                         return;
                     }
 
@@ -1794,7 +1763,7 @@ namespace ACE.Server.Command.Handlers
         {
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentLandblock: {session.Player.CurrentLandblock.Id.Landblock:X4}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentVariation: {session.Player.CurrentLandblock.VariationId:N0} ", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {session.Player.Location.ToLOCString()}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {session.Player.Location}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics : {session.Player.PhysicsObj.Position}", ChatMessageType.Broadcast));
         }
 
@@ -2118,120 +2087,6 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Teleports directly to a dungeon by name or landblock
-        /// </summary>
-        [CommandHandler("teledungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Teleport to a dungeon", "<dungeon name or landblock>")]
-        public static void HandleTeleDungeon(Session session, params string[] parameters)
-        {
-            var isBlock = true;
-            var param = parameters[0];
-            uint? variation = null;
-            if (parameters.Length > 2)
-            {
-                isBlock = false;
-            }
-            else if (parameters.Length == 2)
-            {
-                if (UInt32.TryParse(parameters[1], out var tempVal))
-                {
-                    variation = tempVal;
-                }
-                else
-                {
-                    isBlock = false;
-                }
-            }
-
-            var landblock = 0u;
-            if (isBlock)
-            {
-                try
-                {
-                    landblock = Convert.ToUInt32(param, 16);
-
-                    if (landblock >= 0xFFFF)
-                        landblock = landblock >> 16;
-                }
-                catch (Exception)
-                {
-                    isBlock = false;
-                }
-            }
-
-            // teleport to dungeon landblock
-            if (isBlock)
-                HandleTeleDungeonBlock(session, landblock, variation);
-
-            // teleport to dungeon by name
-            else
-                HandleTeleDungeonName(session, parameters);
-        }
-
-        public static void HandleTeleDungeonBlock(Session session, uint landblock, uint? variation)
-        {
-            using (var ctx = new WorldDbContext())
-            {
-                var query = from weenie in ctx.Weenie
-                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                            where weenie.Type == (int)WeenieType.Portal && wpos.PositionType == (int)PositionType.Destination
-                            select new
-                            {
-                                Weenie = weenie,
-                                Dest = wpos
-                            };
-
-                var results = query.ToList();
-
-                var dest = results.Where(i => i.Dest.ObjCellId >> 16 == landblock && (i.Dest.VariationId == variation || variation == null) ).Select(i => i.Dest).FirstOrDefault();
-
-                if (dest == null)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon {landblock:X4} {variation}", ChatMessageType.Broadcast));
-                    return;
-                }
-
-                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, false, dest.VariationId);
-                WorldObject.AdjustDungeon(pos);
-
-                session.Player.Teleport(pos);
-            }
-        }
-
-        public static void HandleTeleDungeonName(Session session, params string[] parameters)
-        {
-            var searchName = string.Join(" ", parameters);
-
-            using (var ctx = new WorldDbContext())
-            {
-                var query = from weenie in ctx.Weenie
-                            join wstr in ctx.WeeniePropertiesString on weenie.ClassId equals wstr.ObjectId
-                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                            where weenie.Type == (int)WeenieType.Portal && wstr.Type == (int)PropertyString.Name && wpos.PositionType == (int)PositionType.Destination
-                            select new
-                            {
-                                Weenie = weenie,
-                                Name = wstr,
-                                Dest = wpos
-                            };
-
-                var results = query.ToList();
-
-                var dest = results.Where(i => i.Name.Value.Contains(searchName, StringComparison.OrdinalIgnoreCase)).Select(i => i.Dest).FirstOrDefault();
-
-                if (dest == null)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon name {searchName}", ChatMessageType.Broadcast));
-                    return;
-                }
-
-                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, false, dest.VariationId);
-                WorldObject.AdjustDungeon(pos);
-
-                session.Player.Teleport(pos);
-            }
-        }
-
-        /// <summary>
         /// Shows the dungeon name for the current landblock
         /// </summary>
         [CommandHandler("dungeonname", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the dungeon name for the current landblock")]
@@ -2383,6 +2238,9 @@ namespace ACE.Server.Command.Handlers
             var success = LootGenerationFactory.MutateItem(wo, profile, true);
 
             session.Player.TryCreateInInventoryWithNetworking(wo);
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} generated {wo.Name} (0x{wo.WeenieClassId:X8}) of tier {tier} using /lootgen.");
         }
 
         [CommandHandler("ciloot", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Generates randomized loot in player's inventory", "<tier> optional: <# items>")]
@@ -2409,10 +2267,17 @@ namespace ACE.Server.Command.Handlers
                 //var wo = LootGenerationFactory.CreateRandomLootObjects(profile, true);
                 var wo = LootGenerationFactory.CreateRandomLootObjects_New(profile, TreasureItemCategory.MagicItem);
                 if (wo != null)
+                {
                     session.Player.TryCreateInInventoryWithNetworking(wo);
+                    if (session.AccessLevel >= AccessLevel.Admin)
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} generated {wo.Name} (0x{wo.WeenieClassId:X8}) of tier {tier} using /ciloot.");
+                }
                 else
                     log.Error($"{session.Player.Name}.HandleCILoot: LootGenerationFactory.CreateRandomLootObjects({tier}) returned null");
             }
+
+            if (session.AccessLevel >= AccessLevel.Admin)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} generated {numItems} items of tier {tier} using /ciloot.");
         }
 
         [CommandHandler("makeiou", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Make an IOU and put it in your inventory", "<wcid>")]
@@ -2509,7 +2374,7 @@ namespace ACE.Server.Command.Handlers
                 var msg = $"Player {player.Name} (0x{player.Guid}) found in PlayerManager.onlinePlayers.\n";
                 msg += $"------- Session: {(player.Session != null ? $"{player.Session.EndPoint}" : "NULL")}\n";
                 msg += $"------- CurrentLandblock: {(player.CurrentLandblock != null ? $"0x{player.CurrentLandblock.Id:X4}" : "NULL")}\n";
-                msg += $"------- Location: {(player.Location != null ? $"{player.Location.ToLOCString()}" : "NULL")}\n";
+                msg += $"------- Location: {(player.Location != null ? $"{player.Location}" : "NULL")}\n";
                 msg += $"------- IsLoggingOut: {player.IsLoggingOut}\n";
                 msg += $"------- IsInDeathProcess: {player.IsInDeathProcess}\n";
                 var foundOnLandblock = false;
@@ -2853,7 +2718,7 @@ namespace ACE.Server.Command.Handlers
                                 if (spawnWO != null)
                                 {
                                     if (spawnWO.Location != null)
-                                        msg += $" LOC: {spawnWO.Location.ToLOCString()}\n";
+                                        msg += $" LOC: {spawnWO.Location}\n";
                                     else if (spawnWO.ContainerId == wo.Guid.Full)
                                         msg += $" Contained by Generator\n";
                                     else if (spawnWO.WielderId == wo.Guid.Full)
@@ -2958,7 +2823,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurrentLandblock: 0x{wo.CurrentLandblock?.Id.Landblock:X4}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {wo.Location?.ToLOCString()}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Location: {wo.Location}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"Physics : {wo.PhysicsObj?.Position}", ChatMessageType.Broadcast));
             session.Network.EnqueueSend(new GameMessageSystemChat($"CurCell: 0x{wo.PhysicsObj?.CurCell?.ID:X8}", ChatMessageType.Broadcast));
         }
@@ -3097,10 +2962,34 @@ namespace ACE.Server.Command.Handlers
             wo.EnqueueBroadcast(new GameMessageScript(wo.Guid, (PlayScript)pscript));
         }
 
-        [CommandHandler("getinfo", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows basic info for the last appraised object.")]
+        [CommandHandler("getinfo", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows basic info for the last appraised object, or a weenie by class ID if provided.")]
         public static void HandleGetInfo(Session session, params string[] parameters)
         {
-            var wo = CommandHandlerHelper.GetLastAppraisedObject(session);
+            WorldObject wo = null;
+
+            if (parameters.Length > 0 && !string.IsNullOrWhiteSpace(parameters[0]))
+            {
+                // Try to parse as weenieclassid
+                if (uint.TryParse(parameters[0], out uint weenieClassId))
+                {
+                    wo = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+                    if (wo == null)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"WeenieClassId {weenieClassId} not found.", ChatMessageType.Broadcast));
+                        return;
+                    }
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Invalid weenieclassid: {parameters[0]}", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+            else
+            {
+                // Use last appraised object
+                wo = CommandHandlerHelper.GetLastAppraisedObject(session);
+            }
 
             if (wo != null)
             {
@@ -3114,7 +3003,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"Physics Position: {wo.PhysicsObj.Position}", ChatMessageType.Broadcast));
                 }
-            }            
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("No object found. Appraise an object first or provide a valid weenieclassid.", ChatMessageType.Broadcast));
+            }
         }
 
         public static WorldObject LastTestAim;
@@ -3190,6 +3083,8 @@ namespace ACE.Server.Command.Handlers
                 landblock.Init(variation, true);
             });
             actionChain.EnqueueChain();
+            
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} reloaded landblock 0x{landblockId:X8}, variation {variation ?? 0}.", ACE.Common.DiscordLogLevel.Verbose);
         }
 
         [CommandHandler("showvelocity", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the velocity of the last appraised object.")]
@@ -3897,7 +3792,7 @@ namespace ACE.Server.Command.Handlers
                             msg += $"StackSize: {shopItem.StackSize ?? 1} | PaletteTemplate: {(PaletteTemplate)shopItem.PaletteTemplate} ({shopItem.PaletteTemplate}) | Shade: {shopItem.Shade:F3}\n";
                             var soldTimestamp = Time.GetDateTimeFromTimestamp(shopItem.SoldTimestamp ?? 0);
                             msg += $"SoldTimestamp: {soldTimestamp.ToLocalTime()} ({(shopItem.SoldTimestamp.HasValue ? $"{shopItem.SoldTimestamp}" : "NULL")})\n";
-                            var rotTime = soldTimestamp.AddSeconds(PropertyManager.GetDouble("vendor_unique_rot_time"));
+                            var rotTime = soldTimestamp.AddSeconds(ServerConfig.vendor_unique_rot_time.Value);
                             msg += $"RotTimestamp: {rotTime.ToLocalTime()}\n";
                             var payout = vendor.GetBuyCost(shopItem);
                             msg += $"Paid: {payout:N0} {(payout == 1 ? currencyWeenie.GetName() : currencyWeenie.GetPluralName())}\n";

@@ -803,6 +803,61 @@ namespace ACE.Database
             }
         }
 
+        public bool ClearCachedBasementHouseGuids(ushort landblock)
+        {
+            return cachedBasementHouseGuids.TryRemove(landblock, out _);
+        }
+
+        public int ClearLandblockCache(ushort landblockId, int? variationId)
+        {
+            int count = 0;
+
+            // 1. Clear Landblock Instances
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockId, Variant = variationId ?? 0 };
+            if (cachedLandblockInstances.TryRemove(cacheKey, out var instances))
+            {
+                count += instances.Count;
+            }
+
+            // The following caches are not variation-aware, so we only clear them if this is the base landblock (variation 0 or null)
+            // or if we decide that variations share these caches.
+            // Based on the code, Encounters, HousePortals, and BasementGuids do NOT use VariantCacheId.
+            // They are keyed by simple 'ushort Landblock' or 'uint Landblock'.
+            // Therefore, if we are unloading a specific *instance* (Variation 1), we should probably NOT clear the base caches
+            // unless we are sure they are specific to that variation.
+            // However, typically generic world data (encounters, portals) are shared or base-only.
+            // If the variationId is NOT null/0, we should be careful.
+            // But usually Unload is called for the whole landblock when it's empty.
+
+            if (variationId == null || variationId == 0)
+            {
+                // 2. Clear Encounters
+                if (cachedEncounters.TryRemove(landblockId, out var encounters))
+                {
+                    count += encounters.Count;
+                }
+
+                // 3. Clear House Portals
+                // note: cachedHousePortalsByLandblock uses 'uint' key but data is landblock?
+                // The GetCachedHousePortalsByLandblock takes 'uint landblockId'.
+                // Let's match the type exactly.
+                 if (cachedHousePortalsByLandblock.TryRemove(landblockId, out var portals))
+                {
+                    count += portals.Count;
+                }
+
+                // 4. Clear Basement Guids
+                if (cachedBasementHouseGuids.TryRemove(landblockId, out _))
+                {
+                    count++; // It's a single uint, not a list
+                }
+            }
+
+            return count;
+        }
+
+
+
 
         // =====================================
         // PointsOfInterest
@@ -884,7 +939,7 @@ namespace ACE.Database
 
             using (var context = new WorldDbContext())
             {
-                quest = context.Quest.FirstOrDefault(q => q.Name.Equals(questName));
+                quest = context.Quest.AsNoTracking().FirstOrDefault(q => q.Name.Equals(questName));
                 cachedQuest[questName] = quest;
 
                 return quest;
@@ -1009,7 +1064,7 @@ namespace ACE.Database
             {
                 var table = new Dictionary<int, Dictionary<int, List<TreasureMaterialBase>>>();
 
-                var results = context.TreasureMaterialBase.Where(i => i.Probability > 0).ToList();
+                var results = context.TreasureMaterialBase.AsNoTracking().Where(i => i.Probability > 0).ToList();
 
                 foreach (var result in results)
                 {
@@ -1023,7 +1078,7 @@ namespace ACE.Database
                         chances = new List<TreasureMaterialBase>();
                         materialCode.Add((int)result.Tier, chances);
                     }
-                    chances.Add(result.Clone());
+                    chances.Add(result);
                 }
                 TreasureMaterialBase_Normalize(table);
 
@@ -1084,7 +1139,7 @@ namespace ACE.Database
             {
                 var table = new Dictionary<int, Dictionary<int, List<TreasureMaterialColor>>>();
 
-                var results = context.TreasureMaterialColor.ToList();
+                var results = context.TreasureMaterialColor.AsNoTracking().ToList();
 
                 foreach (var result in results)
                 {
@@ -1098,7 +1153,7 @@ namespace ACE.Database
                         list = new List<TreasureMaterialColor>();
                         colorCodes.Add((int)result.ColorCode, list);
                     }
-                    list.Add(result.Clone());
+                    list.Add(result);
                 }
 
                 TreasureMaterialColor_Normalize(table);
@@ -1160,7 +1215,7 @@ namespace ACE.Database
             {
                 var table = new Dictionary<int, Dictionary<int, List<TreasureMaterialGroups>>>();
 
-                var results = context.TreasureMaterialGroups.ToList();
+                var results = context.TreasureMaterialGroups.AsNoTracking().ToList();
 
                 foreach (var result in results)
                 {
@@ -1174,7 +1229,7 @@ namespace ACE.Database
                         list = new List<TreasureMaterialGroups>();
                         tiers.Add((int)result.Tier, list);
                     }
-                    list.Add(result.Clone());
+                    list.Add(result);
                 }
                 TreasureMaterialGroups_Normalize(table);
 

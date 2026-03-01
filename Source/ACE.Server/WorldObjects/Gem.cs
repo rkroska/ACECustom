@@ -46,6 +46,13 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override void ActOnUse(WorldObject activator)
         {
+            // Monster Capture System - POC: Handle capture crystals
+            if (activator is Player player && MonsterCapture.IsCaptureCrystal(this))
+            {
+                MonsterCapture.UseCaptureCrystal(player, this);
+                return;
+            }
+
             ActOnUse(activator, false);
         }
 
@@ -247,14 +254,21 @@ namespace ACE.Server.WorldObjects
 
         public override void HandleActionUseOnTarget(Player player, WorldObject target)
         {
-            // should tailoring kit / aetheria be subtyped?
+            // Monster Capture System - Handle captured appearance on pet device
+            if (MonsterCapture.IsCapturedAppearance(this) && target is PetDevice petDevice)
+            {
+                MonsterCapture.ApplyAppearanceToCrate(player, petDevice, this);
+                return;
+            }
+
+            // Tailoring kits
             if (Tailoring.IsTailoringKit(WeenieClassId))
             {
                 Tailoring.UseObjectOnTarget(player, this, target);
                 return;
             }
 
-            // fallback on recipe manager?
+            // Fallback on recipe manager
             base.HandleActionUseOnTarget(player, target);
         }
 

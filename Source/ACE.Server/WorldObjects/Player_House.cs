@@ -73,7 +73,7 @@ namespace ACE.Server.WorldObjects
 
             if (slumlord.AllegianceMinLevel != null)
             {
-                var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+                var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
                 if (allegianceMinLevel == -1)
                     allegianceMinLevel = slumlord.AllegianceMinLevel.Value;
 
@@ -87,7 +87,7 @@ namespace ACE.Server.WorldObjects
 
             if (slumlord.House.HouseType != HouseType.Apartment)
             {
-                if (PropertyManager.GetBool("house_15day_account") && !Account15Days)
+                if (ServerConfig.house_15day_account.Value && !Account15Days)
                 {
                     var accountTimeSpan = DateTime.UtcNow - Account.CreateTime;
                     if (accountTimeSpan.TotalDays < 15)
@@ -99,7 +99,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (PropertyManager.GetBool("house_30day_cooldown"))
+                if (ServerConfig.house_30day_cooldown.Value)
                 {
                     // fix gap
                     if (!Account15Days) ManageAccount15Days_HousePurchaseTimestamp();
@@ -161,7 +161,7 @@ namespace ACE.Server.WorldObjects
             if (location == null)
             {
                 if (!HouseManager.ApartmentBlocks.TryGetValue(slumLord.Location.Landblock, out location))
-                    log.Error($"{Name}.GiveDeed() - couldn't find location {slumLord.Location.ToLOCString()}");
+                    log.Error($"{Name}.GiveDeed() - couldn't find location {slumLord.Location}");
             }
 
             deed.LongDesc = $"Bought by {Name}{titleStr} on {date} at {time}\n\nPurchased at {location}";
@@ -206,7 +206,7 @@ namespace ACE.Server.WorldObjects
                 var characterHouses = HouseManager.GetCharacterHouses(owner.Guid.Full);
                 var accountHouses = HouseManager.GetAccountHouses(owner.Account.AccountId);
 
-                var ownerHouses = PropertyManager.GetBool("house_per_char") ? characterHouses : accountHouses;
+                var ownerHouses = ServerConfig.house_per_char.Value ? characterHouses : accountHouses;
 
                 if (ownerHouses.Count() > 1)
                 {
@@ -573,12 +573,12 @@ namespace ACE.Server.WorldObjects
             {
                 if (House == null || House.SlumLord == null) return;
 
-                if (House.HouseStatus == HouseStatus.Active && !House.SlumLord.IsRentPaid() && PropertyManager.GetBool("house_rent_enabled", true))
+                if (House.HouseStatus == HouseStatus.Active && !House.SlumLord.IsRentPaid() && ServerConfig.house_rent_enabled.Value)
                 {
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning!  You have not paid your maintenance costs for the last {(House.IsApartment ? "90" : "30")} day maintenance period.  Please pay these costs by this deadline or you will lose your house, and all your items within it.", ChatMessageType.System));
                 }
 
-                if (House.HouseOwner == Guid.Full && !House.SlumLord.HasRequirements(this) && PropertyManager.GetBool("house_purchase_requirements"))
+                if (House.HouseOwner == Guid.Full && !House.SlumLord.HasRequirements(this) && ServerConfig.house_purchase_requirements.Value)
                 {
                     var rankStr = AllegianceNode != null ? $"{AllegianceNode.Rank}" : "";
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning!  Your allegiance rank {rankStr} is now below the requirements for owning a mansion.  Please raise your allegiance rank to {House.SlumLord.GetAllegianceMinLevel()} before the end of the maintenance period or you will lose your mansion, and all your items within it.", ChatMessageType.System));
@@ -880,7 +880,7 @@ namespace ACE.Server.WorldObjects
 
             // if server is running house_per_char mode (non-default),
             // only use the HouseInstance for the current character
-            if (PropertyManager.GetBool("house_per_char"))
+            if (ServerConfig.house_per_char.Value)
                 return this;
 
             // else return the account house owner
@@ -1800,7 +1800,7 @@ namespace ACE.Server.WorldObjects
             //if (showMsg)
                 //Session.Network.EnqueueSend(new GameMessageSystemChat($"AccountHouses: {accountHouses.Count}, CharacterHouses: {characterHouses.Count}", ChatMessageType.Broadcast));
 
-            if (PropertyManager.GetBool("house_per_char"))
+            if (ServerConfig.house_per_char.Value)
             {
                 // 1 house per character
                 if (characterHouses.Count > 1 && showMsg)
@@ -1820,7 +1820,7 @@ namespace ACE.Server.WorldObjects
 
         public List<House> GetMultiHouses()
         {
-            if (PropertyManager.GetBool("house_per_char"))
+            if (ServerConfig.house_per_char.Value)
                 return HouseManager.GetCharacterHouses(Guid.Full);
             else
                 return HouseManager.GetAccountHouses(Account.AccountId);
@@ -1867,7 +1867,7 @@ namespace ACE.Server.WorldObjects
 
             if (HouseRentTimestamp != null) return;
 
-            if (PropertyManager.GetBool("house_15day_account") && !Account15Days)
+            if (ServerConfig.house_15day_account.Value && !Account15Days)
             {
                 // this is set so the next purchase time displays properly on house tab
                 HousePurchaseTimestamp = FifteenDaysBeforeAccountCreation;

@@ -1,10 +1,10 @@
 namespace ACE.Server.Entity
 {
-    public class ItemProfile
+    public class ItemProfile(int amount, uint objectGuid)
     {
         // original data struct
-        public int Amount;      // sent as int, not as uint -- needs to be verified > 0
-        public uint ObjectGuid;
+        public int Amount = amount;      // sent as int, not as uint -- needs to be verified > 0
+        public uint ObjectGuid = objectGuid;
 
         // extended server data
         public uint WeenieClassId;
@@ -15,11 +15,5 @@ namespace ACE.Server.Entity
         /// If false, should be rejected as early as possible
         /// </summary>
         public bool IsValidAmount => Amount > 0;
-
-        public ItemProfile(int amount, uint objectGuid)
-        {
-            Amount = amount;
-            ObjectGuid = objectGuid;
-        }
     }
 }

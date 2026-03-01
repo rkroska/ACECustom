@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -10,13 +12,14 @@ using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.WorldObjects;
+using ACE.Server.WorldObjects.Entity;
 
 namespace ACE.Server.Network.Structure
 {
     /// <summary>
     /// Handles calculating and sending all object appraisal info
     /// </summary>
-    public class AppraiseInfo
+    public partial class AppraiseInfo
     {
         private static readonly uint EnchantmentMask = 0x80000000;
 
@@ -50,6 +53,10 @@ namespace ACE.Server.Network.Structure
 
         // This helps ensure the item will identify properly. Some "items" are technically "Creatures".
         private bool NPCLooksLikeObject;
+
+
+        [GeneratedRegex("(\\B[A-Z])")]
+        private static partial Regex CreatureNameRegex();
 
         public AppraiseInfo()
         {
@@ -113,7 +120,7 @@ namespace ACE.Server.Network.Structure
                 BuildCreature(creature);
 
             if (wo.Damage != null && !(wo is Clothing) || wo is MeleeWeapon || wo is Missile || wo is MissileLauncher || wo is Ammunition || wo is Caster)
-                BuildWeapon(wo);
+                BuildWeapon(wo, examiner);
 
             // TODO: Resolve this issue a better way?
             // Because of the way ACE handles default base values in recipe system (or rather the lack thereof)
@@ -158,6 +165,18 @@ namespace ACE.Server.Network.Structure
 
             if (wo is Corpse)
             {
+                var timeToRot = wo.TimeToRot;
+                if (timeToRot.HasValue && timeToRot.Value != -1)
+                {
+                    TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (wo.LastTimeToRotUpdate ?? DateTime.UtcNow);
+                    TimeSpan tsToRot = TimeSpan.FromSeconds(wo.TimeToRot.Value) - tsSinceLastUpdate;
+                    var msg = tsToRot.TotalSeconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
+
                 PropertiesBool.Clear();
                 PropertiesDID.Clear();
                 PropertiesFloat.Clear();
@@ -173,8 +192,30 @@ namespace ACE.Server.Network.Structure
                 PropertiesInt[PropertyInt.Value] = 0;
             }
 
-            if (wo is Portal)
+            if (wo is Portal portal)
             {
+                var useCount = portal.PortalUseCount;
+                if (useCount.HasValue)
+                {
+                    var msg = $"Remaining Uses: {useCount.Value}";
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
+
+                var timeToRot = portal.TimeToRot;
+                if (timeToRot.HasValue && timeToRot.Value != -1) // -1 is a special value meaning "Never"
+                {
+                    TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (portal.LastTimeToRotUpdate ?? DateTime.UtcNow);
+                    TimeSpan tsToRot = TimeSpan.FromSeconds(portal.TimeToRot.Value) - tsSinceLastUpdate;
+                    var msg = tsToRot.TotalSeconds < 5 ? "Portal is about to fade." : $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
+
                 PropertiesInt.Remove(PropertyInt.EncumbranceVal);
             }
 
@@ -200,7 +241,7 @@ namespace ACE.Server.Network.Structure
                 {
                     if (slumLord.HouseOwner.HasValue && slumLord.HouseOwner.Value > 0)
                     {
-                        longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !PropertyManager.GetBool("house_rent_enabled") ? "" : "not ")}been paid.\n";
+                        longDesc = $"The current maintenance has {(slumLord.IsRentPaid() || !ServerConfig.house_rent_enabled.Value ? "" : "not ")}been paid.\n";
 
                         PropertiesInt.Clear();
                     }
@@ -219,7 +260,7 @@ namespace ACE.Server.Network.Structure
 
                     if (slumLord.AllegianceMinLevel.HasValue)
                     {
-                        var allegianceMinLevel = PropertyManager.GetLong("mansion_min_rank", -1);
+                        var allegianceMinLevel = ServerConfig.mansion_min_rank.Value;
                         if (allegianceMinLevel == -1)
                             allegianceMinLevel = slumLord.AllegianceMinLevel.Value;
 
@@ -325,6 +366,14 @@ namespace ACE.Server.Network.Structure
                 PropertiesString[PropertyString.Use] = useMessage;
             }
 
+            if (wo.GetProperty(PropertyBool.IsCharm) == true)
+            {
+                if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse))
+                    PropertiesString[PropertyString.Use] = $"Charm: Holding this item grants its magical effects.\n{existingUse}";
+                else
+                    PropertiesString[PropertyString.Use] = "Charm: Holding this item grants its magical effects.";
+            }
+
             if (wo is CraftTool && (wo.ItemType == ItemType.TinkeringMaterial || wo.WeenieClassId >= 36619 && wo.WeenieClassId <= 36628 || wo.WeenieClassId >= 36634 && wo.WeenieClassId <= 36636))
             {
                 PropertiesInt.Remove(PropertyInt.Structure);
@@ -348,13 +397,13 @@ namespace ACE.Server.Network.Structure
 
         private void BuildProperties(WorldObject wo)
         {
-            PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesBool = wo.GetAllPropertyBools().Where(x => AssessmentProperties.PropertiesBool.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesFloat = wo.GetAllPropertyFloat().Where(x => AssessmentProperties.PropertiesDouble.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
-            PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesInt = wo.GetAllPropertyInt().Where(x => AssessmentProperties.PropertiesInt.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesInt64 = wo.GetAllPropertyInt64().Where(x => AssessmentProperties.PropertiesInt64.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesBool = wo.GetAllPropertyBools().Where(x => AssessmentProperties.PropertiesBool.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesFloat = wo.GetAllPropertyFloat().Where(x => AssessmentProperties.PropertiesDouble.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesString = wo.GetAllPropertyString().Where(x => AssessmentProperties.PropertiesString.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesDID = wo.GetAllPropertyDataId().Where(x => AssessmentProperties.PropertiesDataId.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+            PropertiesIID = wo.GetAllPropertyInstanceId().Where(x => AssessmentProperties.PropertiesInstanceId.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
 
             if (wo is Player player)
             {
@@ -434,7 +483,7 @@ namespace ACE.Server.Network.Structure
                         ResistColor = ResistMaskHelper.GetColorMask(wo);
                     }
                 }
-                else if (!PropertyManager.GetBool("show_mana_conv_bonus_0"))
+                else if (!ServerConfig.show_mana_conv_bonus_0.Value)
                 {
                     PropertiesFloat.Remove(PropertyFloat.ManaConversionMod);
                 }
@@ -475,11 +524,9 @@ namespace ACE.Server.Network.Structure
             if (wo is Creature)
                 return;
 
-            // add primary spell, if exists
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(wo.SpellDID.Value);
 
-            // add proc spell, if exists
             if (wo.ProcSpell.HasValue)
                 SpellBook.Add(wo.ProcSpell.Value);
 
@@ -504,7 +551,7 @@ namespace ACE.Server.Network.Structure
 
             // this technically wasn't a feature in retail
 
-            if (wo.Wielder != null && wo.IsEnchantable && wo.WeenieType != WeenieType.Clothing && !wo.IsShield && PropertyManager.GetBool("show_aura_buff"))
+            if (wo.Wielder != null && wo.IsEnchantable && wo.WeenieType != WeenieType.Clothing && !wo.IsShield && ServerConfig.show_aura_buff.Value)
             {
                 // get all currently active item enchantment auras on the player
                 var wielderEnchantments = wo.Wielder.EnchantmentManager.GetEnchantments(MagicSchool.ItemEnchantment);
@@ -659,7 +706,7 @@ namespace ACE.Server.Network.Structure
             // add ratings from equipped items?
         }
 
-        private void BuildWeapon(WorldObject weapon)
+        private void BuildWeapon(WorldObject weapon, Player examiner)
         {
             if (!Success)
                 return;
@@ -679,19 +726,137 @@ namespace ACE.Server.Network.Structure
             if (hasSplitArrows == true)
             {
                 PropertiesBool[PropertyBool.SplitArrows] = true;
-                // prefer configured values; otherwise fall back to runtime defaults for transparency
-                const int DefaultSplitArrowCount = 3;
-                const double DefaultSplitArrowRange = 8.0;
-                const double DefaultSplitArrowDamageMultiplier = 0.6;
 
-                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? DefaultSplitArrowCount;
+                var splitCount = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
                 PropertiesInt[PropertyInt.SplitArrowCount] = splitCount;
 
-                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? DefaultSplitArrowRange;
+                var splitRange = weapon.GetProperty(PropertyFloat.SplitArrowRange) ?? Creature.DEFAULT_SPLIT_ARROW_RANGE;
                 PropertiesFloat[PropertyFloat.SplitArrowRange] = splitRange;
 
-                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? DefaultSplitArrowDamageMultiplier;
+                var damageMultiplier = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
                 PropertiesFloat[PropertyFloat.SplitArrowDamageMultiplier] = damageMultiplier;
+            }
+
+            // Add all the descriptive enhancements
+            var effectDescriptions = new List<string>();
+
+            // Determine skill: explicit WeaponSkill, or fallback for Casters (Wands)
+            var checkSkill = weapon.WeaponSkill;
+            if (checkSkill == Skill.None && weapon is Caster)
+            {
+                uint warBase = examiner.GetCreatureSkill(Skill.WarMagic).Base;
+                uint voidBase = examiner.GetCreatureSkill(Skill.VoidMagic).Base;
+                checkSkill = (voidBase > warBase) ? Skill.VoidMagic : Skill.WarMagic;
+            }
+
+            CreatureSkill skill = examiner.GetCreatureSkill(checkSkill);
+
+            // Slayer
+            if (weapon.SlayerCreatureType.HasValue)
+            {
+                var bonus = weapon.SlayerDamageBonus ?? 1.0;
+                var rawName = weapon.SlayerCreatureType.ToString();
+                var niceName = CreatureNameRegex().Replace(rawName, " $1");
+                effectDescriptions.Add($"- {niceName} Slayer: {bonus:0.##}x Damage");
+            }
+
+            // Biting Strike
+            if (weapon.CriticalFrequency.HasValue)
+            {
+                var val = weapon.CriticalFrequency.Value;
+                effectDescriptions.Add($"- Biting Strike: +{val:P0} Crit Chance");
+            }
+
+            // Resistance Cleaving (Fixed Resistance Modifier)
+            if (weapon.ResistanceModifier.HasValue && weapon.ResistanceModifierType.HasValue)
+            {
+                var typeName = weapon.ResistanceModifierType.Value.DisplayName();
+                var val = weapon.ResistanceModifier.Value;
+                effectDescriptions.Add($"- {typeName} Cleaving: +{val:P0} Dmg (Vuln)");
+            }
+
+            // Armor Cleaving 
+            if (weapon.GetProperty(PropertyFloat.IgnoreArmor).HasValue)
+            {
+                var mod = weapon.GetArmorCleavingMod();
+                var reduction = 1.0f - mod;
+                effectDescriptions.Add($"- Armor Cleaving: {reduction:P0} Armor Ignored");
+            }
+
+            // Split Arrow
+            if (weapon.GetProperty(PropertyBool.SplitArrows) == true)
+            {
+                var count = weapon.GetProperty(PropertyInt.SplitArrowCount) ?? Creature.DEFAULT_SPLIT_ARROW_COUNT;
+                var val = weapon.GetProperty(PropertyFloat.SplitArrowDamageMultiplier) ?? Creature.DEFAULT_SPLIT_ARROW_DAMAGE_MULTIPLIER;
+                effectDescriptions.Add($"- Split Arrow: +{count} Targets, {val:P0} Dmg");
+            }
+
+            // Crushing Blow
+            if (weapon.GetProperty(PropertyFloat.CriticalMultiplier) > 1.0f)
+            {
+                var val = weapon.GetProperty(PropertyFloat.CriticalMultiplier);
+                effectDescriptions.Add($"- Crushing Blow: {val:0.##}x Crit Dmg");
+            }
+
+            // Crippling Blow
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CripplingBlow))
+            {
+                var mod = WorldObject.GetCripplingBlowMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.CripplingBlow.DisplayName()}: {mod:0.##}x Crit Dmg");
+            }
+
+            // Armor Rending
+            if (weapon.HasImbuedEffect(ImbuedEffectType.ArmorRending))
+            {
+                var mod = WorldObject.GetArmorRendingMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.ArmorRending.DisplayName()}: {mod:P1} Ignored");
+            }
+
+            // Critical Strike
+            if (weapon.HasImbuedEffect(ImbuedEffectType.CriticalStrike))
+            {
+                var mod = WorldObject.GetCriticalStrikeMod(skill);
+                effectDescriptions.Add($"- {ImbuedEffectType.CriticalStrike.DisplayName()}: +{mod:P1} Crit Chance");
+            }
+
+            // Elemental Rendings
+            var rendings = new ImbuedEffectType[]
+            {
+                ImbuedEffectType.SlashRending,
+                ImbuedEffectType.PierceRending,
+                ImbuedEffectType.BludgeonRending,
+                ImbuedEffectType.AcidRending,
+                ImbuedEffectType.ColdRending,
+                ImbuedEffectType.ElectricRending,
+                ImbuedEffectType.FireRending,
+                ImbuedEffectType.NetherRending
+            };
+
+            foreach (var type in rendings)
+            {
+                if (weapon.HasImbuedEffect(type))
+                {
+                    var mod = WorldObject.GetRendingMod(skill);
+                    var bonusPct = (mod - 1.0);
+                    effectDescriptions.Add($"- {type.DisplayName()}: +{bonusPct:P0} Dmg (vuln)");
+                }
+            }
+
+            if (effectDescriptions.Count > 0)
+            {
+                effectDescriptions.Sort();
+                var enhancementsBlock = $"Property Details:\n{string.Join("\n", effectDescriptions)}";
+
+                if (PropertiesString.TryGetValue(PropertyString.Use, out string value))
+                    PropertiesString[PropertyString.Use] = enhancementsBlock + "\n\n" + value;
+                else
+                    PropertiesString[PropertyString.Use] = enhancementsBlock;
+
+                // Make sure there's a line break between the string and some of the other "details".
+                if (PropertiesInt.ContainsKey(PropertyInt.ItemMaxLevel) ||
+                    PropertiesInt.ContainsKey(PropertyInt.ItemSpellcraft) ||
+                    PropertiesInt.ContainsKey(PropertyInt.WieldRequirements))
+                    PropertiesString[PropertyString.Use] += "\n";
             }
 
             // item enchantments can also be on wielder currently

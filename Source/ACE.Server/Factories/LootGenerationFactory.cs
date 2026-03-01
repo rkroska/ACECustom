@@ -37,7 +37,7 @@ namespace ACE.Server.Factories
 
         public static List<WorldObject> CreateRandomLootObjects(TreasureDeath profile)
         {
-            if (!PropertyManager.GetBool("legacy_loot_system"))
+            if (!ServerConfig.legacy_loot_system.Value)
                 return CreateRandomLootObjects_New(profile);
 
             stopwatch.Value.Restart();
@@ -122,7 +122,7 @@ namespace ACE.Server.Factories
                 itemChance = ThreadSafeRandom.Next(1, 100);
                 if (itemChance <= profile.MundaneItemChance)
                 {
-                    double dropRate = PropertyManager.GetDouble("aetheria_drop_rate");
+                    double dropRate = ServerConfig.aetheria_drop_rate.Value;
                     double dropRateMod = 1.0 / dropRate;
 
                     // Coalesced Aetheria doesn't drop in loot tiers less than 5
@@ -238,6 +238,11 @@ namespace ACE.Server.Factories
 
         private static WorldObject TryRollMundaneAddon(TreasureDeath profile)
         {
+            // Try siphon lens first (independent roll, all tiers)
+            var lens = TryRollSiphonLens(profile);
+            if (lens != null)
+                return lens;
+
             // coalesced mana only dropped in tiers 1-4
             if (profile.Tier <= 4)
                 return TryRollCoalescedMana(profile);
@@ -245,6 +250,109 @@ namespace ACE.Server.Factories
             // aetheria dropped in tiers 5+
             else
                 return TryRollAetheria(profile);
+        }
+
+        /// <summary>
+        /// Rolls for a siphon lens drop with configurable rates per lens type.
+        /// Rates are configurable via /modifydouble:
+        ///   siphon_lens_flawed_rate (default ~1 in 1,000 kills)
+        ///   siphon_lens_pristine_rate (default ~1 in 2,500 kills)
+        ///   siphon_lens_perfect_rate (default ~1 in 6,000 kills)
+        /// WCIDs: 78780101 (Flawed), 78780102 (Pristine), 78780103 (Perfect)
+        /// </summary>
+        private static WorldObject TryRollSiphonLens(TreasureDeath profile)
+        {
+            // Check master enable switch
+            if (!ServerConfig.siphon_lens_enabled.Value)
+                return null;
+
+            // Get configurable rates
+            var flawedRate = (float)ServerConfig.siphon_lens_flawed_rate.Value;
+            var pristineRate = (float)ServerConfig.siphon_lens_pristine_rate.Value;
+            var perfectRate = (float)ServerConfig.siphon_lens_perfect_rate.Value;
+
+            // If all rates are 0, skip rolling entirely
+            if (flawedRate <= 0.0f && pristineRate <= 0.0f && perfectRate <= 0.0f)
+                return null;
+
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+            
+            // Check each lens type in order of rarity (Perfect first, then Pristine, then Flawed)
+            // This prevents more common lenses from "blocking" rarer ones
+            if (rng < perfectRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780103); // Perfect
+            
+            if (rng < perfectRate + pristineRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780102); // Pristine
+            
+            if (rng < perfectRate + pristineRate + flawedRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780101); // Flawed
+
+            return null;
+        }
+
+        /// <summary>
+        /// Rolls for a siphon lens drop for ANY creature death (works without DeathTreasureType).
+        /// Uses creature level to scale tier probabilities - higher level creatures have better lens drop chances.
+        /// Called from Creature_Death.GenerateTreasure().
+        /// </summary>
+        public static WorldObject TryRollSiphonLensForCreature(uint creatureLevel)
+        {
+            // Check master enable switch
+            if (!ServerConfig.siphon_lens_enabled.Value)
+            {
+                // log.Debug($"[SIPHON LENS DEBUG] Disabled via config.");
+                return null;
+            }
+
+            // Get configurable base rates
+            var flawedRate = (float)ServerConfig.siphon_lens_flawed_rate.Value;
+            var pristineRate = (float)ServerConfig.siphon_lens_pristine_rate.Value;
+            var perfectRate = (float)ServerConfig.siphon_lens_perfect_rate.Value;
+
+            // If all rates are 0, skip rolling entirely
+            if (flawedRate <= 0.0f && pristineRate <= 0.0f && perfectRate <= 0.0f)
+                return null;
+
+            // Apply level-based tier scaling:
+            // - Low levels (1-49): Only Flawed can drop (Pristine/Perfect rates = 0)
+            // - Mid levels (50-99): Pristine unlocked, Perfect still 0
+            // - High levels (100-149): Perfect unlocked at reduced rate
+            // - Endgame (150+): Full rates for all tiers
+            // Additionally, higher levels get a slight boost to overall drop chance
+            float levelMultiplier = 1.0f + (creatureLevel / 300.0f); // Up to 50% boost at level 150
+            
+            float effectiveFlawedRate = flawedRate * levelMultiplier;
+            float effectivePristineRate = 0.0f;
+            float effectivePerfectRate = 0.0f;
+            
+            if (creatureLevel >= 50)
+            {
+                // Pristine unlocks at level 50, scales up to full at level 100
+                float pristineScale = Math.Min(1.0f, (creatureLevel - 50) / 50.0f);
+                effectivePristineRate = pristineRate * pristineScale * levelMultiplier;
+            }
+            
+            if (creatureLevel >= 100)
+            {
+                // Perfect unlocks at level 100, scales up to full at level 150
+                float perfectScale = Math.Min(1.0f, (creatureLevel - 100) / 50.0f);
+                effectivePerfectRate = perfectRate * perfectScale * levelMultiplier;
+            }
+            
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+            
+            // Check each lens type in order of rarity (Perfect first, then Pristine, then Flawed)
+            if (rng < effectivePerfectRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780003); // Perfect
+            
+            if (rng < effectivePerfectRate + effectivePristineRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780002); // Pristine
+            
+            if (rng < effectivePerfectRate + effectivePristineRate + effectiveFlawedRate)
+                return WorldObjectFactory.CreateNewWorldObject(78780001); // Flawed
+
+            return null;
         }
 
         private static WorldObject TryRollCoalescedMana(TreasureDeath profile)
@@ -263,7 +371,7 @@ namespace ACE.Server.Factories
 
         private static WorldObject TryRollAetheria(TreasureDeath profile)
         {
-            var aetheria_drop_rate = (float)PropertyManager.GetDouble("aetheria_drop_rate");
+            var aetheria_drop_rate = (float)ServerConfig.aetheria_drop_rate.Value;
 
             if (aetheria_drop_rate <= 0.0f)
                 return null;

@@ -139,13 +139,13 @@ namespace ACE.Server.WorldObjects
                 {
                     if (profile.Biota.InitCreate > 1)
                     {
-                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.InitCreate({profile.Biota.InitCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location.ToLOCString()}");
+                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.InitCreate({profile.Biota.InitCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location}");
                         profile.Biota.InitCreate = 1;
                     }
 
                     if (profile.Biota.MaxCreate > 1)
                     {
-                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.MaxCreate({profile.Biota.MaxCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location.ToLOCString()}");
+                        log.Warn($"[GENERATOR] 0x{Guid} {Name}.SelectAProfile(): profile[{i}].RegenLocationType({profile.RegenLocationType}), profile.Biota.WCID({profile.Biota.WeenieClassId}), profile.Biota.MaxCreate({profile.Biota.MaxCreate}) > 1, set to 1. WCID: {WeenieClassId} - LOC: {Location}");
                         profile.Biota.MaxCreate = 1;
                     }
                 }
@@ -469,6 +469,21 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Calculates a deterministic random spawn offset based on generator GUID
+        /// The offset is capped at the minimum of MaxRandomSpawnTime and RegenerationInterval
+        /// </summary>
+        private double CalculateRandomSpawnOffset()
+        {
+            // Use hash to get better distribution for sequential GUIDs
+            var guidHash = Guid.Full.GetHashCode();
+            var random = new Random(guidHash);
+            // Cap the randomization at either MaxRandomSpawnTime or RegenerationInterval, whichever is lower
+            var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
+            // NextDouble() returns [0.0, 1.0), so offset will be in range [0, maxOffset)
+            return random.NextDouble() * maxOffset;
+        }
+
+        /// <summary>
         /// Called when a generator is first created
         /// </summary>
         public void StartGenerator()
@@ -488,16 +503,11 @@ namespace ACE.Server.WorldObjects
             // This preserves existing generator behavior
             if (RandomizeSpawnTime && GeneratorInitialDelay == 0 && RegenerationInterval > 0)
             {
-                // Calculate deterministic random offset based on generator GUID
-                // Use hash to get better distribution for sequential GUIDs
-                var guidHash = Guid.Full.GetHashCode();
-                var random = new Random(guidHash);
-                // Cap the randomization at either MaxRandomSpawnTime or RegenerationInterval, whichever is lower
-                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
-                // NextDouble() returns [0.0, 1.0), so offset will be in range [0, maxOffset)
-                initialDelay = random.NextDouble() * maxOffset;
+                initialDelay = CalculateRandomSpawnOffset();
                 isRandomized = true;
                 
+                var guidHash = Guid.Full.GetHashCode();
+                var maxOffset = Math.Min(MaxRandomSpawnTime, RegenerationInterval);
                 var nextSpawnTime = Time.GetUnixTime() + initialDelay;
                 log.Debug($"[GENERATOR][RANDOMIZE] {Name} (0x{Guid}): RandomizeSpawnTime enabled, calculated offset = {initialDelay:F2}s, next spawn at {nextSpawnTime:F2} (interval={RegenerationInterval}s, maxOffset={maxOffset:F2}s, hash={guidHash})");
             }
@@ -630,22 +640,24 @@ namespace ACE.Server.WorldObjects
 
             foreach (var link in LinkedInstances)
             {
-                var profile = new PropertiesGenerator();
-                profile.WeenieClassId = link.WeenieClassId;
-                profile.ObjCellId = link.ObjCellId;
-                profile.OriginX = link.OriginX;
-                profile.OriginY = link.OriginY;
-                profile.OriginZ = link.OriginZ;
-                profile.AnglesW = link.AnglesW;
-                profile.AnglesX = link.AnglesX;
-                profile.AnglesY = link.AnglesY;
-                profile.AnglesZ = link.AnglesZ;
-                profile.Delay = profileTemplate.Biota.Delay;
-                profile.Probability = profileTemplate.Biota.Probability;
-                profile.InitCreate = profileTemplate.Biota.InitCreate;
-                profile.MaxCreate = profileTemplate.Biota.MaxCreate;
-                profile.WhenCreate = profileTemplate.Biota.WhenCreate;
-                profile.WhereCreate = profileTemplate.Biota.WhereCreate;
+                var profile = new PropertiesGenerator
+                {
+                    WeenieClassId = link.WeenieClassId,
+                    ObjCellId = link.ObjCellId,
+                    OriginX = link.OriginX,
+                    OriginY = link.OriginY,
+                    OriginZ = link.OriginZ,
+                    AnglesW = link.AnglesW,
+                    AnglesX = link.AnglesX,
+                    AnglesY = link.AnglesY,
+                    AnglesZ = link.AnglesZ,
+                    Delay = profileTemplate.Biota.Delay,
+                    Probability = profileTemplate.Biota.Probability,
+                    InitCreate = profileTemplate.Biota.InitCreate,
+                    MaxCreate = profileTemplate.Biota.MaxCreate,
+                    WhenCreate = profileTemplate.Biota.WhenCreate,
+                    WhereCreate = profileTemplate.Biota.WhereCreate
+                };
 
                 GeneratorProfiles.Add(new GeneratorProfile(this, profile, link.Guid));
                 if (profile.Probability == -1)
@@ -688,6 +700,20 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name}.Generator_Generate({RegenerationInterval})");
 
+            // FALLBACK: If RandomizeSpawnTime wasn't applied in StartGenerator() (e.g., properties not loaded yet on server boot),
+            // apply it now on first generation during power-up phase
+            // Only apply if NextGeneratorRegenerationTime is 0, which indicates StartGenerator() didn't set it (because initialDelay was 0)
+            if (CurrentlyPoweringUp && RandomizeSpawnTime && GeneratorInitialDelay == 0 && RegenerationInterval > 0 && NextGeneratorRegenerationTime == 0)
+            {
+                var currentTime = Time.GetUnixTime();
+                var offset = CalculateRandomSpawnOffset();
+                
+                NextGeneratorRegenerationTime = currentTime + offset;
+                CurrentLandblock?.ResortWorldObjectIntoSortedGeneratorRegenerationList(this);
+                
+                log.Debug($"[GENERATOR][RANDOMIZE][FALLBACK] {Name} (0x{Guid}): Applied RandomizeSpawnTime offset = {offset:F2}s on first generation (properties loaded late on server boot)");
+            }
+
             if (!GeneratorDisabled)
             {
                 if (CurrentlyPoweringUp)
@@ -701,7 +727,7 @@ namespace ACE.Server.WorldObjects
 
                         if (genLoopCount > 1000)
                         {
-                            log.Error($"[GENERATOR] 0x{Guid} {Name}.Generator_Generate(): genLoopCount > 1000, aborted init spawn. GenStopSelectProfileConditions: {GenStopSelectProfileConditions} | InitCreate: {InitCreate} | CurrentCreate: {CurrentCreate} | WCID: {WeenieClassId} - LOC: {Location.ToLOCString()}");
+                            log.Error($"[GENERATOR] 0x{Guid} {Name}.Generator_Generate(): genLoopCount > 1000, aborted init spawn. GenStopSelectProfileConditions: {GenStopSelectProfileConditions} | InitCreate: {InitCreate} | CurrentCreate: {CurrentCreate} | WCID: {WeenieClassId} - LOC: {Location}");
                             break;
                         }
                     }

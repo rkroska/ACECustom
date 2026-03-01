@@ -612,34 +612,52 @@ namespace ACE.Server.Managers
                 // Ensure database is migrated before logging
                 EnsureDatabaseMigrated();
 
-                // Only log if item tracking is enabled and this item should be tracked
-                if (!Config.EnableItemTracking || !ShouldTrackItem(item.Name))
+                // Only log if item tracking is enabled
+                if (!Config.EnableItemTracking)
+                {
+                    log.Debug("Skipping logging - item tracking disabled");
+                    return;
+                }
+
+                // Recursively scan for tracked items (handles containers)
+                // Pass quantity parameter to handle split stacks correctly
+                var trackedItems = GetTrackedItemsRecursive(item, "", quantity);
+                
+                if (trackedItems.Count == 0)
                 {
                     log.Debug($"Skipping logging for untracked item: {item.Name}");
                     return;
                 }
 
-                var transferLog = new TransferLog
-                {
-                    TransferType = TransferTypeDirectGive,
-                    FromPlayerName = fromPlayer.Name,
-                    FromPlayerAccount = fromPlayer.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = toPlayer.Name,
-                    ToPlayerAccount = toPlayer.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = quantity,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
-                    ToAccountCreatedDate = toPlayer.Account?.CreateTime,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(fromPlayer),
-                    ToCharacterCreatedDate = GetCharacterCreationDate(toPlayer),
-                    AdditionalData = $"Item GUID: {item.Guid}",
-                    FromPlayerIP = GetPlayerIP(fromPlayer),
-                    ToPlayerIP = GetPlayerIP(toPlayer)
-                };
+                // Coalesce items with same name and path
+                var aggregatedItems = trackedItems
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
 
-                // Process in background thread to prevent blocking the game thread
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                foreach (var (itemName, itemQuantity, containerPath) in aggregatedItems)
+                {
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeDirectGive,
+                        FromPlayerName = fromPlayer.Name,
+                        FromPlayerAccount = fromPlayer.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = toPlayer.Name,
+                        ToPlayerAccount = toPlayer.Account?.AccountName ?? "Unknown",
+                        ItemName = itemName,
+                        Quantity = itemQuantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = fromPlayer.Account?.CreateTime,
+                        ToAccountCreatedDate = toPlayer.Account?.CreateTime,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(fromPlayer),
+                        ToCharacterCreatedDate = GetCharacterCreationDate(toPlayer),
+                        AdditionalData = $"Item GUID: {item.Guid}",
+                        FromPlayerIP = GetPlayerIP(fromPlayer),
+                        ToPlayerIP = GetPlayerIP(toPlayer)
+                    };
+
+                    // Process in background thread to prevent blocking the game thread
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
             }
             catch (Exception ex)
             {
@@ -668,76 +686,84 @@ namespace ACE.Server.Managers
                 // Ensure database is migrated before logging
                 EnsureDatabaseMigrated();
 
-            // Only log if item tracking is enabled
-            if (!Config.EnableItemTracking)
-            {
-                log.Info("Skipping trade logging - item tracking disabled");
-                return;
-            }
-
-            // Log each tracked item from player1 to player2
-            foreach (var item in player1Escrow)
-            {
-                // Only log if this specific item should be tracked
-                if (!ShouldTrackItem(item.Name))
+                // Only log if item tracking is enabled
+                if (!Config.EnableItemTracking)
                 {
-                    log.Debug($"Skipping untracked item in trade: {item.Name}");
-                    continue;
+                    log.Info("Skipping trade logging - item tracking disabled");
+                    return;
                 }
-            var transferLog = new TransferLog
-            {
-                    TransferType = TransferTypeTrade,
-                FromPlayerName = player1.Name,
-                FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                ToPlayerName = player2.Name,
-                ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = player1.Account?.CreateTime,
-                    ToAccountCreatedDate = player2.Account?.CreateTime,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(player1),
-                    ToCharacterCreatedDate = GetCharacterCreationDate(player2),
-                    AdditionalData = $"Trade Value: {CalculateItemValue(item, item.StackSize ?? 1)}",
-                    FromPlayerIP = GetPlayerIP(player1),
-                    ToPlayerIP = GetPlayerIP(player2)
-                };
 
-                // Process in background thread to prevent blocking the game thread
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
-            }
-
-            // Log each tracked item from player2 to player1
-            foreach (var item in player2Escrow)
-            {
-                // Only log if this specific item should be tracked
-                if (!ShouldTrackItem(item.Name))
+                // Log tracked items from player1 to player2
+                var trackedItemsP1 = new List<(string itemName, int quantity, string containerPath)>();
+                foreach (var item in player1Escrow)
                 {
-                    log.Debug($"Skipping untracked item in trade: {item.Name}");
-                    continue;
+                    trackedItemsP1.AddRange(GetTrackedItemsRecursive(item));
                 }
-            var reverseTransferLog = new TransferLog
-            {
-                    TransferType = TransferTypeTrade,
-                FromPlayerName = player2.Name,
-                FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
-                ToPlayerName = player1.Name,
-                ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = player2.Account?.CreateTime,
-                    ToAccountCreatedDate = player1.Account?.CreateTime,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(player2),
-                    ToCharacterCreatedDate = GetCharacterCreationDate(player1),
-                    AdditionalData = $"Trade Value: {CalculateItemValue(item, item.StackSize ?? 1)}",
-                    FromPlayerIP = GetPlayerIP(player2),
-                    ToPlayerIP = GetPlayerIP(player1)
-                };
 
-                // Process in background thread to prevent blocking the game thread
-                Task.Run(() => ProcessTransferLogBackground(reverseTransferLog));
-            }
+                var aggregatedP1 = trackedItemsP1
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
+
+                foreach (var (itemName, quantity, containerPath) in aggregatedP1)
+                {
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeTrade,
+                        FromPlayerName = player1.Name,
+                        FromPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = player2.Name,
+                        ToPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                        ItemName = itemName,
+                        Quantity = quantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = player1.Account?.CreateTime,
+                        ToAccountCreatedDate = player2.Account?.CreateTime,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(player1),
+                        ToCharacterCreatedDate = GetCharacterCreationDate(player2),
+                        AdditionalData = containerPath != itemName ? $"Container Path: {containerPath}" : null,
+                        FromPlayerIP = GetPlayerIP(player1),
+                        ToPlayerIP = GetPlayerIP(player2)
+                    };
+
+                    // Process in background thread to prevent blocking the game thread
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
+
+                // Log tracked items from player2 to player1
+                var trackedItemsP2 = new List<(string itemName, int quantity, string containerPath)>();
+                foreach (var item in player2Escrow)
+                {
+                    trackedItemsP2.AddRange(GetTrackedItemsRecursive(item));
+                }
+
+                var aggregatedP2 = trackedItemsP2
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
+
+                foreach (var (itemName, quantity, containerPath) in aggregatedP2)
+                {
+                    var reverseTransferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeTrade,
+                        FromPlayerName = player2.Name,
+                        FromPlayerAccount = player2.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = player1.Name,
+                        ToPlayerAccount = player1.Account?.AccountName ?? "Unknown",
+                        ItemName = itemName,
+                        Quantity = quantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = player2.Account?.CreateTime,
+                        ToAccountCreatedDate = player1.Account?.CreateTime,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(player2),
+                        ToCharacterCreatedDate = GetCharacterCreationDate(player1),
+                        AdditionalData = containerPath != itemName ? $"Container Path: {containerPath}" : null,
+                        FromPlayerIP = GetPlayerIP(player2),
+                        ToPlayerIP = GetPlayerIP(player1)
+                    };
+
+                    // Process in background thread to prevent blocking the game thread
+                    Task.Run(() => ProcessTransferLogBackground(reverseTransferLog));
+                }
             }
             catch (Exception ex)
             {
@@ -762,43 +788,55 @@ namespace ACE.Server.Managers
                     return;
                 }
                 
-                // Only log if item tracking is enabled and this item should be tracked
+                // Only log if item tracking is enabled
                 if (!Config.EnableItemTracking)
                 {
                     log.Info("Skipping ground pickup logging - item tracking disabled");
                     return;
                 }
 
-                if (!ShouldTrackItem(item.Name))
+                // Ensure database is migrated before logging
+                EnsureDatabaseMigrated();
+
+                // Recursively scan for tracked items (handles containers)
+                // Pass quantity parameter to handle split stacks correctly
+                var trackedItems = GetTrackedItemsRecursive(item, "", quantity);
+                
+                if (trackedItems.Count == 0)
                 {
                     log.Debug($"Skipping ground pickup logging for untracked item: {item.Name}");
                     return;
                 }
 
-                // Ensure database is migrated before logging
-                EnsureDatabaseMigrated();
+                // Coalesce items with same name and path
+                var aggregatedItems = trackedItems
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
 
-                var transferLog = new TransferLog
+                foreach (var (itemName, itemQuantity, containerPath) in aggregatedItems)
                 {
-                    TransferType = TransferTypeGroundPickup,
-                    FromPlayerName = "Ground",
-                    FromPlayerAccount = "Ground",
-                    ToPlayerName = player.Name,
-                    ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = quantity,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = null, // Ground doesn't have account creation date
-                    ToAccountCreatedDate = player.Account?.CreateTime,
-                    FromCharacterCreatedDate = null, // Ground doesn't have character creation date
-                    ToCharacterCreatedDate = GetCharacterCreationDate(player),
-                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
-                    FromPlayerIP = null, // Ground doesn't have IP
-                    ToPlayerIP = GetPlayerIP(player)
-                };
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeGroundPickup,
+                        FromPlayerName = "Ground",
+                        FromPlayerAccount = "Ground",
+                        ToPlayerName = player.Name,
+                        ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                        ItemName = itemName,
+                        Quantity = itemQuantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = null,
+                        ToAccountCreatedDate = player.Account?.CreateTime,
+                        FromCharacterCreatedDate = null,
+                        ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                        AdditionalData = $"Location: {player.Location}",
+                        FromPlayerIP = null,
+                        ToPlayerIP = GetPlayerIP(player)
+                    };
 
-                // Process in background to avoid blocking the main thread
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                    // Process in background to avoid blocking the main thread
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
             }
             catch (Exception ex)
             {
@@ -876,34 +914,45 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                if (!ShouldTrackItem(item.Name))
+                EnsureDatabaseMigrated();
+
+                // Recursively scan for tracked items (handles containers)
+                var trackedItems = GetTrackedItemsRecursive(item);
+                
+                if (trackedItems.Count == 0)
                 {
                     log.Debug($"Skipping ground drop logging for untracked item: {item.Name}");
                     return;
                 }
 
-                EnsureDatabaseMigrated();
+                // Coalesce items with same name and path
+                var aggregatedItems = trackedItems
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
 
-                var transferLog = new TransferLog
+                foreach (var (itemName, itemQuantity, containerPath) in aggregatedItems)
                 {
-                    TransferType = TransferTypeGroundDrop,
-                    FromPlayerName = player.Name,
-                    FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = "Ground",
-                    ToPlayerAccount = "Ground",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = player.Account?.CreateTime,
-                    ToAccountCreatedDate = null,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(player),
-                    ToCharacterCreatedDate = null,
-                    AdditionalData = $"Location: {player.Location?.ToLOCString()}",
-                    FromPlayerIP = GetPlayerIP(player),
-                    ToPlayerIP = null
-                };
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeGroundDrop,
+                        FromPlayerName = player.Name,
+                        FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = "Ground",
+                        ToPlayerAccount = "Ground",
+                        ItemName = itemName,
+                        Quantity = itemQuantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = player.Account?.CreateTime,
+                        ToAccountCreatedDate = null,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(player),
+                        ToCharacterCreatedDate = null,
+                        AdditionalData = containerPath != itemName ? $"Container Path: {containerPath} | Location: {player.Location}" : $"Location: {player.Location}",
+                        FromPlayerIP = GetPlayerIP(player),
+                        ToPlayerIP = null
+                    };
 
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
             }
             catch (Exception ex)
             {
@@ -928,34 +977,45 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                if (!ShouldTrackItem(item.Name))
+                EnsureDatabaseMigrated();
+
+                // Recursively scan for tracked items (handles containers)
+                var trackedItems = GetTrackedItemsRecursive(item);
+                
+                if (trackedItems.Count == 0)
                 {
                     log.Debug($"Skipping chest deposit logging for untracked item: {item.Name}");
                     return;
                 }
 
-                EnsureDatabaseMigrated();
+                // Coalesce items with same name and path
+                var aggregatedItems = trackedItems
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
 
-                var transferLog = new TransferLog
+                foreach (var (itemName, itemQuantity, containerPath) in aggregatedItems)
                 {
-                    TransferType = TransferTypeChestDeposit,
-                    FromPlayerName = player.Name,
-                    FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
-                    ToPlayerName = $"Chest:{chest.Name}",
-                    ToPlayerAccount = $"Chest:{chest.Guid.Full:X8}",
-                    ItemName = item.Name,
-                    Quantity = item.StackSize ?? 1,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = player.Account?.CreateTime,
-                    ToAccountCreatedDate = null,
-                    FromCharacterCreatedDate = GetCharacterCreationDate(player),
-                    ToCharacterCreatedDate = null,
-                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location?.ToLOCString()}",
-                    FromPlayerIP = GetPlayerIP(player),
-                    ToPlayerIP = null
-                };
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeChestDeposit,
+                        FromPlayerName = player.Name,
+                        FromPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                        ToPlayerName = $"Chest:{chest.Name}",
+                        ToPlayerAccount = $"Chest:{chest.Guid.Full:X8}",
+                        ItemName = itemName,
+                        Quantity = itemQuantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = player.Account?.CreateTime,
+                        ToAccountCreatedDate = null,
+                        FromCharacterCreatedDate = GetCharacterCreationDate(player),
+                        ToCharacterCreatedDate = null,
+                        AdditionalData = containerPath != itemName ? $"Container Path: {containerPath} | Chest: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location}" : $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location}",
+                        FromPlayerIP = GetPlayerIP(player),
+                        ToPlayerIP = null
+                    };
 
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
             }
             catch (Exception ex)
             {
@@ -985,34 +1045,45 @@ namespace ACE.Server.Managers
                     return;
                 }
 
-                if (!ShouldTrackItem(item.Name))
+                EnsureDatabaseMigrated();
+
+                // Recursively scan for tracked items (handles containers)
+                var trackedItems = GetTrackedItemsRecursive(item, "", quantity);
+                
+                if (trackedItems.Count == 0)
                 {
                     log.Debug($"Skipping chest withdrawal logging for untracked item: {item.Name}");
                     return;
                 }
 
-                EnsureDatabaseMigrated();
+                // Coalesce items with same name and path
+                var aggregatedItems = trackedItems
+                    .GroupBy(t => new { t.itemName, t.containerPath })
+                    .Select(g => (itemName: g.Key.itemName, quantity: g.Sum(x => x.quantity), containerPath: g.Key.containerPath));
 
-                var transferLog = new TransferLog
+                foreach (var (itemName, itemQuantity, containerPath) in aggregatedItems)
                 {
-                    TransferType = TransferTypeChestWithdrawal,
-                    FromPlayerName = $"Chest:{chest.Name}",
-                    FromPlayerAccount = $"Chest:{chest.Guid.Full:X8}",
-                    ToPlayerName = player.Name,
-                    ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
-                    ItemName = item.Name,
-                    Quantity = quantity,
-                    Timestamp = DateTime.UtcNow,
-                    FromAccountCreatedDate = null,
-                    ToAccountCreatedDate = player.Account?.CreateTime,
-                    FromCharacterCreatedDate = null,
-                    ToCharacterCreatedDate = GetCharacterCreationDate(player),
-                    AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location?.ToLOCString()}",
-                    FromPlayerIP = null,
-                    ToPlayerIP = GetPlayerIP(player)
-                };
+                    var transferLog = new TransferLog
+                    {
+                        TransferType = TransferTypeChestWithdrawal,
+                        FromPlayerName = $"Chest:{chest.Name}",
+                        FromPlayerAccount = $"Chest:{chest.Guid.Full:X8}",
+                        ToPlayerName = player.Name,
+                        ToPlayerAccount = player.Account?.AccountName ?? "Unknown",
+                        ItemName = itemName,
+                        Quantity = itemQuantity,
+                        Timestamp = DateTime.UtcNow,
+                        FromAccountCreatedDate = null,
+                        ToAccountCreatedDate = player.Account?.CreateTime,
+                        FromCharacterCreatedDate = null,
+                        ToCharacterCreatedDate = GetCharacterCreationDate(player),
+                        AdditionalData = $"Container: {chest.Name} (0x{chest.Guid.Full:X8}) @ {chest.Location}",
+                        FromPlayerIP = null,
+                        ToPlayerIP = GetPlayerIP(player)
+                    };
 
-                Task.Run(() => ProcessTransferLogBackground(transferLog));
+                    Task.Run(() => ProcessTransferLogBackground(transferLog));
+                }
             }
             catch (Exception ex)
             {
@@ -1112,6 +1183,54 @@ namespace ACE.Server.Managers
             return Config.TrackedItems.Any(trackedItem => 
                 string.Equals(itemName, trackedItem, StringComparison.OrdinalIgnoreCase) ||
                 itemName.Contains(trackedItem, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Recursively scans a WorldObject (potentially a container) and returns all tracked items within it.
+        /// Returns a list of tuples: (itemName, quantity, containerPath)
+        /// </summary>
+        /// <param name="item">The item to scan</param>
+        /// <param name="parentPath">The parent container path (for recursion)</param>
+        /// <param name="overrideQuantity">Optional quantity override for the top-level item (used for split stacks)</param>
+        private static List<(string itemName, int quantity, string containerPath)> GetTrackedItemsRecursive(WorldObject item, string parentPath = "", int? overrideQuantity = null)
+        {
+            var trackedItems = new List<(string, int, string)>();
+            
+            try
+            {
+                // Check if this item itself is tracked
+                if (ShouldTrackItem(item.Name))
+                {
+                    var path = string.IsNullOrEmpty(parentPath) ? item.Name : $"{parentPath} > {item.Name}";
+                    // Use override quantity for top-level item if provided, otherwise use stack size
+                    var quantity = overrideQuantity ?? item.StackSize ?? 1;
+                    trackedItems.Add((item.Name, quantity, path));
+                }
+                
+                // If this is a container, recursively scan its contents
+                // Note: Don't use override quantity for nested items
+                if (item is Container container)
+                {
+                    var inventory = container.Inventory?.Values;
+                    if (inventory != null)
+                    {
+                        var containerPath = string.IsNullOrEmpty(parentPath) ? container.Name : $"{parentPath} > {container.Name}";
+                        
+                        foreach (var containedItem in inventory)
+                        {
+                            // Recursive call for nested containers (no quantity override)
+                            var nestedTrackedItems = GetTrackedItemsRecursive(containedItem, containerPath, null);
+                            trackedItems.AddRange(nestedTrackedItems);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error scanning container for tracked items: {ex.Message}");
+            }
+            
+            return trackedItems;
         }
 
         private static bool IsTrackedItemTransfer(TransferLog transferLog)

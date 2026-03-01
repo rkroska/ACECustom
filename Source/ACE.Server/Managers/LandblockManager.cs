@@ -740,8 +740,23 @@ namespace ACE.Server.Managers
                     {
                         landblockLock.ExitWriteLock();
                     }
-                    if (unloadFailed)
+                if (unloadFailed)
                         log.Error($"LandblockManager: failed to unload {landblock.Id.Raw:X8}");
+                    else
+                    {
+                        var clearedCount = DatabaseManager.World.ClearLandblockCache(landblock.Id.Landblock, cacheKey.Variant);
+                        log.Debug($"[Cache Cleanup] Unloaded Landblock {landblock.Id.Raw:X8}. Cleared {clearedCount} cached entities.");
+
+                        // Validation Check
+                        if (DatabaseManager.World.GetLandblockInstancesCacheCount() > 0)
+                        {
+                            // Optional: Deep check if the specific key still exists ( requires exposing ContainsKey or similar, 
+                            // but since we just removed it, this global count isn't specific enough.
+                            // The real check is implicitly done by TryRemove returning true/false which populates 'count'.
+                            // If count > 0, we know we removed something.
+                            // We rely on TryRemove's contract.
+                        }
+                    }
                 }
             }
         }

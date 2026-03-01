@@ -8,6 +8,7 @@ using Discord.WebSocket;
 using ACE.Common;
 using Discord;
 using static System.Net.Mime.MediaTypeNames;
+using System.Net.Http;
 
 namespace ACE.Server.Managers
 {
@@ -17,14 +18,31 @@ namespace ACE.Server.Managers
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static DiscordSocketClient _discordSocketClient;
+        private static readonly HttpClient _httpClient = new HttpClient();
 
-        public static void SendDiscordMessage(string player, string message, long channelId)
+        public static async Task SendDiscordMessage(string player, string message, long channelId)
         {
             if (ConfigManager.Config.Chat.EnableDiscordConnection)
             {
                 try
                 {
-                    _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId).GetTextChannel((ulong)channelId).SendMessageAsync(player + " : " + message);
+                    var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
+                    if (guild != null)
+                    {
+                        var channel = guild.GetTextChannel((ulong)channelId);
+                        if (channel != null)
+                        {
+                            await channel.SendMessageAsync(player + " : " + message);
+                        }
+                        else
+                        {
+                            log.Warn($"[Discord] Failed to find channel {channelId} in guild {guild.Name}");
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"[Discord] Failed to find guild {ConfigManager.Config.Chat.ServerId}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -34,12 +52,20 @@ namespace ACE.Server.Managers
             
         }
 
-        public static void SendDiscordFile(string player, string message, long channelId, FileAttachment fileContent)
+        public static async Task SendDiscordFileAsync(string player, string message, long channelId, FileAttachment fileContent)
         {
 
             try
             {
-                var res = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId).GetTextChannel((ulong)channelId).SendFileAsync(fileContent, player + " : " + message).Result;
+                var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
+                if (guild != null)
+                {
+                    var channel = guild.GetTextChannel((ulong)channelId);
+                    if (channel != null)
+                    {
+                        await channel.SendFileAsync(fileContent, player + " : " + message);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -49,34 +75,35 @@ namespace ACE.Server.Managers
 
         }
 
-        public static string GetSQLFromDiscordMessage(int topN, string identifier)
+        public static async Task<string> GetSqlFromDiscordMessageAsync(int topN, string identifier)
         {
             string res = "";
 
             try
             {
-                _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId)
-                    .GetTextChannel((ulong)ConfigManager.Config.Chat.WeenieUploadsChannelId)
-                    .GetMessagesAsync(limit: topN)
-                    .FlattenAsync().Result.ToList()
-                    .ForEach(x =>
+                var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
+                if (guild == null) return res;
+
+                var channel = guild.GetTextChannel((ulong)ConfigManager.Config.Chat.WeenieUploadsChannelId);
+                if (channel == null) return res;
+
+                var messages = await channel.GetMessagesAsync(limit: topN).FlattenAsync();
+
+                foreach (var x in messages)
+                {
+                    if(x.Content == identifier)
                     {
-                        if(x.Content == identifier)
+                        if(x.Attachments.Count == 1)
                         {
-                            if(x.Attachments.Count == 1)
+                            IAttachment attachment = x.Attachments.First();
+                            if (attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
                             {
-                                IAttachment attachment = x.Attachments.First();
-                                if (attachment.Filename.Contains(".sql", StringComparison.InvariantCultureIgnoreCase))
-                                {
-                                    using (var client = new WebClient())
-                                    {
-                                        res = client.GetStringFromURL(attachment.Url).Result;
-                                        return;
-                                    }
-                                }
+                                res = await _httpClient.GetStringAsync(attachment.Url);
+                                return res;
                             }
-                        }    
-                    });
+                        }
+                    }    
+                }
             }
             catch (Exception ex)
             {
@@ -88,35 +115,35 @@ namespace ACE.Server.Managers
             return res;
         }
 
-        public static string GetJsonFromDiscordMessage(int topN, string identifier)
+        public static async Task<string> GetJsonFromDiscordMessageAsync(int topN, string identifier)
         {
             string res = "";
 
             try
             {
-                _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId)
-                    .GetTextChannel((ulong)ConfigManager.Config.Chat.ClothingModUploadChannelId)
-                    .GetMessagesAsync(limit: topN)
-                    .FlattenAsync().Result.ToList()
-                    .ForEach(x =>
+                var guild = _discordSocketClient.GetGuild((ulong)ConfigManager.Config.Chat.ServerId);
+                if (guild == null) return res;
+
+                var channel = guild.GetTextChannel((ulong)ConfigManager.Config.Chat.ClothingModUploadChannelId);
+                if (channel == null) return res;
+
+                var messages = await channel.GetMessagesAsync(limit: topN).FlattenAsync();
+
+                foreach (var x in messages)
+                {
+                    if (x.Content == identifier)
                     {
-                        if (x.Content == identifier)
+                        if (x.Attachments.Count == 1)
                         {
-                            if (x.Attachments.Count == 1)
+                            IAttachment attachment = x.Attachments.First();
+                            if (attachment.Filename.Contains(".json", StringComparison.InvariantCultureIgnoreCase))
                             {
-                                IAttachment attachment = x.Attachments.First();
-                                if (attachment.Filename.Contains(".json", StringComparison.InvariantCultureIgnoreCase))
-                                {
-                                    // Using HttpClient to download the JSON
-                                    using (var client = new System.Net.Http.HttpClient())
-                                    {
-                                        res = client.GetStringAsync(attachment.Url).Result; // Fetching the JSON content synchronously
-                                        return;
-                                    }
-                                }
+                                res = await _httpClient.GetStringAsync(attachment.Url);
+                                return res;
                             }
                         }
-                    });
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -130,10 +157,23 @@ namespace ACE.Server.Managers
 
         public static void Initialize()
         {
+            _httpClient.Timeout = TimeSpan.FromSeconds(10); // CodeRabbit: Prevent long hangs if Discord is down
+
             _discordSocketClient = new DiscordSocketClient();
-            _discordSocketClient.LoginAsync(Discord.TokenType.Bot, ConfigManager.Config.Chat.DiscordToken);
-            _discordSocketClient.StartAsync();
             
+            // CodeRabbit: Handle fire-and-forget async failures
+            Task.Run(async () => 
+            {
+                try
+                {
+                    await _discordSocketClient.LoginAsync(Discord.TokenType.Bot, ConfigManager.Config.Chat.DiscordToken);
+                    await _discordSocketClient.StartAsync();
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Failed to initialize Discord client: {ex.Message}");
+                }
+            });
         }
     }
 }

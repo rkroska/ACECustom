@@ -23,9 +23,5 @@ namespace ACE.Entity.Models
         public float StatModValue { get; set; }
         public EquipmentSet SpellSetId { get; set; }
         public long? AugmentationLevelWhenCast { get; set; }
-
-        // TODO(Ruggan): Remove and merge into the new calc once rolled out.
-        // Only set for Life Protection Spells
-        public float StatModValueNew { get; set; }
     }
 }

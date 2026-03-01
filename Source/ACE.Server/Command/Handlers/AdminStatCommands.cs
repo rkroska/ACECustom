@@ -158,8 +158,26 @@ namespace ACE.Server.Command.Handlers
             var sb = new StringBuilder();
             
             sb.Append($"Action Queue Status:{'\n'}");
-            var actionThrottle = PropertyManager.GetLong("action_queue_throttle_limit", 300);
+            var actionThrottle = ServerConfig.action_queue_throttle_limit.Value;
             sb.Append($"WorldManager ActionQueue: {WorldManager.ActionQueue.Count():N0} actions queued (Throttle: {actionThrottle}/tick){'\n'}");
+
+            // Action Queue Priority Metrics
+            var stats = WorldManager.ActionQueue.GetPriorityStats();
+            var total = stats.Sum();
+            if (total > 0)
+            {
+                sb.Append("Priority Distribution (Cumulative): ");
+                var priorities = Enum.GetValues(typeof(ACE.Server.Entity.Actions.ActionPriority));
+                for (int i = 0; i < stats.Length; i++)
+                {
+                    var priorityName = i < priorities.Length ? priorities.GetValue(i).ToString() : i.ToString();
+                    var count = stats[i];
+                    var percent = (double)count / total * 100.0;
+                    sb.Append($"{priorityName}={count:N0} ({percent:F0}%) ");
+                }
+                sb.Append("\n");
+            }
+
             sb.Append($"NetworkManager InboundMessageQueue: {Network.Managers.NetworkManager.InboundMessageQueue.Count():N0} actions queued (Throttle: {actionThrottle}/tick){'\n'}");
             
             // Get busiest landblocks by creature count
@@ -175,7 +193,7 @@ namespace ACE.Server.Command.Handlers
                 .OrderByDescending(x => x.CreatureCount)
                 .Take(5);
             
-            var monsterThrottle = PropertyManager.GetLong("monster_tick_throttle_limit", 75);
+            var monsterThrottle = ServerConfig.monster_tick_throttle_limit.Value;
             sb.Append($"{'\n'}Top 5 Landblocks by Creature Count (Monster_Tick throttle: {monsterThrottle}/tick):{'\n'}");
             foreach (var item in busiestByCreatures)
             {
