@@ -15,6 +15,10 @@ namespace ACE.Server.Entity
 {
     public class Enlightenment
     {
+        private const int EnlightenmentTokenWcid = 300000;
+        private const int EnlightenmentMedallionWcid = 90000217;
+        private const int EnlightenmentSigilWcid = 300101189;
+
         // Requirements:
         // - Level 275 + 1 per previous enlightenment
         // - Have all luminance auras (crafting aura included) except the skill credit auras.
@@ -23,12 +27,14 @@ namespace ACE.Server.Entity
         //
         // You lose:
         // - Your level, which reverts to 1.
+        // - Skills, which revert to their base state.
         // - Any items that are required for enlightenment, as per tier requirements. 
-        // - Buffs and spells.
+        // - Enchantments / spells (you are dispelled).
         //
         // You KEEP:
         // - All unspent experience.
-        // - All skills and augmentations.
+        // - All stats and augmentations.
+        // - Learned spells.
         //
         // You GAIN:
         // - +1 to enlightenment property (used for calculating dynamic bonuses).
@@ -37,9 +43,7 @@ namespace ACE.Server.Entity
 
         public static void HandleEnlightenment(Player player)
         {
-            if (!VerifyRequirements(player))
-                return;
-
+            if (!VerifyRequirements(player)) return;
 
             player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
@@ -60,6 +64,10 @@ namespace ACE.Server.Entity
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have moved too far during the enlightenment animation!", ChatMessageType.Broadcast));
                     return;
                 }
+
+                // Re-validate since 14 seconds have passed.
+                if (!VerifyRequirements(player)) return;
+
                 if (!SpendLuminance(player))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
@@ -158,7 +166,7 @@ namespace ACE.Server.Entity
             //first, 1 enlightenment token per enlightenment past 5.
             if (targetEnlightenment > 5 && targetEnlightenment <= 150)
             {
-                var count = player.GetNumInventoryItemsOfWCID(300000); //magic number - EnlightenmentToken
+                var count = player.GetNumInventoryItemsOfWCID(EnlightenmentTokenWcid);
                 if (count < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Tokens to continue.", ChatMessageType.Broadcast));
@@ -186,7 +194,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 150 && targetEnlightenment <= 300)
             {
-                var count2 = player.GetNumInventoryItemsOfWCID(90000217); //magic number - EnlightenmentToken
+                var count2 = player.GetNumInventoryItemsOfWCID(EnlightenmentMedallionWcid);
                 if (count2 < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
@@ -201,7 +209,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 300)
             {
-                var count2 = player.GetNumInventoryItemsOfWCID(300101189); // EnlightenmentSigil
+                var count2 = player.GetNumInventoryItemsOfWCID(EnlightenmentSigilWcid);
                 if (count2 < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(
@@ -275,17 +283,17 @@ namespace ACE.Server.Entity
 
         private static void RemoveTokens(Player player)
         {
-            player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
+            player.TryConsumeFromInventoryWithNetworking(EnlightenmentTokenWcid, player.Enlightenment + 1 - 5);
         }
 
         private static void RemoveMedallion(Player player)
         {
-            player.TryConsumeFromInventoryWithNetworking(90000217, player.Enlightenment + 1 - 5);
+            player.TryConsumeFromInventoryWithNetworking(EnlightenmentMedallionWcid, player.Enlightenment + 1 - 5);
         }
 
         private static void RemoveSigil(Player player)
         {
-            player.TryConsumeFromInventoryWithNetworking(300101189, player.Enlightenment + 1 - 5);
+            player.TryConsumeFromInventoryWithNetworking(EnlightenmentSigilWcid, player.Enlightenment + 1 - 5);
         }
 
         private static bool SpendLuminance(Player player)
