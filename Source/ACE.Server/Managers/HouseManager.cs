@@ -786,8 +786,6 @@ namespace ACE.Server.Managers
             }
         }
 
-
-
         /// <summary>
         /// Pay rent for a house
         /// </summary>

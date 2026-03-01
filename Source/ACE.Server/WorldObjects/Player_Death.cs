@@ -262,7 +262,7 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Retrieves the best loaction to teleport a player to on death.
+        /// Retrieves the best location to teleport a player to on death.
         /// </summary>
         public Position GetDeathLocation()
         {

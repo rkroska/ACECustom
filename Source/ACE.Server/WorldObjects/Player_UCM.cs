@@ -46,12 +46,9 @@ namespace ACE.Server.WorldObjects
         public bool Start(Player player)
         {
             if (IsChecking) return false;
-
             IsChecking = true;
             CheckLocation = new Position(player.Location);
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
-            LastUCMCheckTime = DateTime.UtcNow;
-            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
 
             // N, E, S, W relative or absolute doesn't matter too much, we'll use absolute cardinal offsets
             // Assuming Location.Position.X/Y are coordinates
@@ -109,6 +106,9 @@ namespace ACE.Server.WorldObjects
                 Stop();
                 return false;
             }
+
+            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
+            LastUCMCheckTime = DateTime.UtcNow;
 
             string message = $"Your focus is being tested. Use the statue looking AWAY from you within {secondsUntilTimeout} seconds or suffer consequences!";
             player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
@@ -183,7 +183,7 @@ namespace ACE.Server.WorldObjects
                 // Calculate the true probability of at least one trigger occurring over the elapsed time.
                 // Formula: 1 - (1 - chancePerSecond)^TotalSeconds.
                 // Note: ucm_check_spawn_chance is configured as a percentage between 0 and 1.
-                double chancePerSec = ServerConfig.ucm_check_spawn_chance.Value;
+                double chancePerSec = Math.Clamp(ServerConfig.ucm_check_spawn_chance.Value, 0, 1);
                 double probOverElapsed = 1.0 - Math.Pow(1.0 - chancePerSec, sinceLastTick.TotalSeconds);
                 if (random.NextDouble() < probOverElapsed) Start(player);
                 return;
