@@ -37,6 +37,48 @@ namespace ACE.Server.Managers
             log.DebugFormat("EventManager Initalized.");
         }
 
+        /// <summary>
+        /// Reloads a single event from the database into the Events dictionary
+        /// </summary>
+        public static bool ReloadEvent(string eventName)
+        {
+            // Clear from database cache first so we get fresh data
+            Database.DatabaseManager.World.ClearCachedEvent(eventName);
+
+            var evnt = Database.DatabaseManager.World.GetCachedEvent(eventName);
+            if (evnt != null)
+            {
+                Events[evnt.Name] = evnt;
+                log.Debug($"[EventManager] Reloaded event '{evnt.Name}' from database (State: {(GameEventState)evnt.State})");
+                return true;
+            }
+            else
+            {
+                // Event doesn't exist in DB, remove from dictionary if present
+                if (Events.Remove(eventName))
+                    log.Debug($"[EventManager] Removed event '{eventName}' (not found in database)");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Reloads all events from the database into the Events dictionary
+        /// </summary>
+        public static void ReloadAllEvents()
+        {
+            // Clear database cache
+            Database.DatabaseManager.World.ClearAllCachedEvents();
+
+            // Clear and reload Events dictionary
+            Events.Clear();
+            var events = Database.DatabaseManager.World.GetAllEvents();
+            foreach (var evnt in events)
+            {
+                Events.Add(evnt.Name, evnt);
+            }
+            log.Debug($"[EventManager] Reloaded {Events.Count} events from database");
+        }
+
         public static bool StartEvent(string e, WorldObject source, WorldObject target)
         {
             var eventName = GetEventName(e);
