@@ -3730,24 +3730,26 @@ namespace ACE.Server.Command.Handlers
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all quest caches.");
         }
 
-        [CommandHandler("clearevent", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Clears a cached event by name", "<eventname>")]
+        [CommandHandler("clearevent", AccessLevel.Developer, CommandHandlerFlag.None, 1, "Reloads an event from database", "<eventname>")]
         public static void HandleEventClear(Session session, params string[] parameters)
         {
-            var cleared = DatabaseManager.World.ClearCachedEvent(parameters[0]);
-            if (cleared)
+            var eventName = parameters[0];
+            var reloaded = Managers.EventManager.ReloadEvent(eventName);
+            if (reloaded)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' cleared from cache");
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared event cache for '{parameters[0]}'.");
+                var state = Managers.EventManager.GetEventStatus(eventName);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' reloaded from database (State: {state})");
+              PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared event cache for '{parameters[0]}'.");
             }
             else
-                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{parameters[0]}' was not in cache");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' not found in database");
         }
 
-        [CommandHandler("clearallevents", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Clears all cached events")]
+        [CommandHandler("clearallevents", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Reloads all events from database")]
         public static void HandleEventClearAll(Session session, params string[] parameters)
         {
-            DatabaseManager.World.ClearAllCachedEvents();
-            CommandHandlerHelper.WriteOutputInfo(session, "All events cleared from cache");
+            Managers.EventManager.ReloadAllEvents();
+            CommandHandlerHelper.WriteOutputInfo(session, $"All events reloaded from database ({Managers.EventManager.Events.Count} events)");
             PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} cleared all event caches.");
         }
 
