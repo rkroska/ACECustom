@@ -3,6 +3,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
+using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
 using System.Collections.Generic;
@@ -20,7 +21,12 @@ namespace ACE.Server.WorldObjects
         private WorldObject CorrectStatue { get; set; }
         private Position CheckLocation { get; set; }
         private Random random { get; } = new();
+        public DateTime LastTickTime { get; set; } = DateTime.UtcNow;
+        public DateTime LastUCMCheckTime { get; set; } = DateTime.UnixEpoch;
 
+        /// <summary>
+        /// Spawns the WorldObject for the statue and returns it.
+        /// </summary>
         private static WorldObject MakeStatue()
         {
             WorldObject statue = WorldObjectFactory.CreateNewWorldObject((uint)ServerConfig.ucm_check_statue_wcid.Value);
@@ -29,22 +35,25 @@ namespace ACE.Server.WorldObjects
             statue.ItemType = ItemType.Misc;
             statue.ItemUseable = Usable.RemoteNeverWalk;
             statue.RadarColor = RadarColor.Yellow;
-            statue.Stuck = true;
             statue.Ethereal = true;
             statue.Attackable = false;
+            statue.Invincible = true;
+            statue.AllowEdgeSlide = false;
+            statue.Static = true;
+            statue.IsFrozen = true;
             statue.Name = "Arcane Test Statue";
             return statue;
         }
 
-        // Returns true if the UCM check was started.
+        /// <summary>
+        /// Attempts to start a UCM check and returns true if it was started successfully.
+        /// </summary>
         public bool Start(Player player)
         {
             if (IsChecking) return false;
-
             IsChecking = true;
             CheckLocation = new Position(player.Location);
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
-            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
 
             // N, E, S, W relative or absolute doesn't matter too much, we'll use absolute cardinal offsets
             // Assuming Location.Position.X/Y are coordinates
@@ -68,7 +77,7 @@ namespace ACE.Server.WorldObjects
                 var spawnLoc = new Position(CheckLocation);
                 spawnLoc.PositionX += offsets[i].X;
                 spawnLoc.PositionY += offsets[i].Y;
-                spawnLoc.PositionZ += 1;
+                // We don't set Z - our static will pop onto the landblock surface +/- a few units.
 
                 if (i == correctIndex)
                 {
@@ -103,34 +112,58 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
 
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Your focus is being tested. Use the statue looking AWAY from you within {secondsUntilTimeout} seconds or suffer consequences!", ChatMessageType.Broadcast));
+            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
+            LastUCMCheckTime = DateTime.UtcNow;
+
+            string message = $"Your focus is being tested. Use the statue looking AWAY from you within {secondsUntilTimeout} seconds or suffer consequences!";
+            player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
             return true;
         }
 
-        private void HandleSuccess(Player player)
+        /// <summary>
+        /// If a check is active, passes it.
+        /// </summary>
+        private void PassActiveCheck(Player player)
         {
+            if (!IsChecking) return;
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} passed UCM check at {player.Location}.");
             Stop();
 
         }
-        private void HandleFailure(Player player, bool timeout = false)
+        /// <summary>
+        /// If a check is active, fails it.
+        /// </summary>
+        public void FailActiveCheck(Player player, string reason, bool doTeleport = true)
         {
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat("You failed the focus test!", ChatMessageType.Broadcast));
-            string reason = timeout ? "timed out" : "selected incorrectly";
-            string auditMessage = $"[UCM Check] Player {player.Name} failed UCM check ({reason}).";
-            PlayerManager.BroadcastToAuditChannel(player, auditMessage);
+            if (!IsChecking) return;
+            string message = "You failed the focus test and have been punished!";
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
+            player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
+
+            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.");
             Stop();
-            if (Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
+
+            if (doTeleport)
             {
-                player.Teleport(failTeleLoc);
+                // Try teleporting the player to the configured location.
+                // Fallback to what would happen if the player died.
+                if (Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
+                {
+                    player.Teleport(failTeleLoc);
+                }
+                else
+                {
+                    player.Teleport(player.GetDeathLocation());
+                }
             }
-            else if (player.Sanctuary != null)
-            {
-                player.Teleport(player.Sanctuary);
-            }
+
         }
 
-        // Returns true if the GUID belongs to an active statue, and false otherwise.
+        /// <summary>
+        /// Returns true if the GUID belongs to an active statue, and false otherwise.
+        /// </summary>
         public bool HandleActionUseItem(Player player, uint itemGuid)
         {
             if (!IsChecking) return false;
@@ -139,22 +172,48 @@ namespace ACE.Server.WorldObjects
 
             if (CorrectStatue != null && itemGuid == CorrectStatue.Guid.Full)
             {
-                HandleSuccess(player);
+                PassActiveCheck(player);
             }
             else
             {
-                HandleFailure(player);
+                FailActiveCheck(player, "selected incorrectly");
             }
             return true;
         }
 
+        /// <summary>
+        /// Handles random starts of checks and timing out of active checks. For use by Player.Tick(). 
+        /// </summary>
         public void Tick(Player player)
         {
-            if (!IsChecking) return;
+            DateTime now = DateTime.UtcNow;
+            TimeSpan sinceLastTick = now - LastTickTime;
+            LastTickTime = now;
 
-            if (DateTime.UtcNow > Timeout)
+            if (!IsChecking)
             {
-                HandleFailure(player, true);
+                // If player jumping or teleporting, don't start a check!
+                if (player.IsJumping || player.Teleporting) return;
+
+                // If not in a valid landblock, not eligible for a check.
+                ushort landblockId = (ushort)player.Location.Landblock;
+                if (!LandblockCollections.ValleyOfDeathLandblocks.Contains(landblockId) && !LandblockCollections.ThaelarynIslandLandblocks.Contains(landblockId)) return;
+
+                // If not past the cooldown period since the last check, not eligible for a check.
+                if (now < LastUCMCheckTime.AddSeconds(ServerConfig.ucm_check_cooldown_seconds.Value)) return;
+
+                // Calculate the true probability of at least one trigger occurring over the elapsed time.
+                // Formula: 1 - (1 - chancePerSecond)^TotalSeconds.
+                // Note: ucm_check_spawn_chance is configured as a percentage between 0 and 1.
+                double chancePerSec = Math.Clamp(ServerConfig.ucm_check_spawn_chance.Value, 0, 1);
+                double probOverElapsed = 1.0 - Math.Pow(1.0 - chancePerSec, sinceLastTick.TotalSeconds);
+                if (random.NextDouble() < probOverElapsed) Start(player);
+                return;
+            }
+
+            if (now > Timeout)
+            {
+                FailActiveCheck(player, "timed out");
                 return;
             }
 
@@ -167,7 +226,10 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public void Stop()
+        /// <summary>
+        /// Stops an active check and resets state.
+        /// </summary>
+        private void Stop()
         {
             IsChecking = false;
             CheckLocation = null;

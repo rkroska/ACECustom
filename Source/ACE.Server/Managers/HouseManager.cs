@@ -304,7 +304,7 @@ namespace ACE.Server.Managers
             if (coords == null)
             {
                 // apartment slumlord?
-                if (ApartmentBlocks.TryGetValue(position.Landblock, out var apartmentBlock))
+                if (LandblockCollections.ApartmentBlocks.TryGetValue((ushort)position.Landblock, out var apartmentBlock))
                     coords = $"{apartmentBlock} - ";
                 else
                     log.Error($"[HOUSE] HouseManager.GetCoords({position}) - couldn't find apartment block");
@@ -785,64 +785,6 @@ namespace ACE.Server.Managers
                 SlumlordCallbacks.Remove(slumlord.Guid.Full);
             }
         }
-
-        /// <summary>
-        /// A mapping of apartment landblocks => apartment complex names
-        /// </summary>
-        public static Dictionary<uint, string> ApartmentBlocks = new Dictionary<uint, string>()
-        {
-            // currently used for apartment deeds
-            { 0x5360, "Sanctum Residential Halls - Alvan Court" },
-            { 0x5361, "Sanctum Residential Halls - Caerna Dwellings" },
-            { 0x5362, "Sanctum Residential Halls - Illsin Veranda" },
-            { 0x5363, "Sanctum Residential Halls - Marin Court" },
-            { 0x5364, "Sanctum Residential Halls - Ruadnar Court" },
-            { 0x5365, "Sanctum Residential Halls - Senmai Court" },
-            { 0x5366, "Sanctum Residential Halls - Sigil Veranda" },
-            { 0x5367, "Sanctum Residential Halls - Sorveya Court" },
-            { 0x5368, "Sanctum Residential Halls - Sylvan Dwellings" },
-            { 0x5369, "Sanctum Residential Halls - Treyval Veranda" },
-            { 0x7200, "Atrium Residential Halls - Winthur Gate" },
-            { 0x7300, "Atrium Residential Halls - Larkspur Gardens" },
-            { 0x7400, "Atrium Residential Halls - Mellas Court" },
-            { 0x7500, "Atrium Residential Halls - Vesper Gate" },
-            { 0x7600, "Atrium Residential Halls - Gajin Dwellings" },
-            { 0x7700, "Atrium Residential Halls - Valorya Gate" },
-            { 0x7800, "Atrium Residential Halls - Heartland Yard" },
-            { 0x7900, "Atrium Residential Halls - Ivory Gate" },
-            { 0x7A00, "Atrium Residential Halls - Alphas Court" },
-            { 0x7B00, "Atrium Residential Halls - Hasina Gardens" },
-            { 0x7C00, "Oriel Residential Halls - Sorac Gate" },
-            { 0x7D00, "Oriel Residential Halls - Maru Veranda" },
-            { 0x7E00, "Oriel Residential Halls - Forsythian Gardens" },
-            { 0x7F00, "Oriel Residential Halls - Vindalan Dwellings" },
-            { 0x8000, "Oriel Residential Halls - Syrah Dwellings" },
-            { 0x8100, "Oriel Residential Halls - Allain Court" },
-            { 0x8200, "Oriel Residential Halls - White Lotus Gate" },
-            { 0x8300, "Oriel Residential Halls - Autumn Moon Gardens" },
-            { 0x8400, "Oriel Residential Halls - Trellyn Gardens" },
-            { 0x8500, "Oriel Residential Halls - Endara Gate" },
-            { 0x8600, "Haven Residential Halls - Celcynd Grotto" },
-            { 0x8700, "Haven Residential Halls - Trothyr Hollow" },
-            { 0x8800, "Haven Residential Halls - Jojii Gardens" },
-            { 0x8900, "Haven Residential Halls - Cedraic Court" },
-            { 0x8A00, "Haven Residential Halls - Ben Ten Lodge" },
-            { 0x8B00, "Haven Residential Halls - Dulok Court" },
-            { 0x8C00, "Haven Residential Halls - Crescent Moon Veranda" },
-            { 0x8D00, "Haven Residential Halls - Jade Gate" },
-            { 0x8E00, "Haven Residential Halls - Ispar Yard" },
-            { 0x8F00, "Haven Residential Halls - Xao Wu Gardens" },
-            { 0x9000, "Victory Residential Halls - Accord Veranda" },
-            { 0x9100, "Victory Residential Halls - Candeth Court" },
-            { 0x9200, "Victory Residential Halls - Celdiseth Court" },
-            { 0x9300, "Victory Residential Halls - Festivus Court" },
-            { 0x9400, "Victory Residential Halls - Hibiscus Gardens" },
-            { 0x9500, "Victory Residential Halls - Meditation Gardens" },
-            { 0x9600, "Victory Residential Halls - Setera Gardens" },
-            { 0x9700, "Victory Residential Halls - Spirit Gate" },
-            { 0x9800, "Victory Residential Halls - Triumphal Gardens" },
-            { 0x9900, "Victory Residential Halls - Wilamil Court" },
-        };
 
         /// <summary>
         /// Pay rent for a house

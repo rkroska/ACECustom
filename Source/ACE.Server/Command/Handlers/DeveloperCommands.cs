@@ -2776,7 +2776,7 @@ namespace ACE.Server.Command.Handlers
             {
                 Console.WriteLine($"Dungeon landblock");
 
-                if (!HouseManager.ApartmentBlocks.ContainsKey(session.Player.Location.Landblock))
+                if (!LandblockCollections.ApartmentBlocks.ContainsKey((ushort)session.Player.Location.Landblock))
                     return;
             }
             else

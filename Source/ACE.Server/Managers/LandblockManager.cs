@@ -141,15 +141,17 @@ namespace ACE.Server.Managers
                     continue;
                 }
 
-                if (uint.TryParse(preloadLandblock.Id, NumberStyles.HexNumber, CultureInfo.CurrentCulture, out uint landblock))
+                if (uint.TryParse(preloadLandblock.Id, NumberStyles.HexNumber, CultureInfo.CurrentCulture, out uint rawLandblock))
                 {
+                    ushort landblock = (ushort)(rawLandblock > 0xFFFF ? rawLandblock >> 16 : rawLandblock);
+
                     if (landblock == 0)
                     {
                         switch (preloadLandblock.Description)
                         {
                             case "Apartment Landblocks":
                                 log.InfoFormat("Preloading landblock group: {0}, IncludeAdjacents = {1}, Permaload = {2}", preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
-                                foreach (var apt in apartmentLandblocks)
+                                foreach (var apt in LandblockCollections.ApartmentBlocks.Keys)
                                     PreloadLandblock(apt, preloadLandblock);
                                 break;
                         }
@@ -160,67 +162,12 @@ namespace ACE.Server.Managers
             }
         }
 
-        private static void PreloadLandblock(uint landblock, PreloadedLandblocks preloadLandblock)
+        private static void PreloadLandblock(ushort landblock, PreloadedLandblocks preloadLandblock)
         {
-            var landblockID = new LandblockId(landblock);
+            var landblockID = new LandblockId((uint)landblock << 16 | 0xFFFF);
             GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, null, preloadLandblock.Permaload);
             log.DebugFormat("Landblock {0:X4}, ({1}) preloaded. IncludeAdjacents = {2}, Permaload = {3}", landblockID.Landblock, preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
         }
-
-        private static readonly uint[] apartmentLandblocks =
-        {
-            0x7200FFFF,
-            0x7300FFFF,
-            0x7400FFFF,
-            0x7500FFFF,
-            0x7600FFFF,
-            0x7700FFFF,
-            0x7800FFFF,
-            0x7900FFFF,
-            0x7A00FFFF,
-            0x7B00FFFF,
-            0x7C00FFFF,
-            0x7D00FFFF,
-            0x7E00FFFF,
-            0x7F00FFFF,
-            0x8000FFFF,
-            0x8100FFFF,
-            0x8200FFFF,
-            0x8300FFFF,
-            0x8400FFFF,
-            0x8500FFFF,
-            0x8600FFFF,
-            0x8700FFFF,
-            0x8800FFFF,
-            0x8900FFFF,
-            0x8A00FFFF,
-            0x8B00FFFF,
-            0x8C00FFFF,
-            0x8D00FFFF,
-            0x8E00FFFF,
-            0x8F00FFFF,
-            0x9000FFFF,
-            0x9100FFFF,
-            0x9200FFFF,
-            0x9300FFFF,
-            0x9400FFFF,
-            0x9500FFFF,
-            0x9600FFFF,
-            0x9700FFFF,
-            0x9800FFFF,
-            0x9900FFFF,
-            0x5360FFFF,
-            0x5361FFFF,
-            0x5362FFFF,
-            0x5363FFFF,
-            0x5364FFFF,
-            0x5365FFFF,
-            0x5366FFFF,
-            0x5367FFFF,
-            0x5368FFFF,
-            0x5369FFFF
-        };
-
 
         /// <summary>
         /// Loads landblocks when they are needed

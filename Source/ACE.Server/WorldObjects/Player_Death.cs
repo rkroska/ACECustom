@@ -74,8 +74,6 @@ namespace ACE.Server.WorldObjects
             if (Fellowship != null)
                 Fellowship.OnDeath(this);
 
-            UCMChecker.Stop();
-
             // if the player's lifestone is in a different landblock, also broadcast their demise to that landblock
             if (ServerConfig.lifestone_broadcast_death.Value && Sanctuary != null && Location.Landblock != Sanctuary.Landblock)
             {
@@ -237,6 +235,9 @@ namespace ACE.Server.WorldObjects
 
             dieChain.AddAction(this, ActionType.PlayerDeath_CreateCorpseAndTeleport, () =>
             {
+                // If the checker is running, fail. Skip the teleport, as they'll already be sent home.
+                UCMChecker.FailActiveCheck(this, "died during test", /*doTeleport=*/false);
+
                 CreateCorpse(topDamager, hadVitae);
 
                 ThreadSafeTeleportOnDeath(); // enter portal space
@@ -262,14 +263,20 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Retrieves the best location to teleport a player to on death.
+        /// </summary>
+        public Position GetDeathLocation()
+        {
+            // teleport to sanctuary or best location
+            return Sanctuary ?? Instantiation ?? Location;
+        }
+
+        /// <summary>
         /// Called when the player enters portal space after dying
         /// </summary>
         public void ThreadSafeTeleportOnDeath()
         {
-            // teleport to sanctuary or best location
-            var newPosition = Sanctuary ?? Instantiation ?? Location;
-
-            WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(ActionType.PlayerDeath_EnqueueTeleport, () =>
+            WorldManager.ThreadSafeTeleport(this, GetDeathLocation(), new ActionEventDelegate(ActionType.PlayerDeath_EnqueueTeleport, () =>
             {
                 // Stand back up
                 SetCombatMode(CombatMode.NonCombat);

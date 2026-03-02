@@ -160,7 +160,7 @@ namespace ACE.Server.WorldObjects
             var location = slumLord.Location.GetMapCoordStr();
             if (location == null)
             {
-                if (!HouseManager.ApartmentBlocks.TryGetValue(slumLord.Location.Landblock, out location))
+                if (!LandblockCollections.ApartmentBlocks.TryGetValue((ushort)slumLord.Location.Landblock, out location))
                     log.Error($"{Name}.GiveDeed() - couldn't find location {slumLord.Location}");
             }
 
