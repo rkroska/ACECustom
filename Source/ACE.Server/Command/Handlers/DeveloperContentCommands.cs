@@ -1005,15 +1005,17 @@ namespace ACE.Server.Command.Handlers.Processors
             ImportSQL(sql_folder + sql_file);
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sql_file}");
 
-            // clear cached event
-            var eventName = sql_file.TrimEnd(".sql");
-            DatabaseManager.World.ClearCachedEvent(eventName);
+            // Get event name from filename (remove .sql extension)
+            var eventName = Path.GetFileNameWithoutExtension(sql_file);
 
-            // load event from db
-            var evt = DatabaseManager.World.GetCachedEvent(eventName);
-
-            if (evt != null)
-                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' reloaded into cache");
+            // Reload event into EventManager
+            if (Managers.EventManager.ReloadEvent(eventName))
+            {
+                var state = Managers.EventManager.GetEventStatus(eventName);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' loaded into EventManager (State: {state})");
+            }
+            else
+                CommandHandlerHelper.WriteOutputInfo(session, $"Event '{eventName}' not found in database after import");
         }
 
         private static void ImportSQLSpell(Session session, string sql_folder, string sql_file)
@@ -2247,12 +2249,34 @@ namespace ACE.Server.Command.Handlers.Processors
                     ctx.Database.ExecuteSqlRaw(sql);
 
                 CommandHandlerHelper.WriteOutputInfo(session, $"Imported {identifier} from discord.");
+
+                // Try to reload as event (if it's an event, this will refresh EventManager)
+                if (Managers.EventManager.ReloadEvent(identifier))
+                {
+                    var state = Managers.EventManager.GetEventStatus(identifier);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Event '{identifier}' loaded into EventManager (State: {state})");
+                }
+
+                // Try to reload as quest
+                DatabaseManager.World.ClearCachedQuest(identifier);
+                var quest = DatabaseManager.World.GetCachedQuest(identifier);
+                if (quest != null)
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Quest '{identifier}' reloaded into cache");
+
+                // If it's a weenie (numeric identifier), clear weenie cache
+                if (uint.TryParse(identifier, out var wcid))
+                {
+                    DatabaseManager.World.ClearCachedWeenie(wcid);
+                    var weenie = DatabaseManager.World.GetWeenie(wcid);
+                    if (weenie != null)
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Weenie {wcid} reloaded into cache");
+                }
             }
             catch (Exception e)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Error importing from discord: {e.Message}");
             }
-            
+
         }
 
         // Alias for import-discord
