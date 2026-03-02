@@ -54,6 +54,10 @@ namespace ACE.Server.Network
 
         public DateTime lastMyQuestsCommandTime;
 
+        // Using int for interlocked.Exchange
+        private int _isTerminated = 0;
+        public bool IsTerminated => Volatile.Read(ref _isTerminated) == 1;
+
         public SessionTerminationDetails PendingTermination { get; set; } = null;
 
         public string BootSessionReason { get; private set; }
@@ -308,7 +312,9 @@ namespace ACE.Server.Network
 
         public void Terminate(SessionTerminationReason reason, OutboundGameMessage message = null, ServerPacket packet = null, string extraReason = "")
         {
-            // TODO: graceful SessionTerminationReason.AccountBooted handling
+            // Atomically update _isTerminated, exiting if it waws already true.
+            // Only the first thread will return an old value of 0 and continue.
+            if (Interlocked.Exchange(ref _isTerminated, 1) == 1) return;
 
             if (packet != null)
             {
