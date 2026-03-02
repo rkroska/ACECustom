@@ -15,93 +15,87 @@ namespace ACE.Server.Entity
 {
     public class Enlightenment
     {
-        // https://asheron.fandom.com/wiki/Enlightenment
-
-        // Reset your character to level 1, losing all experience and luminance but gaining a title, two points in vitality and one point in all of your skills.
-        // In order to be eligible for enlightenment, you must be level 275, Master rank in a Society, and have all luminance auras with the exception of the skill credit auras.
-
-        // As stated in the Spring 2014 patch notes, Enlightenment is a process for the most devoted players of Asheron's Call to continue enhancing characters which have been "maxed out" in terms of experience and abilities.
-        // It was not intended to be a quest that every player would undertake or be interested in.
+        private const int EnlightenmentTokenWcid = 300000;
+        private const int EnlightenmentMedallionWcid = 90000217;
+        private const int EnlightenmentSigilWcid = 300101189;
 
         // Requirements:
-        // - Level 275
-        // - Have all luminance auras (crafting aura included) except the 2 skill credit auras. (20 million total luminance)
-        // - Have mastery rank in a society
-        // - Have 25 unused pack spaces
-        // - Max # of times for enlightenment: 5
-
+        // - Level 275 + 1 per previous enlightenment
+        // - Have all luminance auras (crafting aura included) except the skill credit auras.
+        // - Have mastery rank in a Society.
+        // - Inventory space requirements.
+        //
         // You lose:
-        // - All experience, reverting to level 1.
-        // - All luminance, and luminance auras with the exception of the skill credit auras.
-        // - The ability to use aetheria (until you attain sufficient level and re-open aetheria slots).
-        // - The ability to gain luminance (until you attain level 200 and re-complete Nalicana's Test).
-        // - The ability to equip and use items which have skill and level requirements beyond those of a level 1 character.
-        //   Any equipped items are moved to your pack automatically.
-
-        // You keep:
-        // - All augmentations obtained through Augmentation Gems.
-        // - Skill credits from luminance auras, Aun Ralirea, and Chasing Oswald quests.
-        // - All quest flags with the exception of aetheria and luminance.
-
-        // You gain:
-        // - A new title each time you enlighten
-        // - +2 to vitality
-        // - +1 to all of your skills
-        // - An attribute reset certificate
+        // - Your level, which reverts to 1.
+        // - Skills, which revert to their base state.
+        // - Any items that are required for enlightenment, as per tier requirements. 
+        // - Enchantments / spells (you are dispelled).
+        //
+        // You KEEP:
+        // - All unspent experience.
+        // - All stats and augmentations.
+        // - Learned spells.
+        //
+        // You GAIN:
+        // - +1 to enlightenment property (used for calculating dynamic bonuses).
+        // - +2 Vitality (via enlightenment property calculation).
+        // - +1 to all skills (via enlightenment property calculation).
 
         public static void HandleEnlightenment(Player player)
         {
-            if (!VerifyRequirements(player))
-                return;
-
-            DequipAllItems(player);
-
-            RemoveFromFellowships(player);
+            if (!VerifyRequirements(player)) return;
 
             player.SendMotionAsCommands(MotionCommand.MarketplaceRecall, MotionStance.NonCombat);
 
             var startPos = new ACE.Entity.Position(player.Location);
-            ActionChain enlChain = new ActionChain();
+            ActionChain enlChain = new();
             enlChain.AddDelaySeconds(14);
 
-            // Then do teleport
             player.IsBusy = true;
             enlChain.AddAction(player, ActionType.Enlightenment_DoEnlighten, () =>
             {
                 player.IsBusy = false;
                 var endPos = new ACE.Entity.Position(player.Location);
+
+                // Attempt to enlighten. This involves checking distance and luminance.
+                // Tokens / Medallions / Sigils are not checked but should be present due to validation running first.
                 if (startPos.SquaredDistanceTo(endPos) > Player.RecallMoveThresholdSq)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have moved too far during the enlightenment animation!", ChatMessageType.Broadcast));
                     return;
                 }
 
-                player.ThreadSafeTeleportOnDeath();
+                // Re-validate since 14 seconds have passed.
+                if (!VerifyRequirements(player)) return;
+
                 if (!SpendLuminance(player))
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to enlighten!", ChatMessageType.Broadcast));
                     return;
                 }
-                if (player.Enlightenment + 1 > 5 && player.Enlightenment < 150)
+                var targetEnlightenment = player.Enlightenment + 1;
+                if (targetEnlightenment > 5 && targetEnlightenment <= 150)
                 {
                     RemoveTokens(player);
                 }
-                else if
-                (player.Enlightenment >= 150 && player.Enlightenment < 300)
+                else if (targetEnlightenment > 150 && targetEnlightenment <= 300)
                 {
                     RemoveMedallion(player);
                 }
-                else if
-                (player.Enlightenment >= 300)
+                else if (targetEnlightenment > 300)
                 {
                     RemoveSigil(player);
                 }
-                RemoveAbility(player);
+
+                // Enlightenment can proceed.
+                DequipAllItems(player);
+                RemoveFromFellowships(player);
+                player.ThreadSafeTeleportOnDeath();
+                RemoveSociety(player);
+                RemoveSkills(player);
+                RemoveLevel(player);
+                RemoveAllSpells(player);
                 AddPerks(player);
-                if (player.Enlightenment >= 25)
-                {
-                    DequipAllItems(player);
-                }
                 player.SaveBiotaToDatabase();
             });
 
@@ -110,7 +104,7 @@ namespace ACE.Server.Entity
 
         }
 
-        public static bool VerifyRequirements(Player player)
+        private static bool VerifyRequirements(Player player)
         {
             if (player.Level < (275 + player.Enlightenment))
             {
@@ -161,12 +155,18 @@ namespace ACE.Server.Entity
             }
 
             var targetEnlightenment = player.Enlightenment + 1;
+            long lumCost = CalculateLuminanceCost(targetEnlightenment);
+            if (player.GetTotalLuminance() < lumCost)
+            {
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {lumCost:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
+                return false;
+            }
 
             //todo: check for trophies that are enl level appropriate
             //first, 1 enlightenment token per enlightenment past 5.
             if (targetEnlightenment > 5 && targetEnlightenment <= 150)
             {
-                var count = player.GetNumInventoryItemsOfWCID(300000); //magic number - EnlightenmentToken
+                var count = player.GetNumInventoryItemsOfWCID(EnlightenmentTokenWcid);
                 if (count < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Tokens to continue.", ChatMessageType.Broadcast));
@@ -192,27 +192,9 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (targetEnlightenment > 50 && targetEnlightenment <= 150)
+            if (targetEnlightenment > 150 && targetEnlightenment <= 300)
             {
-                var baseLumCost = ServerConfig.enl_50_base_lum_cost.Value;
-                long reqLum = targetEnlightenment * baseLumCost;
-                if (!VerifyLuminance(player, reqLum))
-                {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
-                    return false;
-                }
-            }
-
-            if (targetEnlightenment > 150 && targetEnlightenment < 300)
-            {
-                var baseLumCost = ServerConfig.enl_150_base_lum_cost.Value;
-                long reqLum150 = targetEnlightenment * baseLumCost;
-                if (!VerifyLuminance(player, reqLum150))
-                {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {reqLum150:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
-                    return false;
-                }
-                var count2 = player.GetNumInventoryItemsOfWCID(90000217); //magic number - EnlightenmentToken
+                var count2 = player.GetNumInventoryItemsOfWCID(EnlightenmentMedallionWcid);
                 if (count2 < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
@@ -227,29 +209,7 @@ namespace ACE.Server.Entity
 
             if (targetEnlightenment > 300)
             {
-                var baseLumCost = (decimal)ServerConfig.enl_300_base_lum_cost.Value;
-
-                // how far past 300 we’re going
-                int over = targetEnlightenment - 300;
-
-                // step increases begin AFTER the first 50 levels
-                // 301–350 => steps = 0 (1.0×)
-                // 351–400 => steps = 1 (1.5×)
-                // 401–450 => steps = 2 (2.0×), etc.
-                int steps = (over - 1) / 50;         // integer division
-                decimal costModifier = 1.0m + (0.5m * steps);
-
-                long reqLum300 = (long)Math.Ceiling((targetEnlightenment * baseLumCost) * costModifier);
-
-                if (!VerifyLuminance(player, reqLum300))
-                {
-                    player.Session.Network.EnqueueSend(
-                        new GameMessageSystemChat($"You must have {reqLum300:N0} luminance to enlighten to level {targetEnlightenment}.",
-                        ChatMessageType.Broadcast));
-                    return false;
-                }
-
-                var count2 = player.GetNumInventoryItemsOfWCID(300101189); // EnlightenmentSigil
+                var count2 = player.GetNumInventoryItemsOfWCID(EnlightenmentSigilWcid);
                 if (count2 < player.Enlightenment + 1 - 5)
                 {
                     player.Session.Network.EnqueueSend(
@@ -269,27 +229,22 @@ namespace ACE.Server.Entity
             return true;
         }
 
-        public static bool VerifyLuminance(Player player, long reqLum)
-        {
-            return player.BankedLuminance >= reqLum;
-        }
-
-        public static bool VerifySocietyMaster(Player player)
+        private static bool VerifySocietyMaster(Player player)
         {
             return player.SocietyRankCelhan == 1001 || player.SocietyRankEldweb == 1001 || player.SocietyRankRadblo == 1001;
         }
 
-        public static bool VerifyParagonCompleted(Player player)
+        private static bool VerifyParagonCompleted(Player player)
         {
             return player.QuestManager.GetCurrentSolves("ParagonEnlCompleted") >= 1;
         }
 
-        public static bool VerifyParagonArmorCompleted(Player player)
+        private static bool VerifyParagonArmorCompleted(Player player)
         {
             return player.QuestManager.GetCurrentSolves("ParagonArmorCompleted") >= 1;
         }
 
-        public static bool VerifyLumAugs(Player player)
+        private static bool VerifyLumAugs(Player player)
         {
             var lumAugCredits = 0;
 
@@ -308,12 +263,12 @@ namespace ACE.Server.Entity
             return lumAugCredits == 65;
         }
 
-        public static void RemoveFromFellowships(Player player)
+        private static void RemoveFromFellowships(Player player)
         {
             player.FellowshipQuit(false);
         }
 
-        public static void DequipAllItems(Player player)
+        private static void DequipAllItems(Player player)
         {
             var equippedObjects = player.EquippedObjects.Keys.ToList();
 
@@ -321,65 +276,59 @@ namespace ACE.Server.Entity
                 player.HandleActionPutItemInContainer(equippedObject.Full, player.Guid.Full, 0);
         }
 
-        public static void RemoveAllSpells(Player player)
+        private static void RemoveAllSpells(Player player)
         {
             player.EnchantmentManager.DispelAllEnchantments();
         }
 
-        public static void RemoveAbility(Player player)
+        private static void RemoveTokens(Player player)
         {
-            RemoveSociety(player);
-            //RemoveLuminance(player);
-            RemoveSkills(player);
-            RemoveLevel(player);
-            RemoveAllSpells(player);
+            player.TryConsumeFromInventoryWithNetworking(EnlightenmentTokenWcid, player.Enlightenment + 1 - 5);
         }
 
-        public static void RemoveTokens(Player player)
+        private static void RemoveMedallion(Player player)
         {
-            player.TryConsumeFromInventoryWithNetworking(300000, player.Enlightenment + 1 - 5);
+            player.TryConsumeFromInventoryWithNetworking(EnlightenmentMedallionWcid, player.Enlightenment + 1 - 5);
         }
 
-        public static void RemoveMedallion(Player player)
+        private static void RemoveSigil(Player player)
         {
-            player.TryConsumeFromInventoryWithNetworking(90000217, player.Enlightenment + 1 - 5);
+            player.TryConsumeFromInventoryWithNetworking(EnlightenmentSigilWcid, player.Enlightenment + 1 - 5);
         }
 
-        public static void RemoveSigil(Player player)
+        private static bool SpendLuminance(Player player)
         {
-            player.TryConsumeFromInventoryWithNetworking(300101189, player.Enlightenment + 1 - 5);
+            int targetEnlightenment = player.Enlightenment + 1;
+            long lumCost = CalculateLuminanceCost(targetEnlightenment);
+            return player.SpendLuminance(lumCost);
         }
 
-        public static bool SpendLuminance(Player player)
+        // Calculates the lum needed for enlightening.
+        private static long CalculateLuminanceCost(int targetEnlightenment)
         {
-            if (player.Enlightenment + 1 > 50 && player.Enlightenment < 150)
-            {
-                var baseLumCost = ServerConfig.enl_50_base_lum_cost.Value;
-                var targetEnlightenment = player.Enlightenment + 1;
-                long reqLum = targetEnlightenment * baseLumCost;
-                return player.SpendLuminance(reqLum);
-            }
+            // From 1-50: 0
+            if (targetEnlightenment <= 50)
+                return 0;
 
-            else if (player.Enlightenment + 1 > 150 && player.Enlightenment < 300)
-            {
-                var baseLumCost = ServerConfig.enl_150_base_lum_cost.Value;
-                var targetEnlightenment = player.Enlightenment + 1;
-                long reqLum150 = targetEnlightenment * baseLumCost;
-                return player.SpendLuminance(reqLum150);
-            }
+            // From 51-150: use the first threshold config
+            if (targetEnlightenment <= 150)
+                return targetEnlightenment * ServerConfig.enl_50_base_lum_cost.Value;
 
-            else if (player.Enlightenment + 1 > 300)
-            {
-                var baseLumCost = ServerConfig.enl_300_base_lum_cost.Value;
-                var targetEnlightenment = player.Enlightenment + 1;
-                long reqLum300 = targetEnlightenment * baseLumCost;
-                return player.SpendLuminance(reqLum300);
-            }
-            return true;
+            // From 151-300: use the second threshold config
+            if (targetEnlightenment <= 300)
+                return targetEnlightenment * ServerConfig.enl_150_base_lum_cost.Value;
 
+            // For 301+, use the third threshold config but apply a multiplier every 50 levels.
+            // 301–350 => steps = 0 (1.0×)
+            // 351–400 => steps = 1 (1.5×)
+            // 401–450 => steps = 2 (2.0×), etc.
+            int over = targetEnlightenment - 300;
+            int steps = (over - 1) / 50;         // integer division
+            decimal costModifier = 1.0m + (0.5m * steps);
+            return (long)Math.Ceiling((targetEnlightenment * ServerConfig.enl_300_base_lum_cost.Value) * costModifier);
         }
 
-        public static void RemoveSociety(Player player)
+        private static void RemoveSociety(Player player)
         {
             // Leave society alone if server prop is false
             if (ServerConfig.enl_removes_society.Value)
@@ -401,88 +350,25 @@ namespace ACE.Server.Entity
 
                 player.Faction1Bits = null;
                 player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Faction1Bits, 0));
-                //player.SocietyRankCelhan = null;
-                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankCelhan, 0));
-                //player.SocietyRankEldweb = null;
-                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankEldweb, 0));
-                //player.SocietyRankRadblo = null;
-                //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.SocietyRankRadblo, 0));
             }
         }
 
-        public static void RemoveLevel(Player player)
+        private static void RemoveLevel(Player player)
         {
             player.TotalExperience = 0; player.TotalExperienceDouble = 0;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.TotalExperience, player.TotalExperience ?? 0));
-            //player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyFloat(player, PropertyFloat.TotalExperienceDouble, player.TotalExperienceDouble ?? 0));
-
+            
             player.Level = 1;
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.Level, player.Level ?? 0));
         }
 
-        public static void RemoveAetheria(Player player)
+        private static void RemoveSkills(Player player)
         {
-            player.QuestManager.Erase("EFULNorthManaFieldUsed");
-            player.QuestManager.Erase("EFULSouthManaFieldUsed");
-            player.QuestManager.Erase("EFULEastManaFieldUsed");
-            player.QuestManager.Erase("EFULWestManaFieldUsed");
-            player.QuestManager.Erase("EFULCenterManaFieldUsed");
-
-            player.QuestManager.Erase("EFMLNorthManaFieldUsed");
-            player.QuestManager.Erase("EFMLSouthManaFieldUsed");
-            player.QuestManager.Erase("EFMLEastManaFieldUsed");
-            player.QuestManager.Erase("EFMLWestManaFieldUsed");
-            player.QuestManager.Erase("EFMLCenterManaFieldUsed");
-
-            player.QuestManager.Erase("EFLLNorthManaFieldUsed");
-            player.QuestManager.Erase("EFLLSouthManaFieldUsed");
-            player.QuestManager.Erase("EFLLEastManaFieldUsed");
-            player.QuestManager.Erase("EFLLWestManaFieldUsed");
-            player.QuestManager.Erase("EFLLCenterManaFieldUsed");
-
-            player.AetheriaFlags = AetheriaBitfield.None;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AetheriaBitfield, 0));
-
-            player.SendMessage("Your mastery of Aetheric magics fades.", ChatMessageType.Broadcast);
-        }
-
-        public static void RemoveAttributes(Player player)
-        {
-            var propertyCount = Enum.GetNames(typeof(PropertyAttribute)).Length;
-            for (var i = 1; i < propertyCount; i++)
+            foreach (Skill skill in Enum.GetValues<Skill>())
             {
-                var attribute = (PropertyAttribute)i;
-
-                player.Attributes[attribute].Ranks = 0;
-                player.Attributes[attribute].ExperienceSpent = 0;
-                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateAttribute(player, player.Attributes[attribute]));
-            }
-
-            propertyCount = Enum.GetNames(typeof(PropertyAttribute2nd)).Length;
-            for (var i = 1; i < propertyCount; i += 2)
-            {
-                var attribute = (PropertyAttribute2nd)i;
-
-                player.Vitals[attribute].Ranks = 0;
-                player.Vitals[attribute].ExperienceSpent = 0;
-                player.Session.Network.EnqueueSend(new GameMessagePrivateUpdateVital(player, player.Vitals[attribute]));
-            }
-
-            player.SendMessage("Your attribute training fades.", ChatMessageType.Broadcast);
-        }
-
-        public static void RemoveSkills(Player player)
-        {
-            var propertyCount = Enum.GetNames(typeof(Skill)).Length;
-            for (var i = 1; i < propertyCount; i++)
-            {
-                var skill = (Skill)i;
-
+                if (skill == Skill.None) continue;
                 player.ResetSkill(skill, false);
             }
-
-            player.AvailableExperience = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableExperience, 0));
 
             var heritageGroup = DatManager.PortalDat.CharGen.HeritageGroups[(uint)player.Heritage];
             var availableSkillCredits = 0;
@@ -498,52 +384,27 @@ namespace ACE.Server.Entity
             player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
         }
 
-        public static void RemoveLuminance(Player player)
-        {
-            player.AvailableLuminance = 0;
-            player.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(player, PropertyInt64.AvailableLuminance, 0));
-
-            player.SendMessage("Your Luminance fades from your spirit.", ChatMessageType.Broadcast);
-        }
-
-        public static uint AttributeResetCertificate => 46421;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetEnlightenmentRatingBonus(int EnlightenmentAmt)
+        public static int GetEnlightenmentRatingBonus(int enlightenmentAmt)
         {
-            int bonus = 0;
-            for (int x = 0; x < EnlightenmentAmt; x++)
-            {
-                if (x < 10)
-                {
-                    bonus++;
-                }
-                else if (x < 20)
-                {
-                    if (x % 2 == 0)
-                    {
-                        bonus++;
-                    }
-                }
-                else if (x < 50)
-                {
-                    if (x % 5 == 0)
-                    {
-                        bonus++;
-                    }
-                }
-                else
-                {
-                    if (x % 10 == 0)
-                    {
-                        bonus++;
-                    }
-                }
-            }
-            return bonus;
+            // From 1-10: 1 Damage Rating per Enlightenment (Total of 10)
+            if (enlightenmentAmt <= 10)
+                return enlightenmentAmt;
+
+            // From 11-20: 1 Damage Rating per 2 Enlightenments (Total of 5)
+            if (enlightenmentAmt <= 20)
+                return 10 + (enlightenmentAmt - 10) / 2;
+
+            // From 21-50: 1 Damage Rating per 5 Enlightenments (Total of 6)
+            if (enlightenmentAmt <= 50)
+                return 15 + (enlightenmentAmt - 20) / 5;
+
+            // From 51 and beyond: 1 Damage Rating per 10 Enlightenments
+            return 21 + (enlightenmentAmt - 50) / 10;
         }
 
-        public static void AddPerks(Player player)
+        private static void AddPerks(Player player)
         {
             // +1 to all skills
             // this could be handled through InitLevel, since we are always using deltas when modifying that field

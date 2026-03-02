@@ -2593,7 +2593,7 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat($"----------", ChatMessageType.Broadcast));
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"ShareXP: {fellowship.ShareXP}", ChatMessageType.Broadcast));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"EvenShare: {fellowship.EvenShare}", ChatMessageType.Broadcast));
+
 
             session.Network.EnqueueSend(new GameMessageSystemChat($"Distance scale:", ChatMessageType.Broadcast));
 
