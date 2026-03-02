@@ -81,11 +81,19 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Returns the total luminance for the character, the sum of available and banked.
+        /// </summary>
+        public long GetTotalLuminance()
+        {
+            return AvailableLuminance.GetValueOrDefault() + BankedLuminance.GetValueOrDefault();
+        }
+
+        /// <summary>
         /// Spends the amount of luminance specified, deducting it from available luminance
         /// </summary>
         public bool SpendLuminance(long amount)
         {
-
+            if (amount == 0) return true;
             if (!BankedLuminance.HasValue) { BankedLuminance = 0; }
             if (!AvailableLuminance.HasValue) { AvailableLuminance = 0; }
 
