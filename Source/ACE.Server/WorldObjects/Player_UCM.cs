@@ -27,7 +27,6 @@ namespace ACE.Server.WorldObjects
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
 
             Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
-            LastUCMCheckTime = DateTime.UtcNow;
 
             // Generate math problem using single digits (0-9)
             int a = RNG.Next(0, 10);
@@ -38,7 +37,7 @@ namespace ACE.Server.WorldObjects
             int shownAnswer = isRightAnswerForm ? correctAnswer : (correctAnswer + 1);
 
             string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
-            player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (response, timeout) =>
+            bool enqueued = player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (response, timeout) =>
             {
                 if (timeout)
                 {
@@ -53,6 +52,14 @@ namespace ACE.Server.WorldObjects
                     FailActiveCheck(player, "selected incorrectly");
                 }
             }), message);
+
+            if (!enqueued)
+            {
+                IsChecking = false;
+                return false;
+            }
+
+            LastUCMCheckTime = DateTime.UtcNow;
             return true;
         }
 
@@ -64,7 +71,7 @@ namespace ACE.Server.WorldObjects
             if (!IsChecking) return;
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
             PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} passed UCM check at {player.Location}.");
-            Stop();
+            IsChecking = false;
 
         }
         /// <summary>
@@ -78,7 +85,7 @@ namespace ACE.Server.WorldObjects
             player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
 
             PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.");
-            Stop();
+            IsChecking = false;
 
             if (doTeleport)
             {
@@ -131,14 +138,6 @@ namespace ACE.Server.WorldObjects
                 FailActiveCheck(player, "timed out");
                 return;
             }
-        }
-
-        /// <summary>
-        /// Stops an active check and resets state.
-        /// </summary>
-        private void Stop()
-        {
-            IsChecking = false;
         }
     }
 

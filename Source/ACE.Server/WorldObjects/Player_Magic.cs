@@ -277,9 +277,6 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void HandleActionMagicCastUnTargetedSpell(uint spellId)
         {
-            //Console.WriteLine($"{Name}.HandleActionCastUnTargetedSpell({spellId})");
-            LastCombatActionTime = DateTime.UtcNow;
-
             if (CombatMode != CombatMode.Magic)
             {
                 //log.Error($"{Name}.HandleActionMagicCastUnTargetedSpell({spellId}) - CombatMode mismatch {CombatMode}, LastCombatMode {LastCombatMode}");
@@ -328,14 +325,20 @@ namespace ACE.Server.WorldObjects
             if (!VerifySpell(spellId))
                 return;
 
+            var spell = new Spell(spellId);
+            if (spell.IsHarmful)
+            {
+                LastCombatActionTime = DateTime.UtcNow;
+            }
+
             if (RecordCast.Enabled)
-                RecordCast.OnCastUntargetedSpell(new Spell(spellId));
+                RecordCast.OnCastUntargetedSpell(spell);
 
             MagicState.OnCastStart();
 
             StartPos = new Physics.Common.Position(PhysicsObj.Position);
 
-            if (!CreatePlayerSpell(spellId))
+            if (!CreatePlayerSpell(spell))
                 MagicState.OnCastDone();
         }
 
@@ -1148,9 +1151,8 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Method used for handling player untargeted spell casts
         /// </summary>
-        public bool CreatePlayerSpell(uint spellId)
+        private bool CreatePlayerSpell(Spell spell)
         {
-            var spell = new Spell(spellId);
             if (!IsValidSpell(spell))
                 return false;
 
