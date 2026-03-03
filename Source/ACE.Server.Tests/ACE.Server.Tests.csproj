@@ -1,61 +1,43 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
 
     <IsPackable>false</IsPackable>
-
     <Platforms>x64</Platforms>
-
     <Authors>ACEmulator Contributors</Authors>
-
     <Company>ACEmulator</Company>
-
     <Description>Asheron's Call server emulator</Description>
-
     <Copyright>© 2017-2022 ACEmulator Team and Contributors</Copyright>
-
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
-
     <RepositoryUrl>https://github.com/ACEmulator/ACE</RepositoryUrl>
-
     <PackageProjectUrl>https://emulator.ac</PackageProjectUrl>
-
     <RepositoryType>git</RepositoryType>
-
     <Version>1.0.0</Version>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Appveyor.TestLogger" Version="2.0.0" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
-    <PackageReference Include="MSTest.TestAdapter" Version="3.1.1" />
-    <PackageReference Include="MSTest.TestFramework" Version="3.1.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="xunit" Version="2.6.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.4">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.1.0" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.1.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\ACE.Server\ACE.Server.csproj" />
   </ItemGroup>
-
-    <ItemGroup>
-      <None Include="..\..\LICENSE">
-        <Pack>True</Pack>
-        <PackagePath></PackagePath>
-      </None>
-    </ItemGroup>
-
+  <ItemGroup>
+    <None Include="..\..\LICENSE">
+      <Pack>True</Pack>
+      <PackagePath>
+      </PackagePath>
+    </None>
+  </ItemGroup>
   <!-- Run banking tests after build -->
-  <Target Name="RunBankingTests"
-          AfterTargets="Build"
-          Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true' and '$(RunBankingTestsOnBuildInner)' != 'true'">
-    <Exec Command="$(DotNetExe) test &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) --no-build --nologo --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal -p:RunBankingTestsOnBuildInner=true"
-          ContinueOnError="false" />
+  <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true' and '$(RunBankingTestsOnBuildInner)' != 'true'">
+    <Exec Command="$(DotNetExe) test &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) --no-build --nologo --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal -p:RunBankingTestsOnBuildInner=true" ContinueOnError="false" />
   </Target>
-
 </Project>

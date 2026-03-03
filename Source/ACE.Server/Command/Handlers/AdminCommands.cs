@@ -4160,7 +4160,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var objectId = new ObjectGuid((uint)session.Player.CurrentAppraisalTarget);
                 var wo = session.Player.CurrentLandblock?.GetObject(objectId);
-                if (wo is Lock @lock)
+                if (wo is WorldObjects.Lock @lock)
                 {
                     var opening = openIt ? $" Opening {wo.WeenieType}." : "";
                     string lockCode = LockHelper.GetLockCode(wo);
