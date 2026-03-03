@@ -14,7 +14,7 @@ namespace ACE.Server.WorldObjects
     /// </summary>
     public class UCMChecker()
     {
-        private System.Threading.Lock _lock = new();
+        private readonly System.Threading.Lock _lock = new();
         private Random RNG { get; } = new();
         private bool IsChecking { get; set; } = false;
         private DateTime Timeout { get; set; } = DateTime.UnixEpoch;
