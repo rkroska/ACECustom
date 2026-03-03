@@ -48,7 +48,7 @@ namespace ACE.Common.Cryptography
                 for (int i = 0; i < MaximumEffortLevel - g; i++)
                 {
                     xors.Add(CurrentKey);
-                    Next();
+                    CurrentKey = Next();
                     if (CurrentKey == x)
                         return true;
                 }
