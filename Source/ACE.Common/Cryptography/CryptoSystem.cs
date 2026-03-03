@@ -48,7 +48,7 @@ namespace ACE.Common.Cryptography
                 for (int i = 0; i < MaximumEffortLevel - g; i++)
                 {
                     xors.Add(CurrentKey);
-                    ConsumeKey(CurrentKey);
+                    Next();
                     if (CurrentKey == x)
                         return true;
                 }
@@ -60,8 +60,8 @@ namespace ACE.Common.Cryptography
             lock (_lock)
             {
                 xors.Clear();
+                base.ReleaseResources();
             }
-            base.ReleaseResources();
         }
     }
 }
