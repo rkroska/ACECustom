@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
 
     <IsPackable>false</IsPackable>
 
@@ -51,11 +51,8 @@
     </ItemGroup>
 
   <!-- Run banking tests after build -->
-  <Target Name="RunBankingTests"
-          AfterTargets="Build"
-          Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true' and '$(RunBankingTestsOnBuildInner)' != 'true'">
-    <Exec Command="$(DotNetExe) test &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) --no-build --nologo --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal -p:RunBankingTestsOnBuildInner=true"
-          ContinueOnError="false" />
+  <Target Name="RunBankingTests" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' and '$(RunBankingTestsOnBuild)' == 'true' and '$(RunBankingTestsOnBuildInner)' != 'true'">
+    <Exec Command="$(DotNetExe) test &quot;$(MSBuildProjectFullPath)&quot; -c $(Configuration) --no-build --nologo --filter &quot;FullyQualifiedName~PlayerBankTests&quot; --verbosity minimal -p:RunBankingTestsOnBuildInner=true" ContinueOnError="false" />
   </Target>
 
 </Project>
