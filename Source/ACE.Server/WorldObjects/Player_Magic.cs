@@ -140,6 +140,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // Tag the last combat action if the target is a creature and not self.
+            // This is good enough, and is the easiest way to detect an attempt to cast on a mob.
+            if (target is Creature && targetCategory != TargetCategory.Self)
+            {
+                LastCombatActionTime = DateTime.UtcNow;
+            }
+
             MagicState.OnCastStart();
             MagicState.SetWindupParams(targetGuid, spellId, casterItem);
 
@@ -271,6 +278,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionMagicCastUnTargetedSpell(uint spellId)
         {
             //Console.WriteLine($"{Name}.HandleActionCastUnTargetedSpell({spellId})");
+            LastCombatActionTime = DateTime.UtcNow;
 
             if (CombatMode != CombatMode.Magic)
             {

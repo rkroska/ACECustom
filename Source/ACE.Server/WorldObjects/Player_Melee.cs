@@ -65,6 +65,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionTargetedMeleeAttack(uint targetGuid, uint attackHeight, float powerLevel)
         {
             //log.Info($"-");
+            LastCombatActionTime = DateTime.UtcNow;
 
             if (CombatMode != CombatMode.Melee)
             {

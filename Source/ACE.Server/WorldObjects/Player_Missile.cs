@@ -40,6 +40,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionTargetedMissileAttack(uint targetGuid, uint attackHeight, float accuracyLevel)
         {
             //log.Info($"-");
+            LastCombatActionTime = DateTime.UtcNow;
 
             if (CombatMode != CombatMode.Missile)
             {
