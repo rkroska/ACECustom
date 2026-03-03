@@ -1882,7 +1882,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            if (targetPlayer.UCMChecker.IsChecking)
+            if (targetPlayer.UCMChecker.IsCheckInProgress())
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"{targetPlayer.Name} is already undergoing a UCM check.", ChatMessageType.System));
                 return;

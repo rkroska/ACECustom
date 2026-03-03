@@ -8,22 +8,44 @@ using System;
 
 namespace ACE.Server.WorldObjects
 {
-
+    /// <summary>
+    /// Manages the logic for random "focus checks" that can occur for players in certain areas after combat.
+    /// This class is thread-safe.
+    /// </summary>
     public class UCMChecker()
     {
-        public bool IsChecking { get; private set; } = false;
+        private System.Threading.Lock _lock = new();
+        private bool IsChecking { get; set; } = false;
         private DateTime Timeout { get; set; }
         private Random RNG { get; } = new();
         private DateTime LastTickTime { get; set; } = DateTime.UtcNow;
         private DateTime LastUCMCheckTime { get; set; } = DateTime.UnixEpoch;
 
         /// <summary>
+        /// Determines whether a check operation is currently in progress.
+        /// </summary>
+        public bool IsCheckInProgress()
+        {
+            using var scope = _lock.EnterScope();
+            return IsChecking;
+        }
+
+        /// <summary>
         /// Attempts to start a UCM check and returns true if it was started successfully.
         /// </summary>
         public bool Start(Player player)
         {
+            using var scope = _lock.EnterScope();
+            return StartLocked(player);
+        }
+
+        /// <summary>
+        /// Attempts to start a UCM check and returns true if it was started successfully.
+        /// The lock must be held to call this method.
+        /// </summary>
+        private bool StartLocked(Player player)
+        {
             if (IsChecking) return false;
-            IsChecking = true;
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
 
             Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
@@ -39,6 +61,8 @@ namespace ACE.Server.WorldObjects
             string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
             bool enqueued = player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (response, timeout) =>
             {
+                // This callback is executed asynchronously.
+                // The lock has been released at this point.
                 if (timeout)
                 {
                     FailActiveCheck(player, "timed out");
@@ -53,11 +77,7 @@ namespace ACE.Server.WorldObjects
                 }
             }), message);
 
-            if (!enqueued)
-            {
-                IsChecking = false;
-                return false;
-            }
+            if (!enqueued) return false;
 
             LastUCMCheckTime = DateTime.UtcNow;
             return true;
@@ -66,7 +86,17 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If a check is active, passes it.
         /// </summary>
-        private void PassActiveCheck(Player player)
+        public void PassActiveCheck(Player player)
+        {
+            using var scope = _lock.EnterScope();
+            PassActiveCheckLocked(player);
+        }
+
+        /// <summary>
+        /// If a check is active, passes it.
+        /// The lock must be held to call this method.
+        /// </summary>
+        private void PassActiveCheckLocked(Player player)
         {
             if (!IsChecking) return;
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
@@ -74,10 +104,21 @@ namespace ACE.Server.WorldObjects
             IsChecking = false;
 
         }
+
         /// <summary>
         /// If a check is active, fails it.
         /// </summary>
         public void FailActiveCheck(Player player, string reason, bool doTeleport = true)
+        {
+            using var scope = _lock.EnterScope();
+            FailActiveCheckLocked(player, reason, doTeleport);
+        }
+
+        /// <summary>
+        /// If a check is active, fails it.
+        /// The lock must be held to call this method.
+        /// </summary>
+        private void FailActiveCheckLocked(Player player, string reason, bool doTeleport = true)
         {
             if (!IsChecking) return;
             string message = "You failed the focus test and have been punished!";
@@ -108,6 +149,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void Tick(Player player)
         {
+            using var scope = _lock.EnterScope();
             DateTime now = DateTime.UtcNow;
             TimeSpan sinceLastTick = now - LastTickTime;
             LastTickTime = now;
@@ -129,13 +171,13 @@ namespace ACE.Server.WorldObjects
                 // Note: ucm_check_spawn_chance is configured as a percentage between 0 and 1.
                 double chancePerSec = Math.Clamp(ServerConfig.ucm_check_spawn_chance.Value, 0, 1);
                 double probOverElapsed = 1.0 - Math.Pow(1.0 - chancePerSec, sinceLastTick.TotalSeconds);
-                if (RNG.NextDouble() < probOverElapsed) Start(player);
+                if (RNG.NextDouble() < probOverElapsed) StartLocked(player);
                 return;
             }
 
             if (now > Timeout)
             {
-                FailActiveCheck(player, "timed out");
+                FailActiveCheckLocked(player, "timed out");
                 return;
             }
         }
