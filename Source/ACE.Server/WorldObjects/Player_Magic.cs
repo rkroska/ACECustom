@@ -132,7 +132,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var targetCategory = GetTargetCategory(targetGuid, spellId, out var target);
+            var spell = new Spell(spellId);
+            var targetCategory = GetTargetCategory(targetGuid, spell, out var target);
 
             if (target == null || target.Teleporting)
             {
@@ -142,22 +143,22 @@ namespace ACE.Server.WorldObjects
 
             // Tag the last combat action if the target is a creature and not self.
             // This is good enough, and is the easiest way to detect an attempt to cast on a mob.
-            if (target is Creature && targetCategory != TargetCategory.Self)
+            if (spell.IsHarmful && target is Creature && targetCategory != TargetCategory.Self)
             {
                 LastCombatActionTime = DateTime.UtcNow;
             }
 
             MagicState.OnCastStart();
-            MagicState.SetWindupParams(targetGuid, spellId, casterItem);
+            MagicState.SetWindupParams(targetGuid, spell, casterItem);
 
             StartPos = new Physics.Common.Position(PhysicsObj.Position);
 
             if (RecordCast.Enabled)
-                RecordCast.OnCastTargetedSpell(new Spell(spellId), target);
+                RecordCast.OnCastTargetedSpell(spell, target);
 
             if (targetCategory != TargetCategory.WorldObject && targetCategory != TargetCategory.Wielded)
             {
-                if (!CreatePlayerSpell(target, targetCategory, spellId, casterItem))
+                if (!CreatePlayerSpell(target, targetCategory, spell, casterItem))
                     MagicState.OnCastDone();
 
                 return;
@@ -177,7 +178,7 @@ namespace ACE.Server.WorldObjects
                 actionChain.AddAction(this, ActionType.PlayerMagic_FinishCast, () =>
                 {
                     // ensure target still exists
-                    targetCategory = GetTargetCategory(targetGuid, spellId, out target);
+                    targetCategory = GetTargetCategory(targetGuid, spell, out target);
 
                     if (target == null)
                     {
@@ -186,7 +187,7 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
-                    if (!CreatePlayerSpell(target, targetCategory, spellId, casterItem))
+                    if (!CreatePlayerSpell(target, targetCategory, spell, casterItem))
                         MagicState.OnCastDone();
                 });
 
@@ -201,7 +202,7 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine($"{Name}.DoWindup()");
 
             // ensure target still exists
-            var targetCategory = GetTargetCategory(windupParams.TargetGuid, windupParams.SpellId, out var target);
+            var targetCategory = GetTargetCategory(windupParams.TargetGuid, windupParams.Spell, out var target);
 
             if (target == null)
             {
@@ -212,7 +213,7 @@ namespace ACE.Server.WorldObjects
 
             if (!checkAngle || IsWithinAngle(target))
             {
-                if (!CreatePlayerSpell(target, targetCategory, windupParams.SpellId, windupParams.CasterItem))
+                if (!CreatePlayerSpell(target, targetCategory, windupParams.Spell, windupParams.CasterItem))
                     MagicState.OnCastDone();
             }
             else
@@ -225,10 +226,9 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public TargetCategory GetTargetCategory(uint targetGuid, uint spellId, out WorldObject target)
+        private TargetCategory GetTargetCategory(uint targetGuid, Spell spell, out WorldObject target)
         {
             // fellowship spell
-            var spell = new Spell(spellId);
             if ((spell.Flags & SpellFlags.FellowshipSpell) != 0)
             {
                 target = this;
@@ -391,10 +391,8 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
-        public Spell ValidateSpell(uint spellId, bool isWeaponSpell = false)
+        public bool IsValidSpell(Spell spell, bool isWeaponSpell = false)
         {
-            var spell = new Spell(spellId);
-
             if (spell.NotFound)
             {
                 if (spell._spellBase == null)
@@ -407,15 +405,15 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"{spell.Name} spell not implemented, yet!", ChatMessageType.System));
                     SendUseDoneEvent(WeenieError.MagicInvalidSpellType);
                 }
-                return null;
+                return false;
             }
             if (!isWeaponSpell && !HasComponentsForSpell(spell))
             {
                 SendUseDoneEvent(WeenieError.YouDontHaveAllTheComponents);
-                return null;
+                return false;
             }
 
-            return spell;
+            return true;
         }
 
         public bool VerifySpellTarget(Spell spell, WorldObject target)
@@ -755,7 +753,7 @@ namespace ACE.Server.WorldObjects
             if (target != null)
             {
                 // verify target still exists
-                var targetCategory = GetTargetCategory(target.Guid.Full, spell.Id, out target);
+                var targetCategory = GetTargetCategory(target.Guid.Full, spell, out target);
 
                 if (target == null)
                 {
@@ -842,9 +840,9 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        public Physics.Common.Position StartPos { get; set; }
+        private Physics.Common.Position StartPos { get; set; }
 
-        public void DoCastSpell_Inner(Spell spell, WorldObject casterItem, uint manaUsed, WorldObject target, CastingPreCheckStatus castingPreCheckStatus, bool finishCast = true)
+        private void DoCastSpell_Inner(Spell spell, WorldObject casterItem, uint manaUsed, WorldObject target, CastingPreCheckStatus castingPreCheckStatus, bool finishCast = true)
         {
             if (RecordCast.Enabled)
                 RecordCast.Log($"DoCastSpell_Inner()");
@@ -1009,12 +1007,11 @@ namespace ACE.Server.WorldObjects
         /// Method used for handling player targeted spell casts
         /// </summary>
         /// <param name="builtInSpell">If TRUE, casting a built-in spell from a weapon</param>
-        public bool CreatePlayerSpell(WorldObject target, TargetCategory targetCategory, uint spellId, WorldObject casterItem)
+        private bool CreatePlayerSpell(WorldObject target, TargetCategory targetCategory, Spell spell, WorldObject casterItem)
         {
             var creatureTarget = target as Creature;
 
-            var spell = ValidateSpell(spellId, casterItem != null);
-            if (spell == null)
+            if (!IsValidSpell(spell, casterItem != null))
                 return false;
 
             if (!VerifySpellTarget(spell, target))
@@ -1153,8 +1150,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool CreatePlayerSpell(uint spellId)
         {
-            var spell = ValidateSpell(spellId);
-            if (spell == null)
+            var spell = new Spell(spellId);
+            if (!IsValidSpell(spell))
                 return false;
 
             // get player's current magic skill

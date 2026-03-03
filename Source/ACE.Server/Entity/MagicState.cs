@@ -192,9 +192,9 @@ namespace ACE.Server.Entity
                 Player.RecordCast.Log($"Target Location: {CastSpellParams.Target.Location}");
         }
 
-        public void SetWindupParams(uint targetGuid, uint spellId, WorldObject casterItem)
+        public void SetWindupParams(uint targetGuid, Spell spell, WorldObject casterItem)
         {
-            WindupParams = new WindupParams(targetGuid, spellId, casterItem);
+            WindupParams = new WindupParams(targetGuid, spell, casterItem);
         }
 
         public override string ToString()
