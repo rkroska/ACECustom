@@ -79,6 +79,7 @@ namespace ACE.Server.WorldObjects
 
             if (!enqueued) return false;
 
+            IsChecking = true;
             LastUCMCheckTime = DateTime.UtcNow;
             return true;
         }
