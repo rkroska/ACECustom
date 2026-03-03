@@ -15,9 +15,9 @@ namespace ACE.Server.WorldObjects
     public class UCMChecker()
     {
         private System.Threading.Lock _lock = new();
-        private bool IsChecking { get; set; } = false;
-        private DateTime Timeout { get; set; }
         private Random RNG { get; } = new();
+        private bool IsChecking { get; set; } = false;
+        private DateTime Timeout { get; set; } = DateTime.UnixEpoch;
         private DateTime LastTickTime { get; set; } = DateTime.UtcNow;
         private DateTime LastUCMCheckTime { get; set; } = DateTime.UnixEpoch;
 
@@ -46,9 +46,6 @@ namespace ACE.Server.WorldObjects
         private bool StartLocked(Player player)
         {
             if (IsChecking) return false;
-            long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
-
-            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
 
             // Generate math problem using single digits (0-9)
             int a = RNG.Next(0, 10);
@@ -58,6 +55,7 @@ namespace ACE.Server.WorldObjects
             bool isRightAnswerForm = RNG.Next(0, 2) == 0;
             int shownAnswer = isRightAnswerForm ? correctAnswer : (correctAnswer + 1);
 
+            long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
             string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
             bool enqueued = player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (response, timeout) =>
             {
@@ -81,6 +79,7 @@ namespace ACE.Server.WorldObjects
 
             IsChecking = true;
             LastUCMCheckTime = DateTime.UtcNow;
+            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
             return true;
         }
 
