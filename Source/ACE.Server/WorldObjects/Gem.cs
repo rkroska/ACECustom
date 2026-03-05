@@ -83,7 +83,8 @@ namespace ACE.Server.WorldObjects
             if (RareId != null && player.GetCharacterOption(CharacterOption.ConfirmUseOfRareGems) && !confirmed)
             {
                 var msg = $"Are you sure you want to use {Name}?";
-                var confirm = new Confirmation_Custom(player.Guid, () => ActOnUse(activator, true));
+                void onResponse(bool response, bool _) { if (response) { ActOnUse(activator, true); } }
+                var confirm = new Confirmation_Custom(player.Guid, onResponse);
                 if (!player.ConfirmationManager.EnqueueSend(confirm, msg))
                     player.SendWeenieError(WeenieError.ConfirmationInProgress);
                 return;

@@ -164,18 +164,16 @@ namespace ACE.Server.Entity
         }
     }
 
-    public class Confirmation_Custom(ObjectGuid playerGuid, Action action) : Confirmation(playerGuid, ConfirmationType.Yes_No)
+    public class Confirmation_Custom(ObjectGuid playerGuid, Action<bool, bool> action) : Confirmation(playerGuid, ConfirmationType.Yes_No)
     {
-        public Action Action = action;
+        public Action<bool, bool> Action = action;
 
         public override void ProcessConfirmation(bool response, bool timeout = false)
         {
-            if (!response) return;
-
             var player = Player;
             if (player == null) return;
 
-            Action();
+            Action(response, timeout);
         }
     }
 }

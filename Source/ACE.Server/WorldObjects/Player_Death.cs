@@ -235,9 +235,6 @@ namespace ACE.Server.WorldObjects
 
             dieChain.AddAction(this, ActionType.PlayerDeath_CreateCorpseAndTeleport, () =>
             {
-                // If the checker is running, fail. Skip the teleport, as they'll already be sent home.
-                UCMChecker.FailActiveCheck(this, "died during test", /*doTeleport=*/false);
-
                 CreateCorpse(topDamager, hadVitae);
 
                 ThreadSafeTeleportOnDeath(); // enter portal space

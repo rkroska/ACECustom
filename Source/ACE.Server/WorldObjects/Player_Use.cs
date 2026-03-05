@@ -195,13 +195,6 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (UCMChecker.HandleActionUseItem(this, itemGuid))
-            {
-                // The statue belonged to the UCMChecker, so exit regardless.
-                SendUseDoneEvent();
-                return;
-            }
-
             if (item != null)
             {
                 if (item.CurrentLandblock != null && !item.Visibility && item.Guid != LastOpenedContainerId)

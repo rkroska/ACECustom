@@ -39,8 +39,6 @@ namespace ACE.Server.WorldObjects
         /// <param name="accuracyLevel">The 0-1 accuracy bar level</param>
         public void HandleActionTargetedMissileAttack(uint targetGuid, uint attackHeight, float accuracyLevel)
         {
-            //log.Info($"-");
-
             if (CombatMode != CombatMode.Missile)
             {
                 log.Warn($"{Name}.HandleActionTargetedMissileAttack({targetGuid:X8}, {attackHeight}, {accuracyLevel}) - CombatMode mismatch {CombatMode}, LastCombatMode: {LastCombatMode}");
@@ -112,8 +110,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            //log.Info($"{Name}.HandleActionTargetedMissileAttack({targetGuid:X8}, {attackHeight}, {accuracyLevel})");
-
+            LastCombatActionTime = DateTime.UtcNow;
             AttackTarget = target;
             MissileTarget = target;
 
