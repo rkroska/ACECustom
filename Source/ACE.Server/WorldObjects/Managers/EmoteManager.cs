@@ -2070,8 +2070,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2155,8 +2156,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2239,8 +2241,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2323,8 +2326,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2406,8 +2410,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2489,8 +2494,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2572,8 +2578,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2658,8 +2665,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2741,8 +2749,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));
@@ -2824,8 +2833,9 @@ namespace ACE.Server.WorldObjects.Managers
                                     }
                                     else
                                     {
-                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, () =>
+                                        player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (bool response, bool _) =>
                                         {
+                                            if (!response) return;
                                             if (player.BankedLuminance < totalCost)
                                             {
                                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have enough luminance to use this gem. This will require {totalCost:N0} luminance.", ChatMessageType.Broadcast));

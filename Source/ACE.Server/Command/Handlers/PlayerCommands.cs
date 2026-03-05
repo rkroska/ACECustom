@@ -1055,7 +1055,8 @@ namespace ACE.Server.Command.Handlers
             //if(!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_YesNo(session.Player.Guid, session.Player.Guid, "Enlightenment"), "Are you certain that you'd like to Englighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes."))
             //    return;
             var message = "Are you certain that you'd like to Enlighten? You will lose all unspent experience, unspent Luminance not in your bank, and all skills. You will retain all attributes.";
-            var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => Enlightenment.HandleEnlightenment(session.Player)), message);
+            void onResponse(bool response, bool _) { if (response) { Enlightenment.HandleEnlightenment(session.Player); } }
+            var confirm = session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), message);
 
         }
 
@@ -1651,7 +1652,8 @@ namespace ACE.Server.Command.Handlers
                 var loc = HouseManager.GetCoords(keepHouse.SlumLord.Location);
 
                 var msg = $"Are you sure you want to keep the {houseType} at\n{loc}?";
-                if (!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => HandleHouseSelect(session, true, parameters)), msg))
+                void onResponse(bool response, bool _) { if (response) { HandleHouseSelect(session, true, parameters); } }
+                if (!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), msg))
                     session.Player.SendWeenieError(WeenieError.ConfirmationInProgress);
                 return;
             }

@@ -1570,7 +1570,8 @@ namespace ACE.Server.Command.Handlers.Processors
 
                 // require confirmation for parent objects
                 var msg = $"Are you sure you want to delete this parent object, and {numChilds} child object{(numChilds != 1 ? "s" : "")}?";
-                if (!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, () => RemoveInstance(session, true)), msg))
+                void onResponse(bool response, bool _) { if (response) { RemoveInstance(session, true); } };
+                if (!session.Player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(session.Player.Guid, onResponse), msg))
                     session.Player.SendWeenieError(WeenieError.ConfirmationInProgress);
                 return;
             }

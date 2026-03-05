@@ -64,12 +64,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void HandleActionTargetedMeleeAttack(uint targetGuid, uint attackHeight, float powerLevel)
         {
-            //log.Info($"-");
-
             if (CombatMode != CombatMode.Melee)
             {
-                //log.Error($"{Name}.HandleActionTargetedMeleeAttack({targetGuid:X8}, {attackHeight}, {powerLevel}) - CombatMode mismatch {CombatMode}, LastCombatMode {LastCombatMode}");
-
                 if (LastCombatMode == CombatMode.Melee)
                     CombatMode = CombatMode.Melee;
                 else
@@ -144,8 +140,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            //log.Info($"{Name}.HandleActionTargetedMeleeAttack({targetGuid:X8}, {attackHeight}, {powerLevel})");
-
+            LastCombatActionTime = DateTime.UtcNow;
             MeleeTarget = creatureTarget;
             AttackTarget = MeleeTarget;
 

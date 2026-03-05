@@ -721,6 +721,7 @@ namespace ACE.Server.WorldObjects
         }
 
         public CombatMode LastCombatMode;
+        public DateTime LastCombatActionTime { get; set; } = DateTime.MinValue;
 
         public static readonly float UseTimeEpsilon = 0.05f;
 
