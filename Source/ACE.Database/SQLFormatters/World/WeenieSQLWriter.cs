@@ -589,6 +589,7 @@ namespace ACE.Database.SQLFormatters.World
 
                         case EmoteType.InqBoolStat:
                         case EmoteType.SetBoolStat:
+                        case EmoteType.SetMyBoolStat:
                             statLabel = $" /* PropertyBool.{(PropertyBool)input[i].Stat.Value} */";
                             break;
 
