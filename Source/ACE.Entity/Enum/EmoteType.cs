@@ -147,6 +147,7 @@ namespace ACE.Entity.Enum
         DecrementMyIntStat            = 138, //Custom - Decrement self's PropertyInt stat
         IncrementMyInt64Stat          = 139, //Custom - Increment self's PropertyInt64 stat
         DecrementMyInt64Stat          = 140, //Custom - Decrement self's PropertyInt64 stat
+        SetMyFloatStat                = 141, //Custom - Sets self's PropertyFloat stat
         RegisterPetSkin               = 150, //Custom - Pet Registry registration
         InqPetRegistryCount           = 151, //Custom - Check pet registry count (uses min/max)
         InqPetRegistryCreatureType    = 152, //Custom - Check if account has any pet of creature type (uses stat field)
