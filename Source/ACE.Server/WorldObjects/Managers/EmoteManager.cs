@@ -543,6 +543,21 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* sets self's PropertyInt stat to a specific amount */
+                case EmoteType.SetMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var newValue = emote.Amount ?? 1; 
+                        
+                        WorldObject.SetProperty(intProperty, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, newValue));
+                    }
+                    break;
+
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 
