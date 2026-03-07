@@ -543,6 +543,28 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* sets self's PropertyBool stat to a specific amount */
+                case EmoteType.SetMyBoolStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var boolProperty = (PropertyBool)emote.Stat;
+                        var newValue = emote.Amount == 0 ? false : true; 
+                        
+                        if (WorldObject is Player pUpdater)
+                        {
+                            pUpdater.UpdateProperty(pUpdater, boolProperty, newValue);
+                            pUpdater.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyBool(pUpdater, boolProperty, newValue));
+                        }
+                        else
+                        {
+                            // fallback for monsters/items executing emotes that don't have UpdateProperty available in the same way
+                            WorldObject.SetProperty(boolProperty, newValue);
+                            WorldObject.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyBool(WorldObject, boolProperty, newValue));
+                        }
+                    }
+                    break;
+
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 
