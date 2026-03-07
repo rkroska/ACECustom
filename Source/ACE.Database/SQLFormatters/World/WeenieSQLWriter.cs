@@ -579,6 +579,7 @@ namespace ACE.Database.SQLFormatters.World
                         case EmoteType.IncrementIntStat:
                         case EmoteType.InqIntStat:
                         case EmoteType.SetIntStat:
+                        case EmoteType.SetMyIntStat:
                             statLabel = $" /* PropertyInt.{(PropertyInt)input[i].Stat.Value} */";
                             break;
 
