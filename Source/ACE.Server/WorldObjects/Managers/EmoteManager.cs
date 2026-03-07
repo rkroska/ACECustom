@@ -543,6 +543,28 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* sets self's PropertyInt64 stat to a specific amount */
+                case EmoteType.SetMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var newValue = emote.Amount64 ?? 1; 
+                        
+                        if (WorldObject is Player pUpdater)
+                        {
+                            pUpdater.UpdateProperty(pUpdater, int64Property, newValue);
+                            pUpdater.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyInt64(pUpdater, int64Property, newValue));
+                        }
+                        else
+                        {
+                            // fallback for monsters/items executing emotes that don't have UpdateProperty available in the same way
+                            WorldObject.SetProperty(int64Property, newValue);
+                            WorldObject.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyInt64(WorldObject, int64Property, newValue));
+                        }
+                    }
+                    break;
+
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 

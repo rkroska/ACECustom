@@ -601,6 +601,7 @@ namespace ACE.Database.SQLFormatters.World
                         case EmoteType.SetInt64Stat:
                         case EmoteType.DecrementInt64Stat:
                         case EmoteType.IncrementInt64Stat:
+                        case EmoteType.SetMyInt64Stat:
                             statLabel = $" /* PropertyInt64.{(PropertyInt64)input[i].Stat.Value} */";
                             break;
 
