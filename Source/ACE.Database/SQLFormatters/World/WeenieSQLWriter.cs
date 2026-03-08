@@ -579,6 +579,7 @@ namespace ACE.Database.SQLFormatters.World
                         case EmoteType.IncrementIntStat:
                         case EmoteType.InqIntStat:
                         case EmoteType.SetIntStat:
+                        case EmoteType.SetMyIntStat:
                             statLabel = $" /* PropertyInt.{(PropertyInt)input[i].Stat.Value} */";
                             break;
 
@@ -589,11 +590,13 @@ namespace ACE.Database.SQLFormatters.World
 
                         case EmoteType.InqBoolStat:
                         case EmoteType.SetBoolStat:
+                        case EmoteType.SetMyBoolStat:
                             statLabel = $" /* PropertyBool.{(PropertyBool)input[i].Stat.Value} */";
                             break;
 
                         case EmoteType.InqFloatStat:
                         case EmoteType.SetFloatStat:
+                        case EmoteType.SetMyFloatStat:
                             statLabel = $" /* PropertyFloat.{(PropertyFloat)input[i].Stat.Value} */";
                             break;
 
@@ -601,6 +604,7 @@ namespace ACE.Database.SQLFormatters.World
                         case EmoteType.SetInt64Stat:
                         case EmoteType.DecrementInt64Stat:
                         case EmoteType.IncrementInt64Stat:
+                        case EmoteType.SetMyInt64Stat:
                             statLabel = $" /* PropertyInt64.{(PropertyInt64)input[i].Stat.Value} */";
                             break;
 
