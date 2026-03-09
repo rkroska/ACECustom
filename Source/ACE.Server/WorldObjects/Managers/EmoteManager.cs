@@ -543,28 +543,6 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
-                /* sets self's PropertyFloat stat to a specific amount */
-                case EmoteType.SetMyFloatStat:
-
-                    if (WorldObject != null && emote.Stat != null)
-                    {
-                        var floatProperty = (PropertyFloat)emote.Stat;
-                        var newValue = emote.Percent ?? 1.0f; 
-                        
-                        if (WorldObject is Player pUpdater)
-                        {
-                            pUpdater.UpdateProperty(pUpdater, floatProperty, newValue);
-                            pUpdater.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyFloat(pUpdater, floatProperty, Convert.ToDouble(newValue)));
-                        }
-                        else
-                        {
-                            // fallback for monsters/items executing emotes that don't have UpdateProperty available in the same way
-                            WorldObject.SetProperty(floatProperty, newValue);
-                            WorldObject.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyFloat(WorldObject, floatProperty, Convert.ToDouble(newValue)));
-                        }
-                    }
-                    break;
-
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 
