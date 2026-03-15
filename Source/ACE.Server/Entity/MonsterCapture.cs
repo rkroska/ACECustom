@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using ACE.Common;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Actions;
@@ -16,12 +17,29 @@ namespace ACE.Server.Entity
     /// <summary>
     /// Monster Capture System - Siphon Lens Implementation
     /// Allows players to capture creature appearances using tiered Siphon Lenses
+    /// 
+    /// Lens Tiers:
+    /// - Tier 1 (Flawed): 5-10% base capture rate
+    /// - Tier 2 (Pristine): 10-20% base capture rate  
+    /// - Tier 3 (Perfect): 15-30% base capture rate
+    /// - Tier 4 (Debug): 100% capture, not consumed (admin only)
+    /// - Tier 5 (Resonance): Second-chance lens for failed shiny captures only
+    /// - Tier 6 (Asheron's): Guaranteed 100% capture, consumed on use
     /// </summary>
     public static class MonsterCapture
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        // Lens tier constants for clarity
+        private const int TIER_FLAWED = 1;
+        private const int TIER_PRISTINE = 2;
+        private const int TIER_PERFECT = 3;
+        private const int TIER_DEBUG = 4;
+        private const int TIER_RESONANCE = 5;
+        private const int TIER_ASHERONS = 6;
         /// <summary>
         /// Siphon Lens System - Capture creature appearance
+        /// Handles all lens tiers including Resonance (second-chance) and Asheron's (guaranteed)
         /// </summary>
         public static void UseCaptureCrystal(Player player, WorldObject crystal)
         {
@@ -36,6 +54,26 @@ namespace ACE.Server.Entity
             if (player?.PhysicsObj?.ObjMaint == null)
             {
                 player?.SendTransientError("Unable to detect nearby creatures.");
+                return;
+            }
+
+            // Get crystal tier early for special lens handling
+            var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? TIER_PRISTINE;
+            var isDebugLens = crystalTier == TIER_DEBUG;
+            var isResonanceLens = crystalTier == TIER_RESONANCE || (crystal.GetProperty(PropertyBool.IsResonanceLens) ?? false);
+            var isAsheronsLens = crystalTier == TIER_ASHERONS || (crystal.GetProperty(PropertyBool.IsGuaranteedCaptureLens) ?? false);
+            
+            // For Resonance Lens: validate that player has a valid failed shiny capture target
+            if (isResonanceLens)
+            {
+                if (!ValidateResonanceLensUse(player, out var resonanceTarget, out var errorMessage))
+                {
+                    player.SendTransientError(errorMessage);
+                    return;
+                }
+                
+                // Use the stored failed shiny target for resonance lens
+                UseResonanceLens(player, crystal, resonanceTarget);
                 return;
             }
             
@@ -74,13 +112,9 @@ namespace ACE.Server.Entity
                 return;
             }
             
-            // Get crystal tier early for debug bypass checks
-            var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
-            var isDebugLens = crystalTier == 4;
-            
-            // Health threshold check (must be below 20% OR under 20 HP) - DEBUG LENS BYPASSES THIS
+            // Health threshold check - Debug and Asheron's Lenses bypass this
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
-            if (!isDebugLens && healthPercent > 0.20f && targetCreature.Health.Current >= 20)
+            if (!isDebugLens && !isAsheronsLens && healthPercent > 0.20f && targetCreature.Health.Current >= 20)
             {
                 player.SendTransientError($"The creature is too strong! Weaken it below 20% health or 20 HP first. (Currently {healthPercent:P0})");
                 return;
@@ -101,7 +135,8 @@ namespace ACE.Server.Entity
             }
             
             // Check for Enraged state (The "One Chance" Rule)
-            if (targetCreature.IsEnraged)
+            // Asheron's Lens can capture enraged creatures
+            if (targetCreature.IsEnraged && !isAsheronsLens)
             {
                 // Check for Admin Override
                 var isAdmin = player.Session.AccessLevel > AccessLevel.Player;
@@ -144,87 +179,239 @@ namespace ACE.Server.Entity
             
             if (success)
             {
-                // Visual effect - Focus Self (white glow)
-                targetCreature.EnqueueBroadcast(new GameMessageScript(
-                    targetCreature.Guid, PlayScript.VisionUpWhite));
+                // Clear any previous failed shiny capture state on success
+                ClearFailedShinyCaptureState(player);
                 
-                // Create siphoned essence BEFORE making creature invulnerable
-                // This way if it fails, creature isn't left stuck
-                var capturedItem = CreateCapturedAppearance(targetCreature, crystal, player);
-                if (capturedItem == null)
-                {
-                    player.SendTransientError("Failed to create siphoned essence!");
-                    return;
-                }
-                
-                // Only make creature invulnerable AFTER successful essence creation
-                targetCreature.Invincible = true;
-                targetCreature.IsBusy = true;
-                targetCreature.SetCombatMode(CombatMode.NonCombat);
-                
-                if (player.TryCreateInInventoryWithNetworking(capturedItem))
-                {
-                    player.SendMessage($"You successfully siphoned the essence of the {targetCreature.Name}!");
-                }
-                else
-                {
-                    // Inventory full - drop the essence on the ground instead
-                    player.SendTransientError("Your inventory is full! The essence drops to the ground.");
-                    capturedItem.Location = new ACE.Entity.Position(player.Location);
-                    capturedItem.EnterWorld();
-                }
-                
-                
-                // Trigger proper creature death after 3 seconds (instead of Destroy)
-                // This ensures quest credit, XP, loot, and generator respawns work correctly
-                var actionChain = new ActionChain();
-                actionChain.AddDelaySeconds(3.0);
-                actionChain.AddAction(targetCreature, ActionType.MonsterCapture_DespawnCreature, () =>
-                {
-                    if (!targetCreature.IsDestroyed && targetCreature.Health.Current > 0)
-                    {
-                        // Record the player as the killer in damage history
-                        targetCreature.DamageHistory.Add(player, DamageType.Health, (uint)targetCreature.Health.Current);
-                        
-                        // Trigger proper death sequence (quest credit, XP, loot, respawn)
-                        // Die() uses DamageHistory.LastDamager and TopDamager internally
-                        targetCreature.OnDeath(targetCreature.DamageHistory.LastDamager, DamageType.Health);
-                        targetCreature.Die(); // Uses public overload
-                    }
-                });
-                actionChain.EnqueueChain();
+                ExecuteCaptureSuccess(player, targetCreature, crystal);
             }
             else
             {
-                // Visual effect - dark burst (opposite of success white glow)
+                // Check if this was a shiny creature - track for Resonance Lens second chance
+                var isShiny = targetCreature.CreatureVariant == CreatureVariant.Shiny;
+                if (isShiny)
+                {
+                    SetFailedShinyCaptureState(player, targetCreature);
+                    player.SendMessage("The shiny creature resisted your capture! You may use a Resonance Lens for a second chance.");
+                }
+                
+                ExecuteCaptureFail(player, targetCreature);
+            }
+        }
+
+        /// <summary>
+        /// Validates that a Resonance Lens can be used (player has a valid failed shiny capture)
+        /// </summary>
+        private static bool ValidateResonanceLensUse(Player player, out Creature targetCreature, out string errorMessage)
+        {
+            targetCreature = null;
+            errorMessage = null;
+
+            // Check if player has a failed shiny capture state
+            var failedWcid = player.GetProperty(PropertyInt.FailedShinyCaptureWCID);
+            var failedGuidInt = player.GetProperty(PropertyInt.FailedShinyCaptureGuid);
+
+            if (!failedWcid.HasValue || !failedGuidInt.HasValue)
+            {
+                errorMessage = "The Resonance Lens hums quietly but finds no echo to follow. You haven't failed a shiny capture recently.";
+                return false;
+            }
+
+            // Reconstruct the creature's Guid (stored as int, represents uint)
+            var targetGuidFull = (uint)failedGuidInt.Value;
+
+            // Find the creature in the player's visible range
+            if (player.PhysicsObj?.ObjMaint == null)
+            {
+                errorMessage = "Unable to detect nearby creatures.";
+                return false;
+            }
+
+            var nearbyCreatures = player.PhysicsObj.ObjMaint.GetVisibleObjectsValuesOfTypeCreature()
+                .Where(c => c != null && c.Guid.Full == targetGuidFull)
+                .ToList();
+
+            if (!nearbyCreatures.Any())
+            {
+                // Clear the stale state
+                ClearFailedShinyCaptureState(player);
+                errorMessage = "The echo has faded. The shiny creature you failed to capture is no longer nearby.";
+                return false;
+            }
+
+            targetCreature = nearbyCreatures.First();
+
+            // Verify creature is still alive
+            if (targetCreature.Health == null || targetCreature.Health.Current <= 0)
+            {
+                ClearFailedShinyCaptureState(player);
+                errorMessage = "The creature has perished. The echo cannot reach beyond death.";
+                return false;
+            }
+
+            // Verify creature is still being captured (invincible) would mean already captured
+            if (targetCreature.Invincible)
+            {
+                ClearFailedShinyCaptureState(player);
+                errorMessage = "This creature is already being captured!";
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Executes the Resonance Lens second-chance capture attempt
+        /// </summary>
+        private static void UseResonanceLens(Player player, WorldObject crystal, Creature targetCreature)
+        {
+            // Clear the failed state immediately - resonance can only be used once per failed shiny
+            ClearFailedShinyCaptureState(player);
+
+            // Resonance Lens grants a bonus to capture rate but is not guaranteed
+            // It uses the same base mechanics but with a significant bonus
+            var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
+            
+            // Calculate success rate with resonance bonus
+            var baseRate = CalculateSuccessRate(player, crystal, targetCreature, healthPercent);
+            var resonanceBonus = 0.25f; // +25% bonus for resonance lens
+            var finalRate = Math.Min(baseRate + resonanceBonus, 0.60f); // Cap at 60%
+
+            var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
+            var success = roll < finalRate;
+
+            // Consume the Resonance Lens
+            var consumeResult = player.TryConsumeFromInventoryWithNetworking(crystal, 1);
+            if (!consumeResult)
+            {
+                player.SendTransientError("Failed to consume the Resonance Lens!");
+                return;
+            }
+
+            player.SendMessage($"The Resonance Lens pulses with stored energy... (Capture chance: {finalRate:P0})");
+
+            if (success)
+            {
+                // Special visual for resonance capture
+                targetCreature.EnqueueBroadcast(new GameMessageScript(
+                    targetCreature.Guid, PlayScript.VisionUpWhite));
+                targetCreature.EnqueueBroadcast(new GameMessageScript(
+                    targetCreature.Guid, PlayScript.EnchantUpYellow));
+                
+                ExecuteCaptureSuccess(player, targetCreature, crystal);
+                player.SendMessage("The echo resonates perfectly! The essence is captured!");
+            }
+            else
+            {
+                // Resonance lens failure - NO second second-chance
+                player.SendMessage("The resonance fades into silence. The lens shatters without effect.");
+                
+                // Dark visual effect but creature does NOT enrage again
+                // (It's already enraged from the first failure)
                 targetCreature.EnqueueBroadcast(new GameMessageScript(
                     targetCreature.Guid, PlayScript.VisionDownBlack));
-                
-                player.SendMessage($"The siphon failed! The lens shatters!");
-                
-                // Enrage the creature!
+            }
+        }
 
+        /// <summary>
+        /// Records a failed shiny capture on the player for Resonance Lens second-chance
+        /// </summary>
+        private static void SetFailedShinyCaptureState(Player player, Creature creature)
+        {
+            player.SetProperty(PropertyInt.FailedShinyCaptureWCID, (int)creature.WeenieClassId);
+            // Store Guid.Full as int (it's a uint but fits in int for storage)
+            player.SetProperty(PropertyInt.FailedShinyCaptureGuid, (int)creature.Guid.Full);
+            
+            log.Debug($"[MonsterCapture] Set failed shiny capture state for player {player.Name}: WCID={creature.WeenieClassId}, Guid={creature.Guid.Full}");
+        }
+
+        /// <summary>
+        /// Clears the failed shiny capture state from the player
+        /// </summary>
+        private static void ClearFailedShinyCaptureState(Player player)
+        {
+            player.RemoveProperty(PropertyInt.FailedShinyCaptureWCID);
+            player.RemoveProperty(PropertyInt.FailedShinyCaptureGuid);
+        }
+
+        /// <summary>
+        /// Executes a successful capture sequence
+        /// </summary>
+        private static void ExecuteCaptureSuccess(Player player, Creature targetCreature, WorldObject crystal)
+        {
+            // Visual effect - Focus Self (white glow)
+            targetCreature.EnqueueBroadcast(new GameMessageScript(
+                targetCreature.Guid, PlayScript.VisionUpWhite));
+            
+            // Create siphoned essence BEFORE making creature invulnerable
+            var capturedItem = CreateCapturedAppearance(targetCreature, crystal, player);
+            if (capturedItem == null)
+            {
+                player.SendTransientError("Failed to create siphoned essence!");
+                return;
+            }
+            
+            // Only make creature invulnerable AFTER successful essence creation
+            targetCreature.Invincible = true;
+            targetCreature.IsBusy = true;
+            targetCreature.SetCombatMode(CombatMode.NonCombat);
+            
+            if (player.TryCreateInInventoryWithNetworking(capturedItem))
+            {
+                player.SendMessage($"You successfully siphoned the essence of the {targetCreature.Name}!");
+            }
+            else
+            {
+                // Inventory full - drop the essence on the ground instead
+                player.SendTransientError("Your inventory is full! The essence drops to the ground.");
+                capturedItem.Location = new ACE.Entity.Position(player.Location);
+                capturedItem.EnterWorld();
+            }
+            
+            // Trigger proper creature death after 3 seconds
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(3.0);
+            actionChain.AddAction(targetCreature, ActionType.MonsterCapture_DespawnCreature, () =>
+            {
+                if (!targetCreature.IsDestroyed && targetCreature.Health.Current > 0)
+                {
+                    targetCreature.DamageHistory.Add(player, DamageType.Health, (uint)targetCreature.Health.Current);
+                    targetCreature.OnDeath(targetCreature.DamageHistory.LastDamager, DamageType.Health);
+                    targetCreature.Die();
+                }
+            });
+            actionChain.EnqueueChain();
+        }
+
+        /// <summary>
+        /// Executes a failed capture sequence (enrages the creature)
+        /// </summary>
+        private static void ExecuteCaptureFail(Player player, Creature targetCreature)
+        {
+            // Visual effect - dark burst
+            targetCreature.EnqueueBroadcast(new GameMessageScript(
+                targetCreature.Guid, PlayScript.VisionDownBlack));
+            
+            player.SendMessage($"The siphon failed! The lens shatters!");
+            
+            // Only enrage if not already enraged
+            if (!targetCreature.IsEnraged)
+            {
                 // Apply "Hardcore" stats: 2x Damage, ~3x Effective Health (0.67 reduction)
                 targetCreature.SetProperty(PropertyFloat.EnrageDamageMultiplier, 2.0f);
                 targetCreature.SetProperty(PropertyFloat.EnrageDamageReduction, 0.67f);
                 
                 // Random Enrage Visual
                 var visualOptions = new[] { 
-                    PlayScript.ShieldUpRed,  // Red Swarm
-                    PlayScript.BreatheFlame, // Fire Breath
-                    PlayScript.EnchantUpRed, // Magic Ring
-                    PlayScript.Create        // Red Explosion
+                    PlayScript.ShieldUpRed,
+                    PlayScript.BreatheFlame,
+                    PlayScript.EnchantUpRed,
+                    PlayScript.Create
                 };
                 var chosenVisual = visualOptions[ThreadSafeRandom.Next(0, visualOptions.Length - 1)];
                 targetCreature.SetProperty(PropertyInt.EnrageVisualEffect, (int)chosenVisual);
 
                 // Random Enrage Sound
-                var soundOptions = new[] {
-                    101, // Roar
-                    118, // Thunder1
-                    107, // DarkLaugh
-                    112  // Breathing
-                };
+                var soundOptions = new[] { 101, 118, 107, 112 };
                 var chosenSound = soundOptions[ThreadSafeRandom.Next(0, soundOptions.Length - 1)];
                 targetCreature.SetProperty(PropertyInt.EnrageSound, chosenSound);
                 
@@ -237,21 +424,33 @@ namespace ACE.Server.Entity
         
         /// <summary>
         /// Calculate success rate based on crystal tier, skill, and creature difficulty
+        /// 
+        /// Tier overview:
+        /// - Tier 1 (Flawed): 5% base, 10% cap
+        /// - Tier 2 (Pristine): 10% base, 20% cap
+        /// - Tier 3 (Perfect): 15% base, 30% cap
+        /// - Tier 4 (Debug): 100% guaranteed (admin)
+        /// - Tier 5 (Resonance): Uses base tier 2 rates, handled with bonus in UseResonanceLens
+        /// - Tier 6 (Asheron's): 100% guaranteed capture
         /// </summary>
         private static float CalculateSuccessRate(Player player, WorldObject crystal, Creature creature, float healthPercent)
         {
-            // Get crystal tier (1=Flawed, 2=Pristine, 3=Perfect)
-            var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? 2;
+            var crystalTier = crystal.GetProperty(PropertyInt.CrystalTier) ?? TIER_PRISTINE;
             
-            // Debug Lens: Guaranteed 100% capture, bypasses all difficulty checks
-            if (crystalTier == 4) return 1.0f;
+            // Debug Lens and Asheron's Lens: Guaranteed 100% capture
+            if (crystalTier == TIER_DEBUG) return 1.0f;
+            if (crystalTier == TIER_ASHERONS) return 1.0f;
+            if (crystal.GetProperty(PropertyBool.IsGuaranteedCaptureLens) ?? false) return 1.0f;
             
             // Base rate and cap by tier
+            // Resonance lens (tier 5) uses Pristine (tier 2) base rates
             var (baseRate, tierCap) = crystalTier switch {
-                1 => (0.05f, 0.10f), // Flawed: 5% base, 10% max
-                2 => (0.10f, 0.20f), // Pristine: 10% base, 20% max
-                3 => (0.15f, 0.30f), // Perfect: 15% base, 30% max
-                4 => (1.00f, 1.00f), // Debug: 100% capture rate for testing
+                TIER_FLAWED => (0.05f, 0.10f),
+                TIER_PRISTINE => (0.10f, 0.20f),
+                TIER_PERFECT => (0.15f, 0.30f),
+                TIER_DEBUG => (1.00f, 1.00f),
+                TIER_RESONANCE => (0.10f, 0.20f), // Uses Pristine base for calculation
+                TIER_ASHERONS => (1.00f, 1.00f),
                 _ => (0.10f, 0.20f)
             };
             
@@ -270,7 +469,7 @@ namespace ACE.Server.Entity
             var creatureLevel = creature.Level ?? 1;
             var playerLevel = player.Level ?? 1;
             var levelDiff = Math.Max(0, creatureLevel - playerLevel);
-            var difficultyPenalty = Math.Min(levelDiff / 400f, 0.25f);  // 0% at same level, 25% at 100+ levels higher
+            var difficultyPenalty = Math.Min(levelDiff / 400f, 0.25f);
             
             // Capture Difficulty Multiplier (default 1.0)
             var difficultyMultiplier = (float)(creature.GetProperty(PropertyFloat.CaptureDifficulty) ?? 1.0f);
@@ -658,6 +857,34 @@ namespace ACE.Server.Entity
         public static bool IsCapturedAppearance(WorldObject wo)
         {
             return wo.GetProperty(PropertyBool.IsCapturedAppearance) ?? false;
+        }
+
+        /// <summary>
+        /// Checks if a lens is a Resonance Lens (second-chance shiny capture)
+        /// </summary>
+        public static bool IsResonanceLens(WorldObject wo)
+        {
+            if (!IsCaptureCrystal(wo)) return false;
+            var tier = wo.GetProperty(PropertyInt.CrystalTier);
+            return tier == TIER_RESONANCE || (wo.GetProperty(PropertyBool.IsResonanceLens) ?? false);
+        }
+
+        /// <summary>
+        /// Checks if a lens is Asheron's Lens (guaranteed capture)
+        /// </summary>
+        public static bool IsAsheronsLens(WorldObject wo)
+        {
+            if (!IsCaptureCrystal(wo)) return false;
+            var tier = wo.GetProperty(PropertyInt.CrystalTier);
+            return tier == TIER_ASHERONS || (wo.GetProperty(PropertyBool.IsGuaranteedCaptureLens) ?? false);
+        }
+
+        /// <summary>
+        /// Checks if a player has a pending failed shiny capture that can be retried with a Resonance Lens
+        /// </summary>
+        public static bool HasFailedShinyCaptureState(Player player)
+        {
+            return player.GetProperty(PropertyInt.FailedShinyCaptureWCID).HasValue;
         }
     }
 }
