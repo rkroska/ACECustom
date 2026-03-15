@@ -217,6 +217,45 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {target.Name} to {tier}.");
         }
 
+        [CommandHandler("prestige-debug", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Debug prestige boundary markers in current landblock.")]
+        public static void HandlePrestigeDebug(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            var landblock = player.CurrentLandblock;
+            
+            if (landblock == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Not in a landblock.");
+                return;
+            }
+
+            var variation = player.Location.Variation;
+            var tier = PrestigeManager.GetTier(variation);
+            var isAllowed = PrestigeManager.IsLandblockAllowed(variation, landblock.Id.Landblock);
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"=== Prestige Debug ===");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Landblock: {landblock.Id.Landblock:X4}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Variation: {variation}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Prestige Tier: {tier}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Is Allowed: {isAllowed}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"WorldObjects in LB: {landblock.GetWorldObjectsForDiagnostics().Count()}");
+            
+            // Count boundary markers
+            var markers = landblock.GetWorldObjectsForDiagnostics()
+                .Where(wo => wo.Name == "Prestige Boundary")
+                .ToList();
+            
+            CommandHandlerHelper.WriteOutputInfo(session, $"Boundary Markers: {markers.Count}");
+            
+            foreach (var marker in markers.Take(5))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"  - {marker.Guid} at ({marker.Location.Pos.X:F1}, {marker.Location.Pos.Y:F1}, {marker.Location.Pos.Z:F1})");
+            }
+            
+            if (markers.Count > 5)
+                CommandHandlerHelper.WriteOutputInfo(session, $"  ... and {markers.Count - 5} more");
+        }
+
         private static void HandleTransferLog(Session session, string[] parameters)
         {
             if (parameters.Length < 1)

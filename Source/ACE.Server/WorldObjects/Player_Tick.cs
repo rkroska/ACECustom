@@ -496,10 +496,6 @@ namespace ACE.Server.WorldObjects
                     UpdateVitalDelta(Health, -dmg);
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
 
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: PUNISHMENT calling UpdateBoundaryMarkers(var={variation}, isPunishment=true)");
-                    UpdateBoundaryMarkers(variation, true);
-
                     // Spawn Wisp after ~2 seconds in the danger zone
                     if (Time.GetUnixTime() - _outOfBoundsEntryTime > 2.0)
                     {
@@ -570,45 +566,25 @@ namespace ACE.Server.WorldObjects
                 // Wisp with 5s persistence after reaching safety
                 UpdateGuideWisp(inForbiddenLandblock, variation);
 
-                // ALWAYS check markers on landblock entry - NOT based on danger!
-                bool needMarkers = _boundaryMarkers.Count == 0 || _boundaryMarkers[0].Location.Cell != Location.Cell;
-                if (IsDebugTarget)
-                    log.Warn($"[Prestige-DBG] {Name}: Marker check: needMarkers={needMarkers} markerCount={_boundaryMarkers.Count} inForbiddenLB={inForbiddenLandblock} firstMarkerCell={(_boundaryMarkers.Count > 0 ? _boundaryMarkers[0].Location.Cell.ToString("X8") : "N/A")} myCell={Location.Cell:X8}");
-
-                if (needMarkers)
-                {
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: ENQUEUEING UpdateBoundaryMarkers(var={variation}, isPunishment={inForbiddenLandblock})");
-                    WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () => UpdateBoundaryMarkers(variation, inForbiddenLandblock)));
-                }
+                // Note: Boundary markers are now spawned by the Landblock at load time,
+                // so no per-player marker logic is needed here.
             }
         }
         
-        private List<WorldObject> _boundaryMarkers = new List<WorldObject>();
         private Creature _guideWisp;
         private double _outOfBoundsEntryTime;
         private double _lastDangerTime;
 
+        /// <summary>
+        /// Cleans up player-specific prestige effects (guide wisp).
+        /// Boundary markers are now landblock-owned and don't need per-player cleanup.
+        /// </summary>
         public void CleanupPrestigeEffects()
         {
-            DestroyBoundaryMarkers();
-            
             if (_guideWisp != null)
             {
                 _guideWisp.Destroy();
                 _guideWisp = null;
-            }
-        }
-
-        private void DestroyBoundaryMarkers()
-        {
-            if (_boundaryMarkers != null)
-            {
-                foreach (var marker in _boundaryMarkers)
-                {
-                    if (marker != null) marker.Destroy();
-                }
-                _boundaryMarkers.Clear();
             }
         }
 
@@ -776,108 +752,6 @@ namespace ACE.Server.WorldObjects
                     // No wisp, no danger - nothing to do (don't log this, too spammy)
                 }
             }
-        }
-
-        private void UpdateBoundaryMarkers(int? variation, bool isPunishmentZone = false)
-        {
-            if (IsDebugTarget)
-                log.Warn($"[Prestige-DBG] {Name}: UpdateBoundaryMarkers ENTERED. var={variation} isPunishment={isPunishmentZone} existingMarkers={_boundaryMarkers.Count} myCell={Location.Cell:X8}");
-
-            // 1. Check for Stale Markers (from previous landblock)
-            if (_boundaryMarkers.Count > 0)
-            {
-                if ((_boundaryMarkers[0].Location.Cell >> 16) != (Location.Cell >> 16))
-                {
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: STALE MARKERS detected. MarkerCell={_boundaryMarkers[0].Location.Cell:X8} vs MyCell={Location.Cell:X8}. Destroying {_boundaryMarkers.Count} markers.");
-                    DestroyBoundaryMarkers();
-                }
-                else
-                {
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: Markers already exist for current cell ({_boundaryMarkers.Count} markers). Returning early.");
-                    return;
-                }
-            }
-
-            var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_SHOLANTERN_CLASS); 
-            if (weenie == null)
-            {
-                if (IsDebugTarget)
-                    log.Warn($"[Prestige-DBG] {Name}: MARKER SPAWN FAILED - W_SHOLANTERN_CLASS weenie not found!");
-                return;
-            }
-
-            var lbId = new ACE.Entity.LandblockId(Location.Cell);
-            int markersSpawned = 0;
-
-            void SpawnMarker(float x, float y, string edgeName)
-            {
-                var marker = Factories.WorldObjectFactory.CreateNewWorldObject(weenie);
-                if (marker != null)
-                {
-                    marker.Name = $"Boundary Marker {edgeName}";
-                    marker.SetProperty(PropertyBool.Invincible, true);
-                    marker.SetProperty(PropertyBool.IgnoreCollisions, true);
-                    marker.SetProperty(PropertyBool.GravityStatus, false); 
-                    marker.SetProperty(PropertyFloat.DefaultScale, 5.0f);
-                    
-                    var spawnPos = new ACE.Entity.Position(Location.Cell, x, y, Location.Pos.Z + 1.5f, 0, 0, 0, 0, false, variation);
-                    
-                    marker.Location = spawnPos;
-                    marker.EnterWorld();
-                    _boundaryMarkers.Add(marker);
-                    markersSpawned++;
-
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: MARKER SPAWNED #{markersSpawned}: '{edgeName}' at ({x:F1},{y:F1},{Location.Pos.Z + 1.5f:F1}) Cell={Location.Cell:X8}");
-                }
-            }
-
-            var offsets = new float[] { 32.0f, 96.0f, 160.0f };
-
-            bool ShouldSpawnMarker(ushort neighborLB, string dir)
-            {
-                bool neighborAllowed = PrestigeManager.IsLandblockAllowed(variation, neighborLB);
-                bool shouldSpawn;
-                
-                if (isPunishmentZone)
-                    shouldSpawn = neighborAllowed; // In Bad Zone? Show Safe Neighbors
-                else
-                    shouldSpawn = !neighborAllowed; // In Safe Zone? Show Bad Neighbors
-
-                if (IsDebugTarget)
-                    log.Warn($"[Prestige-DBG] {Name}: ShouldSpawnMarker({dir}): neighborLB={neighborLB:X4} neighborAllowed={neighborAllowed} isPunishment={isPunishmentZone} => shouldSpawn={shouldSpawn}");
-
-                return shouldSpawn;
-            }
-
-            // East Edge (X = 192) -> No Inset
-            if (lbId.LandblockX < 254 && ShouldSpawnMarker(lbId.East.Landblock, "East"))
-            {
-                foreach (var y in offsets) SpawnMarker(192.0f, y, "East"); 
-            }
-
-            // West Edge (X = 0) -> No Inset
-            if (lbId.LandblockX > 0 && ShouldSpawnMarker(lbId.West.Landblock, "West"))
-            {
-                foreach (var y in offsets) SpawnMarker(0.0f, y, "West"); 
-            }
-
-            // North Edge (Y = 192) -> No Inset
-            if (lbId.LandblockY < 254 && ShouldSpawnMarker(lbId.North.Landblock, "North"))
-            {
-                foreach (var x in offsets) SpawnMarker(x, 192.0f, "North"); 
-            }
-
-            // South Edge (Y = 0) -> No Inset
-            if (lbId.LandblockY > 0 && ShouldSpawnMarker(lbId.South.Landblock, "South"))
-            {
-                foreach (var x in offsets) SpawnMarker(x, 0.0f, "South"); 
-            }
-
-            if (IsDebugTarget)
-                log.Warn($"[Prestige-DBG] {Name}: UpdateBoundaryMarkers DONE. Total markers spawned this call: {markersSpawned}. Total markers now: {_boundaryMarkers.Count}");
         }
 
         public bool SyncLocationWithPhysics()

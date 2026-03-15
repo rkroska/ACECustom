@@ -1838,6 +1838,8 @@ namespace ACE.Server.Physics
 
             CurCell = newCell;
             Position.ObjCellID = newCell.ID;        // warning: Position will be in an inconsistent state here, until set_frame() is run!
+            // Note: Do NOT sync Position.Variation here - variation should be preserved during movement
+            // and only set during world entry via SyncLocation()
             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
                 PartArray.SetCellID(newCell.ID);
 
@@ -1855,6 +1857,7 @@ namespace ACE.Server.Physics
 
             enter_cell(newCell);
             RequestPos.ObjCellID = newCell.ID;      // document this control flow better
+            // Note: Do NOT sync RequestPos.Variation here - variation should be preserved during movement
 
             // sync location for initial CO
             if (entering_world)
@@ -2996,6 +2999,9 @@ namespace ACE.Server.Physics
 
             set_cell_id(pos.ObjCellID);
             set_frame(pos.Frame);
+            
+            // Sync variation to ensure visibility filtering works correctly
+            Position.Variation = pos.Variation;
         }
 
 

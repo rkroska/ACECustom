@@ -392,8 +392,20 @@ namespace ACE.Server.Managers
 
             // Remove from the old landblock -- force
             oldBlock?.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
-            // Add to the new landblock
-            newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+
+            // Check if we're in a multi-threaded tick and the new landblock is in a different group
+            // If so, enqueue the add operation to avoid cross-thread errors
+            if (CurrentlyTickingLandblockGroupsMultiThreaded && 
+                newBlock.CurrentLandblockGroup != null && 
+                newBlock.CurrentLandblockGroup != CurrentMultiThreadedTickingLandblockGroup.Value)
+            {
+                newBlock.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+            }
+            else
+            {
+                // Add to the new landblock directly
+                newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+            }
         }
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
