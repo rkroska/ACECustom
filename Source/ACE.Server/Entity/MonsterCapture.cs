@@ -268,6 +268,13 @@ namespace ACE.Server.Entity
         /// </summary>
         private static void UseResonanceLens(Player player, WorldObject crystal, Creature targetCreature)
         {
+            // Defensive check: avoid division by zero when computing healthPercent
+            if (targetCreature.Health == null || targetCreature.Health.MaxValue <= 0)
+            {
+                player.SendTransientError("Unable to assess creature health.");
+                return;
+            }
+
             // Resonance Lens grants a bonus to capture rate but is not guaranteed
             // It uses the same base mechanics but with a significant bonus
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
