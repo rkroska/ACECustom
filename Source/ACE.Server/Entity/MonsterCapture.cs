@@ -179,9 +179,9 @@ namespace ACE.Server.Entity
             
             if (success)
             {
-                // Clear any previous failed shiny capture state on success
-                ClearFailedShinyCaptureState(player);
-                
+                // Do NOT clear failed shiny retry here - that state is only cleared when
+                // Resonance Lens is successfully consumed. Unrelated normal siphon success
+                // or failed consume must not discard the player's retry.
                 ExecuteCaptureSuccess(player, targetCreature, crystal);
             }
             else
@@ -216,10 +216,10 @@ namespace ACE.Server.Entity
                 return false;
             }
 
-            // Reconstruct the creature's Guid (stored as int, represents uint)
+            var storedWcid = (uint)failedWcid.Value;
             var targetGuidFull = (uint)failedGuidInt.Value;
 
-            // Find the creature in the player's visible range
+            // Find the creature - must match both WCID and Guid, and be nearby (same predicate as base capture path)
             if (player.PhysicsObj?.ObjMaint == null)
             {
                 errorMessage = "Unable to detect nearby creatures.";
@@ -227,7 +227,11 @@ namespace ACE.Server.Entity
             }
 
             var nearbyCreatures = player.PhysicsObj.ObjMaint.GetVisibleObjectsValuesOfTypeCreature()
-                .Where(c => c != null && c.Guid.Full == targetGuidFull)
+                .Where(c => c != null && c != player && !(c is Player) && c.Attackable && c.Location != null
+                    && c.Location.DistanceTo(player.Location) <= 5.0f
+                    && c.WeenieClassId == storedWcid
+                    && c.Guid.Full == targetGuidFull)
+                .OrderBy(c => c.Location.DistanceTo(player.Location))
                 .ToList();
 
             if (!nearbyCreatures.Any())
@@ -264,9 +268,6 @@ namespace ACE.Server.Entity
         /// </summary>
         private static void UseResonanceLens(Player player, WorldObject crystal, Creature targetCreature)
         {
-            // Clear the failed state immediately - resonance can only be used once per failed shiny
-            ClearFailedShinyCaptureState(player);
-
             // Resonance Lens grants a bonus to capture rate but is not guaranteed
             // It uses the same base mechanics but with a significant bonus
             var healthPercent = (float)targetCreature.Health.Current / targetCreature.Health.MaxValue;
@@ -279,13 +280,17 @@ namespace ACE.Server.Entity
             var roll = ThreadSafeRandom.Next(0.0f, 1.0f);
             var success = roll < finalRate;
 
-            // Consume the Resonance Lens
+            // Consume the Resonance Lens - must succeed before clearing retry state
             var consumeResult = player.TryConsumeFromInventoryWithNetworking(crystal, 1);
             if (!consumeResult)
             {
                 player.SendTransientError("Failed to consume the Resonance Lens!");
                 return;
             }
+
+            // Clear the failed state only after lens consumption is confirmed
+            // (prevents discarding retry on failed consume)
+            ClearFailedShinyCaptureState(player);
 
             player.SendMessage($"The Resonance Lens pulses with stored energy... (Capture chance: {finalRate:P0})");
 
@@ -880,11 +885,14 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// Checks if a player has a pending failed shiny capture that can be retried with a Resonance Lens
+        /// Checks if a player has a pending failed shiny capture that can be retried with a Resonance Lens.
+        /// Requires both WCID and Guid to be present (same as ValidateResonanceLensUse).
         /// </summary>
         public static bool HasFailedShinyCaptureState(Player player)
         {
-            return player.GetProperty(PropertyInt.FailedShinyCaptureWCID).HasValue;
+            var wcid = player.GetProperty(PropertyInt.FailedShinyCaptureWCID);
+            var guid = player.GetProperty(PropertyInt.FailedShinyCaptureGuid);
+            return wcid.HasValue && guid.HasValue;
         }
     }
 }
