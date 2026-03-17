@@ -713,6 +713,22 @@ namespace ACE.Entity.Enum.Properties
 
         // Portal
         PortalUseCount                          = 9040, // Number of times a portal may be used before destroying itself
+
+        // Resonance Lens System (Second-Chance Shiny Capture)
+        /// <summary>
+        /// The WCID of the creature that the player failed to capture with a shiny variant.
+        /// Used to validate Resonance Lens second-chance attempts.
+        /// </summary>
+        [Ephemeral]
+        FailedShinyCaptureWCID                  = 9041,
+        
+        /// <summary>
+        /// The Guid.Full of the specific creature instance the player failed to capture.
+        /// Stored as int but represents a uint. Used to ensure Resonance Lens can only 
+        /// target the exact creature that escaped.
+        /// </summary>
+        [Ephemeral]
+        FailedShinyCaptureGuid                  = 9042,
     }
 
     public static class PropertyIntExtensions

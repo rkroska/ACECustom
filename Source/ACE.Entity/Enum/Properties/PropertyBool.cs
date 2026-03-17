@@ -225,5 +225,18 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [AssessmentProperty]
         UseDamageCap                      = 9039,
+
+        // Resonance Lens System (Second-Chance Shiny Capture)
+        /// <summary>
+        /// If TRUE, this lens is a Resonance Lens that grants a second-chance capture attempt 
+        /// after a failed shiny capture. Only usable once per failed shiny encounter.
+        /// </summary>
+        IsResonanceLens                   = 9041,
+
+        /// <summary>
+        /// If TRUE, this lens is Asheron's Lens which guarantees 100% capture success.
+        /// Single-use, extremely rare item obtained by exchanging 5000 Flawed Siphon Lenses.
+        /// </summary>
+        IsGuaranteedCaptureLens           = 9042,
     }
 }
