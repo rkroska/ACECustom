@@ -80,7 +80,11 @@ namespace ACE.Server.Physics.Common
 
             var cellID = blockCellID & 0xFFFF;
             if (cellID == 0xFFFF) return null;
-            var cacheKey = new VariantCacheId { Landblock = (ushort)cellID, Variant = variationId ?? 0 };
+            // LandCells keys are stamped at landblock construction with this landblock's VariationId — not the caller's
+            // int?. Using the wrong variant here causes misses (same idx, wrong Variant in VariantCacheId) when
+            // Position/PhysicsObj variation drifts from the loaded landblock instance.
+            var keyVariant = landblock.VariationId ?? 0;
+            var cacheKey = new VariantCacheId { Landblock = (ushort)cellID, Variant = keyVariant };
             ObjCell cell;
 
             // outdoor cells
@@ -88,12 +92,24 @@ namespace ACE.Server.Physics.Common
             {
                 var lcoord = LandDefs.gid_to_lcoord(blockCellID, false);
                 if (lcoord == null) return null;
-                var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
-                
-                if(!landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))
+                // Match Landblock.get_landcell: mask to block-local coords (LandblockMask == 7); % 8 diverges for negatives.
+                var landCellIdx = ((int)lcoord.Value.Y & LandDefs.LandblockMask)
+                    + ((int)lcoord.Value.X & LandDefs.LandblockMask) * landblock.SideCellCount;
+
+                var outdoorKey = new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = keyVariant };
+                if (!landblock.LandCells.TryGetValue(outdoorKey, out cell))
                 {
-                    Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - {variationId:X8}) failed to get from dictionary, cache miss.");
-                    Console.WriteLine($"Landblock {landblock.ID:X8} keys: " + string.Join(", ", landblock.LandCells.Keys.Where(k => (k.Variant == (variationId ?? 0))).Select(k => $"{k.Landblock}:{k.Variant}").Take(10)));
+                    if ((variationId ?? 0) != keyVariant
+                        && landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))
+                    {
+                        Console.WriteLine(
+                            $"get_landcell variant mismatch for {blockCellID:X8}: caller v={variationId?.ToString() ?? "null"} landblock v={landblock.VariationId?.ToString() ?? "null"}; recovered with caller variant — fix variation propagation.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - keyVariant={keyVariant:X8}) failed to get from dictionary, cache miss.");
+                        Console.WriteLine($"Landblock {landblock.ID:X8} keys: " + string.Join(", ", landblock.LandCells.Keys.Where(k => k.Variant == keyVariant).Select(k => $"{k.Landblock}:{k.Variant}").Take(10)));
+                    }
                 }
             }
             // indoor cells
@@ -102,14 +118,15 @@ namespace ACE.Server.Physics.Common
                 if (landblock.LandCells.TryGetValue(cacheKey, out cell))
                     return cell;
 
-                cell = DBObj.GetEnvCell(blockCellID, variationId);
+                var envVariation = landblock.VariationId ?? variationId;
+                cell = DBObj.GetEnvCell(blockCellID, envVariation);
                 if (cell == null) return null;
                 cell.CurLandblock = landblock;
-                cell.Pos.Variation = variationId; //todo - gross
-                cell.VariationId = variationId;
+                cell.Pos.Variation = envVariation; //todo - gross
+                cell.VariationId = envVariation;
                 landblock.LandCells.TryAdd(cacheKey, cell);
                 var envCell = (EnvCell)cell;
-                envCell.PostInit(variationId);
+                envCell.PostInit(envVariation);
                 
             }
             return cell;
