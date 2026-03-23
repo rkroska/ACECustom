@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using ACE.Database.Models.World;
+using ACE.Entity;
 
 namespace ACE.Adapter.GDLE
 {
@@ -180,7 +181,7 @@ namespace ACE.Adapter.GDLE
 
         private static void ReGuidAndConvertLandblocks(List<LandblockInstance> instances, List<LandblockInstanceLink> links, ushort landblockId)
         {
-            var firstGuid = 0x70000000 | ((uint)landblockId << 12);
+            var firstGuid = ObjectGuid.LandblockInstanceGuidBase | ((uint)landblockId << 12);
             var lastGuid = firstGuid | 0xFFF;
 
             var nextGuid = firstGuid;

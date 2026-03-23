@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 
+using ACE.Entity;
+
 namespace ACE.Server.Tests.LoadTests
 {
     /// <summary>
@@ -360,7 +362,7 @@ namespace ACE.Server.Tests.LoadTests
 
                 foreach (var client in clients.Where(c => c.State == LoadTestClientState.InWorld))
                 {
-                    var itemId = (uint)random.Next(0x70000000, 0x7FFFFFFF);
+                    var itemId = (uint)random.Next((int)ObjectGuid.LandblockInstanceGuidBase, (int)ObjectGuid.StaticObjectMax);
                     
                     // Alternate between pickup and drop
                     if (random.Next(2) == 0)
@@ -408,7 +410,7 @@ namespace ACE.Server.Tests.LoadTests
                     }
                     else if (action < 90) // 20% item interaction
                     {
-                        var itemId = (uint)random.Next(0x70000000, 0x7FFFFFFF);
+                        var itemId = (uint)random.Next((int)ObjectGuid.LandblockInstanceGuidBase, (int)ObjectGuid.StaticObjectMax);
                         tasks.Add(UseItemWithMetricsAsync(client, itemId));
                     }
                     // 10% idle

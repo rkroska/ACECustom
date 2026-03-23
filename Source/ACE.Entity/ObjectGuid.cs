@@ -26,6 +26,9 @@ namespace ACE.Entity
         // PY 16 has these ranges 0x70003000 - 0x7FADA053
         // They are organized by landblock where 0x7AABB000 is landblock AABB
         // These represent items that come from the World db
+        /// <summary>OR mask base for landblock-packed static instance GUIDs (0x7xxxxx00); within <see cref="StaticObjectMin"/>–<see cref="StaticObjectMax"/>.</summary>
+        public static uint LandblockInstanceGuidBase { get; } = 0x70000000;
+
         public static uint StaticObjectMin { get; } = 0x01000000;
         // Static world DB objects are below 0x80000000; 0x80000000–0xEFFFFFFF are legacy dynamic GUIDs
         public static uint StaticObjectMax { get; } = 0x7FFFFFFF;

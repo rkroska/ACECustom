@@ -1200,7 +1200,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             var landblock = session.Player.CurrentLandblock.Id.Landblock;
 
-            var firstStaticGuid = 0x70000000 | (uint)landblock << 12;
+            var firstStaticGuid = ObjectGuid.LandblockInstanceGuidBase | (uint)landblock << 12;
 
             if (parameters.Length > 1)
             {
@@ -1493,7 +1493,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
         public static uint GetNextStaticGuid(ushort landblock, List<LandblockInstance> instances)
         {
-            var firstGuid = 0x70000000 | ((uint)landblock << 12);
+            var firstGuid = ObjectGuid.LandblockInstanceGuidBase | ((uint)landblock << 12);
             var lastGuid = firstGuid | 0xFFF;
 
             var highestLandblockInst = instances.Where(i => i.Landblock == landblock).OrderByDescending(i => i.Guid).FirstOrDefault();
@@ -1514,7 +1514,7 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             var landblockGuids = instances.Where(i => i.Landblock == landblock).Select(i => i.Guid).ToHashSet();
 
-            var firstGuid = 0x70000000 | ((uint)landblock << 12);
+            var firstGuid = ObjectGuid.LandblockInstanceGuidBase | ((uint)landblock << 12);
             var lastGuid = firstGuid | 0xFFF;
 
             for (var guid = firstGuid; guid <= lastGuid; guid++)

@@ -128,23 +128,30 @@ namespace ACE.Server.WorldObjects
         {
             Biota = biota;
             Guid = new ObjectGuid(Biota.Id);
-            
-            if (Biota?.PropertiesPosition != null && 
-                Biota.PropertiesPosition.TryGetValue(PositionType.Location, out var locProp) && 
-                locProp != null && 
+
+#if DEBUG
+            if (Biota?.PropertiesPosition != null &&
+                Biota.PropertiesPosition.TryGetValue(PositionType.Location, out var locProp) &&
+                locProp != null &&
                 (locProp.ObjCellId & 0xFFFF0000) == 0xDA550000)
             {
-               Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) DA55: Init GUID={Guid.Full:X16} Cell={locProp.ObjCellId:X8}");
+                Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) DA55: Init GUID={Guid.Full:X16} Cell={locProp.ObjCellId:X8}");
             }
-            else if (Biota.WeenieClassId == 835)
+            else if (Biota?.WeenieClassId == 835)
             {
-                 // Fallback: Check if Ven Ounan has legacy Position or just log missing Loc
-                 Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) Ven Ounan (835): Init GUID={Guid.Full:X16} NO PROPERTIESPOSITION.LOCATION! Keys: {string.Join(",", Biota?.PropertiesPosition?.Keys.Select(k=>k.ToString()) ?? new List<string>())}");
-                 
-                 // Also log legacy Position if available
-                 if (Biota.PropertiesPosition != null && Biota.PropertiesPosition.TryGetValue(PositionType.Location, out var locP))
-                     Console.WriteLine($"[DEBUG-POS] Ven Ounan HAS Location in PropertiesPosition: {locP.ObjCellId:X8}");
+                if (Biota.PropertiesPosition == null || !Biota.PropertiesPosition.TryGetValue(PositionType.Location, out var loc835) || loc835 == null)
+                {
+                    var keysHint = Biota.PropertiesPosition != null
+                        ? string.Join(",", Biota.PropertiesPosition.Keys.Select(k => k.ToString()))
+                        : "n/a";
+                    Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) Ven Ounan (835): Init GUID={Guid.Full:X16} — no PropertiesPosition.Location (keys: {keysHint})");
+                }
+                else if ((loc835.ObjCellId & 0xFFFF0000) != 0xDA550000)
+                {
+                    Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) Ven Ounan (835): Init GUID={Guid.Full:X16} — Location ObjCellId={loc835.ObjCellId:X8} (expected DA55…)");
+                }
             }
+#endif
 
             biotaOriginatedFromDatabase = true;
 
@@ -239,7 +246,8 @@ namespace ACE.Server.WorldObjects
                 var cellWasNullAfterEnter = PhysicsObj?.CurCell == null;
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
-                Console.WriteLine($"[DEBUG-PHYS] AddPhysicsObj: failure (Success:{success}, CellIsNull:{cellWasNullAfterEnter}): {Name} ({Guid:X8}) @ {cell.ID.ToString("X8")} - {Location.Pos} - lv: {Location.Variation}, v: {VariationId}");
+                if (log.IsDebugEnabled)
+                    log.Debug($"AddPhysicsObj: failure (Success:{success}, CellIsNull:{cellWasNullAfterEnter}): {Name} ({Guid:X8}) @ {cell.ID.ToString("X8")} - {Location.Pos} - lv: {Location.Variation}, v: {VariationId}");
                 return false;
             }
 
@@ -769,9 +777,10 @@ namespace ACE.Server.WorldObjects
 
             if (cellID != null && pos.Cell != cellID.Value)
             {
+#if DEBUG
                 if ((pos.Cell & 0xFFFF0000) == 0xDA550000)
-                     Console.WriteLine($"[DEBUG-POS] AdjustDungeonCells CHANGED Cell: {pos.Cell:X8} -> {cellID.Value:X8} (GetCell Result) Var:{pos.Variation}");
-                
+                    Console.WriteLine($"[DEBUG-POS] AdjustDungeonCells CHANGED Cell: {pos.Cell:X8} -> {cellID.Value:X8} (GetCell Result) Var:{pos.Variation}");
+#endif
                 pos.LandblockId = new LandblockId(cellID.Value, pos.Variation);
                 return true;
             }

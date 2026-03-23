@@ -206,6 +206,13 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
+            var maxPrestigeTier = int.MaxValue - PrestigeManager.PRESTIGE_VAR_OFFSET;
+            if (tier < 0 || tier > maxPrestigeTier)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige <tier>");
+                return;
+            }
+
             var target = session.Player.SelectedTarget;
             if (target == null)
             {
@@ -251,12 +258,10 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, $"Variation: {variation}");
             CommandHandlerHelper.WriteOutputInfo(session, $"Prestige Tier: {tier}");
             CommandHandlerHelper.WriteOutputInfo(session, $"Is Allowed: {isAllowed}");
-            CommandHandlerHelper.WriteOutputInfo(session, $"WorldObjects in LB: {landblock.GetWorldObjectsForDiagnostics().Count()}");
-            
-            // Count boundary markers
-            var markers = landblock.GetWorldObjectsForDiagnostics()
-                .Where(wo => wo.Name == "Prestige Boundary")
-                .ToList();
+            var worldObjects = landblock.GetWorldObjectsForDiagnostics().ToList();
+            CommandHandlerHelper.WriteOutputInfo(session, $"WorldObjects in LB: {worldObjects.Count}");
+
+            var markers = worldObjects.Where(wo => wo.Name == "Prestige Boundary").ToList();
             
             CommandHandlerHelper.WriteOutputInfo(session, $"Boundary Markers: {markers.Count}");
             
@@ -2509,6 +2514,11 @@ namespace ACE.Server.Command.Handlers
             }
             else if (int.TryParse(parameters[0], out int varId))
             {
+                if (varId < 0)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null', '0', or an integer ID.");
+                    return;
+                }
                 variation = varId;
             }
             else

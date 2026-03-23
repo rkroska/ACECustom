@@ -978,8 +978,10 @@ namespace ACE.Server.Physics
         {
             if (CurCell == null) prepare_to_enter_world();
 
+#if DEBUG
             if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
-                 Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal ENTRY: pos.ObjCellID={pos.ObjCellID:X8} before AdjustPosition");
+                Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal ENTRY: pos.ObjCellID={pos.ObjCellID:X8} before AdjustPosition");
+#endif
 
             var newCell = AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, true);
 
@@ -1001,15 +1003,19 @@ namespace ACE.Server.Physics
             if (!CheckPositionInternal(newCell, pos, transition, setPos))
             {
                  bool success = handle_all_collisions(transition.CollisionInfo, false, false);
+#if DEBUG
                  if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
                      Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: CheckPositionInternal FAILED. HandleAllCollisions={success}. Transition.CollisionInfo: {transition.CollisionInfo.CollideObject.Count} objs.");
+#endif
                  return success ? SetPositionError.Collided : SetPositionError.NoValidPosition;
             }
 
             if (transition.SpherePath.CurCell == null) 
             {
+#if DEBUG
                 if ((pos.ObjCellID & 0xFFFF0000) == 0xDA550000)
-                     Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: Transition.SpherePath.CurCell is NULL after CheckPositionInternal! NewCell was: {newCell?.ID:X8}");
+                    Console.WriteLine($"[DEBUG-PHYS] SetPositionInternal DA55: Transition.SpherePath.CurCell is NULL after CheckPositionInternal! NewCell was: {newCell?.ID:X8}");
+#endif
                 return SetPositionError.NoCell;
             }
 

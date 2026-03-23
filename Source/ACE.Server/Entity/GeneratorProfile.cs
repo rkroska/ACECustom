@@ -29,7 +29,7 @@ namespace ACE.Server.Entity
         /// </summary>
         public uint Id;
 
-        public string LinkId => Id > 0x70000000 ? $"0x{Id:X8}" : $"{Id}";
+        public string LinkId => ObjectGuid.IsStatic(Id) ? $"0x{Id:X8}" : $"{Id}";
 
         /// <summary>
         /// The biota with all the generator profile info

@@ -305,8 +305,6 @@ namespace ACE.Server.Entity
             //}
             var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, variationId);
             var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock, variationId);
-            if (log.IsDebugEnabled)
-                log.Debug($"Landblock {Id.Landblock:X4} (Var {variationId}): Loaded {objects.Count} World Objects, {shardObjects.Count} Shard Objects.");
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, variationId);
 
 
@@ -365,7 +363,8 @@ namespace ACE.Server.Entity
             var tier = PrestigeManager.GetTier(VariationId);
             if (tier <= 0) return;
 
-            log.Info($"[Prestige] Landblock {Id.Landblock:X4} (Var {VariationId}, Tier {tier}): Checking boundary markers...");
+            if (log.IsDebugEnabled)
+                log.Debug($"[Prestige] Landblock {Id.Landblock:X4} (Var {VariationId}, Tier {tier}): Checking boundary markers...");
 
             // Check if this landblock is allowed for this tier
             bool thisAllowed = PrestigeManager.IsLandblockAllowed(VariationId, Id.Landblock);
@@ -373,7 +372,8 @@ namespace ACE.Server.Entity
             // Only spawn markers in approved landblocks
             if (!thisAllowed)
             {
-                log.Info($"[Prestige] Landblock {Id.Landblock:X4} is NOT allowed - skipping boundary markers.");
+                if (log.IsDebugEnabled)
+                    log.Debug($"[Prestige] Landblock {Id.Landblock:X4} is NOT allowed - skipping boundary markers.");
                 return;
             }
 
@@ -451,7 +451,7 @@ namespace ACE.Server.Entity
 
             // Check each cardinal direction and spawn markers on edges facing forbidden landblocks
             // East edge (X = edgeMax)
-            if (Id.LandblockX < 254 && ShouldSpawnOnEdge(Id.East.Landblock))
+            if (Id.LandblockX < 255 && ShouldSpawnOnEdge(Id.East.Landblock))
                 SpawnMarkersOnEdge(edgeMax, true);
 
             // West edge (X = edgeMin)
@@ -459,7 +459,7 @@ namespace ACE.Server.Entity
                 SpawnMarkersOnEdge(edgeMin, true);
 
             // North edge (Y = edgeMax)
-            if (Id.LandblockY < 254 && ShouldSpawnOnEdge(Id.North.Landblock))
+            if (Id.LandblockY < 255 && ShouldSpawnOnEdge(Id.North.Landblock))
                 SpawnMarkersOnEdge(edgeMax, false);
 
             // South edge (Y = edgeMin)
