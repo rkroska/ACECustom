@@ -590,7 +590,10 @@ namespace ACE.Database
 
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
-            return context.LandblockInstance.AsNoTracking().FirstOrDefault(i => ObjectGuid.IsDynamic(i.Guid)) == null;
+            // Keep this EF-translatable: avoid custom method calls in LINQ-to-SQL.
+            return !context.LandblockInstance
+                .AsNoTracking()
+                .Any(i => i.Guid >= ObjectGuid.DynamicMin);
         }
 
         public bool IsWorldDatabaseGuidRangeValid()

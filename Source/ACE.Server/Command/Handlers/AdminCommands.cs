@@ -274,6 +274,128 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, $"  ... and {markers.Count - 5} more");
         }
 
+        [CommandHandler("prestigezone", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Manage allowed prestige landblocks.",
+            "add <tier> <landblockHex|landblockDec>\nremove <tier> <landblockHex|landblockDec>\nlist [tier]\nreload\nrefresh [variation]")]
+        public static void HandlePrestigeZone(Session session, params string[] parameters)
+        {
+            var subcommand = parameters[0].ToLowerInvariant();
+
+            switch (subcommand)
+            {
+                case "add":
+                    if (parameters.Length < 3 || !TryParsePrestigeTier(parameters[1], out var addTier) || !TryParseLandblock(parameters[2], out var addLandblock))
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone add <tier> <landblockHex|landblockDec>");
+                        return;
+                    }
+
+                    PrestigeManager.AddAllowedLandblock(addTier, addLandblock);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Added landblock {addLandblock:X4} to prestige tier {addTier}.");
+                    break;
+
+                case "remove":
+                    if (parameters.Length < 3 || !TryParsePrestigeTier(parameters[1], out var removeTier) || !TryParseLandblock(parameters[2], out var removeLandblock))
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone remove <tier> <landblockHex|landblockDec>");
+                        return;
+                    }
+
+                    var removed = PrestigeManager.RemoveAllowedLandblock(removeTier, removeLandblock);
+                    CommandHandlerHelper.WriteOutputInfo(session, removed
+                        ? $"Removed landblock {removeLandblock:X4} from prestige tier {removeTier}."
+                        : $"No active mapping found for tier {removeTier}, landblock {removeLandblock:X4}.");
+                    break;
+
+                case "list":
+                    if (parameters.Length >= 2)
+                    {
+                        if (!TryParsePrestigeTier(parameters[1], out var singleTier))
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone list [tier]");
+                            return;
+                        }
+
+                        var singleSet = PrestigeManager.GetAllAllowedLandblocks();
+                        if (!singleSet.TryGetValue(singleTier, out var lbs) || lbs.Count == 0)
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, $"Tier {singleTier}: no allowed landblocks configured.");
+                            return;
+                        }
+
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Tier {singleTier} allowed landblocks ({lbs.Count}): {string.Join(", ", lbs.OrderBy(x => x).Select(x => x.ToString("X4")))}");
+                        return;
+                    }
+
+                    var all = PrestigeManager.GetAllAllowedLandblocks();
+                    if (all.Count == 0)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "No prestige zone mappings configured.");
+                        return;
+                    }
+
+                    foreach (var kvp in all.OrderBy(x => x.Key))
+                    {
+                        var lbList = kvp.Value.OrderBy(x => x).Select(x => x.ToString("X4"));
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Tier {kvp.Key} ({kvp.Value.Count}): {string.Join(", ", lbList)}");
+                    }
+                    break;
+
+                case "reload":
+                    PrestigeManager.ReloadAllowedLandblocksFromDatabase();
+                    CommandHandlerHelper.WriteOutputInfo(session, "Reloaded prestige allowed landblocks from database.");
+                    break;
+
+                case "refresh":
+                    int? variation = null;
+                    if (parameters.Length >= 2)
+                    {
+                        if (!int.TryParse(parameters[1], out var parsedVariation))
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone refresh [variation]");
+                            return;
+                        }
+                        variation = parsedVariation;
+                    }
+
+                    var refreshed = LandblockManager.RefreshLoadedPrestigeBoundaryMarkers(variation);
+                    CommandHandlerHelper.WriteOutputInfo(session, variation.HasValue
+                        ? $"Refreshed prestige boundary markers for {refreshed} loaded landblocks in variation {variation}."
+                        : $"Refreshed prestige boundary markers for {refreshed} loaded landblocks.");
+                    break;
+
+                default:
+                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone add|remove|list|reload|refresh ...");
+                    break;
+            }
+        }
+
+        [CommandHandler("pz", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Alias for prestigezone.",
+            "add|remove|list|reload|refresh")]
+        public static void HandlePz(Session session, params string[] parameters)
+        {
+            HandlePrestigeZone(session, parameters);
+        }
+
+        private static bool TryParsePrestigeTier(string input, out int tier)
+        {
+            if (!int.TryParse(input, out tier))
+                return false;
+
+            return tier > 0 && tier <= (int.MaxValue - PrestigeManager.PRESTIGE_VAR_OFFSET);
+        }
+
+        private static bool TryParseLandblock(string input, out ushort landblock)
+        {
+            var normalized = input.Trim();
+            if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                normalized = normalized[2..];
+
+            return ushort.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblock)
+                || ushort.TryParse(input, out landblock);
+        }
+
         private static void HandleTransferLog(Session session, string[] parameters)
         {
             if (parameters.Length < 1)

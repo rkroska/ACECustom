@@ -472,6 +472,21 @@ namespace ACE.Server.Entity
             }
         }
 
+        public void RefreshPrestigeBoundaryMarkers()
+        {
+            foreach (var marker in _prestigeBoundaryMarkers.ToList())
+            {
+                if (marker == null)
+                    continue;
+
+                RemoveWorldObject(marker.Guid, false, false, false);
+                marker.Destroy();
+            }
+
+            _prestigeBoundaryMarkers.Clear();
+            SpawnPrestigeBoundaryMarkers();
+        }
+
         /// <summary>
         /// Corpses<para />
         /// This will be called from a separate task from our constructor. Use thread safety when interacting with this landblock.

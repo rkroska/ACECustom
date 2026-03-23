@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects;
@@ -17,7 +21,7 @@ namespace ACE.Server.Managers
         /// Prevents players from exploring undesigned areas of the map.
         /// Empty HashSet = no restrictions for that tier (allows free exploration).
         /// </summary>
-        private static readonly Dictionary<int, HashSet<ushort>> _tierAllowedLandblocks = new()
+        private static readonly Dictionary<int, HashSet<ushort>> _defaultTierAllowedLandblocks = new()
         {
             // Test configuration: Landblock 0xEAEA for all tiers during development
             // Expand these lists as content is designed for each tier
@@ -32,6 +36,10 @@ namespace ACE.Server.Managers
             [9] = new HashSet<ushort> { 0xEAEA },
             [10] = new HashSet<ushort> { 0xEAEA },
         };
+        private static Dictionary<int, HashSet<ushort>> _tierAllowedLandblocks = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+        private static readonly object _allowedLandblocksLock = new object();
+        private static readonly object _migrationLock = new object();
+        private static volatile bool _databaseInitialized;
 
         /// <summary>
         /// Checks if a landblock is allowed for the given variation.
@@ -39,6 +47,8 @@ namespace ACE.Server.Managers
         /// </summary>
         public static bool IsLandblockAllowed(int? variation, ushort landblockId)
         {
+            EnsureDatabaseInitialized();
+
             var tier = GetTier(variation);
             if (tier <= 0) return true; // Retail zones unrestricted
             
@@ -77,11 +87,107 @@ namespace ACE.Server.Managers
 
         public static HashSet<ushort> GetAllowedLandblocks(int? variation)
         {
+            EnsureDatabaseInitialized();
+
             var tier = GetTier(variation);
             if (tier <= 0 || !_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
                 return null;
             
             return allowed;
+        }
+
+        public static Dictionary<int, HashSet<ushort>> GetAllAllowedLandblocks()
+        {
+            EnsureDatabaseInitialized();
+
+            lock (_allowedLandblocksLock)
+                return CloneAllowedLandblocks(_tierAllowedLandblocks);
+        }
+
+        public static bool AddAllowedLandblock(int tier, ushort landblock)
+        {
+            EnsureDatabaseInitialized();
+
+            if (tier <= 0)
+                return false;
+
+            using var context = new WorldDbContext();
+            context.Database.ExecuteSqlRaw(@"
+                INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
+                VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
+                ON DUPLICATE KEY UPDATE
+                    is_active = 1,
+                    updated_at = UTC_TIMESTAMP()",
+                tier, landblock);
+
+            ReloadAllowedLandblocksFromDatabase();
+            return true;
+        }
+
+        public static bool RemoveAllowedLandblock(int tier, ushort landblock)
+        {
+            EnsureDatabaseInitialized();
+
+            using var context = new WorldDbContext();
+            var updated = context.Database.ExecuteSqlRaw(@"
+                UPDATE prestige_allowed_landblocks
+                SET is_active = 0, updated_at = UTC_TIMESTAMP()
+                WHERE tier = {0} AND landblock = {1} AND is_active = 1",
+                tier, landblock);
+
+            ReloadAllowedLandblocksFromDatabase();
+            return updated > 0;
+        }
+
+        public static void ReloadAllowedLandblocksFromDatabase()
+        {
+            EnsureDatabaseInitialized();
+
+            var loaded = new Dictionary<int, HashSet<ushort>>();
+            using var context = new WorldDbContext();
+            var connection = context.Database.GetDbConnection();
+            var openedHere = false;
+
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.Open();
+                openedHere = true;
+            }
+
+            try
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = @"
+                    SELECT tier, landblock
+                    FROM prestige_allowed_landblocks
+                    WHERE is_active = 1
+                    ORDER BY tier, landblock";
+
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    var tier = reader.GetInt32(0);
+                    var landblock = Convert.ToUInt16(reader.GetInt32(1));
+
+                    if (!loaded.TryGetValue(tier, out var set))
+                    {
+                        set = new HashSet<ushort>();
+                        loaded[tier] = set;
+                    }
+                    set.Add(landblock);
+                }
+            }
+            finally
+            {
+                if (openedHere)
+                    connection.Close();
+            }
+
+            if (loaded.Count == 0)
+                loaded = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+
+            lock (_allowedLandblocksLock)
+                _tierAllowedLandblocks = loaded;
         }
 
         /// <summary>
@@ -230,6 +336,48 @@ namespace ACE.Server.Managers
                 return (int)Math.Round(mod * 100 - 100);
             else
                 return (int)Math.Round(-100 / mod + 100);
+        }
+
+        private static void EnsureDatabaseInitialized()
+        {
+            if (_databaseInitialized) return;
+
+            lock (_migrationLock)
+            {
+                if (_databaseInitialized) return;
+
+                using var context = new WorldDbContext();
+                EnsurePrestigeAllowedLandblocksTable(context);
+                _databaseInitialized = true;
+            }
+        }
+
+        private static void EnsurePrestigeAllowedLandblocksTable(WorldDbContext context)
+        {
+            try
+            {
+                context.Database.ExecuteSqlRaw("SELECT 1 FROM prestige_allowed_landblocks LIMIT 1");
+            }
+            catch
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS `prestige_allowed_landblocks` (
+                        `id` int(11) NOT NULL AUTO_INCREMENT,
+                        `tier` int(11) NOT NULL,
+                        `landblock` int(11) NOT NULL,
+                        `is_active` tinyint(1) NOT NULL DEFAULT 1,
+                        `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        PRIMARY KEY (`id`),
+                        UNIQUE KEY `ux_prestige_tier_landblock` (`tier`, `landblock`),
+                        KEY `ix_prestige_tier_active` (`tier`, `is_active`),
+                        KEY `ix_prestige_landblock_active` (`landblock`, `is_active`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+            }
+        }
+
+        private static Dictionary<int, HashSet<ushort>> CloneAllowedLandblocks(Dictionary<int, HashSet<ushort>> source)
+        {
+            return source.ToDictionary(kvp => kvp.Key, kvp => new HashSet<ushort>(kvp.Value));
         }
     }
 }

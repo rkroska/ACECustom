@@ -411,6 +411,26 @@ namespace ACE.Server.Managers
             return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
         }
 
+        public static int RefreshLoadedPrestigeBoundaryMarkers(int? variation = null)
+        {
+            var refreshed = 0;
+            var loaded = loadedLandblocks.Values.ToList();
+
+            foreach (var landblock in loaded)
+            {
+                if (landblock == null)
+                    continue;
+
+                if (variation.HasValue && landblock.VariationId != variation)
+                    continue;
+
+                landblock.RefreshPrestigeBoundaryMarkers();
+                refreshed++;
+            }
+
+            return refreshed;
+        }
+
         /// <summary>
         /// Returns a reference to a landblock, loading the landblock if not already active
         /// TODO: Make this Variation Aware
