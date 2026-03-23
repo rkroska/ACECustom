@@ -325,6 +325,9 @@ namespace ACE.Server.Factories
                     }
                 }
 
+                if (worldObject is Creature creature)
+                    PrestigeManager.ApplyPrestigeScaling(creature, variationId);
+
                 if (worldObject != null)
                 {
                     // queue linked child objects

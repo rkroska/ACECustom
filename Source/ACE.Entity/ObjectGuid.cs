@@ -27,9 +27,10 @@ namespace ACE.Entity
         // They are organized by landblock where 0x7AABB000 is landblock AABB
         // These represent items that come from the World db
         public static uint StaticObjectMin { get; } = 0x01000000;
-        public static uint StaticObjectMax { get; } = 0xEFFFFFFF;
+        // Static world DB objects are below 0x80000000; 0x80000000–0xEFFFFFFF are legacy dynamic GUIDs
+        public static uint StaticObjectMax { get; } = 0x7FFFFFFF;
 
-        public static uint DynamicMin { get; } = 0xF0000000;
+        public static uint DynamicMin { get; } = 0x80000000;
         public static uint DynamicMax { get; } = 0xFFFFFFFE; // Ends at E because uint.Max is reserved for "invalid"
 
         public static bool IsPlayer(uint guid) { return (guid >= PlayerMin && guid <= PlayerMax); }

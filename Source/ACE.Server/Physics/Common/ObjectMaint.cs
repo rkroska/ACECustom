@@ -395,7 +395,7 @@ namespace ACE.Server.Physics.Common
 
                 var results = ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && (i.CurCell is not EnvCell indoors || indoors.SeenOutside));
 
-                int targetVar = VariationId ?? 0;
+                int targetVar = VariationId ?? PhysicsObj.Position.Variation ?? 0;
                 results = results.Where(i => (i.Position.Variation ?? 0) == targetVar);
 
                 return results.ToList();
@@ -431,7 +431,7 @@ namespace ACE.Server.Physics.Common
                 visibleObjs.AddRange(outsideObjs);
             }
 
-            int targetVar = VariationId ?? 0;
+            int targetVar = VariationId ?? PhysicsObj.Position.Variation ?? 0;
             var results = ApplyFilter(visibleObjs, type).Where(i => i.ID != PhysicsObj.ID && !i.DatObject);
 
             return results.Where(i => (i.Position.Variation ?? 0) == targetVar).Distinct().ToList();

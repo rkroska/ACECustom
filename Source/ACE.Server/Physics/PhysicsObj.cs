@@ -199,10 +199,12 @@ namespace ACE.Server.Physics
                 LandDefs.AdjustToOutside(position);
                 var cell = ObjCell.GetVisible(position.ObjCellID, position.Variation);
 
+#if DEBUG
                 if (cell == null && (position.ObjCellID & 0xFFFF0000) == 0xDA550000)
                 {
                     Console.WriteLine($"[DEBUG-PHYS] AdjustPosition ({originalID:X8}) -> ({position.ObjCellID:X8}) - Loc: {originalLoc} -> {position.Frame.Origin} - GetVisible returned NULL (Var: {position.Variation})");
                 }
+#endif
                 return cell;
             }
 

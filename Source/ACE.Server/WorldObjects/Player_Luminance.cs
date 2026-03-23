@@ -61,11 +61,15 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                var finalAmount = amount;
+                long rewardAdjusted = amount;
+                if (xpType == XpType.Kill && monsterTier > 0)
+                    rewardAdjusted = (long)Math.Round(amount * PrestigeManager.GetXPRewardModifier(monsterTier));
+
+                var finalAmount = rewardAdjusted;
                 if (xpType == XpType.Kill && monsterTier > 0)
                 {
                     var playerTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
-                    finalAmount = (long)Math.Round(finalAmount * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
+                    finalAmount = (long)Math.Round(rewardAdjusted * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
                 }
                 AddLuminance(finalAmount, xpType, shareType);
             }

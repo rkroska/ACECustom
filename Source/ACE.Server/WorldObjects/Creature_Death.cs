@@ -224,19 +224,16 @@ namespace ACE.Server.WorldObjects
 
                 var totalXP = (XpOverride ?? 0) * damagePercent;
 
-                // Prestige scaling
-                var monsterTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                // Prestige kill scaling only for instance variation 11+ (null/0–10 = retail; see PrestigeManager.GetTier)
+                var monsterTier = PrestigeManager.GetKillScalingMonsterTier(this);
 
-                totalXP *= PrestigeManager.GetXPRewardModifier(monsterTier);
-
+                // Prestige reward multiplier is applied in GrantXP / Fellowship.SplitXp (and GrantLuminance / SplitLuminance) to avoid double-applying for fellowship kills.
                 playerDamager.EarnXP((long)Math.Round(totalXP), XpType.Kill, ShareType.All, monsterTier);
 
                 // handle luminance
                 if (LuminanceAward != null)
                 {
                     var totalLuminance = LuminanceAward.Value * damagePercent;
-
-                    totalLuminance *= PrestigeManager.GetXPRewardModifier(monsterTier);
 
                     playerDamager.EarnLuminance((long)Math.Round(totalLuminance), XpType.Kill, ShareType.All, monsterTier);
                 }
@@ -788,8 +785,7 @@ namespace ACE.Server.WorldObjects
             {
                 List<WorldObject> items = LootGenerationFactory.CreateRandomLootObjects(DeathTreasure);
 
-                // Prestige Scaling
-                var tier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                var tier = PrestigeManager.GetKillScalingMonsterTier(this);
 
                 foreach (WorldObject wo in items)
                 {
@@ -846,7 +842,7 @@ namespace ACE.Server.WorldObjects
                 var createList = Biota.PropertiesCreateList.Where(i => (i.DestinationType & DestinationType.Contain) != 0 ||
                                 (i.DestinationType & DestinationType.Treasure) != 0 && (i.DestinationType & DestinationType.Wield) == 0).ToList();
 
-                var tier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+                var tier = PrestigeManager.GetKillScalingMonsterTier(this);
                 var selected = CreateListSelect(createList);
 
                 foreach (var item in selected)

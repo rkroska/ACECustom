@@ -393,19 +393,17 @@ namespace ACE.Server.Managers
             // Remove from the old landblock -- force
             oldBlock?.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
 
-            // Check if we're in a multi-threaded tick and the new landblock is in a different group
-            // If so, enqueue the add operation to avoid cross-thread errors
-            if (CurrentlyTickingLandblockGroupsMultiThreaded && 
-                newBlock.CurrentLandblockGroup != null && 
-                newBlock.CurrentLandblockGroup != CurrentMultiThreadedTickingLandblockGroup.Value)
-            {
+            // Thread-local tick context is cleared before RelocateObjectForPhysics runs for movedObjects;
+            // use landblock groups + config so cross-group physics relocations still enqueue when MT physics is on.
+            var crossGroupPhysicsMove = ConfigManager.Config.Server.Threading.MultiThreadedLandblockGroupPhysicsTicking
+                && oldBlock?.CurrentLandblockGroup != null
+                && newBlock.CurrentLandblockGroup != null
+                && oldBlock.CurrentLandblockGroup != newBlock.CurrentLandblockGroup;
+
+            if (crossGroupPhysicsMove)
                 newBlock.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
-            }
             else
-            {
-                // Add to the new landblock directly
                 newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
-            }
         }
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)

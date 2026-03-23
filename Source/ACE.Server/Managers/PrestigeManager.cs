@@ -69,6 +69,12 @@ namespace ACE.Server.Managers
             return GetTier(variation.Value);
         }
 
+        /// <summary>
+        /// Tier passed into kill XP / luminance / loot scaling: from the creature's <see cref="WorldObject.Location"/> variation only
+        /// (<see cref="GetTier(int?)"/> — null and 0–10 → 0, 11+ → prestige). Retail instances are never scaled from a stale <see cref="PropertyInt.PrestigeLevel"/>.
+        /// </summary>
+        public static int GetKillScalingMonsterTier(WorldObject wo) => GetTier(wo?.Location?.Variation);
+
         public static HashSet<ushort> GetAllowedLandblocks(int? variation)
         {
             var tier = GetTier(variation);
@@ -201,9 +207,10 @@ namespace ACE.Server.Managers
             var dmgMod = GetDamageModifier(tier);
             if (dmgMod != 1.0f)
             {
-                // Convert 1.15x -> 15 Damage Rating
+                // Convert 1.15x -> 15 Damage Rating; stack on existing rating from the weenie
                 var rating = ModToRating(dmgMod);
-                creature.SetProperty(PropertyInt.DamageRating, rating);
+                var existing = creature.GetProperty(PropertyInt.DamageRating) ?? 0;
+                creature.SetProperty(PropertyInt.DamageRating, existing + rating);
             }
 
             // 3. Mark the creature with its tier for XP/Loot logic later

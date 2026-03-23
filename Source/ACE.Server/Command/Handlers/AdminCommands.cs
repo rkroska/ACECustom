@@ -213,8 +213,21 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            target.SetProperty(PropertyInt.PrestigeLevel, tier);
-            CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {target.Name} to {tier}.");
+            switch (target)
+            {
+                case Player playerTarget:
+                    playerTarget.SetProperty(PropertyInt.PrestigeLevel, tier);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {playerTarget.Name} to {tier}.");
+                    break;
+                case Creature creature:
+                    var variationForTier = tier > 0 ? tier + PrestigeManager.PRESTIGE_VAR_OFFSET : (int?)null;
+                    PrestigeManager.ApplyPrestigeScaling(creature, variationForTier);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Applied prestige scaling to {creature.Name} (tier {tier}).");
+                    break;
+                default:
+                    CommandHandlerHelper.WriteOutputInfo(session, "Target must be a player or creature.");
+                    break;
+            }
         }
 
         [CommandHandler("prestige-debug", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Debug prestige boundary markers in current landblock.")]
@@ -2482,8 +2495,9 @@ namespace ACE.Server.Command.Handlers
         // televariant variation (other /tele* live in TeleportCommands on master)
         [CommandHandler("televariant", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to the specified variation at your current location.",
-            "variation\n" +
-            "Example: @televariant 1")]
+            "variation — retail | default | null | 0 (base), or an integer variation id\n" +
+            "Example: @televariant 1\n" +
+            "Example: @televariant retail")]
         public static void HandleTelevariant(Session session, params string[] parameters)
         {
             int? variation = null;
@@ -2499,7 +2513,7 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'null', '0', or an integer ID.");
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null', '0', or an integer ID.");
                 return;
             }
 
@@ -2511,14 +2525,16 @@ namespace ACE.Server.Command.Handlers
                                         false, variation);
 
             session.Player.Teleport(newPos);
-            CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variation}.");
+            var variationLabel = variation.HasValue ? variation.Value.ToString() : "base (retail / default / null / 0)";
+            CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variationLabel}.");
         }
 
         // tv {variation} - Alias for televariant
         [CommandHandler("tv", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to the specified variation at your current location (alias for televariant).",
-            "variation\n" +
-            "Example: @tv 1")]
+            "variation — retail | default | null | 0 (base), or an integer variation id\n" +
+            "Example: @tv 1\n" +
+            "Example: @tv retail")]
         public static void HandleTV(Session session, params string[] parameters)
         {
             HandleTelevariant(session, parameters);

@@ -208,7 +208,7 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj.CurCell != null)
                 return false;
 
-            AdjustDungeon(Location);
+            AdjustDungeon(Location, preserveIndoorCells: true);
 
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
@@ -236,9 +236,10 @@ namespace ACE.Server.WorldObjects
 
             if (!success || PhysicsObj.CurCell == null)
             {
+                var cellWasNullAfterEnter = PhysicsObj?.CurCell == null;
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
-                Console.WriteLine($"[DEBUG-PHYS] AddPhysicsObj: failure (Success:{success}, CellIsNull:{PhysicsObj?.CurCell == null}): {Name} ({Guid:X8}) @ {cell.ID.ToString("X8")} - {Location.Pos} - lv: {Location.Variation}, v: {VariationId}");
+                Console.WriteLine($"[DEBUG-PHYS] AddPhysicsObj: failure (Success:{success}, CellIsNull:{cellWasNullAfterEnter}): {Name} ({Guid:X8}) @ {cell.ID.ToString("X8")} - {Location.Pos} - lv: {Location.Variation}, v: {VariationId}");
                 return false;
             }
 
@@ -739,27 +740,22 @@ namespace ACE.Server.WorldObjects
         }
 
         // todo: This should really be an extension method for Position, or a static method within Position or even AdjustPos
-        public static void AdjustDungeon(Position pos)
+        public static void AdjustDungeon(Position pos, bool preserveIndoorCells = false)
         {
             AdjustDungeonPos(pos);
-            AdjustDungeonCells(pos);
+            AdjustDungeonCells(pos, preserveIndoorCells);
         }
 
-        public static bool AdjustDungeonCells(Position pos)
+        public static bool AdjustDungeonCells(Position pos, bool preserveIndoorCells = false)
         {
             if (pos == null) return false;
 
             var landblock = LScape.get_landblock(pos.Cell, pos.Variation);
             if (landblock == null || !landblock.HasDungeon) return false;
 
-            // CRITICAL FIX: Do NOT adjust if already in an indoor cell (>= 0x100)
-            // Indoor cells are environment cells with explicit geometry, adjusting them breaks spawning
             var currentCellPart = pos.Cell & 0xFFFF;
-            if (currentCellPart >= 0x100)
-            {
-                // Already in an indoor environment cell, preserve it
+            if (preserveIndoorCells && currentCellPart >= 0x100)
                 return false;
-            }
 
             var dungeonID = pos.Cell >> 16;
 

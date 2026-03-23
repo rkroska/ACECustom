@@ -104,11 +104,15 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var finalAmount = amount;
+            long rewardAdjusted = amount;
+            if (xpType == XpType.Kill && monsterTier > 0)
+                rewardAdjusted = (long)Math.Round(amount * PrestigeManager.GetXPRewardModifier(monsterTier));
+
+            var finalAmount = rewardAdjusted;
             if (xpType == XpType.Kill && monsterTier > 0)
             {
                 var playerTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
-                finalAmount = (long)Math.Round(finalAmount * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
+                finalAmount = (long)Math.Round(rewardAdjusted * PrestigeManager.GetXPPenaltyMultiplier(playerTier, monsterTier));
             }
 
             // Make sure UpdateXpAndLevel is done on this players thread
@@ -117,11 +121,11 @@ namespace ACE.Server.WorldObjects
             // for passing XP up the allegiance chain,
             // this function is only called at the very beginning, to start the process.
             if (shareType.HasFlag(ShareType.Allegiance))
-                UpdateXpAllegiance(amount);
+                UpdateXpAllegiance(rewardAdjusted);
 
             // only certain types of XP are granted to items
             if (xpType == XpType.Kill || xpType == XpType.Quest)
-                GrantItemXP(amount);
+                GrantItemXP(finalAmount);
         }
 
         /// <summary>
