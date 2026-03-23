@@ -187,12 +187,22 @@ namespace ACE.Server.Command.Handlers
             "Example: /teleallto Bob")]
         public static void HandleTeleAllTo(Session session, params string[] parameters)
         {
-            Player destinationPlayer = null;
+            Player destinationPlayer;
 
             if (parameters.Length > 0)
-                destinationPlayer = PlayerManager.GetOnlinePlayer(string.Join(" ", parameters));
-
-            destinationPlayer ??= session.Player;
+            {
+                var targetName = string.Join(" ", parameters);
+                destinationPlayer = PlayerManager.GetOnlinePlayer(targetName);
+                if (destinationPlayer == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player '{targetName}' was not found.", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+            else
+            {
+                destinationPlayer = session.Player;
+            }
 
             foreach (var player in PlayerManager.GetAllOnline())
             {

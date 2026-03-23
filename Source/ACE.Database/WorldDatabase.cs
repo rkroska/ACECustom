@@ -11,6 +11,7 @@ using log4net;
 
 using ACE.Database.Entity;
 using ACE.Database.Models.World;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 
@@ -589,7 +590,7 @@ namespace ACE.Database
 
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
-            return context.LandblockInstance.AsNoTracking().FirstOrDefault(i => i.Guid >= 0xFFFFFFFE) == null;
+            return context.LandblockInstance.AsNoTracking().FirstOrDefault(i => ObjectGuid.IsDynamic(i.Guid)) == null;
         }
 
         public bool IsWorldDatabaseGuidRangeValid()

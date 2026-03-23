@@ -475,6 +475,15 @@ namespace ACE.Server.WorldObjects
                 // Enqueue everything to ensure thread safety (AddWorldObjectInternal must be main thread)
                 WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                 {
+                    if (Session == null || Session.State != SessionState.WorldConnected || Health == null)
+                        return;
+                    var cell = Location?.Cell ?? 0;
+                    var lbVal = (ushort)(cell >> 16);
+                    if (lbVal != currentLBVal || Location?.Variation != variation)
+                        return;
+                    if (PrestigeManager.IsLandblockAllowed(variation, lbVal))
+                        return;
+
                     if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck >= 10.0) // Throttle logs
                     {
                        log.Info($"Player {Name} ({Guid}) is in FORBIDDEN landblock {currentLBVal:X4} (Var: {variation})");
@@ -524,9 +533,9 @@ namespace ACE.Server.WorldObjects
                 // Check 20m buffer from edges (0..192)
                 // Fix: Check bounds before accessing West/East/North/South to avoid OverflowException at map edge
                 string dangerEdge = "none";
-                if (pos.X > 182.0f && lbId.LandblockX < 254 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) { danger = true; dangerEdge = $"East(LB={lbId.East.Landblock:X4})"; }
+                if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) { danger = true; dangerEdge = $"East(LB={lbId.East.Landblock:X4})"; }
                 else if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock)) { danger = true; dangerEdge = $"West(LB={lbId.West.Landblock:X4})"; }
-                else if (pos.Y > 182.0f && lbId.LandblockY < 254 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) { danger = true; dangerEdge = $"North(LB={lbId.North.Landblock:X4})"; }
+                else if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) { danger = true; dangerEdge = $"North(LB={lbId.North.Landblock:X4})"; }
                 else if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock)) { danger = true; dangerEdge = $"South(LB={lbId.South.Landblock:X4})"; }
 
                 if (IsDebugTarget)
@@ -540,7 +549,7 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    SetFogColor(EnvironChangeType.Clear);
+                    SetFogColor(CurrentLandblock?.FogColor ?? EnvironChangeType.Clear);
                 }
 
                 // Check if we are fully inside a bad landblock (not just near edge)
@@ -644,13 +653,13 @@ namespace ACE.Server.WorldObjects
                                 string safeDir = "None";
 
                                 // Check cardinal neighbors for safety
-                                bool eAllowed = lbId.LandblockX < 254 && PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock);
+                                bool eAllowed = lbId.LandblockX < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock);
                                 bool wAllowed = lbId.LandblockX > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock);
-                                bool nAllowed = lbId.LandblockY < 254 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
+                                bool nAllowed = lbId.LandblockY < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
                                 bool sAllowed = lbId.LandblockY > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock);
 
                                 if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP neighbor safety: E={eAllowed}({(lbId.LandblockX < 254 ? lbId.East.Landblock.ToString("X4") : "EDGE")}) W={wAllowed}({(lbId.LandblockX > 0 ? lbId.West.Landblock.ToString("X4") : "EDGE")}) N={nAllowed}({(lbId.LandblockY < 254 ? lbId.North.Landblock.ToString("X4") : "EDGE")}) S={sAllowed}({(lbId.LandblockY > 0 ? lbId.South.Landblock.ToString("X4") : "EDGE")})");
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP neighbor safety: E={eAllowed}({(lbId.LandblockX < 255 ? lbId.East.Landblock.ToString("X4") : "EDGE")}) W={wAllowed}({(lbId.LandblockX > 0 ? lbId.West.Landblock.ToString("X4") : "EDGE")}) N={nAllowed}({(lbId.LandblockY < 255 ? lbId.North.Landblock.ToString("X4") : "EDGE")}) S={sAllowed}({(lbId.LandblockY > 0 ? lbId.South.Landblock.ToString("X4") : "EDGE")})");
 
                                 if (eAllowed)
                                 {

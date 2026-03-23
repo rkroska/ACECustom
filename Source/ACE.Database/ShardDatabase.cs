@@ -564,7 +564,6 @@ namespace ACE.Database
                             staticObjects.Add(biota);
                         }
                     }
-
                 }
             }
 
@@ -588,7 +587,7 @@ namespace ACE.Database
                                 p.ObjCellId >= min && 
                                 p.ObjCellId <= max && 
                                 p.ObjectId >= 0x80000000 &&
-                                (variationId.HasValue 
+                                (variationId.HasValue
                                     ? (p.VariationId.HasValue && p.VariationId.Value == variationId.Value)
                                     : (p.VariationId == null || p.VariationId == 0)))
                     .Select(r => r.ObjectId)

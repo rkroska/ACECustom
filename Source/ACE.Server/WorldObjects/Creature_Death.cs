@@ -226,7 +226,6 @@ namespace ACE.Server.WorldObjects
 
                 // Prestige scaling
                 var monsterTier = GetProperty(PropertyInt.PrestigeLevel) ?? 0;
-                var playerTier = playerDamager.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
 
                 totalXP *= PrestigeManager.GetXPRewardModifier(monsterTier);
 
