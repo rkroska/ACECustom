@@ -20,6 +20,8 @@ namespace ACE.Server.WorldObjects
         private DateTime Timeout { get; set; } = DateTime.UnixEpoch;
         private DateTime LastTickTime { get; set; } = DateTime.UtcNow;
         private DateTime LastUCMCheckTime { get; set; } = DateTime.UnixEpoch;
+        /// <summary>Context id of the active UCM <see cref="ConfirmationType.Yes_No"/> dialog, if any.</summary>
+        private uint? ActiveUcmConfirmationContextId { get; set; }
 
         /// <summary>
         /// Determines whether a check operation is currently in progress.
@@ -57,7 +59,7 @@ namespace ACE.Server.WorldObjects
 
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
             string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
-            bool enqueued = player.ConfirmationManager.EnqueueSend(new Confirmation_Custom(player.Guid, (response, timeout) =>
+            var ucmConfirmation = new Confirmation_Custom(player.Guid, (response, timeout) =>
             {
                 // This callback is executed asynchronously.
                 // The lock has been released at this point.
@@ -73,10 +75,12 @@ namespace ACE.Server.WorldObjects
                 {
                     FailActiveCheck(player, "selected incorrectly");
                 }
-            }), message);
+            });
+            bool enqueued = player.ConfirmationManager.EnqueueSend(ucmConfirmation, message, secondsUntilTimeout);
 
             if (!enqueued) return false;
 
+            ActiveUcmConfirmationContextId = ucmConfirmation.ContextId;
             IsChecking = true;
             LastUCMCheckTime = DateTime.UtcNow;
             Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
@@ -102,6 +106,7 @@ namespace ACE.Server.WorldObjects
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
             PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} passed UCM check at {player.Location}.");
             IsChecking = false;
+            ActiveUcmConfirmationContextId = null;
 
         }
 
@@ -121,12 +126,18 @@ namespace ACE.Server.WorldObjects
         private void FailActiveCheckLocked(Player player, string reason, bool doTeleport = true)
         {
             if (!IsChecking) return;
+
+            // Tick timeout: confirmation is still registered; dismiss so the scheduled EnqueueAbort does not send a duplicate timeout message.
+            if (ActiveUcmConfirmationContextId is uint ctx)
+                player.ConfirmationManager.TryDismissConfirmation(ConfirmationType.Yes_No, ctx);
+
             string message = "You failed the focus test and have been punished!";
             player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
             player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
 
             PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.");
             IsChecking = false;
+            ActiveUcmConfirmationContextId = null;
 
             if (doTeleport)
             {
