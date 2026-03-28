@@ -274,6 +274,149 @@ namespace ACE.Server.Command.Handlers
                 CommandHandlerHelper.WriteOutputInfo(session, $"  ... and {markers.Count - 5} more");
         }
 
+        [CommandHandler("prestige-mirror", AccessLevel.Admin, CommandHandlerFlag.None, 1,
+            "Inspect prestige mirroring targets and normalization.",
+            "targets [sourceVariation]\nnormalize <sourceVariation> <variationList>")]
+        public static void HandlePrestigeMirror(Session session, params string[] parameters)
+        {
+            var subcommand = parameters[0].ToLowerInvariant();
+            switch (subcommand)
+            {
+                case "targets":
+                {
+                    int? sourceVariation = null;
+                    if (parameters.Length >= 2)
+                    {
+                        if (!int.TryParse(parameters[1], out var parsed))
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror targets [sourceVariation]");
+                            return;
+                        }
+                        sourceVariation = parsed;
+                    }
+                    else if (session.Player?.Location != null)
+                    {
+                        sourceVariation = session.Player.Location.Variation;
+                    }
+
+                    var maxVariation = PrestigeManager.GetMaxConfiguredPrestigeVariation();
+                    var defaultTargets = PrestigeManager.GetDefaultMirrorTargetVariations(sourceVariation);
+                    CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Targets ===");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {(sourceVariation.HasValue ? sourceVariation.Value.ToString() : "null")}");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Base Prestige Variation: {PrestigeManager.GetBasePrestigeVariation()}");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Max Configured Prestige Variation: {maxVariation}");
+                    CommandHandlerHelper.WriteOutputInfo(session, defaultTargets.Count == 0
+                        ? "Default Targets: <none>"
+                        : $"Default Targets: {string.Join(", ", defaultTargets)}");
+                    break;
+                }
+
+                case "normalize":
+                {
+                    if (parameters.Length < 3 || !int.TryParse(parameters[1], out var sourceVariation))
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror normalize <sourceVariation> <variationList>");
+                        CommandHandlerHelper.WriteOutputInfo(session, "Examples: /prestige-mirror normalize 11 12,13,15 or /prestige-mirror normalize 11 12-15");
+                        return;
+                    }
+
+                    var requested = ParseVariationList(parameters[2]).ToList();
+                    var normalized = PrestigeManager.NormalizeMirrorTargetVariations(requested, sourceVariation);
+                    CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Normalize ===");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {sourceVariation}");
+                    CommandHandlerHelper.WriteOutputInfo(session, requested.Count == 0
+                        ? "Requested Targets: <none parsed>"
+                        : $"Requested Targets: {string.Join(", ", requested)}");
+                    CommandHandlerHelper.WriteOutputInfo(session, normalized.Count == 0
+                        ? "Normalized Targets: <none>"
+                        : $"Normalized Targets: {string.Join(", ", normalized)}");
+                    break;
+                }
+
+                default:
+                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror targets [sourceVariation]");
+                    CommandHandlerHelper.WriteOutputInfo(session, "   or: /prestige-mirror normalize <sourceVariation> <variationList>");
+                    break;
+            }
+        }
+
+        [CommandHandler("prestige-mirror-check", AccessLevel.Admin, CommandHandlerFlag.None, 0,
+            "Check mirroring eligibility for selected target or wcid.",
+            "[wcid]")]
+        public static void HandlePrestigeMirrorCheck(Session session, params string[] parameters)
+        {
+            WeenieType weenieType;
+            bool hasGeneratorProfiles;
+            uint weenieClassId;
+            string sourceLabel;
+
+            if (parameters.Length >= 1 && uint.TryParse(parameters[0], out var wcid))
+            {
+                var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                if (weenie == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Weenie {wcid} not found.");
+                    return;
+                }
+
+                weenieType = weenie.WeenieType;
+                hasGeneratorProfiles = weenie.PropertiesGenerator != null && weenie.PropertiesGenerator.Count > 0;
+                weenieClassId = wcid;
+                sourceLabel = "WCID argument";
+            }
+            else
+            {
+                var target = session.Player?.SelectedTarget;
+                if (target == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Select a target or pass a wcid.");
+                    return;
+                }
+
+                var weenie = DatabaseManager.World.GetCachedWeenie(target.WeenieClassId);
+                weenieType = target.WeenieType;
+                hasGeneratorProfiles = weenie?.PropertiesGenerator != null && weenie.PropertiesGenerator.Count > 0;
+                weenieClassId = target.WeenieClassId;
+                sourceLabel = $"Selected target {target.Name}";
+            }
+
+            var eligible = PrestigeManager.IsCreateInstMirrorEligible(weenieType, hasGeneratorProfiles);
+            CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Eligibility ===");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Source: {sourceLabel}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"WCID: {weenieClassId}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"WeenieType: {weenieType}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Has Generator Profiles: {hasGeneratorProfiles}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Mirror Eligible: {eligible}");
+        }
+
+        private static IEnumerable<int> ParseVariationList(string csvOrRange)
+        {
+            if (string.IsNullOrWhiteSpace(csvOrRange))
+                yield break;
+
+            var values = csvOrRange.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var value in values)
+            {
+                if (value.Contains('-', StringComparison.Ordinal))
+                {
+                    var parts = value.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (parts.Length != 2 || !int.TryParse(parts[0], out var min) || !int.TryParse(parts[1], out var max))
+                        continue;
+
+                    if (min > max)
+                        (min, max) = (max, min);
+
+                    for (var variation = min; variation <= max; variation++)
+                        yield return variation;
+
+                    continue;
+                }
+
+                if (int.TryParse(value, out var variationId))
+                    yield return variationId;
+            }
+        }
+
         [CommandHandler("prestigezone", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
             "Manage allowed prestige landblocks.",
             "add <tier> <landblockHex|landblockDec>\nremove <tier> <landblockHex|landblockDec>\nlist [tier]\nreload\nrefresh [variation]")]

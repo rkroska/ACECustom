@@ -765,9 +765,10 @@ namespace ACE.Server.WorldObjects
 
         public bool SyncLocationWithPhysics()
         {
-            if (PhysicsObj.CurCell == null)
+            if (PhysicsObj?.CurCell == null)
             {
-                Console.WriteLine($"{Name}.SyncLocationWithPhysics(): CurCell is null!");
+                if (PhysicsObj != null)
+                    Console.WriteLine($"{Name}.SyncLocationWithPhysics(): CurCell is null!");
                 return false;
             }
 
@@ -776,7 +777,8 @@ namespace ACE.Server.WorldObjects
             var rotate = PhysicsObj.Position.Frame.Orientation;
             var variation = PhysicsObj.Position.Variation;
 
-            var landblockUpdate = blockcell << 16 != CurrentLandblock.Id.Landblock;
+            // CurrentLandblock can be null briefly during teleport/recall while physics has already updated
+            var landblockUpdate = CurrentLandblock != null && blockcell << 16 != CurrentLandblock.Id.Landblock;
 
             Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 

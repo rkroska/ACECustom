@@ -15,6 +15,8 @@ namespace ACE.Server.Managers
         // Tier 1 starts at Variation 11
         // Retail is 0-10 (technically 0 is main world, others are specialized)
         public const int PRESTIGE_VAR_OFFSET = 10;
+        public const int PRESTIGE_BASE_VARIATION = PRESTIGE_VAR_OFFSET + 1;
+        private const int DEFAULT_PRESTIGE_MAX_TIER = 10;
 
         /// <summary>
         /// Defines allowed landblocks for each prestige tier.
@@ -336,6 +338,76 @@ namespace ACE.Server.Managers
                 return (int)Math.Round(mod * 100 - 100);
             else
                 return (int)Math.Round(-100 / mod + 100);
+        }
+
+        public static bool IsPrestigeVariation(int? variation)
+        {
+            return variation.HasValue && variation.Value > PRESTIGE_VAR_OFFSET;
+        }
+
+        public static int GetBasePrestigeVariation()
+        {
+            return PRESTIGE_BASE_VARIATION;
+        }
+
+        public static int GetMaxConfiguredPrestigeVariation()
+        {
+            EnsureDatabaseInitialized();
+
+            var maxTier = DEFAULT_PRESTIGE_MAX_TIER;
+            lock (_allowedLandblocksLock)
+            {
+                if (_tierAllowedLandblocks.Count > 0)
+                    maxTier = Math.Max(maxTier, _tierAllowedLandblocks.Keys.Max());
+            }
+            return PRESTIGE_VAR_OFFSET + maxTier;
+        }
+
+        public static List<int> GetDefaultMirrorTargetVariations(int? sourceVariation)
+        {
+            if (!sourceVariation.HasValue || sourceVariation.Value != PRESTIGE_BASE_VARIATION)
+                return new List<int>();
+
+            var targets = new List<int>();
+            var maxVariation = GetMaxConfiguredPrestigeVariation();
+            for (var variation = PRESTIGE_BASE_VARIATION + 1; variation <= maxVariation; variation++)
+                targets.Add(variation);
+
+            return targets;
+        }
+
+        public static List<int> NormalizeMirrorTargetVariations(IEnumerable<int> requestedTargets, int? sourceVariation)
+        {
+            var source = sourceVariation ?? 0;
+            var maxVariation = GetMaxConfiguredPrestigeVariation();
+
+            return requestedTargets
+                .Where(v => v > PRESTIGE_VAR_OFFSET && v <= maxVariation && v != source)
+                .Distinct()
+                .OrderBy(v => v)
+                .ToList();
+        }
+
+        public static bool IsCreateInstMirrorEligible(WeenieType weenieType, bool hasGeneratorProfiles)
+        {
+            if (hasGeneratorProfiles)
+                return true;
+
+            return weenieType switch
+            {
+                WeenieType.Creature => true,
+                WeenieType.Vendor => true,
+                WeenieType.Portal => true,
+                WeenieType.LifeStone => true,
+                WeenieType.Door => true,
+                WeenieType.Chest => true,
+                WeenieType.Container => true,
+                WeenieType.PressurePlate => true,
+                WeenieType.Switch => true,
+                WeenieType.LightSource => true,
+                WeenieType.Generic => true,
+                _ => false,
+            };
         }
 
         private static void EnsureDatabaseInitialized()
