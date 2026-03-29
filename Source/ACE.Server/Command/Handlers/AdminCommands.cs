@@ -6524,6 +6524,17 @@ namespace ACE.Server.Command.Handlers
             PropertyManager.ResyncVariables();
         }
 
+        [CommandHandler("reload-enlightenment-tiers", AccessLevel.Admin, CommandHandlerFlag.None, "Reload config_enlightenment_tier from the shard database")]
+        public static void HandleReloadEnlightenmentTiers(Session session, params string[] parameters)
+        {
+            var ok = EnlightenmentTierManager.TryReload(out var detail);
+            CommandHandlerHelper.WriteOutputInfo(session, detail);
+            if (ok)
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Reloaded enlightenment tier configuration from database.");
+            else
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload fell back to compiled defaults; see server log.");
+        }
+
         [CommandHandler("iterate-allegiances", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Runs through all allegiances and outputs to console")]
         public static void HandleIterateAllegiances(Session session, params string[] parameters)
         {
