@@ -1318,7 +1318,7 @@ namespace ACE.Server.WorldObjects
 
         public RadarColor? RadarColor
         {
-            get => (RadarColor?)GetProperty(PropertyInt.RadarBlipColor);
+            get { if (this is Player player && player.IsInJail()) return ACE.Entity.Enum.RadarColor.Red; else return (RadarColor?)GetProperty(PropertyInt.RadarBlipColor); }
             set { if (!value.HasValue) RemoveProperty(PropertyInt.RadarBlipColor); else SetProperty(PropertyInt.RadarBlipColor, (int)value.Value); }
         }
 

@@ -449,7 +449,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<string> server_motd { get; private set; } = new("", "Server message of the day");
 
         // UCM Configuration
+        public static ConfigProperty<double> ucm_jail_duration_seconds { get; private set; } = new(900.0, "The number of seconds a player who fails a UCM check is punished");
+        public static ConfigProperty<double> ucm_jail_size { get; private set; } = new(30.0, "The lengths of the bounding box sides around the ucm jail center where a jailed player is allowed to move before being teleported back");
         public static ConfigProperty<string> ucm_check_fail_teleport_location { get; private set; } = new("", "The location to send a player to when failing a UCM check. If blank, the player will be sent to the lifestone.");
+        public static ConfigProperty<string> ucm_check_jail_center_location { get; private set; } = new("", "The center location of the jail used for rubberbanding distance checks. If blank, uses ucm_check_fail_teleport_location.");
         public static ConfigProperty<long> ucm_check_timeout_seconds { get; private set; } = new(60, "The amount of time a player has to respond to a UCM check before failing to timeout.");
         public static ConfigProperty<long> ucm_check_combat_eligibility_seconds { get; private set; } = new(60, "A player is only eligible for a UCM check if they took a combat action in the prior N seconds.");
         public static ConfigProperty<long> ucm_check_cooldown_seconds { get; private set; } = new(3600 /* 60 min */, "The minimum amount of time in seconds between random UCM checks on a single player.");
