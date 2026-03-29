@@ -22,6 +22,8 @@ namespace ACE.Server.WorldObjects
         private DateTime LastUCMCheckTime { get; set; } = DateTime.UnixEpoch;
         /// <summary>Context id of the active UCM <see cref="ConfirmationType.Yes_No"/> dialog, if any.</summary>
         private uint? ActiveUcmConfirmationContextId { get; set; }
+        /// <summary>UTC time the current prompt was shown (for audit / bot heuristics).</summary>
+        private DateTime? UcmPromptStartedAtUtc { get; set; }
 
         /// <summary>
         /// Determines whether a check operation is currently in progress.
@@ -80,10 +82,12 @@ namespace ACE.Server.WorldObjects
 
             if (!enqueued) return false;
 
+            var startUtc = DateTime.UtcNow;
             ActiveUcmConfirmationContextId = ucmConfirmation.ContextId;
             IsChecking = true;
-            LastUCMCheckTime = DateTime.UtcNow;
-            Timeout = DateTime.UtcNow.AddSeconds(secondsUntilTimeout);
+            UcmPromptStartedAtUtc = startUtc;
+            LastUCMCheckTime = startUtc;
+            Timeout = startUtc.AddSeconds(secondsUntilTimeout);
             return true;
         }
 
@@ -104,9 +108,11 @@ namespace ACE.Server.WorldObjects
         {
             if (!IsChecking) return;
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
-            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} passed UCM check at {player.Location}.");
+            var passElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
+            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} passed UCM check at {player.Location}.{passElapsed}");
             IsChecking = false;
             ActiveUcmConfirmationContextId = null;
+            UcmPromptStartedAtUtc = null;
 
         }
 
@@ -135,9 +141,11 @@ namespace ACE.Server.WorldObjects
             player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
             player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
 
-            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.");
+            var failElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
+            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.{failElapsed}");
             IsChecking = false;
             ActiveUcmConfirmationContextId = null;
+            UcmPromptStartedAtUtc = null;
 
             if (doTeleport)
             {
@@ -191,6 +199,18 @@ namespace ACE.Server.WorldObjects
                 FailActiveCheckLocked(player, "timed out");
                 return;
             }
+        }
+
+        /// <summary>Audit suffix: seconds from prompt shown to outcome (UTC).</summary>
+        private static string FormatUcmResponseSeconds(DateTime? promptStartedUtc)
+        {
+            if (!promptStartedUtc.HasValue)
+                return string.Empty;
+
+            var seconds = (DateTime.UtcNow - promptStartedUtc.Value).TotalSeconds;
+            if (seconds < 0)
+                seconds = 0;
+            return $" Response time: {seconds:F3}s.";
         }
     }
 

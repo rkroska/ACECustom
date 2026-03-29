@@ -61,7 +61,10 @@ namespace ACE.Server.WorldObjects.Managers
         /// </summary>
         public bool TryDismissConfirmation(ConfirmationType confirmationType, uint contextId)
         {
-            if (!confirmations.TryRemove(confirmationType, out var confirm) || confirm.ContextId != contextId)
+            if (!confirmations.TryGetValue(confirmationType, out var confirm) || confirm.ContextId != contextId)
+                return false;
+
+            if (!confirmations.TryRemove(confirmationType, out var removed) || removed.ContextId != contextId)
                 return false;
 
             if (Player.Session?.Network != null)
@@ -92,8 +95,9 @@ namespace ACE.Server.WorldObjects.Managers
                     case ConfirmationType.Augmentation:
                     case ConfirmationType.Yes_No:
                         Player.SendMessage("You waited too long to answer the question!");
-                        // These events automatically trigger a response from client, others do not.
-                        // do nothing further
+                        // Client will also send ConfirmationResponse with timeout=false; process as timeout now so
+                        // callbacks (e.g. UCM) see timeout=true and the late packet is ignored.
+                        HandleResponse(confirm.ConfirmationType, confirm.ContextId, false, true);
                         break;
 
                     default:
