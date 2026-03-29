@@ -48,8 +48,8 @@ SELECT * FROM (
   UNION ALL SELECT 2, 6, 50, 0, NULL, NULL, NULL, 300000, 5, 'Enlightenment Tokens', NULL, NULL
   UNION ALL SELECT 3, 51, 150, 100000000, NULL, NULL, NULL, 300000, 5, 'Enlightenment Tokens', NULL, NULL
   UNION ALL SELECT 4, 151, 300, 1000000000, NULL, NULL, NULL, 90000217, 5, 'Enlightenment Medallions', 'ParagonEnlCompleted', 'You must have completed 50th Paragon to enlighten beyond level 150.'
-  UNION ALL SELECT 5, 301, 324, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
-  UNION ALL SELECT 6, 325, NULL, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
+  UNION ALL SELECT 5, 301, 325, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
+  UNION ALL SELECT 6, 326, NULL, 2000000000, 300, 50, 0.5000, 98769999, 5, 'Crest of Enlightenment', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
 ) AS `seed`
 WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
 
@@ -164,6 +164,11 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
 
         public static string GetLoadStatus() => _lastLoadDetail;
 
+        /// <summary>
+        /// Resolves the tier for target enlightenment T. When multiple rows would match (e.g. a misconfigured
+        /// band with <c>max_target_enl</c> NULL that is not the final row), the row with the greatest
+        /// <see cref="EnlightenmentTierSnapshot.MinTargetEnl"/> wins (most specific band).
+        /// </summary>
         public static bool TryGetTier(int targetEnlightenment, out EnlightenmentTierSnapshot tier)
         {
             tier = null;
@@ -173,10 +178,10 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
                     continue;
                 if (t.MaxTargetEnl.HasValue && targetEnlightenment > t.MaxTargetEnl.Value)
                     continue;
-                tier = t;
-                return true;
+                if (tier == null || t.MinTargetEnl > tier.MinTargetEnl)
+                    tier = t;
             }
-            return false;
+            return tier != null;
         }
 
         public static long CalculateLuminanceCost(int targetEnlightenment)
@@ -267,9 +272,9 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
                 new(0, 51, 150, enl50, null, null, null, 300000, 5, "Enlightenment Tokens", null, null),
                 new(0, 151, 300, enl150, null, null, null, 90000217, 5, "Enlightenment Medallions", "ParagonEnlCompleted",
                     "You must have completed 50th Paragon to enlighten beyond level 150."),
-                new(0, 301, 324, enl300, 300, 50, 0.5m, 300101189, 5, "Enlightenment Sigils", "ParagonArmorCompleted",
+                new(0, 301, 325, enl300, 300, 50, 0.5m, 300101189, 5, "Enlightenment Sigils", "ParagonArmorCompleted",
                     "You must have completed 50th Armor Paragon to enlighten beyond level 300."),
-                new(0, 325, null, enl300, 300, 50, 0.5m, 300101189, 5, "Enlightenment Sigils", "ParagonArmorCompleted",
+                new(0, 326, null, enl300, 300, 50, 0.5m, 98769999, 5, "Crest of Enlightenment", "ParagonArmorCompleted",
                     "You must have completed 50th Armor Paragon to enlighten beyond level 300."),
             };
         }

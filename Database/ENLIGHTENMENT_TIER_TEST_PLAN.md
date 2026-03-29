@@ -31,9 +31,10 @@ Use a test character; compare **expected** `ceil(T * lum_base_per_target * multi
 | 150 | `150 × 100_000_000` | End of 51–150 band |
 | 151 | `151 × 1_000_000_000` | Medallion band |
 | 300 | `300 × 1_000_000_000` | End of 151–300 |
-| 301 | `ceil(301 × 2_000_000_000 × 1.0)` | First sigil sub-band (301–324); step multiplier steps=0 |
+| 301 | `ceil(301 × 2_000_000_000 × 1.0)` | Sigil band (301–325); step multiplier steps=0 |
 | 324 | `ceil(324 × 2_000_000_000 × 1.0)` | Same formula as 301 |
-| 325 | Same formula as 324 by default | Row 6 seed matches row 5 until you change SQL |
+| 325 | `ceil(325 × 2_000_000_000 × 1.0)` | Last sigil T (same row as 301–325 band) |
+| 326 | `ceil(326 × 2_000_000_000 × 1.0)` | First crest T (open-ended row); same lum columns as sigils in seed |
 | 351 | `ceil(351 × 2_000_000_000 × 1.5)` | `over=51`, `steps=(51-1)/50=1`, increment 0.5 |
 
 Regression: **`enl_50_base_lum_cost` / `enl_150_base_lum_cost` / `enl_300_base_lum_cost` are no longer read** for enlightenment. Changing them with `/modifylong` must **not** change enlightenment cost; change `lum_base_per_target` (and step columns) in the table instead.
@@ -49,7 +50,8 @@ Required stacks = `max(0, T - item_count_target_minus)` with default `item_count
 | 150 | 151 | Medallions (90000217) | 146 |
 | 300 | 301 | Sigils (300101189) | 296 |
 | 323 | 324 | Sigils | 319 |
-| 324 | 325 | Sigils (row 6; change WCID in DB to test a new item) | 320 |
+| 324 | 325 | Sigils (300101189) | 320 |
+| 325 | 326 | Crest of Enlightenment (98769999) | 321 |
 
 After a successful enlighten, inventory loses exactly that many of the tier’s `item_wcid` (and luminance is spent).
 
@@ -78,15 +80,15 @@ These still live in `Enlightenment.cs` and should behave as before:
 - With players online, run `/reload-enlightenment-tiers` after a **valid** SQL edit.
 - Immediately attempt enlighten (or re-open validation): new cost/item/quest rules apply without binary restart.
 
-## 7. Custom 325+ update (content)
+## 7. Custom 326+ update (content)
 
-1. `UPDATE config_enlightenment_tier SET lum_base_per_target = …, item_wcid = …, item_label = '…', quest_stamp = …, quest_failure_message = … WHERE min_target_enl = 325;` (adjust columns as needed).
+1. `UPDATE config_enlightenment_tier SET lum_base_per_target = …, item_wcid = …, item_label = '…', quest_stamp = …, quest_failure_message = … WHERE min_target_enl = 326 AND max_target_enl IS NULL;` (adjust columns as needed).
 2. `/reload-enlightenment-tiers`
-3. Re-run sections **2–4** for T = 325 and a few higher values.
+3. Re-run sections **2–4** for T = 326 and a few higher values.
 
 ## 8. Adding a future breakpoint (e.g. 350)
 
-1. Narrow the open-ended row: `UPDATE config_enlightenment_tier SET max_target_enl = 349 WHERE min_target_enl = 325 AND max_target_enl IS NULL;` (example).
+1. Narrow the open-ended row: `UPDATE config_enlightenment_tier SET max_target_enl = 349 WHERE min_target_enl = 326 AND max_target_enl IS NULL;` (example).
 2. `INSERT` a new row with `min_target_enl = 350`, `max_target_enl = NULL`, and desired lum/item/quest columns.
 3. Ensure `max` of previous row + 1 = `min` of new row.
 4. `/reload-enlightenment-tiers` — must succeed with no validation error.

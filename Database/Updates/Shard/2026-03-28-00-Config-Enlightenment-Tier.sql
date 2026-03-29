@@ -3,7 +3,7 @@
 -- Luminance: ceil(T * lum_base_per_target * multiplier), where multiplier = 1 + lum_step_increment * steps
 --   when lum_step_* are set, with over = T - lum_step_anchor, steps = max(0, (over - 1) / lum_step_every).
 -- Item stacks required when item_wcid set: max(0, T - item_count_target_minus).
--- Edit row 6 (325+) for new cost/item; add rows for future breakpoints (350, 700, …).
+-- Sigils: T 301–325 (current enl 300→324 gaining 301→325). Crests: T 326+ (325→326 onward). Edit open row for cost/item; add rows for future breakpoints (350, 700, …).
 
 CREATE TABLE IF NOT EXISTS `config_enlightenment_tier` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -30,7 +30,7 @@ SELECT * FROM (
   UNION ALL SELECT 2, 6, 50, 0, NULL, NULL, NULL, 300000, 5, 'Enlightenment Tokens', NULL, NULL
   UNION ALL SELECT 3, 51, 150, 100000000, NULL, NULL, NULL, 300000, 5, 'Enlightenment Tokens', NULL, NULL
   UNION ALL SELECT 4, 151, 300, 1000000000, NULL, NULL, NULL, 90000217, 5, 'Enlightenment Medallions', 'ParagonEnlCompleted', 'You must have completed 50th Paragon to enlighten beyond level 150.'
-  UNION ALL SELECT 5, 301, 324, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
-  UNION ALL SELECT 6, 325, NULL, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
+  UNION ALL SELECT 5, 301, 325, 2000000000, 300, 50, 0.5000, 300101189, 5, 'Enlightenment Sigils', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
+  UNION ALL SELECT 6, 326, NULL, 2000000000, 300, 50, 0.5000, 98769999, 5, 'Crest of Enlightenment', 'ParagonArmorCompleted', 'You must have completed 50th Armor Paragon to enlighten beyond level 300.'
 ) AS `seed`
 WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1);
