@@ -4,20 +4,21 @@ Target enlightenment **T** = player’s current `Enlightenment + 1` (the level t
 
 ## Preconditions
 
-- On startup the server runs `EnlightenmentTierManager.EnsureTableCreated()` (same DDL/seed as `Database/Updates/Shard/2026-03-28-00-Config-Enlightenment-Tier.sql`). You can still run that SQL manually if you prefer migrations in source control only.
-- `/reload-enlightenment-tiers` reapplies create-if-missing + empty-table seed, then reloads rows.
-- Confirm startup log: `Loaded N enlightenment tier row(s) from database.` If the table is missing or invalid, the server uses **compiled defaults** and logs a warning; fix the table before production.
+- On startup the server runs `EnlightenmentTierManager.EnsureTableCreated()` (same DDL/seed as `Database/Updates/Shard/2026-03-28-00-Config-Enlightenment-Tier.sql`), which creates `config_enlightenment_tier` when missing and seeds default rows when the table is empty. You can still run that SQL manually if you prefer migrations in source control only.
+- `EnlightenmentTierManager.Initialize()` (also used by `/reload-enlightenment-tiers`) calls `TryReload`, which runs that same create-if-missing + empty-table seed **before** reading rows, then loads from the database. The normal success log is: `Loaded N enlightenment tier row(s) from database.`
+- **Compiled defaults** are a **last-resort** fallback only if create/seed/load/validation still fails after those steps (e.g. shard unreachable, or no rows after seed, or invalid data on first-ever load when there is no prior in-memory configuration). In that case the service logs a **warning** and uses the built-in tier list. If a reload fails but the server had already loaded tiers successfully, the **previous** configuration is **retained** and a warning explains that—fix the table before relying on production changes.
 
 ## 1. Configuration / validation
 
 | Step | Action | Expected |
 |------|--------|----------|
 | 1.1 | Query `SELECT * FROM config_enlightenment_tier ORDER BY sort_order` | Six rows after seed; last row `max_target_enl` IS NULL |
-| 1.2 | Introduce a gap (e.g. set one row’s `max_target_enl` so next `min_target_enl` is not `max+1`) and `/reload-enlightenment-tiers` | Reload fails; fallback to compiled defaults; audit message indicates failure |
+| 1.2 | Introduce a gap (e.g. set one row’s `max_target_enl` so next `min_target_enl` is not `max+1`) and `/reload-enlightenment-tiers` | Reload fails; **previous tier configuration retained** (if any); warning indicates failure—not a switch to compiled defaults unless there was no usable in-memory config |
 | 1.3 | Set only two of three `lum_step_*` columns on a row | Reload fails validation |
 | 1.4 | Set `item_wcid` with NULL `item_count_target_minus` | Reload fails validation |
 | 1.5 | Set `item_wcid` with empty `item_label` | Reload fails validation |
-| 1.6 | Restore valid table and `/reload-enlightenment-tiers` | Success message; `LoadedFromDatabase` behavior restored |
+| 1.6 | Set `lum_base_per_target` or `lum_step_increment` negative on a row | Reload fails validation (`LumBasePerTarget` / `LumStepIncrement` must be non-negative) |
+| 1.7 | Restore valid table and `/reload-enlightenment-tiers` | Success message; `LoadedFromDatabase` behavior restored |
 
 ## 2. Luminance cost (formula parity)
 
@@ -93,7 +94,7 @@ These still live in `Enlightenment.cs` and should behave as before:
 ## 9. Edge cases
 
 - **T above 10 000**: Compiled validation only checks 1–10 000; extending tiers far beyond should still use contiguous bands; spot-check a high T manually.
-- **Missing table / empty table**: Server should start using compiled defaults; enlighten should still work (parity with old behavior).
+- **Missing table / empty table**: Startup runs create + seed-if-empty, then load. If rows still cannot be loaded or validated and there is no prior good in-memory tier set, **compiled defaults** (last resort) apply with a warning; enlighten should still work (parity with old behavior). If the server had already loaded tiers once, a later failed reload **retains** the last good configuration.
 - **Concurrent enlighten**: Two players enlightening with different T should resolve different rows independently (read-only cache after load).
 
 ---

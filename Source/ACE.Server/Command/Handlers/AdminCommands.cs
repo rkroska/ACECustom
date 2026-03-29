@@ -6531,8 +6531,10 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, detail);
             if (ok)
                 PlayerManager.BroadcastToAuditChannel(session?.Player, "Reloaded enlightenment tier configuration from database.");
+            else if (EnlightenmentTierManager.LoadedFromDatabase)
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload failed; previous database-backed configuration retained. See server log.");
             else
-                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload fell back to compiled defaults; see server log.");
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload failed; using compiled defaults (last resort). See server log.");
         }
 
         [CommandHandler("iterate-allegiances", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Runs through all allegiances and outputs to console")]

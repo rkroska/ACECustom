@@ -88,7 +88,10 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
             TryReload(out _);
         }
 
-        /// <summary>Reload tier rows from the shard database. On failure, falls back to compiled defaults.</summary>
+        /// <summary>
+        /// Reload tier rows from the shard database. Runs the same create-if-missing and empty-table seed as <see cref="EnsureTableCreated"/> before loading.
+        /// On failure: if there is no usable in-memory tier set yet, uses compiled defaults (last resort) and logs a warning; if a prior load succeeded, keeps the previous tier snapshot and logs a warning.
+        /// </summary>
         public static bool TryReload(out string message)
         {
             lock (Sync)
@@ -100,7 +103,7 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
                     var rows = DatabaseManager.EnlightenmentTiers.GetAllTiers();
                     if (rows == null || rows.Count == 0)
                     {
-                        ApplyFallback("config_enlightenment_tier has no rows; using compiled defaults.");
+                        ApplyFallbackNoRows();
                         message = _lastLoadDetail;
                         return false;
                     }
@@ -116,21 +119,47 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
                 }
                 catch (Exception ex)
                 {
-                    ApplyFallback($"Failed to load config_enlightenment_tier: {ex.Message}. Using compiled defaults.");
+                    ApplyFallbackAfterException(ex);
                     message = _lastLoadDetail;
                     return false;
                 }
             }
         }
 
-        private static void ApplyFallback(string detail)
+        private static void ApplyFallbackNoRows()
         {
-            var defaults = BuildCompiledDefaults().ToList();
-            ValidateTiers(defaults);
-            _tiers = defaults;
-            LoadedFromDatabase = false;
-            _lastLoadDetail = detail;
-            log.Warn(detail);
+            if (_tiers.Count == 0)
+            {
+                var defaults = BuildCompiledDefaults().ToList();
+                ValidateTiers(defaults);
+                _tiers = defaults;
+                LoadedFromDatabase = false;
+                _lastLoadDetail = "config_enlightenment_tier has no rows; using compiled defaults.";
+                log.Warn(_lastLoadDetail);
+            }
+            else
+            {
+                _lastLoadDetail = "Reload failed: config_enlightenment_tier has no rows. Previous enlightenment tier configuration retained.";
+                log.Warn(_lastLoadDetail);
+            }
+        }
+
+        private static void ApplyFallbackAfterException(Exception ex)
+        {
+            if (_tiers.Count == 0)
+            {
+                var defaults = BuildCompiledDefaults().ToList();
+                ValidateTiers(defaults);
+                _tiers = defaults;
+                LoadedFromDatabase = false;
+                _lastLoadDetail = $"Failed to load config_enlightenment_tier: {ex.Message}. Using compiled defaults.";
+                log.Warn(_lastLoadDetail);
+            }
+            else
+            {
+                _lastLoadDetail = $"Failed to reload config_enlightenment_tier: {ex.Message}. Previous enlightenment tier configuration retained.";
+                log.Warn(_lastLoadDetail);
+            }
         }
 
         public static string GetLoadStatus() => _lastLoadDetail;
@@ -174,6 +203,13 @@ WHERE NOT EXISTS (SELECT 1 FROM `config_enlightenment_tier` LIMIT 1)";
                 var t = sorted[i];
                 if (t.MaxTargetEnl.HasValue && t.MaxTargetEnl.Value < t.MinTargetEnl)
                     throw new InvalidOperationException($"Tier id {t.Id}: MaxTargetEnl < MinTargetEnl.");
+
+                if (t.LumBasePerTarget < 0)
+                    throw new InvalidOperationException($"Tier id {t.Id}: LumBasePerTarget must be non-negative.");
+                if (t.LumStepAnchor.HasValue && t.LumStepAnchor.Value < 0)
+                    throw new InvalidOperationException($"Tier id {t.Id}: LumStepAnchor must be non-negative.");
+                if (t.LumStepIncrement.HasValue && t.LumStepIncrement.Value < 0)
+                    throw new InvalidOperationException($"Tier id {t.Id}: LumStepIncrement must be non-negative.");
 
                 if (t.ItemWcid.HasValue && !t.ItemCountTargetMinus.HasValue)
                     throw new InvalidOperationException($"Tier id {t.Id}: ItemWcid set but ItemCountTargetMinus is null.");
