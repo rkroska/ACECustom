@@ -32,17 +32,13 @@ namespace ACE.Server.WorldObjects
             TimeSpan jailTime = TimeSpan.FromSeconds(ServerConfig.ucm_jail_duration_seconds.Value);
             DateTime releaseTime = DateTime.UtcNow.Add(jailTime);
 
-            bool wasNewlyJailed = false;
-            PlayersJailedUntil.AddOrUpdate(
-                Guid.Full,
-                addValueFactory: _ => {
-                    wasNewlyJailed = true;
-                    return releaseTime;
-                },
-                updateValueFactory: (_, _) => releaseTime
-            );
-            if (!wasNewlyJailed) return;
+            if (!PlayersJailedUntil.TryAdd(Guid.Full, releaseTime))
+            {
+                PlayersJailedUntil[Guid.Full] = releaseTime;
+                return;
+            }
 
+            // Apply jail effects (newly jailed).
             EnqueueEffectChain();
             Teleport(GetJailTeleportLocation());
             Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime} and are attackable by other players.", ChatMessageType.Broadcast));
