@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 
 using log4net;
 
 using ACE.Database;
+using ACE.Server.Diagnostics;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -259,10 +261,28 @@ namespace ACE.Server.Entity
             }
             else
             {
+                if (Biota.WeenieClassId == 0)
+                {
+                    Interlocked.Increment(ref ServerDiagnostics.GeneratorSpawnFailuresRecorded);
+                    if (LogRateLimiter.ShouldEmit($"gen_wcid0:{Generator.Guid.Full}:{LinkId}", TimeSpan.FromMinutes(1), out var suppressed))
+                    {
+                        log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): invalid wcid 0 in profile {LinkId} at {Generator.Location?.ToString() ?? "null"}");
+                        if (suppressed > 0)
+                            log.Warn($"[GENERATOR] Rate-limiter: {suppressed} similar invalid-wcid-0 messages were suppressed for this generator profile before this log window.");
+                    }
+                    return null;
+                }
+
                 var wo = WorldObjectFactory.CreateNewWorldObject(Biota.WeenieClassId);
                 if (wo == null)
                 {
-                    log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to create wcid {Biota.WeenieClassId}");
+                    Interlocked.Increment(ref ServerDiagnostics.GeneratorSpawnFailuresRecorded);
+                    if (LogRateLimiter.ShouldEmit($"gen_spawn_fail:{Generator.Guid.Full}:{Biota.WeenieClassId}", TimeSpan.FromSeconds(30), out var suppressed))
+                    {
+                        log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to create wcid {Biota.WeenieClassId} (profile {LinkId}, gen LOC {Generator.Location?.ToString() ?? "null"})");
+                        if (suppressed > 0)
+                            log.Warn($"[GENERATOR] Rate-limiter: {suppressed} similar \"failed to create wcid\" messages were suppressed for this generator/wcid in the last 30s.");
+                    }
                     return null;
                 }
                 if (wo is Creature creature && creature.IsMonster && creature.Attackable)
