@@ -303,6 +303,12 @@ namespace ACE.Server
             log.Info("Starting PropertyManager...");
             PropertyManager.Initialize();
 
+            log.Info("Ensuring enlightenment tier database table...");
+            EnlightenmentTierManager.EnsureTableCreated();
+
+            log.Info("Loading enlightenment tier configuration...");
+            EnlightenmentTierManager.Initialize();
+
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
             

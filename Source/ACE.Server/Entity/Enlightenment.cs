@@ -15,10 +15,6 @@ namespace ACE.Server.Entity
 {
     public class Enlightenment
     {
-        private const int EnlightenmentTokenWcid = 300000;
-        private const int EnlightenmentMedallionWcid = 90000217;
-        private const int EnlightenmentSigilWcid = 300101189;
-
         // Requirements:
         // - Level 275 + 1 per previous enlightenment
         // - Have all luminance auras (crafting aura included) except the skill credit auras.
@@ -74,18 +70,7 @@ namespace ACE.Server.Entity
                     return;
                 }
                 var targetEnlightenment = player.Enlightenment + 1;
-                if (targetEnlightenment > 5 && targetEnlightenment <= 150)
-                {
-                    RemoveTokens(player);
-                }
-                else if (targetEnlightenment > 150 && targetEnlightenment <= 300)
-                {
-                    RemoveMedallion(player);
-                }
-                else if (targetEnlightenment > 300)
-                {
-                    RemoveSigil(player);
-                }
+                RemoveTierConsumable(player, targetEnlightenment);
 
                 // Enlightenment can proceed.
                 DequipAllItems(player);
@@ -155,24 +140,15 @@ namespace ACE.Server.Entity
             }
 
             var targetEnlightenment = player.Enlightenment + 1;
-            long lumCost = CalculateLuminanceCost(targetEnlightenment);
+            long lumCost = EnlightenmentTierManager.CalculateLuminanceCost(targetEnlightenment);
             if (player.GetTotalLuminance() < lumCost)
             {
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have {lumCost:N0} luminance to enlighten to level {targetEnlightenment}.", ChatMessageType.Broadcast));
                 return false;
             }
 
-            //todo: check for trophies that are enl level appropriate
-            //first, 1 enlightenment token per enlightenment past 5.
-            if (targetEnlightenment > 5 && targetEnlightenment <= 150)
-            {
-                var count = player.GetNumInventoryItemsOfWCID(EnlightenmentTokenWcid);
-                if (count < player.Enlightenment + 1 - 5)
-                {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Tokens to continue.", ChatMessageType.Broadcast));
-                    return false;
-                }
-            }
+            if (!VerifyTierItemAndQuest(player, targetEnlightenment))
+                return false;
 
             if (targetEnlightenment > 10)
             {
@@ -192,56 +168,46 @@ namespace ACE.Server.Entity
                 }
             }
 
-            if (targetEnlightenment > 150 && targetEnlightenment <= 300)
+            return true;
+        }
+
+        private static bool VerifyTierItemAndQuest(Player player, int targetEnlightenment)
+        {
+            if (!EnlightenmentTierManager.TryGetTier(targetEnlightenment, out var tier))
             {
-                var count2 = player.GetNumInventoryItemsOfWCID(EnlightenmentMedallionWcid);
-                if (count2 < player.Enlightenment + 1 - 5)
-                {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Medallions to continue.", ChatMessageType.Broadcast));
-                    return false;
-                }
-                if (!VerifyParagonCompleted(player))
-                {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You must have completed 50th Paragon to enlighten beyond level 150.", ChatMessageType.Broadcast));
-                    return false;
-                }
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat("Enlightenment configuration error: no tier matches your target level. Notify an administrator.", ChatMessageType.Broadcast));
+                return false;
             }
 
-            if (targetEnlightenment > 300)
+            if (tier.ItemWcid.HasValue)
             {
-                var count2 = player.GetNumInventoryItemsOfWCID(EnlightenmentSigilWcid);
-                if (count2 < player.Enlightenment + 1 - 5)
+                var need = tier.GetRequiredItemCount(targetEnlightenment);
+                var have = player.GetNumInventoryItemsOfWCID((uint)tier.ItemWcid.Value);
+                if (have < need)
                 {
-                    player.Session.Network.EnqueueSend(
-                        new GameMessageSystemChat($"You have already been enlightened {player.Enlightenment} times. You must have {player.Enlightenment + 1 - 5} Enlightenment Sigils to continue.",
-                        ChatMessageType.Broadcast));
-                    return false;
-                }
-
-                if (!VerifyParagonArmorCompleted(player))
-                {
-                    player.Session.Network.EnqueueSend(
-                        new GameMessageSystemChat($"You must have completed 50th Armor Paragon to enlighten beyond level 300.",
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"You have already been enlightened {player.Enlightenment} times. You must have {need} {tier.ItemLabel} to continue.",
                         ChatMessageType.Broadcast));
                     return false;
                 }
             }
+
+            if (!string.IsNullOrEmpty(tier.QuestStamp))
+            {
+                if (player.QuestManager.GetCurrentSolves(tier.QuestStamp) < 1)
+                {
+                    var msg = tier.QuestFailureMessage ?? "You lack a required quest completion for this enlightenment tier.";
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+                    return false;
+                }
+            }
+
             return true;
         }
 
         private static bool VerifySocietyMaster(Player player)
         {
             return player.SocietyRankCelhan == 1001 || player.SocietyRankEldweb == 1001 || player.SocietyRankRadblo == 1001;
-        }
-
-        private static bool VerifyParagonCompleted(Player player)
-        {
-            return player.QuestManager.GetCurrentSolves("ParagonEnlCompleted") >= 1;
-        }
-
-        private static bool VerifyParagonArmorCompleted(Player player)
-        {
-            return player.QuestManager.GetCurrentSolves("ParagonArmorCompleted") >= 1;
         }
 
         private static bool VerifyLumAugs(Player player)
@@ -281,51 +247,23 @@ namespace ACE.Server.Entity
             player.EnchantmentManager.DispelAllEnchantments();
         }
 
-        private static void RemoveTokens(Player player)
+        private static void RemoveTierConsumable(Player player, int targetEnlightenment)
         {
-            player.TryConsumeFromInventoryWithNetworking(EnlightenmentTokenWcid, player.Enlightenment + 1 - 5);
-        }
+            if (!EnlightenmentTierManager.TryGetTier(targetEnlightenment, out var tier) || !tier.ItemWcid.HasValue)
+                return;
 
-        private static void RemoveMedallion(Player player)
-        {
-            player.TryConsumeFromInventoryWithNetworking(EnlightenmentMedallionWcid, player.Enlightenment + 1 - 5);
-        }
+            var amount = tier.GetRequiredItemCount(targetEnlightenment);
+            if (amount <= 0)
+                return;
 
-        private static void RemoveSigil(Player player)
-        {
-            player.TryConsumeFromInventoryWithNetworking(EnlightenmentSigilWcid, player.Enlightenment + 1 - 5);
+            player.TryConsumeFromInventoryWithNetworking((uint)tier.ItemWcid.Value, amount);
         }
 
         private static bool SpendLuminance(Player player)
         {
             int targetEnlightenment = player.Enlightenment + 1;
-            long lumCost = CalculateLuminanceCost(targetEnlightenment);
+            long lumCost = EnlightenmentTierManager.CalculateLuminanceCost(targetEnlightenment);
             return player.SpendLuminance(lumCost);
-        }
-
-        // Calculates the lum needed for enlightening.
-        private static long CalculateLuminanceCost(int targetEnlightenment)
-        {
-            // From 1-50: 0
-            if (targetEnlightenment <= 50)
-                return 0;
-
-            // From 51-150: use the first threshold config
-            if (targetEnlightenment <= 150)
-                return targetEnlightenment * ServerConfig.enl_50_base_lum_cost.Value;
-
-            // From 151-300: use the second threshold config
-            if (targetEnlightenment <= 300)
-                return targetEnlightenment * ServerConfig.enl_150_base_lum_cost.Value;
-
-            // For 301+, use the third threshold config but apply a multiplier every 50 levels.
-            // 301–350 => steps = 0 (1.0×)
-            // 351–400 => steps = 1 (1.5×)
-            // 401–450 => steps = 2 (2.0×), etc.
-            int over = targetEnlightenment - 300;
-            int steps = (over - 1) / 50;         // integer division
-            decimal costModifier = 1.0m + (0.5m * steps);
-            return (long)Math.Ceiling((targetEnlightenment * ServerConfig.enl_300_base_lum_cost.Value) * costModifier);
         }
 
         private static void RemoveSociety(Player player)

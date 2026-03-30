@@ -357,9 +357,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> rares_max_seconds_between { get; private set; } = new(5256000, "for rares_real_time: the maximum number of seconds a player can go before a second chance at a rare is allowed on rare eligible creature kills that did not generate a rare");
         public static ConfigProperty<long> summoning_killtask_multicredit_cap { get; private set; } = new(2, "if allow_summoning_killtask_multicredit is enabled, the maximum # of killtask credits a player can receive from 1 kill");
         public static ConfigProperty<long> teleport_visibility_fix { get; private set; } = new(0, "Fixes some possible issues with invisible players and mobs. 0 = default / disabled, 1 = players only, 2 = creatures, 3 = all world objects");
-        public static ConfigProperty<long> enl_50_base_lum_cost { get; private set; } = new(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level");
-        public static ConfigProperty<long> enl_150_base_lum_cost { get; private set; } = new(1000000000, "the base luminance cost for each enlighten after 150, this will be multiplied by the target enlightenment level");
-        public static ConfigProperty<long> enl_300_base_lum_cost { get; private set; } = new(2000000000, "the base luminance cost for each enlighten after 300, this will be multiplied by the target enlightenment level");
+        public static ConfigProperty<long> enl_50_base_lum_cost { get; private set; } = new(100000000, "LEGACY (unused): luminance enlightenment cost is defined per row in shard table config_enlightenment_tier (lum_base_per_target). Kept for reference / tooling.");
+        public static ConfigProperty<long> enl_150_base_lum_cost { get; private set; } = new(1000000000, "LEGACY (unused): see config_enlightenment_tier. Kept for reference / tooling.");
+        public static ConfigProperty<long> enl_300_base_lum_cost { get; private set; } = new(2000000000, "LEGACY (unused): see config_enlightenment_tier. Kept for reference / tooling.");
         public static ConfigProperty<long> dynamic_quest_repeat_hours { get; private set; } = new(20, "the number of hours before a player can do another dynamic quest");
         public static ConfigProperty<long> dynamic_quest_max_xp { get; private set; } = new(5000000000, "the maximum base xp rewarded from a dynamic quest");
         public static ConfigProperty<long> max_nether_dot_damage_rating { get; private set; } = new(50, "the maximum damage rating from Void DoTs");
@@ -449,7 +449,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<string> server_motd { get; private set; } = new("", "Server message of the day");
 
         // UCM Configuration
+        public static ConfigProperty<double> ucm_jail_duration_seconds { get; private set; } = new(900.0, "The number of seconds a player who fails a UCM check is punished");
+        public static ConfigProperty<double> ucm_jail_size { get; private set; } = new(30.0, "The lengths of the bounding box sides around the ucm jail center where a jailed player is allowed to move before being teleported back");
         public static ConfigProperty<string> ucm_check_fail_teleport_location { get; private set; } = new("", "The location to send a player to when failing a UCM check. If blank, the player will be sent to the lifestone.");
+        public static ConfigProperty<string> ucm_check_jail_center_location { get; private set; } = new("", "The center location of the jail used for rubberbanding distance checks. If blank, uses ucm_check_fail_teleport_location.");
         public static ConfigProperty<long> ucm_check_timeout_seconds { get; private set; } = new(60, "The amount of time a player has to respond to a UCM check before failing to timeout.");
         public static ConfigProperty<long> ucm_check_combat_eligibility_seconds { get; private set; } = new(60, "A player is only eligible for a UCM check if they took a combat action in the prior N seconds.");
         public static ConfigProperty<long> ucm_check_cooldown_seconds { get; private set; } = new(3600 /* 60 min */, "The minimum amount of time in seconds between random UCM checks on a single player.");
