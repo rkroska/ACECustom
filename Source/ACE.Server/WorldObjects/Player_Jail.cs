@@ -73,19 +73,20 @@ namespace ACE.Server.WorldObjects
             });
             actionChain.EnqueueChain();
         }
-
         private Position GetJailTeleportLocation()
         {
-            if (!Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
-                failTeleLoc = GetDeathLocation();
-            return failTeleLoc;
+            if (Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
+                return failTeleLoc;
+            if (Position.TryParse(ServerConfig.ucm_check_jail_center_location.Value, out Position jailCenterLoc))
+                return jailCenterLoc;
+            return GetDeathLocation();
         }
 
         private Position GetJailCenterLocation()
         {
-            if (!Position.TryParse(ServerConfig.ucm_check_jail_center_location.Value, out Position jailCenterLoc))
-                jailCenterLoc = GetJailTeleportLocation();
-            return jailCenterLoc;
+            if (Position.TryParse(ServerConfig.ucm_check_jail_center_location.Value, out Position jailCenterLoc))
+                return jailCenterLoc;
+            return GetJailTeleportLocation();
         }
 
         /// <summary>
