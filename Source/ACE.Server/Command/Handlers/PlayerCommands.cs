@@ -59,8 +59,8 @@ namespace ACE.Server.Command.Handlers
 
         /// <summary>
         /// Players to consider for /fship list: zone-wide in VOD / configured T10 landblocks (matches fellowship XP),
-        /// full current landblock for other dungeons, otherwise outdoor players in this landblock group / adjacents
-        /// with kill-XP distance scalar &gt; 0 (same rules as <see cref="Fellowship.GetDistanceScalar"/>).
+        /// same-landblock players matching indoor/outdoor with the requester for other dungeons, otherwise outdoor
+        /// players in this landblock group / adjacents with kill-XP distance scalar &gt; 0 (same rules as <see cref="Fellowship.GetDistanceScalar"/>).
         /// </summary>
         private static List<Player> GetPlayersForFshipList(Player requester)
         {
@@ -79,24 +79,42 @@ namespace ACE.Server.Command.Handlers
                 return FilterOnlinePlayersInLandblockSet(LandblockCollections.Tier10HuntingLandblocks, selfVariation);
 
             if (requester.Location.Indoors || lb.PhysicsLandblock?.IsDungeon == true)
-                return lb.players.ToList();
+            {
+                var selfIndoors = requester.Location.Indoors;
+                var playersSnapshot = lb.players.ToList();
+                var filtered = new List<Player>(playersSnapshot.Count);
+                foreach (var p in playersSnapshot)
+                {
+                    if (p?.Location == null)
+                        continue;
+                    if (p.Location.Indoors != selfIndoors)
+                        continue;
+                    filtered.Add(p);
+                }
+                return filtered;
+            }
 
             var candidates = new HashSet<Player>();
             if (lb.CurrentLandblockGroup != null)
             {
-                foreach (var groupLb in lb.CurrentLandblockGroup)
+                var groupLandblocks = lb.CurrentLandblockGroup.ToList();
+                foreach (var groupLb in groupLandblocks)
                 {
-                    foreach (var p in groupLb.players)
+                    var groupPlayersSnapshot = groupLb.players.ToList();
+                    foreach (var p in groupPlayersSnapshot)
                         candidates.Add(p);
                 }
             }
             else
             {
-                foreach (var p in lb.players)
+                var localPlayers = lb.players.ToList();
+                foreach (var p in localPlayers)
                     candidates.Add(p);
-                foreach (var adj in lb.Adjacents)
+                var adjacentsSnapshot = lb.Adjacents.ToList();
+                foreach (var adj in adjacentsSnapshot)
                 {
-                    foreach (var p in adj.players)
+                    var adjPlayersSnapshot = adj.players.ToList();
+                    foreach (var p in adjPlayersSnapshot)
                         candidates.Add(p);
                 }
             }
