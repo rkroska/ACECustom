@@ -94,15 +94,18 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public Player(Weenie weenie, ObjectGuid guid, uint accountId) : base(weenie, guid)
         {
-            Character = new Character();
-            Character.Id = guid.Full;
-            Character.AccountId = accountId;
-            Character.Name = GetProperty(PropertyString.Name);
+            Character = new Character
+            {
+                Id = guid.Full,
+                AccountId = accountId,
+                Name = GetProperty(PropertyString.Name)
+            };
             CharacterChangesDetected = true;
 
             Account = DatabaseManager.Authentication.GetAccountById(Character.AccountId);
 
             SetEphemeralValues();
+            UCMChecker = new UCMChecker(this);
 
             // Make sure properties this WorldObject requires are not null.
             AvailableExperience = AvailableExperience ?? 0;
@@ -132,6 +135,7 @@ namespace ACE.Server.WorldObjects
             Account = DatabaseManager.Authentication.GetAccountById(Character.AccountId);
 
             SetEphemeralValues();
+            UCMChecker = new UCMChecker(this);
 
             SortBiotasIntoInventory(inventory);
             AddBiotasToEquippedObjects(wieldedItems);

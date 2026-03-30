@@ -29,10 +29,19 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void SendToJail()
         {
-            bool alreadyInJail = PlayersJailedUntil.ContainsKey(Guid.Full);
             TimeSpan jailTime = TimeSpan.FromSeconds(ServerConfig.ucm_jail_duration_seconds.Value);
-            PlayersJailedUntil[Guid.Full] = DateTime.UtcNow.Add(jailTime);
-            if (alreadyInJail) return;
+            DateTime releaseTime = DateTime.UtcNow.Add(jailTime);
+
+            bool wasNewlyJailed = false;
+            PlayersJailedUntil.AddOrUpdate(
+                Guid.Full,
+                addValueFactory: _ => {
+                    wasNewlyJailed = true;
+                    return releaseTime;
+                },
+                updateValueFactory: (_, _) => releaseTime
+            );
+            if (!wasNewlyJailed) return;
 
             EnqueueEffectChain();
             Teleport(GetJailTeleportLocation());
@@ -80,8 +89,7 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Handles random starts of checks and timing out of active checks. For use by Player.Tick(). 
-        /// Also enforces the active UCM Jails.
+        /// Handles random starts of checks and timing out of active checks. For use by Player.Tick().
         /// </summary>
         public void TickJail()
         {

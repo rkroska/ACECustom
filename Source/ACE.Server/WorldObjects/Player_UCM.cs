@@ -3,6 +3,7 @@ using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
+using System.Threading;
 
 namespace ACE.Server.WorldObjects
 {
@@ -202,7 +203,6 @@ namespace ACE.Server.WorldObjects
 
     public partial class Player
     {
-        private Lazy<UCMChecker> _ucmChecker;
-        public UCMChecker UCMChecker => (_ucmChecker ??= new Lazy<UCMChecker>(() => new UCMChecker(this))).Value;
+        public UCMChecker UCMChecker { get; }
     }
 }
