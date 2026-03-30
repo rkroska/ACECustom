@@ -357,9 +357,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> rares_max_seconds_between { get; private set; } = new(5256000, "for rares_real_time: the maximum number of seconds a player can go before a second chance at a rare is allowed on rare eligible creature kills that did not generate a rare");
         public static ConfigProperty<long> summoning_killtask_multicredit_cap { get; private set; } = new(2, "if allow_summoning_killtask_multicredit is enabled, the maximum # of killtask credits a player can receive from 1 kill");
         public static ConfigProperty<long> teleport_visibility_fix { get; private set; } = new(0, "Fixes some possible issues with invisible players and mobs. 0 = default / disabled, 1 = players only, 2 = creatures, 3 = all world objects");
-        public static ConfigProperty<long> enl_50_base_lum_cost { get; private set; } = new(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level");
-        public static ConfigProperty<long> enl_150_base_lum_cost { get; private set; } = new(1000000000, "the base luminance cost for each enlighten after 150, this will be multiplied by the target enlightenment level");
-        public static ConfigProperty<long> enl_300_base_lum_cost { get; private set; } = new(2000000000, "the base luminance cost for each enlighten after 300, this will be multiplied by the target enlightenment level");
+        public static ConfigProperty<long> enl_50_base_lum_cost { get; private set; } = new(100000000, "LEGACY (unused): luminance enlightenment cost is defined per row in shard table config_enlightenment_tier (lum_base_per_target). Kept for reference / tooling.");
+        public static ConfigProperty<long> enl_150_base_lum_cost { get; private set; } = new(1000000000, "LEGACY (unused): see config_enlightenment_tier. Kept for reference / tooling.");
+        public static ConfigProperty<long> enl_300_base_lum_cost { get; private set; } = new(2000000000, "LEGACY (unused): see config_enlightenment_tier. Kept for reference / tooling.");
         public static ConfigProperty<long> dynamic_quest_repeat_hours { get; private set; } = new(20, "the number of hours before a player can do another dynamic quest");
         public static ConfigProperty<long> dynamic_quest_max_xp { get; private set; } = new(5000000000, "the maximum base xp rewarded from a dynamic quest");
         public static ConfigProperty<long> max_nether_dot_damage_rating { get; private set; } = new(50, "the maximum damage rating from Void DoTs");

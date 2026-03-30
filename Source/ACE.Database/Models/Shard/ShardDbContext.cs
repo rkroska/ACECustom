@@ -67,6 +67,7 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
         public virtual DbSet<CharTracker> CharTracker { get; set; }
         public virtual DbSet<PetRegistry> PetRegistry { get; set; }
+        public virtual DbSet<ConfigEnlightenmentTier> ConfigEnlightenmentTier { get; set; }
         public virtual DbSet<CreatureBlacklist> CreatureBlacklist { get; set; }
 
         private static readonly int[] zeroInts = [0, 0];
@@ -128,6 +129,16 @@ namespace ACE.Database.Models.Shard
                 entity.ToTable("pet_registry");
                 entity.HasKey(e => new { e.AccountId, e.Wcid, e.IsShiny });
                 entity.HasIndex(e => e.AccountId, "IX_pet_registry_AccountId");
+            });
+
+            modelBuilder.Entity<ConfigEnlightenmentTier>(entity =>
+            {
+                entity.ToTable("config_enlightenment_tier");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.MinTargetEnl, "IX_config_enlightenment_tier_min");
+                entity.Property(e => e.ItemLabel).HasCharSet("utf8mb4").UseCollation("utf8mb4_unicode_ci");
+                entity.Property(e => e.QuestStamp).HasCharSet("utf8mb4").UseCollation("utf8mb4_unicode_ci");
+                entity.Property(e => e.QuestFailureMessage).HasCharSet("utf8mb4").UseCollation("utf8mb4_unicode_ci");
             });
 
             // Creature Blacklist - blocks capture and/or shiny variants
