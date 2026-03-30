@@ -60,6 +60,14 @@ namespace ACE.Server.Entity
         };
 
         /// <summary>
+        /// Tier 10 hunting / fellowship-relevant landblocks. Populate with your shard's T10 area IDs so /fship list
+        /// includes everyone in the zone (same pattern as Valley of Death). Leave empty if unused.
+        /// </summary>
+        public static readonly HashSet<ushort> Tier10HuntingLandblocks = new()
+        {
+        };
+
+        /// <summary>
         /// A mapping of apartment landblocks => apartment complex names
         /// </summary>
         public static readonly Dictionary<ushort, string> ApartmentBlocks = new Dictionary<ushort, string>()
