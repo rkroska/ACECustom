@@ -25,14 +25,18 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Helper function to immediately apply the jail punishment to a player. 
         /// Applies tracking properties, ephemeral combat state overrides, and teleports them to the jail boundary.
+        /// If the player is already in jail, this will reset their sentence duration.
         /// </summary>
         public void SendToJail()
         {
+            bool alreadyInJail = PlayersJailedUntil.ContainsKey(Guid.Full);
             TimeSpan jailTime = TimeSpan.FromSeconds(ServerConfig.ucm_jail_duration_seconds.Value);
             PlayersJailedUntil[Guid.Full] = DateTime.UtcNow.Add(jailTime);
+            if (alreadyInJail) return;
+
             EnqueueEffectChain();
             Teleport(GetJailTeleportLocation());
-            Session.Network.EnqueueSend(new GameMessageSystemChat($"Your are being punished. You are now in jail for {jailTime} and are attackable by other players.", ChatMessageType.Broadcast));
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime} and are attackable by other players.", ChatMessageType.Broadcast));
         }
 
         /// <summary>
@@ -91,13 +95,17 @@ namespace ACE.Server.WorldObjects
             }
 
             // Player is still serving their sentence, so enforce the jail boundaries.
+            // We do not enforce Z boundary (vertical), it's just a 2D bounding box centered on the configured location.
             var center = GetJailCenterLocation();
             var size = ServerConfig.ucm_jail_size.Value;
             var offset = Location.GetOffset(center);
             if (Math.Abs(offset.X) > size / 2.0 || Math.Abs(offset.Y) > size / 2.0)
             {
+                // Make sure not to count the tele location as a jail boundary violation.
+                var teleLoc = GetJailTeleportLocation();
+                if (Location.Distance2D(teleLoc) < 1.0) return;
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot leave the jail area until your punishment is complete!", ChatMessageType.Broadcast));
-                Teleport(GetJailTeleportLocation());
+                Teleport(teleLoc);
             }
             return;
         }

@@ -202,7 +202,7 @@ namespace ACE.Server.WorldObjects
 
     public partial class Player
     {
-        private UCMChecker _ucmChecker;
-        public UCMChecker UCMChecker => _ucmChecker ??= new UCMChecker(this);
+        private Lazy<UCMChecker> _ucmChecker;
+        public UCMChecker UCMChecker => (_ucmChecker ??= new Lazy<UCMChecker>(() => new UCMChecker(this))).Value;
     }
 }
