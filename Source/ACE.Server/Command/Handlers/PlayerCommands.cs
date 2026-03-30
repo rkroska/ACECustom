@@ -57,6 +57,75 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        /// <summary>
+        /// Players to consider for /fship list: zone-wide in VOD / configured T10 landblocks (matches fellowship XP),
+        /// full current landblock for other dungeons, otherwise outdoor players in this landblock group / adjacents
+        /// with kill-XP distance scalar &gt; 0 (same rules as <see cref="Fellowship.GetDistanceScalar"/>).
+        /// </summary>
+        private static List<Player> GetPlayersForFshipList(Player requester)
+        {
+            var lb = requester?.CurrentLandblock;
+            if (lb == null || requester.Location == null)
+                return [];
+
+            var selfLandblock = requester.Location.LandblockId.Landblock;
+            var selfVariation = requester.Location.Variation ?? 0;
+
+            if (LandblockCollections.ValleyOfDeathLandblocks.Contains(selfLandblock))
+                return FilterOnlinePlayersInLandblockSet(LandblockCollections.ValleyOfDeathLandblocks, selfVariation);
+
+            if (LandblockCollections.Tier10HuntingLandblocks.Count > 0
+                && LandblockCollections.Tier10HuntingLandblocks.Contains(selfLandblock))
+                return FilterOnlinePlayersInLandblockSet(LandblockCollections.Tier10HuntingLandblocks, selfVariation);
+
+            if (requester.Location.Indoors || lb.PhysicsLandblock?.IsDungeon == true)
+                return lb.players.ToList();
+
+            var candidates = new HashSet<Player>();
+            if (lb.CurrentLandblockGroup != null)
+            {
+                foreach (var groupLb in lb.CurrentLandblockGroup)
+                {
+                    foreach (var p in groupLb.players)
+                        candidates.Add(p);
+                }
+            }
+            else
+            {
+                foreach (var p in lb.players)
+                    candidates.Add(p);
+                foreach (var adj in lb.Adjacents)
+                {
+                    foreach (var p in adj.players)
+                        candidates.Add(p);
+                }
+            }
+
+            var result = new List<Player>();
+            foreach (var p in candidates)
+            {
+                if (Fellowship.GetDistanceScalar(requester, p, XpType.Kill) > 0)
+                    result.Add(p);
+            }
+            return result;
+        }
+
+        private static List<Player> FilterOnlinePlayersInLandblockSet(HashSet<ushort> landblocks, int variation)
+        {
+            var list = new List<Player>();
+            foreach (var p in PlayerManager.GetAllOnline())
+            {
+                if (p?.Location == null || p.CurrentLandblock == null)
+                    continue;
+                if ((p.Location.Variation ?? 0) != variation)
+                    continue;
+                if (!landblocks.Contains(p.Location.LandblockId.Landblock))
+                    continue;
+                list.Add(p);
+            }
+            return list;
+        }
+
         [CommandHandler("fship", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Commands to handle fellowships aside from the UI", "")]
         public static void HandleFellowCommand(Session session, params string[] parameters)
         {
@@ -68,7 +137,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship create <name> to create a fellowship", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship leave", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship disband", ChatMessageType.Broadcast));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship list to show fellows and leaders in your landblock", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: use /fship list to show fellows and leaders in fellowship range (wider in VOD / T10)", ChatMessageType.Broadcast));
             }
 
             if (parameters.Length == 1)
@@ -181,11 +250,11 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
 
-                        var fellowshipsInLandblock = new Dictionary<uint, (Fellowship fellowship, Player leader, bool leaderInLandblock)>();
+                        var fellowshipsInLandblock = new Dictionary<uint, (Fellowship fellowship, Player leader, bool leaderInRange)>();
 
-                        // Check all players in the current landblock
-                        // Snapshot to avoid collection modification issues while iterating
-                        var playersSnapshot = session.Player.CurrentLandblock.players.ToList();
+                        // Candidates: zone-wide (VOD / T10 sets), full landblock in dungeons, or outdoor fellowship XP range
+                        var candidateSet = new HashSet<Player>(GetPlayersForFshipList(session.Player));
+                        var playersSnapshot = candidateSet.ToList();
                         foreach (var player in playersSnapshot)
                         {
                             try
@@ -220,15 +289,15 @@ namespace ACE.Server.Command.Handlers
                                         // Check if this player is the leader
                                         bool isLeader = fellowship.FellowshipLeaderGuid == player.Guid.Full;
                                         
-                                        if (!fellowshipsInLandblock.TryGetValue(fellowshipGuid, out (Fellowship fellowship, Player leader, bool leaderInLandblock) current))
+                                        if (!fellowshipsInLandblock.TryGetValue(fellowshipGuid, out (Fellowship fellowship, Player leader, bool leaderInRange) current))
                                         {
-                                            // Find the leader (might not be in this landblock)
+                                            // Find the leader (might not be in the candidate set)
                                             if (PlayerManager.FindByGuid(fellowshipGuid) is not Player leader)
                                             {
                                                 log.Warn($"Fellowship leader with GUID {fellowshipGuid} not found");
                                                 continue;
                                             }
-                                            fellowshipsInLandblock[fellowshipGuid] = (fellowship, leader, isLeader);
+                                            fellowshipsInLandblock[fellowshipGuid] = (fellowship, leader, candidateSet.Contains(leader));
                                         }
                                         else if (isLeader)
                                         {
@@ -246,7 +315,7 @@ namespace ACE.Server.Command.Handlers
 
                         // Display results
                         session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
-                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Fellowships in your landblock:", ChatMessageType.Broadcast));
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"[FSHIP]: Fellowships in your area:", ChatMessageType.Broadcast));
                         
                         if (fellowshipsInLandblock.Count > 0)
                         {
@@ -254,11 +323,11 @@ namespace ACE.Server.Command.Handlers
                             {
                                 try
                                 {
-                                    var (fellowship, leader, leaderInLandblock) = kvp.Value;
+                                    var (fellowship, leader, leaderInRange) = kvp.Value;
                                     var memberCount = fellowship.GetFellowshipMembers().Count;
                                     var isFull = memberCount >= MaxFellows;
                                     var statusText = isFull ? " (FULL)" : "";
-                                    var leaderStatus = leaderInLandblock ? "" : " (Leader not in LB)";
+                                    var leaderStatus = leaderInRange ? "" : " (Leader not in area)";
                                     
                                     var leaderName = leader?.Name ?? "Unknown";
                                     session.Network.EnqueueSend(new GameMessageSystemChat($"  '{fellowship.FellowshipName}' led by {leaderName}{statusText}{leaderStatus}", ChatMessageType.Broadcast));
@@ -272,7 +341,7 @@ namespace ACE.Server.Command.Handlers
                         }
                         else
                         {
-                            session.Network.EnqueueSend(new GameMessageSystemChat($"No fellowships found in your landblock.", ChatMessageType.Broadcast));
+                            session.Network.EnqueueSend(new GameMessageSystemChat($"No fellowships found in your area.", ChatMessageType.Broadcast));
                         }
                         
                         session.Network.EnqueueSend(new GameMessageSystemChat($"---------------------------", ChatMessageType.Broadcast));
