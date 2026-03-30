@@ -1,10 +1,9 @@
-using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
-using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
+using System.Threading;
 
 namespace ACE.Server.WorldObjects
 {
@@ -12,9 +11,10 @@ namespace ACE.Server.WorldObjects
     /// Manages the logic for random "focus checks" that can occur for players in certain areas after combat.
     /// This class is thread-safe.
     /// </summary>
-    public class UCMChecker()
+    public class UCMChecker(Player playerInstance)
     {
         private readonly System.Threading.Lock _lock = new();
+        private readonly Player Self = playerInstance;
         private Random RNG { get; } = new();
         private bool IsChecking { get; set; } = false;
         private DateTime Timeout { get; set; } = DateTime.UnixEpoch;
@@ -37,17 +37,17 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Attempts to start a UCM check and returns true if it was started successfully.
         /// </summary>
-        public bool Start(Player player)
+        public bool Start()
         {
             using var scope = _lock.EnterScope();
-            return StartLocked(player);
+            return StartLocked();
         }
 
         /// <summary>
         /// Attempts to start a UCM check and returns true if it was started successfully.
         /// The lock must be held to call this method.
         /// </summary>
-        private bool StartLocked(Player player)
+        private bool StartLocked()
         {
             if (IsChecking) return false;
 
@@ -61,24 +61,24 @@ namespace ACE.Server.WorldObjects
 
             long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
             string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
-            var ucmConfirmation = new Confirmation_Custom(player.Guid, (response, timeout) =>
+            var ucmConfirmation = new Confirmation_Custom(Self.Guid, (response, timeout) =>
             {
                 // This callback is executed asynchronously.
                 // The lock has been released at this point.
                 if (timeout)
                 {
-                    FailActiveCheck(player, "timed out");
+                    FailActiveCheck("timed out");
                 }
                 else if (response == isRightAnswerForm)
                 {
-                    PassActiveCheck(player);
+                    PassActiveCheck();
                 }
                 else
                 {
-                    FailActiveCheck(player, "selected incorrectly");
+                    FailActiveCheck("selected incorrectly");
                 }
             });
-            bool enqueued = player.ConfirmationManager.EnqueueSend(ucmConfirmation, message, secondsUntilTimeout);
+            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, secondsUntilTimeout);
 
             if (!enqueued) return false;
 
@@ -94,22 +94,22 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If a check is active, passes it.
         /// </summary>
-        public void PassActiveCheck(Player player)
+        public void PassActiveCheck()
         {
             using var scope = _lock.EnterScope();
-            PassActiveCheckLocked(player);
+            PassActiveCheckLocked();
         }
 
         /// <summary>
         /// If a check is active, passes it.
         /// The lock must be held to call this method.
         /// </summary>
-        private void PassActiveCheckLocked(Player player)
+        private void PassActiveCheckLocked()
         {
             if (!IsChecking) return;
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
+            Self.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
             var passElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
-            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} passed UCM check at {player.Location}.{passElapsed}");
+            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} passed UCM check at {Self.Location}.{passElapsed}");
             IsChecking = false;
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
@@ -119,54 +119,41 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If a check is active, fails it.
         /// </summary>
-        public void FailActiveCheck(Player player, string reason, bool doTeleport = true)
+        public void FailActiveCheck(string reason)
         {
             using var scope = _lock.EnterScope();
-            FailActiveCheckLocked(player, reason, doTeleport);
+            FailActiveCheckLocked(reason);
         }
 
         /// <summary>
         /// If a check is active, fails it.
         /// The lock must be held to call this method.
         /// </summary>
-        private void FailActiveCheckLocked(Player player, string reason, bool doTeleport = true)
+        private void FailActiveCheckLocked(string reason)
         {
             if (!IsChecking) return;
 
             // Tick timeout: confirmation is still registered; dismiss so the scheduled EnqueueAbort does not send a duplicate timeout message.
             if (ActiveUcmConfirmationContextId is uint ctx)
-                player.ConfirmationManager.TryDismissConfirmation(ConfirmationType.Yes_No, ctx);
+                Self.ConfirmationManager.TryDismissConfirmation(ConfirmationType.Yes_No, ctx);
 
             string message = "You failed the focus test and have been punished!";
-            player.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
-            player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, message));
+            Self.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
 
             var failElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
-            PlayerManager.BroadcastToAuditChannel(player, $"[UCM Check] Player {player.Name} failed UCM check ({reason}) at {player.Location}.{failElapsed}");
+            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} failed UCM check ({reason}) at {Self.Location}.{failElapsed}");
             IsChecking = false;
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
-
-            if (doTeleport)
-            {
-                // Try teleporting the player to the configured location.
-                // Fallback to what would happen if the player died.
-                if (Position.TryParse(ServerConfig.ucm_check_fail_teleport_location.Value, out Position failTeleLoc))
-                {
-                    player.Teleport(failTeleLoc);
-                }
-                else
-                {
-                    player.Teleport(player.GetDeathLocation());
-                }
-            }
-
+            Self.SendToJail();
+            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check and was sent to jail!", ChatMessageType.Broadcast));
         }
 
         /// <summary>
         /// Handles random starts of checks and timing out of active checks. For use by Player.Tick(). 
+        /// Also enforces the active UCM Jails.
         /// </summary>
-        public void Tick(Player player)
+        public void Tick()
         {
             using var scope = _lock.EnterScope();
             DateTime now = DateTime.UtcNow;
@@ -176,13 +163,13 @@ namespace ACE.Server.WorldObjects
             if (!IsChecking)
             {
                 // Player must have been in combat recently.
-                if (now > player.LastCombatActionTime.AddSeconds(ServerConfig.ucm_check_combat_eligibility_seconds.Value)) return;
+                if (now > Self.LastCombatActionTime.AddSeconds(ServerConfig.ucm_check_combat_eligibility_seconds.Value)) return;
 
                 // If not past the cooldown period since the last check, not eligible for a check.
                 if (now < LastUCMCheckTime.AddSeconds(ServerConfig.ucm_check_cooldown_seconds.Value)) return;
 
                 // If not in a valid landblock, not eligible for a check.
-                ushort landblockId = (ushort)player.Location.Landblock;
+                ushort landblockId = (ushort)Self.Location.Landblock;
                 if (!LandblockCollections.ValleyOfDeathLandblocks.Contains(landblockId) && !LandblockCollections.ThaelarynIslandLandblocks.Contains(landblockId)) return;
 
                 // Calculate the true probability of at least one trigger occurring over the elapsed time.
@@ -190,13 +177,13 @@ namespace ACE.Server.WorldObjects
                 // Note: ucm_check_spawn_chance is configured as a percentage between 0 and 1.
                 double chancePerSec = Math.Clamp(ServerConfig.ucm_check_spawn_chance.Value, 0, 1);
                 double probOverElapsed = 1.0 - Math.Pow(1.0 - chancePerSec, sinceLastTick.TotalSeconds);
-                if (RNG.NextDouble() < probOverElapsed) StartLocked(player);
+                if (RNG.NextDouble() < probOverElapsed) StartLocked();
                 return;
             }
 
             if (now > Timeout)
             {
-                FailActiveCheckLocked(player, "timed out");
+                FailActiveCheckLocked("timed out");
                 return;
             }
         }
@@ -216,6 +203,6 @@ namespace ACE.Server.WorldObjects
 
     public partial class Player
     {
-        public UCMChecker UCMChecker { get; } = new();
+        public UCMChecker UCMChecker { get; }
     }
 }

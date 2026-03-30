@@ -838,8 +838,13 @@ namespace ACE.Server.WorldObjects
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Inscribable, Inscribable);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Stuck, Stuck);
 
-            if (WeenieType == WeenieType.Admin || WeenieType == WeenieType.Sentinel)
-                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Player, CloakStatus < CloakStatus.Creature);
+            if (this is Player player) {
+                bool attackableByPlayers =
+                    CloakStatus == CloakStatus.Creature ||
+                    CloakStatus == CloakStatus.Hybrid ||
+                    player.IsInJail();
+                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Player, !attackableByPlayers);
+            }
 
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Attackable, Attackable);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.PlayerKiller, PlayerKillerStatus == PlayerKillerStatus.PK);
@@ -847,7 +852,7 @@ namespace ACE.Server.WorldObjects
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.UiHidden, UiHidden);
 
             if (WeenieType == WeenieType.Admin || WeenieType == WeenieType.Sentinel)
-                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Admin, CloakStatus < CloakStatus.Player);
+                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Admin, CloakStatus < CloakStatus.Player); 
 
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.FreePkStatus, PlayerKillerStatus == PlayerKillerStatus.Free);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.ImmuneCellRestrictions, IgnoreHouseBarriers);
