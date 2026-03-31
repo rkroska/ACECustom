@@ -3568,29 +3568,60 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
-        /// Called when this creature takes damage from an attacker
+        /// Called when this creature takes damage from an attacker.
+        /// Supports per-DamageType ReceiveDamage channels via the damage_type column.
         /// </summary>
         /// <remarks>
-        /// This method triggers both WoundedTaunt and ReceiveDamage emotes concurrently.
-        /// ReceiveDamage uses nested: true to allow execution even when WoundedTaunt sets IsBusy = true,
-        /// following the same pattern as DoVendorEmote.
-        /// 
-        /// CONCURRENT EXECUTION LIMITATIONS:
-        /// - Both emote sets execute simultaneously, which may cause:
-        ///   * Duplicate quest stamps if both emotes stamp the same quest (mitigated by quest cache checks)
-        ///   * Motion/animation conflicts if both emotes play animations
-        ///   * Multiple messages being sent simultaneously
-        ///   * Item operations (Give/Take) from both emotes executing concurrently
-        /// 
-        /// These limitations are acceptable as:
-        /// 1. Quest stamping has built-in cache checks to prevent duplicate stamps
-        /// 2. ActionChains serialize execution within each emote set
-        /// 3. Content creators should design emotes to avoid conflicts
+        /// WoundedTaunt fires unconditionally (no DamageType filtering).
+        /// ReceiveDamage emote sets are grouped by their DamageType bitmask:
+        ///   - Typed rows: each distinct DamageType value is an independent channel.
+        ///     A channel fires if (incoming &amp; mask) != 0, then rolls probability within that group.
+        ///   - Fallback rows (DamageType = NULL): fire only when no typed mask matches the incoming damage.
         /// </remarks>
-        public void OnDamage(Creature attacker)
+        public void OnDamage(Creature attacker, DamageType damageType = DamageType.Undef)
         {
             ExecuteEmoteSet(EmoteCategory.WoundedTaunt, null, attacker);
-            ExecuteEmoteSet(EmoteCategory.ReceiveDamage, null, attacker, nested: true);
+
+            if (_worldObject.Biota.PropertiesEmote == null)
+                return;
+
+            var receiveDamageEmotes = _worldObject.Biota.PropertiesEmote
+                .Where(e => e.Category == EmoteCategory.ReceiveDamage).ToList();
+
+            var typedRows = receiveDamageEmotes.Where(e => e.DamageType != null).ToList();
+            var fallbackEmotes = receiveDamageEmotes.Where(e => e.DamageType == null).ToList();
+
+            var anyTypedMaskMatchesIncoming = damageType != DamageType.Undef
+                && typedRows.Exists(e => (e.DamageType!.Value & damageType) != 0);
+
+            foreach (var group in typedRows.GroupBy(e => e.DamageType))
+            {
+                var groupDamageType = group.Key!.Value;
+
+                if (damageType != DamageType.Undef && (groupDamageType & damageType) != 0)
+                {
+                    var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+                    var emoteSet = group
+                        .Where(e => e.Probability > rng)
+                        .OrderBy(e => e.Probability)
+                        .FirstOrDefault();
+
+                    if (emoteSet != null)
+                        ExecuteEmoteSet(emoteSet, attacker, nested: true);
+                }
+            }
+
+            if (!anyTypedMaskMatchesIncoming && fallbackEmotes.Count > 0)
+            {
+                var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+                var emoteSet = fallbackEmotes
+                    .Where(e => e.Probability > rng)
+                    .OrderBy(e => e.Probability)
+                    .FirstOrDefault();
+
+                if (emoteSet != null)
+                    ExecuteEmoteSet(emoteSet, attacker, nested: true);
+            }
         }
 
         /// <summary>

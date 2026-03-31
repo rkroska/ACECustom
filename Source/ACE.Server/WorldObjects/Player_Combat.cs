@@ -116,7 +116,7 @@ namespace ACE.Server.WorldObjects
 
         public DamageEvent DamageTarget(Creature target, WorldObject damageSource)
         {
-            if (target.Health.Current <= 0)
+            if (target == null || !CanDamage(target) || target.Health.Current <= 0)
                 return null;
 
             var targetPlayer = target as Player;
@@ -178,13 +178,16 @@ namespace ACE.Server.WorldObjects
                 // handle Dirty Fighting
                 if (GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
                     FightDirty(target, damageEvent.Weapon);
-                
-                target.EmoteManager.OnDamage(this);
 
-                if (damageEvent.IsCritical)
+                if (damageEvent.IsCritical && target.IsAlive)
                     target.EmoteManager.OnReceiveCritical(this);
             }
-            
+
+            if (damageEvent.HasDamage)
+            {
+                target.EmoteManager.OnDamage(this, damageEvent.DamageType);
+            }
+
             if (targetPlayer == null)
                 OnAttackMonster(target);
 
@@ -897,7 +900,10 @@ namespace ACE.Server.WorldObjects
 
         public override bool CanDamage(Creature target)
         {
-            return target.Attackable && !target.Teleporting && !(target is CombatPet);
+            return target.Attackable &&
+                   !target.Teleporting &&
+                   !(target is CombatPet) &&
+                   !target.BlocksFriendlyPlayerDamage(this);
         }
 
         // http://acpedia.org/wiki/Announcements_-_2002/04_-_Betrayal

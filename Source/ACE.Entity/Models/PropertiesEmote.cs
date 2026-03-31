@@ -21,6 +21,7 @@ namespace ACE.Entity.Models
         public VendorType? VendorType { get; set; }
         public float? MinHealth { get; set; }
         public float? MaxHealth { get; set; }
+        public DamageType? DamageType { get; set; }
 
         public Weenie? Object { get; set; }
         public IList<PropertiesEmoteAction> PropertiesEmoteAction { get; set; } = [];
@@ -38,6 +39,7 @@ namespace ACE.Entity.Models
                 VendorType = VendorType,
                 MinHealth = MinHealth,
                 MaxHealth = MaxHealth,
+                DamageType = DamageType,
             };
 
             foreach (var action in PropertiesEmoteAction)

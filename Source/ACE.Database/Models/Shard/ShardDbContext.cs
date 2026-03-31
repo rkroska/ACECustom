@@ -602,6 +602,8 @@ namespace ACE.Database.Models.Shard
 
                 entity.Property(e => e.WeenieClassId).HasColumnName("weenie_Class_Id");
 
+                entity.Property(e => e.DamageType).HasColumnName("damage_type");
+
                 entity.HasOne(d => d.Object)
                     .WithMany(p => p.BiotaPropertiesEmote)
                     .HasForeignKey(d => d.ObjectId)

@@ -911,11 +911,6 @@ namespace ACE.Server.WorldObjects
                 {
                     if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
                         Cloak.TryProcSpell(target, ProjectileSource, equippedCloak, percent);
-
-                    target.EmoteManager.OnDamage(sourcePlayer);
-
-                    if (critical)
-                        target.EmoteManager.OnReceiveCritical(sourcePlayer);
                 }
             }
             else
@@ -923,6 +918,19 @@ namespace ACE.Server.WorldObjects
                 var lastDamager = ProjectileSource != null ? new DamageHistoryInfo(ProjectileSource) : null;
                 target.OnDeath(lastDamager, Spell.DamageType, critical);
                 target.Die();
+            }
+
+            if (sourcePlayer != null)
+            {
+                var isNonHealth = Spell.Category == SpellCategory.StaminaLowering || Spell.Category == SpellCategory.ManaLowering;
+                var emoteDamageType = isNonHealth
+                    ? (Spell.Category == SpellCategory.StaminaLowering ? DamageType.Stamina : DamageType.Mana)
+                    : Spell.DamageType;
+
+                target.EmoteManager.OnDamage(sourcePlayer, emoteDamageType);
+
+                if (critical && target.IsAlive)
+                    target.EmoteManager.OnReceiveCritical(sourcePlayer);
             }
         }
 
