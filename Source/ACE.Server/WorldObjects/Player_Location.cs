@@ -656,50 +656,65 @@ namespace ACE.Server.WorldObjects
 
         public override void OnTeleportComplete()
         {
-
-            int nonexemptCount = 0;
-            var endpoint = this.Session.EndPoint;
-            var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(endpoint.Address.ToString());
-            if(!ipAllowsUnlimited)
+            try
             {
-                var players = PlayerManager.GetAllOnline();
-                foreach (var p in players.Where(x => x.Session.EndPoint.Address.Equals(endpoint.Address)))
+                int nonexemptCount = 0;
+                var endpoint = this.Session.EndPoint;
+                var ipAllowsUnlimited = ConfigManager.Config.Server.Network.AllowUnlimitedSessionsFromIPAddresses.Contains(endpoint.Address.ToString());
+                if(!ipAllowsUnlimited)
                 {
-                    if (p.CurrentLandblock != null && Landblock.connectionExemptLandblocks.Contains(p.CurrentLandblock.Id.Landblock))
-                        continue;
-
-                    if (p.IsPlussed)
-                        continue;
-
-                    if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
+                    var players = PlayerManager.GetAllOnline();
+                    foreach (var p in players.Where(x => x.Session.EndPoint.Address.Equals(endpoint.Address)))
                     {
-                        p.SendMessage($"Booting due to exceeding {ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress} allowed outside of exempt areas.");
-                        p.Session.LogOffPlayer();
+                        var lb = p.CurrentLandblock;
+                        if (lb != null && Landblock.connectionExemptLandblocks.Contains(lb.Id.Landblock))
+                            continue;
+
+                        if (lb == null)
+                            log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete IP check: peer {p.Name} (0x{p.Guid}) has CurrentLandblock=null (mid-teleport race?)");
+
+                        if (p.IsPlussed)
+                            continue;
+
+                        if (++nonexemptCount > ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress)
+                        {
+                            log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete booting peer {p.Name} (0x{p.Guid}) — " +
+                                $"nonexemptCount={nonexemptCount}, limit={ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress}, " +
+                                $"IP={endpoint.Address}, peer landblock={lb?.Id.Raw:X8}");
+                            p.SendMessage($"Booting due to exceeding {ConfigManager.Config.Server.Network.MaximumAllowedSessionsPerIPAddress} allowed outside of exempt areas.");
+                            p.Session.LogOffPlayer();
+                        }
                     }
                 }
-            }
-            
 
-            if (CurrentLandblock != null && !CurrentLandblock.CreateWorldObjectsCompleted)
+                if (CurrentLandblock != null && !CurrentLandblock.CreateWorldObjectsCompleted)
+                {
+                    log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete deferred — CreateWorldObjectsCompleted=false, " +
+                        $"Landblock={CurrentLandblock.Id.Raw:X8}, Teleporting={Teleporting}");
+                    // If the critical landblock resources haven't been loaded yet, we keep the player in the pink bubble state
+                    // We'll check periodically to see when it's safe to let them materialize in
+                    var actionChain = new ActionChain();
+                    actionChain.AddDelaySeconds(0.1);
+                    actionChain.AddAction(this, ActionType.PlayerLocation_OnTeleportComplete, OnTeleportComplete);
+                    actionChain.EnqueueChain();
+                    return;
+                }
+
+                // Call base to handle common cleanup (IgnoreCollisions, Hidden, Teleporting, Broadcast)
+                base.OnTeleportComplete();
+
+                CheckMonsters();
+                CheckHouse();
+
+                // hijacking this for both start/end on portal teleport
+                if (LastTeleportStartTimestamp == LastPortalTeleportTimestamp)
+                    LastPortalTeleportTimestamp = Time.GetUnixTime();
+            }
+            catch (Exception ex)
             {
-                // If the critical landblock resources haven't been loaded yet, we keep the player in the pink bubble state
-                // We'll check periodically to see when it's safe to let them materialize in
-                var actionChain = new ActionChain();
-                actionChain.AddDelaySeconds(0.1);
-                actionChain.AddAction(this, ActionType.PlayerLocation_OnTeleportComplete, OnTeleportComplete);
-                actionChain.EnqueueChain();
-                return;
+                log.Error($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete EXCEPTION — Teleporting will remain {Teleporting}. " +
+                    $"Landblock: {CurrentLandblock?.Id.Raw:X8}. base.OnTeleportComplete() was NOT called.", ex);
             }
-
-            // Call base to handle common cleanup (IgnoreCollisions, Hidden, Teleporting, Broadcast)
-            base.OnTeleportComplete();
-            
-            CheckMonsters();
-            CheckHouse();
-
-            // hijacking this for both start/end on portal teleport
-            if (LastTeleportStartTimestamp == LastPortalTeleportTimestamp)
-                LastPortalTeleportTimestamp = Time.GetUnixTime();
         }
 
         public void SendTeleportedViaMagicMessage(WorldObject itemCaster, Spell spell)

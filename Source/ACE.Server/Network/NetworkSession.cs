@@ -257,12 +257,19 @@ namespace ACE.Server.Network
             if ((packet.Header.Flags & PacketHeaderFlags.RequestRetransmit) == PacketHeaderFlags.RequestRetransmit
                 && !((packet.Header.Flags & PacketHeaderFlags.EncryptedChecksum) == PacketHeaderFlags.EncryptedChecksum))
             {
-                var uncached = packet.HeaderOptional.RetransmitData
+                var retransmitData = packet.HeaderOptional.RetransmitData;
+                var totalRequested = retransmitData.Count;
+
+                var uncached = retransmitData
                     .Where(sequence => !Retransmit(sequence))
                     .ToList();
 
                 if (uncached.Count != 0)
                 {
+                    log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"NAK round: {uncached.Count}/{totalRequested} sequences not in cache. " +
+                        $"Player Teleporting: {session.Player?.Teleporting}, Landblock: {session.Player?.CurrentLandblock?.Id.Raw:X8}");
+
                     // Sends a response packet w/ PacketHeader.RejectRetransmit
                     var packetRejectRetransmit = new PacketRejectRetransmit(uncached);
                     EnqueueSend(packetRejectRetransmit);
@@ -630,7 +637,17 @@ namespace ACE.Server.Network
             // if (!sendAck)
             //    sendAck = true;
 
-            var removalList = cachedPackets.Keys.Where(x => x < sequence);
+            var removalList = cachedPackets.Keys.Where(x => x < sequence).ToList();
+
+            if (removalList.Count > 0)
+            {
+                uint minPruned = removalList.Min();
+                uint maxPruned = removalList.Max();
+                if (removalList.Count > 20)
+                    log.Warn($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"ACK {sequence} pruning {removalList.Count} cached packets (seq {minPruned}-{maxPruned}). " +
+                        $"Player Teleporting: {session.Player?.Teleporting}");
+            }
 
             foreach (var key in removalList)
                 cachedPackets.TryRemove(key, out _);
@@ -655,15 +672,19 @@ namespace ACE.Server.Network
                 // This is to catch a race condition between .Count and .Min() and .Max()
                 try
                 {
-                    log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache range {cachedPackets.Keys.Min()} - {cachedPackets.Keys.Max()}.");
+                    log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"retransmit requested packet {sequence} not in cache. Cache range {cachedPackets.Keys.Min()} - {cachedPackets.Keys.Max()}. " +
+                        $"Cache count: {cachedPackets.Count}.");
                 }
                 catch
                 {
-                    log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty. Race condition threw exception.");
+                    log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"retransmit requested packet {sequence} not in cache. Cache is empty. Race condition threw exception.");
                 }
             }
             else
-                log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty.");
+                log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                    $"retransmit requested packet {sequence} not in cache. Cache is empty.");
 
             // If this session is attached to a player log them off to avoid retransmit floods
             if (session.Player != null)
