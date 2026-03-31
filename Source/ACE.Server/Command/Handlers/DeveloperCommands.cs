@@ -18,6 +18,7 @@ using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
+using ACE.Server.Diagnostics;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
@@ -185,6 +186,14 @@ namespace ACE.Server.Command.Handlers
         public static void HandleNetStats(Session session, params string[] parameters)
         {
             CommandHandlerHelper.WriteOutputInfo(session, NetworkStatistics.Summary(), ChatMessageType.Broadcast);
+        }
+
+        [CommandHandler("serverdiagnostics", AccessLevel.Developer, CommandHandlerFlag.None, "Print ServerDiagnostics counters snapshot")]
+        public static void HandleServerDiagnostics(Session session, params string[] parameters)
+        {
+            var snap = ServerDiagnostics.GetSnapshot();
+            foreach (var line in snap.ToDisplayString().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                CommandHandlerHelper.WriteOutputInfo(session, line, ChatMessageType.Broadcast);
         }
 
         /// <summary>

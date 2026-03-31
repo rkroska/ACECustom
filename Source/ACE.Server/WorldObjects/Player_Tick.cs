@@ -63,7 +63,8 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            UCMChecker.Tick(this);
+            UCMChecker.Tick();
+            TickJail();
 
             actionQueue.RunActions();
 

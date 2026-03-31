@@ -51,6 +51,60 @@ namespace ACE.Server.Command.Handlers
         //     //TODO: output
         // }
 
+        [CommandHandler("jail", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Sends a player to jail.",
+            "Usage: /jail <playername>")]
+        public static void HandleJail(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /jail <playername>", ChatMessageType.System));
+                return;
+            }
+
+            string targetName = string.Join(" ", parameters);
+            var target = PlayerManager.GetOnlinePlayer(targetName);
+
+            if (target == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {targetName} could not be found.", ChatMessageType.System));
+                return;
+            }
+
+            target.SendToJail();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was sent to jail by {session.Player.Name}");
+        }
+
+        [CommandHandler("jailbreak", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Releases a player from jail.",
+            "Usage: /jailbreak <playername>")]
+        public static void HandleJailbreak(Session session, params string[] parameters)
+        {
+            if (parameters.Length == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /jailbreak <playername>", ChatMessageType.System));
+                return;
+            }
+
+            string targetName = string.Join(" ", parameters);
+            var target = PlayerManager.GetOnlinePlayer(targetName);
+
+            if (target == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {targetName} could not be found.", ChatMessageType.System));
+                return;
+            }
+
+            if (!target.IsInJail())
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {target.Name} is not currently in jail.", ChatMessageType.System));
+                return;
+            }
+
+            target.ReleaseFromJail();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was released from jail by {session.Player.Name}");
+        }
+
         // bankaudit {subcommand} {parameters}
         [CommandHandler("bankaudit", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Bank transfer audit commands.",
@@ -2230,7 +2284,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            bool started = targetPlayer.UCMChecker.Start(targetPlayer);
+            bool started = targetPlayer.UCMChecker.Start();
             if (started)
             {
                 PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
@@ -6917,6 +6971,19 @@ namespace ACE.Server.Command.Handlers
         public static void HandleResyncServerProperties(Session session, params string[] parameters)
         {
             PropertyManager.ResyncVariables();
+        }
+
+        [CommandHandler("reload-enlightenment-tiers", AccessLevel.Admin, CommandHandlerFlag.None, "Reload config_enlightenment_tier from the shard database")]
+        public static void HandleReloadEnlightenmentTiers(Session session, params string[] parameters)
+        {
+            var ok = EnlightenmentTierManager.TryReload(out var detail);
+            CommandHandlerHelper.WriteOutputInfo(session, detail);
+            if (ok)
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Reloaded enlightenment tier configuration from database.");
+            else if (EnlightenmentTierManager.LoadedFromDatabase)
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload failed; previous database-backed configuration retained. See server log.");
+            else
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload failed; using compiled defaults (last resort). See server log.");
         }
 
         [CommandHandler("iterate-allegiances", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Runs through all allegiances and outputs to console")]
