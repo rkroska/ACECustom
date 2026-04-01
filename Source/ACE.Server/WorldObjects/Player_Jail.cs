@@ -59,7 +59,7 @@ namespace ACE.Server.WorldObjects
 
         public void OnDeathInJail(Player killingPlayer)
         {
-            if (killingPlayer == null || killingPlayer == this) return;
+            if (killingPlayer == null || killingPlayer == this || killingPlayer.IsInJail()) return;
             int totalKills = killingPlayer.QuestManager.Stamp("jail_vigilante_justice");
             if (totalKills >= 5) killingPlayer.QuestManager.StampFirst("jail_its_me_the_warden");
         }
