@@ -656,6 +656,7 @@ namespace ACE.Server.WorldObjects
 
         public override void OnTeleportComplete()
         {
+            bool shouldCallBase = true;
             try
             {
                 int nonexemptCount = 0;
@@ -691,6 +692,7 @@ namespace ACE.Server.WorldObjects
                 {
                     log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete deferred — CreateWorldObjectsCompleted=false, " +
                         $"Landblock={CurrentLandblock.Id.Raw:X8}, Teleporting={Teleporting}");
+                    shouldCallBase = false;
                     // If the critical landblock resources haven't been loaded yet, we keep the player in the pink bubble state
                     // We'll check periodically to see when it's safe to let them materialize in
                     var actionChain = new ActionChain();
@@ -699,9 +701,6 @@ namespace ACE.Server.WorldObjects
                     actionChain.EnqueueChain();
                     return;
                 }
-
-                // Call base to handle common cleanup (IgnoreCollisions, Hidden, Teleporting, Broadcast)
-                base.OnTeleportComplete();
 
                 CheckMonsters();
                 CheckHouse();
@@ -712,8 +711,13 @@ namespace ACE.Server.WorldObjects
             }
             catch (Exception ex)
             {
-                log.Error($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete EXCEPTION — Teleporting will remain {Teleporting}. " +
-                    $"Landblock: {CurrentLandblock?.Id.Raw:X8}. base.OnTeleportComplete() was NOT called.", ex);
+                log.Error($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete EXCEPTION — forcing materialization. " +
+                    $"Landblock: {CurrentLandblock?.Id.Raw:X8}, Teleporting: {Teleporting}", ex);
+            }
+            finally
+            {
+                if (shouldCallBase)
+                    base.OnTeleportComplete();
             }
         }
 

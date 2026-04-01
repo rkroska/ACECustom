@@ -639,14 +639,11 @@ namespace ACE.Server.Network
 
             var removalList = cachedPackets.Keys.Where(x => x < sequence).ToList();
 
-            if (removalList.Count > 0)
+            if (removalList.Count > 20)
             {
-                uint minPruned = removalList.Min();
-                uint maxPruned = removalList.Max();
-                if (removalList.Count > 20)
-                    log.Warn($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
-                        $"ACK {sequence} pruning {removalList.Count} cached packets (seq {minPruned}-{maxPruned}). " +
-                        $"Player Teleporting: {session.Player?.Teleporting}");
+                log.Warn($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                    $"ACK {sequence} pruning {removalList.Count} cached packets (seq {removalList.Min()}-{removalList.Max()}). " +
+                    $"Player Teleporting: {session.Player?.Teleporting}");
             }
 
             foreach (var key in removalList)
