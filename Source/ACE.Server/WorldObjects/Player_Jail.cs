@@ -65,6 +65,8 @@ namespace ACE.Server.WorldObjects
             PlayersJailedUntil.TryRemove(Guid.Full, out _);
             RedrawPlayerWithUpdates();
             GrantStampsOnExit();
+            EligibleForModelInmate = false;
+            EligibleForDeathStamps = false;
             Session.Network.EnqueueSend(new GameMessageSystemChat("Your punishment has concluded. You may now resume your adventures.", ChatMessageType.Broadcast));
         }
 
