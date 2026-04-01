@@ -126,10 +126,7 @@ namespace ACE.Server.Entity.Actions
                                 sw.Stop();
                                 var elapsedMs = sw.Elapsed.TotalMilliseconds;
 
-                                var tags = new TagList
-                                {
-                                    { "ActionType", result.Type.ToString() }
-                                };
+                                var tags = new TagList{};
                                 MetricsManager.actionLatencies.Record(elapsedMs * 1000.0, tags);
 
                                 if (elapsedMs >= trackThresholdMs)
