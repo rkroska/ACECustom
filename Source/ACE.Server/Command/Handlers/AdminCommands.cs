@@ -71,7 +71,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            target.SendToJail();
+            target.SendToJail(JailReason.SentByAdmin);
             PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was sent to jail by {session.Player.Name}");
         }
 

@@ -67,7 +67,7 @@ namespace ACE.Server.WorldObjects
                 // The lock has been released at this point.
                 if (timeout)
                 {
-                    FailActiveCheck("timed out");
+                    FailActiveCheck(JailReason.TimedOut);
                 }
                 else if (response == isRightAnswerForm)
                 {
@@ -75,7 +75,7 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    FailActiveCheck("selected incorrectly");
+                    FailActiveCheck(JailReason.WrongAnswer);
                 }
             });
             bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, timeout.TotalSeconds);
@@ -119,7 +119,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If a check is active, fails it.
         /// </summary>
-        public void FailActiveCheck(string reason)
+        public void FailActiveCheck(JailReason reason)
         {
             using var scope = _lock.EnterScope();
             FailActiveCheckLocked(reason);
@@ -129,7 +129,7 @@ namespace ACE.Server.WorldObjects
         /// If a check is active, fails it.
         /// The lock must be held to call this method.
         /// </summary>
-        private void FailActiveCheckLocked(string reason)
+        private void FailActiveCheckLocked(JailReason reason)
         {
             if (!IsChecking) return;
 
@@ -145,7 +145,7 @@ namespace ACE.Server.WorldObjects
             IsChecking = false;
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
-            Self.SendToJail();
+            Self.SendToJail(reason);
             PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check ({reason}) and was sent to jail!", ChatMessageType.Broadcast));
         }
 
@@ -183,10 +183,24 @@ namespace ACE.Server.WorldObjects
 
             if (now > Timeout)
             {
-                FailActiveCheckLocked("timed out");
+                FailActiveCheckLocked(JailReason.TimedOut);
                 return;
             }
         }
+
+        /// <summary>
+        /// Returns a human-readable string for the given jail reason, for use in audit messages.
+        /// </summary>
+        /// <param name="reason"></param>
+        /// <returns></returns>
+        public string GetJailReasonString(JailReason reason) => reason switch
+        {
+            JailReason.WrongAnswer => "selected incorrectly",
+            JailReason.TimedOut => "timed out",
+            JailReason.LoggedOut => "logged out",
+            JailReason.SentByAdmin => "sent by admin",
+            _ => "an unknown reason"
+        };
 
         /// <summary>Audit suffix: seconds from prompt shown to outcome (UTC).</summary>
         private static string FormatUcmResponseSeconds(DateTime? promptStartedUtc)

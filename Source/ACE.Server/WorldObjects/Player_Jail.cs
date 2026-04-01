@@ -14,6 +14,8 @@ namespace ACE.Server.WorldObjects
         // Shared across all player instances. We do this to ensure the ephemeral (non-db saved) state
         // of being in jail is still enforced even if the player logs out and back in during their sentence.
         private static ConcurrentDictionary<uint, DateTime> PlayersJailedUntil { get; } = new();
+        bool EligibleForModelInmate = false;
+        bool EligibleForDeathStamps = false;
 
         /// <summary>
         /// Determines whether the player is currently serving a jail sentence.
@@ -28,7 +30,7 @@ namespace ACE.Server.WorldObjects
         /// Applies tracking properties, ephemeral combat state overrides, and teleports them to the jail boundary.
         /// If the player is already in jail, this will reset their sentence duration.
         /// </summary>
-        public void SendToJail()
+        public void SendToJail(JailReason reason)
         {
             TimeSpan jailTime = TimeSpan.FromSeconds(ServerConfig.ucm_jail_duration_seconds.Value);
             DateTime releaseTime = DateTime.UtcNow.Add(jailTime);
@@ -40,8 +42,11 @@ namespace ACE.Server.WorldObjects
             }
 
             // Apply jail effects (newly jailed).
-            EnqueueEffectChain();
+            EligibleForModelInmate = true;
+            EligibleForDeathStamps = true;
+            RedrawPlayerWithUpdates();
             Teleport(GetJailTeleportLocation());
+            GrantStampsOnEntry(reason);
             Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime.GetFriendlyLongString()} and are attackable by other players.", ChatMessageType.Broadcast));
         }
 
@@ -52,18 +57,89 @@ namespace ACE.Server.WorldObjects
         public void ReleaseFromJail()
         {
             PlayersJailedUntil.TryRemove(Guid.Full, out _);
-            EnqueueEffectChain();
+            RedrawPlayerWithUpdates();
+            GrantStampsOnExit();
             Session.Network.EnqueueSend(new GameMessageSystemChat("Your punishment has concluded. You may now resume your adventures.", ChatMessageType.Broadcast));
+        }
+
+        public void OnDeathInJail(Player killingPlayer)
+        {
+            // Dying for any reason counts as failure to survive for exit-jail stamps.
+            // However, benign deaths like suicides do not block the PK-related stamps below.
+            EligibleForModelInmate = false;
+
+            if (killingPlayer == null) return;
+            if (!EligibleForDeathStamps) return;
+
+            if (killingPlayer.IsInJail())
+            {
+                QuestManager.Stamp("jail_lost_the_yard_fight");
+                killingPlayer.QuestManager.Stamp("jail_shanked_a_fool");
+            }
+            else
+            {
+                QuestManager.Stamp("jail_sitting_duck");
+                killingPlayer.QuestManager.Stamp("jail_vigilante_justice");
+            }
+
+            EligibleForDeathStamps = false;
+        }
+
+        private void GrantStampsOnExit()
+        {
+            if (!EligibleForModelInmate) return;
+            int totalGoodBehavior = QuestManager.Stamp("jail_model_inmate");
+            if (totalGoodBehavior >= 5) QuestManager.StampFirst("jail_smooth_sentence");
+            if (totalGoodBehavior >= 20) QuestManager.StampFirst("jail_rehabilitated");
+        }
+
+        private void GrantStampsOnEntry(JailReason reason)
+        {
+            // Overall Counter
+            int totalJails = QuestManager.Stamp("jail_fresh_meat");
+            if (totalJails >= 5) QuestManager.StampFirst("jail_the_usual_suspect");
+            if (totalJails >= 10) QuestManager.StampFirst("jail_the_recidivist");
+            if (totalJails >= 20) QuestManager.StampFirst("jail_cellmate_of_the_month");
+            if (totalJails >= 50) QuestManager.StampFirst("jail_macroed_this_stamp");
+
+            // Reason-Specific Counters
+            string questName = reason switch
+            {
+                JailReason.WrongAnswer => "jail_math_is_hard",
+                JailReason.TimedOut => "jail_alt_tabbed",
+                JailReason.LoggedOut => "jail_tactical_dc",
+                _ => ""
+            };
+
+            // Skip sending by admin for specific reason-stamps
+            if (string.IsNullOrEmpty(questName)) return;
+
+            int reasonCount = QuestManager.Stamp(questName);
+            switch (reason)
+            {
+                case JailReason.WrongAnswer:
+                    if (reasonCount >= 5) QuestManager.StampFirst("jail_stage_fright");
+                    if (reasonCount >= 20) QuestManager.StampFirst("jail_shaky_fingers");
+                    break;
+                case JailReason.TimedOut:
+                    if (reasonCount >= 5) QuestManager.StampFirst("jail_bathroom_break");
+                    if (reasonCount >= 20) QuestManager.StampFirst("jail_asleep_at_the_wheel");
+                    break;
+                case JailReason.LoggedOut:
+                    if (reasonCount >= 5) QuestManager.StampFirst("jail_vanishing_act");
+                    if (reasonCount >= 20) QuestManager.StampFirst("jail_quitters_shame");
+                    break;
+            }
         }
 
         /// <summary>
         /// Broadcasts an update to other players to see the new player.
         /// </summary>
-        private void EnqueueEffectChain()
+        private void RedrawPlayerWithUpdates()
         {
             EnqueueBroadcast(false, new GameMessageDeleteObject(this));
             var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(.5);
+            actionChain.AddDelaySeconds(.25);
             actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep3, () =>
             {
                 EnqueueBroadcast(false, new GameMessageCreateObject(this));
