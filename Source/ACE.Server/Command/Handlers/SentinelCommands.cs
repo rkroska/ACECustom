@@ -18,6 +18,7 @@ using ACE.Server.Network.Managers;
 using ACE.Server.WorldObjects;
 
 using log4net;
+using System.Linq;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -178,25 +179,17 @@ namespace ACE.Server.Command.Handlers
             + "This command buffs your fellowship (or the fellowship of the specified character).")]
         public static void HandleFellowBuff(Session session, params string[] parameters)
         {
-            List<CommandParameterHelpers.ACECommandParameter> aceParams = new List<CommandParameterHelpers.ACECommandParameter>()
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters), fallbackToSelf: true);
+            if (target == null) return;
+            if (target.Fellowship == null)
             {
-                new CommandParameterHelpers.ACECommandParameter() {
-                    Type = CommandParameterHelpers.ACECommandParameterType.OnlinePlayerNameOrIid,
-                    Required = false,
-                    DefaultValue = session.Player
-                }
-            };
-            if (!CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams)) return;
-            if (aceParams[0].AsPlayer.Fellowship == null)
-            {
-                session.Player.CreateSentinelBuffPlayers(new Player[] { aceParams[0].AsPlayer }, aceParams[0].AsPlayer == session.Player);
+                session.Player.CreateSentinelBuffPlayers(new Player[] { target }, target == session.Player);
                 return;
             }
 
-            var fellowshipMembers = aceParams[0].AsPlayer.Fellowship.GetFellowshipMembers();
-
+            var fellowshipMembers = target.Fellowship.GetFellowshipMembers();
             session.Player.CreateSentinelBuffPlayers(fellowshipMembers.Values,
-                fellowshipMembers.Count == 1 && aceParams[0].AsPlayer.Fellowship.FellowshipLeaderGuid == session.Player.Guid.Full);
+                fellowshipMembers.Count == 1 && target.Fellowship.FellowshipLeaderGuid == session.Player.Guid.Full);
         }
 
         // buff [name]
@@ -206,22 +199,16 @@ namespace ACE.Server.Command.Handlers
             + "This command buffs yourself (or the specified character).")]
         public static void HandleBuff(Session session, params string[] parameters)
         {
-            List<CommandParameterHelpers.ACECommandParameter> aceParams = new List<CommandParameterHelpers.ACECommandParameter>()
+            ulong maxLevel = 8;
+            if (parameters.Length > 0 && ulong.TryParse(parameters[^1], out var parsedLevel))
             {
-                new CommandParameterHelpers.ACECommandParameter() {
-                    Type = CommandParameterHelpers.ACECommandParameterType.OnlinePlayerNameOrIid,
-                    Required = false,
-                    DefaultValue = session.Player
-                },
-                new CommandParameterHelpers.ACECommandParameter()
-                {
-                    Type = CommandParameterHelpers.ACECommandParameterType.ULong,
-                    Required = false,
-                    DefaultValue = (ulong)8
-                }
-            };
-            if (!CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams)) return;
-            session.Player.CreateSentinelBuffPlayers(new Player[] { aceParams[0].AsPlayer }, aceParams[0].AsPlayer == session.Player, aceParams[1].AsULong);
+                maxLevel = parsedLevel;
+                parameters = parameters[..^1];
+            }
+
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters), fallbackToSelf: true);
+            if (target == null) return;
+            session.Player.CreateSentinelBuffPlayers(new Player[] { target }, target == session.Player, maxLevel);
         }
 
         // run < on | off | toggle | check >

@@ -1,10 +1,11 @@
 
-using log4net;
-
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Server.Managers;
 using ACE.Server.Network;
+using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
+using log4net;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -99,6 +100,55 @@ namespace ACE.Server.Command.Handlers
 
             if (targetID == null) return null;
             return session.Player.FindObject(targetID.Value, Player.SearchLocations.Everywhere, out _, out _, out _);
+        }
+
+        /// <summary>
+        /// Gets the player to be used as the command target based on the current selection or a specified player name.
+        ///
+        /// If no player is found, a system chat message is sent to the session indicating the reason. The caller need not send any additional messages.
+        ///
+        /// Intended use:
+        /// ```
+        ///     Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+        ///     if (target == null) return;
+        ///     ...
+        /// ```
+        /// </summary>
+        /// <param name="session">The session from which to determine the selected player and to send system chat messages if needed.</param>
+        /// <param name="playerName">The name of the player to target. If empty, the currently selected player in the session is used.</param>
+        /// <param name="fallbackToSelf">A boolean representing whether the command should fall back to the session player if no valid target is found.</param>
+        /// <returns>The player to be used as the command target, or null if no suitable player is found.</returns>
+        public static Player GetPlayerAsCommandTarget(Session session, string playerName = "", bool fallbackToSelf = false)
+        {
+            Player target = null;
+            if (playerName.Length == 0)
+            {
+                WorldObject wo = GetSelected(session);
+                if (wo is Player p) target = p;
+            }
+            else
+            {
+                target = PlayerManager.GetOnlinePlayer(playerName);
+            }
+
+            if (target == null)
+            {
+                if (fallbackToSelf)
+                {
+                    return session.Player;
+                }
+                if (playerName.Length == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"You must select a player or pass one to the command.", ChatMessageType.System));
+                    return null;
+                }
+                else
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.System));
+                    return null;
+                }
+            }
+            return target;
         }
 
         public static WorldObject GetWorldObjectByGuid(Session session, uint guid)
