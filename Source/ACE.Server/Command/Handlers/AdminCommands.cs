@@ -1,21 +1,7 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Threading;
-using Microsoft.EntityFrameworkCore;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Models.Auth;
-using ShardModels = ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -31,8 +17,20 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
-
+using log4net;
+using Microsoft.EntityFrameworkCore;
+using Org.BouncyCastle.Crypto.Generators;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Threading;
 using Position = ACE.Entity.Position;
+using ShardModels = ACE.Database.Models.Shard;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -51,49 +49,24 @@ namespace ACE.Server.Command.Handlers
         //     //TODO: output
         // }
 
-        [CommandHandler("jail", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("jail", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
             "Sends a player to jail.",
-            "Usage: /jail <playername>")]
+            "Usage: /jail [playername]\nIf no name is provided, the currently selected player is used.")]
         public static void HandleJail(Session session, params string[] parameters)
         {
-            if (parameters.Length == 0)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /jail <playername>", ChatMessageType.System));
-                return;
-            }
-
-            string targetName = string.Join(" ", parameters);
-            var target = PlayerManager.GetOnlinePlayer(targetName);
-
-            if (target == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {targetName} could not be found.", ChatMessageType.System));
-                return;
-            }
-
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+            if (target == null) return;
             target.SendToJail();
             PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was sent to jail by {session.Player.Name}");
         }
 
-        [CommandHandler("jailbreak", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+        [CommandHandler("jailbreak", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
             "Releases a player from jail.",
-            "Usage: /jailbreak <playername>")]
+            "Usage: /jailbreak [playername]\nIf no name is provided, the currently selected player is used.")]
         public static void HandleJailbreak(Session session, params string[] parameters)
         {
-            if (parameters.Length == 0)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /jailbreak <playername>", ChatMessageType.System));
-                return;
-            }
-
-            string targetName = string.Join(" ", parameters);
-            var target = PlayerManager.GetOnlinePlayer(targetName);
-
-            if (target == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {targetName} could not be found.", ChatMessageType.System));
-                return;
-            }
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+            if (target == null) return;
 
             if (!target.IsInJail())
             {
@@ -1929,27 +1902,23 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("ucmcheck", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Initiates a UCM check on the selected player.")]
         public static void HandleUCMCheck(Session session, params string[] parameters)
         {
-            var target = CommandHandlerHelper.GetSelected(session);
-            if (target == null || !(target is Player targetPlayer))
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+            if (target == null) return;
+
+            if (target.UCMChecker.IsCheckInProgress())
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat("You must select a player to use this command.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} is already undergoing a UCM check.", ChatMessageType.System));
                 return;
             }
 
-            if (targetPlayer.UCMChecker.IsCheckInProgress())
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"{targetPlayer.Name} is already undergoing a UCM check.", ChatMessageType.System));
-                return;
-            }
-
-            bool started = targetPlayer.UCMChecker.Start();
+            bool started = target.UCMChecker.Start();
             if (started)
             {
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {target.Name}.");
             }
             else
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"UCM check on {targetPlayer.Name} failed to start.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"UCM check on {target.Name} failed to start.", ChatMessageType.System));
             }
         }
 
@@ -4371,35 +4340,17 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("dispel", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Removes all enchantments from the player", "/dispel")]
         public static void HandleDispel(Session session, params string[] parameters)
         {
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters), fallbackToSelf: true);
+            if (target == null) return;
 
-            if (parameters.Length > 0)
-            {
-                var player = PlayerManager.GetOnlinePlayer(parameters[0]);
-                if (player == null)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {parameters[0]} not found.", ChatMessageType.Broadcast));
-                    return;
-                }
-                
-                player.EnchantmentManager.DispelAllEnchantments();
-                // remove all enchantments from equipped items for now
-                foreach (var item in player.EquippedObjects.Values)
-                    item.EnchantmentManager.DispelAllEnchantments();
-                
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {player.Name}.");
-            }
-            else
-            {
-                session.Player.EnchantmentManager.DispelAllEnchantments();
-                // remove all enchantments from equipped items for now
-                foreach (var item in session.Player.EquippedObjects.Values)
-                    item.EnchantmentManager.DispelAllEnchantments();
-                
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from themselves.");
-            }
+            target.EnqueueBroadcast(new GameMessageScript(target.Guid, PlayScript.DispelAll));
+            target.EnchantmentManager.DispelAllEnchantments();
+            // remove all enchantments from equipped items for now
+            foreach (var item in target.EquippedObjects.Values)
+                item.EnchantmentManager.DispelAllEnchantments();
 
-
-
+            if (target != session.Player)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {target.Name}.");
         }
 
         // event
