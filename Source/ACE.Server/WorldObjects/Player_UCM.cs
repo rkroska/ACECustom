@@ -107,6 +107,13 @@ namespace ACE.Server.WorldObjects
         private void PassActiveCheckLocked()
         {
             if (!IsChecking) return;
+
+            int passCount = Self.QuestManager.Stamp("focus_test_passed");
+            if (passCount >= 5) Self.QuestManager.StampFirst("focus_test_not_a_bot");
+            if (passCount >= 10) Self.QuestManager.StampFirst("focus_test_staying_awake");
+            if (passCount >= 20) Self.QuestManager.StampFirst("focus_test_actually_playing");
+            if (passCount >= 50) Self.QuestManager.StampFirst("focus_test_unshakable_focus");
+
             Self.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
             var passElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
             PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} passed UCM check at {Self.Location}.{passElapsed}");
@@ -137,6 +144,14 @@ namespace ACE.Server.WorldObjects
             if (ActiveUcmConfirmationContextId is uint ctx)
                 Self.ConfirmationManager.TryDismissConfirmation(ConfirmationType.Yes_No, ctx);
 
+            _ = reason switch
+            {
+                JailReason.WrongAnswer => Self.QuestManager.StampFirst("focus_test_math_is_hard"),
+                JailReason.TimedOut => Self.QuestManager.StampFirst("focus_test_bathroom_break"),
+                JailReason.LoggedOut => Self.QuestManager.StampFirst("focus_test_tactical_dc"),
+                _ => 0
+            };
+
             string message = "You failed the focus test and have been punished!";
             Self.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
 
@@ -145,7 +160,7 @@ namespace ACE.Server.WorldObjects
             IsChecking = false;
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
-            Self.SendToJail(reason);
+            Self.SendToJail();
             PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check ({reason}) and was sent to jail!", ChatMessageType.Broadcast));
         }
 
