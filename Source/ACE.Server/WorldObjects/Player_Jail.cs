@@ -62,7 +62,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void ReleaseFromJail()
         {
-            PlayersJailedUntil.TryRemove(Guid.Full, out _);
+            if (!PlayersJailedUntil.TryRemove(Guid.Full, out _)) return;
             RedrawPlayerWithUpdates();
             GrantStampsOnExit();
             EligibleForModelInmate = false;
