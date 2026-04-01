@@ -657,7 +657,8 @@ namespace ACE.Server.WorldObjects
 
                         if (player.IsInJail())
                         {
-                            player.OnDeathInJail(PlayerManager.GetOnlinePlayer(killer.Guid));
+                            Player jailKiller = killer?.TryGetPetOwnerOrAttacker() as Player;
+                            player.OnDeathInJail(jailKiller);
                         }
 
                         if (!isPKdeath && !isPKLdeath)

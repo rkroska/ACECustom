@@ -14,7 +14,13 @@ namespace ACE.Server.WorldObjects
         // Shared across all player instances. We do this to ensure the ephemeral (non-db saved) state
         // of being in jail is still enforced even if the player logs out and back in during their sentence.
         private static ConcurrentDictionary<uint, DateTime> PlayersJailedUntil { get; } = new();
+
+        // Denotes whether the player is eligible for stamps on exit.
+        // Set to true on entering jail, and false on death or relog.
         bool EligibleForModelInmate = false;
+
+        // Denotes whether the player can still give/get a stamp when killed.
+        // Set to true on entering jail, and false the first time they are killed by a player or relog.
         bool EligibleForDeathStamps = false;
 
         /// <summary>
@@ -69,8 +75,15 @@ namespace ACE.Server.WorldObjects
             EligibleForModelInmate = false;
 
             if (killingPlayer == null) return;
-            if (!EligibleForDeathStamps) return;
 
+            // Suicide.
+            if (killingPlayer == this)
+            {
+                QuestManager.Stamp("jail_early_retirement_denied");
+                return;
+            }
+
+            if (!EligibleForDeathStamps) return;
             if (killingPlayer.IsInJail())
             {
                 QuestManager.Stamp("jail_lost_the_yard_fight");
@@ -81,7 +94,6 @@ namespace ACE.Server.WorldObjects
                 QuestManager.Stamp("jail_sitting_duck");
                 killingPlayer.QuestManager.Stamp("jail_vigilante_justice");
             }
-
             EligibleForDeathStamps = false;
         }
 
