@@ -170,7 +170,7 @@ namespace ACE.Server.Network.Structure
                 {
                     TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (wo.LastTimeToRotUpdate ?? DateTime.UtcNow);
                     TimeSpan tsToRot = TimeSpan.FromSeconds(wo.TimeToRot.Value) - tsSinceLastUpdate;
-                    var msg = tsToRot.TotalSeconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    var msg = tsToRot.TotalSeconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {tsToRot.GetFriendlyString()}.";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
                         PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
