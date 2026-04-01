@@ -18,7 +18,6 @@ using ACE.Server.Network.Managers;
 using ACE.Server.WorldObjects;
 
 using log4net;
-using System.Linq;
 
 namespace ACE.Server.Command.Handlers
 {

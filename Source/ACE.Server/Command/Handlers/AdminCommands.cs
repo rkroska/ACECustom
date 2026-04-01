@@ -51,7 +51,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("jail", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
             "Sends a player to jail.",
-            "Usage: /jail <playername>")]
+            "Usage: /jail [playername]\nIf no name is provided, the currently selected player is used.")]
         public static void HandleJail(Session session, params string[] parameters)
         {
             Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
@@ -62,7 +62,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("jailbreak", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
             "Releases a player from jail.",
-            "Usage: /jailbreak <playername>")]
+            "Usage: /jailbreak [playername]\nIf no name is provided, the currently selected player is used.")]
         public static void HandleJailbreak(Session session, params string[] parameters)
         {
             Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));

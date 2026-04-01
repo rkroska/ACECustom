@@ -121,7 +121,7 @@ namespace ACE.Server.Command.Handlers
         public static Player GetPlayerAsCommandTarget(Session session, string playerName = "", bool fallbackToSelf = false)
         {
             Player target = null;
-            if (playerName.Length == 0)
+            if (!string.IsNullOrEmpty(playerName))
             {
                 WorldObject wo = GetSelected(session);
                 if (wo is Player p) target = p;
