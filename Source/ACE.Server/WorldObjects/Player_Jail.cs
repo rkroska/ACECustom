@@ -1,3 +1,4 @@
+using ACE.Common.Extensions;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
@@ -41,7 +42,7 @@ namespace ACE.Server.WorldObjects
             // Apply jail effects (newly jailed).
             EnqueueEffectChain();
             Teleport(GetJailTeleportLocation());
-            Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime} and are attackable by other players.", ChatMessageType.Broadcast));
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime.GetFriendlyLongString()} and are attackable by other players.", ChatMessageType.Broadcast));
         }
 
         /// <summary>

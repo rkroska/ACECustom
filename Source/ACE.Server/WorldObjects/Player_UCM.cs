@@ -3,7 +3,7 @@ using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
-using System.Threading;
+using ACE.Common.Extensions;
 
 namespace ACE.Server.WorldObjects
 {
@@ -59,8 +59,8 @@ namespace ACE.Server.WorldObjects
             bool isRightAnswerForm = RNG.Next(0, 2) == 0;
             int shownAnswer = isRightAnswerForm ? correctAnswer : (correctAnswer + 1);
 
-            long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
-            string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
+            TimeSpan timeout = TimeSpan.FromSeconds(ServerConfig.ucm_check_timeout_seconds.Value);
+            string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {timeout.GetFriendlyLongString()} to respond.";
             var ucmConfirmation = new Confirmation_Custom(Self.Guid, (response, timeout) =>
             {
                 // This callback is executed asynchronously.
@@ -78,7 +78,7 @@ namespace ACE.Server.WorldObjects
                     FailActiveCheck("selected incorrectly");
                 }
             });
-            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, secondsUntilTimeout);
+            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, timeout.TotalSeconds);
 
             if (!enqueued) return false;
 
@@ -87,7 +87,7 @@ namespace ACE.Server.WorldObjects
             IsChecking = true;
             UcmPromptStartedAtUtc = startUtc;
             LastUCMCheckTime = startUtc;
-            Timeout = startUtc.AddSeconds(secondsUntilTimeout);
+            Timeout = startUtc.Add(timeout);
             return true;
         }
 
@@ -146,7 +146,7 @@ namespace ACE.Server.WorldObjects
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
             Self.SendToJail();
-            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check and was sent to jail!", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check ({reason}) and was sent to jail!", ChatMessageType.Broadcast));
         }
 
         /// <summary>
@@ -194,10 +194,8 @@ namespace ACE.Server.WorldObjects
             if (!promptStartedUtc.HasValue)
                 return string.Empty;
 
-            var seconds = (DateTime.UtcNow - promptStartedUtc.Value).TotalSeconds;
-            if (seconds < 0)
-                seconds = 0;
-            return $" Response time: {seconds:F3}s.";
+            TimeSpan elapsed = DateTime.UtcNow - promptStartedUtc.Value;
+            return $" Response time: {elapsed.GetFriendlyString()}.";
         }
     }
 
