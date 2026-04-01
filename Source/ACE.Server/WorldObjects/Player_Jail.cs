@@ -198,6 +198,8 @@ namespace ACE.Server.WorldObjects
                 // Make sure not to count the tele location as a jail boundary violation.
                 var teleLoc = GetJailTeleportLocation();
                 if (Location.Distance2D(teleLoc) < 1.0) return;
+                EligibleForModelInmate = false;
+                QuestManager.StampFirst("jail_magic_bars");
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot leave the jail area until your punishment is complete!", ChatMessageType.Broadcast));
                 Teleport(teleLoc);
             }

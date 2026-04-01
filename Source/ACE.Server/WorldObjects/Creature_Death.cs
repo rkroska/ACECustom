@@ -655,12 +655,6 @@ namespace ACE.Server.WorldObjects
                         if (isPKdeath)
                             corpse.PkLevel = PKLevel.PK;
 
-                        if (player.IsInJail())
-                        {
-                            Player jailKiller = killer?.TryGetPetOwnerOrAttacker() as Player;
-                            player.OnDeathInJail(jailKiller);
-                        }
-
                         if (!isPKdeath && !isPKLdeath)
                         {
                             var miserAug = player.AugmentationLessDeathItemLoss * 5;
