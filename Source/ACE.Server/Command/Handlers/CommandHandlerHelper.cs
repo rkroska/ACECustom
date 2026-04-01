@@ -120,33 +120,32 @@ namespace ACE.Server.Command.Handlers
         /// <returns>The player to be used as the command target, or null if no suitable player is found.</returns>
         public static Player GetPlayerAsCommandTarget(Session session, string playerName = "", bool fallbackToSelf = false)
         {
+            bool playerWasSpecified = !string.IsNullOrWhiteSpace(playerName);
+
             Player target = null;
-            if (!string.IsNullOrEmpty(playerName))
+            if (playerWasSpecified)
             {
-                WorldObject wo = GetSelected(session);
-                if (wo is Player p) target = p;
+                target = PlayerManager.GetOnlinePlayer(playerName.Trim());
             }
             else
             {
-                target = PlayerManager.GetOnlinePlayer(playerName);
+                if (GetSelected(session) is Player p) target = p;
             }
 
             if (target == null)
             {
-                if (fallbackToSelf)
+                if (playerWasSpecified)
                 {
-                    return session.Player;
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName.Trim()} was not found.", ChatMessageType.System));
+                    return null;
                 }
-                if (playerName.Length == 0)
+                if (!fallbackToSelf)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"You must select a player or pass one to the command.", ChatMessageType.System));
                     return null;
                 }
-                else
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.System));
-                    return null;
-                }
+
+                return session.Player;
             }
             return target;
         }
