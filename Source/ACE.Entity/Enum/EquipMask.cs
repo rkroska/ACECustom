@@ -56,4 +56,50 @@ namespace ACE.Entity.Enum
         All                 = 0x7FFFFFFF,
         CanGoInReadySlot    = 0x7FFFFFFF
     }
+
+    public static class EquipMaskExtensions
+    {
+        /// <summary>
+        /// Returns a human-readable name for common equipment slots.
+        /// </summary>
+        public static string ToFriendlyString(this EquipMask mask)
+        {
+            return mask switch
+            {
+                EquipMask.None => "nothing",
+                EquipMask.HeadWear => "Head",
+                EquipMask.ChestWear => "Chest Clothing",
+                EquipMask.AbdomenWear => "Abdomen Clothing",
+                EquipMask.UpperArmWear => "Upper Arms Clothing",
+                EquipMask.LowerArmWear => "Lower Arms Clothing",
+                EquipMask.HandWear => "Hands Clothing",
+                EquipMask.UpperLegWear => "Upper Legs Clothing",
+                EquipMask.LowerLegWear => "Lower Legs Clothing",
+                EquipMask.FootWear => "Feet",
+                EquipMask.ChestArmor => "Chest Armor",
+                EquipMask.AbdomenArmor => "Abdomen Armor",
+                EquipMask.UpperArmArmor => "Upper Arms Armor",
+                EquipMask.LowerArmArmor => "Lower Arms Armor",
+                EquipMask.UpperLegArmor => "Upper Legs Armor",
+                EquipMask.LowerLegArmor => "Lower Legs Armor",
+                EquipMask.NeckWear => "Neck",
+                EquipMask.WristWearLeft => "Left Wrist",
+                EquipMask.WristWearRight => "Right Wrist",
+                EquipMask.FingerWearLeft => "Left Finger",
+                EquipMask.FingerWearRight => "Right Finger",
+                EquipMask.MeleeWeapon => "Melee Weapon",
+                EquipMask.Shield => "Shield",
+                EquipMask.MissileWeapon => "Missile Weapon",
+                EquipMask.MissileAmmo => "Missile Ammo",
+                EquipMask.Held => "Main Hand",
+                EquipMask.TwoHanded => "Two Handed",
+                EquipMask.TrinketOne => "Trinket",
+                EquipMask.Cloak => "Cloak",
+                EquipMask.SigilOne => "First Sigil",
+                EquipMask.SigilTwo => "Second Sigil",
+                EquipMask.SigilThree => "Third Sigil",
+                _ => mask.ToString()
+            };
+        }
+    }
 }
