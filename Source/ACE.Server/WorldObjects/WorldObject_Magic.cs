@@ -65,6 +65,11 @@ namespace ACE.Server.WorldObjects
             if (spell.MetaSpellType == SpellType.Dispel && !VerifyDispelPKStatus(itemCaster, target))
                 return;
 
+            if (spell.IsHarmful && this is Creature creatureCaster
+                && target is Creature targetCreature && targetCreature != creatureCaster
+                && !creatureCaster.CanDamage(targetCreature))
+                return;
+
             // perform resistance check, if applicable
             if (tryResist && TryResistSpell(target, spell, itemCaster))
                 return;
@@ -933,7 +938,7 @@ namespace ACE.Server.WorldObjects
             if (targetCreature is Player targetPlayer && targetMsg != null)
                 targetPlayer.SendChatMessage(caster, targetMsg, ChatMessageType.Magic);
 
-            if (isDrain)
+            if (isDrain && srcVitalChange > 0)
             {
                 if (spell.Source == PropertyAttribute2nd.Health && targetCreature.IsAlive)
                 {
