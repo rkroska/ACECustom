@@ -537,7 +537,7 @@ namespace ACE.Server.WorldObjects
         {
             IsBusy = true;
             IsLoggingOut = true;
-            UCMChecker.FailActiveCheck("logged out");
+            UCMChecker.FailActiveCheck(JailReason.LoggedOut);
 
             if (Fellowship != null)
                 FellowshipQuit(false);
