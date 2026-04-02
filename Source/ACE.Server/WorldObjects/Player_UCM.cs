@@ -3,7 +3,7 @@ using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
-using System.Threading;
+using ACE.Common.Extensions;
 
 namespace ACE.Server.WorldObjects
 {
@@ -59,15 +59,15 @@ namespace ACE.Server.WorldObjects
             bool isRightAnswerForm = RNG.Next(0, 2) == 0;
             int shownAnswer = isRightAnswerForm ? correctAnswer : (correctAnswer + 1);
 
-            long secondsUntilTimeout = ServerConfig.ucm_check_timeout_seconds.Value;
-            string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {secondsUntilTimeout} seconds to respond.";
+            TimeSpan timeout = TimeSpan.FromSeconds(ServerConfig.ucm_check_timeout_seconds.Value);
+            string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {timeout.GetFriendlyLongString()} to respond.";
             var ucmConfirmation = new Confirmation_Custom(Self.Guid, (response, timeout) =>
             {
                 // This callback is executed asynchronously.
                 // The lock has been released at this point.
                 if (timeout)
                 {
-                    FailActiveCheck("timed out");
+                    FailActiveCheck(JailReason.TimedOut);
                 }
                 else if (response == isRightAnswerForm)
                 {
@@ -75,10 +75,10 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    FailActiveCheck("selected incorrectly");
+                    FailActiveCheck(JailReason.WrongAnswer);
                 }
             });
-            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, secondsUntilTimeout);
+            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, timeout.TotalSeconds);
 
             if (!enqueued) return false;
 
@@ -87,7 +87,7 @@ namespace ACE.Server.WorldObjects
             IsChecking = true;
             UcmPromptStartedAtUtc = startUtc;
             LastUCMCheckTime = startUtc;
-            Timeout = startUtc.AddSeconds(secondsUntilTimeout);
+            Timeout = startUtc.Add(timeout);
             return true;
         }
 
@@ -107,6 +107,13 @@ namespace ACE.Server.WorldObjects
         private void PassActiveCheckLocked()
         {
             if (!IsChecking) return;
+
+            int passCount = Self.QuestManager.Stamp("focus_test_passed");
+            if (passCount >= 5) Self.QuestManager.StampFirst("focus_test_not_a_bot");
+            if (passCount >= 10) Self.QuestManager.StampFirst("focus_test_staying_awake");
+            if (passCount >= 20) Self.QuestManager.StampFirst("focus_test_actually_playing");
+            if (passCount >= 50) Self.QuestManager.StampFirst("focus_test_unshakable_focus");
+
             Self.Session.Network.EnqueueSend(new GameMessageSystemChat("You passed the focus test.", ChatMessageType.Broadcast));
             var passElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
             PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} passed UCM check at {Self.Location}.{passElapsed}");
@@ -119,7 +126,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If a check is active, fails it.
         /// </summary>
-        public void FailActiveCheck(string reason)
+        public void FailActiveCheck(JailReason reason)
         {
             using var scope = _lock.EnterScope();
             FailActiveCheckLocked(reason);
@@ -129,13 +136,21 @@ namespace ACE.Server.WorldObjects
         /// If a check is active, fails it.
         /// The lock must be held to call this method.
         /// </summary>
-        private void FailActiveCheckLocked(string reason)
+        private void FailActiveCheckLocked(JailReason reason)
         {
             if (!IsChecking) return;
 
             // Tick timeout: confirmation is still registered; dismiss so the scheduled EnqueueAbort does not send a duplicate timeout message.
             if (ActiveUcmConfirmationContextId is uint ctx)
                 Self.ConfirmationManager.TryDismissConfirmation(ConfirmationType.Yes_No, ctx);
+
+            _ = reason switch
+            {
+                JailReason.WrongAnswer => Self.QuestManager.StampFirst("focus_test_math_is_hard"),
+                JailReason.TimedOut => Self.QuestManager.StampFirst("focus_test_bathroom_break"),
+                JailReason.LoggedOut => Self.QuestManager.StampFirst("focus_test_tactical_dc"),
+                _ => 0
+            };
 
             string message = "You failed the focus test and have been punished!";
             Self.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
@@ -146,7 +161,7 @@ namespace ACE.Server.WorldObjects
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
             Self.SendToJail();
-            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check and was sent to jail!", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a UCM check ({reason}) and was sent to jail!", ChatMessageType.Broadcast));
         }
 
         /// <summary>
@@ -183,10 +198,24 @@ namespace ACE.Server.WorldObjects
 
             if (now > Timeout)
             {
-                FailActiveCheckLocked("timed out");
+                FailActiveCheckLocked(JailReason.TimedOut);
                 return;
             }
         }
+
+        /// <summary>
+        /// Returns a human-readable string for the given jail reason, for use in audit messages.
+        /// </summary>
+        /// <param name="reason"></param>
+        /// <returns></returns>
+        public string GetJailReasonString(JailReason reason) => reason switch
+        {
+            JailReason.WrongAnswer => "selected incorrectly",
+            JailReason.TimedOut => "timed out",
+            JailReason.LoggedOut => "logged out",
+            JailReason.SentByAdmin => "sent by admin",
+            _ => "an unknown reason"
+        };
 
         /// <summary>Audit suffix: seconds from prompt shown to outcome (UTC).</summary>
         private static string FormatUcmResponseSeconds(DateTime? promptStartedUtc)
@@ -194,10 +223,8 @@ namespace ACE.Server.WorldObjects
             if (!promptStartedUtc.HasValue)
                 return string.Empty;
 
-            var seconds = (DateTime.UtcNow - promptStartedUtc.Value).TotalSeconds;
-            if (seconds < 0)
-                seconds = 0;
-            return $" Response time: {seconds:F3}s.";
+            TimeSpan elapsed = DateTime.UtcNow - promptStartedUtc.Value;
+            return $" Response time: {elapsed.GetFriendlyString()}.";
         }
     }
 
