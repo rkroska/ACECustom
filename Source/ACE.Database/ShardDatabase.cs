@@ -480,7 +480,8 @@ namespace ACE.Database
                     .Select(r => r.ObjectId)
                     .ToList();
 
-                var inventory = new List<Biota>();
+                // List<T> is not thread-safe; parallel Add/AddRange corrupts backing storage and can yield null slots when enumerated.
+                var inventory = new ConcurrentBag<Biota>();
 
                 Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
@@ -493,12 +494,13 @@ namespace ACE.Database
                         if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
                         {
                             var subItems = GetInventoryInParallel(biota.Id, false);
-                            inventory.AddRange(subItems);
+                            foreach (var sub in subItems)
+                                inventory.Add(sub);
                         }
                     }
                 });
 
-                return inventory;
+                return inventory.ToList();
             }
         }
 
