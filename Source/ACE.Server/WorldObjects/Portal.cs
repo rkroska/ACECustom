@@ -234,13 +234,13 @@ namespace ACE.Server.WorldObjects
                     return new ActivationResult(new GameEventWeenieError(player.Session, WeenieError.YouMustBeAnAdvocateToUsePortal));
                 }
 
-                if (PortalReqType != PortalRequirement.None && PortalReqValue.GetValueOrDefault() > 0)
+                if (PortalReqType != PortalRequirement.None && (PortalReqValue.GetValueOrDefault() > 0 || (PortalReqMaxValue.GetValueOrDefault() > 0 && PortalReqMaxValue.GetValueOrDefault() != 999)))
                 {
                     if (!CheckPortalRequirement(player, PortalReqType, PortalReqValue.GetValueOrDefault(), PortalReqMaxValue.GetValueOrDefault(), "Primary Requirement"))
                         return new ActivationResult(false);
                 }
 
-                if (PortalReqType2 != PortalRequirement.None && PortalReqValue2.GetValueOrDefault() > 0)
+                if (PortalReqType2 != PortalRequirement.None && (PortalReqValue2.GetValueOrDefault() > 0 || (PortalReqMaxValue2.GetValueOrDefault() > 0 && PortalReqMaxValue2.GetValueOrDefault() != 999)))
                 {
                     if (!CheckPortalRequirement(player, PortalReqType2, PortalReqValue2.GetValueOrDefault(), PortalReqMaxValue2.GetValueOrDefault(), "Secondary Requirement"))
                         return new ActivationResult(false);

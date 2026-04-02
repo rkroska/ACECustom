@@ -233,11 +233,11 @@ namespace ACE.Server.Network.Structure
                     string msg;
 
                     if (req.max.GetValueOrDefault() > 0 && req.max.GetValueOrDefault() != 999 && req.value.GetValueOrDefault() > 0)
-                        msg = $"Restricted to characters of {typeName} between {prefix}{req.value.Value.ToString("D2")} and {prefix}{req.max.Value.ToString(format)}.";
+                        msg = $"Restricted to characters of {typeName} between {prefix}{req.value.Value} and {prefix}{req.max.Value}.";
                     else if (req.value.GetValueOrDefault() > 0)
-                        msg = $"Restricted to characters of {typeName} {prefix}{req.value.Value.ToString(format)} or greater.";
+                        msg = $"Restricted to characters of {typeName} {prefix}{req.value.Value} or greater.";
                     else
-                        msg = $"Restricted to characters of {typeName} {prefix}{req.max.Value.ToString(format)} or lower.";
+                        msg = $"Restricted to characters of {typeName} {prefix}{req.max.Value} or lower.";
 
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
                         PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
