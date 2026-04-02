@@ -12,6 +12,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Network.Enum;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Handlers;
@@ -27,7 +28,7 @@ namespace ACE.Server.Network
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static readonly ILog packetLog = LogManager.GetLogger(System.Reflection.Assembly.GetEntryAssembly(), "Packets");
 
-        private const int minimumTimeBetweenBundles = 5; // 5ms
+        private const int minimumTimeBetweenBundles = 5; // 5ms — overridden at runtime by ServerConfig.net_min_bundle_interval_ms
         private const int timeBetweenTimeSync = 20000; // 20s
         private const int timeBetweenAck = 2000; // 2s
 
@@ -215,7 +216,7 @@ namespace ACE.Server.Network
                 if (bundleToSend != null)
                 {
                     SendBundle(bundleToSend, group);
-                    nextSend = DateTime.UtcNow.AddMilliseconds(minimumTimeBetweenBundles);
+                    nextSend = DateTime.UtcNow.AddMilliseconds(ServerConfig.net_min_bundle_interval_ms.Value);
                 }
             }
 
@@ -639,7 +640,7 @@ namespace ACE.Server.Network
 
             var removalList = cachedPackets.Keys.Where(x => x < sequence).ToList();
 
-            if (removalList.Count > 20)
+            if (removalList.Count > ServerConfig.net_retransmit_warn_threshold.Value)
             {
                 log.Warn($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
                     $"ACK {sequence} pruning {removalList.Count} cached packets (seq {removalList.Min()}-{removalList.Max()}). " +
@@ -719,12 +720,11 @@ namespace ACE.Server.Network
             actionChain.EnqueueChain();
         }
 
-        private const int MaxPacketsPerTick = 50;
-
         private void FlushPackets()
         {
             int packetsSent = 0;
-            while (packetsSent < MaxPacketsPerTick && packetQueue.TryDequeue(out var packet))
+            var maxPacketsPerTick = (int)ServerConfig.net_max_packets_per_tick.Value;
+            while (packetsSent < maxPacketsPerTick && packetQueue.TryDequeue(out var packet))
             {
                 packetsSent++;
                 packetLog.DebugFormat("[{0}] Flushing packets, count {1}", session.LoggingIdentifier, packetQueue.Count);
