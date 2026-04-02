@@ -920,16 +920,16 @@ namespace ACE.Server.WorldObjects
                 target.Die();
             }
 
-            if (sourcePlayer != null)
+            if (sourceCreature != null)
             {
                 var emoteDamageType = nonHealth
                     ? (Spell.Category == SpellCategory.StaminaLowering ? DamageType.Stamina : DamageType.Mana)
                     : Spell.DamageType;
 
-                target.EmoteManager.OnDamage(sourcePlayer, emoteDamageType);
+                target.EmoteManager.OnDamage(sourceCreature, emoteDamageType);
 
                 if (critical && target.IsAlive)
-                    target.EmoteManager.OnReceiveCritical(sourcePlayer);
+                    target.EmoteManager.OnReceiveCritical(sourceCreature);
             }
         }
 
