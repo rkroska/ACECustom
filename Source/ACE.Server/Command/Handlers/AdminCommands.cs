@@ -1704,14 +1704,59 @@ namespace ACE.Server.Command.Handlers
             // just a placeholder, probably not needed or should be handled by a decal plugin to replicate the admin ui
         }
 
-        // delete
+        /// <summary>
+        /// Finds the object with a given GUID and validates that it is deleteable, then returns it.
+        /// If the object cannot be found or is not deleteable, a message will be sent and null will be returned.
+        /// </summary>
+        private static (WorldObject, Container) ValidateAndReturnDeleteableObject(Session session, ObjectGuid objectId, string objectTypeFilter = "")
+        {
+            if (objectId == ObjectGuid.Invalid)
+            { 
+                ChatPacket.SendServerMessage(session, "Delete failed. Please identify the object you wish to delete first.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            if (objectId.IsPlayer())
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Players cannot be deleted.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            var wo = session.Player.FindObject(objectId.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
+
+            if (wo == null)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Object not found.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            if (wo is Corpse corpse && !corpse.IsMonster)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            if (!string.IsNullOrWhiteSpace(objectTypeFilter))
+            {
+                string objectType = objectTypeFilter.ToLower().Trim();
+                if (!objectType.Equals(wo.GetType().Name, StringComparison.OrdinalIgnoreCase) &&
+                    !objectType.Equals(wo.WeenieType.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    ChatPacket.SendServerMessage(session, $"Delete failed. Object type specified ({objectType}) does not match object type ({wo.GetType().Name}) or weenie type ({wo.WeenieType.ToString()}) for 0x{wo.Guid}:{wo.Name}.", ChatMessageType.Broadcast);
+                    return (null, null);
+                }
+            }
+
+            return (wo, rootOwner);
+
+        }
+
+        // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
         [CommandHandler("delete", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Deletes the selected object.", "Players and their corpses may not be deleted this way.")]
         public static void HandleDeleteSelected(Session session, params string[] parameters)
         {
-
-            // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
-
-            var objectId = ObjectGuid.Invalid;
+            ObjectGuid objectId = ObjectGuid.Invalid;
+            string objectFilter = parameters.Length > 0 ? parameters[0] : "";
 
             if (session.Player.HealthQueryTarget.HasValue)
                 objectId = new ObjectGuid(session.Player.HealthQueryTarget.Value);
@@ -1720,44 +1765,25 @@ namespace ACE.Server.Command.Handlers
             else if (session.Player.CurrentAppraisalTarget.HasValue)
                 objectId = new ObjectGuid(session.Player.CurrentAppraisalTarget.Value);
 
-            if (objectId == ObjectGuid.Invalid)
-                ChatPacket.SendServerMessage(session, "Delete failed. Please identify the object you wish to delete first.", ChatMessageType.Broadcast);
+            // Validate and return if invalid.
+            (WorldObject wo, Container _) = ValidateAndReturnDeleteableObject(session, objectId, objectFilter);
+            if (wo == null) return;
 
-            if (objectId.IsPlayer())
+            var nextConfirmation = new Confirmation_Custom(session.Player.Guid, (response, timedOut) =>
             {
-                ChatPacket.SendServerMessage(session, "Delete failed. Players cannot be deleted.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            var wo = session.Player.FindObject(objectId.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
-
-            if (wo == null)
-            {
-                ChatPacket.SendServerMessage(session, "Delete failed. Object not found.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            if (wo is Corpse corpse && !corpse.IsMonster)
-            {
-                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            if (parameters.Length == 1)
-            {
-                var objectType = parameters[0].ToLower();
-
-                if (objectType != wo.GetType().Name.ToLower() && objectType != wo.WeenieType.ToString().ToLower())
+                if (session.IsTerminated) return;
+                if (response)
                 {
-                    ChatPacket.SendServerMessage(session, $"Delete failed. Object type specified ({parameters[0]}) does not match object type ({wo.GetType().Name}) or weenie type ({wo.WeenieType.ToString()}) for 0x{wo.Guid}:{wo.Name}.", ChatMessageType.Broadcast);
-                    return;
+                    (WorldObject currentWo, Container rootOwner) = ValidateAndReturnDeleteableObject(session, objectId, objectFilter);
+                    if (currentWo == null) return;
+                    currentWo.DeleteObject(rootOwner);
+                    session.Network.EnqueueSend(new GameMessageDeleteObject(currentWo));
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{currentWo.Guid}:{currentWo.Name}");
                 }
-            }
+            });
 
-            wo.DeleteObject(rootOwner);
-            session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{wo.Guid}:{wo.Name}");
+            if (!session.Player.ConfirmationManager.EnqueueSend(nextConfirmation, $"Are you sure you want to delete this object?\n\nGUID: 0x{wo.Guid}, ID: {wo.Guid.Full}\n{wo.Name}"))
+                ChatPacket.SendServerMessage(session, "The delete was aborted because creating a confirmation box failed.", ChatMessageType.Broadcast);
         }
 
         // Alias for delete
