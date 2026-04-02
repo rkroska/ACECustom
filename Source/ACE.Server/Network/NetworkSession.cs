@@ -216,7 +216,10 @@ namespace ACE.Server.Network
                 if (bundleToSend != null)
                 {
                     SendBundle(bundleToSend, group);
-                    nextSend = DateTime.UtcNow.AddMilliseconds(ServerConfig.net_min_bundle_interval_ms.Value);
+                    var rawInterval = ServerConfig.net_min_bundle_interval_ms.Value;
+                    if (rawInterval < 1 || rawInterval > 1000)
+                        log.Warn($"[NETWORK] net_min_bundle_interval_ms has unsafe value {rawInterval}; clamping to [1, 1000]. Use /modifylong net_min_bundle_interval_ms to correct.");
+                    nextSend = DateTime.UtcNow.AddMilliseconds(Math.Clamp(rawInterval, 1, 1000));
                 }
             }
 
@@ -723,7 +726,10 @@ namespace ACE.Server.Network
         private void FlushPackets()
         {
             int packetsSent = 0;
-            var maxPacketsPerTick = (int)ServerConfig.net_max_packets_per_tick.Value;
+            var rawMax = ServerConfig.net_max_packets_per_tick.Value;
+            if (rawMax < 1 || rawMax > 500)
+                log.Warn($"[NETWORK] net_max_packets_per_tick has unsafe value {rawMax}; clamping to [1, 500]. Use /modifylong net_max_packets_per_tick to correct.");
+            var maxPacketsPerTick = (int)Math.Clamp(rawMax, 1, 500);
             while (packetsSent < maxPacketsPerTick && packetQueue.TryDequeue(out var packet))
             {
                 packetsSent++;
