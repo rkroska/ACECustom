@@ -860,6 +860,8 @@ namespace ACE.Server.WorldObjects
                 ShowInfo(target, heritageMod, sneakAttackMod, damageRatingMod, damageResistRatingMod, critDamageRatingMod, critDamageResistRatingMod, pkDamageRatingMod, pkDamageResistRatingMod, damage);
             }
 
+            var nonHealth = Spell.Category == SpellCategory.StaminaLowering || Spell.Category == SpellCategory.ManaLowering;
+
             if (target.IsAlive)
             {
                 string verb = null, plural = null;
@@ -868,8 +870,6 @@ namespace ACE.Server.WorldObjects
                 var critMsg = critical ? "Critical hit! " : "";
                 var sneakMsg = sneakAttackMod > 1.0f ? "Sneak Attack! " : "";
                 var overpowerMsg = overpower ? "Overpower! " : "";
-
-                var nonHealth = Spell.Category == SpellCategory.StaminaLowering || Spell.Category == SpellCategory.ManaLowering;
 
                 if (sourcePlayer != null)
                 {
@@ -922,8 +922,7 @@ namespace ACE.Server.WorldObjects
 
             if (sourcePlayer != null)
             {
-                var isNonHealth = Spell.Category == SpellCategory.StaminaLowering || Spell.Category == SpellCategory.ManaLowering;
-                var emoteDamageType = isNonHealth
+                var emoteDamageType = nonHealth
                     ? (Spell.Category == SpellCategory.StaminaLowering ? DamageType.Stamina : DamageType.Mana)
                     : Spell.DamageType;
 

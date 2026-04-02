@@ -543,6 +543,73 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                /* sets self's PropertyFloat stat to a specific amount */
+                case EmoteType.SetMyFloatStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var floatProperty = (PropertyFloat)emote.Stat;
+                        var newValue = emote.Percent ?? 1.0f; 
+                        
+                        if (WorldObject is Player pUpdater)
+                        {
+                            pUpdater.UpdateProperty(pUpdater, floatProperty, newValue);
+                            pUpdater.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyFloat(pUpdater, floatProperty, Convert.ToDouble(newValue)));
+                        }
+                        else
+                        {
+                            // fallback for monsters/items executing emotes that don't have UpdateProperty available in the same way
+                            WorldObject.SetProperty(floatProperty, newValue);
+                            WorldObject.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyFloat(WorldObject, floatProperty, Convert.ToDouble(newValue)));
+                        }
+                    }
+                    break;
+
+                /* sets self's PropertyBool stat to a specific amount */
+                case EmoteType.SetMyBoolStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var boolProperty = (PropertyBool)emote.Stat;
+                        var newValue = (emote.Amount ?? 0) != 0;
+                        
+                        WorldObject.SetProperty(boolProperty, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyBool(selfPlayer, boolProperty, newValue));
+                    }
+                    break;
+
+                /* sets self's PropertyInt stat to a specific amount */
+                case EmoteType.SetMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var newValue = emote.Amount ?? 1; 
+                        
+                        WorldObject.SetProperty(intProperty, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, newValue));
+                    }
+                    break;
+
+                /* sets self's PropertyInt64 stat to a specific amount */
+                case EmoteType.SetMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var newValue = emote.Amount64 ?? 1; 
+                        
+                        WorldObject.SetProperty(int64Property, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(selfPlayer, int64Property, newValue));
+                    }
+                    break;
+
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 
@@ -3069,7 +3136,7 @@ namespace ACE.Server.WorldObjects.Managers
         /// <summary>
         /// Selects an emote set based on category, and optional: quest, vendor, rng
         /// </summary>
-        public PropertiesEmote GetEmoteSet(EmoteCategory category, string questName = null, VendorType? vendorType = null, uint? wcid = null, bool useRNG = true)
+        public PropertiesEmote GetEmoteSet(EmoteCategory category, string questName = null, VendorType? vendorType = null, uint? wcid = null, bool useRNG = true, DamageType damageType = DamageType.Undef)
         {
             //if (Debug) Console.WriteLine($"{WorldObject.Name}.EmoteManager.GetEmoteSet({category}, {questName}, {vendorType}, {wcid}, {useRNG})");
 
@@ -3112,6 +3179,11 @@ namespace ACE.Server.WorldObjects.Managers
                     emoteSet = emoteSet.Where(e => creature.Health.Percent >= e.MinHealth && creature.Health.Percent <= e.MaxHealth);
             }
 
+            if (category == EmoteCategory.ReceiveDamage && damageType != DamageType.Undef)
+            {
+                emoteSet = emoteSet.Where(e => e.DamageType == null || (e.DamageType & damageType) != 0);
+            }
+
             if (useRNG)
             {
                 var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
@@ -3125,9 +3197,9 @@ namespace ACE.Server.WorldObjects.Managers
         /// <summary>
         /// Convenience wrapper between GetEmoteSet and ExecututeEmoteSet
         /// </summary>
-        public void ExecuteEmoteSet(EmoteCategory category, string quest = null, WorldObject targetObject = null, bool nested = false)
+        public void ExecuteEmoteSet(EmoteCategory category, string quest = null, WorldObject targetObject = null, bool nested = false, DamageType damageType = DamageType.Undef)
         {
-            var emoteSet = GetEmoteSet(category, quest);
+            var emoteSet = GetEmoteSet(category, quest, damageType: damageType);
 
             if (emoteSet == null) return;
 
@@ -3569,14 +3641,14 @@ namespace ACE.Server.WorldObjects.Managers
 
         /// <summary>
         /// Called when this creature takes damage from an attacker.
-        /// Supports per-DamageType ReceiveDamage channels via the damage_type column.
+        /// Triggers WoundedTaunt concurrently with ReceiveDamage emotes selected by
+        /// <see cref="SelectReceiveDamageEmotes"/>. ReceiveDamage uses nested: true so it
+        /// runs even when WoundedTaunt has set IsBusy = true.
         /// </summary>
         /// <remarks>
-        /// WoundedTaunt fires unconditionally (no DamageType filtering).
-        /// ReceiveDamage emote sets are grouped by their DamageType bitmask:
-        ///   - Typed rows: each distinct DamageType value is an independent channel.
-        ///     A channel fires if (incoming &amp; mask) != 0, then rolls probability within that group.
-        ///   - Fallback rows (DamageType = NULL): fire only when no typed mask matches the incoming damage.
+        /// Both emote sets execute simultaneously. Content creators should avoid designing
+        /// emotes that conflict (duplicate quest stamps, animation collisions, concurrent
+        /// give/take). ActionChains serialize execution within each individual emote set.
         /// </remarks>
         public void OnDamage(Creature attacker, DamageType damageType = DamageType.Undef)
         {
@@ -3586,7 +3658,29 @@ namespace ACE.Server.WorldObjects.Managers
                 return;
 
             var receiveDamageEmotes = _worldObject.Biota.PropertiesEmote
-                .Where(e => e.Category == EmoteCategory.ReceiveDamage).ToList();
+                .Where(e => e.Category == EmoteCategory.ReceiveDamage)
+                .ToList();
+
+            foreach (var emoteSet in SelectReceiveDamageEmotes(receiveDamageEmotes, damageType, () => ThreadSafeRandom.Next(0.0f, 1.0f)))
+                ExecuteEmoteSet(emoteSet, attacker, nested: true);
+        }
+
+        /// <summary>
+        /// Selects which ReceiveDamage emote sets should fire for a given incoming damage type.
+        /// Each distinct non-null DamageType group that bitmask-matches the incoming damage contributes at most one
+        /// winner via the provided RNG. The null-DamageType fallback fires only when no typed group matched at all —
+        /// not when a matching group's probability roll was skipped.
+        /// </summary>
+        /// <param name="receiveDamageEmotes">All emote rows with category ReceiveDamage.</param>
+        /// <param name="damageType">The incoming damage type.</param>
+        /// <param name="rng">Returns a double in [0, 1) for each probability roll; injected for testability.</param>
+        /// <returns>The emote sets to execute, in selection order.</returns>
+        public static List<PropertiesEmote> SelectReceiveDamageEmotes(
+            IList<PropertiesEmote> receiveDamageEmotes,
+            DamageType damageType,
+            Func<double> rng)
+        {
+            var results = new List<PropertiesEmote>();
 
             var typedRows = receiveDamageEmotes.Where(e => e.DamageType != null).ToList();
             var fallbackEmotes = receiveDamageEmotes.Where(e => e.DamageType == null).ToList();
@@ -3597,31 +3691,32 @@ namespace ACE.Server.WorldObjects.Managers
             foreach (var group in typedRows.GroupBy(e => e.DamageType))
             {
                 var groupDamageType = group.Key!.Value;
-
                 if (damageType != DamageType.Undef && (groupDamageType & damageType) != 0)
                 {
-                    var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+                    var roll = rng();
                     var emoteSet = group
-                        .Where(e => e.Probability > rng)
+                        .Where(e => e.Probability > roll)
                         .OrderBy(e => e.Probability)
                         .FirstOrDefault();
 
                     if (emoteSet != null)
-                        ExecuteEmoteSet(emoteSet, attacker, nested: true);
+                        results.Add(emoteSet);
                 }
             }
 
             if (!anyTypedMaskMatchesIncoming && fallbackEmotes.Count > 0)
             {
-                var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
+                var roll = rng();
                 var emoteSet = fallbackEmotes
-                    .Where(e => e.Probability > rng)
+                    .Where(e => e.Probability > roll)
                     .OrderBy(e => e.Probability)
                     .FirstOrDefault();
 
                 if (emoteSet != null)
-                    ExecuteEmoteSet(emoteSet, attacker, nested: true);
+                    results.Add(emoteSet);
             }
+
+            return results;
         }
 
         /// <summary>
@@ -3789,6 +3884,7 @@ namespace ACE.Server.WorldObjects.Managers
                 Object = Database.Adapter.WeenieConverter.ConvertToEntityWeenie(emote.Object),
                 Probability = emote.Probability,
                 WeenieClassId = emote.WeenieClassId,
+                DamageType = (DamageType?)emote.DamageType,
                 PropertiesEmoteAction = [] // Will fill below
             };
 

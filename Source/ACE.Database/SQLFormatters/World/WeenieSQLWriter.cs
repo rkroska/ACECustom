@@ -464,6 +464,14 @@ namespace ACE.Database.SQLFormatters.World
                         vendorTypeLabel = $" /* {vendorTypeLabel} */";
                 }
 
+                string damageTypeLabel = null;
+                if (value.DamageType.HasValue)
+                {
+                    damageTypeLabel = Enum.GetName(typeof(DamageType), value.DamageType.Value);
+                    if (damageTypeLabel != null)
+                        damageTypeLabel = $" /* {damageTypeLabel} */";
+                }
+
                 var output = "VALUES (" +
                              $"{weenieClassID}, " +
                              $"{value.Category.ToString().PadLeft(2)}{categoryLabel}, " +
@@ -475,7 +483,7 @@ namespace ACE.Database.SQLFormatters.World
                              $"{value.VendorType}{vendorTypeLabel}, " +
                              $"{value.MinHealth:0.######}, " +
                              $"{value.MaxHealth:0.######}, " +
-                             $"{value.DamageType}" +
+                             $"{value.DamageType}{damageTypeLabel}" +
                              ");";
 
                 output = FixNullFields(output);
@@ -580,6 +588,7 @@ namespace ACE.Database.SQLFormatters.World
                         case EmoteType.IncrementIntStat:
                         case EmoteType.InqIntStat:
                         case EmoteType.SetIntStat:
+                        case EmoteType.SetMyIntStat:
                             statLabel = $" /* PropertyInt.{(PropertyInt)input[i].Stat.Value} */";
                             break;
 
@@ -590,11 +599,13 @@ namespace ACE.Database.SQLFormatters.World
 
                         case EmoteType.InqBoolStat:
                         case EmoteType.SetBoolStat:
+                        case EmoteType.SetMyBoolStat:
                             statLabel = $" /* PropertyBool.{(PropertyBool)input[i].Stat.Value} */";
                             break;
 
                         case EmoteType.InqFloatStat:
                         case EmoteType.SetFloatStat:
+                        case EmoteType.SetMyFloatStat:
                             statLabel = $" /* PropertyFloat.{(PropertyFloat)input[i].Stat.Value} */";
                             break;
 
@@ -602,6 +613,7 @@ namespace ACE.Database.SQLFormatters.World
                         case EmoteType.SetInt64Stat:
                         case EmoteType.DecrementInt64Stat:
                         case EmoteType.IncrementInt64Stat:
+                        case EmoteType.SetMyInt64Stat:
                             statLabel = $" /* PropertyInt64.{(PropertyInt64)input[i].Stat.Value} */";
                             break;
 
