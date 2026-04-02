@@ -3652,7 +3652,8 @@ namespace ACE.Server.WorldObjects.Managers
         /// </remarks>
         public void OnDamage(Creature attacker, DamageType damageType = DamageType.Undef)
         {
-            ExecuteEmoteSet(EmoteCategory.WoundedTaunt, null, attacker);
+            if (_worldObject.IsAlive)
+                ExecuteEmoteSet(EmoteCategory.WoundedTaunt, null, attacker);
 
             if (_worldObject.Biota.PropertiesEmote == null)
                 return;
