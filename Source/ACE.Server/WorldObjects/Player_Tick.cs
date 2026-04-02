@@ -65,13 +65,14 @@ namespace ACE.Server.WorldObjects
             UCMChecker.Tick();
             TickJail();
 
-            if (Teleporting && PortalSpaceEnteredUtc.HasValue && ServerConfig.portal_stuck_recovery_seconds.Value > 0)
+            var recoverySecs = ServerConfig.PortalStuckRecoverySecondsEffective;
+            if (Teleporting && PortalSpaceEnteredUtc.HasValue && recoverySecs > 0)
             {
                 var elapsed = (DateTime.UtcNow - PortalSpaceEnteredUtc.Value).TotalSeconds;
-                if (elapsed >= ServerConfig.portal_stuck_recovery_seconds.Value && !portalStuckRecoveryAttempted)
+                if (elapsed >= recoverySecs && !portalStuckRecoveryAttempted)
                 {
                     portalStuckRecoveryAttempted = true;
-                    ForceEndPortalSpaceStuck($"no LoginComplete within {ServerConfig.portal_stuck_recovery_seconds.Value}s (portal_stuck_recovery_seconds)");
+                    ForceEndPortalSpaceStuck($"no LoginComplete within {recoverySecs}s (portal_stuck_recovery_seconds, effective)");
                 }
             }
 
@@ -142,12 +143,13 @@ namespace ACE.Server.WorldObjects
             if (LastRequestedDatabaseSave.AddSeconds(PlayerSaveIntervalSecs + ThreadSafeRandom.Next(15, 120)) <= DateTime.UtcNow) //vary the save duration to prevent DB slamming
                 SavePlayerToDatabase();
 
-            if (Teleporting && PortalSpaceEnteredUtc.HasValue && ServerConfig.portal_stuck_kick_seconds.Value > 0)
+            var kickSecs = ServerConfig.PortalStuckKickSecondsEffective;
+            if (Teleporting && PortalSpaceEnteredUtc.HasValue && kickSecs > 0)
             {
-                var kickAfter = TimeSpan.FromSeconds(ServerConfig.portal_stuck_kick_seconds.Value);
+                var kickAfter = TimeSpan.FromSeconds(kickSecs);
                 if (DateTime.UtcNow - PortalSpaceEnteredUtc.Value > kickAfter)
                 {
-                    log.Warn($"[PORTAL STUCK] {Name} (0x{Guid}) kicking session after {ServerConfig.portal_stuck_kick_seconds.Value}s Teleporting (portal_stuck_kick_seconds).");
+                    log.Warn($"[PORTAL STUCK] {Name} (0x{Guid}) kicking session after {kickSecs}s Teleporting (portal_stuck_kick_seconds, effective).");
                     if (Session != null)
                         Session.LogOffPlayer(true);
                     else
