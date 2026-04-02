@@ -23,6 +23,7 @@ namespace ACE.Server.WorldObjects
         {
             PlayerManager.SwitchPlayerFromOfflineToOnline(this);
             Teleporting = true;
+            MarkPortalSpaceEntered();
 
             // Log character login to char_tracker table
             CharacterTracker.LogCharacterLogin(this);

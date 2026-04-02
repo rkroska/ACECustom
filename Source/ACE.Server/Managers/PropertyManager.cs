@@ -468,6 +468,12 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(50, "Maximum UDP packets sent to a single client per server tick. Default: 50 (vanilla). Lower values reduce burst during mass spawns at the cost of latency. Use /modifylong net_max_packets_per_tick <value>.");
         public static ConfigProperty<long> net_min_bundle_interval_ms { get; private set; } = new(5, "Minimum milliseconds between outbound network bundle flushes per session. Default: 5 (vanilla). Higher values pace packet flow during heavy events. Use /modifylong net_min_bundle_interval_ms <value>.");
         public static ConfigProperty<long> net_retransmit_warn_threshold { get; private set; } = new(75, "Log a RETRANSMIT warning when ACK prunes more than this many cached packets. Default: 75. Lower to 20 (vanilla) for stricter monitoring, or raise further during events with mass spawns. Use /modifylong net_retransmit_warn_threshold <value>.");
+
+        /// <summary>If the client never sends LoginComplete after this many seconds in Teleporting state, the server forces materialize. Typical client exit is under ~10s; default 45s avoids false positives on slow loads. 0 disables. Use /modifylong portal_stuck_recovery_seconds.</summary>
+        public static ConfigProperty<long> portal_stuck_recovery_seconds { get; private set; } = new(45, "Seconds without LoginComplete before server forces materialize. 0=off. Default 45 (normal loads are usually under 10s).");
+
+        /// <summary>Optional forced logoff if still Teleporting after this many seconds. 0=disabled (default): recover only, no kick. Use /modifylong portal_stuck_kick_seconds.</summary>
+        public static ConfigProperty<long> portal_stuck_kick_seconds { get; private set; } = new(0, "Seconds in Teleporting before forced logoff. 0=off (default). Set e.g. 600 only if you want a last-resort disconnect after recovery is disabled or insufficient.");
     }
 
     public static class PropertyManager
