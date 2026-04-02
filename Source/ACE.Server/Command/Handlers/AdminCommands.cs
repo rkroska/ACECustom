@@ -1754,10 +1754,16 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            wo.DeleteObject(rootOwner);
-            session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{wo.Guid}:{wo.Name}");
+            var nextConfirmation = new Confirmation_Custom(session.Player.Guid, (response, timedOut) =>
+            {
+                if (response)
+                {
+                    wo.DeleteObject(rootOwner);
+                    session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{wo.Guid}:{wo.Name}");
+                }
+            });
+            session.Player.ConfirmationManager.EnqueueSend(nextConfirmation, $"Are you sure you want to delete this object?\n\nGUID: 0x{wo.Guid}, ID: {wo.Guid.Full}\n{wo.Name}");
         }
 
         // Alias for delete
