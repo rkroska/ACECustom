@@ -12,6 +12,7 @@ using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Network.Enum;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Handlers;
@@ -27,7 +28,7 @@ namespace ACE.Server.Network
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static readonly ILog packetLog = LogManager.GetLogger(System.Reflection.Assembly.GetEntryAssembly(), "Packets");
 
-        private const int minimumTimeBetweenBundles = 5; // 5ms
+        private const int minimumTimeBetweenBundles = 5; // 5ms — overridden at runtime by ServerConfig.net_min_bundle_interval_ms
         private const int timeBetweenTimeSync = 20000; // 20s
         private const int timeBetweenAck = 2000; // 2s
 
@@ -215,7 +216,10 @@ namespace ACE.Server.Network
                 if (bundleToSend != null)
                 {
                     SendBundle(bundleToSend, group);
-                    nextSend = DateTime.UtcNow.AddMilliseconds(minimumTimeBetweenBundles);
+                    var rawInterval = ServerConfig.net_min_bundle_interval_ms.Value;
+                    if (rawInterval < 1 || rawInterval > 1000)
+                        log.Warn($"[NETWORK] net_min_bundle_interval_ms has unsafe value {rawInterval}; clamping to [1, 1000]. Use /modifylong net_min_bundle_interval_ms to correct.");
+                    nextSend = DateTime.UtcNow.AddMilliseconds(Math.Clamp(rawInterval, 1, 1000));
                 }
             }
 
@@ -257,12 +261,19 @@ namespace ACE.Server.Network
             if ((packet.Header.Flags & PacketHeaderFlags.RequestRetransmit) == PacketHeaderFlags.RequestRetransmit
                 && !((packet.Header.Flags & PacketHeaderFlags.EncryptedChecksum) == PacketHeaderFlags.EncryptedChecksum))
             {
-                var uncached = packet.HeaderOptional.RetransmitData
+                var retransmitData = packet.HeaderOptional.RetransmitData;
+                var totalRequested = retransmitData.Count;
+
+                var uncached = retransmitData
                     .Where(sequence => !Retransmit(sequence))
                     .ToList();
 
                 if (uncached.Count != 0)
                 {
+                    log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"NAK round: {uncached.Count}/{totalRequested} sequences not in cache. " +
+                        $"Player Teleporting: {session.Player?.Teleporting}, Landblock: {session.Player?.CurrentLandblock?.Id.Raw:X8}");
+
                     // Sends a response packet w/ PacketHeader.RejectRetransmit
                     var packetRejectRetransmit = new PacketRejectRetransmit(uncached);
                     EnqueueSend(packetRejectRetransmit);
@@ -630,7 +641,14 @@ namespace ACE.Server.Network
             // if (!sendAck)
             //    sendAck = true;
 
-            var removalList = cachedPackets.Keys.Where(x => x < sequence);
+            var removalList = cachedPackets.Keys.Where(x => x < sequence).ToList();
+
+            if (removalList.Count > ServerConfig.net_retransmit_warn_threshold.Value)
+            {
+                log.Warn($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                    $"ACK {sequence} pruning {removalList.Count} cached packets (seq {removalList.Min()}-{removalList.Max()}). " +
+                    $"Player Teleporting: {session.Player?.Teleporting}");
+            }
 
             foreach (var key in removalList)
                 cachedPackets.TryRemove(key, out _);
@@ -655,15 +673,19 @@ namespace ACE.Server.Network
                 // This is to catch a race condition between .Count and .Min() and .Max()
                 try
                 {
-                    log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache range {cachedPackets.Keys.Min()} - {cachedPackets.Keys.Max()}.");
+                    log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"retransmit requested packet {sequence} not in cache. Cache range {cachedPackets.Keys.Min()} - {cachedPackets.Keys.Max()}. " +
+                        $"Cache count: {cachedPackets.Count}.");
                 }
                 catch
                 {
-                    log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty. Race condition threw exception.");
+                    log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                        $"retransmit requested packet {sequence} not in cache. Cache is empty. Race condition threw exception.");
                 }
             }
             else
-                log.Error($"Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) retransmit requested packet {sequence} not in cache. Cache is empty.");
+                log.Error($"[RETRANSMIT] Session {session.Network?.ClientId}\\{session.EndPoint} ({session.Account}:{session.Player?.Name}) " +
+                    $"retransmit requested packet {sequence} not in cache. Cache is empty.");
 
             // If this session is attached to a player log them off to avoid retransmit floods
             if (session.Player != null)
@@ -701,12 +723,14 @@ namespace ACE.Server.Network
             actionChain.EnqueueChain();
         }
 
-        private const int MaxPacketsPerTick = 50;
-
         private void FlushPackets()
         {
             int packetsSent = 0;
-            while (packetsSent < MaxPacketsPerTick && packetQueue.TryDequeue(out var packet))
+            var rawMax = ServerConfig.net_max_packets_per_tick.Value;
+            if (rawMax < 1 || rawMax > 500)
+                log.Warn($"[NETWORK] net_max_packets_per_tick has unsafe value {rawMax}; clamping to [1, 500]. Use /modifylong net_max_packets_per_tick to correct.");
+            var maxPacketsPerTick = (int)Math.Clamp(rawMax, 1, 500);
+            while (packetsSent < maxPacketsPerTick && packetQueue.TryDequeue(out var packet))
             {
                 packetsSent++;
                 packetLog.DebugFormat("[{0}] Flushing packets, count {1}", session.LoggingIdentifier, packetQueue.Count);
