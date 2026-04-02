@@ -7,10 +7,13 @@ namespace ACE.Common.Extensions
     {
         public static string GetFriendlyString(this TimeSpan timeSpan)
         {
-            // use datetime here?
-            // this probably won't work with numDays...
-            //var numYears = timeSpan.GetYears();
-            //var numMonths = timeSpan.GetMonths();
+            int totalMs = (int)timeSpan.TotalMilliseconds;
+            if (totalMs < 1000)
+            {
+                if (totalMs >= 1) return $"{totalMs}ms";
+                if (totalMs < 0) return "negative time";
+                return "0s";
+            }
 
             var numDays = timeSpan.ToString("%d");
             var numHours = timeSpan.ToString("%h");
@@ -18,12 +21,6 @@ namespace ACE.Common.Extensions
             var numSeconds = timeSpan.ToString("%s");
 
             var sb = new StringBuilder();
-
-            // did retail display months/years?
-
-            //if (numYears > 0) sb.Append(numYears + "y ");
-            //if (numMonths > 0) sb.Append(numMonths + "mo ");
-
             if (numDays != "0") sb.Append(numDays + "d ");
             if (numHours != "0") sb.Append(numHours + "h ");
             if (numMinutes != "0") sb.Append(numMinutes + "m ");
@@ -34,13 +31,20 @@ namespace ACE.Common.Extensions
 
         public static string GetFriendlyLongString(this TimeSpan timeSpan)
         {
+            int totalMs = (int)timeSpan.TotalMilliseconds;
+            if (totalMs < 1000)
+            {
+                if (totalMs >= 1) return $"{totalMs} millisecond{((totalMs > 1) ? "s" : "")}";
+                if (totalMs < 0) return "negative time";
+                return "0 seconds";
+            }
+
             var numDays = timeSpan.ToString("%d");
             var numHours = timeSpan.ToString("%h");
             var numMinutes = timeSpan.ToString("%m");
             var numSeconds = timeSpan.ToString("%s");
 
             var sb = new StringBuilder();
-
             if (numDays != "0") sb.Append(numDays + $" day{((timeSpan.Days > 1) ? "s" : "")} ");
             if (numHours != "0") sb.Append($"{((numDays != "0") ? ", " : "")}" + numHours + $" hour{((timeSpan.Hours > 1) ? "s" : "")} ");
             if (numMinutes != "0") sb.Append($"{((numDays != "0" || numHours != "0") ? ", " : "")}" + numMinutes + $" minute{((timeSpan.Minutes > 1) ? "s" : "")} ");
