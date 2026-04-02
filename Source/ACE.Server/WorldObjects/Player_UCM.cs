@@ -82,49 +82,39 @@ namespace ACE.Server.WorldObjects
 
             TimeSpan timeout = TimeSpan.FromSeconds(ServerConfig.ucm_check_timeout_seconds.Value);
             string message = $"Is {a} + {b} = {shownAnswer}?\n\nYou have {timeout.GetFriendlyLongString()} to respond.";
-            var ucmConfirmation = new Confirmation_Custom(Self.Guid, (response, timedOut) =>
+            var ucmBasicCheckConfirmation = new Confirmation_Custom(Self.Guid, (response, timedOut) =>
             {
+                using var scope = _lock.EnterScope();
+                if (!IsChecking || CurrentStage != UcmStage.Basic || !UcmPromptStartedAtUtc.HasValue)
+                    return;
+
                 if (timedOut)
                 {
-                    FailActiveCheck(UCMCheckFailReason.TimedOut);
+                    FailActiveCheckLocked(UCMCheckFailReason.TimedOut);
                 }
                 else if (response == isRightAnswerForm)
                 {
-                    double secondsElapsed = (DateTime.UtcNow - UcmPromptStartedAtUtc.Value).TotalSeconds;
-                    if (secondsElapsed < 1.0)
-                    {
-                        if (CurrentStage == UcmStage.Basic)
-                        {
-                            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was selected for an advanced UCM check after a response time of {FormatUcmResponseSeconds(UcmPromptStartedAtUtc)}.");
-                            StartAdvancedCheck(UcmStage.BotDetection);
-                            return;
-                        }
-
-                        FailActiveCheck(UCMCheckFailReason.SuspiciousSpeed);
-                        return;
-                    }
-
-                    // 5% chance to be randomly selected regardless of response time.
-                    if (CurrentStage == UcmStage.Basic && RNG.NextDouble() < 0.05)
+                    // 5% chance to be randomly selected regardless of response time on basic check
+                    if (RNG.NextDouble() < 0.05)
                     {
                         PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was randomly selected for an advanced UCM check.");
-                        StartAdvancedCheck(UcmStage.BotDetection);
+                        StartAdvancedCheckLocked(UcmStage.BotDetection);
                         return;
                     }
 
-                    PassActiveCheck();
+                    PassActiveCheckLocked();
                 }
                 else
                 {
-                    FailActiveCheck(UCMCheckFailReason.WrongAnswer);
+                    FailActiveCheckLocked(UCMCheckFailReason.WrongAnswer);
                 }
             });
-            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, timeout.TotalSeconds);
+            bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmBasicCheckConfirmation, message, timeout.TotalSeconds);
 
             if (!enqueued) return false;
 
             var startUtc = DateTime.UtcNow;
-            ActiveUcmConfirmationContextId = ucmConfirmation.ContextId;
+            ActiveUcmConfirmationContextId = ucmBasicCheckConfirmation.ContextId;
             CurrentStage = UcmStage.Basic;
             UcmPromptStartedAtUtc = startUtc;
             LastUCMCheckTime = startUtc;
@@ -201,7 +191,7 @@ namespace ACE.Server.WorldObjects
             Self.Session.Network.EnqueueSend(new GameMessageSystemChat(message, ChatMessageType.Broadcast));
 
             var failElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
-            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} failed UCM check ({reason}, Stage: {CurrentStage}) at {Self.Location}.{failElapsed}");
+            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} failed UCM check ({GetUCMCheckFailReasonString(reason)}, Stage: {CurrentStage}) at {Self.Location}.{failElapsed}");
             CurrentStage = UcmStage.None;
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
@@ -212,18 +202,12 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Starts a specific advanced check stage.
         /// </summary>
-        public void StartAdvancedCheck(UcmStage stage)
-        {
-            using var scope = _lock.EnterScope();
-            StartAdvancedCheckLocked(stage);
-        }
-
-        private void StartAdvancedCheckLocked(UcmStage nextStage)
+        private void StartAdvancedCheckLocked(UcmStage stageToStart)
         {
             if (!IsChecking) return;
 
             // Update state
-            CurrentStage = nextStage;
+            CurrentStage = stageToStart;
             UcmPromptStartedAtUtc = DateTime.UtcNow;
             TimeSpan timeout = TimeSpan.FromSeconds(30); // They responded too quickly at first, so... fixed shorter interval.
             Timeout = DateTime.UtcNow.Add(timeout);
@@ -231,7 +215,7 @@ namespace ACE.Server.WorldObjects
             string message = "";
             bool expectedAnswer = false;
 
-            switch (nextStage)
+            switch (stageToStart)
             {
                 case UcmStage.BotDetection:
                     message = "Are you sure you're not a bot?\n\nAttempting to macro these prompts carries higher punishments.";
@@ -251,19 +235,46 @@ namespace ACE.Server.WorldObjects
 
             message += $"\n\nYou have {timeout.GetFriendlyLongString()} to respond.";
 
-            var nextConfirmation = new Confirmation_Custom(Self.Guid, (response, timedOut) =>
+            UcmStage stageForCheck = stageToStart;
+            var nextAdvancedCheckConfirmation = new Confirmation_Custom(Self.Guid, (response, timedOut) =>
             {
+                using var scope = _lock.EnterScope();
+                if (!IsChecking || CurrentStage != stageForCheck || !UcmPromptStartedAtUtc.HasValue)
+                    return;
+
                 if (timedOut)
                 {
-                    FailActiveCheck(UCMCheckFailReason.TimedOut);
+                    FailActiveCheckLocked(UCMCheckFailReason.TimedOut);
                 }
                 else if (response == expectedAnswer)
                 {
-                    HandleAdvancedCheckSuccess();
+                    // Answering too quickly on an advanced check is an automatic failure.
+                    double secondsElapsed = (DateTime.UtcNow - UcmPromptStartedAtUtc.Value).TotalSeconds;
+                    if (secondsElapsed < 1.0)
+                    {
+                        FailActiveCheckLocked(UCMCheckFailReason.SuspiciousSpeed);
+                        return;
+                    }
+
+                    // They got it right, so advance to the next stage.
+                    switch (CurrentStage)
+                    {
+                        case UcmStage.BotDetection:
+                            StartAdvancedCheckLocked(UcmStage.BankCheck);
+                            break;
+                        case UcmStage.BankCheck:
+                            StartAdvancedCheckLocked(UcmStage.EquipCheck);
+                            break;
+                        case UcmStage.EquipCheck:
+                            PassActiveCheckLocked();
+                            break;
+                        default:
+                            break;
+                    }
                 }
                 else
                 {
-                    FailActiveCheck(UCMCheckFailReason.WrongAnswer);
+                    FailActiveCheckLocked(UCMCheckFailReason.WrongAnswer);
                 }
             });
 
@@ -271,34 +282,14 @@ namespace ACE.Server.WorldObjects
             if (ActiveUcmConfirmationContextId.HasValue)
                 Self.ConfirmationManager.TryDismissConfirmation(ConfirmationType.Yes_No, ActiveUcmConfirmationContextId.Value);
 
-            if (Self.ConfirmationManager.EnqueueSend(nextConfirmation, message, timeout.TotalSeconds))
+            if (Self.ConfirmationManager.EnqueueSend(nextAdvancedCheckConfirmation, message, timeout.TotalSeconds))
             {
-                ActiveUcmConfirmationContextId = nextConfirmation.ContextId;
+                ActiveUcmConfirmationContextId = nextAdvancedCheckConfirmation.ContextId;
             }
             else
             {
                 // Unexpectedly failed to start, so pass them.
                 PassActiveCheck();
-            }
-        }
-
-        private void HandleAdvancedCheckSuccess()
-        {
-            using var scope = _lock.EnterScope();
-
-            switch (CurrentStage)
-            {
-                case UcmStage.BotDetection:
-                    StartAdvancedCheckLocked(UcmStage.BankCheck);
-                    break;
-                case UcmStage.BankCheck:
-                    StartAdvancedCheckLocked(UcmStage.EquipCheck);
-                    break;
-                case UcmStage.EquipCheck:
-                    PassActiveCheckLocked();
-                    break;
-                default:
-                    break;
             }
         }
 
