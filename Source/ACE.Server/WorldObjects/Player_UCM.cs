@@ -95,7 +95,7 @@ namespace ACE.Server.WorldObjects
                 else if (response == isRightAnswerForm)
                 {
                     // If extremely fast, trigger the random check.
-                    TimeSpan responseTime = (UcmPromptStartedAtUtc ?? DateTime.MaxValue) - DateTime.UtcNow;
+                    TimeSpan responseTime = DateTime.UtcNow - (UcmPromptStartedAtUtc ?? DateTime.MaxValue);
                     if (responseTime < TimeSpan.FromSeconds(1))
                     {
                         PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was selected for an advanced UCM check (responded in {responseTime.GetFriendlyString() ?? "unknown time"}).");
