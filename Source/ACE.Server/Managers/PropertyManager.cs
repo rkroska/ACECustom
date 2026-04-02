@@ -463,6 +463,11 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_audit_level { get; private set; } = new(1, "Controls Admin Audit logs. 0=None, 1=Info (Bans/Kicks), 2=Verbose (All commands).");
         public static ConfigProperty<long> discord_broadcast_level { get; private set; } = new(1, "Controls World Broadcasts. 0=None, 1=Info (@broadcast/@event), 2=Verbose.");
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
+
+        // Network Throttle Configuration
+        public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(50, "Maximum UDP packets sent to a single client per server tick. Default: 50 (vanilla). Lower values reduce burst during mass spawns at the cost of latency. Use /modifylong net_max_packets_per_tick <value>.");
+        public static ConfigProperty<long> net_min_bundle_interval_ms { get; private set; } = new(5, "Minimum milliseconds between outbound network bundle flushes per session. Default: 5 (vanilla). Higher values pace packet flow during heavy events. Use /modifylong net_min_bundle_interval_ms <value>.");
+        public static ConfigProperty<long> net_retransmit_warn_threshold { get; private set; } = new(75, "Log a RETRANSMIT warning when ACK prunes more than this many cached packets. Default: 75. Lower to 20 (vanilla) for stricter monitoring, or raise further during events with mass spawns. Use /modifylong net_retransmit_warn_threshold <value>.");
     }
 
     public static class PropertyManager
