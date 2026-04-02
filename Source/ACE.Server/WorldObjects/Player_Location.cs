@@ -672,7 +672,10 @@ namespace ACE.Server.WorldObjects
                             continue;
 
                         if (lb == null)
-                            log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete IP check: peer {p.Name} (0x{p.Guid}) has CurrentLandblock=null (mid-teleport race?)");
+                        {
+                            log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete IP check: peer {p.Name} (0x{p.Guid}) has CurrentLandblock=null (mid-teleport race?) — skipping count");
+                            continue;
+                        }
 
                         if (p.IsPlussed)
                             continue;
