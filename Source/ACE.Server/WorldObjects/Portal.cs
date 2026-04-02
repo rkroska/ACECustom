@@ -241,7 +241,7 @@ namespace ACE.Server.WorldObjects
                         return new ActivationResult(false);
 
                     // Secondary requirement check
-                    if (PortalReqType2 != PortalRequirement2.None && PortalReqValue2.GetValueOrDefault() > 0)
+                    if (PortalReqType2 != PortalRequirement.None && PortalReqValue2.GetValueOrDefault() > 0)
                     {
                         if (!CheckPortalRequirement(player, PortalReqType2, PortalReqValue2.GetValueOrDefault(), PortalReqMaxValue2.GetValueOrDefault(), "Secondary Requirement"))
                             return new ActivationResult(false);
@@ -276,15 +276,13 @@ namespace ACE.Server.WorldObjects
             return new ActivationResult(true);
         }
 
-        private static bool CheckPortalRequirement(Player player, Enum reqType, int reqValue, int reqMaxValue, string requirementLabel)
+        private static bool CheckPortalRequirement(Player player, PortalRequirement reqType, int reqValue, int reqMaxValue, string requirementLabel)
         {
             string message = string.Empty;
 
-            // Use a switch-case to handle both PortalRequirement and PortalRequirement2
             switch (reqType)
             {
                 case PortalRequirement.CreatureAug:
-                case PortalRequirement2.CreatureAug:
                     if (player.LuminanceAugmentCreatureCount < reqValue)
                         message = $"You must augment your creature magic {reqValue} times to interact with that portal!";
                     else if (reqMaxValue > reqValue && player.LuminanceAugmentCreatureCount > reqMaxValue)
@@ -292,7 +290,6 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 case PortalRequirement.ItemAug:
-                case PortalRequirement2.ItemAug:
                     if (player.LuminanceAugmentItemCount < reqValue)
                         message = $"You must augment your item magic {reqValue} times to interact with that portal!";
                     else if (reqMaxValue > reqValue && player.LuminanceAugmentItemCount > reqMaxValue)
@@ -300,7 +297,6 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 case PortalRequirement.LifeAug:
-                case PortalRequirement2.LifeAug:
                     if (player.LuminanceAugmentLifeCount < reqValue)
                         message = $"You must augment your life magic {reqValue} times to interact with that portal!";
                     else if (reqMaxValue > reqValue && player.LuminanceAugmentLifeCount > reqMaxValue)
@@ -308,7 +304,6 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 case PortalRequirement.Enlighten:
-                case PortalRequirement2.Enlighten:
                     if (player.Enlightenment < reqValue)
                         message = $"You must enlighten {reqValue} times to interact with that portal!";
                     else if (reqMaxValue > reqValue && player.Enlightenment > reqMaxValue)
@@ -316,11 +311,18 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 case PortalRequirement.QuestBonus:
-                case PortalRequirement2.QuestBonus:
                     if (player.QuestCompletionCount < reqValue)
                         message = $"You must have {reqValue} quest bonus to interact with that portal!";
                     else if (reqMaxValue > reqValue && player.QuestCompletionCount > reqMaxValue)
                         message = $"Your quest bonus is too superior to interact with this portal. {reqMaxValue} is the highest quest bonus allowable!";
+                    break;
+
+                case PortalRequirement.XPMultiplier:
+                    var bonusMultiplier = (long)player.GetTotalXPBonusMultiplier();
+                    if (bonusMultiplier < reqValue)
+                        message = $"You must have a XP bonus multiplier of x{reqValue} to interact with that portal!";
+                    else if (reqMaxValue > reqValue && bonusMultiplier > reqMaxValue)
+                        message = $"Your XP bonus multiplier is too high to interact with this portal. x{reqMaxValue} is the highest allowable!";
                     break;
 
                 default:
