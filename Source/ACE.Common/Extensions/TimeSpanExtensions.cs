@@ -7,11 +7,10 @@ namespace ACE.Common.Extensions
     {
         public static string GetFriendlyString(this TimeSpan timeSpan)
         {
-            int totalMs = (int)timeSpan.TotalMilliseconds;
-            if (totalMs < 1000)
+            if (timeSpan < TimeSpan.FromSeconds(1))
             {
-                if (totalMs >= 1) return $"{totalMs}ms";
-                if (totalMs < 0) return "negative time";
+                if (timeSpan > TimeSpan.FromMilliseconds(1)) return $"{timeSpan.TotalMilliseconds}ms";
+                if (timeSpan < TimeSpan.Zero) return "negative time";
                 return "0s";
             }
 
@@ -31,11 +30,10 @@ namespace ACE.Common.Extensions
 
         public static string GetFriendlyLongString(this TimeSpan timeSpan)
         {
-            int totalMs = (int)timeSpan.TotalMilliseconds;
-            if (totalMs < 1000)
+            if (timeSpan < TimeSpan.FromSeconds(1))
             {
-                if (totalMs >= 1) return $"{totalMs} millisecond{((totalMs > 1) ? "s" : "")}";
-                if (totalMs < 0) return "negative time";
+                if (timeSpan > TimeSpan.FromMilliseconds(1)) return $"{timeSpan.TotalMilliseconds} millisecond{((timeSpan.TotalMilliseconds > 1) ? "s" : "")}";
+                if (timeSpan < TimeSpan.Zero) return "negative time";
                 return "0 seconds";
             }
 
