@@ -193,7 +193,10 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Adds or updates a quest completion to the player's registry
         /// </summary>
-        public void Update(string questFormat)
+        /// <param name="questFormat">A quest name with an optional @comment on the end. The @comment is ignored for quest registry purposes, but can be used to differentiate stamp messages for the same quest (e.g. "ColoArena@win" vs "ColoArena@loss")</param>
+        /// <param name="onlyStampFirstCompletion"></param>if true, only stamps the first completion - existing completions makes this a no-op. This is a cheap "MaxSolves = 1"</param>
+        /// <returns>The quest solve count after this attempted completion (may not increment if MaxSolves is hit).</returns>
+        public int Update(string questFormat, bool onlyStampFirstCompletion = false)
         {
             var questName = GetQuestName(questFormat);
 
@@ -228,10 +231,10 @@ namespace ACE.Server.Managers
             }
             else
             {
-                if (IsMaxSolves(questName))
+                if (IsMaxSolves(questName) || onlyStampFirstCompletion)
                 {
-                    if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): can not update existing quest. IsMaxSolves({questName}) is true.");
-                    return;
+                    if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): can not solve {questName} again.");
+                    return quest.NumTimesCompleted;
                 }
 
                 // update existing quest
@@ -262,6 +265,8 @@ namespace ACE.Server.Managers
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
                 }
             }
+
+            return quest.NumTimesCompleted;
         }
 
         /// <summary>
@@ -554,10 +559,22 @@ namespace ACE.Server.Managers
             }
         }
 
-        public void Stamp(string questFormat)
+        /// <summary>
+        /// Alias for the Update method.
+        /// </summary>
+        public int Stamp(string questFormat)
         {
             var questName = GetQuestName(questFormat);
-            Update(questName);  // ??
+            return Update(questName);
+        }
+
+        /// <summary>
+        /// Alias for the Update method with onlyStampFirstCompletion set to true.
+        /// </summary>
+        public int StampFirst(string questFormat)
+        {
+            var questName = GetQuestName(questFormat);
+            return Update(questName, onlyStampFirstCompletion: true);
         }
 
         /// <summary>
