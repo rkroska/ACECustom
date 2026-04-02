@@ -88,10 +88,7 @@ namespace ACE.Server.Physics.Common
                 if (lcoord == null) return null;
                 var landCellIdx = ((int)lcoord.Value.Y % 8) + ((int)lcoord.Value.X % 8) * landblock.SideCellCount;
                 
-                if(!landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))
-                {
-                    Console.WriteLine($"get_landcell({blockCellID:X8} - {landCellIdx:X8} - {variationId:X8}) failed to get from dictionary, cache miss");
-                }
+                landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell);
             }
             // indoor cells
             else
