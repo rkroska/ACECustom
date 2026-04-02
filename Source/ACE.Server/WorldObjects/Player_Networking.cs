@@ -23,7 +23,6 @@ namespace ACE.Server.WorldObjects
         {
             PlayerManager.SwitchPlayerFromOfflineToOnline(this);
             Teleporting = true;
-            MarkPortalSpaceEntered();
 
             // Log character login to char_tracker table
             CharacterTracker.LogCharacterLogin(this);
@@ -78,6 +77,7 @@ namespace ACE.Server.WorldObjects
 
             // SendSelf will trigger the entrance into portal space
             SendSelf();
+            MarkPortalSpaceEntered();
 
             // Update or override certain properties sent to client.
 
