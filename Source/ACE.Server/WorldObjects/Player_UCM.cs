@@ -17,6 +17,14 @@ namespace ACE.Server.WorldObjects
         BankCheck,
         EquipCheck
     }
+    public enum UCMCheckFailReason
+    {
+        WrongAnswer,
+        TimedOut,
+        LoggedOut,
+        SentByAdmin,
+        SuspiciousSpeed,
+    }
 
     /// <summary>
     /// Manages the logic for random "focus checks" that can occur for players in certain areas after combat.
@@ -78,26 +86,37 @@ namespace ACE.Server.WorldObjects
             {
                 if (timedOut)
                 {
-                    FailActiveCheck(JailReason.TimedOut);
+                    FailActiveCheck(UCMCheckFailReason.TimedOut);
                 }
                 else if (response == isRightAnswerForm)
                 {
                     double secondsElapsed = (DateTime.UtcNow - UcmPromptStartedAtUtc.Value).TotalSeconds;
-                    if (CurrentStage == UcmStage.Basic)
+                    if (secondsElapsed < 1.0)
                     {
-                        bool randomlySelected = RNG.Next(0, 20) == 0;
-                        if (secondsElapsed < 1.0 || randomlySelected)
+                        if (CurrentStage == UcmStage.Basic)
                         {
-                            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was {(randomlySelected ? "randomly selected for" : "selected due to suspicious response time")} for an advanced UCM check.");
+                            PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was selected for an advanced UCM check after a response time of {FormatUcmResponseSeconds(UcmPromptStartedAtUtc)}.");
                             StartAdvancedCheck(UcmStage.BotDetection);
                             return;
                         }
+
+                        FailActiveCheck(UCMCheckFailReason.SuspiciousSpeed);
+                        return;
                     }
+
+                    // 5% chance to be randomly selected regardless of response time.
+                    if (CurrentStage == UcmStage.Basic && RNG.NextDouble() < 0.05)
+                    {
+                        PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was randomly selected for an advanced UCM check.");
+                        StartAdvancedCheck(UcmStage.BotDetection);
+                        return;
+                    }
+
                     PassActiveCheck();
                 }
                 else
                 {
-                    FailActiveCheck(JailReason.WrongAnswer);
+                    FailActiveCheck(UCMCheckFailReason.WrongAnswer);
                 }
             });
             bool enqueued = Self.ConfirmationManager.EnqueueSend(ucmConfirmation, message, timeout.TotalSeconds);
@@ -149,7 +168,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// If a check is active, fails it.
         /// </summary>
-        public void FailActiveCheck(JailReason reason)
+        public void FailActiveCheck(UCMCheckFailReason reason)
         {
             using var scope = _lock.EnterScope();
             FailActiveCheckLocked(reason);
@@ -159,7 +178,7 @@ namespace ACE.Server.WorldObjects
         /// If a check is active, fails it.
         /// The lock must be held to call this method.
         /// </summary>
-        private void FailActiveCheckLocked(JailReason reason)
+        private void FailActiveCheckLocked(UCMCheckFailReason reason)
         {
             if (!IsChecking) return;
 
@@ -171,9 +190,9 @@ namespace ACE.Server.WorldObjects
             {
                 _ = reason switch
                 {
-                    JailReason.WrongAnswer => Self.QuestManager.StampFirst("focus_test_math_is_hard"),
-                    JailReason.TimedOut => Self.QuestManager.StampFirst("focus_test_bathroom_break"),
-                    JailReason.LoggedOut => Self.QuestManager.StampFirst("focus_test_tactical_dc"),
+                    UCMCheckFailReason.WrongAnswer => Self.QuestManager.StampFirst("focus_test_math_is_hard"),
+                    UCMCheckFailReason.TimedOut => Self.QuestManager.StampFirst("focus_test_bathroom_break"),
+                    UCMCheckFailReason.LoggedOut => Self.QuestManager.StampFirst("focus_test_tactical_dc"),
                     _ => 0
                 };
             }
@@ -205,6 +224,7 @@ namespace ACE.Server.WorldObjects
 
             // Update state
             CurrentStage = nextStage;
+            UcmPromptStartedAtUtc = DateTime.UtcNow;
             TimeSpan timeout = TimeSpan.FromSeconds(30); // They responded too quickly at first, so... fixed shorter interval.
             Timeout = DateTime.UtcNow.Add(timeout);
 
@@ -235,7 +255,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (timedOut)
                 {
-                    FailActiveCheck(JailReason.TimedOut);
+                    FailActiveCheck(UCMCheckFailReason.TimedOut);
                 }
                 else if (response == expectedAnswer)
                 {
@@ -243,7 +263,7 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    FailActiveCheck(JailReason.WrongAnswer);
+                    FailActiveCheck(UCMCheckFailReason.WrongAnswer);
                 }
             });
 
@@ -287,7 +307,7 @@ namespace ACE.Server.WorldObjects
             long trueCoins = Self.BankedEnlightenedCoins ?? 0;
             bool isCorrect = RNG.Next(0, 2) == 0;
             
-            // 50% chance of being off-by-one (either +1 or -1)
+            // 50% chance of being off-by-one.
             long shownValue = isCorrect ? trueCoins : (trueCoins + 1);
             
             // Format with commas for readability (e.g. "1,234,567")
@@ -342,7 +362,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Verify what is actually in that slot to determine the definitive correct answer
-            var itemInQuerySlot = Self.EquippedObjects.Values.FirstOrDefault(i => 
+            var itemInQuerySlot = items.FirstOrDefault(i => 
                 i.CurrentWieldedLocation != null && ((EquipMask)i.CurrentWieldedLocation & querySlot) != 0);
             
             // The answer is YES ONLY if the item in that slot has the same name as our target item
@@ -385,7 +405,7 @@ namespace ACE.Server.WorldObjects
 
             if (now > Timeout)
             {
-                FailActiveCheckLocked(JailReason.TimedOut);
+                FailActiveCheckLocked(UCMCheckFailReason.TimedOut);
                 return;
             }
         }
@@ -395,13 +415,14 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         /// <param name="reason"></param>
         /// <returns></returns>
-        public string GetJailReasonString(JailReason reason) => reason switch
+        public string GetUCMCheckFailReasonString(UCMCheckFailReason reason) => reason switch
         {
-            JailReason.WrongAnswer => "selected incorrectly",
-            JailReason.TimedOut => "timed out",
-            JailReason.LoggedOut => "logged out",
-            JailReason.SentByAdmin => "sent by admin",
-            _ => "an unknown reason"
+            UCMCheckFailReason.WrongAnswer => "selected incorrectly",
+            UCMCheckFailReason.TimedOut => "timed out",
+            UCMCheckFailReason.LoggedOut => "logged out",
+            UCMCheckFailReason.SentByAdmin => "sent by admin",
+            UCMCheckFailReason.SuspiciousSpeed => "responded too fast",
+            _ => "unknown reason",
         };
 
         /// <summary>Audit suffix: seconds from prompt shown to outcome (UTC).</summary>
