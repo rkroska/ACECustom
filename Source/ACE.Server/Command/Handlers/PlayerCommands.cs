@@ -6,26 +6,17 @@ using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
-using ACE.Server.Factories.Tables;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
-using Lifestoned.DataModel.DerethForever;
 using log4net;
-using MySqlX.XDevAPI.Common;
-using Org.BouncyCastle.Utilities.Net;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Timers;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
-//using ACE.Server.Factories;
-//using Org.BouncyCastle.Ocsp;
-//using System.Diagnostics.Metrics;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -1156,15 +1147,13 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("bonus", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]
         public static void HandleMultiplier(Session session, params string[] paramters)
         {
-            session.Player.QuestCompletionCount = session.Player.Account.GetCharacterQuestCompletions();
-            var qb = session.Player.GetQuestCountXPBonus();
-            var eq = session.Player.GetXPAndLuminanceModifier(XpType.Kill);
-            var en = session.Player.GetEnglightenmentXPBonus();
-
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Quests is: {qb - 1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Equipment is: {eq - 1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Enlightenment is: {en - 1:P}", ChatMessageType.System));
-            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your Total XP multiplier is: {(qb * eq * en) - 1:P}", ChatMessageType.System));
+            var player = session.Player;
+            player.QuestCompletionCount = player.Account.GetCharacterQuestCompletions();
+            
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Quests is: x{player.GetQuestCountXPBonus():N2}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Equipment is: x{player.GetXPAndLuminanceModifier(XpType.Kill):N2}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your XP multiplier from Enlightenment is: x{player.GetEnglightenmentXPBonus():N2}", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"[BONUS] Your Total XP multiplier is: x{player.GetTotalXPBonusMultiplier():N2}", ChatMessageType.System));
         }
 
         [CommandHandler("xp", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Handles Experience Checks", "Leave blank for level, pass first 3 letters of attribute for specific attribute cost")]

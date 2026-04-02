@@ -2548,10 +2548,10 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue); else SetProperty(PropertyInt.PortalReqMaxValue, value.Value); }
         }
 
-        public PortalRequirement2 PortalReqType2
+        public PortalRequirement PortalReqType2
         {
-            get => (PortalRequirement2)(GetProperty(PropertyInt.PortalReqType2) ?? 0);
-            set { if (value == PortalRequirement2.None) RemoveProperty(PropertyInt.PortalReqType2); else SetProperty(PropertyInt.PortalReqType2, (int)value); }
+            get => (PortalRequirement)(GetProperty(PropertyInt.PortalReqType2) ?? 0);
+            set { if (value == PortalRequirement.None) RemoveProperty(PropertyInt.PortalReqType2); else SetProperty(PropertyInt.PortalReqType2, (int)value); }
         }
 
         public int? PortalReqValue2

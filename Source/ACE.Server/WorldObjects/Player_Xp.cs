@@ -723,5 +723,10 @@ namespace ACE.Server.WorldObjects
         {
             return 1 + (this.Enlightenment * enlightenmentToBonusRatio);
         }
+
+        public double GetTotalXPBonusMultiplier()
+        {
+            return GetQuestCountXPBonus() * GetXPAndLuminanceModifier(XpType.Kill) * GetEnglightenmentXPBonus();
+        }
     }
 }
