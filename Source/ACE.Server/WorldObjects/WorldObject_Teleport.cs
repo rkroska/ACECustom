@@ -29,6 +29,8 @@ namespace ACE.Server.WorldObjects
             var timestamp = Time.GetUnixTime();
             SetProperty(PropertyFloat.LastTeleportStartTimestamp, timestamp);
 
+            player?.MarkPortalSpaceEntered();
+
             if (player != null)
                 player.LastTeleportTime = DateTime.UtcNow;
 
@@ -74,6 +76,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void OnTeleportComplete()
         {
+            (this as Player)?.ClearPortalSpaceEntered();
+
             // set materialize physics state
             // this takes the player from pink bubbles -> fully materialized
             // Only re-enable collisions if not cloaked (admin/GM)

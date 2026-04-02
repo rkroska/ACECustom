@@ -77,6 +77,7 @@ namespace ACE.Server.WorldObjects
 
             // SendSelf will trigger the entrance into portal space
             SendSelf();
+            MarkPortalSpaceEntered();
 
             // Update or override certain properties sent to client.
 
