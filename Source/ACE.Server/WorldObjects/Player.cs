@@ -46,6 +46,47 @@ namespace ACE.Server.WorldObjects
 
         public bool LastContact = true;
 
+        /// <summary>UTC when the player entered portal space (initial login SendSelf or any Teleport). Cleared in OnTeleportComplete.</summary>
+        public DateTime? PortalSpaceEnteredUtc { get; private set; }
+
+        private bool portalStuckRecoveryAttempted;
+
+        public void MarkPortalSpaceEntered()
+        {
+            PortalSpaceEnteredUtc = DateTime.UtcNow;
+            portalStuckRecoveryAttempted = false;
+        }
+
+        public void ClearPortalSpaceEntered()
+        {
+            PortalSpaceEnteredUtc = null;
+            portalStuckRecoveryAttempted = false;
+        }
+
+        /// <summary>Forces server-side end of teleport/portal physics state when LoginComplete never arrives. Client UI may still show portal until recall/relog.</summary>
+        public void ForceEndPortalSpaceStuck(string reason)
+        {
+            if (!Teleporting)
+                return;
+
+            var secs = PortalSpaceEnteredUtc.HasValue ? (DateTime.UtcNow - PortalSpaceEnteredUtc.Value).TotalSeconds : -1;
+            log.Warn($"[PORTAL STUCK] {Name} (0x{Guid}) forcing server materialize after {secs:F0}s ({reason}). Landblock={CurrentLandblock?.Id.Raw:X8}");
+
+            ClearPortalSpaceEntered();
+
+            if (CloakStatus != CloakStatus.On)
+                ReportCollisions = true;
+            IgnoreCollisions = false;
+            Hidden = false;
+            Teleporting = false;
+
+            EnqueueBroadcastPhysicsState();
+
+            Session?.Network.EnqueueSend(new GameMessageSystemChat(
+                "The server cleared a stuck portal or loading state on your character. If you still see portal graphics, use recall/lifestone or relog.",
+                ChatMessageType.System));
+        }
+
         public ObjectGuid LastGivenItemGuid { get; set; }
         
         /// <summary>

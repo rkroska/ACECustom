@@ -468,6 +468,45 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(50, "Maximum UDP packets sent to a single client per server tick. Default: 50 (vanilla). Lower values reduce burst during mass spawns at the cost of latency. Use /modifylong net_max_packets_per_tick <value>.");
         public static ConfigProperty<long> net_min_bundle_interval_ms { get; private set; } = new(5, "Minimum milliseconds between outbound network bundle flushes per session. Default: 5 (vanilla). Higher values pace packet flow during heavy events. Use /modifylong net_min_bundle_interval_ms <value>.");
         public static ConfigProperty<long> net_retransmit_warn_threshold { get; private set; } = new(75, "Log a RETRANSMIT warning when ACK prunes more than this many cached packets. Default: 75. Lower to 20 (vanilla) for stricter monitoring, or raise further during events with mass spawns. Use /modifylong net_retransmit_warn_threshold <value>.");
+
+        /// <summary>If the client never sends LoginComplete after this many seconds in Teleporting state, the server forces materialize. 0=off. Stored value when &gt;0 is clamped to 15–3600s at runtime. Default 45. Use /modifylong portal_stuck_recovery_seconds.</summary>
+        public static ConfigProperty<long> portal_stuck_recovery_seconds { get; private set; } = new(45, "Seconds without LoginComplete before server forces materialize. 0=off. When enabled, effective range 15–3600s. Default 45.");
+
+        /// <summary>Optional forced logoff if still Teleporting after this many seconds. 0=disabled (default): recover only, no kick. When enabled, effective value is clamped 60–86400 and never below recovery+30s if recovery is on. Use /modifylong portal_stuck_kick_seconds.</summary>
+        public static ConfigProperty<long> portal_stuck_kick_seconds { get; private set; } = new(0, "Seconds in Teleporting before forced logoff. 0=off (default). Set e.g. 600 only if you want a last-resort disconnect after recovery is disabled or insufficient.");
+
+        private const long PortalStuckRecoveryMinSeconds = 15;
+        private const long PortalStuckRecoveryMaxSeconds = 3600;
+        private const long PortalStuckKickMinSeconds = 60;
+        private const long PortalStuckKickMaxSeconds = 86400;
+
+        /// <summary>0 = recovery disabled. Otherwise raw <see cref="portal_stuck_recovery_seconds"/> clamped to [15, 3600] so misconfiguration cannot fire every tick or stall for days.</summary>
+        public static long PortalStuckRecoverySecondsEffective
+        {
+            get
+            {
+                var raw = portal_stuck_recovery_seconds.Value;
+                if (raw <= 0)
+                    return 0;
+                return Math.Clamp(raw, PortalStuckRecoveryMinSeconds, PortalStuckRecoveryMaxSeconds);
+            }
+        }
+
+        /// <summary>0 = kick disabled. Otherwise raw <see cref="portal_stuck_kick_seconds"/> clamped to [60, 86400]. If recovery is enabled, effective kick is at least recovery+30s so kick does not beat recovery.</summary>
+        public static long PortalStuckKickSecondsEffective
+        {
+            get
+            {
+                var raw = portal_stuck_kick_seconds.Value;
+                if (raw <= 0)
+                    return 0;
+                var clamped = Math.Clamp(raw, PortalStuckKickMinSeconds, PortalStuckKickMaxSeconds);
+                var recovery = PortalStuckRecoverySecondsEffective;
+                if (recovery > 0)
+                    clamped = Math.Max(clamped, recovery + 30);
+                return Math.Min(clamped, PortalStuckKickMaxSeconds);
+            }
+        }
     }
 
     public static class PropertyManager

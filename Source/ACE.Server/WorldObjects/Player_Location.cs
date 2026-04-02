@@ -671,9 +671,10 @@ namespace ACE.Server.WorldObjects
                         if (lb != null && Landblock.connectionExemptLandblocks.Contains(lb.Id.Landblock))
                             continue;
 
-                        if (lb == null)
+                        // Only omit from the IP cap when mid-teleport (no landblock yet). Recovered sessions (e.g. ForceEndPortalSpaceStuck) clear Teleporting but can briefly still have null landblock — they must count.
+                        if (lb == null && p.Teleporting)
                         {
-                            log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete IP check: peer {p.Name} (0x{p.Guid}) has CurrentLandblock=null (mid-teleport race?) — skipping count");
+                            log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete IP check: peer {p.Name} (0x{p.Guid}) has CurrentLandblock=null while Teleporting — skipping count");
                             continue;
                         }
 
@@ -691,7 +692,7 @@ namespace ACE.Server.WorldObjects
                     }
                 }
 
-                if (CurrentLandblock != null && !CurrentLandblock.CreateWorldObjectsCompleted)
+                if (CurrentLandblock != null && !CurrentLandblock.CreateWorldObjectsCompleted && Teleporting)
                 {
                     log.Warn($"[PORTAL SPACE] {Name} (0x{Guid}) OnTeleportComplete deferred — CreateWorldObjectsCompleted=false, " +
                         $"Landblock={CurrentLandblock.Id.Raw:X8}, Teleporting={Teleporting}");
