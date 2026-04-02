@@ -94,10 +94,18 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (response == isRightAnswerForm)
                 {
+                    // If extremely fast, trigger the random check.
+                    TimeSpan responseTime = (UcmPromptStartedAtUtc ?? DateTime.MaxValue) - DateTime.UtcNow;
+                    if (responseTime < TimeSpan.FromSeconds(1))
+                    {
+                        PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was selected for an advanced UCM check (responded in {responseTime.GetFriendlyString() ?? "unknown time"}).");
+                        StartAdvancedCheckLocked(UcmStage.BotDetection);
+                        return;
+                    }
                     // 5% chance to be randomly selected regardless of response time on basic check
                     if (RNG.NextDouble() < 0.05)
                     {
-                        PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was randomly selected for an advanced UCM check.");
+                        PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} was selected for an advanced UCM check (randomly chosen).");
                         StartAdvancedCheckLocked(UcmStage.BotDetection);
                         return;
                     }
@@ -132,7 +140,7 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// If a check is active, passes it.
+        /// If a check is active, finishes it.
         /// The lock must be held to call this method.
         /// </summary>
         private void PassActiveCheckLocked()
@@ -149,10 +157,7 @@ namespace ACE.Server.WorldObjects
             var passElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
             var stageInfo = CurrentStage == UcmStage.Basic ? "" : $" (Stage: {CurrentStage})";
             PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} passed UCM check{stageInfo} at {Self.Location}.{passElapsed}");
-            CurrentStage = UcmStage.None;
-            ActiveUcmConfirmationContextId = null;
-            UcmPromptStartedAtUtc = null;
-
+            EndActiveCheckLocked();
         }
 
         /// <summary>
@@ -192,11 +197,20 @@ namespace ACE.Server.WorldObjects
 
             var failElapsed = FormatUcmResponseSeconds(UcmPromptStartedAtUtc);
             PlayerManager.BroadcastToAuditChannel(Self, $"[UCM Check] Player {Self.Name} failed UCM check ({GetUCMCheckFailReasonString(reason)}, Stage: {CurrentStage}) at {Self.Location}.{failElapsed}");
+            EndActiveCheckLocked();
+            Self.SendToJail();
+            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a focus check and was sent to jail!", ChatMessageType.Broadcast));
+        }
+
+        /// <summary>
+        /// Performs steps to finish the check regardless of pass/fail/abort.
+        /// While typically called by pass/fail, it can also be used directly to abort without a pass/fail occurring.
+        /// </summary>
+        private void EndActiveCheckLocked()
+        {
             CurrentStage = UcmStage.None;
             ActiveUcmConfirmationContextId = null;
             UcmPromptStartedAtUtc = null;
-            Self.SendToJail();
-            PlayerManager.BroadcastToAll(new GameMessageSystemChat($"{Self.Name} failed a focus check and was sent to jail!", ChatMessageType.Broadcast));
         }
 
         /// <summary>
@@ -288,8 +302,8 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                // Unexpectedly failed to start, so pass them.
-                PassActiveCheck();
+                // Unexpectedly failed to start, so abort it.
+                EndActiveCheckLocked();
             }
         }
 
