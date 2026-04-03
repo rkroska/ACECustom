@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 #nullable disable
@@ -23,6 +23,7 @@ namespace ACE.Database.Models.Shard
         public int? VendorType { get; set; }
         public float? MinHealth { get; set; }
         public float? MaxHealth { get; set; }
+        public int? DamageType { get; set; }
 
         public virtual Biota Object { get; set; }
         public virtual ICollection<BiotaPropertiesEmoteAction> BiotaPropertiesEmoteAction { get; set; }

@@ -609,6 +609,8 @@ namespace ACE.Database.Models.Shard
 
                 entity.Property(e => e.Substyle).HasColumnName("substyle");
 
+                entity.Property(e => e.DamageType).HasColumnName("damage_type");
+
                 entity.Property(e => e.VendorType).HasColumnName("vendor_Type");
 
                 entity.Property(e => e.WeenieClassId).HasColumnName("weenie_Class_Id");

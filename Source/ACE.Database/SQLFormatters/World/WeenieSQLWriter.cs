@@ -426,7 +426,7 @@ namespace ACE.Database.SQLFormatters.World
             foreach (var value in input)
             {
                 writer.WriteLine();
-                writer.WriteLine("INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`)");
+                writer.WriteLine("INSERT INTO `weenie_properties_emote` (`object_Id`, `category`, `probability`, `weenie_Class_Id`, `style`, `substyle`, `quest`, `vendor_Type`, `min_Health`, `max_Health`, `damage_type`)");
 
                 var categoryLabel = Enum.GetName(typeof(EmoteCategory), value.Category);
                 if (categoryLabel != null)
@@ -464,6 +464,14 @@ namespace ACE.Database.SQLFormatters.World
                         vendorTypeLabel = $" /* {vendorTypeLabel} */";
                 }
 
+                string damageTypeLabel = null;
+                if (value.DamageType.HasValue)
+                {
+                    damageTypeLabel = Enum.GetName(typeof(DamageType), value.DamageType.Value);
+                    if (damageTypeLabel != null)
+                        damageTypeLabel = $" /* {damageTypeLabel} */";
+                }
+
                 var output = "VALUES (" +
                              $"{weenieClassID}, " +
                              $"{value.Category.ToString().PadLeft(2)}{categoryLabel}, " +
@@ -474,7 +482,8 @@ namespace ACE.Database.SQLFormatters.World
                              $"{GetSQLString(value.Quest)}, " +
                              $"{value.VendorType}{vendorTypeLabel}, " +
                              $"{value.MinHealth:0.######}, " +
-                             $"{value.MaxHealth:0.######}" +
+                             $"{value.MaxHealth:0.######}, " +
+                             $"{value.DamageType}{damageTypeLabel}" +
                              ");";
 
                 output = FixNullFields(output);

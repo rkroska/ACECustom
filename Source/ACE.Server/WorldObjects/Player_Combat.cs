@@ -178,10 +178,14 @@ namespace ACE.Server.WorldObjects
                 // handle Dirty Fighting
                 if (GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
                     FightDirty(target, damageEvent.Weapon);
-                
-                target.EmoteManager.OnDamage(this);
+            }
 
-                if (damageEvent.IsCritical)
+            // WoundedTaunt / ReceiveDamage: run on any connecting hit, including lethal (TakeDamage may have killed the target).
+            if (damageEvent.HasDamage)
+            {
+                target.EmoteManager.OnDamage(this, damageEvent.DamageType);
+
+                if (damageEvent.IsCritical && target.IsAlive)
                     target.EmoteManager.OnReceiveCritical(this);
             }
             

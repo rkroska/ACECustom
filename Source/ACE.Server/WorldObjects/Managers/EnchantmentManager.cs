@@ -1704,7 +1704,7 @@ namespace ACE.Server.WorldObjects.Managers
                     creature.TakeDamageOverTime_NotifySource(damageSourcePlayer, damageType, amount, aetheria);
 
                     if (creature.IsAlive)
-                        creature.EmoteManager.OnDamage(damageSourcePlayer);
+                        creature.EmoteManager.OnDamage(damageSourcePlayer, damageType);
                 }
             }
         }

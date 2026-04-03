@@ -187,6 +187,7 @@ namespace ACE.Database.Adapter
                         VendorType = (VendorType?)record.VendorType,
                         MinHealth = record.MinHealth,
                         MaxHealth = record.MaxHealth,
+                        DamageType = (DamageType?)record.DamageType,
                     };
 
                     foreach (var record2 in record.WeeniePropertiesEmoteAction.OrderBy(r => r.Order))
@@ -582,6 +583,7 @@ namespace ACE.Database.Adapter
                     VendorType = value.VendorType,
                     MinHealth = value.MinHealth,
                     MaxHealth = value.MaxHealth,
+                    DamageType = (int?)value.DamageType,
                 };
 
                 foreach (var value2 in value.WeeniePropertiesEmoteAction)

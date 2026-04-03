@@ -860,6 +860,8 @@ namespace ACE.Server.WorldObjects
                 ShowInfo(target, heritageMod, sneakAttackMod, damageRatingMod, damageResistRatingMod, critDamageRatingMod, critDamageResistRatingMod, pkDamageRatingMod, pkDamageResistRatingMod, damage);
             }
 
+            var nonHealth = Spell.Category == SpellCategory.StaminaLowering || Spell.Category == SpellCategory.ManaLowering;
+
             if (target.IsAlive)
             {
                 string verb = null, plural = null;
@@ -868,8 +870,6 @@ namespace ACE.Server.WorldObjects
                 var critMsg = critical ? "Critical hit! " : "";
                 var sneakMsg = sneakAttackMod > 1.0f ? "Sneak Attack! " : "";
                 var overpowerMsg = overpower ? "Overpower! " : "";
-
-                var nonHealth = Spell.Category == SpellCategory.StaminaLowering || Spell.Category == SpellCategory.ManaLowering;
 
                 if (sourcePlayer != null)
                 {
@@ -911,11 +911,6 @@ namespace ACE.Server.WorldObjects
                 {
                     if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
                         Cloak.TryProcSpell(target, ProjectileSource, equippedCloak, percent);
-
-                    target.EmoteManager.OnDamage(sourcePlayer);
-
-                    if (critical)
-                        target.EmoteManager.OnReceiveCritical(sourcePlayer);
                 }
             }
             else
@@ -923,6 +918,18 @@ namespace ACE.Server.WorldObjects
                 var lastDamager = ProjectileSource != null ? new DamageHistoryInfo(ProjectileSource) : null;
                 target.OnDeath(lastDamager, Spell.DamageType, critical);
                 target.Die();
+            }
+
+            if (sourceCreature != null)
+            {
+                var emoteDamageType = nonHealth
+                    ? (Spell.Category == SpellCategory.StaminaLowering ? DamageType.Stamina : DamageType.Mana)
+                    : Spell.DamageType;
+
+                target.EmoteManager.OnDamage(sourceCreature, emoteDamageType);
+
+                if (critical && target.IsAlive)
+                    target.EmoteManager.OnReceiveCritical(sourceCreature);
             }
         }
 
