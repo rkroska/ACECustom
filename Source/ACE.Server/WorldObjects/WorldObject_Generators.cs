@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 using ACE.Common;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
+using ACE.Server.Diagnostics;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
 
@@ -33,6 +35,11 @@ namespace ACE.Server.WorldObjects
         /// Each generator profile can in turn spawn multiple objects (init_create / max_create)
         /// </summary>
         public List<GeneratorProfile> GeneratorProfiles;
+
+        /// <summary>
+        /// Set when the server disables this generator after repeated init/spawn failure (in-memory only; cleared on restart).
+        /// </summary>
+        public bool GeneratorServerFaulted { get; private set; }
 
         /// <summary>
         /// Creates a list of active generator profiles
@@ -296,8 +303,8 @@ namespace ACE.Server.WorldObjects
 
             //Console.WriteLine($"INIT - 0x{Guid.ToString()} {Name} ({WeenieClassId}): CurrentCreate = {CurrentCreate} | profile.Biota.InitCreate = {profile.Biota.InitCreate} | profile.Biota.MaxCreate = {profile.Biota.MaxCreate} | InitCreate: {InitCreate} | MaxCreate: {MaxCreate} | initCreate: {initCreate} | maxCreate: {maxCreate} | leftObjects = {leftObjects} | numObjects: {numObjects}");            
 
-            var genSlotsAvailable = MaxCreate - CurrentCreate;
-            var profileSlotsAvailable = profile.MaxCreate - profile.CurrentCreate;
+            var genSlotsAvailable = MaxCreate < 0 ? int.MaxValue - Math.Max(0, CurrentCreate) : MaxCreate - CurrentCreate;
+            var profileSlotsAvailable = profile.MaxCreate < 0 ? int.MaxValue - Math.Max(0, profile.CurrentCreate) : profile.MaxCreate - profile.CurrentCreate;
 
             if (genSlotsAvailable < numObjects)
                 numObjects = genSlotsAvailable;
@@ -490,6 +497,9 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name}.StartGenerator()");
 
+            if (GeneratorServerFaulted)
+                return;
+
             if (CurrentlyPoweringUp)
                 return;
 
@@ -674,6 +684,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void Generator_Update()
         {
+            if (GeneratorServerFaulted)
+                return;
+
             //Console.WriteLine($"{Name}.Generator_HeartBeat({HeartbeatInterval})");
 
             if (!FirstEnterWorldDone)
@@ -698,6 +711,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void Generator_Generate()
         {
+            if (GeneratorServerFaulted)
+                return;
+
             //Console.WriteLine($"{Name}.Generator_Generate({RegenerationInterval})");
 
             // FALLBACK: If RandomizeSpawnTime wasn't applied in StartGenerator() (e.g., properties not loaded yet on server boot),
@@ -720,14 +736,54 @@ namespace ACE.Server.WorldObjects
                 {
                     //Console.WriteLine($"{Name}.Generator_Generate({RegenerationInterval}) SelectAProfile: Init={InitCreate} Current={CurrentCreate} Max={MaxCreate} GenStopSelectProfileConditions={GenStopSelectProfileConditions}");
                     var genLoopCount = 0;
-                    while (!GenStopSelectProfileConditions)
+                    var stallIterations = 0;
+
+                    while (!GenStopSelectProfileConditions && !GeneratorServerFaulted)
                     {
+                        // No RNG mass: SelectAProfile cannot enqueue. Exit the init loop immediately — spinning 1000 times
+                        // only burns CPU and triggers genLoopCount abort; Spawn_HeartBeat still runs below.
+                        if (InitCreate > 0 && GetTotalProbability() <= 0f && !GenStopSelectProfileConditions)
+                        {
+                            Interlocked.Increment(ref ServerDiagnostics.GeneratorInitZeroTotalProbabilityObserved);
+                            log.Info($"[GENERATOR][INIT] 0x{Guid} {Name} ({WeenieClassId}): GetTotalProbability()=0 during init power-up (CurrentCreate={CurrentCreate}, InitCreate={InitCreate}, MaxCreate={MaxCreate}). " +
+                                $"Exiting init loop this pass (normal for some linkable generators). Remaining init may complete on later ticks. Counter: GeneratorInitZeroTotalProbabilityObserved. LOC: {Location?.ToString() ?? "null"}");
+                            break;
+                        }
+
+                        var qBefore = GetTotalSpawnQueueDepth();
+                        var ccBefore = CurrentCreate;
+
                         SelectAProfile();
                         genLoopCount++;
+
+                        var qAfter = GetTotalSpawnQueueDepth();
+                        var ccAfter = CurrentCreate;
+
+                        if (ccAfter == ccBefore && qAfter == qBefore)
+                        {
+                            // Only treat as stall when RNG could select a profile this pass. When GetTotalProbability()==0,
+                            // SelectAProfile cannot enqueue — no progress is normal (e.g. linkables); do not fault.
+                            if (GetTotalProbability() > 0f)
+                            {
+                                stallIterations++;
+                                if (stallIterations >= 256)
+                                {
+                                    FaultGeneratorServer(
+                                        $"init SelectAProfile stalled: no progress in CurrentCreate or spawn queues for {stallIterations} iterations with RNG mass available (CurrentCreate={ccAfter}, InitCreate={InitCreate})");
+                                    Interlocked.Increment(ref ServerDiagnostics.GeneratorInitSelectStallAborts);
+                                    break;
+                                }
+                            }
+                            else
+                                stallIterations = 0;
+                        }
+                        else
+                            stallIterations = 0;
 
                         if (genLoopCount > 1000)
                         {
                             log.Error($"[GENERATOR] 0x{Guid} {Name}.Generator_Generate(): genLoopCount > 1000, aborted init spawn. GenStopSelectProfileConditions: {GenStopSelectProfileConditions} | InitCreate: {InitCreate} | CurrentCreate: {CurrentCreate} | WCID: {WeenieClassId} - LOC: {Location}");
+                            Interlocked.Increment(ref ServerDiagnostics.GeneratorInitSelectMaxIterationsHit);
                             break;
                         }
                     }
@@ -742,6 +798,31 @@ namespace ACE.Server.WorldObjects
 
             foreach (var profile in GeneratorProfiles)
                 profile.Spawn_HeartBeat();
+        }
+
+        private int GetTotalSpawnQueueDepth()
+        {
+            if (GeneratorProfiles == null)
+                return 0;
+
+            var n = 0;
+            foreach (var p in GeneratorProfiles)
+                n += p.SpawnQueue.Count;
+            return n;
+        }
+
+        /// <summary>
+        /// Permanently disables this generator for the process lifetime after unrecoverable spawn/init failure.
+        /// </summary>
+        public void FaultGeneratorServer(string reason)
+        {
+            if (GeneratorServerFaulted || !IsGenerator)
+                return;
+
+            GeneratorServerFaulted = true;
+            CurrentlyPoweringUp = false;
+            Interlocked.Increment(ref ServerDiagnostics.GeneratorServerFaults);
+            log.Error($"[GENERATOR] Server-faulted generator 0x{Guid} {Name} ({WeenieClassId}): {reason} | LOC: {Location?.ToString() ?? "null"}");
         }
 
         public virtual void ResetGenerator()

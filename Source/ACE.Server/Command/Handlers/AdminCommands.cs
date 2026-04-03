@@ -1,21 +1,7 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Threading;
-using Microsoft.EntityFrameworkCore;
-
-using log4net;
-
 using ACE.Common;
 using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Models.Auth;
-using ShardModels = ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -31,8 +17,20 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
-
+using log4net;
+using Microsoft.EntityFrameworkCore;
+using Org.BouncyCastle.Crypto.Generators;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Threading;
 using Position = ACE.Entity.Position;
+using ShardModels = ACE.Database.Models.Shard;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -50,6 +48,35 @@ namespace ACE.Server.Command.Handlers
         // {
         //     //TODO: output
         // }
+
+        [CommandHandler("jail", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
+            "Sends a player to jail.",
+            "Usage: /jail [playername]\nIf no name is provided, the currently selected player is used.")]
+        public static void HandleJail(Session session, params string[] parameters)
+        {
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+            if (target == null) return;
+            target.SendToJail();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was sent to jail by {session.Player.Name}");
+        }
+
+        [CommandHandler("jailbreak", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld,
+            "Releases a player from jail.",
+            "Usage: /jailbreak [playername]\nIf no name is provided, the currently selected player is used.")]
+        public static void HandleJailbreak(Session session, params string[] parameters)
+        {
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+            if (target == null) return;
+
+            if (!target.IsInJail())
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {target.Name} is not currently in jail.", ChatMessageType.System));
+                return;
+            }
+
+            target.ReleaseFromJail();
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"[Jail] Player {target.Name} was released from jail by {session.Player.Name}");
+        }
 
         // bankaudit {subcommand} {parameters}
         [CommandHandler("bankaudit", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
@@ -1677,14 +1704,59 @@ namespace ACE.Server.Command.Handlers
             // just a placeholder, probably not needed or should be handled by a decal plugin to replicate the admin ui
         }
 
-        // delete
+        /// <summary>
+        /// Finds the object with a given GUID and validates that it is deleteable, then returns it.
+        /// If the object cannot be found or is not deleteable, a message will be sent and null will be returned.
+        /// </summary>
+        private static (WorldObject, Container) ValidateAndReturnDeleteableObject(Session session, ObjectGuid objectId, string objectTypeFilter = "")
+        {
+            if (objectId == ObjectGuid.Invalid)
+            { 
+                ChatPacket.SendServerMessage(session, "Delete failed. Please identify the object you wish to delete first.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            if (objectId.IsPlayer())
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Players cannot be deleted.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            var wo = session.Player.FindObject(objectId.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
+
+            if (wo == null)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Object not found.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            if (wo is Corpse corpse && !corpse.IsMonster)
+            {
+                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
+                return (null, null);
+            }
+
+            if (!string.IsNullOrWhiteSpace(objectTypeFilter))
+            {
+                string objectType = objectTypeFilter.ToLower().Trim();
+                if (!objectType.Equals(wo.GetType().Name, StringComparison.OrdinalIgnoreCase) &&
+                    !objectType.Equals(wo.WeenieType.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    ChatPacket.SendServerMessage(session, $"Delete failed. Object type specified ({objectType}) does not match object type ({wo.GetType().Name}) or weenie type ({wo.WeenieType.ToString()}) for 0x{wo.Guid}:{wo.Name}.", ChatMessageType.Broadcast);
+                    return (null, null);
+                }
+            }
+
+            return (wo, rootOwner);
+
+        }
+
+        // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
         [CommandHandler("delete", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Deletes the selected object.", "Players and their corpses may not be deleted this way.")]
         public static void HandleDeleteSelected(Session session, params string[] parameters)
         {
-
-            // @delete - Deletes the selected object. Players and their corpses may not be deleted this way.
-
-            var objectId = ObjectGuid.Invalid;
+            ObjectGuid objectId = ObjectGuid.Invalid;
+            string objectFilter = parameters.Length > 0 ? parameters[0] : "";
 
             if (session.Player.HealthQueryTarget.HasValue)
                 objectId = new ObjectGuid(session.Player.HealthQueryTarget.Value);
@@ -1693,44 +1765,25 @@ namespace ACE.Server.Command.Handlers
             else if (session.Player.CurrentAppraisalTarget.HasValue)
                 objectId = new ObjectGuid(session.Player.CurrentAppraisalTarget.Value);
 
-            if (objectId == ObjectGuid.Invalid)
-                ChatPacket.SendServerMessage(session, "Delete failed. Please identify the object you wish to delete first.", ChatMessageType.Broadcast);
+            // Validate and return if invalid.
+            (WorldObject wo, Container _) = ValidateAndReturnDeleteableObject(session, objectId, objectFilter);
+            if (wo == null) return;
 
-            if (objectId.IsPlayer())
+            var nextConfirmation = new Confirmation_Custom(session.Player.Guid, (response, timedOut) =>
             {
-                ChatPacket.SendServerMessage(session, "Delete failed. Players cannot be deleted.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            var wo = session.Player.FindObject(objectId.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
-
-            if (wo == null)
-            {
-                ChatPacket.SendServerMessage(session, "Delete failed. Object not found.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            if (wo is Corpse corpse && !corpse.IsMonster)
-            {
-                ChatPacket.SendServerMessage(session, "Delete failed. Player corpses cannot be deleted.", ChatMessageType.Broadcast);
-                return;
-            }
-
-            if (parameters.Length == 1)
-            {
-                var objectType = parameters[0].ToLower();
-
-                if (objectType != wo.GetType().Name.ToLower() && objectType != wo.WeenieType.ToString().ToLower())
+                if (session.IsTerminated) return;
+                if (response)
                 {
-                    ChatPacket.SendServerMessage(session, $"Delete failed. Object type specified ({parameters[0]}) does not match object type ({wo.GetType().Name}) or weenie type ({wo.WeenieType.ToString()}) for 0x{wo.Guid}:{wo.Name}.", ChatMessageType.Broadcast);
-                    return;
+                    (WorldObject currentWo, Container rootOwner) = ValidateAndReturnDeleteableObject(session, objectId, objectFilter);
+                    if (currentWo == null) return;
+                    currentWo.DeleteObject(rootOwner);
+                    session.Network.EnqueueSend(new GameMessageDeleteObject(currentWo));
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{currentWo.Guid}:{currentWo.Name}");
                 }
-            }
+            });
 
-            wo.DeleteObject(rootOwner);
-            session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
-
-            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted 0x{wo.Guid}:{wo.Name}");
+            if (!session.Player.ConfirmationManager.EnqueueSend(nextConfirmation, $"Are you sure you want to delete this object?\n\nGUID: 0x{wo.Guid}, ID: {wo.Guid.Full}\n{wo.Name}"))
+                ChatPacket.SendServerMessage(session, "The delete was aborted because creating a confirmation box failed.", ChatMessageType.Broadcast);
         }
 
         // Alias for delete
@@ -1875,27 +1928,23 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("ucmcheck", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, "Initiates a UCM check on the selected player.")]
         public static void HandleUCMCheck(Session session, params string[] parameters)
         {
-            var target = CommandHandlerHelper.GetSelected(session);
-            if (target == null || !(target is Player targetPlayer))
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters));
+            if (target == null) return;
+
+            if (target.UCMChecker.IsCheckInProgress())
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat("You must select a player to use this command.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{target.Name} is already undergoing a UCM check.", ChatMessageType.System));
                 return;
             }
 
-            if (targetPlayer.UCMChecker.IsCheckInProgress())
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"{targetPlayer.Name} is already undergoing a UCM check.", ChatMessageType.System));
-                return;
-            }
-
-            bool started = targetPlayer.UCMChecker.Start(targetPlayer);
+            bool started = target.UCMChecker.Start();
             if (started)
             {
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {targetPlayer.Name}.");
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"Admin {session.Player.Name} initiated a UCM check on {target.Name}.");
             }
             else
             {
-                session.Network.EnqueueSend(new GameMessageSystemChat($"UCM check on {targetPlayer.Name} failed to start.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"UCM check on {target.Name} failed to start.", ChatMessageType.System));
             }
         }
 
@@ -4317,35 +4366,17 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("dispel", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Removes all enchantments from the player", "/dispel")]
         public static void HandleDispel(Session session, params string[] parameters)
         {
+            Player target = CommandHandlerHelper.GetPlayerAsCommandTarget(session, string.Join(" ", parameters), fallbackToSelf: true);
+            if (target == null) return;
 
-            if (parameters.Length > 0)
-            {
-                var player = PlayerManager.GetOnlinePlayer(parameters[0]);
-                if (player == null)
-                {
-                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player {parameters[0]} not found.", ChatMessageType.Broadcast));
-                    return;
-                }
-                
-                player.EnchantmentManager.DispelAllEnchantments();
-                // remove all enchantments from equipped items for now
-                foreach (var item in player.EquippedObjects.Values)
-                    item.EnchantmentManager.DispelAllEnchantments();
-                
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {player.Name}.");
-            }
-            else
-            {
-                session.Player.EnchantmentManager.DispelAllEnchantments();
-                // remove all enchantments from equipped items for now
-                foreach (var item in session.Player.EquippedObjects.Values)
-                    item.EnchantmentManager.DispelAllEnchantments();
-                
-                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from themselves.");
-            }
+            target.EnqueueBroadcast(new GameMessageScript(target.Guid, PlayScript.DispelAll));
+            target.EnchantmentManager.DispelAllEnchantments();
+            // remove all enchantments from equipped items for now
+            foreach (var item in target.EquippedObjects.Values)
+                item.EnchantmentManager.DispelAllEnchantments();
 
-
-
+            if (target != session.Player)
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} dispelled all enchantments from {target.Name}.");
         }
 
         // event
@@ -6522,6 +6553,19 @@ namespace ACE.Server.Command.Handlers
         public static void HandleResyncServerProperties(Session session, params string[] parameters)
         {
             PropertyManager.ResyncVariables();
+        }
+
+        [CommandHandler("reload-enlightenment-tiers", AccessLevel.Admin, CommandHandlerFlag.None, "Reload config_enlightenment_tier from the shard database")]
+        public static void HandleReloadEnlightenmentTiers(Session session, params string[] parameters)
+        {
+            var ok = EnlightenmentTierManager.TryReload(out var detail);
+            CommandHandlerHelper.WriteOutputInfo(session, detail);
+            if (ok)
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Reloaded enlightenment tier configuration from database.");
+            else if (EnlightenmentTierManager.LoadedFromDatabase)
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload failed; previous database-backed configuration retained. See server log.");
+            else
+                PlayerManager.BroadcastToAuditChannel(session?.Player, "Enlightenment tier reload failed; using compiled defaults (last resort). See server log.");
         }
 
         [CommandHandler("iterate-allegiances", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, "Runs through all allegiances and outputs to console")]

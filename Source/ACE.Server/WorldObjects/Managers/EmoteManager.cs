@@ -3125,6 +3125,72 @@ namespace ACE.Server.WorldObjects.Managers
                         WorldObject.CurrentLandblock.SendEnvironChange(changeType);
                     }
                     break;
+                /* sets self's PropertyFloat stat to a specific amount */
+                case EmoteType.SetMyFloatStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var floatProperty = (PropertyFloat)emote.Stat;
+                        var newValue = emote.Percent ?? 1.0f; 
+                        
+                        if (WorldObject is Player pUpdater)
+                        {
+                            pUpdater.UpdateProperty(pUpdater, floatProperty, newValue);
+                            pUpdater.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyFloat(pUpdater, floatProperty, Convert.ToDouble(newValue)));
+                        }
+                        else
+                        {
+                            WorldObject.SetProperty(floatProperty, newValue);
+                            WorldObject.EnqueueBroadcast(false, new GameMessagePublicUpdatePropertyFloat(WorldObject, floatProperty, Convert.ToDouble(newValue)));
+                        }
+                    }
+                    break;
+
+                /* sets self's PropertyBool stat to a specific amount */
+                case EmoteType.SetMyBoolStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var boolProperty = (PropertyBool)emote.Stat;
+                        var newValue = (emote.Amount ?? 0) != 0;
+                        
+                        WorldObject.SetProperty(boolProperty, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyBool(selfPlayer, boolProperty, newValue));
+                    }
+                    break;
+
+                /* sets self's PropertyInt stat to a specific amount */
+                case EmoteType.SetMyIntStat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var intProperty = (PropertyInt)emote.Stat;
+                        var newValue = emote.Amount ?? 1; 
+                        
+                        WorldObject.SetProperty(intProperty, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(selfPlayer, intProperty, newValue));
+                    }
+                    break;
+
+                /* sets self's PropertyInt64 stat to a specific amount */
+                case EmoteType.SetMyInt64Stat:
+
+                    if (WorldObject != null && emote.Stat != null)
+                    {
+                        var int64Property = (PropertyInt64)emote.Stat;
+                        var newValue = emote.Amount64 ?? 1; 
+                        
+                        WorldObject.SetProperty(int64Property, newValue);
+
+                        if (WorldObject is Player selfPlayer)
+                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(selfPlayer, int64Property, newValue));
+                    }
+                    break;
+
                 default:
                     log.Debug($"EmoteManager.Execute - Encountered Unhandled EmoteType {(EmoteType)emote.Type} for {WorldObject.Name} ({WorldObject.WeenieClassId})");
                     break;

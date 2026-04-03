@@ -46,6 +46,47 @@ namespace ACE.Server.WorldObjects
 
         public bool LastContact = true;
 
+        /// <summary>UTC when the player entered portal space (initial login SendSelf or any Teleport). Cleared in OnTeleportComplete.</summary>
+        public DateTime? PortalSpaceEnteredUtc { get; private set; }
+
+        private bool portalStuckRecoveryAttempted;
+
+        public void MarkPortalSpaceEntered()
+        {
+            PortalSpaceEnteredUtc = DateTime.UtcNow;
+            portalStuckRecoveryAttempted = false;
+        }
+
+        public void ClearPortalSpaceEntered()
+        {
+            PortalSpaceEnteredUtc = null;
+            portalStuckRecoveryAttempted = false;
+        }
+
+        /// <summary>Forces server-side end of teleport/portal physics state when LoginComplete never arrives. Client UI may still show portal until recall/relog.</summary>
+        public void ForceEndPortalSpaceStuck(string reason)
+        {
+            if (!Teleporting)
+                return;
+
+            var secs = PortalSpaceEnteredUtc.HasValue ? (DateTime.UtcNow - PortalSpaceEnteredUtc.Value).TotalSeconds : -1;
+            log.Warn($"[PORTAL STUCK] {Name} (0x{Guid}) forcing server materialize after {secs:F0}s ({reason}). Landblock={CurrentLandblock?.Id.Raw:X8}");
+
+            ClearPortalSpaceEntered();
+
+            if (CloakStatus != CloakStatus.On)
+                ReportCollisions = true;
+            IgnoreCollisions = false;
+            Hidden = false;
+            Teleporting = false;
+
+            EnqueueBroadcastPhysicsState();
+
+            Session?.Network.EnqueueSend(new GameMessageSystemChat(
+                "The server cleared a stuck portal or loading state on your character. If you still see portal graphics, use recall/lifestone or relog.",
+                ChatMessageType.System));
+        }
+
         public ObjectGuid LastGivenItemGuid { get; set; }
         
         /// <summary>
@@ -94,15 +135,18 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public Player(Weenie weenie, ObjectGuid guid, uint accountId) : base(weenie, guid)
         {
-            Character = new Character();
-            Character.Id = guid.Full;
-            Character.AccountId = accountId;
-            Character.Name = GetProperty(PropertyString.Name);
+            Character = new Character
+            {
+                Id = guid.Full,
+                AccountId = accountId,
+                Name = GetProperty(PropertyString.Name)
+            };
             CharacterChangesDetected = true;
 
             Account = DatabaseManager.Authentication.GetAccountById(Character.AccountId);
 
             SetEphemeralValues();
+            UCMChecker = new UCMChecker(this);
 
             // Make sure properties this WorldObject requires are not null.
             AvailableExperience = AvailableExperience ?? 0;
@@ -132,6 +176,7 @@ namespace ACE.Server.WorldObjects
             Account = DatabaseManager.Authentication.GetAccountById(Character.AccountId);
 
             SetEphemeralValues();
+            UCMChecker = new UCMChecker(this);
 
             SortBiotasIntoInventory(inventory);
             AddBiotasToEquippedObjects(wieldedItems);
@@ -533,7 +578,7 @@ namespace ACE.Server.WorldObjects
         {
             IsBusy = true;
             IsLoggingOut = true;
-            UCMChecker.FailActiveCheck(this, "logged out");
+            UCMChecker.FailActiveCheck(UCMCheckFailReason.LoggedOut);
 
             if (Fellowship != null)
                 FellowshipQuit(false);

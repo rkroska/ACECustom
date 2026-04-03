@@ -170,7 +170,7 @@ namespace ACE.Server.Network.Structure
                 {
                     TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (wo.LastTimeToRotUpdate ?? DateTime.UtcNow);
                     TimeSpan tsToRot = TimeSpan.FromSeconds(wo.TimeToRot.Value) - tsSinceLastUpdate;
-                    var msg = tsToRot.TotalSeconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    var msg = tsToRot.TotalSeconds < 5 ? $"Corpse is about to decay." : $"Corpse will decay in {tsToRot.GetFriendlyString()}.";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
                         PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
@@ -204,12 +204,53 @@ namespace ACE.Server.Network.Structure
                         PropertiesString[PropertyString.LongDesc] = msg;
                 }
 
+                var reqs = new (PortalRequirement type, int? value, int? max)[]
+                {
+                    (portal.PortalReqType, portal.PortalReqValue, portal.PortalReqMaxValue),
+                    (portal.PortalReqType2, portal.PortalReqValue2, portal.PortalReqMaxValue2)
+                };
+
+                foreach (var req in reqs)
+                {
+                    if (req.type == PortalRequirement.None) continue;
+                    if (req.value.GetValueOrDefault() <= 0 && (req.max.GetValueOrDefault() <= 0 || req.max.GetValueOrDefault() == 999)) continue;
+
+                    string typeName;
+                    bool isMultiplier = false;
+
+                    switch (req.type)
+                    {
+                        case PortalRequirement.CreatureAug: typeName = "Creature Augmentations"; break;
+                        case PortalRequirement.ItemAug: typeName = "Item Augmentations"; break;
+                        case PortalRequirement.LifeAug: typeName = "Life Augmentations"; break;
+                        case PortalRequirement.Enlighten: typeName = "Enlightenment"; break;
+                        case PortalRequirement.QuestBonus: typeName = "Quest Bonus"; break;
+                        case PortalRequirement.XPMultiplier: typeName = "XP Multiplier"; isMultiplier = true; break;
+                        default: continue;
+                    }
+
+                    var prefix = isMultiplier ? "x" : "";
+                    string msg;
+
+                    if (req.max.GetValueOrDefault() > 0 && req.max.GetValueOrDefault() != 999 && req.value.GetValueOrDefault() > 0)
+                        msg = $"Restricted to characters of {typeName} between {prefix}{req.value.Value} and {prefix}{req.max.Value}.";
+                    else if (req.value.GetValueOrDefault() > 0)
+                        msg = $"Restricted to characters of {typeName} {prefix}{req.value.Value} or greater.";
+                    else
+                        msg = $"Restricted to characters of {typeName} {prefix}{req.max.Value} or lower.";
+
+                    if (PropertiesString.ContainsKey(PropertyString.LongDesc))
+                        PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
+                    else
+                        PropertiesString[PropertyString.LongDesc] = msg;
+                }
+
                 var timeToRot = portal.TimeToRot;
                 if (timeToRot.HasValue && timeToRot.Value != -1) // -1 is a special value meaning "Never"
                 {
                     TimeSpan tsSinceLastUpdate = DateTime.UtcNow - (portal.LastTimeToRotUpdate ?? DateTime.UtcNow);
                     TimeSpan tsToRot = TimeSpan.FromSeconds(portal.TimeToRot.Value) - tsSinceLastUpdate;
-                    var msg = tsToRot.TotalSeconds < 5 ? "Portal is about to fade." : $"Portal will fade in {TimeSpanExtensions.GetFriendlyString(tsToRot)}.";
+                    var msg = tsToRot.TotalSeconds < 5 ? "Portal is about to fade." : $"Portal will fade in {tsToRot.GetFriendlyString()}.";
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc))
                         PropertiesString[PropertyString.LongDesc] += $"\n\n{msg}";
                     else
