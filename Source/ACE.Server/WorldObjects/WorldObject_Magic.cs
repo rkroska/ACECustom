@@ -65,6 +65,11 @@ namespace ACE.Server.WorldObjects
             if (spell.MetaSpellType == SpellType.Dispel && !VerifyDispelPKStatus(itemCaster, target))
                 return;
 
+            if (spell.IsHarmful && this is Creature creatureCaster
+                && target is Creature targetCreature && targetCreature != creatureCaster
+                && !creatureCaster.CanDamage(targetCreature))
+                return;
+
             // perform resistance check, if applicable
             if (tryResist && TryResistSpell(target, spell, itemCaster))
                 return;
@@ -273,6 +278,9 @@ namespace ACE.Server.WorldObjects
                     return false;
                 }
             }
+
+            if (spell.IsHarmful && this is Creature creatureCaster && targetCreature != null && targetCreature != creatureCaster && !creatureCaster.CanDamage(targetCreature))
+                return false;
 
             switch (spell.MetaSpellType)
             {
@@ -624,26 +632,24 @@ namespace ACE.Server.WorldObjects
                 targetPlayer.SendChatMessage(player, targetMessage, ChatMessageType.Magic);
             }
 
-            if (targetCreature != this && targetCreature.IsAlive && spell.VitalDamageType == DamageType.Health && boost < 0)
+            if (targetCreature != this && boost < 0)
             {
-                // handle cloak spell proc
-                if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                if (spell.VitalDamageType == DamageType.Health && targetCreature.IsAlive)
                 {
-                    var pct = (float)-boost / targetCreature.Health.MaxValue;
+                    if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                    {
+                        var pct = (float)-boost / targetCreature.Health.MaxValue;
 
-                    // ensure message is sent after enchantment.Message
-                    var actionChain = new ActionChain();
-                    actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(this, ActionType.WorldObjectMagic_TryProcCloakSpell, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
-                    actionChain.EnqueueChain();
+                        var actionChain = new ActionChain();
+                        actionChain.AddDelayForOneTick();
+                        actionChain.AddAction(this, ActionType.WorldObjectMagic_TryProcCloakSpell, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
+                        actionChain.EnqueueChain();
+                    }
                 }
 
-                // ensure emote process occurs after damage msg
                 var emoteChain = new ActionChain();
                 emoteChain.AddDelayForOneTick();
-                emoteChain.AddAction(targetCreature, ActionType.EmoteManager_OnDamage, () => targetCreature.EmoteManager.OnDamage(creature));
-                //if (critical)
-                //    emoteChain.AddAction(target, () => target.EmoteManager.OnReceiveCritical(creature));
+                emoteChain.AddAction(targetCreature, ActionType.EmoteManager_OnDamage, () => targetCreature.EmoteManager.OnDamage(creature, spell.VitalDamageType));
                 emoteChain.EnqueueChain();
             }
 
@@ -932,26 +938,31 @@ namespace ACE.Server.WorldObjects
             if (targetCreature is Player targetPlayer && targetMsg != null)
                 targetPlayer.SendChatMessage(caster, targetMsg, ChatMessageType.Magic);
 
-            if (isDrain && targetCreature.IsAlive && spell.Source == PropertyAttribute2nd.Health)
+            if (isDrain && srcVitalChange > 0)
             {
-                // handle cloak spell proc
-                if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                if (spell.Source == PropertyAttribute2nd.Health && targetCreature.IsAlive)
                 {
-                    var pct = (float)srcVitalChange / targetCreature.Health.MaxValue;
+                    if (equippedCloak != null && Cloak.HasProcSpell(equippedCloak))
+                    {
+                        var pct = (float)srcVitalChange / targetCreature.Health.MaxValue;
 
-                    // ensure message is sent after enchantment.Message
-                    var actionChain = new ActionChain();
-                    actionChain.AddDelayForOneTick();
-                    actionChain.AddAction(this, ActionType.WorldObjectMagic_TryProcCloakSpell, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
-                    actionChain.EnqueueChain();
+                        var actionChain = new ActionChain();
+                        actionChain.AddDelayForOneTick();
+                        actionChain.AddAction(this, ActionType.WorldObjectMagic_TryProcCloakSpell, () => Cloak.TryProcSpell(targetCreature, this, equippedCloak, pct));
+                        actionChain.EnqueueChain();
+                    }
                 }
 
-                // ensure emote process occurs after damage msg
+                var drainDamageType = spell.Source switch
+                {
+                    PropertyAttribute2nd.Stamina => DamageType.Stamina,
+                    PropertyAttribute2nd.Mana => DamageType.Mana,
+                    _ => DamageType.Health
+                };
+
                 var emoteChain = new ActionChain();
                 emoteChain.AddDelayForOneTick();
-                emoteChain.AddAction(targetCreature, ActionType.EmoteManager_OnDamage, () => targetCreature.EmoteManager.OnDamage(creature));
-                //if (critical)
-                //    emoteChain.AddAction(targetCreature, () => targetCreature.EmoteManager.OnReceiveCritical(creature));
+                emoteChain.AddAction(targetCreature, ActionType.EmoteManager_OnDamage, () => targetCreature.EmoteManager.OnDamage(creature, drainDamageType));
                 emoteChain.EnqueueChain();
             }
 
