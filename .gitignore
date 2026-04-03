@@ -303,3 +303,9 @@ Source/ACE.Server/log4net.config
 docker.env
 docker-compose.yml
 /httplocalhost8000contentuser=rudy&p.txt
+
+# Frontend build results
+dist/
+**/dist/
+node_modules/
+**/node_modules/
