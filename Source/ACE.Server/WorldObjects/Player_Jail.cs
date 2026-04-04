@@ -1,3 +1,4 @@
+using ACE.Common.Extensions;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
@@ -39,9 +40,10 @@ namespace ACE.Server.WorldObjects
             }
 
             // Apply jail effects (newly jailed).
-            EnqueueEffectChain();
+            QuestManager.Stamp("jail_fresh_meat");
+            RedrawPlayerWithUpdates();
             Teleport(GetJailTeleportLocation());
-            Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime} and are attackable by other players.", ChatMessageType.Broadcast));
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"You are being punished. You are now in jail for {jailTime.GetFriendlyLongString()} and are attackable by other players.", ChatMessageType.Broadcast));
         }
 
         /// <summary>
@@ -50,19 +52,26 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void ReleaseFromJail()
         {
-            PlayersJailedUntil.TryRemove(Guid.Full, out _);
-            EnqueueEffectChain();
+            if (!PlayersJailedUntil.TryRemove(Guid.Full, out _)) return;
+            RedrawPlayerWithUpdates();
             Session.Network.EnqueueSend(new GameMessageSystemChat("Your punishment has concluded. You may now resume your adventures.", ChatMessageType.Broadcast));
+        }
+
+        public void OnDeathInJail(Player killingPlayer)
+        {
+            if (killingPlayer == null || killingPlayer == this || killingPlayer.IsInJail()) return;
+            int totalKills = killingPlayer.QuestManager.Stamp("jail_vigilante_justice");
+            if (totalKills >= 5) killingPlayer.QuestManager.StampFirst("jail_its_me_the_warden");
         }
 
         /// <summary>
         /// Broadcasts an update to other players to see the new player.
         /// </summary>
-        private void EnqueueEffectChain()
+        private void RedrawPlayerWithUpdates()
         {
             EnqueueBroadcast(false, new GameMessageDeleteObject(this));
             var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(.5);
+            actionChain.AddDelaySeconds(.25);
             actionChain.AddAction(this, ActionType.PlayerTracking_DeCloakStep3, () =>
             {
                 EnqueueBroadcast(false, new GameMessageCreateObject(this));
@@ -109,6 +118,7 @@ namespace ACE.Server.WorldObjects
                 // Make sure not to count the tele location as a jail boundary violation.
                 var teleLoc = GetJailTeleportLocation();
                 if (Location.Distance2D(teleLoc) < 1.0) return;
+                QuestManager.StampFirst("jail_magic_bars");
                 Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot leave the jail area until your punishment is complete!", ChatMessageType.Broadcast));
                 Teleport(teleLoc);
             }

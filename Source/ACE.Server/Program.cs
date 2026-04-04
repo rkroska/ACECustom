@@ -275,6 +275,9 @@ namespace ACE.Server
             else
                 log.Info("DAT Patching Disabled...");
 
+            log.Info("Ensuring emote damage_type columns (shard + world)...");
+            EmoteDamageTypeSchema.EnsureColumns();
+
             log.Info("Initializing DatabaseManager...");
             DatabaseManager.Initialize();
 

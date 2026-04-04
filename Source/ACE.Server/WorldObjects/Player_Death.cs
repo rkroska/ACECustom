@@ -150,6 +150,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected override void Die(DamageHistoryInfo lastDamager, DamageHistoryInfo topDamager)
         {
+            bool isSuicide = suicideInProgress;
             IsInDeathProcess = true;
 
             if (topDamager?.Guid == Guid && IsPKType)
@@ -217,6 +218,13 @@ namespace ACE.Server.WorldObjects
                     InflictVitaePenalty();
                 }
                 
+            }
+
+            // Handle jail.
+            if (IsInJail())
+            {
+                Player jailKiller = isSuicide? this : topDamager?.TryGetPetOwnerOrAttacker() as Player;
+                OnDeathInJail(jailKiller);
             }
 
             if (IsPKDeath(topDamager) || AugmentationSpellsRemainPastDeath == 0)

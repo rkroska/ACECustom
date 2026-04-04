@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 using ACE.Common;
 using ACE.Database.Models.Shard;
@@ -76,6 +77,7 @@ namespace ACE.Server.WorldObjects
 
             // SendSelf will trigger the entrance into portal space
             SendSelf();
+            MarkPortalSpaceEntered();
 
             // Update or override certain properties sent to client.
 
@@ -263,6 +265,13 @@ namespace ACE.Server.WorldObjects
             int itemCount = 0;
             int batchSize = 25;
             float batchDelay = 0.1f;
+            int equippedCount = EquippedObjects.Values.Count;
+            int topLevelInvCount = Inventory.Values.Count;
+            int containerCount = Inventory.Values.Count(i => i is Container);
+
+            log.Debug($"[INVENTORY] {Name} (0x{Guid}) SendInventoryAndWieldedItems starting: " +
+                $"{equippedCount} equipped, {topLevelInvCount} top-level inventory ({containerCount} containers), " +
+                $"batchSize={batchSize}, batchDelay={batchDelay}s");
 
             // 1. Equipped Items (Priority: Immediate, send first)
             foreach (var item in EquippedObjects.Values)
@@ -314,7 +323,11 @@ namespace ACE.Server.WorldObjects
                     }
                 }
             }
-            
+
+            int totalBatches = (itemCount + batchSize - 1) / batchSize;
+            log.Debug($"[INVENTORY] {Name} (0x{Guid}) SendInventoryAndWieldedItems queued: " +
+                $"{itemCount} total items across ~{totalBatches} batches (~{totalBatches * batchDelay:F1}s total delay)");
+
             actionChain.EnqueueChain();
         }
 
