@@ -1192,7 +1192,7 @@ namespace ACE.Server.Command.Handlers.Processors
             public List<int> ExplicitTargetVariations { get; } = new();
         }
 
-        [CommandHandler("createinst", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Spawns a new wcid or classname as a landblock instance", "<wcid or classname>")]
+        [CommandHandler("createinst", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Spawns landblock instance. Flags: -nomirror|-nm, -mirror|-mv <variations|all|*>. -mirror all|* = every prestige var (11..max) except your current. Prestige mirrors only if -mirror set or createinst_auto_mirror_higher_prestige_variants=true.", "<wcid or classname> [flags]")]
         public static void HandleCreateInst(Session session, params string[] parameters)
         {
             var loc = new Position(session.Player.Location);
@@ -1532,6 +1532,15 @@ namespace ACE.Server.Command.Handlers.Processors
             var values = csvOrRange.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var value in values)
             {
+                if (value.Equals("all", StringComparison.OrdinalIgnoreCase) || value.Equals("*", StringComparison.Ordinal))
+                {
+                    var min = PrestigeManager.GetBasePrestigeVariation();
+                    var max = PrestigeManager.GetMaxConfiguredPrestigeVariation();
+                    for (var variation = min; variation <= max; variation++)
+                        yield return variation;
+                    continue;
+                }
+
                 if (value.Contains('-', StringComparison.Ordinal))
                 {
                     var parts = value.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -1565,9 +1574,13 @@ namespace ACE.Server.Command.Handlers.Processors
             if (!PrestigeManager.IsCreateInstMirrorEligible(sourceObject.WeenieType, hasGeneratorProfiles))
                 return;
 
-            var targetVariations = mirrorOptions.ExplicitTargetVariations.Count > 0
-                ? PrestigeManager.NormalizeMirrorTargetVariations(mirrorOptions.ExplicitTargetVariations, sourceVariation)
-                : PrestigeManager.GetDefaultMirrorTargetVariations(sourceVariation);
+            List<int> targetVariations;
+            if (mirrorOptions.ExplicitTargetVariations.Count > 0)
+                targetVariations = PrestigeManager.NormalizeMirrorTargetVariations(mirrorOptions.ExplicitTargetVariations, sourceVariation);
+            else if (ServerConfig.createinst_auto_mirror_higher_prestige_variants.Value)
+                targetVariations = PrestigeManager.GetDefaultMirrorTargetVariations(sourceVariation);
+            else
+                targetVariations = [];
 
             if (targetVariations.Count == 0)
                 return;

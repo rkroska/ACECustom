@@ -509,6 +509,10 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnEncounters()
         {
+            // encounter rows have no variation_Id; optionally restrict to base layer only (matches landblock_instance NULL/0 semantics)
+            if (ServerConfig.encounter_spawn_base_variation_only.Value && VariationId != null && VariationId.Value != 0)
+                return;
+
             // get the encounter spawns for this landblock
             var encounters = DatabaseManager.World.GetCachedEncountersByLandblock(Id.Landblock);
 
