@@ -26,13 +26,13 @@ class ApiClient {
    * Performs a fetch with automatic auth header injection.
    * If the portal is disabled (503) or the session expires (401), it triggers global state changes.
    */
-  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T | null> {
     const { logout, setPortalDisabled } = useAuthStore.getState();
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
-    };
+    const headers = new Headers(options.headers || {});
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
 
     try {
       const response = await fetch(endpoint, { 
@@ -63,9 +63,17 @@ class ApiClient {
         throw new Error('Web Portal is currently offline.');
       }
 
-      // Handle Empty Content (204/205) or missing body
-      if (response.status === 204 || response.status === 205 || response.headers.get('content-length') === '0') {
-        return null as T;
+      // Handle Empty Content (204/205) Success - Only return null for intentional no-content statuses
+      if (response.ok && (response.status === 204 || response.status === 205)) {
+        return null;
+      }
+
+      // If we have an empty body on an error, let the standard error path handle it
+      if (!response.ok && response.headers.get('content-length') === '0') {
+        const error = new Error(`Server error (${response.status})`);
+        error.name = 'ApiError';
+        (error as any).code = response.status.toString();
+        throw error;
       }
 
       // Clone response to allow reading body twice (JSON then text fallback)
@@ -92,7 +100,7 @@ class ApiClient {
       if (!response.ok) {
         const error = new Error(data.message || 'API request failed');
         error.name = 'ApiError';
-        (error as any).code = data.code;
+        (error as any).code = data.code || response.status.toString();
         (error as any).details = data.details;
         throw error;
       }
@@ -107,11 +115,11 @@ class ApiClient {
   }
 
   // Helper Methods for common HTTP verbs
-  async get<T>(url: string, options?: RequestInit): Promise<T> {
+  async get<T>(url: string, options?: RequestInit): Promise<T | null> {
     return this.request<T>(url, { ...options, method: 'GET' });
   }
 
-  async post<T>(url: string, body?: any, options?: RequestInit): Promise<T> {
+  async post<T>(url: string, body?: any, options?: RequestInit): Promise<T | null> {
     return this.request<T>(url, {
       ...options,
       method: 'POST',
@@ -119,7 +127,7 @@ class ApiClient {
     });
   }
 
-  async delete<T>(url: string, options?: RequestInit): Promise<T> {
+  async delete<T>(url: string, options?: RequestInit): Promise<T | null> {
     return this.request<T>(url, { ...options, method: 'DELETE' });
   }
 }

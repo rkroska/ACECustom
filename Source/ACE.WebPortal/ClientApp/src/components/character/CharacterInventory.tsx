@@ -23,10 +23,10 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
     try {
       setIsLoading(true)
       const data = await api.get<InventoryItem[]>(`/api/character/inventory/${guid}`)
-      setItems(data)
+      setItems(data ?? [])
       
       const initialExpanded: Record<string, boolean> = { 'main': true, 'equipped': true }
-      data.forEach((item: InventoryItem) => {
+      ;(data ?? []).forEach((item: InventoryItem) => {
         if (item.requiresBackpackSlot && item.containerGuid === guid) {
           initialExpanded[`group-${item.guid}`] = true
         }

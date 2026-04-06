@@ -28,7 +28,7 @@ const PropertyExplorer = ({ navigateToEnum }: PropertyExplorerProps) => {
         setIsLoading(true)
         setFetchError(null)
         const data = await api.get<PropertyMetadata[]>('/api/property/metadata')
-        setProperties(data)
+        setProperties(data ?? [])
       } catch (err) {
         console.error('Failed to fetch property metadata', err)
         setFetchError(err instanceof Error ? err.message : 'An unexpected error occurred while loading property metadata.')

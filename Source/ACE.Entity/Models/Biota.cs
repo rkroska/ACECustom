@@ -117,7 +117,7 @@ namespace ACE.Entity.Models
                     PropertiesAllegiance = PropertiesAllegiance == null ? null : PropertiesAllegiance.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
                     PropertiesEnchantmentRegistry = PropertiesEnchantmentRegistry == null ? null : new List<PropertiesEnchantmentRegistry>(PropertiesEnchantmentRegistry),
                     HousePermissions = HousePermissions == null ? null : new Dictionary<uint, bool>(HousePermissions),
-                    DynamicEmoteList = DynamicEmoteList == null ? null : new List<PropertiesEmote>(DynamicEmoteList)
+                    DynamicEmoteList = DynamicEmoteList == null ? null : DynamicEmoteList.Select(e => e.Clone()).ToList()
                 };
 
                 return clone;

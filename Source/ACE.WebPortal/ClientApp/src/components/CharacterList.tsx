@@ -23,7 +23,7 @@ export default function CharacterList() {
     try {
       setIsLoading(true)
       const data = await api.get<Character[]>('/api/character/list')
-      setCharacters(data)
+      setCharacters(data ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {

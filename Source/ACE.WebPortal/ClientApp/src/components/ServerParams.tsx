@@ -18,7 +18,7 @@ const ServerParams = () => {
       setIsLoading(true)
       setError(null)
       const data = await api.get<ServerParamMetadata[]>('/api/serverparam/list')
-      setParams(data)
+      setParams(data ?? [])
     } catch (err) {
       console.error('Failed to fetch server params', err)
       setError(err instanceof Error ? err.message : 'Failed to load parameters from server.')

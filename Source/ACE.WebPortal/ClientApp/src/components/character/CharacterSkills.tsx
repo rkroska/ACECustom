@@ -21,7 +21,7 @@ export default function CharacterSkills({ guid }: CharacterSkillsProps) {
     try {
       setIsLoading(true)
       const data = await api.get<SkillData[]>(`/api/character/skills/${guid}`)
-      setSkills(data)
+      setSkills(data ?? [])
     } catch (err) {
       console.error(err)
     } finally {

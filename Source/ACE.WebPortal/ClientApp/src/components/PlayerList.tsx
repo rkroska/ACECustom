@@ -29,7 +29,7 @@ export default function PlayerList() {
       setIsLoading(true)
       const data = await api.get<Character[]>('/api/character/all-online')
       // Mark initial online list as online
-      setOnlinePlayersBase(data.map(p => ({ ...p, isOnline: true })))
+      setOnlinePlayersBase((data ?? []).map(p => ({ ...p, isOnline: true })))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -54,7 +54,7 @@ export default function PlayerList() {
     try {
       setIsLoading(true)
       const data = await api.get<Character[]>(`/api/character/search-all/${encodeURIComponent(name)}`)
-      setSearchResults(data)
+      setSearchResults(data ?? [])
     } catch (err) {
       console.error('Unified search error:', err)
     } finally {

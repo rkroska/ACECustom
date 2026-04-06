@@ -29,6 +29,7 @@ const LookupTables = () => {
   const debouncedValueSearch = useDebounce(valueSearch, 300)
   
   const [currentPage, setCurrentPage] = useState(1)
+  const [retryKey, setRetryKey] = useState(0)
   const [copiedText, setCopiedText] = useState<string | null>(null)
 
   const setSelectedEnum = (name: string | null) => {
@@ -46,7 +47,7 @@ const LookupTables = () => {
       try {
         setListError(null)
         const data = await api.get<EnumListItem[]>('/api/enum/list')
-        setEnumList(data)
+        setEnumList(data ?? [])
       } catch (err) {
         console.error('Failed to fetch enum list', err)
         setListError(err instanceof Error ? err.message : 'Failed to load index.')
@@ -88,7 +89,7 @@ const LookupTables = () => {
     fetchEnumDetail()
 
     return () => { isAborted = true }
-  }, [selectedEnum])
+  }, [selectedEnum, retryKey])
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
@@ -223,7 +224,7 @@ const LookupTables = () => {
                 {detailError}
               </p>
               <button 
-                onClick={() => setSearchParams({ enum: selectedEnum })}
+                onClick={() => setRetryKey(prev => prev + 1)}
                 className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all"
               >
                 Retry Request

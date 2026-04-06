@@ -47,13 +47,12 @@ namespace ACE.Server.Web
 
                 var secret = Secret;
 
-                // Prevent ASP.NET from mapping JWT claim names (like "id") to long XML-based URIs
-                System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
                 // Environment-Aware Resolution:
                 // Development fallback: Crawl for Source tree dist (Vite build)
                 // Production fallback: Use binary-local 'wwwroot'
-                var isDevelopment = System.Diagnostics.Debugger.IsAttached || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+                var envStr = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                var isDevelopment = System.Diagnostics.Debugger.IsAttached || string.Equals(envStr, "Development", StringComparison.OrdinalIgnoreCase);
 
                 string? distPath = null;
                 if (isDevelopment)
@@ -103,6 +102,7 @@ namespace ACE.Server.Web
                 })
                 .AddJwtBearer(x =>
                 {
+                    x.MapInboundClaims = false;
                     x.RequireHttpsMetadata = false;
                     x.SaveToken = true;
                     x.TokenValidationParameters = new TokenValidationParameters
@@ -138,11 +138,8 @@ namespace ACE.Server.Web
 
                 // Configure the HTTP request pipeline.
                 
-                // Enable support for reverse proxies (NGINX) by preserving client IP and protocol
-                app.UseForwardedHeaders(new ForwardedHeadersOptions
-                {
-                    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-                });
+                // Environment-Aware resolution of static assets
+                isDevelopment = app.Environment.IsDevelopment();
 
                 if (app.Environment.IsDevelopment())
                 {
@@ -154,6 +151,16 @@ namespace ACE.Server.Web
                 app.UseStaticFiles();
 
                 app.UseRouting();
+
+                // Enable support for reverse proxies (NGINX) by preserving client IP and protocol
+                // This must be placed before UseAuthentication/UseAuthorization
+                var forwardedHeadersOptions = new ForwardedHeadersOptions
+                {
+                    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+                };
+                forwardedHeadersOptions.KnownProxies.Clear();
+                forwardedHeadersOptions.KnownNetworks.Clear();
+                app.UseForwardedHeaders(forwardedHeadersOptions);
 
                 app.UseAuthentication();
                 app.UseAuthorization();
@@ -194,6 +201,7 @@ namespace ACE.Server.Web
                     log.Warn("SECURE CONFIGURATION: Portal is bound to loopback only. A reverse proxy (e.g., NGINX, IIS) is required to terminate SSL/TLS and expose this service.");
                 }
 
+                app.Urls.Clear();
                 app.Urls.Add(url);
                 await app.StartAsync();
                 _started = true;
@@ -201,6 +209,17 @@ namespace ACE.Server.Web
             catch (Exception ex)
             {
                 log.Error("Failed to start Web Portal", ex);
+
+                if (_host != null)
+                {
+                    if (_host is IAsyncDisposable asyncDisposable)
+                        await asyncDisposable.DisposeAsync();
+                    else
+                        _host.Dispose();
+                        
+                    _host = null;
+                }
+
                 _started = false;
                 throw; // Rethrow so the caller (Program.cs) can realize the failure
             }

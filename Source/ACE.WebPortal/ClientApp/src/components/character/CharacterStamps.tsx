@@ -31,7 +31,7 @@ export default function CharacterStamps({ guid }: CharacterStampsProps) {
       setIsLoading(true)
       const data = await api.get<string[]>(`/api/character/stamps/${guid}`)
       if (!isAborted) {
-        setStamps(data)
+        setStamps(data ?? [])
       }
     } catch (err) {
       if (!isAborted) {
