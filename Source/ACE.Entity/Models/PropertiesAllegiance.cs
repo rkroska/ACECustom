@@ -6,5 +6,14 @@ namespace ACE.Entity.Models
     {
         public required bool Banned { get; set; }
         public required bool ApprovedVassal { get; set; }
+
+        public PropertiesAllegiance Clone()
+        {
+            return new PropertiesAllegiance
+            {
+                Banned = Banned,
+                ApprovedVassal = ApprovedVassal
+            };
+        }
     }
 }
