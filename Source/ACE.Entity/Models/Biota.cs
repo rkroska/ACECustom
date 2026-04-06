@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -65,6 +66,66 @@ namespace ACE.Entity.Models
         public override int GetHashCode()
         {
             return HashCode.Combine(Id);
+        }
+
+        /// <summary>
+        /// Creates a deep copy of the Biota, capturing a point-in-time snapshot of all property collections.
+        /// If a ReaderWriterLockSlim is provided, the copy operation is performed under a read lock.
+        /// </summary>
+        public Biota Clone(System.Threading.ReaderWriterLockSlim? rwLock = null)
+        {
+            if (rwLock != null) rwLock.EnterReadLock();
+            try
+            {
+                var clone = new Biota
+                {
+                    Id = Id,
+                    WeenieClassId = WeenieClassId,
+                    WeenieType = WeenieType,
+
+                    // Basic Properties
+                    PropertiesBool = PropertiesBool == null ? null : new Dictionary<PropertyBool, bool>(PropertiesBool),
+                    PropertiesDID = PropertiesDID == null ? null : new Dictionary<PropertyDataId, uint>(PropertiesDID),
+                    PropertiesFloat = PropertiesFloat == null ? null : new Dictionary<PropertyFloat, double>(PropertiesFloat),
+                    PropertiesIID = PropertiesIID == null ? null : new Dictionary<PropertyInstanceId, uint>(PropertiesIID),
+                    PropertiesInt = PropertiesInt == null ? null : new Dictionary<PropertyInt, int>(PropertiesInt),
+                    PropertiesInt64 = PropertiesInt64 == null ? null : new Dictionary<PropertyInt64, long>(PropertiesInt64),
+                    PropertiesString = PropertiesString == null ? null : new Dictionary<PropertyString, string>(PropertiesString),
+                    PropertiesPosition = PropertiesPosition == null ? null : PropertiesPosition.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
+                    PropertiesSpellBook = PropertiesSpellBook == null ? null : new Dictionary<int, float>(PropertiesSpellBook),
+
+                    // Lists
+                    PropertiesAnimPart = PropertiesAnimPart == null ? null : new List<PropertiesAnimPart>(PropertiesAnimPart),
+                    PropertiesPalette = PropertiesPalette == null ? null : new List<PropertiesPalette>(PropertiesPalette),
+                    PropertiesTextureMap = PropertiesTextureMap == null ? null : new List<PropertiesTextureMap>(PropertiesTextureMap),
+                    PropertiesCreateList = PropertiesCreateList == null ? null : new List<PropertiesCreateList>(PropertiesCreateList),
+                    PropertiesEmote = PropertiesEmote == null ? null : new List<PropertiesEmote>(PropertiesEmote),
+                    PropertiesGenerator = PropertiesGenerator == null ? null : new List<PropertiesGenerator>(PropertiesGenerator),
+                    PropertiesEventFilter = PropertiesEventFilter == null ? null : new HashSet<int>(PropertiesEventFilter),
+
+                    // Creature Properties
+                    PropertiesAttribute = PropertiesAttribute == null ? null : PropertiesAttribute.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
+                    PropertiesAttribute2nd = PropertiesAttribute2nd == null ? null : PropertiesAttribute2nd.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
+                    PropertiesBodyPart = PropertiesBodyPart == null ? null : PropertiesBodyPart.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
+                    PropertiesSkill = PropertiesSkill == null ? null : PropertiesSkill.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
+
+                    // Book Properties
+                    PropertiesBook = PropertiesBook, // PropertiesBook is usually treated as a static model-ref
+                    PropertiesBookPageData = PropertiesBookPageData == null ? null : new List<PropertiesBookPageData>(PropertiesBookPageData),
+
+                    // Biota Additions
+                    PropertiesAllegiance = PropertiesAllegiance == null ? null : PropertiesAllegiance.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
+                    PropertiesEnchantmentRegistry = PropertiesEnchantmentRegistry == null ? null : new List<PropertiesEnchantmentRegistry>(PropertiesEnchantmentRegistry),
+                    HousePermissions = HousePermissions == null ? null : new Dictionary<uint, bool>(HousePermissions),
+                    DynamicEmoteList = DynamicEmoteList == null ? null : new List<PropertiesEmote>(DynamicEmoteList)
+                };
+
+                return clone;
+            }
+            finally
+            {
+                if (rwLock != null) rwLock.ExitReadLock();
+            }
         }
     }
 }

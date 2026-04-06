@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 using log4net;
 using log4net.Config;
@@ -40,7 +41,7 @@ namespace ACE.Server
 
         public static readonly bool IsRunningInContainer = Convert.ToBoolean(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             var consoleTitle = $"ACEmulator - v{ServerBuildInfo.FullVersion}";
 
@@ -400,6 +401,12 @@ namespace ACE.Server
             {
                 WorldManager.Open(null);
             }
+
+            // Start the Web Portal
+            await ACE.Server.Web.WebPortalHost.Start(args);
+
+            // Keep the server alive (ACE uses a manual loop or waits for shutdown elsewhere)
+            // In this project, Main ends here, but other threads (Network, etc.) are running.
         }
 
         private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)

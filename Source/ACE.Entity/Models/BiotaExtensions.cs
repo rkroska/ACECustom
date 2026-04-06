@@ -704,6 +704,51 @@ namespace ACE.Entity.Models
             }
         }
 
+        // =====================================
+        // Logic Helpers (Thread-Safe Delegation)
+        // These methods wrap the IWeenieExtensions logic in a ReaderWriterLockSlim.
+        // Use these for live, multi-threaded access to character data.
+        // =====================================
+
+        public static string? GetName(this Biota biota, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try { return ((IWeenie)biota).GetName(); }
+            finally { rwLock.ExitReadLock(); }
+        }
+
+        public static string? GetPluralName(this Biota biota, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try { return ((IWeenie)biota).GetPluralName(); }
+            finally { rwLock.ExitReadLock(); }
+        }
+
+        public static ItemType GetItemType(this Biota biota, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try { return ((IWeenie)biota).GetItemType(); }
+            finally { rwLock.ExitReadLock(); }
+        }
+
+        public static bool IsStackable(this Biota biota, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try { return ((IWeenie)biota).IsStackable(); }
+            finally { rwLock.ExitReadLock(); }
+        }
+
+        public static bool RequiresBackpackSlotOrIsContainer(this Biota biota, ReaderWriterLockSlim rwLock)
+        {
+            rwLock.EnterReadLock();
+            try { return ((IWeenie)biota).RequiresBackpackSlotOrIsContainer(); }
+            finally { rwLock.ExitReadLock(); }
+        }
+
+        // =====================================
+        // Property Access (Thread-Safe Delegation)
+        // =====================================
+
         public static PropertiesSkill GetOrAddSkill(this Biota biota, Skill skill, ReaderWriterLockSlim rwLock, out bool skillAdded)
         {
             rwLock.EnterWriteLock();
