@@ -1382,15 +1382,16 @@ namespace ACE.Server.Command.Handlers.Processors
 
             instances.Add(instance);
 
+            LandblockInstanceLink linkEntry = null;
             if (isLinkChild)
             {
-                var link = new LandblockInstanceLink();
+                linkEntry = new LandblockInstanceLink();
 
-                link.ParentGuid = parentGuid.Value;
-                link.ChildGuid = wo.Guid.Full;
-                link.LastModified = DateTime.Now;
+                linkEntry.ParentGuid = parentGuid.Value;
+                linkEntry.ChildGuid = wo.Guid.Full;
+                linkEntry.LastModified = DateTime.Now;
 
-                parentInstance.LandblockInstanceLink.Add(link);
+                parentInstance.LandblockInstanceLink.Add(linkEntry);
 
                 parentObj.LinkedInstances.Add(instance);
 
@@ -1399,7 +1400,20 @@ namespace ACE.Server.Command.Handlers.Processors
                 parentObj.ChildLinks.Add(wo);
                 wo.ParentLink = parentObj;
             }
-            SaveInstanceToWorldDatabase(instance);
+            if (!SaveInstanceToWorldDatabase(instance))
+            {
+                if (isLinkChild && linkEntry != null)
+                {
+                    parentInstance.LandblockInstanceLink.Remove(linkEntry);
+                    parentObj.LinkedInstances.Remove(instance);
+                    parentObj.ChildLinks.Remove(wo);
+                    wo.ParentLink = null;
+                }
+                instances.Remove(instance);
+                wo.Destroy();
+                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to save landblock instance to the database.", ChatMessageType.Broadcast));
+                return;
+            }
 
             if (!isLinkChild)
                 TryCreateMirroredInstances(session, entityWeenie, wo, loc, instances, mirrorOptions);
@@ -1513,6 +1527,14 @@ namespace ACE.Server.Command.Handlers.Processors
             return instance;
         }
 
+        private static bool IsCreateInstMirrorFlagToken(string token)
+        {
+            return token.Equals("-nomirror", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("-nm", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("-mirror", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("-mv", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static CreateInstMirrorOptions ParseCreateInstMirrorOptions(string[] parameters)
         {
             var options = new CreateInstMirrorOptions();
@@ -1527,12 +1549,20 @@ namespace ACE.Server.Command.Handlers.Processors
 
                 if (token.Equals("-mirror", StringComparison.OrdinalIgnoreCase) || token.Equals("-mv", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (i + 1 < parameters.Length)
-                    {
-                        foreach (var v in ParseVariationList(parameters[i + 1]))
-                            options.ExplicitTargetVariations.Add(v);
-                        i++;
-                    }
+                    if (i + 1 >= parameters.Length)
+                        throw new ArgumentException("-mirror/-mv requires a variation list (e.g. 12,13 or 11-15 or all).");
+
+                    var nextArg = parameters[i + 1];
+                    if (IsCreateInstMirrorFlagToken(nextArg))
+                        throw new ArgumentException("-mirror/-mv must be followed by a variation list, not another flag.");
+
+                    var parsed = ParseVariationList(nextArg).ToList();
+                    if (parsed.Count == 0)
+                        throw new ArgumentException("-mirror/-mv variation list is empty or could not be parsed.");
+
+                    foreach (var v in parsed)
+                        options.ExplicitTargetVariations.Add(v);
+                    i++;
                     continue;
                 }
             }
@@ -1541,6 +1571,9 @@ namespace ACE.Server.Command.Handlers.Processors
 
         private const int MaxVariationExpandItems = 4096;
         private const int MaxVariationIdBound = 1_000_000;
+
+        /// <summary>Single token like "5-10" or "-5--1" (hyphen-separated signed bounds).</summary>
+        private static readonly Regex VariationRangeRegex = new(@"^\s*([+-]?\d+)\s*-\s*([+-]?\d+)\s*$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
         private static IEnumerable<int> ParseVariationList(string csvOrRange)
         {
@@ -1567,32 +1600,31 @@ namespace ACE.Server.Command.Handlers.Processors
                     if (spanAll > MaxVariationExpandItems)
                         throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
 
-                    for (var i = 0; i < spanAll; i++)
-                        yield return min + i;
+                    for (var n = 0; n < spanAll; n++)
+                        yield return min + n;
                     continue;
                 }
 
-                if (value.Contains('-', StringComparison.Ordinal))
+                var rangeMatch = VariationRangeRegex.Match(value);
+                if (rangeMatch.Success
+                    && int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMin)
+                    && int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMax))
                 {
-                    var parts = value.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    if (parts.Length != 2 || !int.TryParse(parts[0], out var min) || !int.TryParse(parts[1], out var max))
+                    if (rangeMin > rangeMax)
+                        (rangeMin, rangeMax) = (rangeMax, rangeMin);
+
+                    if (rangeMin < 0 || rangeMax > MaxVariationIdBound)
                         continue;
 
-                    if (min > max)
-                        (min, max) = (max, min);
-
-                    if (min < 0 || max > MaxVariationIdBound)
-                        continue;
-
-                    var span = (long)max - (long)min + 1L;
+                    var span = (long)rangeMax - (long)rangeMin + 1L;
                     if (span <= 0)
                         continue;
 
                     if (span > MaxVariationExpandItems)
                         throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
 
-                    for (var i = 0; i < span; i++)
-                        yield return min + i;
+                    for (var n = 0; n < span; n++)
+                        yield return rangeMin + n;
 
                     continue;
                 }
@@ -1620,7 +1652,16 @@ namespace ACE.Server.Command.Handlers.Processors
 
             List<int> targetVariations;
             if (mirrorOptions.ExplicitTargetVariations.Count > 0)
+            {
                 targetVariations = PrestigeManager.NormalizeMirrorTargetVariations(mirrorOptions.ExplicitTargetVariations, sourceVariation);
+                if (targetVariations.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "Mirror: explicit target variations produced no valid targets after normalization (check source variation and targets).",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+            }
             else if (ServerConfig.createinst_auto_mirror_higher_prestige_variants.Value)
                 targetVariations = PrestigeManager.GetDefaultMirrorTargetVariations(sourceVariation);
             else

@@ -28,6 +28,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Position = ACE.Entity.Position;
 using ShardModels = ACE.Database.Models.Shard;
@@ -461,6 +462,9 @@ namespace ACE.Server.Command.Handlers
         private const int MaxVariationExpandItems = 4096;
         private const int MaxVariationIdBound = 1_000_000;
 
+        /// <summary>Single token like "5-10" or "-5--1" (hyphen-separated signed bounds); not comma lists.</summary>
+        private static readonly Regex VariationRangeRegex = new(@"^\s*([+-]?\d+)\s*-\s*([+-]?\d+)\s*$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
         private static IEnumerable<int> ParseVariationList(string csvOrRange)
         {
             if (string.IsNullOrWhiteSpace(csvOrRange))
@@ -469,12 +473,11 @@ namespace ACE.Server.Command.Handlers
             var values = csvOrRange.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var value in values)
             {
-                if (value.Contains('-', StringComparison.Ordinal))
+                var rangeMatch = VariationRangeRegex.Match(value);
+                if (rangeMatch.Success
+                    && int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var min)
+                    && int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var max))
                 {
-                    var parts = value.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    if (parts.Length != 2 || !int.TryParse(parts[0], out var min) || !int.TryParse(parts[1], out var max))
-                        continue;
-
                     if (min > max)
                         (min, max) = (max, min);
 
@@ -599,7 +602,7 @@ namespace ACE.Server.Command.Handlers
                         variation = parsedVariation;
                     }
 
-                    var queued = LandblockManager.RefreshLoadedPrestigeBoundaryMarkers(variation);
+                    var queued = LandblockManager.EnqueueRefreshLoadedPrestigeBoundaryMarkers(variation);
                     CommandHandlerHelper.WriteOutputInfo(session, variation.HasValue
                         ? $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) in variation {variation} (processed asynchronously on each landblock)."
                         : $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) (processed asynchronously on each landblock).");

@@ -151,7 +151,7 @@ namespace ACE.Server.Managers
         {
             EnsureDatabaseInitialized();
 
-            var loaded = new Dictionary<int, HashSet<ushort>>();
+            var fromDb = new Dictionary<int, HashSet<ushort>>();
             using var context = new WorldDbContext();
             context.Database.OpenConnection();
             try
@@ -170,10 +170,10 @@ namespace ACE.Server.Managers
                     var tier = reader.GetInt32(0);
                     var landblock = Convert.ToUInt16(reader.GetInt32(1));
 
-                    if (!loaded.TryGetValue(tier, out var set))
+                    if (!fromDb.TryGetValue(tier, out var set))
                     {
                         set = new HashSet<ushort>();
-                        loaded[tier] = set;
+                        fromDb[tier] = set;
                     }
                     set.Add(landblock);
                 }
@@ -183,8 +183,9 @@ namespace ACE.Server.Managers
                 context.Database.CloseConnection();
             }
 
-            if (loaded.Count == 0)
-                loaded = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+            var loaded = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+            foreach (var kvp in fromDb)
+                loaded[kvp.Key] = new HashSet<ushort>(kvp.Value);
 
             lock (_allowedLandblocksLock)
                 _tierAllowedLandblocks = loaded;
@@ -335,6 +336,31 @@ namespace ACE.Server.Managers
             // Variations 11-20 are Prestige Tiers 1-10
             var tier = GetTier(variation ?? creature.Location?.Variation);
             if (tier <= 0) return;
+
+            var prev = creature.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+            if (prev == tier)
+                return;
+
+            if (prev > 0)
+            {
+                var hpModPrev = GetHPModifier(prev);
+                if (hpModPrev != 1.0f)
+                    creature.Health.StartingValue = (uint)Math.Round(creature.Health.StartingValue / hpModPrev);
+
+                var dmgModPrev = GetDamageModifier(prev);
+                if (dmgModPrev != 1.0f)
+                {
+                    var ratingPrev = ModToRating(dmgModPrev);
+                    var existingDr = creature.GetProperty(PropertyInt.DamageRating) ?? 0;
+                    var nextDr = Math.Max(0, existingDr - ratingPrev);
+                    if (nextDr == 0)
+                        creature.RemoveProperty(PropertyInt.DamageRating);
+                    else
+                        creature.SetProperty(PropertyInt.DamageRating, nextDr);
+                }
+
+                creature.SetMaxVitals();
+            }
 
             // 1. HP Scaling (Mulitply Base)
             var hpMod = GetHPModifier(tier);

@@ -416,9 +416,13 @@ namespace ACE.Server.Managers
             return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
         }
 
-        public static int RefreshLoadedPrestigeBoundaryMarkers(int? variation = null)
+        /// <summary>
+        /// Enqueues <see cref="Landblock.RefreshPrestigeBoundaryMarkers"/> on each matching loaded landblock (async per landblock queue); does not wait for completion.
+        /// </summary>
+        /// <returns>Number of landblocks that had a refresh enqueued.</returns>
+        public static int EnqueueRefreshLoadedPrestigeBoundaryMarkers(int? variation = null)
         {
-            var refreshed = 0;
+            var queued = 0;
             var loaded = loadedLandblocks.Values.ToList();
 
             foreach (var landblock in loaded)
@@ -430,10 +434,10 @@ namespace ACE.Server.Managers
                     continue;
 
                 landblock.RefreshPrestigeBoundaryMarkers();
-                refreshed++;
+                queued++;
             }
 
-            return refreshed;
+            return queued;
         }
 
         /// <summary>
