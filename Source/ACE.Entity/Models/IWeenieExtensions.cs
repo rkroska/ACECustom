@@ -89,7 +89,7 @@ namespace ACE.Entity.Models
         public static Position? GetPosition(this IWeenie weenie, PositionType property)
         {
             if (weenie.PropertiesPosition != null && weenie.PropertiesPosition.TryGetValue(property, out var value))
-                return new Position(value.ObjCellId, value.PositionX, value.PositionY, value.PositionZ, value.RotationX, value.RotationY, value.RotationZ, value.RotationW);
+                return new Position(value.ObjCellId, value.PositionX, value.PositionY, value.PositionZ, value.RotationX, value.RotationY, value.RotationZ, value.RotationW, property == PositionType.RelativeDestination, value.VariationId);
 
             return null;
         }

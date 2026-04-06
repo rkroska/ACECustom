@@ -1,5 +1,4 @@
 import { useAuthStore } from '../store/useAuthStore';
-import { ApiError } from '../types';
 
 /**
  * Global API Client for ILT Web Portal
@@ -64,6 +63,11 @@ class ApiClient {
         throw new Error('Web Portal is currently offline.');
       }
 
+      // Handle Empty Content (204/205) or missing body
+      if (response.status === 204 || response.status === 205 || response.headers.get('content-length') === '0') {
+        return null as T;
+      }
+
       // Clone response to allow reading body twice (JSON then text fallback)
       const clonedResponse = response.clone();
       let data: any;
@@ -75,23 +79,21 @@ class ApiClient {
         const rawText = await clonedResponse.text();
         
         if (!response.ok) {
-          const error: ApiError = {
-            message: rawText || `Server error (${response.status})`,
-            code: response.status.toString(),
-          };
+          const error = new Error(rawText || `Server error (${response.status})`);
+          error.name = 'ApiError';
+          (error as any).code = response.status.toString();
           throw error;
         }
         
-        // If it's OK but not JSON, we can't reliably return it as T
+        // If it's OK but not JSON and not empty content, we can't reliably return it as T
         throw new Error('API returned an invalid (non-JSON) response.');
       }
 
       if (!response.ok) {
-        const error: ApiError = {
-          message: data.message || 'API request failed',
-          code: data.code,
-          details: data.details,
-        };
+        const error = new Error(data.message || 'API request failed');
+        error.name = 'ApiError';
+        (error as any).code = data.code;
+        (error as any).details = data.details;
         throw error;
       }
 

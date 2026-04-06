@@ -16,23 +16,31 @@ export default function CharacterStamps({ guid }: CharacterStampsProps) {
   const [isCopied, setIsCopied] = useState(false)
 
   useEffect(() => {
-    fetchStamps()
+    let isAborted = false
+    fetchStamps(isAborted)
+    return () => { isAborted = true }
   }, [guid])
 
-  // Reset to first page when search changes
+  // Reset to first page when search or character changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm])
+  }, [searchTerm, guid])
 
-  const fetchStamps = async () => {
+  const fetchStamps = async (isAborted: boolean) => {
     try {
       setIsLoading(true)
       const data = await api.get<string[]>(`/api/character/stamps/${guid}`)
-      setStamps(data)
+      if (!isAborted) {
+        setStamps(data)
+      }
     } catch (err) {
-      console.error(err)
+      if (!isAborted) {
+        console.error(err)
+      }
     } finally {
-      setIsLoading(false)
+      if (!isAborted) {
+        setIsLoading(false)
+      }
     }
   }
 

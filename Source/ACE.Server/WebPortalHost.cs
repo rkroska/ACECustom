@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Hosting;
@@ -136,6 +137,13 @@ namespace ACE.Server.Web
                 var app = builder.Build();
 
                 // Configure the HTTP request pipeline.
+                
+                // Enable support for reverse proxies (NGINX) by preserving client IP and protocol
+                app.UseForwardedHeaders(new ForwardedHeadersOptions
+                {
+                    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+                });
+
                 if (app.Environment.IsDevelopment())
                 {
                     app.UseDeveloperExceptionPage();

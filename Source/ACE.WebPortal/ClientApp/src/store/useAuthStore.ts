@@ -52,13 +52,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   logout: async () => {
+    // Immediately clear local state for responsiveness
+    set({ isAuthenticated: false, user: null, accessLevel: null, error: null });
+
     try {
-      // Notify backend to clear the HttpOnly cookie
+      // Notify backend to clear the HttpOnly cookie in the background
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (e) {
       // Silent fail for network errors on logout
     }
-    set({ isAuthenticated: false, user: null, accessLevel: null, error: null });
   },
   clearError: () => set({ error: null }),
   bootstrap: async () => {

@@ -11,19 +11,23 @@ const ServerParams = () => {
   const [search, setSearch] = useState('')
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [copiedText, setCopiedText] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchParams = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const data = await api.get<ServerParamMetadata[]>('/api/serverparam/list')
+      setParams(data)
+    } catch (err) {
+      console.error('Failed to fetch server params', err)
+      setError(err instanceof Error ? err.message : 'Failed to load parameters from server.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetchParams = async () => {
-      try {
-        setIsLoading(true)
-        const data = await api.get<ServerParamMetadata[]>('/api/serverparam/list')
-        setParams(data)
-      } catch (err) {
-        console.error('Failed to fetch server params', err)
-      } finally {
-        setIsLoading(false)
-      }
-    }
     fetchParams()
   }, [])
 
@@ -52,6 +56,28 @@ const ServerParams = () => {
         <div className="flex flex-col items-center justify-center space-y-4">
           <div className="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin"></div>
           <div className="text-neutral-500 text-sm font-medium uppercase tracking-widest animate-pulse">Fetching server parameters...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[400px] bg-neutral-950 p-8">
+        <div className="max-w-md w-full bg-neutral-900 border border-red-500/20 rounded-3xl p-8 text-center shadow-2xl">
+          <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Settings className="w-8 h-8 text-red-500/50" />
+          </div>
+          <h2 className="text-xl font-black text-white uppercase tracking-tight mb-2">Sync Failed</h2>
+          <p className="text-neutral-500 text-sm font-medium mb-8 leading-relaxed">
+            {error}
+          </p>
+          <button 
+            onClick={() => fetchParams()}
+            className="w-full bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] border border-neutral-700 shadow-lg"
+          >
+            Retry Request
+          </button>
         </div>
       </div>
     )

@@ -712,37 +712,67 @@ namespace ACE.Entity.Models
 
         public static string? GetName(this Biota biota, ReaderWriterLockSlim rwLock)
         {
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try { return ((IWeenie)biota).GetName(); }
-            finally { rwLock.ExitReadLock(); }
+            finally { if (lockEntered) rwLock.ExitReadLock(); }
         }
 
         public static string? GetPluralName(this Biota biota, ReaderWriterLockSlim rwLock)
         {
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try { return ((IWeenie)biota).GetPluralName(); }
-            finally { rwLock.ExitReadLock(); }
+            finally { if (lockEntered) rwLock.ExitReadLock(); }
         }
 
         public static ItemType GetItemType(this Biota biota, ReaderWriterLockSlim rwLock)
         {
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try { return ((IWeenie)biota).GetItemType(); }
-            finally { rwLock.ExitReadLock(); }
+            finally { if (lockEntered) rwLock.ExitReadLock(); }
         }
 
         public static bool IsStackable(this Biota biota, ReaderWriterLockSlim rwLock)
         {
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try { return ((IWeenie)biota).IsStackable(); }
-            finally { rwLock.ExitReadLock(); }
+            finally { if (lockEntered) rwLock.ExitReadLock(); }
         }
 
         public static bool RequiresBackpackSlotOrIsContainer(this Biota biota, ReaderWriterLockSlim rwLock)
         {
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try { return ((IWeenie)biota).RequiresBackpackSlotOrIsContainer(); }
-            finally { rwLock.ExitReadLock(); }
+            finally { if (lockEntered) rwLock.ExitReadLock(); }
         }
 
         // =====================================

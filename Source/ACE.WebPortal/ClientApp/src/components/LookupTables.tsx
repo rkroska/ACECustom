@@ -64,20 +64,30 @@ const LookupTables = () => {
       return
     }
 
+    let isAborted = false
+
     const fetchEnumDetail = async () => {
       try {
         setIsLoadingValues(true)
         setDetailError(null)
         const data = await api.get<EnumDetail>(`/api/enum/detail/${selectedEnum}`)
-        setEnumDetail(data)
+        if (!isAborted) {
+          setEnumDetail(data)
+        }
       } catch (err) {
-        console.error('Failed to fetch enum detail', err)
-        setDetailError(err instanceof Error ? err.message : 'Failed to load table details.')
+        if (!isAborted) {
+          console.error('Failed to fetch enum detail', err)
+          setDetailError(err instanceof Error ? err.message : 'Failed to load table details.')
+        }
       } finally {
-        setIsLoadingValues(false)
+        if (!isAborted) {
+          setIsLoadingValues(false)
+        }
       }
     }
     fetchEnumDetail()
+
+    return () => { isAborted = true }
   }, [selectedEnum])
 
   const copyToClipboard = (text: string, id: string) => {

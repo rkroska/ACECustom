@@ -37,14 +37,19 @@ const LoginPage: React.FC = () => {
             )}
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2 ml-1">
+              <label 
+                htmlFor="username"
+                className="block text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2 ml-1"
+              >
                 Username
               </label>
               <input
+                id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={isLoading}
+                autoComplete="username"
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all font-medium disabled:opacity-50"
                 placeholder="Enter username"
                 required
@@ -52,14 +57,19 @@ const LoginPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2 ml-1">
+              <label 
+                htmlFor="password"
+                className="block text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2 ml-1"
+              >
                 Password
               </label>
               <input
+                id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
+                autoComplete="current-password"
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-neutral-100 focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all font-medium disabled:opacity-50"
                 placeholder="••••••••"
                 required

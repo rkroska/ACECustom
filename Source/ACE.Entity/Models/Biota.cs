@@ -95,12 +95,12 @@ namespace ACE.Entity.Models
                     PropertiesSpellBook = PropertiesSpellBook == null ? null : new Dictionary<int, float>(PropertiesSpellBook),
 
                     // Lists
-                    PropertiesAnimPart = PropertiesAnimPart == null ? null : new List<PropertiesAnimPart>(PropertiesAnimPart),
-                    PropertiesPalette = PropertiesPalette == null ? null : new List<PropertiesPalette>(PropertiesPalette),
-                    PropertiesTextureMap = PropertiesTextureMap == null ? null : new List<PropertiesTextureMap>(PropertiesTextureMap),
-                    PropertiesCreateList = PropertiesCreateList == null ? null : new List<PropertiesCreateList>(PropertiesCreateList),
-                    PropertiesEmote = PropertiesEmote == null ? null : new List<PropertiesEmote>(PropertiesEmote),
-                    PropertiesGenerator = PropertiesGenerator == null ? null : new List<PropertiesGenerator>(PropertiesGenerator),
+                    PropertiesAnimPart = PropertiesAnimPart == null ? null : PropertiesAnimPart.Select(x => x.Clone()).ToList(),
+                    PropertiesPalette = PropertiesPalette == null ? null : PropertiesPalette.Select(x => x.Clone()).ToList(),
+                    PropertiesTextureMap = PropertiesTextureMap == null ? null : PropertiesTextureMap.Select(x => x.Clone()).ToList(),
+                    PropertiesCreateList = PropertiesCreateList == null ? null : PropertiesCreateList.Select(x => x.Clone()).ToList(),
+                    PropertiesEmote = PropertiesEmote == null ? null : PropertiesEmote.Select(x => x.Clone()).ToList(),
+                    PropertiesGenerator = PropertiesGenerator == null ? null : PropertiesGenerator.Select(x => x.Clone()).ToList(),
                     PropertiesEventFilter = PropertiesEventFilter == null ? null : new HashSet<int>(PropertiesEventFilter),
 
                     // Creature Properties
@@ -110,7 +110,7 @@ namespace ACE.Entity.Models
                     PropertiesSkill = PropertiesSkill == null ? null : PropertiesSkill.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Clone()),
 
                     // Book Properties
-                    PropertiesBook = PropertiesBook, // PropertiesBook is usually treated as a static model-ref
+                    PropertiesBook = PropertiesBook?.Clone(),
                     PropertiesBookPageData = PropertiesBookPageData == null ? null : new List<PropertiesBookPageData>(PropertiesBookPageData),
 
                     // Biota Additions
