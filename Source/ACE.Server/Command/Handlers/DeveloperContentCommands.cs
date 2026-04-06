@@ -32,10 +32,13 @@ using ACE.DatLoader;
 using Discord;
 using ACE.Server.Mods;
 
+using log4net;
+
 namespace ACE.Server.Command.Handlers.Processors
 {
     public class DeveloperContentCommands
     {
+        private static readonly ILog log = LogManager.GetLogger(typeof(DeveloperContentCommands));
         public enum FileType
         {
             Undefined,
@@ -1519,7 +1522,9 @@ namespace ACE.Server.Command.Handlers.Processors
                     {
                         foreach (var v in ParseVariationList(parameters[i + 1]))
                             options.ExplicitTargetVariations.Add(v);
+                        i++;
                     }
+                    continue;
                 }
             }
             return options;
@@ -1801,8 +1806,9 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log.Error($"SaveInstanceToWorldDatabase failed for landblock instance (guid {instance?.Guid:X8}): {ex.Message}", ex);
                 return false;
             }
         }

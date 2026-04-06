@@ -252,6 +252,8 @@ namespace ACE.Server.Command.Handlers
                 case Player playerTarget:
                     playerTarget.SetProperty(PropertyInt.PrestigeLevel, tier);
                     CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {playerTarget.Name} to {tier}.");
+                    PlayerManager.BroadcastToAuditChannel(session.Player,
+                        $"[Prestige] {session.Player.Name} set player target {playerTarget.Name} PrestigeLevel property to tier {tier}.");
                     break;
                 case Creature creature:
                     PrestigeManager.RemovePrestigeScaling(creature);
@@ -261,6 +263,10 @@ namespace ACE.Server.Command.Handlers
                         tier > 0
                             ? $"Replaced prestige scaling on {creature.Name} for tier {tier} (variation {variationForTier})."
                             : $"Cleared prestige scaling on {creature.Name} (retail / tier 0, variation {variationForTier}).");
+                    PlayerManager.BroadcastToAuditChannel(session.Player,
+                        tier > 0
+                            ? $"[Prestige] {session.Player.Name} replaced creature prestige scaling on {creature.Name}: tier {tier}, variation {variationForTier}."
+                            : $"[Prestige] {session.Player.Name} cleared creature prestige scaling on {creature.Name} (tier 0, variation {variationForTier}).");
                     break;
                 default:
                     CommandHandlerHelper.WriteOutputInfo(session, "Target must be a player or creature.");
@@ -323,6 +329,11 @@ namespace ACE.Server.Command.Handlers
                             CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror targets [sourceVariation]");
                             return;
                         }
+                        if (parsed < 0)
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror targets [sourceVariation]");
+                            return;
+                        }
                         sourceVariation = parsed;
                     }
                     else if (session.Player?.Location != null)
@@ -348,6 +359,11 @@ namespace ACE.Server.Command.Handlers
                     {
                         CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror normalize <sourceVariation> <variationList>");
                         CommandHandlerHelper.WriteOutputInfo(session, "Examples: /prestige-mirror normalize 11 12,13,15 or /prestige-mirror normalize 11 12-15");
+                        return;
+                    }
+                    if (sourceVariation < 0)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror normalize <sourceVariation> <variationList>");
                         return;
                     }
 
@@ -487,6 +503,8 @@ namespace ACE.Server.Command.Handlers
 
                     PrestigeManager.AddAllowedLandblock(addTier, addLandblock);
                     CommandHandlerHelper.WriteOutputInfo(session, $"Added landblock {addLandblock:X4} to prestige tier {addTier}.");
+                    PlayerManager.BroadcastToAuditChannel(session.Player,
+                        $"[PrestigeZone] {session.Player.Name} added landblock {addLandblock:X4} to prestige tier {addTier}.");
                     break;
 
                 case "remove":
@@ -500,6 +518,10 @@ namespace ACE.Server.Command.Handlers
                     CommandHandlerHelper.WriteOutputInfo(session, removed
                         ? $"Removed landblock {removeLandblock:X4} from prestige tier {removeTier}."
                         : $"No active mapping found for tier {removeTier}, landblock {removeLandblock:X4}.");
+                    PlayerManager.BroadcastToAuditChannel(session.Player,
+                        removed
+                            ? $"[PrestigeZone] {session.Player.Name} removed landblock {removeLandblock:X4} from prestige tier {removeTier}."
+                            : $"[PrestigeZone] {session.Player.Name} attempted remove tier {removeTier} landblock {removeLandblock:X4} (no active row).");
                     break;
 
                 case "list":
@@ -539,6 +561,8 @@ namespace ACE.Server.Command.Handlers
                 case "reload":
                     PrestigeManager.ReloadAllowedLandblocksFromDatabase();
                     CommandHandlerHelper.WriteOutputInfo(session, "Reloaded prestige allowed landblocks from database.");
+                    PlayerManager.BroadcastToAuditChannel(session.Player,
+                        $"[PrestigeZone] {session.Player.Name} reloaded prestige allowed landblocks from database.");
                     break;
 
                 case "refresh":
@@ -550,6 +574,11 @@ namespace ACE.Server.Command.Handlers
                             CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone refresh [variation]");
                             return;
                         }
+                        if (parsedVariation < 0)
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone refresh [variation]");
+                            return;
+                        }
                         variation = parsedVariation;
                     }
 
@@ -557,6 +586,10 @@ namespace ACE.Server.Command.Handlers
                     CommandHandlerHelper.WriteOutputInfo(session, variation.HasValue
                         ? $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) in variation {variation} (processed asynchronously on each landblock)."
                         : $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) (processed asynchronously on each landblock).");
+                    PlayerManager.BroadcastToAuditChannel(session.Player,
+                        variation.HasValue
+                            ? $"[PrestigeZone] {session.Player.Name} queued prestige boundary marker refresh for {queued} landblock(s), variation {variation}."
+                            : $"[PrestigeZone] {session.Player.Name} queued prestige boundary marker refresh for {queued} landblock(s) (all variations).");
                     break;
 
                 default:

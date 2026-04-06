@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using ACE.Database.Models.World;
@@ -53,15 +52,16 @@ namespace ACE.Server.Managers
 
             var tier = GetTier(variation);
             if (tier <= 0) return true; // Retail zones unrestricted
-            
-            if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
-                return true; // No restrictions configured for this tier
-            
-            if (allowed.Count == 0) return true; // Empty list = no restrictions
-            
 
+            lock (_allowedLandblocksLock)
+            {
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+                    return true; // No restrictions configured for this tier
 
-            return allowed.Contains(landblockId);
+                if (allowed.Count == 0) return true; // Empty list = no restrictions
+
+                return allowed.Contains(landblockId);
+            }
         }
 
         /// <summary>
@@ -92,10 +92,16 @@ namespace ACE.Server.Managers
             EnsureDatabaseInitialized();
 
             var tier = GetTier(variation);
-            if (tier <= 0 || !_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+            if (tier <= 0)
                 return null;
-            
-            return allowed;
+
+            lock (_allowedLandblocksLock)
+            {
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
+                    return null;
+
+                return allowed;
+            }
         }
 
         public static Dictionary<int, HashSet<ushort>> GetAllAllowedLandblocks()
@@ -147,17 +153,10 @@ namespace ACE.Server.Managers
 
             var loaded = new Dictionary<int, HashSet<ushort>>();
             using var context = new WorldDbContext();
-            var connection = context.Database.GetDbConnection();
-            var openedHere = false;
-
-            if (connection.State != ConnectionState.Open)
-            {
-                connection.Open();
-                openedHere = true;
-            }
-
+            context.Database.OpenConnection();
             try
             {
+                var connection = context.Database.GetDbConnection();
                 using var command = connection.CreateCommand();
                 command.CommandText = @"
                     SELECT tier, landblock
@@ -181,8 +180,7 @@ namespace ACE.Server.Managers
             }
             finally
             {
-                if (openedHere)
-                    connection.Close();
+                context.Database.CloseConnection();
             }
 
             if (loaded.Count == 0)
@@ -456,12 +454,17 @@ namespace ACE.Server.Managers
 
         private static void EnsurePrestigeAllowedLandblocksTable(WorldDbContext context)
         {
+            context.Database.OpenConnection();
             try
             {
-                context.Database.ExecuteSqlRaw("SELECT 1 FROM prestige_allowed_landblocks LIMIT 1");
-            }
-            catch
-            {
+                using var cmd = context.Database.GetDbConnection().CreateCommand();
+                cmd.CommandText = @"
+                    SELECT COUNT(*) FROM information_schema.tables
+                    WHERE table_schema = DATABASE() AND table_name = 'prestige_allowed_landblocks'";
+                var count = Convert.ToInt64(cmd.ExecuteScalar());
+                if (count > 0)
+                    return;
+
                 context.Database.ExecuteSqlRaw(@"
                     CREATE TABLE IF NOT EXISTS `prestige_allowed_landblocks` (
                         `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -474,6 +477,10 @@ namespace ACE.Server.Managers
                         KEY `ix_prestige_tier_active` (`tier`, `is_active`),
                         KEY `ix_prestige_landblock_active` (`landblock`, `is_active`)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+            }
+            finally
+            {
+                context.Database.CloseConnection();
             }
         }
 
