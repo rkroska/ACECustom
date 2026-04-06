@@ -29,7 +29,7 @@ namespace ACE.Server.Command.Handlers
                                               "  player <name>\n" +
                                               "  dungeon <name|hex>\n" +
                                               "  poi <name>\n" +
-                                              "  variant <id>\n" +
+                                              "  variant <retail|default|null|id> (retail/default/null = base; 0 = variation 0)\n" +
                                               "  xyz <cell> <x> <y> <z>...\n" +
                                               "  type <id>\n" +
                                               "  dist <distance>\n" +
@@ -49,7 +49,7 @@ namespace ACE.Server.Command.Handlers
                                                 "  player <name>\n" +
                                                 "  dungeon <name|hex>\n" +
                                                 "  poi <name>\n" +
-                                                "  variant <id>\n" +
+                                                "  variant <retail|default|null|id> (retail/default/null = base; 0 = variation 0)\n" +
                                                 "  xyz <cell> <x> <y> <z>...\n" +
                                                 "  type <id>\n" +
                                                 "  dist <distance>\n" +
@@ -260,20 +260,24 @@ namespace ACE.Server.Command.Handlers
 
             if (args.Length > 0)
             {
-                if (args[0] == "null")
+                var a = args[0].Trim();
+                // Same semantics as @televariant: retail/default/null => unlayered base; 0 is explicit variation 0
+                if (string.Equals(a, "null", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a, "retail", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a, "default", StringComparison.OrdinalIgnoreCase))
                 {
                     pos.Variation = null;
-                    name = "variant null";
+                    name = "variant base (retail/default/null)";
                     return true;
                 }
-                if (int.TryParse(args[0], out var variant))
+                if (int.TryParse(a, out var variant))
                 {
                     pos.Variation = variant;
-                    name = $"variant {pos.Variation}";
+                    name = $"variant {variant}";
                     return true;
                 }
             }
-            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: ... to variant <value or null>", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: ... to variant <retail|default|null|integer id>", ChatMessageType.System));
             return false;
         }
 

@@ -2891,7 +2891,7 @@ namespace ACE.Server.Command.Handlers
         // televariant variation (other /tele* live in TeleportCommands on master)
         [CommandHandler("televariant", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to the specified variation at your current location.",
-            "variation — retail | default | null | 0 (base), or an integer variation id\n" +
+            "variation — retail | default | null (unlayered base, same as omitting variation), or an integer id (use 0 for variation 0)\n" +
             "Example: @televariant 1\n" +
             "Example: @televariant retail")]
         public static void HandleTelevariant(Session session, params string[] parameters)
@@ -2899,7 +2899,8 @@ namespace ACE.Server.Command.Handlers
             int? variation = null;
             var param = parameters[0].ToLower();
 
-            if (param == "retail" || param == "null" || param == "default" || param == "0")
+            // retail / default / null => true base (unlayered); 0 is explicit variation id 0, not base
+            if (param == "retail" || param == "null" || param == "default")
             {
                 variation = null;
             }
@@ -2907,14 +2908,14 @@ namespace ACE.Server.Command.Handlers
             {
                 if (varId < 0)
                 {
-                    CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null', '0', or an integer ID.");
+                    CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null' for base, or a non-negative integer (0 = variation 0).");
                     return;
                 }
                 variation = varId;
             }
             else
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null', '0', or an integer ID.");
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null' for base, or a non-negative integer (0 = variation 0).");
                 return;
             }
 
@@ -2926,14 +2927,14 @@ namespace ACE.Server.Command.Handlers
                                         false, variation);
 
             session.Player.Teleport(newPos);
-            var variationLabel = variation.HasValue ? variation.Value.ToString() : "base (retail / default / null / 0)";
+            var variationLabel = variation.HasValue ? variation.Value.ToString() : "base (retail / default / null)";
             CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variationLabel}.");
         }
 
         // tv {variation} - Alias for televariant
         [CommandHandler("tv", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to the specified variation at your current location (alias for televariant).",
-            "variation — retail | default | null | 0 (base), or an integer variation id\n" +
+            "variation — retail | default | null (unlayered base), or an integer id (use 0 for variation 0)\n" +
             "Example: @tv 1\n" +
             "Example: @tv retail")]
         public static void HandleTV(Session session, params string[] parameters)

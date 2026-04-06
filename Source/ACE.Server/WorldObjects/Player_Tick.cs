@@ -458,8 +458,6 @@ namespace ACE.Server.WorldObjects
 
         private double _lastPrestigeBoundaryCheck;
 
-        private bool IsDebugTarget => Name != null && Name.Contains("Schneeblytest");
-
         private void CheckPrestigeBoundary()
         {
             // Throttle to every 2 seconds
@@ -472,13 +470,7 @@ namespace ACE.Server.WorldObjects
             var currentLBVal = (ushort)(Location.Cell >> 16);
 
             if (currentLBVal == 0)
-            {
-                if (IsDebugTarget) log.Warn($"[Prestige-DBG] {Name}: CheckPrestigeBoundary ABORTED due to invalid LB 0000. Cell={Location.Cell:X8}");
                 return;
-            }
-            
-            // if (IsDebugTarget)
-            //    log.Warn($"[Prestige-DBG] CheckPrestigeBoundary TICK for {Name}. Cell={Location.Cell:X8} LB={currentLBVal:X4} Var={variation} Pos=({Location.Pos.X:F1},{Location.Pos.Y:F1},{Location.Pos.Z:F1}) Markers={_boundaryMarkers.Count} WispAlive={_guideWisp != null} IsAllowed={PrestigeManager.IsLandblockAllowed(variation, currentLBVal)}");
 
             if (!PrestigeManager.IsLandblockAllowed(variation, currentLBVal))
             {
@@ -486,9 +478,6 @@ namespace ACE.Server.WorldObjects
                 var nowOob = Time.GetUnixTime();
                 if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = nowOob;
                 _lastDangerTime = nowOob;
-
-                if (IsDebugTarget)
-                    log.Warn($"[Prestige-DBG] {Name}: IN PUNISHMENT ZONE. LB={currentLBVal:X4} Var={variation} OOBTime={Time.GetUnixTime() - _outOfBoundsEntryTime:F1}s");
 
                 // Enqueue everything to ensure thread safety (AddWorldObjectInternal must be main thread)
                 WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
@@ -525,11 +514,7 @@ namespace ACE.Server.WorldObjects
 
                     // Spawn Wisp after ~2 seconds in the danger zone
                     if (Time.GetUnixTime() - _outOfBoundsEntryTime > 2.0)
-                    {
-                        if (IsDebugTarget)
-                            log.Warn($"[Prestige-DBG] {Name}: PUNISHMENT calling UpdateGuideWisp(danger=true)");
                         UpdateGuideWisp(true, variation);
-                    }
                     
                     if (Health.Current <= 0)
                     {
@@ -550,14 +535,10 @@ namespace ACE.Server.WorldObjects
 
                 // Check 20m buffer from edges (0..192)
                 // Fix: Check bounds before accessing West/East/North/South to avoid OverflowException at map edge
-                string dangerEdge = "none";
-                if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) { danger = true; dangerEdge = $"East(LB={lbId.East.Landblock:X4})"; }
-                else if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock)) { danger = true; dangerEdge = $"West(LB={lbId.West.Landblock:X4})"; }
-                else if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) { danger = true; dangerEdge = $"North(LB={lbId.North.Landblock:X4})"; }
-                else if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock)) { danger = true; dangerEdge = $"South(LB={lbId.South.Landblock:X4})"; }
-
-                if (IsDebugTarget)
-                    log.Warn($"[Prestige-DBG] {Name}: SAFE ZONE proximity check. danger={danger} dangerEdge={dangerEdge} Pos=({pos.X:F1},{pos.Y:F1}) LB={lbId.Landblock:X4}");
+                if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) danger = true;
+                else if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock)) danger = true;
+                else if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) danger = true;
+                else if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock)) danger = true;
 
                 if (danger)
                 {
@@ -573,23 +554,12 @@ namespace ACE.Server.WorldObjects
                 // Check if we are fully inside a bad landblock (not just near edge)
                 bool inForbiddenLandblock = !PrestigeManager.IsLandblockAllowed(variation, lbId.Landblock);
                 if (inForbiddenLandblock)
-                {
                     danger = true;
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: inForbiddenLandblock=true (current LB not allowed), overriding danger=true");
-                }
 
                 // Track when we last had danger (for wisp persistence)
                 if (danger)
-                {
                     _lastDangerTime = Time.GetUnixTime();
-                }
 
-                if (IsDebugTarget)
-                {
-                    var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
-                    log.Warn($"[Prestige-DBG] {Name}: calling UpdateGuideWisp(danger={danger}). WispAlive={_guideWisp != null} timeSinceDanger={timeSinceDanger:F1}s lastDangerTime={_lastDangerTime:F1}");
-                }
                 // Wisp with 10s persistence after reaching safety
                 UpdateGuideWisp(inForbiddenLandblock, variation);
 
@@ -621,9 +591,6 @@ namespace ACE.Server.WorldObjects
             {
                 if (_guideWisp == null)
                 {
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN REQUESTED. danger=true, wisp=null. Fetching weenie...");
-
                     // Spawn Wisp
                     var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_WISPETHEREAL_CLASS);
                     if (weenie != null)
@@ -632,9 +599,6 @@ namespace ACE.Server.WorldObjects
                         var playerPos = Location.Pos; // Exact player position
                         var cell = Location.Cell;
                         var lbId = new ACE.Entity.LandblockId(cell);
-                        
-                        if (IsDebugTarget)
-                            log.Warn($"[Prestige-DBG] {Name}: WISP enqueuing spawn. PlayerPos=({playerPos.X:F1},{playerPos.Y:F1},{playerPos.Z:F1}) Cell={cell:X8} LB={lbId.Landblock:X4}");
 
                         WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                         {
@@ -643,11 +607,7 @@ namespace ACE.Server.WorldObjects
 
                             // Double check inside queue
                             if (_guideWisp != null)
-                            {
-                                if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP spawn aborted inside queue - wisp already exists (Guid={_guideWisp.Guid})");
                                 return;
-                            }
 
                             var liveCell = Location?.Cell ?? 0;
                             if (liveCell != cell || Location?.Variation != variation)
@@ -671,9 +631,6 @@ namespace ACE.Server.WorldObjects
                                 
                                 wisp.EnterWorld();
                                 _guideWisp = wisp;
-                                
-                                if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP SPAWNED. Guid={wisp.Guid} SpawnPos=({spawnPos.X:F1},{spawnPos.Y:F1},{spawnPos.Z:F1}) Cell={cell:X8}");
 
                                 // Calculate "Smart" Safe Spot
                                 uint targetCell = cell;
@@ -686,9 +643,6 @@ namespace ACE.Server.WorldObjects
                                 bool wAllowed = lbId.LandblockX > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock);
                                 bool nAllowed = lbId.LandblockY < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
                                 bool sAllowed = lbId.LandblockY > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock);
-
-                                if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP neighbor safety: E={eAllowed}({(lbId.LandblockX < 255 ? lbId.East.Landblock.ToString("X4") : "EDGE")}) W={wAllowed}({(lbId.LandblockX > 0 ? lbId.West.Landblock.ToString("X4") : "EDGE")}) N={nAllowed}({(lbId.LandblockY < 255 ? lbId.North.Landblock.ToString("X4") : "EDGE")}) S={sAllowed}({(lbId.LandblockY > 0 ? lbId.South.Landblock.ToString("X4") : "EDGE")})");
 
                                 if (eAllowed)
                                 {
@@ -724,35 +678,16 @@ namespace ACE.Server.WorldObjects
                                 }
 
                                 var safePos = new ACE.Entity.Position(targetCell, targetX, targetY, spawnPos.Z, 0, 0, 0, 0, false, variation);
-                                
-                                log.Warn($"[Prestige] Wisp: Spawned at {lbId}. Found Safe Direction: {safeDir}.");
-                                log.Warn($"[Prestige] Wisp: Moving to Target: {safePos} (Cell: {targetCell:X8}, X:{targetX}, Y:{targetY})");
 
-                                if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP MOVE: From ({spawnPos.X:F1},{spawnPos.Y:F1}) -> ({targetX:F1},{targetY:F1}) targetCell={targetCell:X8} dir={safeDir}");
+                                log.Debug($"[Prestige] Wisp: Spawned at {lbId}. Safe direction: {safeDir}. Move to {safePos} (cell {targetCell:X8}).");
 
                                 wisp.MoveToPosition(safePos);
                                 
                                 Session.Network.EnqueueSend(new GameMessageSystemChat(
                                     "Follow the Wisp to safety!", ChatMessageType.Broadcast));
                             }
-                            else
-                            {
-                                if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN FAILED - CreateNewWorldObject returned null or not Creature");
-                            }
                         }));
                     }
-                    else
-                    {
-                        if (IsDebugTarget)
-                            log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN FAILED - weenie not found in cache");
-                    }
-                }
-                else
-                {
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: WISP already alive (Guid={_guideWisp.Guid}), danger=true, no action. WispPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
                 }
             }
             else
@@ -761,14 +696,9 @@ namespace ACE.Server.WorldObjects
                 if (_guideWisp != null)
                 {
                     var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
-                    if (IsDebugTarget)
-                        log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWN CHECK. danger=false, timeSinceDanger={timeSinceDanger:F1}s (need 10.0s). WispGuid={_guideWisp.Guid} WispPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
 
                     if (timeSinceDanger >= 10.0)
                     {
-                        if (IsDebugTarget)
-                            log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWNING NOW (10s elapsed). Enqueuing destroy.");
-
                         WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                         {
                             if (Session == null || Session.State != SessionState.WorldConnected)
@@ -776,9 +706,6 @@ namespace ACE.Server.WorldObjects
 
                             if (_guideWisp != null)
                             {
-                                if (IsDebugTarget)
-                                    log.Warn($"[Prestige-DBG] {Name}: WISP DESTROYED inside queue. FinalPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
-
                                 var msg = new GameMessageHearSpeech("Do try to stay on the path next time...", _guideWisp.Name, _guideWisp.Guid.Full, ChatMessageType.Speech);
                                 Session.Network.EnqueueSend(msg);
 
