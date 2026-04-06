@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Search, Filter, Settings } from 'lucide-react'
 import { api } from '../services/api'
 import { ServerParamMetadata } from '../types'
@@ -12,6 +12,7 @@ const ServerParams = () => {
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [copiedText, setCopiedText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchParams = async (signal?: AbortSignal) => {
     try {
@@ -31,7 +32,10 @@ const ServerParams = () => {
   useEffect(() => {
     const controller = new AbortController()
     fetchParams(controller.signal)
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+    }
   }, [])
 
   const categories = useMemo(() => {
@@ -49,10 +53,17 @@ const ServerParams = () => {
   }, [params, search, selectedType])
 
   const copyToClipboard = (text: string, id: string) => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current)
+    }
+
     navigator.clipboard.writeText(text)
       .then(() => {
         setCopiedText(id)
-        setTimeout(() => setCopiedText(null), 2000)
+        copyTimeoutRef.current = setTimeout(() => {
+          setCopiedText(null)
+          copyTimeoutRef.current = null
+        }, 2000)
       })
       .catch(err => console.error('Clipboard copy failed:', err))
   }
