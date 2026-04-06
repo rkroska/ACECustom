@@ -237,6 +237,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> allow_summoning_killtask_multicredit { get; private set; } = new(true, "enables retail behavior where a summoner can get multiple killtask credits from a monster");
         public static ConfigProperty<bool> assess_creature_mod { get; private set; } = new(false, "(non-retail function) If enabled, re-enables former skill formula, when assess creature skill is not trained or spec'ed");
         public static ConfigProperty<bool> attribute_augmentation_safety_cap { get; private set; } = new(true, "if TRUE players are not able to use attribute augmentations if the innate value of the target attribute is >= 96. All normal restrictions to these augmentations still apply.");
+        /// <summary>When true, <c>/createinst</c> from prestige variation 11 auto-adds instances for variations 12 through max configured. When false (default), only explicit <c>-mirror</c>/<c>-mv</c> lists mirror; use <c>/modifybool</c>.</summary>
+        public static ConfigProperty<bool> createinst_auto_mirror_higher_prestige_variants { get; private set; } = new(false, "createinst from var 11 auto-mirrors to 12..max when TRUE. Default FALSE: mirror only with -mirror list. Retail (null/0-10) never mirrors.");
         public static ConfigProperty<bool> chat_disable_general { get; private set; } = new(false, "disable general global chat channel");
         public static ConfigProperty<bool> chat_disable_lfg { get; private set; } = new(false, "disable lfg global chat channel");
         public static ConfigProperty<bool> chat_disable_olthoi { get; private set; } = new(false, "disable olthoi global chat channel");
@@ -300,6 +302,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> npc_hairstyle_fullrange { get; private set; } = new(false, "if TRUE, allows generated creatures to use full range of hairstyles. Retail only allowed first nine (0-8) out of 51");
         public static ConfigProperty<bool> offline_xp_passup_limit { get; private set; } = new(true, "if FALSE, allows unlimited xp to passup to offline characters in allegiances");
         public static ConfigProperty<bool> olthoi_play_disabled { get; private set; } = new(false, "if false, allows players to create and play as olthoi characters");
+        public static ConfigProperty<bool> encounter_spawn_base_variation_only { get; private set; } = new(true, "if TRUE, world encounter table spawns only run when landblock variation is NULL/0 (base). FALSE = stock ACE: same encounter rows run for every landblock variation (2–10, prestige, etc.).");
         public static ConfigProperty<bool> override_encounter_spawn_rates { get; private set; } = new(false, "if enabled, landblock encounter spawns are overidden by double properties below.");
         public static ConfigProperty<bool> permit_corpse_all { get; private set; } = new(false, "If TRUE, /permit grants permittees access to all corpses of the permitter. Defaults to FALSE as per retail, where /permit only grants access to 1 locked corpse");
         public static ConfigProperty<bool> persist_movement { get; private set; } = new(false, "If TRUE, persists autonomous movements such as turns and sidesteps through non-autonomous server actions. Retail didn't appear to do this, but some players may prefer this.");

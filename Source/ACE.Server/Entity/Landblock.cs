@@ -101,6 +101,12 @@ namespace ACE.Server.Entity
 
         public List<Landblock> Adjacents = new List<Landblock>();
 
+        /// <summary>
+        /// Prestige boundary markers spawned at landblock load time.
+        /// These are static objects visible to all players in this variation.
+        /// </summary>
+        private readonly List<WorldObject> _prestigeBoundaryMarkers = new List<WorldObject>();
+
         private readonly ActionQueue actionQueue = new();
 
         public int WorldObjectCount
@@ -111,11 +117,19 @@ namespace ACE.Server.Entity
             }
         }
 
+        /// <summary>
+        /// Returns a snapshot of world objects for diagnostic purposes.
+        /// </summary>
+        public IEnumerable<WorldObject> GetWorldObjectsForDiagnostics()
+        {
+            return worldObjects.Values.ToList();
+        }
+
         public int PhysicsObjectCount
         { get
             {
                 if (PhysicsLandblock != null)
-                    return PhysicsLandblock.ServerObjects.Count;
+                    return PhysicsLandblock.ServerObjectsCount;
                 else
                     return 0;
             }
@@ -332,8 +346,157 @@ namespace ACE.Server.Entity
 
                 CreateWorldObjectsCompleted = true;
 
+                // Spawn prestige boundary markers after normal objects
+                SpawnPrestigeBoundaryMarkers();
+
                 PhysicsLandblock.SortObjects();
             }, ActionPriority.Low));
+        }
+
+        /// <summary>
+        /// Spawns boundary markers for prestige landblocks.
+        /// Markers appear on edges adjacent to forbidden landblocks, forming a perimeter.
+        /// </summary>
+        private void SpawnPrestigeBoundaryMarkers()
+        {
+            // Only spawn for prestige variations (11+)
+            var tier = PrestigeManager.GetTier(VariationId);
+            if (tier <= 0) return;
+
+            if (log.IsDebugEnabled)
+                log.Debug($"[Prestige] Landblock {Id.Landblock:X4} (Var {VariationId}, Tier {tier}): Checking boundary markers...");
+
+            // Check if this landblock is allowed for this tier
+            bool thisAllowed = PrestigeManager.IsLandblockAllowed(VariationId, Id.Landblock);
+
+            // Only spawn markers in approved landblocks
+            if (!thisAllowed)
+            {
+                if (log.IsDebugEnabled)
+                    log.Debug($"[Prestige] Landblock {Id.Landblock:X4} is NOT allowed - skipping boundary markers.");
+                return;
+            }
+
+            var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_SHOLANTERN_CLASS);
+            if (weenie == null)
+            {
+                log.Warn($"[Prestige] SpawnPrestigeBoundaryMarkers: W_SHOLANTERN_CLASS weenie not found!");
+                return;
+            }
+
+            // Edge boundaries (inset 10m from actual edge)
+            const float edgeMin = 10.0f;
+            const float edgeMax = 182.0f;
+            const int markersPerEdge = 6;
+            
+            // Calculate evenly spaced positions including corners
+            float edgeLength = edgeMax - edgeMin;
+            float spacing = edgeLength / (markersPerEdge - 1);
+
+            void SpawnMarkerAtPosition(float x, float y)
+            {
+                const float cornerEpsilon = 0.25f;
+                foreach (var existing in _prestigeBoundaryMarkers)
+                {
+                    if (existing?.Location == null)
+                        continue;
+                    if (Math.Abs(existing.Location.PositionX - x) < cornerEpsilon && Math.Abs(existing.Location.PositionY - y) < cornerEpsilon)
+                        return;
+                }
+
+                var marker = WorldObjectFactory.CreateNewWorldObject(weenie);
+                if (marker == null)
+                {
+                    log.Warn($"[Prestige] Failed to create marker WorldObject");
+                    return;
+                }
+
+                marker.Name = "Prestige Boundary";
+                marker.SetProperty(PropertyFloat.DefaultScale, 2.5f);
+                
+                // Prevent despawning - make it persistent like static objects
+                marker.SetProperty(PropertyBool.Stuck, true);
+                marker.TimeToRot = -1;  // Never rot/despawn
+
+                // Use physics system to calculate proper position (like encounters do)
+                var pos = new Physics.Common.Position();
+                pos.ObjCellID = (uint)(Id.Landblock << 16) | 1;
+                pos.Variation = VariationId;
+                pos.Frame = new Physics.Animation.AFrame(new Vector3(x, y, 0), Quaternion.Identity);
+                pos.adjust_to_outside();
+
+                // Get terrain Z height
+                pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
+
+                marker.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, pos.Variation);
+                marker.Location.Variation = VariationId;
+
+                if (AddWorldObject(marker, VariationId))
+                {
+                    _prestigeBoundaryMarkers.Add(marker);
+                }
+                else
+                {
+                    marker.Destroy();
+                }
+            }
+
+            void SpawnMarkersOnEdge(float fixedCoord, bool isXFixed)
+            {
+                for (int i = 0; i < markersPerEdge; i++)
+                {
+                    float offset = edgeMin + (i * spacing);
+                    float x = isXFixed ? fixedCoord : offset;
+                    float y = isXFixed ? offset : fixedCoord;
+                    SpawnMarkerAtPosition(x, y);
+                }
+            }
+
+            bool ShouldSpawnOnEdge(ushort neighborLB)
+            {
+                bool neighborAllowed = PrestigeManager.IsLandblockAllowed(VariationId, neighborLB);
+                return !neighborAllowed;
+            }
+
+            // Check each cardinal direction and spawn markers on edges facing forbidden landblocks
+            // East edge (X = edgeMax)
+            if (Id.LandblockX < 255 && ShouldSpawnOnEdge(Id.East.Landblock))
+                SpawnMarkersOnEdge(edgeMax, true);
+
+            // West edge (X = edgeMin)
+            if (Id.LandblockX > 0 && ShouldSpawnOnEdge(Id.West.Landblock))
+                SpawnMarkersOnEdge(edgeMin, true);
+
+            // North edge (Y = edgeMax)
+            if (Id.LandblockY < 255 && ShouldSpawnOnEdge(Id.North.Landblock))
+                SpawnMarkersOnEdge(edgeMax, false);
+
+            // South edge (Y = edgeMin)
+            if (Id.LandblockY > 0 && ShouldSpawnOnEdge(Id.South.Landblock))
+                SpawnMarkersOnEdge(edgeMin, false);
+
+            if (_prestigeBoundaryMarkers.Count > 0)
+            {
+                log.Info($"[Prestige] Landblock {Id.Landblock:X4} (Var {VariationId}): Spawned {_prestigeBoundaryMarkers.Count} boundary markers.");
+            }
+        }
+
+        public void RefreshPrestigeBoundaryMarkers()
+        {
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+            {
+                foreach (var marker in _prestigeBoundaryMarkers.ToList())
+                {
+                    if (marker == null)
+                        continue;
+
+                    RemoveWorldObject(marker.Guid, false, false, false);
+                    marker.Destroy();
+                }
+
+                _prestigeBoundaryMarkers.Clear();
+                SpawnPrestigeBoundaryMarkers();
+            }));
         }
 
         /// <summary>
@@ -358,6 +521,10 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnEncounters()
         {
+            // encounter rows have no variation_Id; optionally restrict to base layer only (matches landblock_instance NULL/0 semantics)
+            if (ServerConfig.encounter_spawn_base_variation_only.Value && VariationId != null && VariationId.Value != 0)
+                return;
+
             // get the encounter spawns for this landblock
             var encounters = DatabaseManager.World.GetCachedEncountersByLandblock(Id.Landblock);
 
@@ -1021,6 +1188,18 @@ namespace ACE.Server.Entity
         public void AddWorldObjectForPhysics(WorldObject wo, int? VariationId)
         {
             AddWorldObjectInternal(wo, VariationId);
+        }
+
+        /// <summary>
+        /// Enqueues an AddWorldObject operation to be processed on this landblock's thread.
+        /// Use this when adding objects during multi-threaded physics ticking to avoid cross-thread errors.
+        /// </summary>
+        public void EnqueueAddWorldObjectForPhysics(WorldObject wo, int? variationId)
+        {
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+            {
+                AddWorldObjectInternal(wo, variationId);
+            }));
         }
 
         private bool AddWorldObjectInternal(WorldObject wo, int? VariationId)

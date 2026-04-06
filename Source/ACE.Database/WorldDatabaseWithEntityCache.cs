@@ -744,7 +744,7 @@ namespace ACE.Database
                 return value;
 
             List<LandblockInstance> results;
-            if (variation.HasValue)
+            if (variation.HasValue && variation.Value != 0)
             {
                 results = context.LandblockInstance
                     .Include(r => r.LandblockInstanceLink)
@@ -757,7 +757,7 @@ namespace ACE.Database
                 results = context.LandblockInstance
                     .Include(r => r.LandblockInstanceLink)
                     .AsNoTracking()
-                    .Where(r => r.Landblock == landblock && r.VariationId == null)
+                    .Where(r => r.Landblock == landblock && (r.VariationId == null || r.VariationId == 0))
                     .ToList();
             }
 

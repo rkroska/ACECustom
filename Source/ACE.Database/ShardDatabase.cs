@@ -550,18 +550,22 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
+                    
                     if (variationId.HasValue)
                     {
-                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId)) //filter to only the objects that are the correct variation
+                        // Use explicit comparison for nullable int
+                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId.HasValue && x.VariationId.Value == variationId.Value))
                         {
                             staticObjects.Add(biota);
                         }
                     }
-                    else //no variation id specified, so return all objects`
+                    else // no variation id specified, so return only base objects
                     {
-                        staticObjects.Add(biota);
+                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == null || x.VariationId == 0))
+                        {
+                            staticObjects.Add(biota);
+                        }
                     }
-
                 }
             }
 
@@ -579,8 +583,15 @@ namespace ACE.Database
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
+                // Use explicit nullable comparison to ensure Entity Framework generates correct SQL
                 var results = context.BiotaPropertiesPosition
-                    .Where(p => p.PositionType == 1 && p.ObjCellId >= min && p.ObjCellId <= max && p.ObjectId >= 0x80000000 && p.VariationId == variationId)
+                    .Where(p => p.PositionType == 1 && 
+                                p.ObjCellId >= min && 
+                                p.ObjCellId <= max && 
+                                p.ObjectId >= 0x80000000 &&
+                                (variationId.HasValue
+                                    ? (p.VariationId.HasValue && p.VariationId.Value == variationId.Value)
+                                    : (p.VariationId == null || p.VariationId == 0)))
                     .Select(r => r.ObjectId)
                     .ToList();
 

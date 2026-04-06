@@ -16,7 +16,7 @@ namespace ACE.Server.Physics.Common
 
         public uint LandblockID { get => CurCell.ID | 0xFFFF; }
 
-        public BuildingObj() : base(null)
+        public BuildingObj(int? VariationId) : base(VariationId)
         {
             Portals = new List<BldPortal>();
             LeafCells = new List<PartCell>();
@@ -55,7 +55,7 @@ namespace ACE.Server.Physics.Common
         {
             foreach (var portal in Portals)
             {
-                var otherCell = portal.GetOtherCell(CurCell.ID);
+                var otherCell = portal.GetOtherCell(CurCell.ID, this.Position.Variation);
                 if (otherCell != null)
                     otherCell.check_building_transit(portal.OtherPortalId, pos, numSphere, sphere, cellArray, path);
             }
@@ -65,7 +65,7 @@ namespace ACE.Server.Physics.Common
         {
             foreach (var portal in Portals)
             {
-                var otherCell = portal.GetOtherCell(CurCell.ID);
+                var otherCell = portal.GetOtherCell(CurCell.ID, this.Position.Variation);
                 if (otherCell != null)
                     otherCell.check_building_transit(portal.OtherPortalId, numParts, parts, cellArray);
             }
@@ -81,7 +81,7 @@ namespace ACE.Server.Physics.Common
             // aka cells touching the outdoor landblock
             foreach (var portal in Portals)
             {
-                var entrypoint = portal.GetOtherCell(LandblockID);
+                var entrypoint = portal.GetOtherCell(LandblockID, this.Position.Variation);
                 add_cells_recursive(entrypoint);
             }
             return BuildingCells;
@@ -97,9 +97,9 @@ namespace ACE.Server.Physics.Common
                 add_cells_recursive(visibleCell);
         }
 
-        public static BuildingObj makeBuilding(uint buildingID, List<CBldPortal> portals, uint numLeaves)
+        public static BuildingObj makeBuilding(uint buildingID, List<CBldPortal> portals, uint numLeaves, int? VariationId = null)
         {
-            var building = new BuildingObj();
+            var building = new BuildingObj(VariationId);
 
             if (!building.InitObjectBegin(0, false) || !building.InitPartArrayObject(buildingID, true))
                 return null;

@@ -153,6 +153,12 @@ namespace ACE.Server.WorldObjects
 
         public Position StartJump;
 
+        public override void Teleport(Position newPos, bool fromPortal = false)
+        {
+            CleanupPrestigeEffects();
+            base.Teleport(newPos, fromPortal);
+        }
+
         public override void MoveTo(WorldObject target, float runRate = 0.0f)
         {
             if (runRate == 0.0f)

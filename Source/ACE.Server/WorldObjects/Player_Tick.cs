@@ -16,6 +16,7 @@ using ACE.Server.Network.Structure;
 using ACE.Server.Physics;
 using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Common;
+using ACE.Database;
 
 namespace ACE.Server.WorldObjects
 {
@@ -115,6 +116,11 @@ namespace ACE.Server.WorldObjects
                 else if (houseRentWarnTimestamp == 0)
                     houseRentWarnTimestamp = Time.GetFutureUnixTime(houseRentWarnInterval);
             }
+            
+            
+            // Fix: Sync Location with Physics before checking boundary logic to ensure coordinates are fresh
+            SyncLocationWithPhysics();
+            CheckPrestigeBoundary();
         }
 
         /// <summary>
@@ -450,12 +456,351 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
+        private double _lastPrestigeBoundaryCheck;
+
+        private bool IsDebugTarget => Name != null && Name.Contains("Schneeblytest");
+
+        private void CheckPrestigeBoundary()
+        {
+            // Throttle to every 2 seconds
+            if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck < 2.0)
+                return;
+
+            _lastPrestigeBoundaryCheck = Time.GetUnixTime();
+
+            var variation = Location.Variation;
+            var currentLBVal = (ushort)(Location.Cell >> 16);
+
+            if (currentLBVal == 0)
+            {
+                if (IsDebugTarget) log.Warn($"[Prestige-DBG] {Name}: CheckPrestigeBoundary ABORTED due to invalid LB 0000. Cell={Location.Cell:X8}");
+                return;
+            }
+            
+            // if (IsDebugTarget)
+            //    log.Warn($"[Prestige-DBG] CheckPrestigeBoundary TICK for {Name}. Cell={Location.Cell:X8} LB={currentLBVal:X4} Var={variation} Pos=({Location.Pos.X:F1},{Location.Pos.Y:F1},{Location.Pos.Z:F1}) Markers={_boundaryMarkers.Count} WispAlive={_guideWisp != null} IsAllowed={PrestigeManager.IsLandblockAllowed(variation, currentLBVal)}");
+
+            if (!PrestigeManager.IsLandblockAllowed(variation, currentLBVal))
+            {
+                // PUNISHMENT ZONE
+                var nowOob = Time.GetUnixTime();
+                if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = nowOob;
+                _lastDangerTime = nowOob;
+
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: IN PUNISHMENT ZONE. LB={currentLBVal:X4} Var={variation} OOBTime={Time.GetUnixTime() - _outOfBoundsEntryTime:F1}s");
+
+                // Enqueue everything to ensure thread safety (AddWorldObjectInternal must be main thread)
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                {
+                    if (Session == null || Session.State != SessionState.WorldConnected || Health == null)
+                        return;
+                    var cell = Location?.Cell ?? 0;
+                    var lbVal = (ushort)(cell >> 16);
+                    if (lbVal != currentLBVal || Location?.Variation != variation)
+                        return;
+                    if (PrestigeManager.IsLandblockAllowed(variation, lbVal))
+                        return;
+
+                    if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck >= 10.0) // Throttle logs
+                    {
+                       log.Info($"Player {Name} ({Guid}) is in FORBIDDEN landblock {currentLBVal:X4} (Var: {variation})");
+                    }
+
+                    // 1. Visuals: Void Particles + Fog (Removed PortalStorm to avoid chat spam)
+                    Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
+                    SetFogColor(EnvironChangeType.RedFog);
+
+                    // 2. Text: Center Screen (Yellow) ONLY
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, 
+                        "!!! YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! !!!"));
+
+                    // 3. Damage: Force update vital (Direct HP reduction)
+                    var dmg = (int)(Health.MaxValue * 0.05f);
+                    if (dmg < 10) dmg = 10;
+                    
+                    UpdateVitalDelta(Health, -dmg);
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
+
+                    // Spawn Wisp after ~2 seconds in the danger zone
+                    if (Time.GetUnixTime() - _outOfBoundsEntryTime > 2.0)
+                    {
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: PUNISHMENT calling UpdateGuideWisp(danger=true)");
+                        UpdateGuideWisp(true, variation);
+                    }
+                    
+                    if (Health.Current <= 0)
+                    {
+                        OnDeath(new DamageHistoryInfo(this), DamageType.Nether, false);
+                        Die(); 
+                        CleanupPrestigeEffects();
+                    }
+                }));
+            }
+            else
+            {
+                _outOfBoundsEntryTime = 0;
+
+                // PROXIMITY CHECK (Safe but near edge?)
+                var lbId = new ACE.Entity.LandblockId(Location.Cell);
+                var pos = Location.Pos;
+                bool danger = false;
+
+                // Check 20m buffer from edges (0..192)
+                // Fix: Check bounds before accessing West/East/North/South to avoid OverflowException at map edge
+                string dangerEdge = "none";
+                if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) { danger = true; dangerEdge = $"East(LB={lbId.East.Landblock:X4})"; }
+                else if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock)) { danger = true; dangerEdge = $"West(LB={lbId.West.Landblock:X4})"; }
+                else if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) { danger = true; dangerEdge = $"North(LB={lbId.North.Landblock:X4})"; }
+                else if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock)) { danger = true; dangerEdge = $"South(LB={lbId.South.Landblock:X4})"; }
+
+                if (IsDebugTarget)
+                    log.Warn($"[Prestige-DBG] {Name}: SAFE ZONE proximity check. danger={danger} dangerEdge={dangerEdge} Pos=({pos.X:F1},{pos.Y:F1}) LB={lbId.Landblock:X4}");
+
+                if (danger)
+                {
+                    SetFogColor(EnvironChangeType.WhiteFog);
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, "!!! PRESTIGE BOUNDARY NEARBY !!!"));
+                }
+                else
+                {
+                    SetFogColor(CurrentLandblock?.FogColor ?? EnvironChangeType.Clear);
+                }
+
+                // Check if we are fully inside a bad landblock (not just near edge)
+                bool inForbiddenLandblock = !PrestigeManager.IsLandblockAllowed(variation, lbId.Landblock);
+                if (inForbiddenLandblock)
+                {
+                    danger = true;
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: inForbiddenLandblock=true (current LB not allowed), overriding danger=true");
+                }
+
+                // Track when we last had danger (for wisp persistence)
+                if (danger)
+                {
+                    _lastDangerTime = Time.GetUnixTime();
+                }
+
+                if (IsDebugTarget)
+                {
+                    var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
+                    log.Warn($"[Prestige-DBG] {Name}: calling UpdateGuideWisp(danger={danger}). WispAlive={_guideWisp != null} timeSinceDanger={timeSinceDanger:F1}s lastDangerTime={_lastDangerTime:F1}");
+                }
+                // Wisp with 5s persistence after reaching safety
+                UpdateGuideWisp(inForbiddenLandblock, variation);
+
+                // Note: Boundary markers are now spawned by the Landblock at load time,
+                // so no per-player marker logic is needed here.
+            }
+        }
+        
+        private Creature _guideWisp;
+        private double _outOfBoundsEntryTime;
+        private double _lastDangerTime;
+
+        /// <summary>
+        /// Cleans up player-specific prestige effects (guide wisp).
+        /// Boundary markers are now landblock-owned and don't need per-player cleanup.
+        /// </summary>
+        public void CleanupPrestigeEffects()
+        {
+            if (_guideWisp != null)
+            {
+                _guideWisp.Destroy();
+                _guideWisp = null;
+            }
+        }
+
+        private void UpdateGuideWisp(bool danger, int? variation)
+        {
+            if (danger)
+            {
+                if (_guideWisp == null)
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN REQUESTED. danger=true, wisp=null. Fetching weenie...");
+
+                    // Spawn Wisp
+                    var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_WISPETHEREAL_CLASS);
+                    if (weenie != null)
+                    {
+                        // Capture state for thread safety
+                        var playerPos = Location.Pos; // Exact player position
+                        var cell = Location.Cell;
+                        var lbId = new ACE.Entity.LandblockId(cell);
+                        
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: WISP enqueuing spawn. PlayerPos=({playerPos.X:F1},{playerPos.Y:F1},{playerPos.Z:F1}) Cell={cell:X8} LB={lbId.Landblock:X4}");
+
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                        {
+                            if (Session == null || Session.State != SessionState.WorldConnected)
+                                return;
+
+                            // Double check inside queue
+                            if (_guideWisp != null)
+                            {
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP spawn aborted inside queue - wisp already exists (Guid={_guideWisp.Guid})");
+                                return;
+                            }
+
+                            var liveCell = Location?.Cell ?? 0;
+                            if (liveCell != cell || Location?.Variation != variation)
+                                return;
+
+                            var lbValNow = (ushort)(liveCell >> 16);
+                            if (PrestigeManager.IsLandblockAllowed(variation, lbValNow))
+                                return;
+
+                            var wisp = Factories.WorldObjectFactory.CreateNewWorldObject(weenie) as Creature;
+                            if (wisp != null)
+                            {
+                                wisp.Name = "Prestige Guide";
+                                wisp.SetProperty(PropertyBool.Invincible, true);
+                                wisp.SetProperty(PropertyBool.IgnoreCollisions, true);
+                                wisp.SetProperty(PropertyBool.Attackable, false);
+                                wisp.SetProperty(PropertyBool.NeverAttack, true);
+                                
+                                var spawnPos = playerPos + (Vector3.UnitZ * 0.2f);
+                                wisp.Location = new ACE.Entity.Position(cell, spawnPos.X, spawnPos.Y, spawnPos.Z, 0, 0, 0, 0, false, variation);
+                                
+                                wisp.EnterWorld();
+                                _guideWisp = wisp;
+                                
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP SPAWNED. Guid={wisp.Guid} SpawnPos=({spawnPos.X:F1},{spawnPos.Y:F1},{spawnPos.Z:F1}) Cell={cell:X8}");
+
+                                // Calculate "Smart" Safe Spot
+                                uint targetCell = cell;
+                                float targetX = 96.0f;
+                                float targetY = 96.0f;
+                                string safeDir = "None";
+
+                                // Check cardinal neighbors for safety
+                                bool eAllowed = lbId.LandblockX < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock);
+                                bool wAllowed = lbId.LandblockX > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock);
+                                bool nAllowed = lbId.LandblockY < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
+                                bool sAllowed = lbId.LandblockY > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock);
+
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP neighbor safety: E={eAllowed}({(lbId.LandblockX < 255 ? lbId.East.Landblock.ToString("X4") : "EDGE")}) W={wAllowed}({(lbId.LandblockX > 0 ? lbId.West.Landblock.ToString("X4") : "EDGE")}) N={nAllowed}({(lbId.LandblockY < 255 ? lbId.North.Landblock.ToString("X4") : "EDGE")}) S={sAllowed}({(lbId.LandblockY > 0 ? lbId.South.Landblock.ToString("X4") : "EDGE")})");
+
+                                if (eAllowed)
+                                {
+                                    targetCell = lbId.East.Raw;
+                                    targetX = 5.0f; 
+                                    targetY = playerPos.Y;
+                                    safeDir = "East";
+                                }
+                                else if (wAllowed)
+                                {
+                                    targetCell = lbId.West.Raw;
+                                    targetX = 187.0f;
+                                    targetY = playerPos.Y;
+                                    safeDir = "West";
+                                }
+                                else if (nAllowed)
+                                {
+                                    targetCell = lbId.North.Raw;
+                                    targetX = playerPos.X;
+                                    targetY = 5.0f;
+                                    safeDir = "North";
+                                }
+                                else if (sAllowed)
+                                {
+                                    targetCell = lbId.South.Raw;
+                                    targetX = playerPos.X;
+                                    targetY = 187.0f;
+                                    safeDir = "South";
+                                }
+                                else
+                                {
+                                    safeDir = "Fallback(Center)";
+                                }
+
+                                var safePos = new ACE.Entity.Position(targetCell, targetX, targetY, spawnPos.Z, 0, 0, 0, 0, false, variation);
+                                
+                                log.Warn($"[Prestige] Wisp: Spawned at {lbId}. Found Safe Direction: {safeDir}.");
+                                log.Warn($"[Prestige] Wisp: Moving to Target: {safePos} (Cell: {targetCell:X8}, X:{targetX}, Y:{targetY})");
+
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP MOVE: From ({spawnPos.X:F1},{spawnPos.Y:F1}) -> ({targetX:F1},{targetY:F1}) targetCell={targetCell:X8} dir={safeDir}");
+
+                                wisp.MoveToPosition(safePos);
+                                
+                                Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    "Follow the Wisp to safety!", ChatMessageType.Broadcast));
+                            }
+                            else
+                            {
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN FAILED - CreateNewWorldObject returned null or not Creature");
+                            }
+                        }));
+                    }
+                    else
+                    {
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: WISP SPAWN FAILED - weenie not found in cache");
+                    }
+                }
+                else
+                {
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: WISP already alive (Guid={_guideWisp.Guid}), danger=true, no action. WispPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
+                }
+            }
+            else
+            {
+                // Only destroy wisp if we've been safe for 5+ seconds
+                if (_guideWisp != null)
+                {
+                    var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
+                    if (IsDebugTarget)
+                        log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWN CHECK. danger=false, timeSinceDanger={timeSinceDanger:F1}s (need 10.0s). WispGuid={_guideWisp.Guid} WispPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
+
+                    if (timeSinceDanger >= 10.0)
+                    {
+                        if (IsDebugTarget)
+                            log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWNING NOW (5s elapsed). Enqueuing destroy.");
+
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                        {
+                            if (Session == null || Session.State != SessionState.WorldConnected)
+                                return;
+
+                            if (_guideWisp != null)
+                            {
+                                if (IsDebugTarget)
+                                    log.Warn($"[Prestige-DBG] {Name}: WISP DESTROYED inside queue. FinalPos=({_guideWisp.Location?.Pos.X:F1},{_guideWisp.Location?.Pos.Y:F1})");
+
+                                var msg = new GameMessageHearSpeech("Do try to stay on the path next time...", _guideWisp.Name, _guideWisp.Guid.Full, ChatMessageType.Speech);
+                                Session.Network.EnqueueSend(msg);
+
+                                _guideWisp.Destroy();
+                                _guideWisp = null;
+                            }
+                        }));
+                    }
+                }
+                else
+                {
+                    // No wisp, no danger - nothing to do (don't log this, too spammy)
+                }
+            }
+        }
 
         public bool SyncLocationWithPhysics()
         {
-            if (PhysicsObj.CurCell == null)
+            if (PhysicsObj?.CurCell == null)
             {
-                Console.WriteLine($"{Name}.SyncLocationWithPhysics(): CurCell is null!");
+                if (PhysicsObj != null)
+                    Console.WriteLine($"{Name}.SyncLocationWithPhysics(): CurCell is null!");
                 return false;
             }
 
@@ -464,7 +809,8 @@ namespace ACE.Server.WorldObjects
             var rotate = PhysicsObj.Position.Frame.Orientation;
             var variation = PhysicsObj.Position.Variation;
 
-            var landblockUpdate = blockcell << 16 != CurrentLandblock.Id.Landblock;
+            // CurrentLandblock can be null briefly during teleport/recall while physics has already updated
+            var landblockUpdate = CurrentLandblock != null && (ushort)(blockcell >> 16) != CurrentLandblock.Id.Landblock;
 
             Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 

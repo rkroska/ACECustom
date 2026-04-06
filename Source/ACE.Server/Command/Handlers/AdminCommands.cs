@@ -197,6 +197,361 @@ namespace ACE.Server.Command.Handlers
             return first;
         }
 
+        [CommandHandler("prestige", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1, "Sets the Prestige level of your target.", "tier")]
+        public static void HandlePrestige(Session session, params string[] parameters)
+        {
+            if (parameters.Length < 1 || !int.TryParse(parameters[0], out var tier))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige <tier>");
+                return;
+            }
+
+            var maxPrestigeTier = int.MaxValue - PrestigeManager.PRESTIGE_VAR_OFFSET;
+            if (tier < 0 || tier > maxPrestigeTier)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige <tier>");
+                return;
+            }
+
+            var target = session.Player.SelectedTarget;
+            if (target == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "You must select a target.");
+                return;
+            }
+
+            switch (target)
+            {
+                case Player playerTarget:
+                    playerTarget.SetProperty(PropertyInt.PrestigeLevel, tier);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {playerTarget.Name} to {tier}.");
+                    break;
+                case Creature creature:
+                    var variationForTier = tier > 0 ? tier + PrestigeManager.PRESTIGE_VAR_OFFSET : (int?)null;
+                    PrestigeManager.ApplyPrestigeScaling(creature, variationForTier);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Applied prestige scaling to {creature.Name} (tier {tier}).");
+                    break;
+                default:
+                    CommandHandlerHelper.WriteOutputInfo(session, "Target must be a player or creature.");
+                    break;
+            }
+        }
+
+        [CommandHandler("prestige-debug", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Debug prestige boundary markers in current landblock.")]
+        public static void HandlePrestigeDebug(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            var landblock = player.CurrentLandblock;
+            
+            if (landblock == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Not in a landblock.");
+                return;
+            }
+
+            var variation = player.Location.Variation;
+            var tier = PrestigeManager.GetTier(variation);
+            var isAllowed = PrestigeManager.IsLandblockAllowed(variation, landblock.Id.Landblock);
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"=== Prestige Debug ===");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Landblock: {landblock.Id.Landblock:X4}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Variation: {variation}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Prestige Tier: {tier}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Is Allowed: {isAllowed}");
+            var worldObjects = landblock.GetWorldObjectsForDiagnostics().ToList();
+            CommandHandlerHelper.WriteOutputInfo(session, $"WorldObjects in LB: {worldObjects.Count}");
+
+            var markers = worldObjects.Where(wo => wo.Name == "Prestige Boundary").ToList();
+            
+            CommandHandlerHelper.WriteOutputInfo(session, $"Boundary Markers: {markers.Count}");
+            
+            foreach (var marker in markers.Take(5))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"  - {marker.Guid} at ({marker.Location.Pos.X:F1}, {marker.Location.Pos.Y:F1}, {marker.Location.Pos.Z:F1})");
+            }
+            
+            if (markers.Count > 5)
+                CommandHandlerHelper.WriteOutputInfo(session, $"  ... and {markers.Count - 5} more");
+        }
+
+        [CommandHandler("prestige-mirror", AccessLevel.Admin, CommandHandlerFlag.None, 1,
+            "Inspect prestige mirroring targets and normalization.",
+            "targets [sourceVariation]\nnormalize <sourceVariation> <variationList>")]
+        public static void HandlePrestigeMirror(Session session, params string[] parameters)
+        {
+            var subcommand = parameters[0].ToLowerInvariant();
+            switch (subcommand)
+            {
+                case "targets":
+                {
+                    int? sourceVariation = null;
+                    if (parameters.Length >= 2)
+                    {
+                        if (!int.TryParse(parameters[1], out var parsed))
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror targets [sourceVariation]");
+                            return;
+                        }
+                        sourceVariation = parsed;
+                    }
+                    else if (session.Player?.Location != null)
+                    {
+                        sourceVariation = session.Player.Location.Variation;
+                    }
+
+                    var maxVariation = PrestigeManager.GetMaxConfiguredPrestigeVariation();
+                    var defaultTargets = PrestigeManager.GetDefaultMirrorTargetVariations(sourceVariation);
+                    CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Targets ===");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {(sourceVariation.HasValue ? sourceVariation.Value.ToString() : "null")}");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Base Prestige Variation: {PrestigeManager.GetBasePrestigeVariation()}");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Max Configured Prestige Variation: {maxVariation}");
+                    CommandHandlerHelper.WriteOutputInfo(session, defaultTargets.Count == 0
+                        ? "Default Targets: <none>"
+                        : $"Default Targets: {string.Join(", ", defaultTargets)}");
+                    break;
+                }
+
+                case "normalize":
+                {
+                    if (parameters.Length < 3 || !int.TryParse(parameters[1], out var sourceVariation))
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror normalize <sourceVariation> <variationList>");
+                        CommandHandlerHelper.WriteOutputInfo(session, "Examples: /prestige-mirror normalize 11 12,13,15 or /prestige-mirror normalize 11 12-15");
+                        return;
+                    }
+
+                    var requested = ParseVariationList(parameters[2]).ToList();
+                    var normalized = PrestigeManager.NormalizeMirrorTargetVariations(requested, sourceVariation);
+                    CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Normalize ===");
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {sourceVariation}");
+                    CommandHandlerHelper.WriteOutputInfo(session, requested.Count == 0
+                        ? "Requested Targets: <none parsed>"
+                        : $"Requested Targets: {string.Join(", ", requested)}");
+                    CommandHandlerHelper.WriteOutputInfo(session, normalized.Count == 0
+                        ? "Normalized Targets: <none>"
+                        : $"Normalized Targets: {string.Join(", ", normalized)}");
+                    break;
+                }
+
+                default:
+                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestige-mirror targets [sourceVariation]");
+                    CommandHandlerHelper.WriteOutputInfo(session, "   or: /prestige-mirror normalize <sourceVariation> <variationList>");
+                    break;
+            }
+        }
+
+        [CommandHandler("prestige-mirror-check", AccessLevel.Admin, CommandHandlerFlag.None, 0,
+            "Check mirroring eligibility for selected target or wcid.",
+            "[wcid]")]
+        public static void HandlePrestigeMirrorCheck(Session session, params string[] parameters)
+        {
+            WeenieType weenieType;
+            bool hasGeneratorProfiles;
+            uint weenieClassId;
+            string sourceLabel;
+
+            if (parameters.Length >= 1 && uint.TryParse(parameters[0], out var wcid))
+            {
+                var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
+                if (weenie == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Weenie {wcid} not found.");
+                    return;
+                }
+
+                weenieType = weenie.WeenieType;
+                hasGeneratorProfiles = weenie.PropertiesGenerator != null && weenie.PropertiesGenerator.Count > 0;
+                weenieClassId = wcid;
+                sourceLabel = "WCID argument";
+            }
+            else
+            {
+                var target = session.Player?.SelectedTarget;
+                if (target == null)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Select a target or pass a wcid.");
+                    return;
+                }
+
+                var weenie = DatabaseManager.World.GetCachedWeenie(target.WeenieClassId);
+                weenieType = target.WeenieType;
+                hasGeneratorProfiles = weenie?.PropertiesGenerator != null && weenie.PropertiesGenerator.Count > 0;
+                weenieClassId = target.WeenieClassId;
+                sourceLabel = $"Selected target {target.Name}";
+            }
+
+            var eligible = PrestigeManager.IsCreateInstMirrorEligible(weenieType, hasGeneratorProfiles);
+            CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Eligibility ===");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Source: {sourceLabel}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"WCID: {weenieClassId}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"WeenieType: {weenieType}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Has Generator Profiles: {hasGeneratorProfiles}");
+            CommandHandlerHelper.WriteOutputInfo(session, $"Mirror Eligible: {eligible}");
+        }
+
+        private const int MaxVariationExpandItems = 4096;
+        private const int MaxVariationIdBound = 1_000_000;
+
+        private static IEnumerable<int> ParseVariationList(string csvOrRange)
+        {
+            if (string.IsNullOrWhiteSpace(csvOrRange))
+                yield break;
+
+            var values = csvOrRange.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var value in values)
+            {
+                if (value.Contains('-', StringComparison.Ordinal))
+                {
+                    var parts = value.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (parts.Length != 2 || !int.TryParse(parts[0], out var min) || !int.TryParse(parts[1], out var max))
+                        continue;
+
+                    if (min > max)
+                        (min, max) = (max, min);
+
+                    if (min < 0 || max > MaxVariationIdBound)
+                        continue;
+
+                    var span = (long)max - (long)min + 1L;
+                    if (span <= 0)
+                        continue;
+
+                    var cap = (int)Math.Min(span, MaxVariationExpandItems);
+                    for (var i = 0; i < cap; i++)
+                        yield return min + i;
+
+                    continue;
+                }
+
+                if (int.TryParse(value, out var variationId))
+                {
+                    if (variationId >= 0 && variationId <= MaxVariationIdBound)
+                        yield return variationId;
+                }
+            }
+        }
+
+        [CommandHandler("prestigezone", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Manage allowed prestige landblocks.",
+            "add <tier> <landblockHex|landblockDec>\nremove <tier> <landblockHex|landblockDec>\nlist [tier]\nreload\nrefresh [variation]")]
+        public static void HandlePrestigeZone(Session session, params string[] parameters)
+        {
+            var subcommand = parameters[0].ToLowerInvariant();
+
+            switch (subcommand)
+            {
+                case "add":
+                    if (parameters.Length < 3 || !TryParsePrestigeTier(parameters[1], out var addTier) || !TryParseLandblock(parameters[2], out var addLandblock))
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone add <tier> <landblockHex|landblockDec>");
+                        return;
+                    }
+
+                    PrestigeManager.AddAllowedLandblock(addTier, addLandblock);
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Added landblock {addLandblock:X4} to prestige tier {addTier}.");
+                    break;
+
+                case "remove":
+                    if (parameters.Length < 3 || !TryParsePrestigeTier(parameters[1], out var removeTier) || !TryParseLandblock(parameters[2], out var removeLandblock))
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone remove <tier> <landblockHex|landblockDec>");
+                        return;
+                    }
+
+                    var removed = PrestigeManager.RemoveAllowedLandblock(removeTier, removeLandblock);
+                    CommandHandlerHelper.WriteOutputInfo(session, removed
+                        ? $"Removed landblock {removeLandblock:X4} from prestige tier {removeTier}."
+                        : $"No active mapping found for tier {removeTier}, landblock {removeLandblock:X4}.");
+                    break;
+
+                case "list":
+                    if (parameters.Length >= 2)
+                    {
+                        if (!TryParsePrestigeTier(parameters[1], out var singleTier))
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone list [tier]");
+                            return;
+                        }
+
+                        var singleSet = PrestigeManager.GetAllAllowedLandblocks();
+                        if (!singleSet.TryGetValue(singleTier, out var lbs) || lbs.Count == 0)
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, $"Tier {singleTier}: no allowed landblocks configured.");
+                            return;
+                        }
+
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Tier {singleTier} allowed landblocks ({lbs.Count}): {string.Join(", ", lbs.OrderBy(x => x).Select(x => x.ToString("X4")))}");
+                        return;
+                    }
+
+                    var all = PrestigeManager.GetAllAllowedLandblocks();
+                    if (all.Count == 0)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, "No prestige zone mappings configured.");
+                        return;
+                    }
+
+                    foreach (var kvp in all.OrderBy(x => x.Key))
+                    {
+                        var lbList = kvp.Value.OrderBy(x => x).Select(x => x.ToString("X4"));
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Tier {kvp.Key} ({kvp.Value.Count}): {string.Join(", ", lbList)}");
+                    }
+                    break;
+
+                case "reload":
+                    PrestigeManager.ReloadAllowedLandblocksFromDatabase();
+                    CommandHandlerHelper.WriteOutputInfo(session, "Reloaded prestige allowed landblocks from database.");
+                    break;
+
+                case "refresh":
+                    int? variation = null;
+                    if (parameters.Length >= 2)
+                    {
+                        if (!int.TryParse(parameters[1], out var parsedVariation))
+                        {
+                            CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone refresh [variation]");
+                            return;
+                        }
+                        variation = parsedVariation;
+                    }
+
+                    var queued = LandblockManager.RefreshLoadedPrestigeBoundaryMarkers(variation);
+                    CommandHandlerHelper.WriteOutputInfo(session, variation.HasValue
+                        ? $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) in variation {variation} (processed asynchronously on each landblock)."
+                        : $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) (processed asynchronously on each landblock).");
+                    break;
+
+                default:
+                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /prestigezone add|remove|list|reload|refresh ...");
+                    break;
+            }
+        }
+
+        [CommandHandler("pz", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Alias for prestigezone.",
+            "add|remove|list|reload|refresh")]
+        public static void HandlePz(Session session, params string[] parameters)
+        {
+            HandlePrestigeZone(session, parameters);
+        }
+
+        private static bool TryParsePrestigeTier(string input, out int tier)
+        {
+            if (!int.TryParse(input, out tier))
+                return false;
+
+            return tier > 0 && tier <= (int.MaxValue - PrestigeManager.PRESTIGE_VAR_OFFSET);
+        }
+
+        private static bool TryParseLandblock(string input, out ushort landblock)
+        {
+            var normalized = input.Trim();
+            if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                return ushort.TryParse(normalized[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblock);
+
+            return ushort.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out landblock);
+        }
+
         private static void HandleTransferLog(Session session, string[] parameters)
         {
             if (parameters.Length < 1)
@@ -2418,6 +2773,59 @@ namespace ACE.Server.Command.Handlers
                     ChatPacket.SendServerMessage(session, "Select a target and use @smite, or use @smite all to kill all creatures in radar range or @smite [players' name].", ChatMessageType.Broadcast);
                 }
             }
+        }
+
+        // televariant variation (other /tele* live in TeleportCommands on master)
+        [CommandHandler("televariant", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Teleport yourself to the specified variation at your current location.",
+            "variation — retail | default | null | 0 (base), or an integer variation id\n" +
+            "Example: @televariant 1\n" +
+            "Example: @televariant retail")]
+        public static void HandleTelevariant(Session session, params string[] parameters)
+        {
+            int? variation = null;
+            var param = parameters[0].ToLower();
+
+            if (param == "retail" || param == "null" || param == "default" || param == "0")
+            {
+                variation = null;
+            }
+            else if (int.TryParse(parameters[0], out int varId))
+            {
+                if (varId < 0)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null', '0', or an integer ID.");
+                    return;
+                }
+                variation = varId;
+            }
+            else
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Invalid variation ID. Use 'retail', 'default', 'null', '0', or an integer ID.");
+                return;
+            }
+
+            var currentPos = session.Player.Location;
+            // Create a completely new Position object to avoid any reference issues
+            // and ensure the LandblockId is correctly re-constructed with the new variation.
+            var newPos = new Position(currentPos.Cell, currentPos.PositionX, currentPos.PositionY, currentPos.PositionZ,
+                                        currentPos.RotationX, currentPos.RotationY, currentPos.RotationZ, currentPos.RotationW,
+                                        false, variation);
+
+            session.Player.Teleport(newPos);
+            var variationLabel = variation.HasValue ? variation.Value.ToString() : "base (retail / default / null / 0)";
+            CommandHandlerHelper.WriteOutputInfo(session, $"Teleporting to variation {variationLabel}.");
+        }
+
+        // tv {variation} - Alias for televariant
+        [CommandHandler("tv", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 1,
+            "Teleport yourself to the specified variation at your current location (alias for televariant).",
+            "variation — retail | default | null | 0 (base), or an integer variation id\n" +
+            "Example: @tv 1\n" +
+            "Example: @tv retail")]
+        public static void HandleTV(Session session, params string[] parameters)
+        {
+            HandleTelevariant(session, parameters);
         }
 
         // time

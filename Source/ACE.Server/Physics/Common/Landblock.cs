@@ -33,6 +33,22 @@ namespace ACE.Server.Physics.Common
         //public List<LandCell> DrawArray;
         //public List<PhysicsObj> Scenery;
         public List<PhysicsObj> ServerObjects { get; set; }
+        private readonly object _serverObjectsLock = new object();
+
+        public int ServerObjectsCount
+        {
+            get
+            {
+                lock (_serverObjectsLock)
+                    return ServerObjects.Count;
+            }
+        }
+
+        public void CopyServerObjectsTo(List<PhysicsObj> target)
+        {
+            lock (_serverObjectsLock)
+                target.AddRange(ServerObjects);
+        }
 
 
         private static bool UseSceneFiles = true;
@@ -84,12 +100,15 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool add_server_object(PhysicsObj obj)
         {
-            if (!ServerObjects.Contains(obj))
+            lock (_serverObjectsLock)
             {
-                ServerObjects.Add(obj);
-                return true;
+                if (!ServerObjects.Contains(obj))
+                {
+                    ServerObjects.Add(obj);
+                    return true;
+                }
+                return false;
             }
-            return false;
         }
 
         /// <summary>
@@ -98,7 +117,8 @@ namespace ACE.Server.Physics.Common
         /// </summary>
         public bool remove_server_object(PhysicsObj obj)
         {
-            return ServerObjects.Remove(obj);
+            lock (_serverObjectsLock)
+                return ServerObjects.Remove(obj);
         }
 
         public void adjust_scene_obj_height()
@@ -263,7 +283,7 @@ namespace ACE.Server.Physics.Common
                             pos.Frame = ObjectDesc.RotateObj(obj, globalCellX, globalCellY, j, pos.Frame.Origin);
 
                         // build object
-                        var physicsObj = PhysicsObj.makeObject(obj.ObjId, 0, false);
+                        var physicsObj = PhysicsObj.makeObject(obj.ObjId, 0, false, VariationId);
                         physicsObj.DatObject = true;
                         physicsObj.set_initial_frame(pos.Frame);
                         if (!physicsObj.obj_within_block())
@@ -431,7 +451,7 @@ namespace ACE.Server.Physics.Common
             uint maxSize = 0, stabNum = 0;
             foreach (var info in Info.Buildings)
             {
-                var building = BuildingObj.makeBuilding(info.ModelId, info.Portals, info.NumLeaves);
+                var building = BuildingObj.makeBuilding(info.ModelId, info.Portals, info.NumLeaves, VariationId);
                 var position = new Position(ID, new AFrame(info.Frame), VariationId);
                 var outside = LandDefs.AdjustToOutside(position);
                 var cell = get_landcell(position.ObjCellID);
@@ -482,16 +502,17 @@ namespace ACE.Server.Physics.Common
             }
             else if (Info != null)
             {
+                // Console.WriteLine($"[Dir] Landblock {ID:X8} (Var {VariationId}): Loading {Info.Objects.Count} static objects from DB Info.");
                 foreach (var info in Info.Objects)
                 {
-                    var obj = PhysicsObj.makeObject(info.Id, 0, false);
+                    var obj = PhysicsObj.makeObject(info.Id, 0, false, VariationId);
                     obj.DatObject = true;
                     var position = new Position(ID, new AFrame(info.Frame), VariationId);
                     var outside = LandDefs.AdjustToOutside(position);
                     var cell = get_landcell(position.ObjCellID);
                     if (cell == null)
                     {
-                        //Console.WriteLine($"Landblock {ID:X8} - failed to spawn static object {info.Id:X8}");
+                        Console.WriteLine($"Landblock {ID:X8} - failed to spawn static object {info.Id:X8}");
                         obj.DestroyObject();
                         continue;
                     }
@@ -516,8 +537,16 @@ namespace ACE.Server.Physics.Common
                     }
                 }
             }
+            else
+            {
+                 // Console.WriteLine($"[Dir] Landblock {ID:X8} (Var {VariationId}): No DB Info found.");
+            }
+
             if (UseSceneFiles)
+            {
+                // Console.WriteLine($"[Dir] Landblock {ID:X8} (Var {VariationId}): Loading Scenery (DAT)...");
                 get_land_scenes();
+            }
         }
 
         //public void notify_change_size()
@@ -650,12 +679,18 @@ namespace ACE.Server.Physics.Common
 
         public List<PhysicsObj> GetServerObjects(bool includeAdjacents)
         {
-            var results = new List<PhysicsObj>(ServerObjects);
+            // Lock access to this landblock's server objects
+            var results = new List<PhysicsObj>();
+            lock (_serverObjectsLock)
+                results.AddRange(ServerObjects);
 
             if (includeAdjacents && adjacents?.Count > 0)
             {
                 foreach (var adjacent in adjacents)
-                    results.AddRange(adjacent.ServerObjects);
+                {
+                    // Use thread-safe copy from adjacent landblock
+                    adjacent.CopyServerObjectsTo(results);
+                }
             }
 
             return results;
@@ -687,7 +722,8 @@ namespace ACE.Server.Physics.Common
 
         public void SortObjects()
         {
-            ServerObjects = ServerObjects.OrderBy(i => i.Order).ToList();
+            lock (_serverObjectsLock)
+                ServerObjects = ServerObjects.OrderBy(i => i.Order).ToList();
         }
     }
 }

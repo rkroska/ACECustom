@@ -392,13 +392,43 @@ namespace ACE.Server.Managers
 
             // Remove from the old landblock -- force
             oldBlock?.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
-            // Add to the new landblock
-            newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+
+            // Thread-local tick context is cleared before RelocateObjectForPhysics runs for movedObjects;
+            // use landblock groups + config so cross-group physics relocations still enqueue when MT physics is on.
+            var crossGroupPhysicsMove = ConfigManager.Config.Server.Threading.MultiThreadedLandblockGroupPhysicsTicking
+                && oldBlock?.CurrentLandblockGroup != null
+                && newBlock.CurrentLandblockGroup != null
+                && oldBlock.CurrentLandblockGroup != newBlock.CurrentLandblockGroup;
+
+            if (crossGroupPhysicsMove)
+                newBlock.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+            else
+                newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
         }
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
             return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
+        }
+
+        public static int RefreshLoadedPrestigeBoundaryMarkers(int? variation = null)
+        {
+            var refreshed = 0;
+            var loaded = loadedLandblocks.Values.ToList();
+
+            foreach (var landblock in loaded)
+            {
+                if (landblock == null)
+                    continue;
+
+                if (variation.HasValue && landblock.VariationId != variation)
+                    continue;
+
+                landblock.RefreshPrestigeBoundaryMarkers();
+                refreshed++;
+            }
+
+            return refreshed;
         }
 
         /// <summary>
@@ -587,7 +617,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void SetAdjacents(Landblock landblock, bool traverse = true, bool pSync = false)
         {
-            landblock.Adjacents = GetAdjacents(landblock);
+            landblock.Adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             if (pSync)
                 landblock.PhysicsLandblock.SetAdjacents(landblock.Adjacents);
@@ -714,7 +744,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void NotifyAdjacents(Landblock landblock)
         {
-            var adjacents = GetAdjacents(landblock);
+            var adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             foreach (var adjacent in adjacents)
                 SetAdjacents(adjacent, false, true);
