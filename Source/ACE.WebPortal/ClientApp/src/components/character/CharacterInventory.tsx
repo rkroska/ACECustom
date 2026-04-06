@@ -101,18 +101,11 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
       }
     })
 
-    let finalTopLevel = topLevelHeaders
-    let finalMainPack = mainPackItems
-    if (searchTerm) {
-      finalTopLevel = topLevelHeaders.filter(header => visibleIds.has(header.guid))
-      finalMainPack = mainPackItems.filter(item => visibleIds.has(item.guid))
-    }
-
     equipped.sort((a, b) => a.name.localeCompare(b.name))
-    finalMainPack.sort((a, b) => a.name.localeCompare(b.name))
-    finalTopLevel.sort((a, b) => a.name.localeCompare(b.name))
-
-    return { equipped, mainPackItems: finalMainPack, topLevelHeaders: finalTopLevel, itemsByContainer, visibleIds }
+    mainPackItems.sort((a, b) => a.name.localeCompare(b.name))
+    topLevelHeaders.sort((a, b) => a.name.localeCompare(b.name))
+ 
+    return { equipped, mainPackItems, topLevelHeaders, itemsByContainer, visibleIds }
   }, [items, searchTerm, guid])
 
   if (isLoading) {

@@ -37,7 +37,8 @@ namespace ACE.Server.Web
         public static async Task Start(string[] args)
         {
             var envStr = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var isDevelopment = System.Diagnostics.Debugger.IsAttached || string.Equals(envStr, "Development", StringComparison.OrdinalIgnoreCase);
+            var isDevelopment = string.Equals(envStr, "Development", StringComparison.OrdinalIgnoreCase);
+            var isDebuggerAttached = System.Diagnostics.Debugger.IsAttached;
 
             await _hostLock.WaitAsync();
             try
@@ -56,7 +57,7 @@ namespace ACE.Server.Web
                 // Production fallback: Use binary-local 'wwwroot'
 
                 string? distPath = null;
-                if (isDevelopment)
+                if (isDevelopment || isDebuggerAttached)
                 {
                     distPath = FindSourceDist();
                 }
@@ -75,13 +76,20 @@ namespace ACE.Server.Web
                     throw new DirectoryNotFoundException($"Web Portal assets missing at {distPath}");
                 }
 
+                // Entrypoint Check (Non-Fatal): Verify if the SPA is present
+                // We intentionally avoid a fatal error, as the primary purpose of the server is to serve the game client.
+                if (!File.Exists(Path.Combine(distPath, "index.html")))
+                {
+                    log.Warn($"[WEB PORTAL] Asset directory exists, but 'index.html' was NOT found at: {distPath}. Web Portal UI requests will return a 404 (Not Found).");
+                }
+
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
                 {
                     Args = args,
                     WebRootPath = distPath
                 });
 
-                if (isDevelopment)
+                if (isDevelopment || isDebuggerAttached)
                 {
                     builder.Logging.SetMinimumLevel(LogLevel.Debug);
                 }
@@ -187,18 +195,18 @@ namespace ACE.Server.Web
                 var port = isDevelopment ? 5000 : 5001;
                 var url = $"http://{host}:{port}";
 
+                app.Urls.Clear();
+                app.Urls.Add(url);
+                await app.StartAsync();
+
                 _host = app;
+                _started = true;
                 log.Info($"Web Portal listening at {url}");
 
                 if (!isDevelopment)
                 {
                     log.Warn("SECURE CONFIGURATION: Portal is bound to loopback only. A reverse proxy (e.g., NGINX, IIS) is required to terminate SSL/TLS and expose this service.");
                 }
-
-                app.Urls.Clear();
-                app.Urls.Add(url);
-                await app.StartAsync();
-                _started = true;
             }
             catch (Exception ex)
             {
