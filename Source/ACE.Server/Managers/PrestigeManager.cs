@@ -295,6 +295,36 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Reverts HP and damage changes from <see cref="ApplyPrestigeScaling"/> using <see cref="PropertyInt.PrestigeLevel"/> as the tier that was applied.
+        /// Call before re-applying a different tier so stats replace rather than compound.
+        /// </summary>
+        public static void RemovePrestigeScaling(Creature creature)
+        {
+            var oldTier = creature.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
+            if (oldTier <= 0)
+                return;
+
+            var hpMod = GetHPModifier(oldTier);
+            if (hpMod != 1.0f)
+                creature.Health.StartingValue = (uint)Math.Round(creature.Health.StartingValue / hpMod);
+
+            var dmgMod = GetDamageModifier(oldTier);
+            if (dmgMod != 1.0f)
+            {
+                var rating = ModToRating(dmgMod);
+                var existing = creature.GetProperty(PropertyInt.DamageRating) ?? 0;
+                var next = Math.Max(0, existing - rating);
+                if (next == 0)
+                    creature.RemoveProperty(PropertyInt.DamageRating);
+                else
+                    creature.SetProperty(PropertyInt.DamageRating, next);
+            }
+
+            creature.RemoveProperty(PropertyInt.PrestigeLevel);
+            creature.SetMaxVitals();
+        }
+
+        /// <summary>
         /// Applies HP and Damage scaling to a spawned creature based on its location's prestige tier.
         /// </summary>
         public static void ApplyPrestigeScaling(Creature creature, int? variation = null)

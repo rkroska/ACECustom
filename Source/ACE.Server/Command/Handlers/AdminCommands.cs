@@ -254,9 +254,13 @@ namespace ACE.Server.Command.Handlers
                     CommandHandlerHelper.WriteOutputInfo(session, $"Set Prestige level of {playerTarget.Name} to {tier}.");
                     break;
                 case Creature creature:
-                    var variationForTier = tier > 0 ? tier + PrestigeManager.PRESTIGE_VAR_OFFSET : (int?)null;
+                    PrestigeManager.RemovePrestigeScaling(creature);
+                    var variationForTier = tier + PrestigeManager.PRESTIGE_VAR_OFFSET;
                     PrestigeManager.ApplyPrestigeScaling(creature, variationForTier);
-                    CommandHandlerHelper.WriteOutputInfo(session, $"Applied prestige scaling to {creature.Name} (tier {tier}).");
+                    CommandHandlerHelper.WriteOutputInfo(session,
+                        tier > 0
+                            ? $"Replaced prestige scaling on {creature.Name} for tier {tier} (variation {variationForTier})."
+                            : $"Cleared prestige scaling on {creature.Name} (retail / tier 0, variation {variationForTier}).");
                     break;
                 default:
                     CommandHandlerHelper.WriteOutputInfo(session, "Target must be a player or creature.");
@@ -347,7 +351,8 @@ namespace ACE.Server.Command.Handlers
                         return;
                     }
 
-                    var requested = ParseVariationList(parameters[2]).ToList();
+                    var variationListArg = string.Join(" ", parameters.Skip(2));
+                    var requested = ParseVariationList(variationListArg).ToList();
                     var normalized = PrestigeManager.NormalizeMirrorTargetVariations(requested, sourceVariation);
                     CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Normalize ===");
                     CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {sourceVariation}");
@@ -377,8 +382,14 @@ namespace ACE.Server.Command.Handlers
             uint weenieClassId;
             string sourceLabel;
 
-            if (parameters.Length >= 1 && uint.TryParse(parameters[0], out var wcid))
+            if (parameters.Length >= 1)
             {
+                if (!uint.TryParse(parameters[0], out var wcid))
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, $"Invalid WCID: \"{parameters[0]}\". Pass a numeric weenie class id or omit the argument to use your selected target.");
+                    return;
+                }
+
                 var weenie = DatabaseManager.World.GetCachedWeenie(wcid);
                 if (weenie == null)
                 {

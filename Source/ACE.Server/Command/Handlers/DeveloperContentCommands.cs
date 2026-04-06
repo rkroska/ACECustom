@@ -1294,7 +1294,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var maxStaticGuid = firstStaticGuid | 0xFFF;
 
             // manually specify a start guid?
-            if (parameters.Length == 2 && !parameters[1].StartsWith("-", StringComparison.Ordinal))
+            if (parameters.Length >= 2 && !parameters[1].StartsWith("-", StringComparison.Ordinal))
             {
                 if (uint.TryParse(parameters[1].Replace("0x", ""), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var startGuid))
                 {
@@ -1634,15 +1634,21 @@ namespace ACE.Server.Command.Handlers.Processors
                 mirrorObject.Location.Variation = targetVariation;
 
                 var mirrorInstance = CreateLandblockInstance(mirrorObject, false, targetVariation);
+                if (!SaveInstanceToWorldDatabase(mirrorInstance))
+                {
+                    mirrorObject.Destroy();
+                    continue;
+                }
+
                 instances.Add(mirrorInstance);
-                SaveInstanceToWorldDatabase(mirrorInstance);
                 mirroredForLiveWorld.Add((mirrorObject, targetVariation));
                 mirroredCount++;
             }
 
             if (mirroredCount > 0)
             {
-                foreach (var tv in targetVariations.Distinct())
+                var persistedVariations = mirroredForLiveWorld.Select(p => p.targetVariation).Distinct().ToList();
+                foreach (var tv in persistedVariations)
                     DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, tv);
 
                 var lbKey = new LandblockId((uint)(landblock << 16) | 0xFFFF);
@@ -1654,7 +1660,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
 
                 session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"Mirrored {mirroredCount} instance(s) from variation {sourceVariation} to: {string.Join(", ", targetVariations)}",
+                    $"Mirrored {mirroredCount} instance(s) from variation {sourceVariation} to: {string.Join(", ", persistedVariations)}",
                     ChatMessageType.Broadcast));
             }
         }
@@ -1784,7 +1790,7 @@ namespace ACE.Server.Command.Handlers.Processors
         /// WARNING: This is one of the few places where World database writes occur.
         /// World database entities are generally read-only except through admin commands.
         /// </summary>
-        public static void SaveInstanceToWorldDatabase(LandblockInstance instance)
+        public static bool SaveInstanceToWorldDatabase(LandblockInstance instance)
         {
             try
             {
@@ -1793,12 +1799,12 @@ namespace ACE.Server.Command.Handlers.Processors
                     ctx.LandblockInstance.Add(instance);
                     ctx.SaveChanges();
                 }
+                return true;
             }
             catch (Exception)
             {
-
+                return false;
             }
-
         }
 
         /// <summary>

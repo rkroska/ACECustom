@@ -590,7 +590,7 @@ namespace ACE.Server.WorldObjects
                     var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
                     log.Warn($"[Prestige-DBG] {Name}: calling UpdateGuideWisp(danger={danger}). WispAlive={_guideWisp != null} timeSinceDanger={timeSinceDanger:F1}s lastDangerTime={_lastDangerTime:F1}");
                 }
-                // Wisp with 5s persistence after reaching safety
+                // Wisp with 10s persistence after reaching safety
                 UpdateGuideWisp(inForbiddenLandblock, variation);
 
                 // Note: Boundary markers are now spawned by the Landblock at load time,
@@ -767,7 +767,7 @@ namespace ACE.Server.WorldObjects
                     if (timeSinceDanger >= 10.0)
                     {
                         if (IsDebugTarget)
-                            log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWNING NOW (5s elapsed). Enqueuing destroy.");
+                            log.Warn($"[Prestige-DBG] {Name}: WISP DESPAWNING NOW (10s elapsed). Enqueuing destroy.");
 
                         WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                         {
