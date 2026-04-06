@@ -115,9 +115,13 @@ Follow these steps to perform a safe, version-controlled update and build of the
     sudo /usr/local/bin/backup-mysql-all.sh
     ```
 
-6.  **Atomic Binary Swap**: Replace the live directory with the staged build while the server is down.
+6.  **Atomic Binary Swap**: Move the current live directory to a backup location and swap in the new staging build.
     ```bash
-    sudo rm -rf /ace/serverbuild && sudo mv /ace/serverbuildstaging /ace/serverbuild
+    # Clean up previous rollback target and move current live to backup
+    sudo rm -rf /ace/serverbuildold && [ -d /ace/serverbuild ] && sudo mv /ace/serverbuild /ace/serverbuildold
+
+    # Move staged build to production
+    sudo mv /ace/serverbuildstaging /ace/serverbuild
     ```
 
 7.  **Restart via Watchdog**: Launch the newly deployed server version.
@@ -149,11 +153,15 @@ The `ACE.Server.csproj` is configured to **automatically build** the Web Portal 
 
 ### Deployment & Serving Strategy
 The `ACE.Server` uses an **Environment-Aware** strategy to serve the portal:
-- **Development Mode**: Priorities the source tree `dist` folder (`Source/ACE.WebPortal/ClientApp/dist`).
-- **Production Mode**: Resolves to the local `wwwroot/` folder.
+- **Development Mode**: Priorities the source tree `dist` folder (`Source/ACE.WebPortal/ClientApp/dist`) on port 5000.
+- **Production Mode**: Resolves to the local `wwwroot/` folder and binds to **localhost:5001** only.
 
 > [!IMPORTANT]
 > **Fail-Fast Guard**: The server will **refuse to start** if it cannot find the Web Portal assets. If the server fails with a FATAL log about missing assets, ensure that `wwwroot` (production) or `dist` (development) exists.
+
+### Reverse Proxy & Buffer Hardening
+If you encounter **400 Bad Request** errors (Header Too Large), you must adjust your NGINX buffers. Refer to the:
+**[➜ Hardened Linux Setup Guide (readme_linux_setup.md)](./readme_linux_setup.md)**
 
 ---
 
@@ -181,6 +189,38 @@ If the server crashes, collect the following for review:
 
 > [!IMPORTANT]
 > **Philosophy**: Always prioritize **Recovery and Stability** over experimentation during live incidents. Preserve all crash data for post-mortem analysis.
+
+---
+
+## 10. Rollback Procedure
+
+If a new binary deployment is unstable, corrupt, or fails to start, follow these steps to immediately restore the last known-good version.
+
+### 1. Enable Maintenance Mode
+Prevents the watchdog from fighting manual recovery.
+```bash
+sudo mkdir -p /run/ace && sudo touch /run/ace/maintenance
+```
+
+### 2. Swap Failed Build with Rollback Backup
+This restores the binary and assets from `/ace/serverbuildold`.
+```bash
+# Move the failed build to a diagnostic path and restore backup
+sudo mv /ace/serverbuild /ace/serverbuildfailed && sudo mv /ace/serverbuildold /ace/serverbuild
+```
+
+### 3. Restart and Monitor
+```bash
+sudo systemctl restart ace-watchdog
+pgrep -af "dotnet .*ACE\.Server\.dll"
+tail -n 50 /ace/logs/ace.console.log
+```
+
+### 4. Disable Maintenance Mode
+Once the server is confirmed stable on the old version.
+```bash
+sudo rm -f /run/ace/maintenance
+```
 
 ---
 This document should be updated whenever the server architecture or build pipeline changes.
