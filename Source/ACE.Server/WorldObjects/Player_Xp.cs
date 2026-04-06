@@ -123,7 +123,7 @@ namespace ACE.Server.WorldObjects
             // for passing XP up the allegiance chain,
             // this function is only called at the very beginning, to start the process.
             if (shareType.HasFlag(ShareType.Allegiance))
-                UpdateXpAllegiance(rewardAdjusted);
+                UpdateXpAllegiance(finalAmount);
 
             // only certain types of XP are granted to items
             if (xpType == XpType.Kill || xpType == XpType.Quest)

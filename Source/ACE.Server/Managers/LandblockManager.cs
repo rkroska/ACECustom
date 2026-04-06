@@ -430,7 +430,8 @@ namespace ACE.Server.Managers
                 if (landblock == null)
                     continue;
 
-                if (variation.HasValue && landblock.VariationId != variation)
+                // Treat null landblock variation as 0 so base matches when filtering by variation 0
+                if (variation.HasValue && (landblock.VariationId ?? 0) != variation.Value)
                     continue;
 
                 landblock.RefreshPrestigeBoundaryMarkers();

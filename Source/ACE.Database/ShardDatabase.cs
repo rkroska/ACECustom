@@ -551,7 +551,7 @@ namespace ACE.Database
                 {
                     var biota = GetBiota(result);
                     
-                    if (variationId.HasValue)
+                    if (variationId.HasValue && variationId.Value != 0)
                     {
                         // Use explicit comparison for nullable int
                         if (biota.BiotaPropertiesPosition.Any(x => x.VariationId.HasValue && x.VariationId.Value == variationId.Value))
@@ -559,7 +559,7 @@ namespace ACE.Database
                             staticObjects.Add(biota);
                         }
                     }
-                    else // no variation id specified, so return only base objects
+                    else // no variation id specified (or 0 = base), so return only base objects
                     {
                         if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == null || x.VariationId == 0))
                         {
@@ -589,9 +589,9 @@ namespace ACE.Database
                                 p.ObjCellId >= min && 
                                 p.ObjCellId <= max && 
                                 p.ObjectId >= 0x80000000 &&
-                                (variationId.HasValue
-                                    ? (p.VariationId.HasValue && p.VariationId.Value == variationId.Value)
-                                    : (p.VariationId == null || p.VariationId == 0)))
+                                ((!variationId.HasValue || variationId.Value == 0)
+                                    ? (p.VariationId == null || p.VariationId == 0)
+                                    : (p.VariationId.HasValue && p.VariationId.Value == variationId.Value)))
                     .Select(r => r.ObjectId)
                     .ToList();
 
