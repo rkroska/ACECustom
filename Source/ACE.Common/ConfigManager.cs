@@ -77,7 +77,7 @@ namespace ACE.Common
                 }
                 {
                     // Redact secrets from the logs.
-                    string secretKeys = "Password|ApiToken|DiscordToken|WebhookURL";
+                    string secretKeys = "Password|ApiToken|DiscordToken|WebhookURL|Secret";
                     string pattern = $@"^(\s*[""']?(?:{secretKeys})[""']?\s*[:=]\s*[""']).*([""']\s*,?)$";
                     string replacement = @"$1******$2";
                     redactedFileText = Regex.Replace(redactedFileText, pattern, replacement, RegexOptions.Multiline);
@@ -99,7 +99,8 @@ namespace ACE.Common
             AllowTrailingCommas = true,
             NumberHandling = JsonNumberHandling.AllowReadingFromString,
             ReadCommentHandling = JsonCommentHandling.Skip,
-            WriteIndented = true
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
     }
 }

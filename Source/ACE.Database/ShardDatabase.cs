@@ -719,6 +719,37 @@ namespace ACE.Database
             return result;
         }
 
+        public List<LoginCharacter> GetCharacterStubsByPartialName(string name, int limit = 50)
+        {
+            using var context = new ShardDbContext();
+            
+            var query = context.Character.AsNoTracking().Where(r => !r.IsDeleted);
+
+            if (name.StartsWith('+'))
+            {
+                query = query
+                    .Where(r => r.IsPlussed)
+                    .Where(r => r.Name.StartsWith(name.Substring(1)));
+            }
+            else
+            {
+                query = query.Where(r => r.Name.Contains(name));
+            }
+
+            return query
+                .OrderBy(r => r.Name)
+                .Take(limit)
+                .Select(x => new LoginCharacter 
+                { 
+                    Id = x.Id, 
+                    AccountId = x.AccountId, 
+                    Name = x.Name, 
+                    IsPlussed = x.IsPlussed,
+                    LastLoginTimestamp = x.LastLoginTimestamp 
+                })
+                .ToList();
+        }
+
         public Character GetCharacterStubByGuid(uint guid)
         {
             using var context = new ShardDbContext();

@@ -3,6 +3,7 @@ using ACE.DatLoader;
 using ACE.DatLoader.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Entity
@@ -49,6 +50,27 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// Returns the amount to add to a creature's current vital,
+        /// based on their primary attribute current values
+        /// </summary>
+        public static uint GetFormula(Biota biota, PropertyAttribute2nd vital)
+        {
+            var vitalTable = DatManager.PortalDat.SecondaryAttributeTable;
+
+            switch (vital)
+            {
+                case PropertyAttribute2nd.MaxHealth:
+                    return GetFormula(biota, vitalTable.MaxHealth.Formula);
+                case PropertyAttribute2nd.MaxStamina:
+                    return GetFormula(biota, vitalTable.MaxStamina.Formula);
+                case PropertyAttribute2nd.MaxMana:
+                    return GetFormula(biota, vitalTable.MaxMana.Formula);
+                default:
+                    return 0;
+            }
+        }
+
+        /// <summary>
         /// Applies a SkillFormula from the portal.dat,
         /// using the primary attributes for a creature
         /// </summary>
@@ -64,7 +86,31 @@ namespace ACE.Server.Entity
             if (attr2 != PropertyAttribute.Undef)
                 total += current ? creature.Attributes[attr2].Current : creature.Attributes[attr2].Base;
 
-            if (divisor != 1)
+            if (divisor > 1)
+                total = (uint)((float)total / divisor).Round();
+
+            return total;
+        }
+
+        /// <summary>
+        /// Applies a SkillFormula using a Biota model (for offline players)
+        /// </summary>
+        public static uint GetFormula(Biota biota, DatLoader.Entity.SkillFormula formula)
+        {
+            if (formula.X == 0) return 0;
+
+            var attr1 = (PropertyAttribute)formula.Attr1;
+            var attr2 = (PropertyAttribute)formula.Attr2;
+            var divisor = formula.Z;
+
+            var total = 0u;
+            if (biota.PropertiesAttribute != null && biota.PropertiesAttribute.TryGetValue(attr1, out var val1))
+                total = (uint)(val1.InitLevel + val1.LevelFromCP);
+
+            if (attr2 != PropertyAttribute.Undef && biota.PropertiesAttribute != null && biota.PropertiesAttribute.TryGetValue(attr2, out var val2))
+                total += (uint)(val2.InitLevel + val2.LevelFromCP);
+
+            if (divisor > 1)
                 total = (uint)((float)total / divisor).Round();
 
             return total;
