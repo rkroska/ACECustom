@@ -37,7 +37,11 @@ namespace ACE.Server.Web
         public static async Task Start(string[] args)
         {
             var envStr = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+#if DEBUG
+            var isDevelopment = true;
+#else
             var isDevelopment = string.Equals(envStr, "Development", StringComparison.OrdinalIgnoreCase);
+#endif
             var isDebuggerAttached = System.Diagnostics.Debugger.IsAttached;
 
             await _hostLock.WaitAsync();
@@ -111,7 +115,6 @@ namespace ACE.Server.Web
                 })
                 .AddJwtBearer(x =>
                 {
-                    x.MapInboundClaims = false;
                     x.RequireHttpsMetadata = false;
                     x.SaveToken = true;
                     x.TokenValidationParameters = new TokenValidationParameters
@@ -201,7 +204,8 @@ namespace ACE.Server.Web
 
                 _host = app;
                 _started = true;
-                log.Info($"Web Portal listening at {url}");
+                var envLog = isDevelopment ? "DEVELOPMENT (Debug Build Fallback)" : "PRODUCTION (Hardened)";
+                log.Info($"[WEB PORTAL] Mode: {envLog} | Listening at {url}");
 
                 if (!isDevelopment)
                 {
