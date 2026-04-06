@@ -38,32 +38,22 @@ The portal utilizes a **professional "HttpOnly" cookie-based session model** to 
 The portal is designed with a **Zero-Config** architecture:
 - **Secure Binding**: The server dynamically adjusts its visibility based on the environment:
     - **Development**: Binds to all interfaces (`*`) on port **5000**.
-    - **Production**: Binds to **loopback only** (`localhost`) on port **80**, ensuring administrative traffic remains private.
-- **Reverse Proxy Requirement**: In production, a reverse proxy (e.g., NGINX or IIS) is required to terminate SSL/TLS and forward requests to `http://localhost:80`.
+    - **Production**: Binds to **loopback only** (`localhost`) on port **5001**, ensuring administrative traffic remains private and is only accessible via the local reverse proxy.
+- **Reverse Proxy Requirement**: In production, a reverse proxy (e.g., NGINX or IIS) is required to terminate SSL/TLS and forward requests to `http://localhost:5001`.
 - **Dynamic Secret**: Automatically generated each time the server starts (`WebPortalHost.Secret`).
 
 ## Production Deployment (HTTPS)
 
-To securely expose the Web Portal to external users, configure a reverse proxy to handle encryption. 
+To securely expose the Web Portal to external users, you **MUST** configure a reverse proxy to handle SSL/TLS termination. 
 
-### Sample NGINX Configuration
-```nginx
-server {
-    listen 443 ssl;
-    server_name portal.yourdomain.com;
+For detailed, step-by-step instructions on setting up a hardened Linux environment with NGINX and Let's Encrypt, see the:
 
-    ssl_certificate /path/to/fullchain.pem;
-    ssl_certificate_key /path/to/privkey.pem;
+### [➜ Hardened Linux Setup Guide (readme_linux_setup.md)](./readme_linux_setup.md)
 
-    location / {
-        proxy_pass http://127.0.0.1:80;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+This guide covers:
+- Installing Node.js LTS for frontend builds.
+- Hardening NGINX with security headers and large-buffer support.
+- Automated SSL certificate management via Certbot.
 
 ### Account Scoping
 Controllers inherit from `BaseController` to ensure standardized account-scoped authorization and logging:

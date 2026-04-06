@@ -301,7 +301,7 @@
 
   <Target Name="BuildClientApp" BeforeTargets="Publish" Condition="Exists('$(ClientAppDir)')">
     <Message Importance="high" Text="Installing Web Portal dependencies..." />
-    <Exec Command="npm install" WorkingDirectory="$(ClientAppDir)" />
+    <Exec Command="npm install --legacy-peer-deps" WorkingDirectory="$(ClientAppDir)" />
     <Message Importance="high" Text="Building Web Portal SPA..." />
     <Exec Command="npm run build" WorkingDirectory="$(ClientAppDir)" />
     
