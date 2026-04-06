@@ -13,13 +13,14 @@ const ServerParams = () => {
   const [copiedText, setCopiedText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchParams = async () => {
+  const fetchParams = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true)
       setError(null)
-      const data = await api.get<ServerParamMetadata[]>('/api/serverparam/list')
+      const data = await api.get<ServerParamMetadata[]>('/api/serverparam/list', { signal })
       setParams(data ?? [])
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
       console.error('Failed to fetch server params', err)
       setError(err instanceof Error ? err.message : 'Failed to load parameters from server.')
     } finally {
@@ -28,7 +29,9 @@ const ServerParams = () => {
   }
 
   useEffect(() => {
-    fetchParams()
+    const controller = new AbortController()
+    fetchParams(controller.signal)
+    return () => controller.abort()
   }, [])
 
   const categories = useMemo(() => {
@@ -36,9 +39,10 @@ const ServerParams = () => {
   }, [params])
 
   const filteredParams = useMemo(() => {
+    const lowerSearch = search.toLowerCase()
     return params.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
-                          p.description.toLowerCase().includes(search.toLowerCase())
+      const matchesSearch = p.name.toLowerCase().includes(lowerSearch) || 
+                          (p.description || '').toLowerCase().includes(lowerSearch)
       const matchesType = !selectedType || p.type === selectedType
       return matchesSearch && matchesType
     })
@@ -46,8 +50,11 @@ const ServerParams = () => {
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
-    setCopiedText(id)
-    setTimeout(() => setCopiedText(null), 2000)
+      .then(() => {
+        setCopiedText(id)
+        setTimeout(() => setCopiedText(null), 2000)
+      })
+      .catch(err => console.error('Clipboard copy failed:', err))
   }
 
   if (isLoading) {

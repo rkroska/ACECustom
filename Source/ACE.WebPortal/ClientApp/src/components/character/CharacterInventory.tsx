@@ -16,13 +16,15 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ 'main': true, 'equipped': true })
 
   useEffect(() => {
-    fetchInventory()
+    const controller = new AbortController()
+    fetchInventory(controller.signal)
+    return () => controller.abort()
   }, [guid])
 
-  const fetchInventory = async () => {
+  const fetchInventory = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true)
-      const data = await api.get<InventoryItem[]>(`/api/character/inventory/${guid}`)
+      const data = await api.get<InventoryItem[]>(`/api/character/inventory/${guid}`, { signal })
       setItems(data ?? [])
       
       const initialExpanded: Record<string, boolean> = { 'main': true, 'equipped': true }
@@ -33,7 +35,9 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
       })
       setExpandedSections(initialExpanded)
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
       console.error(err)
+      setItems([])
     } finally {
       setIsLoading(false)
     }
@@ -100,10 +104,7 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
     let finalTopLevel = topLevelHeaders
     let finalMainPack = mainPackItems
     if (searchTerm) {
-      finalTopLevel = topLevelHeaders.filter(header => {
-        const children = itemsByContainer[header.guid] || []
-        return children.some(child => visibleIds.has(child.guid))
-      })
+      finalTopLevel = topLevelHeaders.filter(header => visibleIds.has(header.guid))
       finalMainPack = mainPackItems.filter(item => visibleIds.has(item.guid))
     }
 
@@ -177,7 +178,9 @@ export default function CharacterInventory({ guid }: CharacterInventoryProps) {
       {visibleIds.size === 0 && (
         <div className="text-center py-24 bg-neutral-950/20 border border-neutral-800/40 border-dashed rounded-3xl">
           <Package className="w-12 h-12 mx-auto mb-4 text-neutral-800/50" />
-          <p className="text-neutral-500 font-medium tracking-tight">No items found matching your search</p>
+          <p className="text-neutral-500 font-medium tracking-tight">
+            {searchTerm ? `No items found matching "${searchTerm}"` : 'Your inventory is empty'}
+          </p>
         </div>
       )}
     </div>

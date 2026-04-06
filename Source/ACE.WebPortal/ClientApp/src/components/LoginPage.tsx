@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
+import { X } from 'lucide-react';
 import logo from '../assets/logo.svg';
 
 const LoginPage: React.FC = () => {
@@ -9,7 +10,7 @@ const LoginPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username.trim()) {
+    if (username.trim() && password.trim()) {
       await login(username, password);
     }
   };
@@ -29,10 +30,18 @@ const LoginPage: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div 
-                className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded-xl text-sm font-medium animate-in fade-in slide-in-from-top-1 duration-200"
-                onClick={clearError}
+                role="alert"
+                className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded-xl text-sm font-medium animate-in fade-in slide-in-from-top-1 duration-200 flex items-center justify-between gap-2"
               >
-                {error}
+                <span className="flex-1">{error}</span>
+                <button
+                  type="button"
+                  onClick={clearError}
+                  aria-label="Dismiss error"
+                  className="shrink-0 p-1 hover:bg-red-500/20 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/40"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             )}
 

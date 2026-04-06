@@ -33,13 +33,17 @@ export const useAuthStore = create<AuthState>((set) => ({
         body: JSON.stringify({ username, password }),
       });
 
+      const data = await response.json().catch(() => ({ message: 'Invalid server response structure.' }));
+
       if (!response.ok) {
-        const data = await response.json();
         set({ error: data.message || 'Login failed.', isLoading: false });
         return;
       }
 
-      const data = await response.json();
+      if (!data.username || data.accessLevel === undefined) {
+        set({ error: 'Incomplete user data received from server.', isLoading: false });
+        return;
+      }
       
       set({ 
         isAuthenticated: true, 
@@ -48,7 +52,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false 
       });
     } catch (err) {
-      set({ error: 'Network error. Please try again.', isLoading: false });
+      set({ error: 'Connection error. Please check your internet and try again.', isLoading: false });
     }
   },
   logout: async () => {
@@ -67,15 +71,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const response = await fetch('/api/auth/me');
       if (response.ok) {
-        const data = await response.json();
-        set({ 
-          isAuthenticated: true, 
-          user: data.username, 
-          accessLevel: data.accessLevel 
-        });
+        const data = await response.json().catch(() => null);
+        if (data && data.username && data.accessLevel !== undefined) {
+          set({ 
+            isAuthenticated: true, 
+            user: data.username, 
+            accessLevel: data.accessLevel 
+          });
+          return;
+        }
       }
+      // If not OK or malformed, ensure we are logged out
+      set({ isAuthenticated: false, user: null, accessLevel: null });
     } catch (err) {
-      // No active session
       set({ isAuthenticated: false, user: null, accessLevel: null });
     } finally {
       set({ isBootstrapping: false });

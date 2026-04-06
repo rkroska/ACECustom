@@ -416,6 +416,9 @@ namespace ACE.Server
 
         private static void OnProcessExit(object sender, EventArgs e)
         {
+            // Ensure Web Portal is stopped cleanly
+            ACE.Server.Web.WebPortalHost.StopAsync().GetAwaiter().GetResult();
+
             if (!IsRunningInContainer)
             {
                 if (!ServerManager.ShutdownInitiated)

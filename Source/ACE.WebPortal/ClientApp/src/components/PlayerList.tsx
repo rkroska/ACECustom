@@ -54,7 +54,12 @@ export default function PlayerList() {
     try {
       setIsLoading(true)
       const data = await api.get<Character[]>(`/api/character/search-all/${encodeURIComponent(name)}`)
-      setSearchResults(data ?? [])
+      
+      const onlineGuids = new Set(onlinePlayersBase.map(p => p.guid))
+      setSearchResults((data ?? []).map(p => ({ 
+        ...p, 
+        isOnline: onlineGuids.has(p.guid) 
+      })))
     } catch (err) {
       console.error('Unified search error:', err)
     } finally {
@@ -89,7 +94,7 @@ export default function PlayerList() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-neutral-900 text-neutral-100">
         <ShieldAlert className="w-12 h-12 text-red-500 mb-4 opacity-50" />
-        <h2 className="text-xl font-bold text-white mb-2 uppercase tracking-widest text-[10px]">Access Restricted</h2>
+        <h2 className="font-bold text-white mb-2 uppercase tracking-widest text-[10px]">Access Restricted</h2>
         <p className="text-neutral-500 text-sm max-w-xs font-medium">{error}</p>
         <button 
           onClick={fetchOnlinePlayers}
@@ -109,7 +114,7 @@ export default function PlayerList() {
           <PageHeader title="Player list" icon={Users}>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full text-green-500 text-[10px] font-bold uppercase tracking-wider">
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              {onlinePlayersBase.filter(p => p.isOnline).length} Online
+              {onlinePlayersBase.length} Online
             </div>
           </PageHeader>
 

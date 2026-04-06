@@ -20,7 +20,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesBool == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesBool.TryGetValue(property, out var value))
@@ -30,7 +36,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -39,7 +45,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesDID == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesDID.TryGetValue(property, out var value))
@@ -49,7 +61,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -58,7 +70,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesFloat == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesFloat.TryGetValue(property, out var value))
@@ -68,7 +86,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -77,7 +95,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesIID == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesIID.TryGetValue(property, out var value))
@@ -87,7 +111,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -96,7 +120,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesInt == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesInt.TryGetValue(property, out var value))
@@ -106,7 +136,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -115,7 +145,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesInt64 == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesInt64.TryGetValue(property, out var value))
@@ -125,7 +161,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -134,7 +170,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesString == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesString.TryGetValue(property, out var value))
@@ -144,7 +186,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -153,7 +195,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesPosition == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesPosition.TryGetValue(property, out var value))
@@ -163,7 +211,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 
@@ -172,7 +220,13 @@ namespace ACE.Entity.Models
             if (biota.PropertiesPosition == null)
                 return null;
 
-            rwLock.EnterReadLock();
+            var lockEntered = false;
+            if (!rwLock.IsReadLockHeld && !rwLock.IsUpgradeableReadLockHeld && !rwLock.IsWriteLockHeld)
+            {
+                rwLock.EnterReadLock();
+                lockEntered = true;
+            }
+
             try
             {
                 if (biota.PropertiesPosition.TryGetValue(property, out var value))
@@ -182,7 +236,7 @@ namespace ACE.Entity.Models
             }
             finally
             {
-                rwLock.ExitReadLock();
+                if (lockEntered) rwLock.ExitReadLock();
             }
         }
 

@@ -36,6 +36,9 @@ namespace ACE.Server.Web
 
         public static async Task Start(string[] args)
         {
+            var envStr = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            var isDevelopment = System.Diagnostics.Debugger.IsAttached || string.Equals(envStr, "Development", StringComparison.OrdinalIgnoreCase);
+
             await _hostLock.WaitAsync();
             try
             {
@@ -51,8 +54,6 @@ namespace ACE.Server.Web
                 // Environment-Aware Resolution:
                 // Development fallback: Crawl for Source tree dist (Vite build)
                 // Production fallback: Use binary-local 'wwwroot'
-                var envStr = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-                var isDevelopment = System.Diagnostics.Debugger.IsAttached || string.Equals(envStr, "Development", StringComparison.OrdinalIgnoreCase);
 
                 string? distPath = null;
                 if (isDevelopment)
@@ -139,9 +140,7 @@ namespace ACE.Server.Web
                 // Configure the HTTP request pipeline.
                 
                 // Environment-Aware resolution of static assets
-                isDevelopment = app.Environment.IsDevelopment();
-
-                if (app.Environment.IsDevelopment())
+                if (isDevelopment)
                 {
                     app.UseDeveloperExceptionPage();
                 }
@@ -181,16 +180,11 @@ namespace ACE.Server.Web
                     });
                 });
 
-                // Environment-Aware Port Selection
-                // If running from IDE/Debug, use 5000 (Vite friendly)
-                // If running in production, use 80 (Standard web address)
-                isDevelopment = builder.Environment.IsDevelopment() || System.Diagnostics.Debugger.IsAttached;
-
                 // Secure Binding:
                 // Development: "*" (Accessible globally for debugging)
                 // Production: "localhost" (Restricted to loopback; assumes a TLS-terminating reverse proxy)
                 var host = isDevelopment ? "*" : "localhost";
-                var port = isDevelopment ? 5000 : 80;
+                var port = isDevelopment ? 5000 : 5001;
                 var url = $"http://{host}:{port}";
 
                 _host = app;
@@ -256,15 +250,15 @@ namespace ACE.Server.Web
             return null;
         }
 
-        public static void Stop()
+        public static async Task StopAsync()
         {
-            _hostLock.Wait();
+            await _hostLock.WaitAsync();
             try
             {
                 if (!_started || _host == null) return;
 
                 log.Info("[WEB PORTAL] Stopping Host...");
-                _host.StopAsync().GetAwaiter().GetResult();
+                await _host.StopAsync();
                 _host.Dispose();
                 _host = null;
                 _started = false;

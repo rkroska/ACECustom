@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Filter, Layers, Link as LinkIcon, Database, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '../services/api'
@@ -31,6 +31,7 @@ const LookupTables = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [retryKey, setRetryKey] = useState(0)
   const [copiedText, setCopiedText] = useState<string | null>(null)
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const setSelectedEnum = (name: string | null) => {
     setCurrentPage(1)
@@ -71,7 +72,7 @@ const LookupTables = () => {
       try {
         setIsLoadingValues(true)
         setDetailError(null)
-        const data = await api.get<EnumDetail>(`/api/enum/detail/${selectedEnum}`)
+        const data = await api.get<EnumDetail>(`/api/enum/detail/${encodeURIComponent(selectedEnum!)}`)
         if (!isAborted) {
           setEnumDetail(data)
         }
@@ -92,9 +93,16 @@ const LookupTables = () => {
   }, [selectedEnum, retryKey])
 
   const copyToClipboard = (text: string, id: string) => {
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+
     navigator.clipboard.writeText(text)
-    setCopiedText(id)
-    setTimeout(() => setCopiedText(null), 2000)
+      .then(() => {
+        setCopiedText(id)
+        copyTimeoutRef.current = setTimeout(() => setCopiedText(null), 2000)
+      })
+      .catch(err => {
+        console.error('Clipboard copy failed:', err)
+      })
   }
 
   const filteredEnumList = useMemo(() => {
