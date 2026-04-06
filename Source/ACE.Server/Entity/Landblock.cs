@@ -395,6 +395,15 @@ namespace ACE.Server.Entity
 
             void SpawnMarkerAtPosition(float x, float y)
             {
+                const float cornerEpsilon = 0.25f;
+                foreach (var existing in _prestigeBoundaryMarkers)
+                {
+                    if (existing?.Location == null)
+                        continue;
+                    if (Math.Abs(existing.Location.PositionX - x) < cornerEpsilon && Math.Abs(existing.Location.PositionY - y) < cornerEpsilon)
+                        return;
+                }
+
                 var marker = WorldObjectFactory.CreateNewWorldObject(weenie);
                 if (marker == null)
                 {
@@ -474,17 +483,20 @@ namespace ACE.Server.Entity
 
         public void RefreshPrestigeBoundaryMarkers()
         {
-            foreach (var marker in _prestigeBoundaryMarkers.ToList())
+            actionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
             {
-                if (marker == null)
-                    continue;
+                foreach (var marker in _prestigeBoundaryMarkers.ToList())
+                {
+                    if (marker == null)
+                        continue;
 
-                RemoveWorldObject(marker.Guid, false, false, false);
-                marker.Destroy();
-            }
+                    RemoveWorldObject(marker.Guid, false, false, false);
+                    marker.Destroy();
+                }
 
-            _prestigeBoundaryMarkers.Clear();
-            SpawnPrestigeBoundaryMarkers();
+                _prestigeBoundaryMarkers.Clear();
+                SpawnPrestigeBoundaryMarkers();
+            }));
         }
 
         /// <summary>

@@ -1389,7 +1389,8 @@ namespace ACE.Server.Command.Handlers.Processors
             }
             SaveInstanceToWorldDatabase(instance);
 
-            TryCreateMirroredInstances(session, entityWeenie, wo, loc, instances, mirrorOptions);
+            if (!isLinkChild)
+                TryCreateMirroredInstances(session, entityWeenie, wo, loc, instances, mirrorOptions);
             //SyncInstances(session, landblock, instances, variation);
         }
 
@@ -1524,6 +1525,9 @@ namespace ACE.Server.Command.Handlers.Processors
             return options;
         }
 
+        private const int MaxVariationExpandItems = 4096;
+        private const int MaxVariationIdBound = 1_000_000;
+
         private static IEnumerable<int> ParseVariationList(string csvOrRange)
         {
             if (string.IsNullOrWhiteSpace(csvOrRange))
@@ -1536,8 +1540,19 @@ namespace ACE.Server.Command.Handlers.Processors
                 {
                     var min = PrestigeManager.GetBasePrestigeVariation();
                     var max = PrestigeManager.GetMaxConfiguredPrestigeVariation();
-                    for (var variation = min; variation <= max; variation++)
-                        yield return variation;
+                    if (min > max)
+                        (min, max) = (max, min);
+
+                    if (min < 0 || max > MaxVariationIdBound)
+                        yield break;
+
+                    var spanAll = (long)max - (long)min + 1L;
+                    if (spanAll <= 0)
+                        yield break;
+
+                    var capAll = (int)Math.Min(spanAll, MaxVariationExpandItems);
+                    for (var i = 0; i < capAll; i++)
+                        yield return min + i;
                     continue;
                 }
 
@@ -1550,14 +1565,25 @@ namespace ACE.Server.Command.Handlers.Processors
                     if (min > max)
                         (min, max) = (max, min);
 
-                    for (var variation = min; variation <= max; variation++)
-                        yield return variation;
+                    if (min < 0 || max > MaxVariationIdBound)
+                        continue;
+
+                    var span = (long)max - (long)min + 1L;
+                    if (span <= 0)
+                        continue;
+
+                    var cap = (int)Math.Min(span, MaxVariationExpandItems);
+                    for (var i = 0; i < cap; i++)
+                        yield return min + i;
 
                     continue;
                 }
 
                 if (int.TryParse(value, out var variationId))
-                    yield return variationId;
+                {
+                    if (variationId >= 0 && variationId <= MaxVariationIdBound)
+                        yield return variationId;
+                }
             }
         }
 
@@ -1590,6 +1616,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var maxStaticGuid = firstStaticGuid | 0xFFF;
 
             var mirroredCount = 0;
+            var mirroredForLiveWorld = new List<(WorldObject wo, int targetVariation)>();
             foreach (var targetVariation in targetVariations)
             {
                 var mirrorGuid = GetNextStaticGuid(landblock, instances);
@@ -1609,11 +1636,23 @@ namespace ACE.Server.Command.Handlers.Processors
                 var mirrorInstance = CreateLandblockInstance(mirrorObject, false, targetVariation);
                 instances.Add(mirrorInstance);
                 SaveInstanceToWorldDatabase(mirrorInstance);
+                mirroredForLiveWorld.Add((mirrorObject, targetVariation));
                 mirroredCount++;
             }
 
             if (mirroredCount > 0)
             {
+                foreach (var tv in targetVariations.Distinct())
+                    DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, tv);
+
+                var lbKey = new LandblockId((uint)(landblock << 16) | 0xFFFF);
+                foreach (var (mirrorObject, targetVariation) in mirroredForLiveWorld)
+                {
+                    var targetLb = LandblockManager.GetLandblock(lbKey, false, targetVariation, false);
+                    if (targetLb != null)
+                        targetLb.EnqueueAddWorldObjectForPhysics(mirrorObject, targetVariation);
+                }
+
                 session.Network.EnqueueSend(new GameMessageSystemChat(
                     $"Mirrored {mirroredCount} instance(s) from variation {sourceVariation} to: {string.Join(", ", targetVariations)}",
                     ChatMessageType.Broadcast));

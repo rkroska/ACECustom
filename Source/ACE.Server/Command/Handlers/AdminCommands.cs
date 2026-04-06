@@ -416,6 +416,9 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, $"Mirror Eligible: {eligible}");
         }
 
+        private const int MaxVariationExpandItems = 4096;
+        private const int MaxVariationIdBound = 1_000_000;
+
         private static IEnumerable<int> ParseVariationList(string csvOrRange)
         {
             if (string.IsNullOrWhiteSpace(csvOrRange))
@@ -433,14 +436,25 @@ namespace ACE.Server.Command.Handlers
                     if (min > max)
                         (min, max) = (max, min);
 
-                    for (var variation = min; variation <= max; variation++)
-                        yield return variation;
+                    if (min < 0 || max > MaxVariationIdBound)
+                        continue;
+
+                    var span = (long)max - (long)min + 1L;
+                    if (span <= 0)
+                        continue;
+
+                    var cap = (int)Math.Min(span, MaxVariationExpandItems);
+                    for (var i = 0; i < cap; i++)
+                        yield return min + i;
 
                     continue;
                 }
 
                 if (int.TryParse(value, out var variationId))
-                    yield return variationId;
+                {
+                    if (variationId >= 0 && variationId <= MaxVariationIdBound)
+                        yield return variationId;
+                }
             }
         }
 
@@ -528,10 +542,10 @@ namespace ACE.Server.Command.Handlers
                         variation = parsedVariation;
                     }
 
-                    var refreshed = LandblockManager.RefreshLoadedPrestigeBoundaryMarkers(variation);
+                    var queued = LandblockManager.RefreshLoadedPrestigeBoundaryMarkers(variation);
                     CommandHandlerHelper.WriteOutputInfo(session, variation.HasValue
-                        ? $"Refreshed prestige boundary markers for {refreshed} loaded landblocks in variation {variation}."
-                        : $"Refreshed prestige boundary markers for {refreshed} loaded landblocks.");
+                        ? $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) in variation {variation} (processed asynchronously on each landblock)."
+                        : $"Queued prestige boundary marker refresh for {queued} loaded landblock(s) (processed asynchronously on each landblock).");
                     break;
 
                 default:
@@ -560,10 +574,9 @@ namespace ACE.Server.Command.Handlers
         {
             var normalized = input.Trim();
             if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                normalized = normalized[2..];
+                return ushort.TryParse(normalized[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblock);
 
-            return ushort.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out landblock)
-                || ushort.TryParse(input, out landblock);
+            return ushort.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out landblock);
         }
 
         private static void HandleTransferLog(Session session, string[] parameters)

@@ -483,7 +483,9 @@ namespace ACE.Server.WorldObjects
             if (!PrestigeManager.IsLandblockAllowed(variation, currentLBVal))
             {
                 // PUNISHMENT ZONE
-                if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = Time.GetUnixTime();
+                var nowOob = Time.GetUnixTime();
+                if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = nowOob;
+                _lastDangerTime = nowOob;
 
                 if (IsDebugTarget)
                     log.Warn($"[Prestige-DBG] {Name}: IN PUNISHMENT ZONE. LB={currentLBVal:X4} Var={variation} OOBTime={Time.GetUnixTime() - _outOfBoundsEntryTime:F1}s");
@@ -636,6 +638,9 @@ namespace ACE.Server.WorldObjects
 
                         WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                         {
+                            if (Session == null || Session.State != SessionState.WorldConnected)
+                                return;
+
                             // Double check inside queue
                             if (_guideWisp != null)
                             {
@@ -643,6 +648,14 @@ namespace ACE.Server.WorldObjects
                                     log.Warn($"[Prestige-DBG] {Name}: WISP spawn aborted inside queue - wisp already exists (Guid={_guideWisp.Guid})");
                                 return;
                             }
+
+                            var liveCell = Location?.Cell ?? 0;
+                            if (liveCell != cell || Location?.Variation != variation)
+                                return;
+
+                            var lbValNow = (ushort)(liveCell >> 16);
+                            if (PrestigeManager.IsLandblockAllowed(variation, lbValNow))
+                                return;
 
                             var wisp = Factories.WorldObjectFactory.CreateNewWorldObject(weenie) as Creature;
                             if (wisp != null)
@@ -758,6 +771,9 @@ namespace ACE.Server.WorldObjects
 
                         WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                         {
+                            if (Session == null || Session.State != SessionState.WorldConnected)
+                                return;
+
                             if (_guideWisp != null)
                             {
                                 if (IsDebugTarget)
@@ -794,7 +810,7 @@ namespace ACE.Server.WorldObjects
             var variation = PhysicsObj.Position.Variation;
 
             // CurrentLandblock can be null briefly during teleport/recall while physics has already updated
-            var landblockUpdate = CurrentLandblock != null && blockcell << 16 != CurrentLandblock.Id.Landblock;
+            var landblockUpdate = CurrentLandblock != null && (ushort)(blockcell >> 16) != CurrentLandblock.Id.Landblock;
 
             Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 
