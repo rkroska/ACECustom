@@ -99,8 +99,7 @@ namespace ACE.Common
             AllowTrailingCommas = true,
             NumberHandling = JsonNumberHandling.AllowReadingFromString,
             ReadCommentHandling = JsonCommentHandling.Skip,
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            WriteIndented = true
         };
     }
 }
