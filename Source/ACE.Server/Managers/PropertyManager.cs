@@ -344,6 +344,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> enl_removes_society { get; private set; } = new(true, "if true, enlightenment will remove society flags");
         public static ConfigProperty<bool> action_queue_tracking_enabled { get; private set; } = new(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled.");
         public static ConfigProperty<bool> siphon_lens_enabled { get; private set; } = new(false, "if TRUE, enables siphon lens drops from all creature deaths. Use /modifybool siphon_lens_enabled true to activate.");
+        public static ConfigProperty<bool> enable_web_portal { get; private set; } = new(true, "If FALSE, the web portal API is disabled and all requests will return an error.");
         public static ConfigProperty<long> char_delete_time { get; private set; } = new(3600, "the amount of time in seconds a deleted character can be restored");
         public static ConfigProperty<long> chat_requires_account_time_seconds { get; private set; } = new(0, "the amount of time in seconds an account is required to have existed for for global chat privileges");
         public static ConfigProperty<long> chat_requires_player_age { get; private set; } = new(0, "the amount of time in seconds a player is required to have played for global chat privileges");

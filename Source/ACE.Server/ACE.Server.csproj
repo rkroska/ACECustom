@@ -229,6 +229,8 @@
     <EmbeddedResource Include="Entity\Mutations\Recipes\39000001 - Lucky White Rabbit's Foot.txt" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="BCnEncoder.Net" Version="2.2.1" />
+    <PackageReference Include="BCnEncoder.Net.ImageSharp" Version="1.1.2" />
     <PackageReference Include="Discord.Net" Version="3.18.0" />
     <PackageReference Include="Lib.Harmony" Version="2.4.2" />
     <PackageReference Include="log4net" Version="2.0.17" />
@@ -237,9 +239,14 @@
     <PackageReference Include="MySql.Data" Version="9.6.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ACE.Adapter\ACE.Adapter.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\ACE.Common\ACE.Common.csproj" />
     <ProjectReference Include="..\ACE.Database\ACE.Database.csproj" />
     <ProjectReference Include="..\ACE.DatLoader\ACE.DatLoader.csproj" />
@@ -285,5 +292,24 @@
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
     <Exec Command="if exist &quot;$(ProjectDir)Config.js&quot; copy &quot;$(ProjectDir)Config.js&quot; &quot;$(TargetDir)Config.js&quot;&#xD;&#xA;if not exist &quot;$(ProjectDir)log4net.config&quot; if exist &quot;$(TargetDir)log4net.config&quot; copy &quot;$(TargetDir)log4net.config&quot; &quot;$(ProjectDir)log4net.config&quot;&#xD;&#xA;if exist &quot;$(ProjectDir)log4net.config&quot; copy &quot;$(ProjectDir)log4net.config&quot; &quot;$(TargetDir)log4net.config&quot;" Condition="'$(OS)' == 'Windows_NT'" />
     <Exec Command="if [ -f &quot;$(ProjectDir)Config.js&quot; ] ; then cp &quot;$(ProjectDir)Config.js&quot; &quot;$(TargetDir)Config.js&quot; ; fi&#xD;&#xA;if [ ! -f &quot;$(ProjectDir)log4net.config&quot; ] &amp;&amp; [ -f &quot;$(TargetDir)log4net.config&quot; ] ; then cp &quot;$(TargetDir)log4net.config&quot; &quot;$(ProjectDir)log4net.config&quot; ; fi&#xD;&#xA;if [ -f &quot;$(ProjectDir)log4net.config&quot; ] ; then cp &quot;$(ProjectDir)log4net.config&quot; &quot;$(TargetDir)log4net.config&quot; ; fi" Condition="'$(OS)' != 'Windows_NT'" />
+  </Target>
+
+  <!-- Web Portal SPA Build Automation -->
+  <PropertyGroup>
+    <ClientAppDir>$(ProjectDir)..\ACE.WebPortal\ClientApp\</ClientAppDir>
+  </PropertyGroup>
+
+  <Target Name="BuildClientApp" BeforeTargets="Publish" Condition="Exists('$(ClientAppDir)')">
+    <Message Importance="high" Text="Installing Web Portal dependencies..." />
+    <Exec Command="npm install --legacy-peer-deps" WorkingDirectory="$(ClientAppDir)" />
+    <Message Importance="high" Text="Building Web Portal SPA..." />
+    <Exec Command="npm run build" WorkingDirectory="$(ClientAppDir)" />
+    
+    <ItemGroup>
+      <DistFiles Include="$(ClientAppDir)dist\**\*.*" />
+    </ItemGroup>
+    
+    <Message Importance="high" Text="Deploying Web Portal assets to wwwroot..." />
+    <Copy SourceFiles="@(DistFiles)" DestinationFolder="$(PublishDir)wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 </Project>
