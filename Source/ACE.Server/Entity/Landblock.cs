@@ -521,8 +521,8 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnEncounters()
         {
-            // encounter rows have no variation_Id; optionally restrict to base layer only (matches landblock_instance NULL/0 semantics)
-            if (ServerConfig.encounter_spawn_base_variation_only.Value && VariationId != null && VariationId.Value != 0)
+            // encounter rows have no variation_Id; optionally skip only prestige layers (not retail 1–10)
+            if (ServerConfig.encounter_spawn_base_variation_only.Value && PrestigeManager.IsPrestigeVariation(VariationId))
                 return;
 
             // get the encounter spawns for this landblock

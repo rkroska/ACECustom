@@ -256,17 +256,23 @@ namespace ACE.Server.Command.Handlers
                         $"[Prestige] {session.Player.Name} set player target {playerTarget.Name} PrestigeLevel property to tier {tier}.");
                     break;
                 case Creature creature:
-                    PrestigeManager.RemovePrestigeScaling(creature);
-                    var variationForTier = tier + PrestigeManager.PRESTIGE_VAR_OFFSET;
-                    PrestigeManager.ApplyPrestigeScaling(creature, variationForTier);
-                    CommandHandlerHelper.WriteOutputInfo(session,
-                        tier > 0
-                            ? $"Replaced prestige scaling on {creature.Name} for tier {tier} (variation {variationForTier})."
-                            : $"Cleared prestige scaling on {creature.Name} (retail / tier 0, variation {variationForTier}).");
-                    PlayerManager.BroadcastToAuditChannel(session.Player,
-                        tier > 0
-                            ? $"[Prestige] {session.Player.Name} replaced creature prestige scaling on {creature.Name}: tier {tier}, variation {variationForTier}."
-                            : $"[Prestige] {session.Player.Name} cleared creature prestige scaling on {creature.Name} (tier 0, variation {variationForTier}).");
+                    if (tier <= 0)
+                    {
+                        PrestigeManager.ClearPrestigeScaling(creature);
+                        CommandHandlerHelper.WriteOutputInfo(session, $"Cleared prestige scaling on {creature.Name} (retail / tier 0).");
+                        PlayerManager.BroadcastToAuditChannel(session.Player,
+                            $"[Prestige] {session.Player.Name} cleared creature prestige scaling on {creature.Name} (tier 0).");
+                    }
+                    else
+                    {
+                        PrestigeManager.RemovePrestigeScaling(creature);
+                        var variationForTier = tier + PrestigeManager.PRESTIGE_VAR_OFFSET;
+                        PrestigeManager.ApplyPrestigeScaling(creature, variationForTier);
+                        CommandHandlerHelper.WriteOutputInfo(session,
+                            $"Replaced prestige scaling on {creature.Name} for tier {tier} (variation {variationForTier}).");
+                        PlayerManager.BroadcastToAuditChannel(session.Player,
+                            $"[Prestige] {session.Player.Name} replaced creature prestige scaling on {creature.Name}: tier {tier}, variation {variationForTier}.");
+                    }
                     break;
                 default:
                     CommandHandlerHelper.WriteOutputInfo(session, "Target must be a player or creature.");
@@ -368,7 +374,16 @@ namespace ACE.Server.Command.Handlers
                     }
 
                     var variationListArg = string.Join(" ", parameters.Skip(2));
-                    var requested = ParseVariationList(variationListArg).ToList();
+                    List<int> requested;
+                    try
+                    {
+                        requested = ParseVariationList(variationListArg).ToList();
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, ex.Message);
+                        return;
+                    }
                     var normalized = PrestigeManager.NormalizeMirrorTargetVariations(requested, sourceVariation);
                     CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Normalize ===");
                     CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {sourceVariation}");
@@ -470,8 +485,10 @@ namespace ACE.Server.Command.Handlers
                     if (span <= 0)
                         continue;
 
-                    var cap = (int)Math.Min(span, MaxVariationExpandItems);
-                    for (var i = 0; i < cap; i++)
+                    if (span > MaxVariationExpandItems)
+                        throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
+
+                    for (var i = 0; i < span; i++)
                         yield return min + i;
 
                     continue;

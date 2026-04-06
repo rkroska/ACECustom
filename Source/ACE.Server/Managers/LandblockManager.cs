@@ -400,6 +400,11 @@ namespace ACE.Server.Managers
                 && newBlock.CurrentLandblockGroup != null
                 && oldBlock.CurrentLandblockGroup != newBlock.CurrentLandblockGroup;
 
+            // RemoveWorldObjectForPhysics clears CurrentLandblock until the add runs; point at the destination
+            // so same-tick lookups do not see a dangling null between remove and the queued add.
+            if (crossGroupPhysicsMove)
+                worldObject.CurrentLandblock = newBlock;
+
             if (crossGroupPhysicsMove)
                 newBlock.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
             else

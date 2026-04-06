@@ -100,7 +100,7 @@ namespace ACE.Server.Managers
                 if (!_tierAllowedLandblocks.TryGetValue(tier, out var allowed))
                     return null;
 
-                return allowed;
+                return new HashSet<ushort>(allowed);
             }
         }
 
@@ -321,6 +321,11 @@ namespace ACE.Server.Managers
             creature.RemoveProperty(PropertyInt.PrestigeLevel);
             creature.SetMaxVitals();
         }
+
+        /// <summary>
+        /// Clears prestige scaling from a creature without re-applying (use for admin tier 0 / retail).
+        /// </summary>
+        public static void ClearPrestigeScaling(Creature creature) => RemovePrestigeScaling(creature);
 
         /// <summary>
         /// Applies HP and Damage scaling to a spawned creature based on its location's prestige tier.

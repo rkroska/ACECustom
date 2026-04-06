@@ -1200,7 +1200,16 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             var loc = new Position(session.Player.Location);
             var variation = loc.Variation;
-            var mirrorOptions = ParseCreateInstMirrorOptions(parameters);
+            CreateInstMirrorOptions mirrorOptions;
+            try
+            {
+                mirrorOptions = ParseCreateInstMirrorOptions(parameters);
+            }
+            catch (ArgumentException ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(ex.Message, ChatMessageType.Broadcast));
+                return;
+            }
 
             var param = parameters[0];
 
@@ -1555,8 +1564,10 @@ namespace ACE.Server.Command.Handlers.Processors
                     if (spanAll <= 0)
                         yield break;
 
-                    var capAll = (int)Math.Min(spanAll, MaxVariationExpandItems);
-                    for (var i = 0; i < capAll; i++)
+                    if (spanAll > MaxVariationExpandItems)
+                        throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
+
+                    for (var i = 0; i < spanAll; i++)
                         yield return min + i;
                     continue;
                 }
@@ -1577,8 +1588,10 @@ namespace ACE.Server.Command.Handlers.Processors
                     if (span <= 0)
                         continue;
 
-                    var cap = (int)Math.Min(span, MaxVariationExpandItems);
-                    for (var i = 0; i < cap; i++)
+                    if (span > MaxVariationExpandItems)
+                        throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
+
+                    for (var i = 0; i < span; i++)
                         yield return min + i;
 
                     continue;
