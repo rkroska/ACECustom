@@ -400,6 +400,11 @@ namespace ACE.Server.WorldObjects
                             if (cleaveHit == null)
                                 continue;
 
+                            // Clear split arrow tracking on cleave targets before hitting
+                            cleaveHit?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                            cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                            cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+
                             // Apply cast on strike effects to cleaved targets
                             var cleaveDamageEvent = DamageTarget(cleaveHit, weapon);
                             
