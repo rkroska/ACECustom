@@ -118,9 +118,12 @@ namespace ACE.Server.WorldObjects
             }
             
             
-            // Fix: Sync Location with Physics before checking boundary logic to ensure coordinates are fresh
-            SyncLocationWithPhysics();
-            CheckPrestigeBoundary();
+            // Sync Location with Physics before boundary checks; skip prestige logic when physics has no cell (stale Location).
+            if (PhysicsObj?.CurCell != null)
+            {
+                SyncLocationWithPhysics();
+                CheckPrestigeBoundary();
+            }
         }
 
         /// <summary>
@@ -518,10 +521,10 @@ namespace ACE.Server.WorldObjects
                     if (Time.GetUnixTime() - _outOfBoundsEntryTime > 2.0)
                         UpdateGuideWisp(true, variation);
                     
-                    if (Health.Current <= 0)
+                    if (Health.Current <= 0 && !IsInDeathProcess)
                     {
                         OnDeath(new DamageHistoryInfo(this), DamageType.Nether, false);
-                        Die(); 
+                        Die();
                         CleanupPrestigeEffects();
                     }
                 }));

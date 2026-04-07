@@ -147,10 +147,9 @@ namespace ACE.Server.Managers
             return updated > 0;
         }
 
-        public static void ReloadAllowedLandblocksFromDatabase()
+        /// <summary>Loads active rows from <c>prestige_allowed_landblocks</c> into <see cref="_tierAllowedLandblocks"/>.</summary>
+        private static void ReloadAllowedLandblocksFromDatabaseInternal()
         {
-            EnsureDatabaseInitialized();
-
             var fromDb = new Dictionary<int, HashSet<ushort>>();
             using var context = new WorldDbContext();
             context.Database.OpenConnection();
@@ -189,6 +188,12 @@ namespace ACE.Server.Managers
 
             lock (_allowedLandblocksLock)
                 _tierAllowedLandblocks = loaded;
+        }
+
+        public static void ReloadAllowedLandblocksFromDatabase()
+        {
+            EnsureDatabaseInitialized();
+            ReloadAllowedLandblocksFromDatabaseInternal();
         }
 
         /// <summary>
@@ -333,11 +338,16 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void ApplyPrestigeScaling(Creature creature, int? variation = null)
         {
+            var prev = creature.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
             // Variations 11-20 are Prestige Tiers 1-10
             var tier = GetTier(variation ?? creature.Location?.Variation);
-            if (tier <= 0) return;
+            if (tier <= 0)
+            {
+                if (prev > 0)
+                    RemovePrestigeScaling(creature);
+                return;
+            }
 
-            var prev = creature.GetProperty(PropertyInt.PrestigeLevel) ?? 0;
             if (prev == tier)
                 return;
 
@@ -479,6 +489,7 @@ namespace ACE.Server.Managers
 
                 using var context = new WorldDbContext();
                 EnsurePrestigeAllowedLandblocksTable(context);
+                ReloadAllowedLandblocksFromDatabaseInternal();
                 _databaseInitialized = true;
             }
         }

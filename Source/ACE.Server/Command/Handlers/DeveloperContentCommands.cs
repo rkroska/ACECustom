@@ -1305,8 +1305,13 @@ namespace ACE.Server.Command.Handlers.Processors
 
             var maxStaticGuid = firstStaticGuid | 0xFFF;
 
-            // manually specify a start guid?
-            if (parameters.Length >= 2 && !parameters[1].StartsWith("-", StringComparison.Ordinal))
+            // manually specify a start guid? (do not treat link-child "-p <parent>" parent hex in parameters[1] as a manual start guid)
+            var canParseManualStartGuid = parameters.Length >= 2
+                && parentGuid == null
+                && !string.Equals(parameters[0], "-p", StringComparison.OrdinalIgnoreCase)
+                && !parameters[1].StartsWith("-", StringComparison.Ordinal);
+
+            if (canParseManualStartGuid)
             {
                 if (uint.TryParse(parameters[1].Replace("0x", ""), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var startGuid))
                 {
