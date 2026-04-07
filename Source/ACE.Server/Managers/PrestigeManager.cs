@@ -122,7 +122,11 @@ namespace ACE.Server.Managers
             try
             {
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM prestige_allowed_landblocks WHERE tier = " + tier;
+                cmd.CommandText = "SELECT COUNT(*) FROM prestige_allowed_landblocks WHERE tier = @tier";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "@tier";
+                p.Value = tier;
+                cmd.Parameters.Add(p);
                 return Convert.ToInt64(cmd.ExecuteScalar());
             }
             finally
