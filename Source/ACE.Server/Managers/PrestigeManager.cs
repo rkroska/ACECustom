@@ -200,11 +200,21 @@ namespace ACE.Server.Managers
         private static void ReloadAllowedLandblocksFromDatabaseInternal()
         {
             var fromDb = new Dictionary<int, HashSet<ushort>>();
+            var seededTiers = new HashSet<int>();
             using var context = new WorldDbContext();
             context.Database.OpenConnection();
             try
             {
                 var connection = context.Database.GetDbConnection();
+
+                using (var tierCmd = connection.CreateCommand())
+                {
+                    tierCmd.CommandText = "SELECT DISTINCT tier FROM prestige_allowed_landblocks";
+                    using var tierReader = tierCmd.ExecuteReader();
+                    while (tierReader.Read())
+                        seededTiers.Add(tierReader.GetInt32(0));
+                }
+
                 using var command = connection.CreateCommand();
                 command.CommandText = @"
                     SELECT tier, landblock
@@ -232,8 +242,22 @@ namespace ACE.Server.Managers
             }
 
             var loaded = CloneAllowedLandblocks(_defaultTierAllowedLandblocks);
+            foreach (var tier in seededTiers)
+                loaded[tier] = new HashSet<ushort>();
             foreach (var kvp in fromDb)
-                loaded[kvp.Key] = new HashSet<ushort>(kvp.Value);
+            {
+                if (!loaded.TryGetValue(kvp.Key, out var set))
+                {
+                    set = new HashSet<ushort>();
+                    loaded[kvp.Key] = set;
+                }
+                else
+                {
+                    set.Clear();
+                }
+                foreach (var lb in kvp.Value)
+                    set.Add(lb);
+            }
 
             lock (_allowedLandblocksLock)
                 _tierAllowedLandblocks = loaded;

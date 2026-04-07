@@ -473,6 +473,9 @@ namespace ACE.Server.WorldObjects
             var variation = Location.Variation;
             var currentLBVal = (ushort)(Location.Cell >> 16);
 
+            if (!PrestigeManager.IsPrestigeVariation(variation))
+                return;
+
             if (currentLBVal == 0)
                 return;
 
@@ -495,10 +498,14 @@ namespace ACE.Server.WorldObjects
                     if (PrestigeManager.IsLandblockAllowed(variation, lbVal))
                         return;
 
-                    if (Time.GetUnixTime() - _lastForbiddenLandblockLog >= 10.0) // Throttle logs
+                    var nowExec = Time.GetUnixTime();
+                    if (nowExec - _outOfBoundsEntryTime <= 2.0)
+                        return;
+
+                    if (nowExec - _lastForbiddenLandblockLog >= 10.0)
                     {
                        log.Info($"Player {Name} ({Guid}) is in FORBIDDEN landblock {currentLBVal:X4} (Var: {variation})");
-                       _lastForbiddenLandblockLog = Time.GetUnixTime();
+                       _lastForbiddenLandblockLog = nowExec;
                     }
 
                     // 1. Visuals: Void Particles + Fog (Removed PortalStorm to avoid chat spam)
@@ -517,9 +524,7 @@ namespace ACE.Server.WorldObjects
                     UpdateVitalDelta(Health, -dmg);
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
 
-                    // Spawn Wisp after ~2 seconds in the danger zone
-                    if (Time.GetUnixTime() - _outOfBoundsEntryTime > 2.0)
-                        UpdateGuideWisp(true, variation);
+                    UpdateGuideWisp(true, variation);
                     
                     if (Health.Current <= 0 && !IsInDeathProcess)
                     {
@@ -710,19 +715,23 @@ namespace ACE.Server.WorldObjects
 
                     if (timeSinceDanger >= 10.0)
                     {
+                        var wispAtEnqueue = _guideWisp;
                         WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
                         {
                             if (Session == null || Session.State != SessionState.WorldConnected)
                                 return;
 
-                            if (_guideWisp != null)
-                            {
-                                var msg = new GameMessageHearSpeech("Do try to stay on the path next time...", _guideWisp.Name, _guideWisp.Guid.Full, ChatMessageType.Speech);
-                                Session.Network.EnqueueSend(msg);
+                            if (Time.GetUnixTime() - _lastDangerTime < 10.0)
+                                return;
 
-                                _guideWisp.Destroy();
-                                _guideWisp = null;
-                            }
+                            if (wispAtEnqueue == null || _guideWisp != wispAtEnqueue)
+                                return;
+
+                            var msg = new GameMessageHearSpeech("Do try to stay on the path next time...", wispAtEnqueue.Name, wispAtEnqueue.Guid.Full, ChatMessageType.Speech);
+                            Session.Network.EnqueueSend(msg);
+
+                            wispAtEnqueue.Destroy();
+                            _guideWisp = null;
                         }));
                     }
                 }
