@@ -9,43 +9,11 @@ namespace ACE.Server.Network.GameEvent.Events
 {
     public class GameEventKillerNotification : GameEventMessage
     {
-        public GameEventKillerNotification(Session session, string deathMessage, ObjectGuid? killedCreatureId = null)
+        public GameEventKillerNotification(Session session, string deathMessage, bool wasKilledBySplitArrow = false)
             : base(GameEventType.KillerNotification, GameMessageGroup.UIQueue, session)
         {
-            // Check if this death message should be modified for split arrows
-            var modifiedMessage = ModifyDeathMessageForSplitArrows(session.Player, deathMessage, killedCreatureId);
-            
-            // sent to player when they kill something
+            var modifiedMessage = wasKilledBySplitArrow ? ModifyDeathMessageForSplitArrow(deathMessage) : deathMessage;
             Writer.WriteString16L(modifiedMessage);
-        }
-        
-        private string ModifyDeathMessageForSplitArrows(Player player, string originalMessage, ObjectGuid? killedCreatureId)
-        {
-            // If we have the specific creature ID, check if it was killed by a split arrow
-            if (killedCreatureId.HasValue)
-            {
-                // Debug: Checking creature ID for split arrow kill
-                
-                var killedCreature = player?.CurrentLandblock?.GetObject(killedCreatureId.Value) as Creature;
-                if (killedCreature != null)
-                {
-                    var wasKilledBySplitArrow = killedCreature.GetProperty(PropertyBool.IsSplitArrowKill) == true;
-                    if (wasKilledBySplitArrow)
-                    {
-                        // This creature was killed by a split arrow, modify the message
-                        var modifiedMessage = ModifyDeathMessageForSplitArrow(originalMessage);
-                        
-                        // Clear the tracking properties to prevent affecting other death messages
-                        killedCreature.RemoveProperty(PropertyBool.IsSplitArrowKill);
-                        killedCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
-                        killedCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
-                        
-                        return modifiedMessage;
-                    }
-                }
-            }
-            
-            return originalMessage;
         }
         
         

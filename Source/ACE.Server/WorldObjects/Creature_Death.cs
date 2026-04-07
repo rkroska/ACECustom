@@ -90,8 +90,16 @@ namespace ACE.Server.WorldObjects
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
+                var isSplitArrowKill = GetProperty(PropertyBool.IsSplitArrowKill) == true;
+                if (isSplitArrowKill)
+                {
+                    RemoveProperty(PropertyBool.IsSplitArrowKill);
+                    RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                    RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+                }
+
                 if (lastDamager is Player playerKiller && playerKiller.Session != null)
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
+                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, isSplitArrowKill));
             }
             return deathMessage;
         }
