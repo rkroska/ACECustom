@@ -59,13 +59,20 @@ namespace ACE.Server.WorldObjects
                     try
                     {
                         var projectileIsSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
-                        
-                        // Always track the last projectile hit, regardless of whether it's split or main
-                        targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, projectileIsSplitArrow);
-                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
-                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
-                        
-                        // Removed verbose projectile tracking logging
+
+                        if (projectileIsSplitArrow)
+                        {
+                            targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, true);
+                            targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
+                            targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
+                        }
+                        else
+                        {
+                            // Non-split-arrow projectile — clear any stale split arrow tracking
+                            targetCreature.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                            targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                            targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+                        }
                     }
                     catch (Exception ex)
                     {

@@ -844,6 +844,11 @@ namespace ACE.Server.WorldObjects
                 amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
 
+                // Spell hit clears any stale split arrow kill tracking on the target
+                target.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                target.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                target.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+
                 //if (targetPlayer != null && targetPlayer.Fellowship != null)
                     //targetPlayer.Fellowship.OnVitalUpdate(targetPlayer);
             }
