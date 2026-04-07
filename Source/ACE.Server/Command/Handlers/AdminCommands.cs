@@ -327,9 +327,7 @@ namespace ACE.Server.Command.Handlers
                     CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {(sourceVariation.HasValue ? sourceVariation.Value.ToString() : "null")}");
                     CommandHandlerHelper.WriteOutputInfo(session, $"Base Prestige Variation: {PrestigeManager.GetBasePrestigeVariation()}");
                     CommandHandlerHelper.WriteOutputInfo(session, $"Max Configured Prestige Variation: {maxVariation}");
-                    CommandHandlerHelper.WriteOutputInfo(session, defaultTargets.Count == 0
-                        ? "Default Targets: <none>"
-                        : $"Default Targets: {string.Join(", ", defaultTargets)}");
+                    CommandHandlerHelper.WriteOutputInfo(session, FormatPreview("Default Targets", defaultTargets));
                     break;
                 }
 
@@ -361,12 +359,8 @@ namespace ACE.Server.Command.Handlers
                     var normalized = PrestigeManager.NormalizeMirrorTargetVariations(requested, sourceVariation);
                     CommandHandlerHelper.WriteOutputInfo(session, "=== Prestige Mirror Normalize ===");
                     CommandHandlerHelper.WriteOutputInfo(session, $"Source Variation: {sourceVariation}");
-                    CommandHandlerHelper.WriteOutputInfo(session, requested.Count == 0
-                        ? "Requested Targets: <none parsed>"
-                        : $"Requested Targets: {string.Join(", ", requested)}");
-                    CommandHandlerHelper.WriteOutputInfo(session, normalized.Count == 0
-                        ? "Normalized Targets: <none>"
-                        : $"Normalized Targets: {string.Join(", ", normalized)}");
+                    CommandHandlerHelper.WriteOutputInfo(session, FormatPreview("Requested Targets", requested, emptyLabel: "<none parsed>"));
+                    CommandHandlerHelper.WriteOutputInfo(session, FormatPreview("Normalized Targets", normalized));
                     break;
                 }
 
@@ -438,6 +432,22 @@ namespace ACE.Server.Command.Handlers
         /// <summary>Single token like "5-10" or "-5--1" (hyphen-separated signed bounds); not comma lists.</summary>
         private static readonly Regex VariationRangeRegex = new(@"^\s*([+-]?\d+)\s*-\s*([+-]?\d+)\s*$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+        private static string FormatPreview<T>(string label, IEnumerable<T> values, int maxItems = 50, string emptyLabel = "<none>")
+        {
+            if (values == null)
+                return $"{label}: {emptyLabel}";
+
+            var list = values as IList<T> ?? values.ToList();
+            if (list.Count == 0)
+                return $"{label}: {emptyLabel}";
+
+            var preview = string.Join(", ", list.Take(maxItems).Select(v => v?.ToString() ?? ""));
+            if (list.Count > maxItems)
+                preview += ", ...";
+
+            return $"{label} ({list.Count}): {preview}";
+        }
+
         private static IEnumerable<int> ParseVariationList(string csvOrRange)
         {
             if (string.IsNullOrWhiteSpace(csvOrRange))
@@ -447,19 +457,21 @@ namespace ACE.Server.Command.Handlers
             foreach (var value in values)
             {
                 var rangeMatch = VariationRangeRegex.Match(value);
-                if (rangeMatch.Success
-                    && int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var min)
-                    && int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var max))
+                if (rangeMatch.Success)
                 {
+                    if (!int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var min)
+                        || !int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var max))
+                        throw new ArgumentException($"Invalid variation range token: \"{value}\".");
+
                     if (min > max)
                         (min, max) = (max, min);
 
                     if (min < 0 || max > MaxVariationIdBound)
-                        continue;
+                        throw new ArgumentException($"Variation range out of bounds in token \"{value}\" (allowed 0..{MaxVariationIdBound}).");
 
                     var span = (long)max - (long)min + 1L;
                     if (span <= 0)
-                        continue;
+                        throw new ArgumentException($"Invalid variation range (empty span) in token \"{value}\".");
 
                     if (span > MaxVariationExpandItems)
                         throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
@@ -470,11 +482,13 @@ namespace ACE.Server.Command.Handlers
                     continue;
                 }
 
-                if (int.TryParse(value, out var variationId))
-                {
-                    if (variationId >= 0 && variationId <= MaxVariationIdBound)
-                        yield return variationId;
-                }
+                if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var variationId))
+                    throw new ArgumentException($"Invalid variation token: \"{value}\".");
+
+                if (variationId < 0 || variationId > MaxVariationIdBound)
+                    throw new ArgumentException($"Variation ID out of bounds in token \"{value}\" (allowed 0..{MaxVariationIdBound}).");
+
+                yield return variationId;
             }
         }
 
@@ -533,7 +547,7 @@ namespace ACE.Server.Command.Handlers
                             return;
                         }
 
-                        CommandHandlerHelper.WriteOutputInfo(session, $"Tier {singleTier} allowed landblocks ({lbs.Count}): {string.Join(", ", lbs.OrderBy(x => x).Select(x => x.ToString("X4")))}");
+                        CommandHandlerHelper.WriteOutputInfo(session, FormatPreview($"Tier {singleTier} allowed landblocks", lbs.OrderBy(x => x).Select(x => x.ToString("X4"))));
                         return;
                     }
 
@@ -547,7 +561,7 @@ namespace ACE.Server.Command.Handlers
                     foreach (var kvp in all.OrderBy(x => x.Key))
                     {
                         var lbList = kvp.Value.OrderBy(x => x).Select(x => x.ToString("X4"));
-                        CommandHandlerHelper.WriteOutputInfo(session, $"Tier {kvp.Key} ({kvp.Value.Count}): {string.Join(", ", lbList)}");
+                        CommandHandlerHelper.WriteOutputInfo(session, FormatPreview($"Tier {kvp.Key}", lbList));
                     }
                     break;
 

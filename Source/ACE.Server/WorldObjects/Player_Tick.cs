@@ -457,6 +457,7 @@ namespace ACE.Server.WorldObjects
         }
 
         private double _lastPrestigeBoundaryCheck;
+        private double _lastForbiddenLandblockLog;
 
         private void CheckPrestigeBoundary()
         {
@@ -491,9 +492,10 @@ namespace ACE.Server.WorldObjects
                     if (PrestigeManager.IsLandblockAllowed(variation, lbVal))
                         return;
 
-                    if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck >= 10.0) // Throttle logs
+                    if (Time.GetUnixTime() - _lastForbiddenLandblockLog >= 10.0) // Throttle logs
                     {
                        log.Info($"Player {Name} ({Guid}) is in FORBIDDEN landblock {currentLBVal:X4} (Var: {variation})");
+                       _lastForbiddenLandblockLog = Time.GetUnixTime();
                     }
 
                     // 1. Visuals: Void Particles + Fog (Removed PortalStorm to avoid chat spam)
@@ -692,7 +694,7 @@ namespace ACE.Server.WorldObjects
             }
             else
             {
-                // Only destroy wisp if we've been safe for 5+ seconds
+                // Only destroy wisp if we've been safe for 10+ seconds
                 if (_guideWisp != null)
                 {
                     var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;

@@ -591,6 +591,9 @@ namespace ACE.Database
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
             // Keep this EF-translatable: avoid custom method calls in LINQ-to-SQL.
+            // Only reject the new dynamic allocator band (0xF0000000+). Do not use LegacyDynamicMin here:
+            // world static instance GUIDs may still appear in 0x80000000–0xEFFFFFFF on real shards; those
+            // are not GuidManager dynamic assignments. See ObjectGuid.LandblockInstanceGuidBase / StaticObjectMax.
             return !context.LandblockInstance
                 .AsNoTracking()
                 .Any(i => i.Guid >= ObjectGuid.DynamicMin);

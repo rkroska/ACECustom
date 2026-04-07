@@ -362,7 +362,7 @@ namespace ACE.Server.Managers
                 creature.SetMaxVitals();
             }
 
-            // 1. HP Scaling (Mulitply Base)
+            // 1. HP Scaling (Multiply Base)
             var hpMod = GetHPModifier(tier);
             if (hpMod != 1.0f)
             {

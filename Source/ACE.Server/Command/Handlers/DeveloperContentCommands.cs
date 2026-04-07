@@ -1400,7 +1400,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 parentObj.ChildLinks.Add(wo);
                 wo.ParentLink = parentObj;
             }
-            if (!SaveInstanceToWorldDatabase(instance))
+            if (!SaveInstanceToWorldDatabase(instance, isLinkChild ? linkEntry : null))
             {
                 if (isLinkChild && linkEntry != null)
                 {
@@ -1416,7 +1416,10 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             if (!isLinkChild)
-                TryCreateMirroredInstances(session, entityWeenie, wo, loc, instances, mirrorOptions);
+            {
+                var mirrorSourceLoc = new Position(wo.Location);
+                TryCreateMirroredInstances(session, entityWeenie, wo, mirrorSourceLoc, instances, mirrorOptions);
+            }
             //SyncInstances(session, landblock, instances, variation);
         }
 
@@ -1644,19 +1647,21 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
 
                 var rangeMatch = VariationRangeRegex.Match(value);
-                if (rangeMatch.Success
-                    && int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMin)
-                    && int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMax))
+                if (rangeMatch.Success)
                 {
+                    if (!int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMin)
+                        || !int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMax))
+                        throw new ArgumentException($"Invalid variation range token: \"{value}\".");
+
                     if (rangeMin > rangeMax)
                         (rangeMin, rangeMax) = (rangeMax, rangeMin);
 
                     if (rangeMin < 0 || rangeMax > MaxVariationIdBound)
-                        continue;
+                        throw new ArgumentException($"Variation range out of bounds in token \"{value}\" (allowed 0..{MaxVariationIdBound}).");
 
                     var span = (long)rangeMax - (long)rangeMin + 1L;
                     if (span <= 0)
-                        continue;
+                        throw new ArgumentException($"Invalid variation range (empty span) in token \"{value}\".");
 
                     if (span > MaxVariationExpandItems)
                         throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
@@ -1667,11 +1672,13 @@ namespace ACE.Server.Command.Handlers.Processors
                     continue;
                 }
 
-                if (int.TryParse(value, out var variationId))
-                {
-                    if (variationId >= 0 && variationId <= MaxVariationIdBound)
-                        yield return variationId;
-                }
+                if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var variationId))
+                    throw new ArgumentException($"Invalid variation token: \"{value}\".");
+
+                if (variationId < 0 || variationId > MaxVariationIdBound)
+                    throw new ArgumentException($"Variation ID out of bounds in token \"{value}\" (allowed 0..{MaxVariationIdBound}).");
+
+                yield return variationId;
             }
         }
 
@@ -1887,13 +1894,15 @@ namespace ACE.Server.Command.Handlers.Processors
         /// WARNING: This is one of the few places where World database writes occur.
         /// World database entities are generally read-only except through admin commands.
         /// </summary>
-        public static bool SaveInstanceToWorldDatabase(LandblockInstance instance)
+        public static bool SaveInstanceToWorldDatabase(LandblockInstance instance, LandblockInstanceLink linkEntry = null)
         {
             try
             {
                 using (var ctx = new WorldDbContext())
                 {
                     ctx.LandblockInstance.Add(instance);
+                    if (linkEntry != null)
+                        ctx.LandblockInstanceLink.Add(linkEntry);
                     ctx.SaveChanges();
                 }
                 return true;
