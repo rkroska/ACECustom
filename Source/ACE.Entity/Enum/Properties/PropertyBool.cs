@@ -244,5 +244,10 @@ namespace ACE.Entity.Enum.Properties
         /// monsters at or below 20% health.
         /// </summary>
         HasCullingStrike                  = 9050,
+
+        /// <summary>
+        /// If TRUE, this player deals 100% more damage to monsters above 80% health.
+        /// </summary>
+        HasPredator                       = 9051,
     }
 }

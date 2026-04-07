@@ -2602,6 +2602,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasCullingStrike); else SetProperty(PropertyBool.HasCullingStrike, value); }
         }
 
+        public bool HasPredator
+        {
+            get => GetProperty(PropertyBool.HasPredator) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasPredator); else SetProperty(PropertyBool.HasPredator, value); }
+        }
+
         public int? EnrageFogColor
         {
             get => GetProperty(PropertyInt.EnrageFogColor);

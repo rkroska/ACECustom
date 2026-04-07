@@ -488,6 +488,20 @@ namespace ACE.Server.Entity
                 //Console.WriteLine($"[DEBUG] Final Mob Defender Enrage Damage Reduction Applied: {damageReduction * 100}%, Final Damage: {Damage}");
             }
 
+            // Predator: attacker deals 100% more damage to monsters above 80% health
+            if (attacker.HasPredator && !(defender is Player) && defender.Health.MaxValue > 0)
+            {
+                float defenderHealthPct = (float)defender.Health.Current / defender.Health.MaxValue;
+                if (defenderHealthPct > 0.80f)
+                {
+                    float damageBeforePredator = Damage;
+                    Damage *= 2.0f;
+                    if (attacker is Player predatorPlayer)
+                        predatorPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Predator! You deal double damage to {defender.Name}. ({damageBeforePredator:F0} -> {Damage:F0})", ChatMessageType.Combat));
+                }
+            }
+
             DamageMitigated = DamageBeforeMitigation - Damage;
 
             //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");
