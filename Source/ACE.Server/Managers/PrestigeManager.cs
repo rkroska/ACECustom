@@ -181,6 +181,9 @@ namespace ACE.Server.Managers
 
         public static bool RemoveAllowedLandblock(int tier, ushort landblock)
         {
+            if (tier <= 0)
+                return false;
+
             EnsureDatabaseInitialized();
 
             using var context = new WorldDbContext();
@@ -425,25 +428,7 @@ namespace ACE.Server.Managers
                 return;
 
             if (prev > 0)
-            {
-                var hpModPrev = GetHPModifier(prev);
-                if (hpModPrev != 1.0f)
-                    creature.Health.StartingValue = (uint)Math.Round(creature.Health.StartingValue / hpModPrev);
-
-                var dmgModPrev = GetDamageModifier(prev);
-                if (dmgModPrev != 1.0f)
-                {
-                    var ratingPrev = ModToRating(dmgModPrev);
-                    var existingDr = creature.GetProperty(PropertyInt.DamageRating) ?? 0;
-                    var nextDr = Math.Max(0, existingDr - ratingPrev);
-                    if (nextDr == 0)
-                        creature.RemoveProperty(PropertyInt.DamageRating);
-                    else
-                        creature.SetProperty(PropertyInt.DamageRating, nextDr);
-                }
-
-                creature.SetMaxVitals();
-            }
+                RemovePrestigeScaling(creature);
 
             // 1. HP Scaling (Multiply Base)
             var hpMod = GetHPModifier(tier);

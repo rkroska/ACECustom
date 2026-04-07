@@ -461,6 +461,7 @@ namespace ACE.Server.WorldObjects
 
         private double _lastPrestigeBoundaryCheck;
         private double _lastForbiddenLandblockLog;
+        private double _lastForbiddenZonePunishmentTime;
 
         private void CheckPrestigeBoundary()
         {
@@ -499,8 +500,13 @@ namespace ACE.Server.WorldObjects
                         return;
 
                     var nowExec = Time.GetUnixTime();
-                    if (nowExec - _outOfBoundsEntryTime <= 2.0)
+                    const double forbiddenPunishCooldown = 2.0;
+                    if (nowExec - _outOfBoundsEntryTime <= forbiddenPunishCooldown)
                         return;
+                    if (_lastForbiddenZonePunishmentTime > 0 && nowExec - _lastForbiddenZonePunishmentTime < forbiddenPunishCooldown)
+                        return;
+
+                    _lastForbiddenZonePunishmentTime = nowExec;
 
                     if (nowExec - _lastForbiddenLandblockLog >= 10.0)
                     {
@@ -537,6 +543,7 @@ namespace ACE.Server.WorldObjects
             else
             {
                 _outOfBoundsEntryTime = 0;
+                _lastForbiddenZonePunishmentTime = 0;
 
                 // PROXIMITY CHECK (Safe but near edge?)
                 var lbId = new ACE.Entity.LandblockId(Location.Cell);
@@ -588,11 +595,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void CleanupPrestigeEffects()
         {
-            if (_guideWisp != null)
+            var capturedWisp = _guideWisp;
+            if (capturedWisp == null)
+                return;
+
+            WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
             {
-                _guideWisp.Destroy();
-                _guideWisp = null;
-            }
+                capturedWisp.Destroy();
+                if (_guideWisp == capturedWisp)
+                    _guideWisp = null;
+            }));
         }
 
         private void UpdateGuideWisp(bool danger, int? variation)
