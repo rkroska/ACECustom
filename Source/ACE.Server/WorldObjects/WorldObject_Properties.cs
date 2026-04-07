@@ -2614,6 +2614,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasDeathWish); else SetProperty(PropertyBool.HasDeathWish, value); }
         }
 
+        public bool HasChainLightning
+        {
+            get => GetProperty(PropertyBool.HasChainLightning) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasChainLightning); else SetProperty(PropertyBool.HasChainLightning, value); }
+        }
+
         public int? EnrageFogColor
         {
             get => GetProperty(PropertyInt.EnrageFogColor);

@@ -7293,5 +7293,22 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat(
                 $"Death Wish {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
         }
+
+        [CommandHandler("chainlightning", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Toggles Chain Lightning on yourself — Lightning Streak chains to all monsters within 100m.",
+            "Usage: /chainlightning [on|off]")]
+        public static void HandleChainLightning(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            bool enable = true;
+            if (parameters.Length > 0)
+                enable = parameters[0].ToLower() != "off";
+
+            session.Player.HasChainLightning = enable;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Chain Lightning {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
+        }
     }
 }

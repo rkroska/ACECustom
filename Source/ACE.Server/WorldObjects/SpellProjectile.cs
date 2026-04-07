@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 using ACE.Common;
@@ -18,6 +21,16 @@ namespace ACE.Server.WorldObjects
     public class SpellProjectile : WorldObject
     {
         public const float DefaultSpellAttributeMult = 0.25f;
+
+        // Chain Lightning: tracks which creatures have been hit per chain session
+        // Key = session ID (caster GUID + timestamp), Value = set of hit creature GUIDs
+        private static readonly ConcurrentDictionary<long, HashSet<uint>> ChainSessions = new ConcurrentDictionary<long, HashSet<uint>>();
+        private const int LightningStreakSpellId = 4452;
+        private const float ChainLightningRange = 100f;
+
+        // Carries the chain session ID for chained projectiles (0 = not a chain projectile)
+        public long ChainSessionId { get; set; } = 0;
+
         public Spell Spell;
         public ProjectileSpellType SpellType { get; set; }
 
@@ -331,6 +344,10 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     DamageTarget(creatureTarget, damage.Value, critical, critDefended, overpower);
+
+                    // Chain Lightning: if caster has HasChainLightning and this is Lightning Streak, chain to next closest target
+                    if (Spell.Id == LightningStreakSpellId && player != null && player.HasChainLightning)
+                        TryChainLightning(player, creatureTarget);
                 }
 
                 // if this SpellProjectile has a TargetEffect, play it on successful hit
@@ -382,6 +399,66 @@ namespace ACE.Server.WorldObjects
                 if (sourceCreature != null && creatureTarget != null && (sourceCreature.AllowFactionCombat(creatureTarget) || sourceCreature.PotentialFoe(creatureTarget)))
                     sourceCreature.MonsterOnAttackMonster(creatureTarget);
             }
+        }
+
+        private void TryChainLightning(Player caster, Creature justHit)
+        {
+            // Get or create the chain session for this chain
+            if (ChainSessionId == 0)
+                ChainSessionId = (long)caster.Guid.Full << 20 | (DateTime.UtcNow.Ticks & 0xFFFFF);
+
+            var hitSet = ChainSessions.GetOrAdd(ChainSessionId, _ => new HashSet<uint>());
+            hitSet.Add(justHit.Guid.Full);
+
+            var landblock = caster.CurrentLandblock;
+            if (landblock == null)
+            {
+                ChainSessions.TryRemove(ChainSessionId, out _);
+                return;
+            }
+
+            // Gather all objects from caster's landblock and adjacents
+            var allNearby = new List<WorldObject>(landblock.GetWorldObjectsForPhysicsHandling());
+            foreach (var adj in landblock.Adjacents)
+            {
+                if (adj != null)
+                    allNearby.AddRange(adj.GetWorldObjectsForPhysicsHandling());
+            }
+
+            // Find valid unhit creatures within ChainLightningRange of the caster
+            var casterPos = caster.Location.ToGlobal(false);
+            var candidates = new List<(Creature creature, float distFromHit)>();
+
+            foreach (var wo in allNearby)
+            {
+                if (!(wo is Creature c) || c is Player || !c.IsAlive) continue;
+                if (hitSet.Contains(c.Guid.Full)) continue;
+                if (!caster.CanDamage(c)) continue;
+
+                var distFromCaster = Vector3.Distance(casterPos, c.Location.ToGlobal(false));
+                if (distFromCaster > ChainLightningRange) continue;
+
+                var distFromHit = Vector3.Distance(justHit.Location.ToGlobal(false), c.Location.ToGlobal(false));
+                candidates.Add((c, distFromHit));
+            }
+
+            if (candidates.Count == 0)
+            {
+                ChainSessions.TryRemove(ChainSessionId, out _);
+                return;
+            }
+
+            // Pick closest target to the just-hit creature
+            candidates.Sort((a, b) => a.distFromHit.CompareTo(b.distFromHit));
+            var nextTarget = candidates[0].creature;
+
+            // Fire a new Lightning Streak projectile at the next target
+            var chainSpell = new Spell(LightningStreakSpellId);
+            var newProjectiles = caster.CreateSpellProjectiles(chainSpell, nextTarget, null);
+
+            // Tag each new projectile with the session so the chain continues
+            foreach (var proj in newProjectiles)
+                proj.ChainSessionId = ChainSessionId;
         }
 
         /// <summary>
