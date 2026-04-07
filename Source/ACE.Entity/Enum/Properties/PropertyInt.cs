@@ -733,6 +733,11 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [Ephemeral]
         FailedShinyCaptureGuid                  = 9042,
+
+        /// <summary>Server/admin: times jailed (leaderboard stat).</summary>
+        TimesJailed                             = 9044,
+        /// <summary>Server/admin: UCM checks passed count (leaderboard stat).</summary>
+        TimesUcmCheckPassed                     = 9045,
     }
 
     public static class PropertyIntExtensions
