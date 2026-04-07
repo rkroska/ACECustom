@@ -238,5 +238,11 @@ namespace ACE.Entity.Enum.Properties
         /// Single-use, extremely rare item obtained by exchanging 5000 Flawed Siphon Lenses.
         /// </summary>
         IsGuaranteedCaptureLens           = 9042,
+
+        /// <summary>
+        /// If TRUE, this creature/player can execute a Culling Strike — instantly killing
+        /// monsters at or below 20% health.
+        /// </summary>
+        HasCullingStrike                  = 9050,
     }
 }

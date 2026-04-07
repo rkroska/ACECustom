@@ -2596,6 +2596,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.EnrageThreshold); else SetProperty(PropertyFloat.EnrageThreshold, value.Value); }
         }
 
+        public bool HasCullingStrike
+        {
+            get => GetProperty(PropertyBool.HasCullingStrike) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasCullingStrike); else SetProperty(PropertyBool.HasCullingStrike, value); }
+        }
+
         public int? EnrageFogColor
         {
             get => GetProperty(PropertyInt.EnrageFogColor);
