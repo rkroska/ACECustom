@@ -116,7 +116,7 @@ namespace ACE.Server
             Console.Write($"Importing {sqlFile} into SQL server at {ConfigManager.Config.MySql.World.Host}:{ConfigManager.Config.MySql.World.Port} (This will take a while, please be patient) .... ");
             using (var sr = File.OpenText(sqlFile))
             {
-                var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={ConfigManager.Config.MySql.World.Host};port={ConfigManager.Config.MySql.World.Port};user={ConfigManager.Config.MySql.World.Username};password={ConfigManager.Config.MySql.World.Password};DefaultCommandTimeout=120;SslMode=None;AllowPublicKeyRetrieval=true");
+                var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={ConfigManager.Config.MySql.World.Host};port={ConfigManager.Config.MySql.World.Port};user={ConfigManager.Config.MySql.World.Username};password={ConfigManager.Config.MySql.World.Password};DefaultCommandTimeout=120;SslMode=Disabled;AllowPublicKeyRetrieval=true");
 
                 var line = string.Empty;
                 var completeSQLline = string.Empty;
@@ -156,7 +156,7 @@ namespace ACE.Server
 
         private static string GetContentFolder()
         {
-            var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={ConfigManager.Config.MySql.Shard.Host};port={ConfigManager.Config.MySql.Shard.Port};user={ConfigManager.Config.MySql.Shard.Username};password={ConfigManager.Config.MySql.Shard.Password};database={ConfigManager.Config.MySql.Shard.Database};DefaultCommandTimeout=120;SslMode=None;AllowPublicKeyRetrieval=true");
+            var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={ConfigManager.Config.MySql.Shard.Host};port={ConfigManager.Config.MySql.Shard.Port};user={ConfigManager.Config.MySql.Shard.Username};password={ConfigManager.Config.MySql.Shard.Password};database={ConfigManager.Config.MySql.Shard.Database};DefaultCommandTimeout=120;SslMode=Disabled;AllowPublicKeyRetrieval=true");
             var sqlQuery = "SELECT `value` FROM config_properties_string WHERE `key` = 'content_folder';";
             var sqlCommand = new MySql.Data.MySqlClient.MySqlCommand(sqlQuery, sqlConnect);
 
@@ -209,7 +209,7 @@ namespace ACE.Server
                     {
                         Console.Write($"Found {file.FullName} .... ");
                         var sqlDBFile = File.ReadAllText(file.FullName);
-                        var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={ConfigManager.Config.MySql.World.Host};port={ConfigManager.Config.MySql.World.Port};user={ConfigManager.Config.MySql.World.Username};password={ConfigManager.Config.MySql.World.Password};database={ConfigManager.Config.MySql.World.Database};DefaultCommandTimeout=120;SslMode=None;AllowPublicKeyRetrieval=true");
+                        var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={ConfigManager.Config.MySql.World.Host};port={ConfigManager.Config.MySql.World.Port};user={ConfigManager.Config.MySql.World.Username};password={ConfigManager.Config.MySql.World.Password};database={ConfigManager.Config.MySql.World.Database};DefaultCommandTimeout=120;SslMode=Disabled;AllowPublicKeyRetrieval=true");
                         sqlDBFile = sqlDBFile.Replace("ace_world", ConfigManager.Config.MySql.World.Database);
                         var script = new MySql.Data.MySqlClient.MySqlScript(sqlConnect, sqlDBFile);
 
@@ -303,7 +303,7 @@ namespace ACE.Server
                         database = worldDB;
                         break;
                 }
-                var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={host};port={port};user={username};password={password};database={database};DefaultCommandTimeout=120;SslMode=None;AllowPublicKeyRetrieval=true");
+                var sqlConnect = new MySql.Data.MySqlClient.MySqlConnection($"server={host};port={port};user={username};password={password};database={database};DefaultCommandTimeout=120;SslMode=Disabled;AllowPublicKeyRetrieval=true");
                 sqlDBFile = sqlDBFile.Replace("ace_auth", authDB);
                 sqlDBFile = sqlDBFile.Replace("ace_shard", shardDB);
                 sqlDBFile = sqlDBFile.Replace("ace_world", worldDB);
