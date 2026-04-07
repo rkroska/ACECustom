@@ -112,6 +112,51 @@ namespace ACE.Server.Managers
                 return CloneAllowedLandblocks(_tierAllowedLandblocks);
         }
 
+        private static long CountRowsForTier(WorldDbContext context, int tier)
+        {
+            context.Database.OpenConnection();
+            try
+            {
+                using var cmd = context.Database.GetDbConnection().CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM prestige_allowed_landblocks WHERE tier = " + tier;
+                return Convert.ToInt64(cmd.ExecuteScalar());
+            }
+            finally
+            {
+                context.Database.CloseConnection();
+            }
+        }
+
+        /// <summary>
+        /// If <paramref name="tier"/> has no rows in <c>prestige_allowed_landblocks</c>, insert the current effective allow-list
+        /// (in-memory defaults merged with any loaded DB state) so the next add/remove is incremental rather than replacing the tier with a single row.
+        /// </summary>
+        private static void EnsureTierSeededFromEffectiveSet(WorldDbContext context, int tier)
+        {
+            if (CountRowsForTier(context, tier) > 0)
+                return;
+
+            HashSet<ushort> snapshot;
+            lock (_allowedLandblocksLock)
+            {
+                if (!_tierAllowedLandblocks.TryGetValue(tier, out var set) || set.Count == 0)
+                    return;
+
+                snapshot = new HashSet<ushort>(set);
+            }
+
+            foreach (var lb in snapshot)
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
+                    VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
+                    ON DUPLICATE KEY UPDATE
+                        is_active = 1,
+                        updated_at = UTC_TIMESTAMP()",
+                    tier, (int)lb);
+            }
+        }
+
         public static bool AddAllowedLandblock(int tier, ushort landblock)
         {
             EnsureDatabaseInitialized();
@@ -120,6 +165,8 @@ namespace ACE.Server.Managers
                 return false;
 
             using var context = new WorldDbContext();
+            EnsureTierSeededFromEffectiveSet(context, tier);
+
             context.Database.ExecuteSqlRaw(@"
                 INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
                 VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
@@ -137,6 +184,8 @@ namespace ACE.Server.Managers
             EnsureDatabaseInitialized();
 
             using var context = new WorldDbContext();
+            EnsureTierSeededFromEffectiveSet(context, tier);
+
             var updated = context.Database.ExecuteSqlRaw(@"
                 UPDATE prestige_allowed_landblocks
                 SET is_active = 0, updated_at = UTC_TIMESTAMP()

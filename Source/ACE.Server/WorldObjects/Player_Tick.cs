@@ -633,8 +633,14 @@ namespace ACE.Server.WorldObjects
                                 
                                 var spawnPos = playerPos + (Vector3.UnitZ * 0.2f);
                                 wisp.Location = new ACE.Entity.Position(cell, spawnPos.X, spawnPos.Y, spawnPos.Z, 0, 0, 0, 0, false, variation);
-                                
-                                wisp.EnterWorld();
+
+                                if (!wisp.EnterWorld() || wisp.CurrentLandblock == null)
+                                {
+                                    log.Warn($"[Prestige] Failed to enter world for prestige guide wisp (player {Name} 0x{Guid.Full:X8}).");
+                                    wisp.Destroy();
+                                    return;
+                                }
+
                                 _guideWisp = wisp;
 
                                 // Calculate "Smart" Safe Spot
