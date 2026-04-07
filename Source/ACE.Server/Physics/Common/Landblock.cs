@@ -429,7 +429,7 @@ namespace ACE.Server.Physics.Common
             var lcoord = LandDefs.gid_to_lcoord(cellID).Value;
 
             var idx = ((int)lcoord.Y & 7) + ((int)lcoord.X & 7) * SideCellCount;
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId ?? 0 };
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId };
             var found = LandCells.TryGetValue(cacheKey, out var cell);
             if (found && cell.ID == cellID)
                 return (LandCell)LandCells[cacheKey];
@@ -476,7 +476,7 @@ namespace ACE.Server.Physics.Common
 
             for (var i = 0; i < SideCellCount; i++)
             {
-                VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 };
+                VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)i, Variant = VariationId };
                 var cell = (ObjCell)LandCells[cacheKey];
                 cell.init_objects();
             }
@@ -529,7 +529,7 @@ namespace ACE.Server.Physics.Common
                         if (lcoord == null) continue;
 
                         var idx = ((int)lcoord.Value.Y & 7) + ((int)lcoord.Value.X & 7) * SideCellCount;
-                        var cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId ?? 0 };
+                        var cacheKey = new VariantCacheId { Landblock = (ushort)idx, Variant = VariationId };
                         if (LandCells.TryGetValue(cacheKey, out ObjCell landcell))
                         {
                             landcell.RestrictionObj = kvp.Value;

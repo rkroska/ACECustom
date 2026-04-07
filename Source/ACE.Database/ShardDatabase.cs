@@ -551,20 +551,14 @@ namespace ACE.Database
                 {
                     var biota = GetBiota(result);
                     
-                    if (variationId.HasValue && variationId.Value != 0)
+                    if (!variationId.HasValue)
                     {
-                        // Use explicit comparison for nullable int
-                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId.HasValue && x.VariationId.Value == variationId.Value))
-                        {
+                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == null))
                             staticObjects.Add(biota);
-                        }
                     }
-                    else // no variation id specified (or 0 = base), so return only base objects
+                    else if (biota.BiotaPropertiesPosition.Any(x => x.VariationId.HasValue && x.VariationId.Value == variationId.Value))
                     {
-                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == null || x.VariationId == 0))
-                        {
-                            staticObjects.Add(biota);
-                        }
+                        staticObjects.Add(biota);
                     }
                 }
             }
@@ -589,9 +583,9 @@ namespace ACE.Database
                                 p.ObjCellId >= min && 
                                 p.ObjCellId <= max && 
                                 p.ObjectId >= 0x80000000 &&
-                                ((!variationId.HasValue || variationId.Value == 0)
-                                    ? (p.VariationId == null || p.VariationId == 0)
-                                    : (p.VariationId.HasValue && p.VariationId.Value == variationId.Value)))
+                                (!variationId.HasValue
+                                    ? p.VariationId == null
+                                    : p.VariationId.HasValue && p.VariationId.Value == variationId.Value))
                     .Select(r => r.ObjectId)
                     .ToList();
 

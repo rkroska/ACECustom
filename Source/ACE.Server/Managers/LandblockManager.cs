@@ -233,7 +233,7 @@ namespace ACE.Server.Managers
                     }
                 }
 
-                landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId ?? 0 }, out _);                    
+                landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId }, out _);                    
                     
             }
 
@@ -413,7 +413,7 @@ namespace ACE.Server.Managers
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
-            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
+            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId }) != null;
         }
 
         /// <summary>
@@ -430,8 +430,7 @@ namespace ACE.Server.Managers
                 if (landblock == null)
                     continue;
 
-                // Treat null landblock variation as 0 so base matches when filtering by variation 0
-                if (variation.HasValue && (landblock.VariationId ?? 0) != variation.Value)
+                if (variation.HasValue && landblock.VariationId != variation.Value)
                     continue;
 
                 landblock.RefreshPrestigeBoundaryMarkers();
@@ -450,7 +449,7 @@ namespace ACE.Server.Managers
             Landblock landblock;
 
             bool setAdjacents = false;
-            var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation ?? 0 };
+            var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation };
             landblock = GetLandblock(cacheKey);
 
             if (landblock == null)
@@ -528,7 +527,7 @@ namespace ACE.Server.Managers
 
             foreach (var adjacentID in adjacentIDs)
             {
-                var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId ?? 0 });
+                var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId });
                 if (adjacent != null)
                     adjacents.Add(adjacent);
             }
@@ -644,7 +643,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void AddToDestructionQueue(Landblock landblock, int? VariationId)
         {
-            var cacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = VariationId ?? 0 };
+            var cacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = VariationId };
             destructionQueue.TryAdd(cacheKey, landblock);
         }
 

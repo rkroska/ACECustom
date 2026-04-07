@@ -159,7 +159,7 @@ namespace ACE.Server.Physics.Common
                     {
                         bool cellHasWater, cellFullyFlooded;
                         CalcCellWater(x, y, out cellHasWater, out cellFullyFlooded);
-                        var cacheKey = new VariantCacheId { Landblock = (ushort)(x * SideCellCount + y), Variant = VariationId ?? 0 };
+                        var cacheKey = new VariantCacheId { Landblock = (ushort)(x * SideCellCount + y), Variant = VariationId };
                         if (cellHasWater)
                         {
                             hasWater = true;
@@ -208,7 +208,7 @@ namespace ACE.Server.Physics.Common
                     var magicB = seedB;
                     var magicA = seedA + 1813693831;
                     var cellIdx = x * SideCellCount + y;
-                    VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)cellIdx, Variant = VariationId ?? 0 };
+                    VariantCacheId cacheKey = new VariantCacheId { Landblock = (ushort)cellIdx, Variant = VariationId };
                     for (var i = 0; i < LandDefs.VertexPerCell; i++)
                     {
                         var idxI = vertexCnt + i;
@@ -488,7 +488,7 @@ namespace ACE.Server.Physics.Common
             // init for landcell
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>();
-            for (uint i = 0; i < 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId ?? 0}, new LandCell((i)));
+            for (uint i = 0; i < 64; i++) LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = variationId }, new LandCell((i)));
         }
 
         /// <summary>
@@ -515,7 +515,7 @@ namespace ACE.Server.Physics.Common
 
             LandCells = new ConcurrentDictionary<VariantCacheId, ObjCell>(1, numCells);
             for (uint i = 0; i < numCells; i++)
-                LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId ?? 0 }, new LandCell((ID & LandDefs.BlockMask) + i));
+                LandCells.TryAdd(new VariantCacheId { Landblock = (ushort)i, Variant = VariationId }, new LandCell((ID & LandDefs.BlockMask) + i));
         }
 
         /// <summary>

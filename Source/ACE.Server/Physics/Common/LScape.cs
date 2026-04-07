@@ -34,7 +34,7 @@ namespace ACE.Server.Physics.Common
                 var lbmLandblock = LandblockManager.GetLandblock(lbid, false, variationId, false);
                 return lbmLandblock?.PhysicsLandblock;
             }
-            VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new() { Landblock = lbid.Landblock, Variant = variationId };
 
             // check if landblock is already cached
             if (Landblocks.TryGetValue(cacheKey, out var landblock))
@@ -53,7 +53,7 @@ namespace ACE.Server.Physics.Common
 
         public static bool unload_landblock(uint landblockID, int? variationId = null)
         {
-            VariantCacheId cacheKey = new() { Landblock = (ushort)landblockID, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new() { Landblock = (ushort)landblockID, Variant = variationId };
             if (PhysicsEngine.Instance.Server)
             {
                 // todo: Instead of ACE.Server.Entity.Landblock.Unload() calling this function, it should be calling PhysicsLandblock.Unload()
@@ -82,7 +82,7 @@ namespace ACE.Server.Physics.Common
             if (cellID == 0xFFFF) return null;
             // Align cache keys with EnvCell load: same envVariation for DB + dictionary (caller wins when landblock instance has no VariationId).
             var envVariation = landblock.VariationId ?? variationId;
-            var variantForCache = envVariation ?? 0;
+            var variantForCache = envVariation;
             var cacheKey = new VariantCacheId { Landblock = (ushort)cellID, Variant = variantForCache };
             ObjCell cell;
 
@@ -98,8 +98,8 @@ namespace ACE.Server.Physics.Common
                 var outdoorKey = new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variantForCache };
                 if (!landblock.LandCells.TryGetValue(outdoorKey, out cell))
                 {
-                    if ((variationId ?? 0) != variantForCache
-                        && landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId ?? 0 }, out cell))
+                    if (!Nullable.Equals(variationId, variantForCache)
+                        && landblock.LandCells.TryGetValue(new VariantCacheId { Landblock = (ushort)landCellIdx, Variant = variationId }, out cell))
                     {
                         Console.WriteLine(
                             $"get_landcell variant mismatch for {blockCellID:X8}: caller v={variationId?.ToString() ?? "null"} landblock v={landblock.VariationId?.ToString() ?? "null"}; recovered with caller variant — fix variation propagation.");
