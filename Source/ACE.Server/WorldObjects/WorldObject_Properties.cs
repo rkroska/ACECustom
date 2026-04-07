@@ -2608,6 +2608,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasPredator); else SetProperty(PropertyBool.HasPredator, value); }
         }
 
+        public bool HasDeathWish
+        {
+            get => GetProperty(PropertyBool.HasDeathWish) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasDeathWish); else SetProperty(PropertyBool.HasDeathWish, value); }
+        }
+
         public int? EnrageFogColor
         {
             get => GetProperty(PropertyInt.EnrageFogColor);

@@ -249,5 +249,10 @@ namespace ACE.Entity.Enum.Properties
         /// If TRUE, this player deals 100% more damage to monsters above 80% health.
         /// </summary>
         HasPredator                       = 9051,
+
+        /// <summary>
+        /// If TRUE, this player deals 500% more damage while below 20% health.
+        /// </summary>
+        HasDeathWish                      = 9052,
     }
 }
