@@ -19,9 +19,9 @@ export interface Player extends Character {
 // --- Stats & Progression ---
 
 export interface StatDetail {
-  base: number;
-  total: number | null;
+  innate: number;
   ranks: number;
+  total: number;
 }
 
 export interface StatsData {

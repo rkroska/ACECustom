@@ -14,6 +14,8 @@ using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Web.Controllers;
 using ACE.Server.WorldObjects;
+using Google.Protobuf.WellKnownTypes;
+using Lifestoned.DataModel.Gdle;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -44,6 +46,13 @@ namespace ACE.Server.Controllers
          *     IWeenieExtensions for all lookups, avoiding complex lock recursion 
          *     and maximizing concurrency.
          */
+
+        private struct StatValue
+        {
+            public uint Innate { get; set; }
+            public uint Ranks { get; set; }
+            public uint Total { get; set; }
+        }
 
         [HttpGet("list")]
         public IActionResult GetList()
@@ -478,31 +487,29 @@ namespace ACE.Server.Controllers
             throw new InvalidOperationException("Unknown player type");
         }
 
-        private object GetAttribute(Biota snapshot, PropertyAttribute attr)
+        private StatValue GetAttribute(Biota snapshot, PropertyAttribute attr)
         {
-            if (snapshot.PropertiesAttribute != null && snapshot.PropertiesAttribute.TryGetValue(attr, out var val))
+            if (snapshot.PropertiesAttribute == null) return new();
+            if (!snapshot.PropertiesAttribute.TryGetValue(attr, out PropertiesAttribute prop)) return new();
+            return new StatValue
             {
-                var baseVal = (int)(val.InitLevel + val.LevelFromCP);
-                return new { @base = baseVal, total = (int?)null, ranks = (int)val.LevelFromCP };
-            }
-            return new { @base = 0, total = (int?)null, ranks = 0 };
+                Innate = prop.InitLevel,
+                Ranks = prop.LevelFromCP,
+                Total = prop.InitLevel + prop.LevelFromCP
+            };
         }
 
-        private object GetVital(Biota snapshot, PropertyAttribute2nd vital)
+        private static StatValue GetVital(Biota snapshot, PropertyAttribute2nd vital)
         {
-            var baseVal = 0;
-            if (snapshot.PropertiesAttribute2nd != null && snapshot.PropertiesAttribute2nd.TryGetValue(vital, out var val))
-                baseVal = (int)val.InitLevel;
-
-            if (baseVal == 0)
+            if (snapshot.PropertiesAttribute2nd == null) return new();
+            if (!snapshot.PropertiesAttribute2nd.TryGetValue(vital, out PropertiesAttribute2nd prop)) return new();
+            return new StatValue
             {
-                // Use authoritative formula for base vitals
-                // This replaces the previous magic numbered fallback logic
-                baseVal = (int)AttributeFormula.GetFormula(snapshot, vital);
-            }
+                Innate = AttributeFormula.GetFormula(snapshot, vital),
+                Ranks = prop.LevelFromCP,
+                Total = prop.CurrentLevel
+            };
 
-            var ranks = (snapshot.PropertiesAttribute2nd != null && snapshot.PropertiesAttribute2nd.TryGetValue(vital, out var v) ? v.LevelFromCP : 0);
-            return new { @base = baseVal, total = (int?)null, ranks = (int)ranks };
         }
     }
 }

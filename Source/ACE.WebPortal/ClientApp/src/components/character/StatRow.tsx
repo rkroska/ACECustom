@@ -8,9 +8,9 @@ interface StatRowProps {
 }
 
 export default function StatRow({ label, detail, icon }: StatRowProps) {
-  const { total, base, ranks } = detail
+  const { innate, ranks, total } = detail
+  const base = innate + ranks;
   const isOnline = total !== null
-  const innate = base - ranks
   const mainColor = "text-white"
 
   return (
@@ -25,7 +25,7 @@ export default function StatRow({ label, detail, icon }: StatRowProps) {
         {/* Innate Column */}
         <div className="flex flex-col items-center min-w-[3.5rem]">
           <div className="text-sm font-mono font-medium text-neutral-600 tabular-nums">
-            {innate}
+            {innate?.toLocaleString()}
           </div>
         </div>
 
@@ -35,7 +35,7 @@ export default function StatRow({ label, detail, icon }: StatRowProps) {
         {/* Base Column */}
         <div className="flex flex-col items-center min-w-[3.5rem]">
           <div className={`text-sm font-mono font-medium ${isOnline ? 'text-neutral-500' : 'text-neutral-200'} tabular-nums`}>
-            {base}
+            {base?.toLocaleString()}
           </div>
         </div>
 
@@ -47,7 +47,7 @@ export default function StatRow({ label, detail, icon }: StatRowProps) {
             {/* Current Column */}
             <div className="flex flex-col items-center min-w-[3.5rem]">
               <div className={`font-mono font-bold text-base tracking-tight tabular-nums ${mainColor} brightness-110`}>
-                {total.toLocaleString()}
+                {total?.toLocaleString()}
               </div>
             </div>
           </>
