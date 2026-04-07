@@ -238,5 +238,10 @@ namespace ACE.Entity.Enum.Properties
         /// Single-use, extremely rare item obtained by exchanging 5000 Flawed Siphon Lenses.
         /// </summary>
         IsGuaranteedCaptureLens           = 9042,
+
+        /// <summary>
+        /// If TRUE, this player deals 500% more damage while below 20% health.
+        /// </summary>
+        HasDeathWish                      = 9052,
     }
 }

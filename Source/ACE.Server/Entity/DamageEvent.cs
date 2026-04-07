@@ -488,6 +488,20 @@ namespace ACE.Server.Entity
                 //Console.WriteLine($"[DEBUG] Final Mob Defender Enrage Damage Reduction Applied: {damageReduction * 100}%, Final Damage: {Damage}");
             }
 
+            // Death Wish: attacker deals 500% more damage while below 20% health
+            if (attacker.HasDeathWish && !(defender is Player) && attacker.Health.MaxValue > 0)
+            {
+                float attackerHealthPct = (float)attacker.Health.Current / attacker.Health.MaxValue;
+                if (attackerHealthPct < 0.20f)
+                {
+                    float damageBeforeDeathWish = Damage;
+                    Damage *= 6.0f;
+                    if (attacker is Player deathWishPlayer)
+                        deathWishPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Death Wish! You deal 6x damage to {defender.Name}. ({damageBeforeDeathWish:F0} -> {Damage:F0})", ChatMessageType.Combat));
+                }
+            }
+
             DamageMitigated = DamageBeforeMitigation - Damage;
 
             //Console.WriteLine($"[DEBUG] Final Damage: {Damage}");

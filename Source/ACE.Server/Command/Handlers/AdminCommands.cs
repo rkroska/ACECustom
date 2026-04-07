@@ -7238,10 +7238,26 @@ namespace ACE.Server.Command.Handlers
             {
                 var weenieInfo = $"{weenie.ClassId} - {weenie.ClassName}";
                 session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})", 
+                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})",
                     ChatMessageType.Broadcast));
             }
         }
 
+        [CommandHandler("deathwish", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Toggles Death Wish on yourself — deal 500% more damage while below 20% health.",
+            "Usage: /deathwish [on|off]")]
+        public static void HandleDeathWish(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            bool enable = true;
+            if (parameters.Length > 0)
+                enable = parameters[0].ToLower() != "off";
+
+            session.Player.HasDeathWish = enable;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Death Wish {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
+        }
     }
 }
