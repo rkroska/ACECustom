@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using ACE.Database.Models.World;
@@ -114,16 +115,20 @@ namespace ACE.Server.Managers
 
         private static long CountRowsForTier(WorldDbContext context, int tier)
         {
-            context.Database.OpenConnection();
+            var conn = context.Database.GetDbConnection();
+            var wasOpen = conn.State == ConnectionState.Open;
+            if (!wasOpen)
+                context.Database.OpenConnection();
             try
             {
-                using var cmd = context.Database.GetDbConnection().CreateCommand();
+                using var cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT COUNT(*) FROM prestige_allowed_landblocks WHERE tier = " + tier;
                 return Convert.ToInt64(cmd.ExecuteScalar());
             }
             finally
             {
-                context.Database.CloseConnection();
+                if (!wasOpen)
+                    context.Database.CloseConnection();
             }
         }
 
@@ -165,15 +170,26 @@ namespace ACE.Server.Managers
                 return false;
 
             using var context = new WorldDbContext();
-            EnsureTierSeededFromEffectiveSet(context, tier);
+            using var transaction = context.Database.BeginTransaction();
+            try
+            {
+                EnsureTierSeededFromEffectiveSet(context, tier);
 
-            context.Database.ExecuteSqlRaw(@"
-                INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
-                VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
-                ON DUPLICATE KEY UPDATE
-                    is_active = 1,
-                    updated_at = UTC_TIMESTAMP()",
-                tier, landblock);
+                context.Database.ExecuteSqlRaw(@"
+                    INSERT INTO prestige_allowed_landblocks (tier, landblock, is_active, updated_at)
+                    VALUES ({0}, {1}, 1, UTC_TIMESTAMP())
+                    ON DUPLICATE KEY UPDATE
+                        is_active = 1,
+                        updated_at = UTC_TIMESTAMP()",
+                    tier, landblock);
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
 
             ReloadAllowedLandblocksFromDatabase();
             return true;
@@ -187,16 +203,26 @@ namespace ACE.Server.Managers
             EnsureDatabaseInitialized();
 
             using var context = new WorldDbContext();
-            EnsureTierSeededFromEffectiveSet(context, tier);
+            using var transaction = context.Database.BeginTransaction();
+            try
+            {
+                EnsureTierSeededFromEffectiveSet(context, tier);
 
-            var updated = context.Database.ExecuteSqlRaw(@"
-                UPDATE prestige_allowed_landblocks
-                SET is_active = 0, updated_at = UTC_TIMESTAMP()
-                WHERE tier = {0} AND landblock = {1} AND is_active = 1",
-                tier, landblock);
+                var updated = context.Database.ExecuteSqlRaw(@"
+                    UPDATE prestige_allowed_landblocks
+                    SET is_active = 0, updated_at = UTC_TIMESTAMP()
+                    WHERE tier = {0} AND landblock = {1} AND is_active = 1",
+                    tier, landblock);
 
-            ReloadAllowedLandblocksFromDatabase();
-            return updated > 0;
+                transaction.Commit();
+                ReloadAllowedLandblocksFromDatabase();
+                return updated > 0;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
         }
 
         /// <summary>Loads active rows from <c>prestige_allowed_landblocks</c> into <see cref="_tierAllowedLandblocks"/>.</summary>
@@ -385,6 +411,9 @@ namespace ACE.Server.Managers
                 return;
 
             var hpMod = GetHPModifier(oldTier);
+            var maxBefore = creature.Health.MaxValue;
+            var healthPct = maxBefore > 0 ? (float)creature.Health.Current / maxBefore : 1f;
+
             if (hpMod != 1.0f)
                 creature.Health.StartingValue = (uint)Math.Round(creature.Health.StartingValue / hpMod);
 
@@ -401,7 +430,13 @@ namespace ACE.Server.Managers
             }
 
             creature.RemoveProperty(PropertyInt.PrestigeLevel);
-            creature.SetMaxVitals();
+
+            if (hpMod != 1.0f)
+            {
+                var maxAfter = creature.Health.MaxValue;
+                var newCur = (uint)Math.Clamp((uint)Math.Round(healthPct * maxAfter), 0u, maxAfter);
+                creature.Health.Current = newCur;
+            }
         }
 
         /// <summary>
@@ -430,12 +465,15 @@ namespace ACE.Server.Managers
             if (prev > 0)
                 RemovePrestigeScaling(creature);
 
-            // 1. HP Scaling (Multiply Base)
+            // 1. HP Scaling (Multiply Base) — keep current health % across max-HP change (no free full heal)
             var hpMod = GetHPModifier(tier);
             if (hpMod != 1.0f)
             {
+                var maxBefore = creature.Health.MaxValue;
+                var healthPct = maxBefore > 0 ? (float)creature.Health.Current / maxBefore : 1f;
                 creature.Health.StartingValue = (uint)Math.Round(creature.Health.StartingValue * hpMod);
-                creature.SetMaxVitals(); // Refill to new max
+                var maxAfter = creature.Health.MaxValue;
+                creature.Health.Current = (uint)Math.Clamp((uint)Math.Round(healthPct * maxAfter), 0u, maxAfter);
             }
 
             // 2. Damage Scaling (Apply as DamageRating)

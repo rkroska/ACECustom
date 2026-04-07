@@ -545,17 +545,8 @@ namespace ACE.Server.WorldObjects
                 _outOfBoundsEntryTime = 0;
                 _lastForbiddenZonePunishmentTime = 0;
 
-                // PROXIMITY CHECK (Safe but near edge?)
-                var lbId = new ACE.Entity.LandblockId(Location.Cell);
-                var pos = Location.Pos;
-                bool danger = false;
-
-                // Check 20m buffer from edges (0..192)
-                // Fix: Check bounds before accessing West/East/North/South to avoid OverflowException at map edge
-                if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock)) danger = true;
-                else if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock)) danger = true;
-                else if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock)) danger = true;
-                else if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock)) danger = true;
+                // Edge proximity and/or forbidden current landblock (re-checked live in wisp spawn lambda)
+                var danger = IsPrestigeGuideDangerState(variation);
 
                 if (danger)
                 {
@@ -568,17 +559,12 @@ namespace ACE.Server.WorldObjects
                     SetFogColor(CurrentLandblock?.FogColor ?? EnvironChangeType.Clear);
                 }
 
-                // Check if we are fully inside a bad landblock (not just near edge)
-                bool inForbiddenLandblock = !PrestigeManager.IsLandblockAllowed(variation, lbId.Landblock);
-                if (inForbiddenLandblock)
-                    danger = true;
-
                 // Track when we last had danger (for wisp persistence)
                 if (danger)
                     _lastDangerTime = Time.GetUnixTime();
 
-                // Wisp with 10s persistence after reaching safety
-                UpdateGuideWisp(inForbiddenLandblock, variation);
+                // Wisp with 10s persistence after reaching safety — use full danger (edge + forbidden when re-checked in spawn lambda)
+                UpdateGuideWisp(danger, variation);
 
                 // Note: Boundary markers are now spawned by the Landblock at load time,
                 // so no per-player marker logic is needed here.
@@ -588,6 +574,27 @@ namespace ACE.Server.WorldObjects
         private Creature _guideWisp;
         private double _outOfBoundsEntryTime;
         private double _lastDangerTime;
+
+        /// <summary>
+        /// True when in a forbidden prestige landblock or within 20m of a map edge that borders a forbidden neighbor.
+        /// Used for guide wisp spawn checks so proximity danger still spawns when the current landblock is allowed.
+        /// </summary>
+        private bool IsPrestigeGuideDangerState(int? variation)
+        {
+            var lbId = new ACE.Entity.LandblockId(Location.Cell);
+            var pos = Location.Pos;
+
+            if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock))
+                return true;
+            if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock))
+                return true;
+            if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock))
+                return true;
+            if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock))
+                return true;
+
+            return !PrestigeManager.IsLandblockAllowed(variation, lbId.Landblock);
+        }
 
         /// <summary>
         /// Cleans up player-specific prestige effects (guide wisp).
@@ -635,8 +642,7 @@ namespace ACE.Server.WorldObjects
                             if (liveCell != cell || Location?.Variation != variation)
                                 return;
 
-                            var lbValNow = (ushort)(liveCell >> 16);
-                            if (PrestigeManager.IsLandblockAllowed(variation, lbValNow))
+                            if (!IsPrestigeGuideDangerState(variation))
                                 return;
 
                             var wisp = Factories.WorldObjectFactory.CreateNewWorldObject(weenie) as Creature;
