@@ -341,6 +341,11 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
+                    // Clear split arrow kill tracking before hitting — ensures melee killing blows don't show split arrow death message
+                    creature?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                    creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                    creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+
                     var damageEvent = DamageTarget(creature, weapon);
 
                     // Only increment successful hit counter when we actually deal damage
