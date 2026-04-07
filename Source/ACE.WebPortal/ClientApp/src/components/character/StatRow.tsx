@@ -37,7 +37,7 @@ export default function StatRow({ label, detail, iconId }: StatRowProps) {
 
         {/* Base Column */}
         <div className="flex flex-col items-center min-w-14">
-          <div className={`text-sm font-mono font-medium 'text-neutral-500' tabular-nums`}>
+          <div className="text-sm font-mono font-medium text-neutral-600 tabular-nums">
             {base?.toLocaleString()}
           </div>
         </div>

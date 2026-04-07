@@ -14,7 +14,7 @@ export default function InventoryItemCard({ item, isHeader = false }: InventoryI
     : "text-xs font-medium text-neutral-400 group-hover:text-neutral-100"
 
   return (
-    <div className={`grid ${GRID_COLS} gap-4 px-5 py-2.5 items-center group transition-colors hover:bg-white/[0.02]`}>
+    <div className={`w-full grid ${GRID_COLS} gap-4 px-5 py-2.5 items-center group transition-colors hover:bg-white/[0.02]`}>
       <div className={`flex items-center gap-3 min-w-0 ${paddingLeft}`}>
         {item.iconId ? (
           <div className={`p-0.5 shrink-0 ${getIconBgClass(item)}`}>

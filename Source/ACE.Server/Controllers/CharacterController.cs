@@ -542,35 +542,27 @@ namespace ACE.Server.Controllers
                 if (skillTableRecord?.MinLevel != 1) skillValue.isUsable = false;
             }
 
-            if (!skillValue.isUsable)
-            {
-                skillValue.Base = 0;
-                skillValue.Total = 0;
-            }
-            else
-            {
-                uint fromAttributes = AttributeFormula.GetFormula(snapshot, skill);
-                uint enlBonus = (prop.SAC >= SkillAdvancementClass.Trained ? (uint)(snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0) : 0);
-                uint augBaseBonus =
-                    (uint)(snapshot.GetProperty(PropertyInt.LumAugAllSkills) ?? 0)
-                    + (Player.MeleeSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMelee) ?? 0)) : 0)
-                    + (Player.MissileSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMissile) ?? 0)) : 0)
-                    + (Player.MagicSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMagic) ?? 0)) : 0);
-                uint augTotalBonus =
-                    (uint)(5 * (snapshot.GetProperty(PropertyInt.AugmentationJackOfAllTrades) ?? 0))
-                    + (prop.SAC >= SkillAdvancementClass.Specialized ? (uint)(2 * (snapshot.GetProperty(PropertyInt.LumAugSkilledSpec) ?? 0)) : 0);
+            uint fromAttributes = skillValue.isUsable ? AttributeFormula.GetFormula(snapshot, skill) : 0;
+            uint enlBonus = (prop.SAC >= SkillAdvancementClass.Trained ? (uint)(snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0) : 0);
+            uint augBaseBonus =
+                (uint)(snapshot.GetProperty(PropertyInt.LumAugAllSkills) ?? 0)
+                + (Player.MeleeSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMelee) ?? 0)) : 0)
+                + (Player.MissileSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMissile) ?? 0)) : 0)
+                + (Player.MagicSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMagic) ?? 0)) : 0);
+            uint augTotalBonus =
+                (uint)(5 * (snapshot.GetProperty(PropertyInt.AugmentationJackOfAllTrades) ?? 0))
+                + (prop.SAC >= SkillAdvancementClass.Specialized ? (uint)(2 * (snapshot.GetProperty(PropertyInt.LumAugSkilledSpec) ?? 0)) : 0);
 
-                skillValue.Base =
-                    prop.InitLevel +
-                    + fromAttributes
-                    + prop.LevelFromPP
-                    + augBaseBonus
-                    + enlBonus;
+            skillValue.Base =
+                prop.InitLevel +
+                + fromAttributes
+                + prop.LevelFromPP
+                + augBaseBonus
+                + enlBonus;
 
-                skillValue.Total =
-                    skillValue.Base
-                    + augTotalBonus;
-            }
+            skillValue.Total =
+                skillValue.Base
+                + augTotalBonus;
 
             return skillValue;
         }
