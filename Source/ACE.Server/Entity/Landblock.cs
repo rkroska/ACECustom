@@ -521,6 +521,11 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnEncounters()
         {
+            // World DB encounter table has no per-variation rows; by default these generators spawn on every landblock load.
+            // Optional: align with landblock_instance "base only" (null/0) — skips retail variants 1–10 and prestige.
+            if (ServerConfig.encounter_spawn_base_layer_only.Value && VariationId.HasValue && VariationId.Value != 0)
+                return;
+
             // encounter rows have no variation_Id; optionally skip only prestige layers (not retail 1–10)
             if (ServerConfig.encounter_spawn_base_variation_only.Value && PrestigeManager.IsPrestigeVariation(VariationId))
                 return;
