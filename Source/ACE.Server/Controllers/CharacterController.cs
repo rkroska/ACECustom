@@ -1,27 +1,23 @@
-using ACE.Common.Extensions;
 using ACE.Database;
 using ACE.Database.Adapter;
-using ACE.Database.Entity;
-using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
 using ACE.DatLoader;
+using ACE.DatLoader.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
-using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Web.Controllers;
 using ACE.Server.WorldObjects;
-using Google.Protobuf.WellKnownTypes;
-using Lifestoned.DataModel.Gdle;
+using ACE.Server.WorldObjects.Entity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Claims;
+using System.Numerics;
 using System.Threading.Tasks;
 
 using Biota = ACE.Entity.Models.Biota;
@@ -47,12 +43,20 @@ namespace ACE.Server.Controllers
          *     and maximizing concurrency.
          */
 
-        private struct StatValue
+        private class StatValue
         {
-            public uint Innate { get; set; }
-            public uint Ranks { get; set; }
-            public uint Total { get; set; }
+            public uint Innate { get; set; } = 0;
+            public uint Ranks { get; set; } = 0;
+            public uint Total { get; set; } = 0;
         }
+        private class SkillValue
+        {
+            public string Name { get; set; } = "";
+            public string Sac { get; set; } = "";
+            public bool isUsable { get; set; } = true;
+            public uint Base { get; set; } = 0;
+            public uint Total { get; set; } = 0;
+        };
 
         [HttpGet("list")]
         public IActionResult GetList()
@@ -209,10 +213,11 @@ namespace ACE.Server.Controllers
         [HttpGet("stats/{guid}")]
         public IActionResult GetStats(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out var player))
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player))
                 return Unauthorized();
 
             var snapshot = GetBiotaSnapshot(player);
+            Player online = player as Player;
 
             return Ok(new
             {
@@ -220,26 +225,26 @@ namespace ACE.Server.Controllers
                 enlightenment = snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0,
                 attributes = new
                 {
-                    strength = GetAttribute(snapshot, PropertyAttribute.Strength),
-                    endurance = GetAttribute(snapshot, PropertyAttribute.Endurance),
-                    quickness = GetAttribute(snapshot, PropertyAttribute.Quickness),
-                    coordination = GetAttribute(snapshot, PropertyAttribute.Coordination),
-                    focus = GetAttribute(snapshot, PropertyAttribute.Focus),
-                    self = GetAttribute(snapshot, PropertyAttribute.Self)
+                    strength = GetAttribute(player, snapshot, PropertyAttribute.Strength),
+                    endurance = GetAttribute(player, snapshot, PropertyAttribute.Endurance),
+                    quickness = GetAttribute(player, snapshot, PropertyAttribute.Quickness),
+                    coordination = GetAttribute(player, snapshot, PropertyAttribute.Coordination),
+                    focus = GetAttribute(player, snapshot, PropertyAttribute.Focus),
+                    self = GetAttribute(player, snapshot, PropertyAttribute.Self)
                 },
                 vitals = new
                 {
-                    health = GetVital(snapshot, PropertyAttribute2nd.MaxHealth),
-                    stamina = GetVital(snapshot, PropertyAttribute2nd.MaxStamina),
-                    mana = GetVital(snapshot, PropertyAttribute2nd.MaxMana)
+                    health = GetVital(player, snapshot, PropertyAttribute2nd.MaxHealth),
+                    stamina = GetVital(player, snapshot, PropertyAttribute2nd.MaxStamina),
+                    mana = GetVital(player, snapshot, PropertyAttribute2nd.MaxMana)
                 },
                 ratings = new
                 {
-                    emd = GetEMD(player), // EMD still needs authoritative engine check for online
-                    dr = snapshot.GetProperty(PropertyInt.DamageResistRating) ?? 0,
-                    cdr = snapshot.GetProperty(PropertyInt.CritDamageResistRating) ?? 0,
-                    damage = snapshot.GetProperty(PropertyInt.DamageRating) ?? 0,
-                    critDamage = snapshot.GetProperty(PropertyInt.CritDamageRating) ?? 0
+                    emd = online != null ? online.GetEffectiveDefenseSkill(CombatType.Melee) : (uint?)null,
+                    damage = online != null ? online.GetDamageRating() : (int?)null,
+                    critDamage = online != null ? online.GetCritDamageRating() : (int?)null,
+                    dr = online != null ? online.GetDamageResistRating() : (int?)null,
+                    cdr = online != null ? online.GetCritDamageResistRating() : (int?)null,
                 },
                 augmentations = GetAugmentations(snapshot),
                 bank = GetBankedProperties(snapshot)
@@ -253,51 +258,10 @@ namespace ACE.Server.Controllers
                 return Unauthorized();
 
             var snapshot = GetBiotaSnapshot(player);
-            var result = new List<object>();
             var validSkills = SkillHelper.ValidSkills.OrderBy(s => s.ToString());
 
-            foreach (var skillEnum in validSkills)
-            {
-                var skillName = skillEnum.ToSentence();
-                var sac = SkillAdvancementClass.Untrained;
-                var baseVal = 0;
-                int? total = 0;
-                var isUsable = false;
-
-                if (snapshot.PropertiesSkill != null && snapshot.PropertiesSkill.TryGetValue(skillEnum, out var skillProp))
-                {
-                    sac = skillProp.SAC;
-                    baseVal = (int)(skillProp.InitLevel + skillProp.LevelFromPP);
-                    
-                    if (sac == SkillAdvancementClass.Trained || sac == SkillAdvancementClass.Specialized)
-                        isUsable = true;
-                }
-                
-                // Calculate skill formula base
-                if (DatManager.PortalDat.SkillTable.SkillBaseHash.TryGetValue((uint)skillEnum, out var skillTableRecord))
-                {
-                    baseVal += (int)AttributeFormula.GetFormula(snapshot, skillTableRecord.Formula);
-
-                    if (sac == SkillAdvancementClass.Untrained)
-                        isUsable = skillTableRecord.MinLevel == 1;
-                }
-
-                // If online, we can show the authoritative 'Current' value
-                if (player is Player online && online.Skills.TryGetValue(skillEnum, out var creatureSkill))
-                    total = (int)creatureSkill.Current;
-                else
-                    total = null;
-
-                result.Add(new
-                {
-                    name = skillName,
-                    sac = sac.ToString(),
-                    @base = baseVal,
-                    total = total,
-                    isUsable = isUsable
-                });
-            }
-
+            var result = new List<object>();
+            foreach (Skill skill in validSkills) result.Add(GetSkill(player, snapshot, skill));
             return Ok(result);
         }
 
@@ -411,26 +375,12 @@ namespace ACE.Server.Controllers
             return Ok(new { message = "Administrative logout signal sent" });
         }
 
-        private double? GetEMD(IPlayer player)
-        {
-            if (player is Player online)
-            {
-                // Use the server's native defense skill calculation for online players
-                // This includes weapon bonuses, enchantments, and stance modifiers
-                return online.GetEffectiveDefenseSkill(CombatType.Melee);
-            }
-            
-            // Effective Melee Defense requires authoritative engine calculation (weapon/shield buffs etc)
-            // so we return null for offline players
-            return null;
-        }
-
         private bool IsAuthorizedForCharacter(uint guid, out IPlayer player)
         {
             player = null;
             if (CurrentAccountId == null) return false;
 
-            var p = PlayerManager.FindByGuid(guid);
+            IPlayer p = PlayerManager.FindByGuid(guid);
             if (p == null) return false;
 
             // Check if this character belongs to the account
@@ -487,7 +437,24 @@ namespace ACE.Server.Controllers
             throw new InvalidOperationException("Unknown player type");
         }
 
-        private StatValue GetAttribute(Biota snapshot, PropertyAttribute attr)
+        private static StatValue GetAttribute(IPlayer player, Biota snapshot, PropertyAttribute attr)
+        {
+            if (player is Player online) return GetOnlineAttribute(online, attr);
+            return GetOfflineAttribute(snapshot, attr);
+        }
+
+        private static StatValue GetOnlineAttribute(Player player, PropertyAttribute attr)
+        {
+            if (!player.Attributes.TryGetValue(attr, out CreatureAttribute creatureAttribute)) return new();
+            return new StatValue
+            {
+                Innate = creatureAttribute.StartingValue,
+                Ranks = creatureAttribute.Ranks,
+                Total = creatureAttribute.Current
+            };
+        }
+
+        private static StatValue GetOfflineAttribute(Biota snapshot, PropertyAttribute attr)
         {
             if (snapshot.PropertiesAttribute == null) return new();
             if (!snapshot.PropertiesAttribute.TryGetValue(attr, out PropertiesAttribute prop)) return new();
@@ -499,17 +466,113 @@ namespace ACE.Server.Controllers
             };
         }
 
-        private static StatValue GetVital(Biota snapshot, PropertyAttribute2nd vital)
+        private static StatValue GetVital(IPlayer player, Biota snapshot, PropertyAttribute2nd vital)
         {
-            if (snapshot.PropertiesAttribute2nd == null) return new();
-            if (!snapshot.PropertiesAttribute2nd.TryGetValue(vital, out PropertiesAttribute2nd prop)) return new();
+            if (player is Player online) return GetOnlineVital(online, vital);
+            return GetOfflineVital(snapshot, vital);
+        }
+        private static StatValue GetOnlineVital(Player player, PropertyAttribute2nd vital)
+        {
+            if (!player.Vitals.TryGetValue(vital, out CreatureVital creatureVital)) return new();
             return new StatValue
             {
-                Innate = AttributeFormula.GetFormula(snapshot, vital),
-                Ranks = prop.LevelFromCP,
-                Total = prop.CurrentLevel
+                // Base includes Ranks (which is its own field) and GearBonus (not innate)
+                Innate = creatureVital.Base - creatureVital.Ranks - creatureVital.GearBonus,
+                Ranks = creatureVital.Ranks,
+                Total = creatureVital.MaxValue
             };
+        }
+        private static StatValue GetOfflineVital(Biota snapshot, PropertyAttribute2nd vital)
+        {
+            StatValue statValue = new();
+            if (snapshot.PropertiesAttribute2nd == null) return statValue;
+            if (!snapshot.PropertiesAttribute2nd.TryGetValue(vital, out PropertiesAttribute2nd prop)) return statValue;
 
+            // Innate
+            statValue.Innate =
+                prop.InitLevel
+                + AttributeFormula.GetFormula(snapshot, vital)
+                + ((vital == PropertyAttribute2nd.MaxHealth) ? ((uint)(snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0) * 2) : 0);
+
+            // Ranks
+            statValue.Ranks = prop.LevelFromCP;
+
+            // Total
+            statValue.Total =
+                statValue.Innate
+                + statValue.Ranks
+                + ((vital == PropertyAttribute2nd.MaxHealth) ? ((uint)(snapshot.GetProperty(PropertyInt.GearMaxHealth) ?? 0)) : 0);
+
+            return statValue;
+        }
+
+        private static SkillValue GetSkill(IPlayer player, Biota snapshot, Skill skill)
+        {
+            if (player is Player online) return GetOnlineSkill(online, skill);
+            return GetOfflineSkill(snapshot, skill);
+        }
+        private static SkillValue GetOnlineSkill(Player player, Skill skill)
+        {
+            if (!player.Skills.TryGetValue(skill, out CreatureSkill creatureSkill)) return new();
+            return new SkillValue
+            {
+                Name = skill.ToSentence(),
+                Sac = creatureSkill.AdvancementClass.ToString(),
+                isUsable = creatureSkill.IsUsable,
+                Base = creatureSkill.Base,
+                Total = creatureSkill.Current
+            };
+        }
+        private static SkillValue GetOfflineSkill(Biota snapshot, Skill skill)
+        {
+            SkillValue skillValue = new()
+            {
+                Name = skill.ToSentence(),
+                Sac = SkillAdvancementClass.Untrained.ToString(),
+            };
+            if (snapshot.PropertiesSkill == null) return skillValue;
+            if (!snapshot.PropertiesSkill.TryGetValue(skill, out PropertiesSkill prop)) return skillValue;
+
+            skillValue.Sac = prop.SAC.ToString();
+            skillValue.isUsable = true;
+
+            if (prop.SAC == SkillAdvancementClass.Untrained)
+            {
+                DatManager.PortalDat.SkillTable.SkillBaseHash.TryGetValue((uint)skill, out SkillBase skillTableRecord);
+                if (skillTableRecord?.MinLevel != 1) skillValue.isUsable = false;
+            }
+
+            if (!skillValue.isUsable)
+            {
+                skillValue.Base = 0;
+                skillValue.Total = 0;
+            }
+            else
+            {
+                uint fromAttributes = AttributeFormula.GetFormula(snapshot, skill);
+                uint enlBonus = (prop.SAC >= SkillAdvancementClass.Trained ? (uint)(snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0) : 0);
+                uint augBaseBonus =
+                    (uint)(snapshot.GetProperty(PropertyInt.LumAugAllSkills) ?? 0)
+                    + (Player.MeleeSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMelee) ?? 0)) : 0)
+                    + (Player.MissileSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMissile) ?? 0)) : 0)
+                    + (Player.MagicSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMagic) ?? 0)) : 0);
+                uint augTotalBonus =
+                    (uint)(5 * (snapshot.GetProperty(PropertyInt.AugmentationJackOfAllTrades) ?? 0))
+                    + (prop.SAC >= SkillAdvancementClass.Specialized ? (uint)(2 * (snapshot.GetProperty(PropertyInt.LumAugSkilledSpec) ?? 0)) : 0);
+
+                skillValue.Base =
+                    prop.InitLevel +
+                    + fromAttributes
+                    + prop.LevelFromPP
+                    + augBaseBonus
+                    + enlBonus;
+
+                skillValue.Total =
+                    skillValue.Base
+                    + augTotalBonus;
+            }
+
+            return skillValue;
         }
     }
 }

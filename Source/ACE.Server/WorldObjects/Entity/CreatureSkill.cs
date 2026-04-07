@@ -137,16 +137,10 @@ namespace ACE.Server.WorldObjects.Entity
         {
             get
             {
-                uint total = 0;
-
-                if (IsUsable)
-                    total = AttributeFormula.GetFormula(creature, Skill, false);
-
-                total += InitLevel + Ranks;
-
-                if (creature is Player player)
-                    total += GetAugBonus_Base(player);
-
+                Player player = creature as Player;
+                uint total = InitLevel + Ranks;
+                if (IsUsable) total += AttributeFormula.GetFormula(creature, Skill, /*current=*/false);
+                if (player != null) total += GetAugBonus_Base(player);
                 return total;
             }
         }
@@ -155,18 +149,10 @@ namespace ACE.Server.WorldObjects.Entity
         {
             get
             {
-                uint total = 0;
-
-                if (IsUsable)
-                    total = AttributeFormula.GetFormula(creature, Skill);
-
-                total += InitLevel + Ranks;
-
-                var player = creature as Player;
-
-                // base gets scaled by vitae
-                if (player != null)
-                    total += GetAugBonus_Base(player);
+                Player player = creature as Player;
+                uint total = InitLevel + Ranks;
+                if (IsUsable) total += AttributeFormula.GetFormula(creature, Skill, /*current=*/true);
+                if (player != null) total += GetAugBonus_Base(player);
 
                 // apply multiplicative enchantments
                 var multiplier = creature.EnchantmentManager.GetSkillMod_Multiplier(Skill);

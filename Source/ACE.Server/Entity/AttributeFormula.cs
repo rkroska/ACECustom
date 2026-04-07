@@ -50,6 +50,20 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
+        /// Returns the amount to add to a creature's current skill,
+        /// based on their primary attribute current values
+        /// </summary>
+        public static uint GetFormula(Biota creature, Skill skill)
+        {
+            var skillTable = DatManager.PortalDat.SkillTable;
+
+            if (!skillTable.SkillBaseHash.TryGetValue((uint)skill, out SkillBase skillBase))
+                return 0;
+
+            return GetFormula(creature, skillBase.Formula);
+        }
+
+        /// <summary>
         /// Returns the amount to add to a creature's current vital,
         /// based on their primary attribute current values
         /// </summary>
