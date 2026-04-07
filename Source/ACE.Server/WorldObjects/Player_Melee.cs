@@ -343,6 +343,14 @@ namespace ACE.Server.WorldObjects
 
                     var damageEvent = DamageTarget(creature, weapon);
 
+                    // Melee hit clears any stale split arrow kill tracking on the target
+                    if (damageEvent != null && damageEvent.HasDamage)
+                    {
+                        creature?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                        creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                        creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+                    }
+
                     // Only increment successful hit counter when we actually deal damage
                     // This ensures procs are based on successful hits, not swing attempts
                     bool hitSuccessful = damageEvent != null && damageEvent.HasDamage;
