@@ -7243,5 +7243,21 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        [CommandHandler("cullingstrike", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Toggles Culling Strike on yourself — instantly kill monsters at or below 20% health.",
+            "Usage: /cullingstrike [on|off]")]
+        public static void HandleCullingStrike(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            bool enable = true;
+            if (parameters.Length > 0)
+                enable = parameters[0].ToLower() != "off";
+
+            session.Player.HasCullingStrike = enable;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Culling Strike {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
+        }
     }
 }

@@ -771,6 +771,22 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Culling Strike: instantly kill monsters at or below 20% health
+            if (Health.Current > 0 && source is Creature attacker && attacker.HasCullingStrike)
+            {
+                float healthPct = (float)Health.Current / Health.MaxValue;
+                if (healthPct <= 0.20f)
+                {
+                    var remainingHp = (uint)Health.Current;
+                    UpdateVital(Health, 0);
+                    DamageHistory.Add(source, damageType, remainingHp);
+
+                    if (source is Player cullingPlayer)
+                        cullingPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Your Culling Strike finishes off {Name}!", ChatMessageType.Combat));
+                }
+            }
+
             // Handle death
 
             if (Health.Current <= 0)
