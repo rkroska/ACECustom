@@ -7238,10 +7238,26 @@ namespace ACE.Server.Command.Handlers
             {
                 var weenieInfo = $"{weenie.ClassId} - {weenie.ClassName}";
                 session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})", 
+                    $"Spawned {spawned} Shiny {weenie.ClassName}{(spawned > 1 ? "s" : "")} ({weenieInfo})",
                     ChatMessageType.Broadcast));
             }
         }
 
+        [CommandHandler("predator", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Toggles Predator on yourself — deal 100% more damage to monsters above 80% health.",
+            "Usage: /predator [on|off]")]
+        public static void HandlePredator(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            bool enable = true;
+            if (parameters.Length > 0)
+                enable = parameters[0].ToLower() != "off";
+
+            session.Player.HasPredator = enable;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Predator {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
+        }
     }
 }
