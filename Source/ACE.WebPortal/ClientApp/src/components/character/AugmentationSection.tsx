@@ -11,7 +11,7 @@ export default function AugmentationSection({ augmentations }: AugmentationSecti
       <div className="absolute top-0 right-0 p-8 opacity-5">
         <TrendingUp className="w-24 h-24 text-purple-500" />
       </div>
-      <div className="flex items-center gap-2 mb-6 px-1">
+      <div className="flex items-center gap-2 mb-4 px-1">
         <TrendingUp className="w-4 h-4 text-purple-400" />
         <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-400">Augmentations</h3>
       </div>

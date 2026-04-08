@@ -11,8 +11,6 @@ import Modal from './common/Modal'
 import TabButton from './common/TabButton'
 
 interface CharacterDetailData extends Character {
-  enlightenment: number
-  augmentations: Record<string, number>
 }
 
 export default function CharacterDetail() {

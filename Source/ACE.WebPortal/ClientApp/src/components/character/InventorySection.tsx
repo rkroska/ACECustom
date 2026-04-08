@@ -55,7 +55,7 @@ export default function InventorySection({
           {items.map(item => (
             <InventoryItemCard key={item.guid} item={item} />
           ))}
-          {items.length === 0 && (
+          {items.length === 0 && headerItem?.isContainer && (
             <div className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500 bg-neutral-950/10 flex items-center gap-3">
               <div className="pl-7 flex items-center gap-3">
                 <Package className="w-3.5 h-3.5 opacity-40" />

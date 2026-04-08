@@ -4,8 +4,6 @@ export interface Character {
   guid: number;
   name: string;
   wcid: number;
-  level: number;
-  lastLogin: string;
   isOnline: boolean;
   isAdmin?: boolean;
 }
@@ -19,9 +17,9 @@ export interface Player extends Character {
 // --- Stats & Progression ---
 
 export interface StatDetail {
-  base: number;
-  total: number | null;
+  innate: number;
   ranks: number;
+  total: number;
 }
 
 export interface StatsData {
@@ -40,10 +38,10 @@ export interface StatsData {
   };
   ratings: {
     emd: number | null;
-    dr: number;
-    cdr: number;
-    damage: number;
-    critDamage: number;
+    dr: number | null;
+    cdr: number | null;
+    damage: number | null;
+    critDamage: number | null;
   };
   augmentations: Record<string, number>;
   bank: Record<string, number>;

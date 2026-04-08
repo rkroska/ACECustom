@@ -1,14 +1,19 @@
-import { Heart, Flame, Droplets } from 'lucide-react'
+import { Heart } from 'lucide-react'
 import { StatsData } from '../../types'
 import StatRow from './StatRow'
+
+const VITAL_ICONS = {
+  health: 0x06001D79,
+  stamina: 0x06001D7A,
+  mana: 0x06001D7B,
+}
+
 
 interface VitalSectionProps {
   vitals: StatsData['vitals']
 }
 
 export default function VitalSection({ vitals }: VitalSectionProps) {
-  const isOnline = vitals.health.total !== null
-
   return (
     <div className="bg-neutral-950/50 border border-neutral-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
       <div className="flex items-center justify-between mb-4 px-1">
@@ -20,18 +25,14 @@ export default function VitalSection({ vitals }: VitalSectionProps) {
           <div className="w-14 text-center">Innate</div>
           <div className="w-px h-3 opacity-0" />
           <div className="w-14 text-center">Base</div>
-          {isOnline && (
-            <>
-              <div className="w-px h-3 opacity-0" />
-              <div className="w-14 text-center text-red-400/80">Current</div>
-            </>
-          )}
+          <div className="w-px h-3 opacity-0" />
+          <div className="w-14 text-center text-blue-400/80">Current</div>
         </div>
       </div>
-      <div className="space-y-4">
-        <StatRow label="Health" detail={vitals.health} icon={<Heart className="w-3.5 h-3.5" />} />
-        <StatRow label="Stamina" detail={vitals.stamina} icon={<Flame className="w-3.5 h-3.5" />} />
-        <StatRow label="Mana" detail={vitals.mana} icon={<Droplets className="w-3.5 h-3.5" />} />
+      <div className="space-y-2">
+        <StatRow label="Health" detail={vitals.health} iconId={VITAL_ICONS.health} />
+        <StatRow label="Stamina" detail={vitals.stamina} iconId={VITAL_ICONS.stamina} />
+        <StatRow label="Mana" detail={vitals.mana} iconId={VITAL_ICONS.mana} />
       </div>
     </div>
   )
