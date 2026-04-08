@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Activity, Users, ShieldAlert, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { Search, Activity, Users, ShieldAlert, ChevronLeft, ChevronRight, MapPin, ChevronDown, Sun, Gem } from 'lucide-react'
 import { api } from '../services/api'
 import { Character } from '../types'
 import { useDebounce } from '../hooks/useDebounce'
 import CharacterListItem from './character/CharacterListItem'
 import PageHeader from './common/PageHeader'
+import SearchHint from './common/SearchHint'
 
 const ITEMS_PER_PAGE = 25
 
@@ -18,6 +19,17 @@ export default function PlayerList() {
   const [currentPage, setCurrentPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Grouping state - Persisted to localStorage
+  const [isGroupedByLocation, setIsGroupedByLocation] = useState(() => {
+    return localStorage.getItem('ace_admin_grouped_players') === 'true'
+  })
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+
+  // Persist grouping choice
+  useEffect(() => {
+    localStorage.setItem('ace_admin_grouped_players', isGroupedByLocation.toString())
+  }, [isGroupedByLocation])
 
   // Initial fetch of online players
   useEffect(() => {
@@ -53,6 +65,7 @@ export default function PlayerList() {
   const searchAllPlayers = async (name: string) => {
     try {
       setIsLoading(true)
+      setSearchResults([]) // Clear existing results while searching to show loading state
       const data = await api.get<Character[]>(`/api/character/search-all/${encodeURIComponent(name)}`)
       
       const onlineGuids = new Set(onlinePlayersBase.map(p => p.guid))
@@ -69,7 +82,8 @@ export default function PlayerList() {
 
   // Derived list based on search term
   const effectivePlayersList = useMemo(() => {
-    if (debouncedSearchTerm.length >= 3) {
+    // Mode switch should be instantaneous (use raw searchTerm)
+    if (searchTerm.length >= 3) {
       return searchResults
     }
     
@@ -80,15 +94,74 @@ export default function PlayerList() {
     return onlinePlayersBase.filter(p => p.name.toLowerCase().includes(lowerSearch))
   }, [onlinePlayersBase, searchResults, debouncedSearchTerm, searchTerm])
 
+  // Explicitly override grouping when search is active
+  const isActuallyGrouping = isGroupedByLocation && !searchTerm.trim();
+
   const totalPages = Math.ceil(effectivePlayersList.length / ITEMS_PER_PAGE)
-  const paginatedPlayers = effectivePlayersList.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  )
+  // Pagination: only applies if not grouping
+  const paginatedPlayers = useMemo(() => {
+    if (isActuallyGrouping) return effectivePlayersList
+    
+    return effectivePlayersList.slice(
+      (currentPage - 1) * ITEMS_PER_PAGE,
+      currentPage * ITEMS_PER_PAGE
+    )
+  }, [effectivePlayersList, currentPage, isActuallyGrouping])
 
   const handleSelect = (guid: number) => {
     navigate(`/players/${guid}/general`)
   }
+
+  // Header action toggle
+  const toggleGrouping = () => {
+    setIsGroupedByLocation(!isGroupedByLocation)
+    setCurrentPage(1) // Reset to first page when toggling grouping for simplicity
+  }
+
+  const toggleGroupCollapse = (key: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  // Unused locationKeys and resolvedNames removed as location is now embedded.
+
+  // Grouped logic
+  const groupedPlayers = useMemo(() => {
+    if (!isActuallyGrouping) return null
+
+    const groups: Record<string, { title: string, players: Character[], grouperType: number, adminCount: number }> = {}
+
+    paginatedPlayers.forEach((p: Character) => {
+        const loc = p.location
+        if (!loc) return;
+
+        const groupTitle = loc.name || loc.hex || "Unknown"
+        const grouperType = loc.grouperType
+        
+        const groupKey = `${grouperType}_${groupTitle}`
+        
+        if (!groups[groupKey]) {
+            groups[groupKey] = { 
+                title: groupTitle, 
+                players: [],
+                grouperType: grouperType,
+                adminCount: 0
+            }
+        }
+        groups[groupKey].players.push(p)
+        if (p.isAdmin) groups[groupKey].adminCount++
+    })
+
+    // Sort groups by GrouperType (Ordinal 1-4), then alphabetically by title
+    const sortedEntries = Object.entries(groups)
+        .sort((a, b) => {
+            if (a[1].grouperType !== b[1].grouperType) {
+                return a[1].grouperType - b[1].grouperType
+            }
+            return a[1].title.localeCompare(b[1].title)
+        })
+
+    return sortedEntries
+  }, [isActuallyGrouping, paginatedPlayers])
 
   if (error) {
     return (
@@ -112,9 +185,22 @@ export default function PlayerList() {
       <div className="p-8 pb-0 shrink-0">
         <div className="max-w-2xl mx-auto w-full">
           <PageHeader title="Player list" icon={Users}>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full text-green-500 text-[10px] font-bold uppercase tracking-wider">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              {onlinePlayersBase.length} Online
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleGrouping}
+                className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all border flex items-center gap-1.5 ${
+                    isGroupedByLocation 
+                      ? 'bg-blue-500/10 border-blue-500/20 text-blue-500' 
+                      : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200'
+                }`}
+              >
+                <MapPin className="w-3 h-3" />
+                {isGroupedByLocation ? 'Grouped by Area' : 'No Grouping'}
+              </button>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full text-green-500 text-[10px] font-bold uppercase tracking-wider">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                {onlinePlayersBase.length} Online
+              </div>
             </div>
           </PageHeader>
 
@@ -125,8 +211,14 @@ export default function PlayerList() {
               placeholder="Search all players..."
               value={searchTerm}
               onChange={(e) => {
-                setSearchTerm(e.target.value)
-                if (e.target.value.length >= 3) setIsLoading(true)
+                const val = e.target.value
+                setSearchTerm(val)
+                if (val.length >= 3) {
+                  setIsLoading(true)
+                } else {
+                  // Instant mode switch back to online list
+                  setIsLoading(false)
+                }
               }}
               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-12 pr-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all placeholder:text-neutral-700 font-medium text-sm"
             />
@@ -142,48 +234,110 @@ export default function PlayerList() {
       {/* Main List Container (Scrollable) */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-4">
         <div className="max-w-2xl mx-auto w-full flex flex-col gap-1.5">
-          {isLoading && paginatedPlayers.length === 0 ? (
-            <div className="space-y-1.5">
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="h-12 bg-neutral-950/50 border border-neutral-800/50 rounded-lg animate-pulse" />
-              ))}
+          {isLoading ? (
+            <div className="py-20 flex flex-col items-center justify-center animate-in fade-in duration-500">
+              <Activity className="w-8 h-8 text-blue-500 animate-spin mb-4" />
+              <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest">Searching Global Database...</p>
             </div>
-          ) : paginatedPlayers.length > 0 ? (
+          ) : paginatedPlayers.length === 0 ? (
+            searchTerm.length > 0 && searchTerm.length < 3 ? (
+              <SearchHint searchTerm={searchTerm} />
+            ) : (
+              <div className="py-12 flex flex-col items-center justify-center bg-neutral-950/30 border border-neutral-800 border-dashed rounded-2xl text-center">
+                <Search className="w-8 h-8 text-neutral-800 mb-3" />
+                <p className="text-neutral-600 text-sm font-medium">
+                  {searchTerm.length === 0 ? (
+                    <span className="text-neutral-500 flex items-center gap-2">
+                      <Users className="w-4 h-4 opacity-50" />
+                      No players online. Use search to find offline players.
+                    </span>
+                  ) : (
+                    `No players found matching "${searchTerm}"`
+                  )}
+                </p>
+              </div>
+            )
+          ) : (
             <>
               <div className="flex flex-col gap-1.5">
-                {paginatedPlayers.map(player => (
-                  <CharacterListItem 
-                    key={player.guid} 
-                    character={player} 
-                    onClick={() => handleSelect(player.guid)} 
-                  />
-                ))}
+                {isActuallyGrouping && groupedPlayers ? (
+                    (groupedPlayers as [string, { title: string, players: any[], grouperType: number, adminCount: number }][])
+                        .filter(([_, group]) => group.players.length > 0)
+                        .map(([key, group]) => {
+                        const isCollapsed = collapsedGroups[key] !== false; // Default to true (collapsed)
+                        return (
+                        <div key={key} className="flex flex-col gap-1">
+                            <button 
+                                onClick={() => toggleGroupCollapse(key)}
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left group/header ${
+                                    !isCollapsed
+                                    ? 'bg-neutral-800/40 border-neutral-700 mb-1' 
+                                    : 'bg-neutral-950 border-neutral-800 hover:bg-neutral-900'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                        group.grouperType <= 2
+                                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500' 
+                                            : group.grouperType === 3
+                                            ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500'
+                                            : 'bg-blue-500/10 border border-blue-500/20 text-blue-500'
+                                    }`}>
+                                        {group.grouperType === 3 ? <Sun className="w-4 h-4" /> : group.grouperType === 4 ? <Gem className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold text-white group-hover/header:text-blue-400 transition-colors">
+                                            {group.title}
+                                        </span>
+                                        <span className="text-[11px] font-bold text-neutral-500 tracking-tight lowercase">
+                                            {(() => {
+                                                const total = group.players.length;
+                                                const admins = group.adminCount;
+                                                const players = total - admins;
+                                                const parts = [];
+                                                if (admins > 0) parts.push(`${admins} Admin${admins !== 1 ? 's' : ''}`);
+                                                if (players > 0) parts.push(`${players} Player${players !== 1 ? 's' : ''}`);
+                                                return parts.join(' & ') + ' here';
+                                            })()}
+                                        </span>
+                                    </div>
+                                </div>
+                                <ChevronDown className={`w-4 h-4 text-neutral-600 transition-transform duration-300 ${!isCollapsed ? 'rotate-180 text-blue-500' : ''}`} />
+                            </button>
+                            
+                            {!isCollapsed && (
+                                <div className="flex flex-col gap-1.5 pl-4 border-l border-neutral-800/50 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    {group.players.map((player: Character) => (
+                                        <CharacterListItem 
+                                            key={player.guid} 
+                                            character={player} 
+                                            onClick={() => handleSelect(player.guid)}
+                                            locationInfo={player.location?.hex}
+                                            secondaryInfo={group.grouperType === 3 ? player.location?.coordinates : undefined}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        )})
+                ) : (
+                    paginatedPlayers.map((player: Character) => {
+                      const loc = player.location
+                      return (
+                        <CharacterListItem 
+                          key={player.guid} 
+                          character={player} 
+                          onClick={() => handleSelect(player.guid)} 
+                          locationInfo={!isActuallyGrouping && loc ? (loc.name || loc.hex) : undefined}
+                          secondaryInfo={!isActuallyGrouping && loc ? loc.coordinates : undefined}
+                        />
+                      )
+                    })
+                )}
               </div>
 
-              {/* Global Search Hint */}
-              {searchTerm.length > 0 && searchTerm.length < 3 && (
-                <div className="mt-4 px-4 py-3 bg-neutral-900/50 border border-neutral-800 border-dashed rounded-xl flex items-center justify-center gap-3">
-                  <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-                    <Info className="w-4 h-4" />
-                    Type {3 - searchTerm.length} more character{3 - searchTerm.length > 1 ? 's' : ''} to search the global player database
-                  </p>
-                </div>
-              )}
+              <SearchHint searchTerm={searchTerm} />
             </>
-          ) : (
-            <div className="py-12 flex flex-col items-center justify-center bg-neutral-950/30 border border-neutral-800 border-dashed rounded-2xl text-center">
-              <Search className="w-8 h-8 text-neutral-800 mb-3" />
-              <p className="text-neutral-600 text-sm font-medium">
-                {searchTerm.length === 0 ? (
-                  <span className="text-neutral-500 flex items-center gap-2">
-                    <Users className="w-4 h-4 opacity-50" />
-                    No players online. Use search to find offline players.
-                  </span>
-                ) : (
-                  `No players found matching "${searchTerm}"`
-                )}
-              </p>
-            </div>
           )}
 
           {/* Result Count Status */}
@@ -198,8 +352,8 @@ export default function PlayerList() {
         </div>
       </div>
 
-      {/* Pagination Footer */}
-      {totalPages > 1 && (
+      {/* Pagination Footer - only if not grouping */}
+      {!isActuallyGrouping && totalPages > 1 && (
         <div className="shrink-0 border-t border-neutral-800 bg-neutral-950/50 backdrop-blur-xl p-4 mt-auto">
           <div className="max-w-2xl mx-auto flex items-center justify-between">
             <div className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">

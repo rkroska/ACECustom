@@ -608,5 +608,46 @@ namespace ACE.Database
                 return IsWorldDatabaseGuidRangeValid(context);
             }
         }
+
+        public string GetLandblockName(uint landblockId, int? variationId)
+        {
+            var lb = landblockId >> 16;
+            if (lb == 0) lb = landblockId;
+
+            uint min = lb << 16;
+            uint max = min | 0xFFFF;
+
+            using (var context = new WorldDbContext())
+            {
+                // Try to find an exact match first (LB + Variation)
+                var name = (from pos in context.WeeniePropertiesPosition
+                            join str in context.WeeniePropertiesString on pos.ObjectId equals str.ObjectId
+                            where pos.ObjCellId >= min && pos.ObjCellId <= max
+                               && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
+                               && pos.VariationId == variationId
+                               && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            select str.Value).FirstOrDefault();
+
+                if (name != null)
+                    return name;
+
+                // Fallback to base landblock name if variation provided but not found
+                if (variationId.HasValue)
+                {
+                    name = (from pos in context.WeeniePropertiesPosition
+                            join str in context.WeeniePropertiesString on pos.ObjectId equals str.ObjectId
+                            where pos.ObjCellId >= min && pos.ObjCellId <= max
+                               && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
+                               && pos.VariationId == null
+                               && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            select str.Value).FirstOrDefault();
+
+                    if (name != null)
+                        return $"{name} (v: {variationId.Value})";
+                }
+
+                return null;
+            }
+        }
     }
 }

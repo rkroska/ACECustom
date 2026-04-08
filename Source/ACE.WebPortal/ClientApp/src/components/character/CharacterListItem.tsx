@@ -4,9 +4,11 @@ import { Character } from '../../types'
 interface CharacterListItemProps {
   character: Character
   onClick: () => void
+  locationInfo?: string | null
+  secondaryInfo?: string | null
 }
 
-export default function CharacterListItem({ character, onClick }: CharacterListItemProps) {
+export default function CharacterListItem({ character, onClick, locationInfo, secondaryInfo }: CharacterListItemProps) {
   const displayName = character.isAdmin && !character.name.startsWith('+') 
     ? `+${character.name}` 
     : character.name
@@ -33,7 +35,21 @@ export default function CharacterListItem({ character, onClick }: CharacterListI
         </h3>
       </div>
 
-      <ChevronRight className="w-3.5 h-3.5 text-neutral-800 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all relative z-10" />
+      <div className="flex items-center gap-4 relative z-10">
+        <div className="flex flex-col items-end">
+          {locationInfo && (
+            <span className="text-[11px] font-bold text-neutral-500 group-hover:text-blue-400/80 transition-colors">
+              {locationInfo}
+            </span>
+          )}
+          {secondaryInfo && (
+            <span className="text-[10px] font-bold text-neutral-700 group-hover:text-neutral-500 transition-colors">
+              {secondaryInfo}
+            </span>
+          )}
+        </div>
+        <ChevronRight className="w-3.5 h-3.5 text-neutral-800 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+      </div>
     </button>
   )
 }

@@ -12,6 +12,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Web.Controllers;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
+using ACE.Server.Controllers.Resolvers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -57,6 +58,26 @@ namespace ACE.Server.Controllers
             public bool isUsable { get; set; } = true;
             public uint Base { get; set; } = 0;
             public uint Total { get; set; } = 0;
+        }
+
+        private class WorldLocationDto
+        {
+            public uint Landblock { get; set; }
+            public int? Variation { get; set; }
+            public string Coordinates { get; set; }
+            public bool IsDungeon { get; set; }
+            public string Name { get; set; }
+            public int GrouperType { get; set; }
+            public string Hex { get; set; }
+        }
+
+        private class PlayerStubDto
+        {
+            public uint Guid { get; set; }
+            public string Name { get; set; }
+            public bool IsOnline { get; set; }
+            public bool IsAdmin { get; set; }
+            public WorldLocationDto Location { get; set; }
         }
 
         private class CharacterStatsDto
@@ -116,52 +137,85 @@ namespace ACE.Server.Controllers
         }
 
         [HttpGet("list")]
-        public IActionResult GetList()
+        public async Task<IActionResult> GetList()
         {
             var accountId = CurrentAccountId;
             if (accountId == null) return Unauthorized();
 
             var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(accountId.Value, false);
-            var result = characters.Select(c => {
+            var tasks = characters.Select(async c => {
                 var isAdmin = c.IsPlussed;
                 var charName = isAdmin && !c.Name.StartsWith("+") ? $"+{c.Name}" : c.Name;
-                return new
+                var online = PlayerManager.GetOnlinePlayer(c.Id);
+                
+                WorldLocationDto location = null;
+                if (online != null)
                 {
-                    guid = c.Id,
-                    name = charName,
-                    isOnline = PlayerManager.GetOnlinePlayer(c.Id) != null,
-                    isAdmin
+                    var res = await LocationResolver.ResolveLocationAsync(online.Location.LandblockId.Raw, online.Location.Variation, online.CurrentLandblock?.IsDungeon);
+                    location = new WorldLocationDto
+                    {
+                        Landblock = online.Location.LandblockId.Raw,
+                        Variation = online.Location.Variation,
+                        Coordinates = online.Location.GetMapCoordStr(),
+                        IsDungeon = online.CurrentLandblock?.IsDungeon ?? false,
+                        Name = res.Name,
+                        GrouperType = res.GrouperType,
+                        Hex = res.Hex
+                    };
+                }
+
+                return new PlayerStubDto
+                {
+                    Guid = c.Id,
+                    Name = charName,
+                    IsOnline = online != null,
+                    IsAdmin = isAdmin,
+                    Location = location
                 };
             });
 
+            var result = await Task.WhenAll(tasks);
             return Ok(result);
         }
 
         [HttpGet("all-online")]
-        public IActionResult GetAllOnline()
+        public async Task<IActionResult> GetAllOnline()
         {
             if (!IsAdmin)
                 return Unauthorized();
 
             var online = PlayerManager.GetAllOnline();
-            var result = online.Select(p => {
+            var tasks = online.Select(async p => {
                 var isAdmin = (p.Account?.AccessLevel ?? 0) > 0;
                 var charName = isAdmin && !p.Name.StartsWith("+") ? $"+{p.Name}" : p.Name;
-                return new
+
+                var res = await LocationResolver.ResolveLocationAsync(p.Location.LandblockId.Raw, p.Location.Variation, p.CurrentLandblock?.IsDungeon);
+                
+                return new PlayerStubDto
                 {
-                    guid = p.Guid.Full,
-                    name = charName,
-                    isOnline = true,
-                    isAdmin
+                    Guid = p.Guid.Full,
+                    Name = charName,
+                    IsOnline = true,
+                    IsAdmin = isAdmin,
+                    Location = new WorldLocationDto
+                    {
+                        Landblock = p.Location.LandblockId.Raw,
+                        Variation = p.Location.Variation,
+                        Coordinates = p.Location.GetMapCoordStr(),
+                        IsDungeon = p.CurrentLandblock?.IsDungeon ?? false,
+                        Name = res.Name,
+                        GrouperType = res.GrouperType,
+                        Hex = res.Hex
+                    }
                 };
             });
 
-            return Ok(result.OrderBy(r => r.name));
+            var result = await Task.WhenAll(tasks);
+            return Ok(result.OrderBy(r => r.Name));
         }
 
-
         [HttpGet("search-all/{name}")]
-        public IActionResult SearchAll(string name)
+        public async Task<IActionResult> SearchAll(string name)
         {
             if (!IsAdmin)
                 return Unauthorized();
@@ -172,38 +226,75 @@ namespace ACE.Server.Controllers
             // SQL-level search with ShardDatabase
             var stubs = DatabaseManager.Shard.BaseDatabase.GetCharacterStubsByPartialName(name, 100);
             
-            var result = stubs.Select(s =>
+            var tasks = stubs.Select(async s =>
             {
                 var player = PlayerManager.FindByGuid(s.Id);
                 var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
                 var charName = isAdmin && !s.Name.StartsWith("+") ? $"+{s.Name}" : s.Name;
+                var online = PlayerManager.GetOnlinePlayer(s.Id);
 
-                return new
+                WorldLocationDto location = null;
+                if (online != null)
                 {
-                    guid = s.Id,
-                    name = charName,
-                    isOnline = PlayerManager.GetOnlinePlayer(s.Id) != null,
-                    isAdmin
+                    var res = await LocationResolver.ResolveLocationAsync(online.Location.LandblockId.Raw, online.Location.Variation, online.CurrentLandblock?.IsDungeon);
+                    location = new WorldLocationDto
+                    {
+                        Landblock = online.Location.LandblockId.Raw,
+                        Variation = online.Location.Variation,
+                        Coordinates = online.Location.GetMapCoordStr(),
+                        IsDungeon = online.CurrentLandblock?.IsDungeon ?? false,
+                        Name = res.Name,
+                        GrouperType = res.GrouperType,
+                        Hex = res.Hex
+                    };
+                }
+
+                return new PlayerStubDto
+                {
+                    Guid = s.Id,
+                    Name = charName,
+                    IsOnline = online != null,
+                    IsAdmin = isAdmin,
+                    Location = location
                 };
             });
 
+            var result = await Task.WhenAll(tasks);
             return Ok(result);
         }
 
         [HttpGet("detail/{guid}")]
-        public IActionResult GetDetail(uint guid)
+        public async Task<IActionResult> GetDetail(uint guid)
         {
             if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
             
             var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
             var charName = isAdmin && !player?.Name.StartsWith("+") == true ? $"+{player?.Name}" : player?.Name;
+            var online = player as Player;
 
-            return Ok(new
+            WorldLocationDto location = null;
+            if (online != null)
             {
-                guid,
-                name = charName,
-                isOnline = PlayerManager.GetOnlinePlayer(guid) != null,
-                isAdmin
+                var res = await LocationResolver.ResolveLocationAsync(online.Location.LandblockId.Raw, online.Location.Variation, online.CurrentLandblock?.IsDungeon);
+                location = new WorldLocationDto
+                {
+                    Landblock = online.Location.LandblockId.Raw,
+                    Variation = online.Location.Variation,
+                    Coordinates = online.Location.GetMapCoordStr(),
+                    IsDungeon = online.CurrentLandblock?.IsDungeon ?? false,
+                    Name = res.Name,
+                    GrouperType = res.GrouperType,
+                    Hex = res.Hex
+                };
+            }
+
+            return Ok(new PlayerStubDto
+            {
+                Guid = guid,
+                Name = charName,
+                IsOnline = online != null,
+                IsAdmin = isAdmin,
+                Location = location
             });
         }
 

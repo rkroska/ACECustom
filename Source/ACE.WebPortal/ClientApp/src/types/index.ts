@@ -1,17 +1,28 @@
 // --- Common Entity Types ---
 
+export interface WorldLocation {
+  landblock: number;
+  variation: number | null;
+  coordinates: string;
+  isDungeon: boolean;
+  name: string;
+  grouperType: number;
+  hex: string;
+}
+
+export interface LocationResolution {
+  name: string;
+  grouperType: number;
+  hex: string;
+}
+
 export interface Character {
   guid: number;
   name: string;
   wcid: number;
   isOnline: boolean;
   isAdmin?: boolean;
-}
-
-export interface Player extends Character {
-  accountId: number;
-  accountName: string;
-  shard: string;
+  location?: WorldLocation | null;
 }
 
 // --- Stats & Progression ---
