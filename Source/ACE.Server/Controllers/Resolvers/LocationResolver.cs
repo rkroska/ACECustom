@@ -91,11 +91,31 @@ namespace ACE.Server.Controllers.Resolvers
             {
                 // Try Shard DB (asynchronous callback)
                 var tcs = new TaskCompletionSource<string>();
-                DatabaseManager.Shard.GetLandblockName(landblockId, variationId, (n) =>
+                try
                 {
-                    tcs.SetResult(n);
-                });
-                name = await tcs.Task;
+                    DatabaseManager.Shard.GetLandblockName(landblockId, variationId, (n) =>
+                    {
+                        try
+                        {
+                            tcs.TrySetResult(n);
+                        }
+                        catch (Exception ex)
+                        {
+                            tcs.TrySetException(ex);
+                        }
+                    });
+
+                    // Wait for result with a 5-second timeout
+                    var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(5000));
+                    if (completedTask == tcs.Task)
+                        name = await tcs.Task;
+                    else
+                        name = null; // Timeout
+                }
+                catch
+                {
+                    name = null;
+                }
             }
 
             if (name != null)

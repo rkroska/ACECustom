@@ -92,7 +92,7 @@ export default function PlayerList() {
     
     const lowerSearch = searchTerm.toLowerCase()
     return onlinePlayersBase.filter(p => p.name.toLowerCase().includes(lowerSearch))
-  }, [onlinePlayersBase, searchResults, debouncedSearchTerm, searchTerm])
+  }, [onlinePlayersBase, searchResults, searchTerm])
 
   // Explicitly override grouping when search is active
   const isActuallyGrouping = isGroupedByLocation && !searchTerm.trim();
@@ -132,10 +132,8 @@ export default function PlayerList() {
 
     paginatedPlayers.forEach((p: Character) => {
         const loc = p.location
-        if (!loc) return;
-
-        const groupTitle = loc.name || loc.hex || "Unknown"
-        const grouperType = loc.grouperType
+        const groupTitle = loc?.name || loc?.hex || "Unknown Location"
+        const grouperType = loc?.grouperType ?? 0
         
         const groupKey = `${grouperType}_${groupTitle}`
         

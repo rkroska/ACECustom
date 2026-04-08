@@ -151,13 +151,18 @@ namespace ACE.Server.Controllers
                 WorldLocationDto location = null;
                 if (online != null)
                 {
-                    var res = await LocationResolver.ResolveLocationAsync(online.Location.LandblockId.Raw, online.Location.Variation, online.CurrentLandblock?.IsDungeon);
+                    var lbRaw = online.Location.LandblockId.Raw;
+                    var variation = online.Location.Variation;
+                    var coords = online.Location.GetMapCoordStr();
+                    var isDungeon = online.CurrentLandblock?.IsDungeon ?? false;
+
+                    var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
                     location = new WorldLocationDto
                     {
-                        Landblock = online.Location.LandblockId.Raw,
-                        Variation = online.Location.Variation,
-                        Coordinates = online.Location.GetMapCoordStr(),
-                        IsDungeon = online.CurrentLandblock?.IsDungeon ?? false,
+                        Landblock = lbRaw,
+                        Variation = variation,
+                        Coordinates = coords,
+                        IsDungeon = isDungeon,
                         Name = res.Name,
                         GrouperType = res.GrouperType,
                         Hex = res.Hex
@@ -189,7 +194,12 @@ namespace ACE.Server.Controllers
                 var isAdmin = (p.Account?.AccessLevel ?? 0) > 0;
                 var charName = isAdmin && !p.Name.StartsWith("+") ? $"+{p.Name}" : p.Name;
 
-                var res = await LocationResolver.ResolveLocationAsync(p.Location.LandblockId.Raw, p.Location.Variation, p.CurrentLandblock?.IsDungeon);
+                var lbRaw = p.Location.LandblockId.Raw;
+                var variation = p.Location.Variation;
+                var coords = p.Location.GetMapCoordStr();
+                var isDungeon = p.CurrentLandblock?.IsDungeon ?? false;
+
+                var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
                 
                 return new PlayerStubDto
                 {
@@ -199,10 +209,10 @@ namespace ACE.Server.Controllers
                     IsAdmin = isAdmin,
                     Location = new WorldLocationDto
                     {
-                        Landblock = p.Location.LandblockId.Raw,
-                        Variation = p.Location.Variation,
-                        Coordinates = p.Location.GetMapCoordStr(),
-                        IsDungeon = p.CurrentLandblock?.IsDungeon ?? false,
+                        Landblock = lbRaw,
+                        Variation = variation,
+                        Coordinates = coords,
+                        IsDungeon = isDungeon,
                         Name = res.Name,
                         GrouperType = res.GrouperType,
                         Hex = res.Hex
@@ -236,13 +246,18 @@ namespace ACE.Server.Controllers
                 WorldLocationDto location = null;
                 if (online != null)
                 {
-                    var res = await LocationResolver.ResolveLocationAsync(online.Location.LandblockId.Raw, online.Location.Variation, online.CurrentLandblock?.IsDungeon);
+                    var lbRaw = online.Location.LandblockId.Raw;
+                    var variation = online.Location.Variation;
+                    var coords = online.Location.GetMapCoordStr();
+                    var isDungeon = online.CurrentLandblock?.IsDungeon ?? false;
+
+                    var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
                     location = new WorldLocationDto
                     {
-                        Landblock = online.Location.LandblockId.Raw,
-                        Variation = online.Location.Variation,
-                        Coordinates = online.Location.GetMapCoordStr(),
-                        IsDungeon = online.CurrentLandblock?.IsDungeon ?? false,
+                        Landblock = lbRaw,
+                        Variation = variation,
+                        Coordinates = coords,
+                        IsDungeon = isDungeon,
                         Name = res.Name,
                         GrouperType = res.GrouperType,
                         Hex = res.Hex
@@ -275,13 +290,18 @@ namespace ACE.Server.Controllers
             WorldLocationDto location = null;
             if (online != null)
             {
-                var res = await LocationResolver.ResolveLocationAsync(online.Location.LandblockId.Raw, online.Location.Variation, online.CurrentLandblock?.IsDungeon);
+                var lbRaw = online.Location.LandblockId.Raw;
+                var variation = online.Location.Variation;
+                var coords = online.Location.GetMapCoordStr();
+                var isDungeon = online.CurrentLandblock?.IsDungeon ?? false;
+
+                var res = await LocationResolver.ResolveLocationAsync(lbRaw, variation, isDungeon);
                 location = new WorldLocationDto
                 {
-                    Landblock = online.Location.LandblockId.Raw,
-                    Variation = online.Location.Variation,
-                    Coordinates = online.Location.GetMapCoordStr(),
-                    IsDungeon = online.CurrentLandblock?.IsDungeon ?? false,
+                    Landblock = lbRaw,
+                    Variation = variation,
+                    Coordinates = coords,
+                    IsDungeon = isDungeon,
                     Name = res.Name,
                     GrouperType = res.GrouperType,
                     Hex = res.Hex

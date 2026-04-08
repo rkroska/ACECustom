@@ -79,6 +79,8 @@ export default function CharacterList() {
               key={char.guid}
               character={char}
               onClick={() => navigate(`/characters/${char.guid}/general`)}
+              locationInfo={char.location?.name || char.location?.hex}
+              secondaryInfo={char.location?.coordinates}
             />
           ))}
 
