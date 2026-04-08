@@ -88,12 +88,25 @@ namespace ACE.Server.Controllers.Resolvers
 
         private static async Task<string> GetDungeonNameCachedAsync(uint landblockId, int? variationId)
         {
-            var cacheKey = $"{landblockId:X8}:{variationId ?? 0}";
+            // Normalize landblock to the 4-digit prefix (dungeon range) used by DB resolvers
+            var lb = landblockId >> 16;
+            if (lb == 0) lb = landblockId;
+
+            var cacheKey = $"{lb:X4}:{variationId?.ToString() ?? "null"}";
             if (_dungeonNameCache.TryGetValue(cacheKey, out string cachedName))
                 return cachedName;
 
-            // Try World DB (synchronous)
-            var name = DatabaseManager.World.GetLandblockName(landblockId, variationId);
+            // Try World DB (synchronous) - Soft failure pattern
+            string name = null;
+            try
+            {
+                name = DatabaseManager.World.GetLandblockName(landblockId, variationId);
+            }
+            catch (Exception ex)
+            {
+                // Log and swallow - allow fallback to Shard DB
+                Console.WriteLine($"[LocationResolver] Warning: World DB lookup failed for LB 0x{landblockId:X8}: {ex.Message}");
+            }
 
             if (name == null)
             {

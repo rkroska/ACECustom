@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Activity, Users, ShieldAlert, ChevronLeft, ChevronRight, MapPin, ChevronDown, Sun, Gem } from 'lucide-react'
 import { api } from '../services/api'
@@ -25,6 +25,7 @@ export default function PlayerList() {
     return localStorage.getItem('ace_admin_grouped_players') === 'true'
   })
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const latestSearchIdRef = useRef(0)
 
   // Persist grouping choice
   useEffect(() => {
@@ -49,10 +50,13 @@ export default function PlayerList() {
     }
   }
 
+  // Reset pagination immediately when search changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm])
+
   // Unified Search Logic using Debounce Hook
   useEffect(() => {
-    setCurrentPage(1) // Reset pagination on search change
-
     if (debouncedSearchTerm.length >= 3) {
       searchAllPlayers(debouncedSearchTerm)
     } else {
@@ -63,20 +67,28 @@ export default function PlayerList() {
   }, [debouncedSearchTerm])
 
   const searchAllPlayers = async (name: string) => {
+    const requestId = ++latestSearchIdRef.current
     try {
       setIsLoading(true)
       setSearchResults([]) // Clear existing results while searching to show loading state
       const data = await api.get<Character[]>(`/api/character/search-all/${encodeURIComponent(name)}`)
       
+      // Ignore response if a newer request has been started
+      if (requestId !== latestSearchIdRef.current) return
+
       const onlineGuids = new Set(onlinePlayersBase.map(p => p.guid))
       setSearchResults((data ?? []).map(p => ({ 
         ...p, 
         isOnline: onlineGuids.has(p.guid) 
       })))
     } catch (err) {
-      console.error('Unified search error:', err)
+      if (requestId === latestSearchIdRef.current) {
+        console.error('Unified search error:', err)
+      }
     } finally {
-      setIsLoading(false)
+      if (requestId === latestSearchIdRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
