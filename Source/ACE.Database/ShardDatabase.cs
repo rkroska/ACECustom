@@ -550,16 +550,9 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
-                    
-                    if (!variationId.HasValue)
-                    {
-                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == null))
-                            staticObjects.Add(biota);
-                    }
-                    else if (biota.BiotaPropertiesPosition.Any(x => x.VariationId.HasValue && x.VariationId.Value == variationId.Value))
-                    {
+
+                    if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId))
                         staticObjects.Add(biota);
-                    }
                 }
             }
 
@@ -577,15 +570,13 @@ namespace ACE.Database
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
-                // Use explicit nullable comparison to ensure Entity Framework generates correct SQL
+                // Nullable equality: EF translates to null-safe comparison (match when both null or same value)
                 var results = context.BiotaPropertiesPosition
-                    .Where(p => p.PositionType == 1 && 
-                                p.ObjCellId >= min && 
-                                p.ObjCellId <= max && 
+                    .Where(p => p.PositionType == 1 &&
+                                p.ObjCellId >= min &&
+                                p.ObjCellId <= max &&
                                 p.ObjectId >= 0x80000000 &&
-                                (!variationId.HasValue
-                                    ? p.VariationId == null
-                                    : p.VariationId.HasValue && p.VariationId.Value == variationId.Value))
+                                p.VariationId == variationId)
                     .Select(r => r.ObjectId)
                     .ToList();
 

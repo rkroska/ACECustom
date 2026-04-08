@@ -459,7 +459,7 @@ namespace ACE.Server.Entity
 
                 foreach (var member in fellowshipMembers.Values)
                 {
-                    var shareAmount = perAmount;
+                    long shareAmount = perAmount;
                     if (xpType == XpType.Kill && monsterTier > 0)
                     {
                         var memberTier = member.GetProperty(PropertyInt.PrestigeLevel) ?? 0;

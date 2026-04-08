@@ -743,23 +743,11 @@ namespace ACE.Database
             if (cachedLandblockInstances.TryGetValue(cacheKey, out var value))
                 return value;
 
-            List<LandblockInstance> results;
-            if (!variation.HasValue)
-            {
-                results = context.LandblockInstance
-                    .Include(r => r.LandblockInstanceLink)
-                    .AsNoTracking()
-                    .Where(r => r.Landblock == landblock && r.VariationId == null)
-                    .ToList();
-            }
-            else
-            {
-                results = context.LandblockInstance
-                    .Include(r => r.LandblockInstanceLink)
-                    .AsNoTracking()
-                    .Where(r => r.Landblock == landblock && r.VariationId == variation)
-                    .ToList();
-            }
+            var results = context.LandblockInstance
+                .Include(r => r.LandblockInstanceLink)
+                .AsNoTracking()
+                .Where(r => r.Landblock == landblock && r.VariationId == variation)
+                .ToList();
 
             cachedLandblockInstances.TryAdd(cacheKey, results);
 

@@ -514,9 +514,8 @@ namespace ACE.Server.WorldObjects
                        _lastForbiddenLandblockLog = nowExec;
                     }
 
-                    // 1. Visuals: Void Particles + Fog (Removed PortalStorm to avoid chat spam)
+                    // 1. Visuals: Void Particles (no fog — avoids fog/teleport interaction with prestige boundary)
                     Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
-                    SetFogColor(EnvironChangeType.RedFog);
 
                     // 2. Text: Center Screen (Yellow) ONLY
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
@@ -550,7 +549,6 @@ namespace ACE.Server.WorldObjects
 
                 if (danger)
                 {
-                    SetFogColor(EnvironChangeType.WhiteFog);
                     Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
                         Session, "!!! PRESTIGE BOUNDARY NEARBY !!!"));
                 }
