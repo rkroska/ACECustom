@@ -129,7 +129,10 @@ namespace ACE.Server.Physics.Common
             {
                 var blockCellID = ID & 0xFFFF0000 | visibleCellID;
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
-                VisibleCells.TryAdd(visibleCellID, cell);
+                if (cell == null)
+                    Console.WriteLine($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8}");
+                else if (!VisibleCells.TryAdd(visibleCellID, cell))
+                    ;// Console.WriteLine($"[DEBUG-VIS] EnvCell {ID:X8}: Failed to add VisibleCell {blockCellID:X8} (Duplicate?)");
             }
             //Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
             //{
@@ -401,7 +404,7 @@ namespace ACE.Server.Physics.Common
 
                 for (var i = 0; i < NumStaticObjects; i++)
                 {
-                    var staticObj = PhysicsObj.makeObject(StaticObjectIDs[i], 0, false);
+                    var staticObj = PhysicsObj.makeObject(StaticObjectIDs[i], 0, false, variation);
                     staticObj.DatObject = true;
                     staticObj.add_obj_to_cell(this, StaticObjectFrames[i], variation);
                     if (staticObj.CurCell == null)

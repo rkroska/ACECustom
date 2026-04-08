@@ -32,10 +32,13 @@ using ACE.DatLoader;
 using Discord;
 using ACE.Server.Mods;
 
+using log4net;
+
 namespace ACE.Server.Command.Handlers.Processors
 {
     public class DeveloperContentCommands
     {
+        private static readonly ILog log = LogManager.GetLogger(typeof(DeveloperContentCommands));
         public enum FileType
         {
             Undefined,
@@ -1186,11 +1189,27 @@ namespace ACE.Server.Command.Handlers.Processors
 
         public static LandblockInstanceWriter LandblockInstanceWriter;
 
-        [CommandHandler("createinst", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Spawns a new wcid or classname as a landblock instance", "<wcid or classname>")]
+        private sealed class CreateInstMirrorOptions
+        {
+            public bool DisableMirroring { get; set; }
+            public List<int> ExplicitTargetVariations { get; } = new();
+        }
+
+        [CommandHandler("createinst", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Spawns landblock instance. Prestige mirroring (extra landblock_instance rows for other prestige layers) never runs on retail/base (variation null or 1–10); it only runs when your current layer is prestige (11+). Flags: -nomirror|-nm skips mirroring. -mirror|-mv <list> targets only prestige variants: comma list and/or ranges (11,15,20 or 11-15), all|* = 11..max configured, spaces after commas OK (e.g. -mv 11, 15, 20). Retail IDs in -mv are rejected. Auto-mirror 11→12..max only if createinst_auto_mirror_higher_prestige_variants=true and no explicit -mv/-mirror.", "<wcid or classname> [flags]")]
         public static void HandleCreateInst(Session session, params string[] parameters)
         {
             var loc = new Position(session.Player.Location);
             var variation = loc.Variation;
+            CreateInstMirrorOptions mirrorOptions;
+            try
+            {
+                mirrorOptions = ParseCreateInstMirrorOptions(parameters);
+            }
+            catch (ArgumentException ex)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(ex.Message, ChatMessageType.Broadcast));
+                return;
+            }
 
             var param = parameters[0];
 
@@ -1200,7 +1219,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             var landblock = session.Player.CurrentLandblock.Id.Landblock;
 
-            var firstStaticGuid = 0x70000000 | (uint)landblock << 12;
+            var firstStaticGuid = ObjectGuid.LandblockInstanceGuidBase | (uint)landblock << 12;
 
             if (parameters.Length > 1)
             {
@@ -1286,8 +1305,13 @@ namespace ACE.Server.Command.Handlers.Processors
 
             var maxStaticGuid = firstStaticGuid | 0xFFF;
 
-            // manually specify a start guid?
-            if (parameters.Length == 2)
+            // manually specify a start guid? (do not treat link-child "-p <parent>" parent hex in parameters[1] as a manual start guid)
+            var canParseManualStartGuid = parameters.Length >= 2
+                && parentGuid == null
+                && !string.Equals(parameters[0], "-p", StringComparison.OrdinalIgnoreCase)
+                && !parameters[1].StartsWith("-", StringComparison.Ordinal);
+
+            if (canParseManualStartGuid)
             {
                 if (uint.TryParse(parameters[1].Replace("0x", ""), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var startGuid))
                 {
@@ -1363,15 +1387,16 @@ namespace ACE.Server.Command.Handlers.Processors
 
             instances.Add(instance);
 
+            LandblockInstanceLink linkEntry = null;
             if (isLinkChild)
             {
-                var link = new LandblockInstanceLink();
+                linkEntry = new LandblockInstanceLink();
 
-                link.ParentGuid = parentGuid.Value;
-                link.ChildGuid = wo.Guid.Full;
-                link.LastModified = DateTime.Now;
+                linkEntry.ParentGuid = parentGuid.Value;
+                linkEntry.ChildGuid = wo.Guid.Full;
+                linkEntry.LastModified = DateTime.Now;
 
-                parentInstance.LandblockInstanceLink.Add(link);
+                parentInstance.LandblockInstanceLink.Add(linkEntry);
 
                 parentObj.LinkedInstances.Add(instance);
 
@@ -1380,7 +1405,26 @@ namespace ACE.Server.Command.Handlers.Processors
                 parentObj.ChildLinks.Add(wo);
                 wo.ParentLink = parentObj;
             }
-            SaveInstanceToWorldDatabase(instance);
+            if (!SaveInstanceToWorldDatabase(instance, isLinkChild ? linkEntry : null))
+            {
+                if (isLinkChild && linkEntry != null)
+                {
+                    parentInstance.LandblockInstanceLink.Remove(linkEntry);
+                    parentObj.LinkedInstances.Remove(instance);
+                    parentObj.ChildLinks.Remove(wo);
+                    wo.ParentLink = null;
+                }
+                instances.Remove(instance);
+                wo.Destroy();
+                session.Network.EnqueueSend(new GameMessageSystemChat("Failed to save landblock instance to the database.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            if (!isLinkChild)
+            {
+                var mirrorSourceLoc = new Position(wo.Location);
+                TryCreateMirroredInstances(session, entityWeenie, wo, mirrorSourceLoc, instances, mirrorOptions);
+            }
             //SyncInstances(session, landblock, instances, variation);
         }
 
@@ -1491,9 +1535,248 @@ namespace ACE.Server.Command.Handlers.Processors
             return instance;
         }
 
+        private static bool IsCreateInstMirrorFlagToken(string token)
+        {
+            return token.Equals("-nomirror", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("-nm", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("-mirror", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("-mv", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True if this argv token is a command flag (starts with '-'), e.g. -p, -c, -nm.</summary>
+        private static bool IsCommandLineFlagToken(string token)
+        {
+            return !string.IsNullOrEmpty(token) && token[0] == '-';
+        }
+
+        /// <summary>Gathers -mirror/-mv list tokens until the next flag or end; joins with commas for <see cref="ParseVariationList"/>.</summary>
+        private static string CollectCreateInstMirrorVariationListTokens(string[] parameters, ref int indexAfterMirrorFlag)
+        {
+            var i = indexAfterMirrorFlag;
+            if (i >= parameters.Length)
+                return null;
+
+            if (IsCommandLineFlagToken(parameters[i]))
+                return null;
+
+            var parts = new List<string>();
+            while (i < parameters.Length && !IsCommandLineFlagToken(parameters[i]))
+            {
+                parts.Add(parameters[i]);
+                i++;
+            }
+
+            indexAfterMirrorFlag = i;
+            return string.Join(",", parts);
+        }
+
+        private static CreateInstMirrorOptions ParseCreateInstMirrorOptions(string[] parameters)
+        {
+            var options = new CreateInstMirrorOptions();
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                var token = parameters[i];
+                if (token.Equals("-nomirror", StringComparison.OrdinalIgnoreCase) || token.Equals("-nm", StringComparison.OrdinalIgnoreCase))
+                {
+                    options.DisableMirroring = true;
+                    continue;
+                }
+
+                if (token.Equals("-mirror", StringComparison.OrdinalIgnoreCase) || token.Equals("-mv", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 >= parameters.Length)
+                        throw new ArgumentException("-mirror/-mv requires a variation list (e.g. 12,13 or 11-15 or all).");
+
+                    if (IsCommandLineFlagToken(parameters[i + 1]))
+                        throw new ArgumentException("-mirror/-mv must be followed by a variation list, not another flag.");
+
+                    var listStart = i + 1;
+                    var joined = CollectCreateInstMirrorVariationListTokens(parameters, ref listStart);
+                    if (string.IsNullOrEmpty(joined))
+                        throw new ArgumentException("-mirror/-mv must be followed by a variation list, not another flag.");
+
+                    var parsed = ParseVariationList(joined).ToList();
+                    if (parsed.Count == 0)
+                        throw new ArgumentException("-mirror/-mv variation list is empty or could not be parsed.");
+
+                    var invalidRetail = parsed.Where(v => v <= PrestigeManager.PRESTIGE_VAR_OFFSET).Distinct().OrderBy(v => v).ToList();
+                    if (invalidRetail.Count > 0)
+                        throw new ArgumentException(
+                            "Mirroring only applies to prestige variations 11+ (prestige tier N uses variant 10+N). Retail / base layers use variation null or 1–10 and are not valid -mirror/-mv targets. Invalid: "
+                            + string.Join(", ", invalidRetail)
+                            + ".");
+
+                    foreach (var v in parsed)
+                        options.ExplicitTargetVariations.Add(v);
+                    i = listStart - 1;
+                    continue;
+                }
+            }
+            return options;
+        }
+
+        private const int MaxVariationExpandItems = 4096;
+        private const int MaxVariationIdBound = 1_000_000;
+
+        /// <summary>Single token like "5-10" or "-5--1" (hyphen-separated signed bounds).</summary>
+        private static readonly Regex VariationRangeRegex = new(@"^\s*([+-]?\d+)\s*-\s*([+-]?\d+)\s*$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+        private static IEnumerable<int> ParseVariationList(string csvOrRange)
+        {
+            if (string.IsNullOrWhiteSpace(csvOrRange))
+                yield break;
+
+            var values = csvOrRange.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var value in values)
+            {
+                if (value.Equals("all", StringComparison.OrdinalIgnoreCase) || value.Equals("*", StringComparison.Ordinal))
+                {
+                    var min = PrestigeManager.GetBasePrestigeVariation();
+                    var max = PrestigeManager.GetMaxConfiguredPrestigeVariation();
+                    if (min > max)
+                        (min, max) = (max, min);
+
+                    if (min < 0 || max > MaxVariationIdBound)
+                        yield break;
+
+                    var spanAll = (long)max - (long)min + 1L;
+                    if (spanAll <= 0)
+                        yield break;
+
+                    if (spanAll > MaxVariationExpandItems)
+                        throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
+
+                    for (var n = 0; n < spanAll; n++)
+                        yield return min + n;
+                    continue;
+                }
+
+                var rangeMatch = VariationRangeRegex.Match(value);
+                if (rangeMatch.Success)
+                {
+                    if (!int.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMin)
+                        || !int.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rangeMax))
+                        throw new ArgumentException($"Invalid variation range token: \"{value}\".");
+
+                    if (rangeMin > rangeMax)
+                        (rangeMin, rangeMax) = (rangeMax, rangeMin);
+
+                    if (rangeMin < 0 || rangeMax > MaxVariationIdBound)
+                        throw new ArgumentException($"Variation range out of bounds in token \"{value}\" (allowed 0..{MaxVariationIdBound}).");
+
+                    var span = (long)rangeMax - (long)rangeMin + 1L;
+                    if (span <= 0)
+                        throw new ArgumentException($"Invalid variation range (empty span) in token \"{value}\".");
+
+                    if (span > MaxVariationExpandItems)
+                        throw new ArgumentException($"Variation range exceeds maximum expansion of {MaxVariationExpandItems} items.");
+
+                    for (var n = 0; n < span; n++)
+                        yield return rangeMin + n;
+
+                    continue;
+                }
+
+                if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var variationId))
+                    throw new ArgumentException($"Invalid variation token: \"{value}\".");
+
+                if (variationId < 0 || variationId > MaxVariationIdBound)
+                    throw new ArgumentException($"Variation ID out of bounds in token \"{value}\" (allowed 0..{MaxVariationIdBound}).");
+
+                yield return variationId;
+            }
+        }
+
+        private static void TryCreateMirroredInstances(Session session, ACE.Entity.Models.Weenie entityWeenie, WorldObject sourceObject, Position sourceLocation, List<LandblockInstance> instances, CreateInstMirrorOptions mirrorOptions)
+        {
+            var sourceVariation = sourceLocation.Variation;
+            if (!PrestigeManager.IsPrestigeVariation(sourceVariation))
+                return;
+
+            if (mirrorOptions.DisableMirroring)
+                return;
+
+            var hasGeneratorProfiles = entityWeenie.PropertiesGenerator != null && entityWeenie.PropertiesGenerator.Count > 0;
+            if (!PrestigeManager.IsCreateInstMirrorEligible(sourceObject.WeenieType, hasGeneratorProfiles))
+                return;
+
+            List<int> targetVariations;
+            if (mirrorOptions.ExplicitTargetVariations.Count > 0)
+            {
+                targetVariations = PrestigeManager.NormalizeMirrorTargetVariations(mirrorOptions.ExplicitTargetVariations, sourceVariation);
+                if (targetVariations.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "Mirror: explicit target variations produced no valid targets after normalization (check source variation and targets).",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+            else if (ServerConfig.createinst_auto_mirror_higher_prestige_variants.Value)
+                targetVariations = PrestigeManager.GetDefaultMirrorTargetVariations(sourceVariation);
+            else
+                targetVariations = [];
+
+            if (targetVariations.Count == 0)
+                return;
+
+            var landblock = (ushort)sourceLocation.Landblock;
+            var firstStaticGuid = ObjectGuid.LandblockInstanceGuidBase | (uint)landblock << 12;
+            var maxStaticGuid = firstStaticGuid | 0xFFF;
+
+            var mirroredCount = 0;
+            var mirroredForLiveWorld = new List<(WorldObject wo, int targetVariation)>();
+            foreach (var targetVariation in targetVariations)
+            {
+                var mirrorGuid = GetNextStaticGuid(landblock, instances);
+                if (mirrorGuid > maxStaticGuid)
+                    break;
+
+                var mirrorObject = WorldObjectFactory.CreateWorldObject(entityWeenie, new ObjectGuid(mirrorGuid));
+                if (mirrorObject == null)
+                    continue;
+
+                if (mirrorObject.WeenieType != WeenieType.Creature)
+                    mirrorObject.CreatedByAccountId = session.Player.Account.AccountId;
+
+                mirrorObject.Location = new Position(sourceLocation);
+                mirrorObject.Location.Variation = targetVariation;
+
+                var mirrorInstance = CreateLandblockInstance(mirrorObject, false, targetVariation);
+                if (!SaveInstanceToWorldDatabase(mirrorInstance))
+                {
+                    mirrorObject.Destroy();
+                    continue;
+                }
+
+                instances.Add(mirrorInstance);
+                mirroredForLiveWorld.Add((mirrorObject, targetVariation));
+                mirroredCount++;
+            }
+
+            if (mirroredCount > 0)
+            {
+                var persistedVariations = mirroredForLiveWorld.Select(p => p.targetVariation).Distinct().ToList();
+                foreach (var tv in persistedVariations)
+                    DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, tv);
+
+                var lbKey = new LandblockId((uint)(landblock << 16) | 0xFFFF);
+                foreach (var (mirrorObject, targetVariation) in mirroredForLiveWorld)
+                {
+                    var targetLb = LandblockManager.GetLandblock(lbKey, false, targetVariation, false);
+                    if (targetLb != null)
+                        targetLb.EnqueueAddWorldObjectForPhysics(mirrorObject, targetVariation);
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Mirrored {mirroredCount} instance(s) from variation {sourceVariation} to: {string.Join(", ", persistedVariations)}",
+                    ChatMessageType.Broadcast));
+            }
+        }
+
         public static uint GetNextStaticGuid(ushort landblock, List<LandblockInstance> instances)
         {
-            var firstGuid = 0x70000000 | ((uint)landblock << 12);
+            var firstGuid = ObjectGuid.LandblockInstanceGuidBase | ((uint)landblock << 12);
             var lastGuid = firstGuid | 0xFFF;
 
             var highestLandblockInst = instances.Where(i => i.Landblock == landblock).OrderByDescending(i => i.Guid).FirstOrDefault();
@@ -1514,7 +1797,7 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             var landblockGuids = instances.Where(i => i.Landblock == landblock).Select(i => i.Guid).ToHashSet();
 
-            var firstGuid = 0x70000000 | ((uint)landblock << 12);
+            var firstGuid = ObjectGuid.LandblockInstanceGuidBase | ((uint)landblock << 12);
             var lastGuid = firstGuid | 0xFFF;
 
             for (var guid = firstGuid; guid <= lastGuid; guid++)
@@ -1616,21 +1899,24 @@ namespace ACE.Server.Command.Handlers.Processors
         /// WARNING: This is one of the few places where World database writes occur.
         /// World database entities are generally read-only except through admin commands.
         /// </summary>
-        public static void SaveInstanceToWorldDatabase(LandblockInstance instance)
+        public static bool SaveInstanceToWorldDatabase(LandblockInstance instance, LandblockInstanceLink linkEntry = null)
         {
             try
             {
                 using (var ctx = new WorldDbContext())
                 {
                     ctx.LandblockInstance.Add(instance);
+                    if (linkEntry != null)
+                        ctx.LandblockInstanceLink.Add(linkEntry);
                     ctx.SaveChanges();
                 }
+                return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                log.Error($"SaveInstanceToWorldDatabase failed for landblock instance (guid {instance?.Guid:X8}): {ex.Message}", ex);
+                return false;
             }
-
         }
 
         /// <summary>

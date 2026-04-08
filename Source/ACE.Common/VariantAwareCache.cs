@@ -5,9 +5,16 @@ namespace ACE.Common
     public struct VariantCacheId : IEquatable<VariantCacheId>
     {
         public ushort Landblock;
-        public int Variant;
+        /// <summary>Unlayered base uses null; retail layer 0 is the value 0 — they are not interchangeable.</summary>
+        public int? Variant;
 
         public VariantCacheId(ushort landblock, int variant)
+        {
+            Landblock = landblock;
+            Variant = variant;
+        }
+
+        public VariantCacheId(ushort landblock, int? variant)
         {
             Landblock = landblock;
             Variant = variant;

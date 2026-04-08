@@ -129,6 +129,30 @@ namespace ACE.Server.WorldObjects
             Biota = biota;
             Guid = new ObjectGuid(Biota.Id);
 
+#if DEBUG
+            if (Biota?.PropertiesPosition != null &&
+                Biota.PropertiesPosition.TryGetValue(PositionType.Location, out var locProp) &&
+                locProp != null &&
+                (locProp.ObjCellId & 0xFFFF0000) == 0xDA550000)
+            {
+                Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) DA55: Init GUID={Guid.Full:X16} Cell={locProp.ObjCellId:X8}");
+            }
+            else if (Biota?.WeenieClassId == 835)
+            {
+                if (Biota.PropertiesPosition == null || !Biota.PropertiesPosition.TryGetValue(PositionType.Location, out var loc835) || loc835 == null)
+                {
+                    var keysHint = Biota.PropertiesPosition != null
+                        ? string.Join(",", Biota.PropertiesPosition.Keys.Select(k => k.ToString()))
+                        : "n/a";
+                    Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) Ven Ounan (835): Init GUID={Guid.Full:X16} — no PropertiesPosition.Location (keys: {keysHint})");
+                }
+                else if ((loc835.ObjCellId & 0xFFFF0000) != 0xDA550000)
+                {
+                    Console.WriteLine($"[DEBUG-POS] WorldObject(Biota) Ven Ounan (835): Init GUID={Guid.Full:X16} — Location ObjCellId={loc835.ObjCellId:X8} (expected DA55…)");
+                }
+            }
+#endif
+
             biotaOriginatedFromDatabase = true;
 
             InitializePropertyDictionaries();
@@ -162,7 +186,7 @@ namespace ACE.Server.WorldObjects
                 }
                 // TODO: REMOVE ME?
 
-                PhysicsObj = PhysicsObj.makeObject(setupTableId, Guid.Full, isDynamic);
+                PhysicsObj = PhysicsObj.makeObject(setupTableId, Guid.Full, isDynamic, VariationId);
             }
             else
             {
@@ -191,7 +215,7 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj.CurCell != null)
                 return false;
 
-            AdjustDungeon(Location);
+            AdjustDungeon(Location, preserveIndoorCells: true);
 
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
@@ -219,9 +243,11 @@ namespace ACE.Server.WorldObjects
 
             if (!success || PhysicsObj.CurCell == null)
             {
+                var cellWasNullAfterEnter = PhysicsObj?.CurCell == null;
                 PhysicsObj.DestroyObject();
                 PhysicsObj = null;
-                //Console.WriteLine($"AddPhysicsObj: failure: {Name} @ {cell.ID.ToString("X8")} - {Location.Pos} - {Location.Rotation} - lv: {Location.Variation}, v: {VariationId} - SetupID: {SetupTableId.ToString("X8")}, MTableID: {MotionTableId.ToString("X8")}");
+                if (log.IsDebugEnabled)
+                    log.Debug($"AddPhysicsObj: failure (Success:{success}, CellIsNull:{cellWasNullAfterEnter}): {Name} ({Guid:X8}) @ {cell.ID.ToString("X8")} - {Location.Pos} - lv: {Location.Variation}, v: {VariationId}");
                 return false;
             }
 
@@ -336,7 +362,7 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj == null || wo.PhysicsObj == null)
                 return false;
 
-            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);
+            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, null, true);
 
             SightObj.State |= PhysicsState.Missile;
 
@@ -722,27 +748,39 @@ namespace ACE.Server.WorldObjects
         }
 
         // todo: This should really be an extension method for Position, or a static method within Position or even AdjustPos
-        public static void AdjustDungeon(Position pos)
+        public static void AdjustDungeon(Position pos, bool preserveIndoorCells = false)
         {
             AdjustDungeonPos(pos);
-            AdjustDungeonCells(pos);
+            AdjustDungeonCells(pos, preserveIndoorCells);
         }
 
-        // todo: This should really be an extension method for Position, or a static method within Position or even AdjustPos
-        public static bool AdjustDungeonCells(Position pos)
+        public static bool AdjustDungeonCells(Position pos, bool preserveIndoorCells = false)
         {
             if (pos == null) return false;
 
             var landblock = LScape.get_landblock(pos.Cell, pos.Variation);
             if (landblock == null || !landblock.HasDungeon) return false;
 
+            var currentCellPart = pos.Cell & 0xFFFF;
+            if (preserveIndoorCells && currentCellPart >= 0x100)
+                return false;
+
             var dungeonID = pos.Cell >> 16;
 
             var adjustCell = AdjustCell.Get(dungeonID, pos.Variation);
             var cellID = adjustCell.GetCell(pos.Pos);
+            
+            //if (pos.Cell == 0xDA55001C) /* Ven Ounan check */
+            //{
+            //    Console.WriteLine($"[DEBUG-POS] AdjustDungeonCells for Cell(0x{pos.Cell:X8}) -> GetCell returned {(cellID.HasValue ? cellID.Value.ToString("X4") : "NULL")}");
+            //}
 
             if (cellID != null && pos.Cell != cellID.Value)
             {
+#if DEBUG
+                if ((pos.Cell & 0xFFFF0000) == 0xDA550000)
+                    Console.WriteLine($"[DEBUG-POS] AdjustDungeonCells CHANGED Cell: {pos.Cell:X8} -> {cellID.Value:X8} (GetCell Result) Var:{pos.Variation}");
+#endif
                 pos.LandblockId = new LandblockId(cellID.Value, pos.Variation);
                 return true;
             }

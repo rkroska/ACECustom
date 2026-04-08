@@ -233,7 +233,7 @@ namespace ACE.Server.Managers
                     }
                 }
 
-                landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId ?? 0 }, out _);                    
+                landblockGroupPendingAdditions.Remove(new VariantCacheId { Landblock = landlockToAdd.Id.Landblock, Variant = landlockToAdd.VariationId }, out _);                    
                     
             }
 
@@ -392,13 +392,52 @@ namespace ACE.Server.Managers
 
             // Remove from the old landblock -- force
             oldBlock?.RemoveWorldObjectForPhysics(worldObject.Guid, adjacencyMove);
-            // Add to the new landblock
-            newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+
+            // Thread-local tick context is cleared before RelocateObjectForPhysics runs for movedObjects;
+            // use landblock groups + config so cross-group physics relocations still enqueue when MT physics is on.
+            var crossGroupPhysicsMove = ConfigManager.Config.Server.Threading.MultiThreadedLandblockGroupPhysicsTicking
+                && oldBlock?.CurrentLandblockGroup != null
+                && newBlock.CurrentLandblockGroup != null
+                && oldBlock.CurrentLandblockGroup != newBlock.CurrentLandblockGroup;
+
+            // RemoveWorldObjectForPhysics clears CurrentLandblock until the add runs; point at the destination
+            // so same-tick lookups do not see a dangling null between remove and the queued add.
+            if (crossGroupPhysicsMove)
+                worldObject.CurrentLandblock = newBlock;
+
+            if (crossGroupPhysicsMove)
+                newBlock.EnqueueAddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
+            else
+                newBlock.AddWorldObjectForPhysics(worldObject, worldObject.Location.Variation);
         }
 
         public static bool IsLoaded(LandblockId landblockId, int? variationId = null)
         {
-            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId ?? 0 }) != null;
+            return GetLandblock(new VariantCacheId() {Landblock = landblockId.Landblock, Variant = variationId }) != null;
+        }
+
+        /// <summary>
+        /// Enqueues <see cref="Landblock.RefreshPrestigeBoundaryMarkers"/> on each matching loaded landblock (async per landblock queue); does not wait for completion.
+        /// </summary>
+        /// <returns>Number of landblocks that had a refresh enqueued.</returns>
+        public static int EnqueueRefreshLoadedPrestigeBoundaryMarkers(int? variation = null)
+        {
+            var queued = 0;
+            var loaded = loadedLandblocks.Values.ToList();
+
+            foreach (var landblock in loaded)
+            {
+                if (landblock == null)
+                    continue;
+
+                if (variation.HasValue && landblock.VariationId != variation.Value)
+                    continue;
+
+                landblock.RefreshPrestigeBoundaryMarkers();
+                queued++;
+            }
+
+            return queued;
         }
 
         /// <summary>
@@ -410,7 +449,7 @@ namespace ACE.Server.Managers
             Landblock landblock;
 
             bool setAdjacents = false;
-            var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation ?? 0 };
+            var cacheKey = new VariantCacheId() { Landblock = landblockId.Landblock, Variant = variation };
             landblock = GetLandblock(cacheKey);
 
             if (landblock == null)
@@ -488,7 +527,7 @@ namespace ACE.Server.Managers
 
             foreach (var adjacentID in adjacentIDs)
             {
-                var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId ?? 0 });
+                var adjacent = GetLandblock(new VariantCacheId() { Landblock = adjacentID.Landblock, Variant = variationId });
                 if (adjacent != null)
                     adjacents.Add(adjacent);
             }
@@ -587,7 +626,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void SetAdjacents(Landblock landblock, bool traverse = true, bool pSync = false)
         {
-            landblock.Adjacents = GetAdjacents(landblock);
+            landblock.Adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             if (pSync)
                 landblock.PhysicsLandblock.SetAdjacents(landblock.Adjacents);
@@ -604,7 +643,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public static void AddToDestructionQueue(Landblock landblock, int? VariationId)
         {
-            var cacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = VariationId ?? 0 };
+            var cacheKey = new VariantCacheId() { Landblock = landblock.Id.Landblock, Variant = VariationId };
             destructionQueue.TryAdd(cacheKey, landblock);
         }
 
@@ -714,7 +753,7 @@ namespace ACE.Server.Managers
         /// </summary>
         private static void NotifyAdjacents(Landblock landblock)
         {
-            var adjacents = GetAdjacents(landblock);
+            var adjacents = GetAdjacents(landblock, landblock.VariationId);
 
             foreach (var adjacent in adjacents)
                 SetAdjacents(adjacent, false, true);

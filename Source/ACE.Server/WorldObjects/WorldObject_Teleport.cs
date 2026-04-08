@@ -25,6 +25,9 @@ namespace ACE.Server.WorldObjects
             if (player != null && player.HandleFogBeforeTeleport(_newPosition))
                 return;
 
+            // After fog deferral path returns false: cleanup runs with the real teleport (not ~1s early on a no-op).
+            player?.CleanupPrestigeEffects();
+
             Teleporting = true;
             var timestamp = Time.GetUnixTime();
             SetProperty(PropertyFloat.LastTeleportStartTimestamp, timestamp);

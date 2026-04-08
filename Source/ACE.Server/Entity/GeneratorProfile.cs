@@ -31,7 +31,7 @@ namespace ACE.Server.Entity
         /// </summary>
         public uint Id;
 
-        public string LinkId => Id > 0x70000000 ? $"0x{Id:X8}" : $"{Id}";
+        public string LinkId => ObjectGuid.IsStatic(Id) ? $"0x{Id:X8}" : $"{Id}";
 
         /// <summary>
         /// The biota with all the generator profile info
@@ -288,6 +288,7 @@ namespace ACE.Server.Entity
                 if (wo is Creature creature && creature.IsMonster && creature.Attackable)
                 {
                     CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
+                    PrestigeManager.ApplyPrestigeScaling(creature, Generator.Location.Variation);
                 }
 
                 if (Biota.PaletteId.HasValue && Biota.PaletteId > 0)

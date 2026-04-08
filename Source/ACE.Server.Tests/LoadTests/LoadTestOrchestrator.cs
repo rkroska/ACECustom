@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 
+using ACE.Entity;
+
 namespace ACE.Server.Tests.LoadTests
 {
     /// <summary>
@@ -349,6 +351,16 @@ namespace ACE.Server.Tests.LoadTests
             }
         }
 
+        /// <summary>
+        /// Picks a random GUID in the static instance range without overflowing int bounds (see ObjectGuid.LandblockInstanceGuidBase–StaticObjectMax).
+        /// </summary>
+        private static uint NextRandomLandblockStaticInstanceGuid(Random random)
+        {
+            var min = (long)ObjectGuid.LandblockInstanceGuidBase;
+            var maxExclusive = (long)ObjectGuid.StaticObjectMax + 1L;
+            return (uint)random.NextInt64(min, maxExclusive);
+        }
+
         private async Task RunItemManipulationScenarioAsync(DateTime endTime, CancellationToken cancellationToken)
         {
             Console.WriteLine("Running item manipulation scenario...");
@@ -360,7 +372,7 @@ namespace ACE.Server.Tests.LoadTests
 
                 foreach (var client in clients.Where(c => c.State == LoadTestClientState.InWorld))
                 {
-                    var itemId = (uint)random.Next(0x70000000, 0x7FFFFFFF);
+                    var itemId = NextRandomLandblockStaticInstanceGuid(random);
                     
                     // Alternate between pickup and drop
                     if (random.Next(2) == 0)
@@ -408,7 +420,7 @@ namespace ACE.Server.Tests.LoadTests
                     }
                     else if (action < 90) // 20% item interaction
                     {
-                        var itemId = (uint)random.Next(0x70000000, 0x7FFFFFFF);
+                        var itemId = NextRandomLandblockStaticInstanceGuid(random);
                         tasks.Add(UseItemWithMetricsAsync(client, itemId));
                     }
                     // 10% idle

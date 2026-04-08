@@ -39,7 +39,7 @@ namespace ACE.Server.Physics.Util
 
         public static AdjustCell Get(uint dungeonID, int? variationId)
         {            
-            VariantCacheId cacheKey = new() { Landblock = (ushort)dungeonID, Variant = variationId ?? 0};
+            VariantCacheId cacheKey = new() { Landblock = (ushort)dungeonID, Variant = variationId };
             AdjustCells.TryGetValue(cacheKey, out AdjustCell adjustCell);
             if (adjustCell == null)
             {

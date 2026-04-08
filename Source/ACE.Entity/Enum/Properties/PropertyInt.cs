@@ -711,6 +711,10 @@ namespace ACE.Entity.Enum.Properties
         CreatureVariant                         = 9038, // Shiny variant on live creature
         CapturedCreatureVariant                 = 9039, // Shiny status copied to essence
 
+        [SendOnLogin]
+        [AssessmentProperty]
+        PrestigeLevel = 9043, // distinct from FailedShinyCaptureWCID (9041)
+
         // Portal
         PortalUseCount                          = 9040, // Number of times a portal may be used before destroying itself
 
@@ -721,14 +725,19 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [Ephemeral]
         FailedShinyCaptureWCID                  = 9041,
-        
+
         /// <summary>
         /// The Guid.Full of the specific creature instance the player failed to capture.
-        /// Stored as int but represents a uint. Used to ensure Resonance Lens can only 
+        /// Stored as int but represents a uint. Used to ensure Resonance Lens can only
         /// target the exact creature that escaped.
         /// </summary>
         [Ephemeral]
         FailedShinyCaptureGuid                  = 9042,
+
+        /// <summary>Server/admin: times jailed (leaderboard stat).</summary>
+        TimesJailed                             = 9044,
+        /// <summary>Server/admin: UCM checks passed count (leaderboard stat).</summary>
+        TimesUcmCheckPassed                     = 9045,
     }
 
     public static class PropertyIntExtensions
