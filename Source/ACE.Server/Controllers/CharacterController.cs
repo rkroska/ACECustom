@@ -30,57 +30,107 @@ namespace ACE.Server.Controllers
     public class CharacterController : BaseController
     {
         /*
-         *  ARCHITECTURAL NOTE: THE SNAPSHOT PATTERN
-         *  ----------------------------------------
-         *  To ensure thread-safety and high performance for the Web Portal, we use a 
-         *  "Captured Snapshot" pattern for character data retrieval.
+         *  ARCHITECTURAL NOTE: AUTHORITATIVE ATOMIC PLUCKING
+         *  -------------------------------------------------
+         *  To ensure thread-safety and high performance without the overhead of deep clones,
+         *  we use an "Authoritative Atomic Plucking" pattern for character data retrieval.
          *  
-         *  1. GetBiotaSnapshot(player): Enters the character's BiotaDatabaseLock once,
-         *     performs a deep clone of the Biota properties, and exits.
-         *  2. JSON Generation: The rest of the request works on this private 'clone'.
-         *  3. Lock-Free Logic: Because the clone is isolated, we use the lock-free 
-         *     IWeenieExtensions for all lookups, avoiding complex lock recursion 
-         *     and maximizing concurrency.
+         *  1. Discrete Locking: We enter the character's BiotaDatabaseLock briefly to pluck 
+         *     raw property values or internal dictionary references.
+         *  2. Pluck and Release: The lock is released immediately after extraction.
+         *  3. Authoritative Engines: Calculations (Attributes, Skills, Vitals) that call 
+         *     into authoritative server engines (and acquire their own locks) are performed 
+         *     OUTSIDE the controller-level lock to prevent LockRecursionException.
          */
 
-        private class StatValue
+        private class StatValueDto
         {
             public uint Innate { get; set; } = 0;
             public uint Ranks { get; set; } = 0;
             public uint Total { get; set; } = 0;
         }
-        private class SkillValue
+
+        private class SkillValueDto
         {
             public string Name { get; set; } = "";
             public string Sac { get; set; } = "";
             public bool isUsable { get; set; } = true;
             public uint Base { get; set; } = 0;
             public uint Total { get; set; } = 0;
-        };
+        }
+
+        private class CharacterStatsDto
+        {
+            public int Level { get; set; }
+            public int Enlightenment { get; set; }
+            public StatAttributesDto Attributes { get; set; } = new();
+            public StatVitalsDto Vitals { get; set; } = new();
+            public StatRatingsDto Ratings { get; set; } = new();
+            public Dictionary<string, long> Augmentations { get; set; } = new();
+            public Dictionary<string, long> Bank { get; set; } = new();
+        }
+
+        private class StatAttributesDto
+        {
+            public StatValueDto Strength { get; set; } = new();
+            public StatValueDto Endurance { get; set; } = new();
+            public StatValueDto Quickness { get; set; } = new();
+            public StatValueDto Coordination { get; set; } = new();
+            public StatValueDto Focus { get; set; } = new();
+            public StatValueDto Self { get; set; } = new();
+        }
+
+        private class StatVitalsDto
+        {
+            public StatValueDto Health { get; set; } = new();
+            public StatValueDto Stamina { get; set; } = new();
+            public StatValueDto Mana { get; set; } = new();
+        }
+
+        private class StatRatingsDto
+        {
+            public uint? Emd { get; set; }
+            public int? Damage { get; set; }
+            public int? CritDamage { get; set; }
+            public int? Dr { get; set; }
+            public int? Cdr { get; set; }
+        }
+
+        private class InventoryItemDto
+        {
+            public uint Guid { get; set; }
+            public uint ContainerGuid { get; set; }
+            public uint WeenieType { get; set; }
+            public bool RequiresBackpackSlot { get; set; }
+            public bool IsContainer { get; set; }
+            public string Name { get; set; }
+            public int Wcid { get; set; }
+            public int StackSize { get; set; }
+            public bool IsEquipped { get; set; }
+            public uint IconId { get; set; }
+            public uint IconUnderlayId { get; set; }
+            public uint IconOverlayId { get; set; }
+            public uint IconOverlaySecondaryId { get; set; }
+            public uint ItemType { get; set; }
+            public uint UiEffects { get; set; }
+        }
 
         [HttpGet("list")]
         public IActionResult GetList()
         {
             var accountId = CurrentAccountId;
-            if (accountId == null)
-                return Unauthorized();
-
-            var account = DatabaseManager.Authentication.GetAccountById(accountId.Value);
-            var isAdmin = account?.AccessLevel > 0;
+            if (accountId == null) return Unauthorized();
 
             var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(accountId.Value, false);
             var result = characters.Select(c => {
-                var iPlayer = PlayerManager.FindByGuid(c.Id);
+                var isAdmin = c.IsPlussed;
                 var charName = isAdmin && !c.Name.StartsWith("+") ? $"+{c.Name}" : c.Name;
-
                 return new
                 {
                     guid = c.Id,
                     name = charName,
-                    level = iPlayer?.Level ?? 0,
-                    enlightenment = iPlayer?.GetProperty(PropertyInt.Enlightenment) ?? 0,
                     isOnline = PlayerManager.GetOnlinePlayer(c.Id) != null,
-                    isAdmin = isAdmin
+                    isAdmin
                 };
             });
 
@@ -101,49 +151,14 @@ namespace ACE.Server.Controllers
                 {
                     guid = p.Guid.Full,
                     name = charName,
-                    level = p.Level ?? 0,
-                    enlightenment = p.GetProperty(PropertyInt.Enlightenment) ?? 0,
-                    isAdmin = isAdmin
+                    isOnline = true,
+                    isAdmin
                 };
             });
 
             return Ok(result.OrderBy(r => r.name));
         }
 
-        [HttpGet("search-offline/{name}")]
-        public IActionResult SearchOffline(string name)
-        {
-            if (!IsAdmin)
-                return Unauthorized();
-
-            if (string.IsNullOrWhiteSpace(name))
-                return Ok(new List<object>());
-
-            // Search only characters who are not currently online
-            var stubs = DatabaseManager.Shard.BaseDatabase.GetCharacterStubsByPartialName(name)
-                .Where(s => PlayerManager.GetOnlinePlayer(s.Id) == null)
-                .Select(s => {
-                    var iPlayer = PlayerManager.FindByGuid(s.Id);
-                    var accessLevel = 0;
-                    if (iPlayer is Player online) accessLevel = (int)online.Account.AccessLevel;
-                    else if (iPlayer is OfflinePlayer offline) accessLevel = (int)offline.Account.AccessLevel;
-
-                    var isAdminChar = accessLevel > 0;
-                    var charName = isAdminChar && !s.Name.StartsWith("+") ? $"+{s.Name}" : s.Name;
-
-                    return new
-                    {
-                        guid = s.Id,
-                        name = charName,
-                        level = iPlayer?.Level ?? 0,
-                        enlightenment = iPlayer?.GetProperty(PropertyInt.Enlightenment) ?? 0,
-                        isOnline = false,
-                        isAdmin = isAdminChar
-                    };
-                });
-
-            return Ok(stubs);
-        }
 
         [HttpGet("search-all/{name}")]
         public IActionResult SearchAll(string name)
@@ -159,23 +174,16 @@ namespace ACE.Server.Controllers
             
             var result = stubs.Select(s =>
             {
-                var isOnline = PlayerManager.GetOnlinePlayer(s.Id) != null;
                 var player = PlayerManager.FindByGuid(s.Id);
-                var accessLevel = 0;
-                if (player is Player online) accessLevel = (int)online.Account.AccessLevel;
-                else if (player is OfflinePlayer offline) accessLevel = (int)offline.Account.AccessLevel;
-
-                var isAdminChar = accessLevel > 0;
-                var charName = isAdminChar && !s.Name.StartsWith("+") ? $"+{s.Name}" : s.Name;
+                var isAdmin = player.Account.AccessLevel > 0;
+                var charName = isAdmin && !s.Name.StartsWith("+") ? $"+{s.Name}" : s.Name;
 
                 return new
                 {
                     guid = s.Id,
                     name = charName,
-                    level = player?.Level ?? 0,
-                    enlightenment = player?.GetProperty(PropertyInt.Enlightenment) ?? 0,
-                    isOnline,
-                    isAdmin = isAdminChar
+                    isOnline = PlayerManager.GetOnlinePlayer(s.Id) != null,
+                    isAdmin
                 };
             });
 
@@ -185,173 +193,59 @@ namespace ACE.Server.Controllers
         [HttpGet("detail/{guid}")]
         public IActionResult GetDetail(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out var player))
-                return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
 
-            var snapshot = GetBiotaSnapshot(player);
-            var level = snapshot.GetProperty(PropertyInt.Level) ?? 0;
-            var enlightenment = snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0;
-            
-            var accessLevel = 0;
-            if (player is Player pOnline) accessLevel = (int)pOnline.Account.AccessLevel;
-            else if (player is OfflinePlayer pOffline) accessLevel = (int)pOffline.Account.AccessLevel;
-            var isAdminChar = accessLevel > 0;
-            var charName = isAdminChar && !player.Name.StartsWith("+") ? $"+{player.Name}" : player.Name;
+            var isAdmin = player.Account.AccessLevel > 0;
+            var charName = isAdmin && !player.Name.StartsWith("+") ? $"+{player.Name}" : player.Name;
 
             return Ok(new
             {
                 guid,
                 name = charName,
-                level,
-                enlightenment,
-                augmentations = GetAugmentations(snapshot),
                 isOnline = PlayerManager.GetOnlinePlayer(guid) != null,
-                isAdmin = isAdminChar
+                isAdmin
             });
         }
 
         [HttpGet("stats/{guid}")]
         public IActionResult GetStats(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out IPlayer player))
-                return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
 
-            var snapshot = GetBiotaSnapshot(player);
-            Player online = player as Player;
-
-            return Ok(new
-            {
-                level = snapshot.GetProperty(PropertyInt.Level) ?? 0,
-                enlightenment = snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0,
-                attributes = new
-                {
-                    strength = GetAttribute(player, snapshot, PropertyAttribute.Strength),
-                    endurance = GetAttribute(player, snapshot, PropertyAttribute.Endurance),
-                    quickness = GetAttribute(player, snapshot, PropertyAttribute.Quickness),
-                    coordination = GetAttribute(player, snapshot, PropertyAttribute.Coordination),
-                    focus = GetAttribute(player, snapshot, PropertyAttribute.Focus),
-                    self = GetAttribute(player, snapshot, PropertyAttribute.Self)
-                },
-                vitals = new
-                {
-                    health = GetVital(player, snapshot, PropertyAttribute2nd.MaxHealth),
-                    stamina = GetVital(player, snapshot, PropertyAttribute2nd.MaxStamina),
-                    mana = GetVital(player, snapshot, PropertyAttribute2nd.MaxMana)
-                },
-                ratings = new
-                {
-                    emd = online != null ? online.GetEffectiveDefenseSkill(CombatType.Melee) : (uint?)null,
-                    damage = online != null ? online.GetDamageRating() : (int?)null,
-                    critDamage = online != null ? online.GetCritDamageRating() : (int?)null,
-                    dr = online != null ? online.GetDamageResistRating() : (int?)null,
-                    cdr = online != null ? online.GetCritDamageResistRating() : (int?)null,
-                },
-                augmentations = GetAugmentations(snapshot),
-                bank = GetBankedProperties(snapshot)
-            });
+            if (player is Player online)
+                return Ok(GetOnlineStats(online));
+            else
+                return Ok(GetOfflineStats(RetrieveBiota(player)));
         }
 
         [HttpGet("skills/{guid}")]
         public IActionResult GetSkills(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out var player))
-                return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
 
-            var snapshot = GetBiotaSnapshot(player);
-            var validSkills = SkillHelper.ValidSkills.OrderBy(s => s.ToString());
-
-            var result = new List<object>();
-            foreach (Skill skill in validSkills) result.Add(GetSkill(player, snapshot, skill));
-            return Ok(result);
+            if (player is Player online)
+                return Ok(GetOnlineSkills(online));
+            else
+                return Ok(GetOfflineSkills(RetrieveBiota(player)));
         }
 
         [HttpGet("inventory/{guid}")]
         public IActionResult GetInventory(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out var player))
-                return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
 
-            var inventoryItems = new List<Biota>();
-            var onlinePlayer = PlayerManager.GetOnlinePlayer(guid);
-
-            HashSet<uint> equippedIds;
-
-            if (onlinePlayer != null)
-            {
-                // Memory-First: Get live inventory
-                onlinePlayer.BiotaDatabaseLock.EnterReadLock();
-                try
-                {
-                    CollectInventoryRecursive(onlinePlayer, inventoryItems);
-                }
-                finally { onlinePlayer.BiotaDatabaseLock.ExitReadLock(); }
-
-                equippedIds = new HashSet<uint>(onlinePlayer.EquippedObjects.Keys.Select(g => g.Full));
-            }
+            if (player is Player online)
+                return Ok(GetOnlineInventory(online));
             else
-            {
-                // Offline: Fallback to Shard database
-                var possessedBiotas = DatabaseManager.Shard.BaseDatabase.GetPossessedBiotasInParallel(guid);
-                foreach (var dbBiom in possessedBiotas.Inventory.Concat(possessedBiotas.WieldedItems))
-                    inventoryItems.Add(BiotaConverter.ConvertToEntityBiota(dbBiom));
-
-                equippedIds = new HashSet<uint>(possessedBiotas.WieldedItems.Select(w => w.Id));
-            }
-
-            var result = inventoryItems.Select(biom => new
-            {
-                guid = biom.Id,
-                containerGuid = biom.GetProperty(PropertyInstanceId.Container) ?? 0,
-                weenieType = (uint)biom.WeenieType,
-                requiresBackpackSlot = biom.RequiresBackpackSlotOrIsContainer(),
-                isContainer = biom.WeenieType == WeenieType.Container,
-                name = biom.GetProperty(PropertyString.Name) ?? "Unknown Item",
-                wcid = biom.WeenieClassId,
-                stackSize = biom.GetProperty(PropertyInt.StackSize) ?? 1,
-                isEquipped = equippedIds.Contains(biom.Id),
-                iconId = biom.GetProperty(PropertyDataId.Icon) ?? 0,
-                iconUnderlayId = biom.GetProperty(PropertyDataId.IconUnderlay) ?? 0,
-                iconOverlayId = biom.GetProperty(PropertyDataId.IconOverlay) ?? 0,
-                iconOverlaySecondaryId = biom.GetProperty(PropertyDataId.IconOverlaySecondary) ?? 0,
-                itemType = (uint)biom.GetItemType(),
-                uiEffects = biom.GetProperty(PropertyInt.UiEffects) ?? 0
-            });
-
-            return Ok(result.OrderBy(i => i.name));
-        }
-
-        private void CollectInventoryRecursive(Container container, List<Biota> items)
-        {
-            // Add items in this container
-            foreach (var wo in container.Inventory.Values)
-            {
-                items.Add(wo.Biota.Clone()); // Isolated clone for snapshot
-
-                if (wo is Container subContainer)
-                    CollectInventoryRecursive(subContainer, items);
-            }
-
-            // Also add equipped items if this is a creature/player
-            if (container is Creature creature)
-            {
-                foreach (var eq in creature.EquippedObjects.Values)
-                    items.Add(eq.Biota.Clone());
-            }
+                return Ok(GetOfflineInventory(guid));
         }
         
         [HttpGet("stamps/{guid}")]
         public IActionResult GetStamps(uint guid)
         {
-            if (!IsAuthorizedForCharacter(guid, out var player))
-                return Unauthorized();
+            if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
 
-            uint accountId = 0;
-            if (player is Player online)
-                accountId = online.Session.AccountId;
-            else if (player is OfflinePlayer offline)
-                accountId = offline.Account.AccountId;
-
-            var stamps = DatabaseManager.Authentication.GetAccountQuests(accountId)
+            var stamps = DatabaseManager.Authentication.GetAccountQuests(player.Account.AccountId)
                 .Where(q => q.NumTimesCompleted >= 1)
                 .Select(q => q.Quest)
                 .Distinct()
@@ -379,54 +273,44 @@ namespace ACE.Server.Controllers
         {
             player = null;
             if (CurrentAccountId == null) return false;
-
             IPlayer p = PlayerManager.FindByGuid(guid);
             if (p == null) return false;
-
-            // Check if this character belongs to the account
-            uint playerAccountId = 0;
-            if (p is Player online)
-                playerAccountId = online.Session.AccountId;
-            else if (p is OfflinePlayer offline)
-                playerAccountId = offline.Account.AccountId;
-
-            if (!IsAuthorizedForAccount(playerAccountId)) return false;
-
+            if (!IsAuthorizedForAccount(p.Account.AccountId)) return false;
             player = p;
             return true;
         }
 
-        private Dictionary<string, long> GetBankedProperties(Biota snapshot)
+        private static Dictionary<string, long> GetBankedProperties(Biota biota)
         {
             return new Dictionary<string, long>
             {
-                ["Pyreals"] = snapshot.GetProperty(PropertyInt64.BankedPyreals) ?? 0,
-                ["Luminance"] = snapshot.GetProperty(PropertyInt64.BankedLuminance) ?? 0,
-                ["EnlightenedCoins"] = snapshot.GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0,
-                ["WeaklyEnlightenedCoins"] = snapshot.GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0,
-                ["LegendaryKeys"] = snapshot.GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0,
-                ["MythicalKeys"] = snapshot.GetProperty(PropertyInt64.BankedMythicalKeys) ?? 0
+                ["Pyreals"] = biota.GetProperty(PropertyInt64.BankedPyreals) ?? 0,
+                ["Luminance"] = biota.GetProperty(PropertyInt64.BankedLuminance) ?? 0,
+                ["EnlightenedCoins"] = biota.GetProperty(PropertyInt64.BankedEnlightenedCoins) ?? 0,
+                ["WeaklyEnlightenedCoins"] = biota.GetProperty(PropertyInt64.BankedWeaklyEnlightenedCoins) ?? 0,
+                ["LegendaryKeys"] = biota.GetProperty(PropertyInt64.BankedLegendaryKeys) ?? 0,
+                ["MythicalKeys"] = biota.GetProperty(PropertyInt64.BankedMythicalKeys) ?? 0
             };
         }
 
-        private Dictionary<string, long> GetAugmentations(Biota snapshot)
+        private static Dictionary<string, long> GetAugmentations(Biota biota)
         {
             return new Dictionary<string, long>
             {
-                ["Creature"] = snapshot.GetProperty(PropertyInt64.LumAugCreatureCount) ?? 0,
-                ["Item"] = snapshot.GetProperty(PropertyInt64.LumAugItemCount) ?? 0,
-                ["Life"] = snapshot.GetProperty(PropertyInt64.LumAugLifeCount) ?? 0,
-                ["War"] = snapshot.GetProperty(PropertyInt64.LumAugWarCount) ?? 0,
-                ["Void"] = snapshot.GetProperty(PropertyInt64.LumAugVoidCount) ?? 0,
-                ["Duration"] = snapshot.GetProperty(PropertyInt64.LumAugDurationCount) ?? 0,
-                ["Specialize"] = snapshot.GetProperty(PropertyInt64.LumAugSpecializeCount) ?? 0,
-                ["Summon"] = snapshot.GetProperty(PropertyInt64.LumAugSummonCount) ?? 0,
-                ["Melee"] = snapshot.GetProperty(PropertyInt64.LumAugMeleeCount) ?? 0,
-                ["Missile"] = snapshot.GetProperty(PropertyInt64.LumAugMissileCount) ?? 0
+                ["Creature"] = biota.GetProperty(PropertyInt64.LumAugCreatureCount) ?? 0,
+                ["Item"] = biota.GetProperty(PropertyInt64.LumAugItemCount) ?? 0,
+                ["Life"] = biota.GetProperty(PropertyInt64.LumAugLifeCount) ?? 0,
+                ["War"] = biota.GetProperty(PropertyInt64.LumAugWarCount) ?? 0,
+                ["Void"] = biota.GetProperty(PropertyInt64.LumAugVoidCount) ?? 0,
+                ["Duration"] = biota.GetProperty(PropertyInt64.LumAugDurationCount) ?? 0,
+                ["Specialize"] = biota.GetProperty(PropertyInt64.LumAugSpecializeCount) ?? 0,
+                ["Summon"] = biota.GetProperty(PropertyInt64.LumAugSummonCount) ?? 0,
+                ["Melee"] = biota.GetProperty(PropertyInt64.LumAugMeleeCount) ?? 0,
+                ["Missile"] = biota.GetProperty(PropertyInt64.LumAugMissileCount) ?? 0
             };
         }
 
-        private Biota GetBiotaSnapshot(IPlayer player)
+        private static Biota RetrieveBiota(IPlayer player)
         {
             if (player is Player online)
                 return online.Biota.Clone(online.BiotaDatabaseLock);
@@ -437,16 +321,10 @@ namespace ACE.Server.Controllers
             throw new InvalidOperationException("Unknown player type");
         }
 
-        private static StatValue GetAttribute(IPlayer player, Biota snapshot, PropertyAttribute attr)
-        {
-            if (player is Player online) return GetOnlineAttribute(online, attr);
-            return GetOfflineAttribute(snapshot, attr);
-        }
-
-        private static StatValue GetOnlineAttribute(Player player, PropertyAttribute attr)
+        private static StatValueDto GetOnlineAttribute(Player player, PropertyAttribute attr)
         {
             if (!player.Attributes.TryGetValue(attr, out CreatureAttribute creatureAttribute)) return new();
-            return new StatValue
+            return new StatValueDto
             {
                 Innate = creatureAttribute.StartingValue,
                 Ranks = creatureAttribute.Ranks,
@@ -454,11 +332,11 @@ namespace ACE.Server.Controllers
             };
         }
 
-        private static StatValue GetOfflineAttribute(Biota snapshot, PropertyAttribute attr)
+        private static StatValueDto GetOfflineAttribute(Biota biota, PropertyAttribute attr)
         {
-            if (snapshot.PropertiesAttribute == null) return new();
-            if (!snapshot.PropertiesAttribute.TryGetValue(attr, out PropertiesAttribute prop)) return new();
-            return new StatValue
+            if (biota.PropertiesAttribute == null) return new();
+            if (!biota.PropertiesAttribute.TryGetValue(attr, out PropertiesAttribute prop)) return new();
+            return new StatValueDto
             {
                 Innate = prop.InitLevel,
                 Ranks = prop.LevelFromCP,
@@ -466,33 +344,30 @@ namespace ACE.Server.Controllers
             };
         }
 
-        private static StatValue GetVital(IPlayer player, Biota snapshot, PropertyAttribute2nd vital)
-        {
-            if (player is Player online) return GetOnlineVital(online, vital);
-            return GetOfflineVital(snapshot, vital);
-        }
-        private static StatValue GetOnlineVital(Player player, PropertyAttribute2nd vital)
+        private static StatValueDto GetOnlineVital(Player player, PropertyAttribute2nd vital)
         {
             if (!player.Vitals.TryGetValue(vital, out CreatureVital creatureVital)) return new();
-            return new StatValue
+            uint removeFromBase = creatureVital.Ranks + creatureVital.GearBonus;
+            return new StatValueDto
             {
                 // Base includes Ranks (which is its own field) and GearBonus (not innate)
-                Innate = creatureVital.Base - creatureVital.Ranks - creatureVital.GearBonus,
+                Innate = removeFromBase > creatureVital.Base ? 0 : creatureVital.Base - removeFromBase,
                 Ranks = creatureVital.Ranks,
                 Total = creatureVital.MaxValue
             };
         }
-        private static StatValue GetOfflineVital(Biota snapshot, PropertyAttribute2nd vital)
+
+        private static StatValueDto GetOfflineVital(Biota biota, PropertyAttribute2nd vital)
         {
-            StatValue statValue = new();
-            if (snapshot.PropertiesAttribute2nd == null) return statValue;
-            if (!snapshot.PropertiesAttribute2nd.TryGetValue(vital, out PropertiesAttribute2nd prop)) return statValue;
+            StatValueDto statValue = new();
+            if (biota.PropertiesAttribute2nd == null) return statValue;
+            if (!biota.PropertiesAttribute2nd.TryGetValue(vital, out PropertiesAttribute2nd prop)) return statValue;
 
             // Innate
             statValue.Innate =
                 prop.InitLevel
-                + AttributeFormula.GetFormula(snapshot, vital)
-                + ((vital == PropertyAttribute2nd.MaxHealth) ? ((uint)(snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0) * 2) : 0);
+                + AttributeFormula.GetFormula(biota, vital)
+                + ((vital == PropertyAttribute2nd.MaxHealth) ? ((uint)(biota.GetProperty(PropertyInt.Enlightenment) ?? 0) * 2) : 0);
 
             // Ranks
             statValue.Ranks = prop.LevelFromCP;
@@ -501,70 +376,217 @@ namespace ACE.Server.Controllers
             statValue.Total =
                 statValue.Innate
                 + statValue.Ranks
-                + ((vital == PropertyAttribute2nd.MaxHealth) ? ((uint)(snapshot.GetProperty(PropertyInt.GearMaxHealth) ?? 0)) : 0);
+                + ((vital == PropertyAttribute2nd.MaxHealth) ? ((uint)(biota.GetProperty(PropertyInt.GearMaxHealth) ?? 0)) : 0);
 
             return statValue;
         }
 
-        private static SkillValue GetSkill(IPlayer player, Biota snapshot, Skill skill)
+        private static CharacterStatsDto GetOnlineStats(Player online)
         {
-            if (player is Player online) return GetOnlineSkill(online, skill);
-            return GetOfflineSkill(snapshot, skill);
-        }
-        private static SkillValue GetOnlineSkill(Player player, Skill skill)
-        {
-            if (!player.Skills.TryGetValue(skill, out CreatureSkill creatureSkill)) return new();
-            return new SkillValue
-            {
-                Name = skill.ToSentence(),
-                Sac = creatureSkill.AdvancementClass.ToString(),
-                isUsable = creatureSkill.IsUsable,
-                Base = creatureSkill.Base,
-                Total = creatureSkill.Current
-            };
-        }
-        private static SkillValue GetOfflineSkill(Biota snapshot, Skill skill)
-        {
-            SkillValue skillValue = new()
-            {
-                Name = skill.ToSentence(),
-                Sac = SkillAdvancementClass.Untrained.ToString(),
-            };
-            if (snapshot.PropertiesSkill == null) return skillValue;
-            if (!snapshot.PropertiesSkill.TryGetValue(skill, out PropertiesSkill prop)) return skillValue;
+            var stats = new CharacterStatsDto();
 
-            skillValue.Sac = prop.SAC.ToString();
-            skillValue.isUsable = true;
-
-            if (prop.SAC == SkillAdvancementClass.Untrained)
+            // DISCRETE PLUCKING:
+            // We use a brief lock for raw property extraction, but release it before
+            // calling authoritative engine methods (Attributes, Vitals, Ratings) 
+            // to avoid LockRecursionException in ACE's non-recursive locks.
+            online.BiotaDatabaseLock.EnterReadLock();
+            try
             {
-                DatManager.PortalDat.SkillTable.SkillBaseHash.TryGetValue((uint)skill, out SkillBase skillTableRecord);
-                if (skillTableRecord?.MinLevel != 1) skillValue.isUsable = false;
+                stats.Level = online.Level ?? 0;
+                stats.Enlightenment = online.GetProperty(PropertyInt.Enlightenment) ?? 0;
+                stats.Bank = GetBankedProperties(online.Biota);
+                stats.Augmentations = GetAugmentations(online.Biota);
+            }
+            finally { online.BiotaDatabaseLock.ExitReadLock(); }
+
+            // Authoritative engine calls - MUST be outside the lock
+            stats.Attributes.Strength = GetOnlineAttribute(online, PropertyAttribute.Strength);
+            stats.Attributes.Endurance = GetOnlineAttribute(online, PropertyAttribute.Endurance);
+            stats.Attributes.Quickness = GetOnlineAttribute(online, PropertyAttribute.Quickness);
+            stats.Attributes.Coordination = GetOnlineAttribute(online, PropertyAttribute.Coordination);
+            stats.Attributes.Focus = GetOnlineAttribute(online, PropertyAttribute.Focus);
+            stats.Attributes.Self = GetOnlineAttribute(online, PropertyAttribute.Self);
+            
+            stats.Vitals.Health = GetOnlineVital(online, PropertyAttribute2nd.MaxHealth);
+            stats.Vitals.Stamina = GetOnlineVital(online, PropertyAttribute2nd.MaxStamina);
+            stats.Vitals.Mana = GetOnlineVital(online, PropertyAttribute2nd.MaxMana);
+
+            stats.Ratings.Emd = online.GetEffectiveDefenseSkill(CombatType.Melee);
+            stats.Ratings.Damage = online.GetDamageRating();
+            stats.Ratings.CritDamage = online.GetCritDamageRating();
+            stats.Ratings.Dr = online.GetDamageResistRating();
+            stats.Ratings.Cdr = online.GetCritDamageResistRating();
+
+            return stats;
+        }
+
+        private static CharacterStatsDto GetOfflineStats(Biota biota)
+        {
+            var stats = new CharacterStatsDto();
+            stats.Level = biota.GetProperty(PropertyInt.Level) ?? 0;
+            stats.Enlightenment = biota.GetProperty(PropertyInt.Enlightenment) ?? 0;
+            stats.Attributes.Strength = GetOfflineAttribute(biota, PropertyAttribute.Strength);
+            stats.Attributes.Endurance = GetOfflineAttribute(biota, PropertyAttribute.Endurance);
+            stats.Attributes.Quickness = GetOfflineAttribute(biota, PropertyAttribute.Quickness);
+            stats.Attributes.Coordination = GetOfflineAttribute(biota, PropertyAttribute.Coordination);
+            stats.Attributes.Focus = GetOfflineAttribute(biota, PropertyAttribute.Focus);
+            stats.Attributes.Self = GetOfflineAttribute(biota, PropertyAttribute.Self);
+            
+            stats.Vitals.Health = GetOfflineVital(biota, PropertyAttribute2nd.MaxHealth);
+            stats.Vitals.Stamina = GetOfflineVital(biota, PropertyAttribute2nd.MaxStamina);
+            stats.Vitals.Mana = GetOfflineVital(biota, PropertyAttribute2nd.MaxMana);
+
+            stats.Bank = GetBankedProperties(biota);
+            stats.Augmentations = GetAugmentations(biota);
+
+            return stats;
+        }
+
+        private static List<SkillValueDto> GetOnlineSkills(Player online)
+        {
+            var result = new List<SkillValueDto>();
+            var pluckedSkills = new List<CreatureSkill>();
+
+            // DISCRETE PLUCKING:
+            // We use a brief lock for dictionary safety (to get references to the skill objects), 
+            // but we MUST release the lock before calling .Base or .Current.
+            // Those properties call into the EnchantmentManager, which attempts to acquire
+            // the same BiotaDatabaseLock. Since ACE locks are non-recursive, holding the lock
+            // here would cause a LockRecursionException and crash the thread.
+            online.BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                foreach (var skill in SkillHelper.ValidSkills)
+                {
+                    if (online.Skills.TryGetValue(skill, out var creatureSkill))
+                        pluckedSkills.Add(creatureSkill);
+                }
+            }
+            finally { online.BiotaDatabaseLock.ExitReadLock(); }
+
+            foreach (var creatureSkill in pluckedSkills)
+            {
+                result.Add(new SkillValueDto
+                {
+                    Name = creatureSkill.Skill.ToSentence(),
+                    Sac = creatureSkill.AdvancementClass.ToString(),
+                    isUsable = creatureSkill.IsUsable,
+                    Base = creatureSkill.Base,
+                    Total = creatureSkill.Current
+                });
+            }
+            return result;
+        }
+
+        private static List<SkillValueDto> GetOfflineSkills(Biota biota)
+        {
+            var result = new List<SkillValueDto>();
+            if (biota.PropertiesSkill == null) return result;
+
+            foreach (var skill in SkillHelper.ValidSkills)
+            {
+                if (!biota.PropertiesSkill.TryGetValue(skill, out PropertiesSkill prop))
+                    continue;
+
+                SkillValueDto skillValue = new()
+                {
+                    Name = skill.ToSentence(),
+                    Sac = prop.SAC.ToString(),
+                    isUsable = true,
+                };
+
+                if (prop.SAC == SkillAdvancementClass.Untrained)
+                {
+                    DatManager.PortalDat.SkillTable.SkillBaseHash.TryGetValue((uint)skill, out SkillBase skillTableRecord);
+                    if (skillTableRecord?.MinLevel != 1) skillValue.isUsable = false;
+                }
+
+                uint fromAttributes = skillValue.isUsable ? AttributeFormula.GetFormula(biota, skill) : 0;
+                uint enlBonus = (prop.SAC >= SkillAdvancementClass.Trained ? (uint)(biota.GetProperty(PropertyInt.Enlightenment) ?? 0) : 0);
+                uint augBaseBonus =
+                    (uint)(biota.GetProperty(PropertyInt.LumAugAllSkills) ?? 0)
+                    + (Player.MeleeSkills.Contains(skill) ? (uint)(10 * (biota.GetProperty(PropertyInt.AugmentationSkilledMelee) ?? 0)) : 0)
+                    + (Player.MissileSkills.Contains(skill) ? (uint)(10 * (biota.GetProperty(PropertyInt.AugmentationSkilledMissile) ?? 0)) : 0)
+                    + (Player.MagicSkills.Contains(skill) ? (uint)(10 * (biota.GetProperty(PropertyInt.AugmentationSkilledMagic) ?? 0)) : 0);
+                uint augTotalBonus =
+                    (uint)(5 * (biota.GetProperty(PropertyInt.AugmentationJackOfAllTrades) ?? 0))
+                    + (prop.SAC >= SkillAdvancementClass.Specialized ? (uint)(2 * (biota.GetProperty(PropertyInt.LumAugSkilledSpec) ?? 0)) : 0);
+
+                skillValue.Base = prop.InitLevel + fromAttributes + prop.LevelFromPP + augBaseBonus + enlBonus;
+                skillValue.Total = skillValue.Base + augTotalBonus;
+
+                result.Add(skillValue);
             }
 
-            uint fromAttributes = skillValue.isUsable ? AttributeFormula.GetFormula(snapshot, skill) : 0;
-            uint enlBonus = (prop.SAC >= SkillAdvancementClass.Trained ? (uint)(snapshot.GetProperty(PropertyInt.Enlightenment) ?? 0) : 0);
-            uint augBaseBonus =
-                (uint)(snapshot.GetProperty(PropertyInt.LumAugAllSkills) ?? 0)
-                + (Player.MeleeSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMelee) ?? 0)) : 0)
-                + (Player.MissileSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMissile) ?? 0)) : 0)
-                + (Player.MagicSkills.Contains(skill) ? (uint)(10 * (snapshot.GetProperty(PropertyInt.AugmentationSkilledMagic) ?? 0)) : 0);
-            uint augTotalBonus =
-                (uint)(5 * (snapshot.GetProperty(PropertyInt.AugmentationJackOfAllTrades) ?? 0))
-                + (prop.SAC >= SkillAdvancementClass.Specialized ? (uint)(2 * (snapshot.GetProperty(PropertyInt.LumAugSkilledSpec) ?? 0)) : 0);
+            return result;
+        }
 
-            skillValue.Base =
-                prop.InitLevel +
-                + fromAttributes
-                + prop.LevelFromPP
-                + augBaseBonus
-                + enlBonus;
+        private static List<InventoryItemDto> GetOnlineInventory(Player online)
+        {
+            var result = new List<InventoryItemDto>();
+            online.BiotaDatabaseLock.EnterReadLock();
+            try
+            {
+                var equippedIds = new HashSet<uint>(online.EquippedObjects.Keys.Select(g => g.Full));
+                CollectInventoryRecursive(online, result, equippedIds);
+            }
+            finally { online.BiotaDatabaseLock.ExitReadLock(); }
 
-            skillValue.Total =
-                skillValue.Base
-                + augTotalBonus;
+            return result.OrderBy(i => i.Name).ToList();
+        }
 
-            return skillValue;
+        private static List<InventoryItemDto> GetOfflineInventory(uint guid)
+        {
+            var result = new List<InventoryItemDto>();
+            var possessedBiotas = DatabaseManager.Shard.BaseDatabase.GetPossessedBiotasInParallel(guid);
+            var equippedIds = new HashSet<uint>(possessedBiotas.WieldedItems.Select(w => w.Id));
+
+            foreach (var dbBiota in possessedBiotas.Inventory.Concat(possessedBiotas.WieldedItems))
+            {
+                var biota = BiotaConverter.ConvertToEntityBiota(dbBiota);
+                result.Add(MapToDto(biota, equippedIds.Contains(biota.Id)));
+            }
+
+            return result.OrderBy(i => i.Name).ToList();
+        }
+
+        private static InventoryItemDto MapToDto(Biota biota, bool isEquipped, uint? containerGuid = null)
+        {
+            return new InventoryItemDto
+            {
+                Guid = biota.Id,
+                ContainerGuid = containerGuid ?? biota.GetProperty(PropertyInstanceId.Container) ?? 0,
+                WeenieType = (uint)biota.WeenieType,
+                RequiresBackpackSlot = biota.RequiresBackpackSlotOrIsContainer(),
+                IsContainer = biota.WeenieType == WeenieType.Container,
+                Name = biota.GetProperty(PropertyString.Name) ?? "Unknown Item",
+                Wcid = (int)biota.WeenieClassId,
+                StackSize = biota.GetProperty(PropertyInt.StackSize) ?? 1,
+                IsEquipped = isEquipped,
+                IconId = biota.GetProperty(PropertyDataId.Icon) ?? 0,
+                IconUnderlayId = biota.GetProperty(PropertyDataId.IconUnderlay) ?? 0,
+                IconOverlayId = biota.GetProperty(PropertyDataId.IconOverlay) ?? 0,
+                IconOverlaySecondaryId = biota.GetProperty(PropertyDataId.IconOverlaySecondary) ?? 0,
+                ItemType = (uint)biota.GetItemType(),
+                UiEffects = (uint)(biota.GetProperty(PropertyInt.UiEffects) ?? 0)
+            };
+        }
+
+        private static void CollectInventoryRecursive(Container container, List<InventoryItemDto> items, HashSet<uint> equippedIds)
+        {
+            foreach (var wo in container.Inventory.Values)
+            {
+                items.Add(MapToDto(wo.Biota, equippedIds.Contains(wo.Guid.Full), (uint)container.Guid.Full));
+
+                if (wo is Container subContainer)
+                    CollectInventoryRecursive(subContainer, items, equippedIds);
+            }
+
+            if (container is Creature creature)
+            {
+                foreach (var eq in creature.EquippedObjects.Values)
+                    items.Add(MapToDto(eq.Biota, true, (uint)container.Guid.Full));
+            }
         }
     }
 }

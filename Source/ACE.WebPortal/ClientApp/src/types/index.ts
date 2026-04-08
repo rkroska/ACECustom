@@ -4,8 +4,6 @@ export interface Character {
   guid: number;
   name: string;
   wcid: number;
-  level: number;
-  lastLogin: string;
   isOnline: boolean;
   isAdmin?: boolean;
 }
