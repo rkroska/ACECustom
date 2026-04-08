@@ -145,7 +145,7 @@ namespace ACE.Server.Controllers
 
             var online = PlayerManager.GetAllOnline();
             var result = online.Select(p => {
-                var isAdmin = p.Account.AccessLevel > 0;
+                var isAdmin = (p.Account?.AccessLevel ?? 0) > 0;
                 var charName = isAdmin && !p.Name.StartsWith("+") ? $"+{p.Name}" : p.Name;
                 return new
                 {
@@ -175,7 +175,7 @@ namespace ACE.Server.Controllers
             var result = stubs.Select(s =>
             {
                 var player = PlayerManager.FindByGuid(s.Id);
-                var isAdmin = player.Account.AccessLevel > 0;
+                var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
                 var charName = isAdmin && !s.Name.StartsWith("+") ? $"+{s.Name}" : s.Name;
 
                 return new
@@ -194,9 +194,9 @@ namespace ACE.Server.Controllers
         public IActionResult GetDetail(uint guid)
         {
             if (!IsAuthorizedForCharacter(guid, out IPlayer player)) return Unauthorized();
-
-            var isAdmin = player.Account.AccessLevel > 0;
-            var charName = isAdmin && !player.Name.StartsWith("+") ? $"+{player.Name}" : player.Name;
+            
+            var isAdmin = (player?.Account?.AccessLevel ?? 0) > 0;
+            var charName = isAdmin && !player?.Name.StartsWith("+") == true ? $"+{player?.Name}" : player?.Name;
 
             return Ok(new
             {
@@ -274,7 +274,7 @@ namespace ACE.Server.Controllers
             player = null;
             if (CurrentAccountId == null) return false;
             IPlayer p = PlayerManager.FindByGuid(guid);
-            if (p == null) return false;
+            if (p == null || p.Account == null) return false;
             if (!IsAuthorizedForAccount(p.Account.AccountId)) return false;
             player = p;
             return true;

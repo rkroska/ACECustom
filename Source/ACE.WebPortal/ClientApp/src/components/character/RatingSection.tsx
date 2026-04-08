@@ -38,7 +38,7 @@ export default function RatingSection({ ratings }: RatingSectionProps) {
               <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 group-hover:text-neutral-300 transition-colors">Effective Melee Defense</span>
             </div>
             <div className="text-sm font-mono font-bold text-neutral-300 group-hover:text-white transition-colors">
-              {ratings.emd?.toLocaleString() ?? ''}
+              {ratings.emd != null ? ratings.emd.toLocaleString() : '-'}
             </div>
           </div>
           <div className="h-px bg-neutral-800/50 mt-3" />
@@ -54,7 +54,7 @@ export default function RatingSection({ ratings }: RatingSectionProps) {
   )
 }
 
-function RatingStat({ label, value, icon }: { label: string, value: number, icon: React.ReactNode }) {
+function RatingStat({ label, value, icon }: { label: string, value: number | null, icon: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-1 group">
       <div className="flex items-center gap-2">
@@ -64,7 +64,7 @@ function RatingStat({ label, value, icon }: { label: string, value: number, icon
         <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 group-hover:text-neutral-400 transition-colors">{label}</span>
       </div>
       <div className="text-sm font-mono font-bold text-neutral-300 group-hover:text-white transition-colors">
-        {value}
+        {value != null ? value : '-'}
       </div>
     </div>
   )

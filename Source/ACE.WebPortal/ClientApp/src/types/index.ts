@@ -38,10 +38,10 @@ export interface StatsData {
   };
   ratings: {
     emd: number | null;
-    dr: number;
-    cdr: number;
-    damage: number;
-    critDamage: number;
+    dr: number | null;
+    cdr: number | null;
+    damage: number | null;
+    critDamage: number | null;
   };
   augmentations: Record<string, number>;
   bank: Record<string, number>;
