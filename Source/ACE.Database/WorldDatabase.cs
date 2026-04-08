@@ -626,6 +626,7 @@ namespace ACE.Database
                                && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
                                && pos.VariationId == variationId
                                && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            orderby str.ObjectId
                             select str.Value).FirstOrDefault();
 
                 if (name != null)
@@ -640,6 +641,7 @@ namespace ACE.Database
                                && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
                                && pos.VariationId == null
                                && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            orderby str.ObjectId
                             select str.Value).FirstOrDefault();
 
                     if (name != null)

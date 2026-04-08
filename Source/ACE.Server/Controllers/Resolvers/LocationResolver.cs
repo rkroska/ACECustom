@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Memory;
 using ACE.Database;
 using ACE.Server.Managers;
 using ACE.Server.Entity;
@@ -10,7 +10,15 @@ namespace ACE.Server.Controllers.Resolvers
 {
     public static class LocationResolver
     {
-        private static readonly ConcurrentDictionary<string, string> _dungeonNameCache = new();
+        private static readonly IMemoryCache _dungeonNameCache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = 10000 // Limit to 10k entries to prevent memory growth
+        });
+
+        private static readonly MemoryCacheEntryOptions _cacheOptions = new MemoryCacheEntryOptions()
+            .SetSize(1) // Each entry counts as 1 towards the SizeLimit
+            .SetSlidingExpiration(TimeSpan.FromHours(1))
+            .SetAbsoluteExpiration(TimeSpan.FromHours(4));
 
         public struct LocationResolution
         {
@@ -81,7 +89,7 @@ namespace ACE.Server.Controllers.Resolvers
         private static async Task<string> GetDungeonNameCachedAsync(uint landblockId, int? variationId)
         {
             var cacheKey = $"{landblockId:X8}:{variationId ?? 0}";
-            if (_dungeonNameCache.TryGetValue(cacheKey, out var cachedName))
+            if (_dungeonNameCache.TryGetValue(cacheKey, out string cachedName))
                 return cachedName;
 
             // Try World DB (synchronous)
@@ -119,7 +127,7 @@ namespace ACE.Server.Controllers.Resolvers
             }
 
             if (name != null)
-                _dungeonNameCache.TryAdd(cacheKey, name);
+                _dungeonNameCache.Set(cacheKey, name, _cacheOptions);
 
             return name;
         }
