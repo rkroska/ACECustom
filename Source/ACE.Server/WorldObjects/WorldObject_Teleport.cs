@@ -16,7 +16,7 @@ namespace ACE.Server.WorldObjects
         /// Unified Teleport method for all world objects.
         /// Handles visual effects, physics state changes, networking, and safety checks.
         /// </summary>
-        public virtual void Teleport(ACE.Entity.Position _newPosition, bool fromPortal = false)
+        public void Teleport(ACE.Entity.Position _newPosition, bool fromPortal = false)
         {
             var player = this as Player; // null if not a player
             var newPosition = new ACE.Entity.Position(_newPosition);
@@ -24,6 +24,9 @@ namespace ACE.Server.WorldObjects
 
             if (player != null && player.HandleFogBeforeTeleport(_newPosition))
                 return;
+
+            // After fog deferral path returns false: cleanup runs with the real teleport (not ~1s early on a no-op).
+            player?.CleanupPrestigeEffects();
 
             Teleporting = true;
             var timestamp = Time.GetUnixTime();
