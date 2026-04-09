@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Activity, Users, Shield, ChevronLeft, ChevronRight, User } from 'lucide-react'
+import { Activity, Users, Shield, User } from 'lucide-react'
 import { api } from '../services/api'
 import { Character } from '../types'
-import CharacterListItem from './character/CharacterListItem'
+import CharacterListItem from './common/CharacterListItem'
 import PageHeader from './common/PageHeader'
+import Pagination from './common/Pagination'
 
 const ITEMS_PER_PAGE = 25
 
@@ -99,31 +100,11 @@ export default function CharacterList() {
       </div>
 
       {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="shrink-0 border-t border-neutral-800 bg-neutral-950/50 backdrop-blur-xl p-4 mt-auto">
-          <div className="max-w-2xl mx-auto flex items-center justify-between">
-            <div className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-              Page {currentPage} of {totalPages}
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Pagination 
+        currentPage={currentPage} 
+        totalPages={totalPages} 
+        onPageChange={setCurrentPage} 
+      />
     </div>
   )
 }

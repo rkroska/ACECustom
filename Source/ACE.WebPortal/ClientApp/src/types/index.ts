@@ -6,7 +6,8 @@ export interface WorldLocation {
   coordinates: string;
   isDungeon: boolean;
   name: string;
-  grouperType: number;
+  categoryName: string;
+  categoryOrdinal: number;
   hex: string;
 }
 

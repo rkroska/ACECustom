@@ -23,54 +23,82 @@ namespace ACE.Server.Controllers.Resolvers
         public struct LocationResolution
         {
             public string Name { get; set; }
-            public int GrouperType { get; set; }
-            public string Hex { get; set; }
+            public string CategoryName { get; set; }
+            public int CategoryOrdinal { get; set; }
         }
 
         public static async Task<LocationResolution> ResolveLocationAsync(uint landblockId, int? variationId, bool? isDungeonForced = null)
         {
-            var lb16 = (ushort)(landblockId >> 16);
-            if (lb16 == 0) lb16 = (ushort)landblockId;
+            // Normalize: use high 16 bits if present, else low 16 bits
+            var normalizedLandblock = (ushort)(landblockId >> 16);
+            if (normalizedLandblock == 0) normalizedLandblock = (ushort)(landblockId & 0xFFFF);
 
-            var hex = $"0x{lb16:x4}";
-            if (variationId.HasValue) hex += $":{variationId.Value}";
-
-            // 1. Marketplace (0x016C)
-            if (LandblockCollections.MarketplaceLandblocks.Contains(lb16))
+            // 1. Special: Marketplace (0x016C)
+            if (LandblockCollections.MarketplaceLandblocks.Contains(normalizedLandblock))
             {
-                return new LocationResolution { Name = "Marketplace", GrouperType = 1, Hex = hex };
+                return new LocationResolution 
+                { 
+                    CategoryName = "Special", 
+                    CategoryOrdinal = 1,
+                    Name = "Marketplace"
+                };
             }
 
-            // 2. Apartments
-            if (LandblockCollections.ApartmentLandblocks.Contains(lb16))
+            // 2. Special: Apartments
+            if (LandblockCollections.ApartmentLandblocks.Contains(normalizedLandblock))
             {
-                LandblockCollections.ApartmentBlocks.TryGetValue(lb16, out var aptName);
-                return new LocationResolution { Name = aptName ?? "Apartments", GrouperType = 2, Hex = hex };
+                LandblockCollections.ApartmentBlocks.TryGetValue(normalizedLandblock, out var aptName);
+                return new LocationResolution 
+                { 
+                    CategoryName = "Special", 
+                    CategoryOrdinal = 1,
+                    Name = "Apartments",
+                };
             }
 
-            // 3. Special Outside
-            if (LandblockCollections.ValleyOfDeathLandblocks.Contains(lb16))
+            // 3. Outdoors: Specific Islands
+            if (LandblockCollections.ThaelarynIslandLandblocks.Contains(normalizedLandblock))
             {
-                return new LocationResolution { Name = "Valley of Death", GrouperType = 3, Hex = hex };
+                return new LocationResolution 
+                { 
+                    CategoryName = "Outdoors", 
+                    CategoryOrdinal = 2,
+                    Name = "Thaelaryn Island",
+                };
             }
-            if (LandblockCollections.ThaelarynIslandLandblocks.Contains(lb16))
+            if (LandblockCollections.ValleyOfDeathLandblocks.Contains(normalizedLandblock))
             {
-                return new LocationResolution { Name = "Thaelaryn Island", GrouperType = 3, Hex = hex };
+                return new LocationResolution 
+                { 
+                    CategoryName = "Outdoors", 
+                    CategoryOrdinal = 2,
+                    Name = "Valley of Death",
+                };
             }
-            if (LandblockCollections.DarkIsleLandblocks.Contains(lb16))
+            if (LandblockCollections.DarkIsleLandblocks.Contains(normalizedLandblock))
             {
-                return new LocationResolution { Name = "Dark Isle", GrouperType = 3, Hex = hex };
+                return new LocationResolution 
+                { 
+                    CategoryName = "Outdoors", 
+                    CategoryOrdinal = 2,
+                    Name = "Dark Isle",
+                };
             }
 
             // Determination of "Interior/Dungeon" status:
-            // Priority 1: Client-provided / Engine-authoritative flag (online players)
-            // Priority 2: Bitwise heuristic (offline players / fallback)
-            bool isDungeon = isDungeonForced ?? (lb16 >= 0xFF00 || (landblockId & 0xFFFF) >= 0x0100);
+            // Fix: Only treat low bits as "cell bits" if it's a 32-bit ID (has high bits)
+            // or if the regional byte is in the 0xFF00 range.
+            bool isDungeon = isDungeonForced ?? (normalizedLandblock >= 0xFF00 || (landblockId > 0xFFFF && (landblockId & 0xFFFF) >= 0x0100));
 
             if (!isDungeon)
             {
                 // Outdoor / Landscape Landblocks
-                return new LocationResolution { Name = "Outside", GrouperType = 3, Hex = hex };
+                return new LocationResolution 
+                { 
+                    CategoryName = "Outdoors", 
+                    CategoryOrdinal = 2,
+                    Name = "Outside",
+                };
             }
             else
             {
@@ -79,9 +107,9 @@ namespace ACE.Server.Controllers.Resolvers
 
                 return new LocationResolution 
                 { 
-                    Name = name ?? "Unknown Dungeon", 
-                    GrouperType = 4, 
-                    Hex = hex 
+                    CategoryName = "Dungeons", 
+                    CategoryOrdinal = 3,
+                    Name = name ?? "Unknown Dungeon",
                 };
             }
         }

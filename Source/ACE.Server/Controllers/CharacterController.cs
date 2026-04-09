@@ -67,8 +67,8 @@ namespace ACE.Server.Controllers
             public string Coordinates { get; set; }
             public bool IsDungeon { get; set; }
             public string Name { get; set; }
-            public int GrouperType { get; set; }
-            public string Hex { get; set; }
+            public string CategoryName { get; set; }
+            public int CategoryOrdinal { get; set; }
         }
 
         private class PlayerStubDto
@@ -163,9 +163,9 @@ namespace ACE.Server.Controllers
                         Variation = variation,
                         Coordinates = coords,
                         IsDungeon = isDungeon,
+                        CategoryName = res.CategoryName,
+                        CategoryOrdinal = res.CategoryOrdinal,
                         Name = res.Name,
-                        GrouperType = res.GrouperType,
-                        Hex = res.Hex
                     };
                 }
 
@@ -213,15 +213,15 @@ namespace ACE.Server.Controllers
                         Variation = variation,
                         Coordinates = coords,
                         IsDungeon = isDungeon,
+                        CategoryName = res.CategoryName,
+                        CategoryOrdinal = res.CategoryOrdinal,
                         Name = res.Name,
-                        GrouperType = res.GrouperType,
-                        Hex = res.Hex
                     }
                 };
             });
 
-            var result = await Task.WhenAll(tasks);
-            return Ok(result.OrderBy(r => r.Name));
+            var result = (await Task.WhenAll(tasks)).ToList();
+            return Ok(result);
         }
 
         [HttpGet("search-all/{name}")]
@@ -258,9 +258,9 @@ namespace ACE.Server.Controllers
                         Variation = variation,
                         Coordinates = coords,
                         IsDungeon = isDungeon,
+                        CategoryName = res.CategoryName,
+                        CategoryOrdinal = res.CategoryOrdinal,
                         Name = res.Name,
-                        GrouperType = res.GrouperType,
-                        Hex = res.Hex
                     };
                 }
 
@@ -302,9 +302,9 @@ namespace ACE.Server.Controllers
                     Variation = variation,
                     Coordinates = coords,
                     IsDungeon = isDungeon,
-                    Name = res.Name,
-                    GrouperType = res.GrouperType,
-                    Hex = res.Hex
+                    CategoryName = res.CategoryName,
+                    CategoryOrdinal = res.CategoryOrdinal,
+                    Name = res.Name
                 };
             }
 

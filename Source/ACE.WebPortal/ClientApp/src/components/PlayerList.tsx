@@ -1,14 +1,26 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Activity, Users, ShieldAlert, ChevronLeft, ChevronRight, MapPin, ChevronDown, Sun, Gem } from 'lucide-react'
+import { Search, Activity, Users, ShieldAlert, MapPin } from 'lucide-react'
 import { api } from '../services/api'
 import { Character } from '../types'
 import { useDebounce } from '../hooks/useDebounce'
-import CharacterListItem from './character/CharacterListItem'
+import CharacterListItem from './common/CharacterListItem'
 import PageHeader from './common/PageHeader'
 import SearchHint from './common/SearchHint'
+import Pagination from './common/Pagination'
+import PlayerLocationGroup from './admin/PlayerLocationGroup'
 
 const ITEMS_PER_PAGE = 25
+
+interface LocationGroup {
+  key: string;
+  title: string;
+  players: Character[];
+  categoryOrdinal: number;
+  adminCount: number;
+  variation: number | null;
+  landblock: number;
+}
 
 export default function PlayerList() {
   const navigate = useNavigate()
@@ -24,7 +36,6 @@ export default function PlayerList() {
   const [isGroupedByLocation, setIsGroupedByLocation] = useState(() => {
     return localStorage.getItem('ace_admin_grouped_players') === 'true'
   })
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const latestSearchIdRef = useRef(0)
 
   // Persist grouping choice
@@ -130,47 +141,90 @@ export default function PlayerList() {
     setCurrentPage(1) // Reset to first page when toggling grouping for simplicity
   }
 
-  const toggleGroupCollapse = (key: string) => {
-    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
-  }
-
   // Unused locationKeys and resolvedNames removed as location is now embedded.
 
-  // Grouped logic
-  const groupedPlayers = useMemo(() => {
+  // Grouped logic - Hierarchical Category -> Location
+    /**
+     * Hierarchical Location Grouping Logic
+     * ------------------------------------
+     * Players are organized in a two-tier hierarchy:
+     * 1. Category (sorted by ordinal: Special > Outdoors > Dungeons).
+     * 2. Location (sorted by player count, then title).
+     * 
+     * Technical Consideration: Dungeons (Category 3) are grouped by their 16-bit
+     * normalized landblock ID. This ensures players in the same dungeon area stay
+     * together even if they are in different specific cells.
+     */
+  const groupedCategories = useMemo(() => {
     if (!isActuallyGrouping) return null
 
-    const groups: Record<string, { title: string, players: Character[], grouperType: number, adminCount: number }> = {}
+    const categoryMap: Record<string, { name: string, ordinal: number, locationGroups: Record<string, LocationGroup> }> = {}
 
     paginatedPlayers.forEach((p: Character) => {
         const loc = p.location
-        const groupTitle = loc?.name || loc?.hex || "Unknown Location"
-        const grouperType = loc?.grouperType ?? 0
+        const catName = loc?.categoryName || "Unknown"
+        const catOrdinal = loc?.categoryOrdinal ?? 99
+        let groupTitle = loc?.name || loc?.hex || "Unknown Location"
+        const variation = loc?.variation ?? null
+        const landblock = loc?.landblock ?? 0
         
-        const groupKey = `${grouperType}_${groupTitle}`
+        /**
+         * BITWISE SAFETY: Unsigned Right Shift (>>>)
+         * We use >>> instead of >> for all landblock ID manipulations.
+         * JavaScript bitwise operators default to signed 32-bit integers; using >>>
+         * treats the ID as an unsigned value, preventing negative hex display bugs.
+         */
+        const normalizedLandblock = (landblock >>> 16) || (landblock & 0xFFFF)
         
-        if (!groups[groupKey]) {
-            groups[groupKey] = { 
-                title: groupTitle, 
-                players: [],
-                grouperType: grouperType,
-                adminCount: 0
+        /**
+         * VARIATION LABELING: (v: N)
+         * If a location has a variation (e.g., specific dungeon wings or apartment floors),
+         * we append a "v: N" suffix to the title for administrative clarity.
+         */
+        if (variation !== null) {
+            groupTitle = `${groupTitle} v: ${variation}`
+        }
+        
+        if (!categoryMap[catName]) {
+            categoryMap[catName] = { 
+                name: catName, 
+                ordinal: catOrdinal,
+                locationGroups: {}
             }
         }
-        groups[groupKey].players.push(p)
-        if (p.isAdmin) groups[groupKey].adminCount++
+
+        // For Dungeons (Category 3), include landblock and variation in the key to keep unknown dungeons split
+        let groupKey = `${catOrdinal}_${groupTitle}`
+        if (catOrdinal === 3) {
+            groupKey = `${catOrdinal}_${normalizedLandblock}_${variation ?? 'null'}_${groupTitle}`
+        }
+        
+        if (!categoryMap[catName].locationGroups[groupKey]) {
+            categoryMap[catName].locationGroups[groupKey] = {
+                key: groupKey,
+                title: groupTitle,
+                players: [],
+                categoryOrdinal: catOrdinal,
+                adminCount: 0,
+                variation: variation,
+                landblock: normalizedLandblock
+            }
+        }
+
+        const group = categoryMap[catName].locationGroups[groupKey]
+        group.players.push(p)
+        if (p.isAdmin) group.adminCount++
     })
 
-    // Sort groups by GrouperType (Ordinal 1-4), then alphabetically by title
-    const sortedEntries = Object.entries(groups)
-        .sort((a, b) => {
-            if (a[1].grouperType !== b[1].grouperType) {
-                return a[1].grouperType - b[1].grouperType
-            }
-            return a[1].title.localeCompare(b[1].title)
-        })
-
-    return sortedEntries
+    // Convert to sorted array
+    return Object.values(categoryMap)
+        .sort((a, b) => a.ordinal - b.ordinal)
+        .map(cat => ({
+            categoryName: cat.name,
+            categoryOrdinal: cat.ordinal,
+            // WITHIN CATEGORIES: Sort locations by total player count DESCENDING
+            locations: Object.values(cat.locationGroups).sort((a, b) => b.players.length - a.players.length)
+        }))
   }, [isActuallyGrouping, paginatedPlayers])
 
   if (error) {
@@ -269,67 +323,35 @@ export default function PlayerList() {
             )
           ) : (
             <>
-              <div className="flex flex-col gap-1.5">
-                {isActuallyGrouping && groupedPlayers ? (
-                    (groupedPlayers as [string, { title: string, players: any[], grouperType: number, adminCount: number }][])
-                        .filter(([_, group]) => group.players.length > 0)
-                        .map(([key, group]) => {
-                        const isCollapsed = collapsedGroups[key] !== false; // Default to true (collapsed)
-                        return (
-                        <div key={key} className="flex flex-col gap-1">
-                            <button 
-                                onClick={() => toggleGroupCollapse(key)}
-                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left group/header ${
-                                    !isCollapsed
-                                    ? 'bg-neutral-800/40 border-neutral-700 mb-1' 
-                                    : 'bg-neutral-950 border-neutral-800 hover:bg-neutral-900'
-                                }`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                        group.grouperType <= 2
-                                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500' 
-                                            : group.grouperType === 3
-                                            ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500'
-                                            : 'bg-blue-500/10 border border-blue-500/20 text-blue-500'
-                                    }`}>
-                                        {group.grouperType === 3 ? <Sun className="w-4 h-4" /> : group.grouperType === 4 ? <Gem className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-white group-hover/header:text-blue-400 transition-colors">
-                                            {group.title}
-                                        </span>
-                                        <span className="text-[11px] font-bold text-neutral-500 tracking-tight lowercase">
-                                            {(() => {
-                                                const total = group.players.length;
-                                                const admins = group.adminCount;
-                                                const players = total - admins;
-                                                const parts = [];
-                                                if (admins > 0) parts.push(`${admins} Admin${admins !== 1 ? 's' : ''}`);
-                                                if (players > 0) parts.push(`${players} Player${players !== 1 ? 's' : ''}`);
-                                                return parts.join(' & ') + ' here';
-                                            })()}
-                                        </span>
-                                    </div>
-                                </div>
-                                <ChevronDown className={`w-4 h-4 text-neutral-600 transition-transform duration-300 ${!isCollapsed ? 'rotate-180 text-blue-500' : ''}`} />
-                            </button>
-                            
-                            {!isCollapsed && (
-                                <div className="flex flex-col gap-1.5 pl-4 border-l border-neutral-800/50 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                                    {group.players.map((player: Character) => (
-                                        <CharacterListItem 
-                                            key={player.guid} 
-                                            character={player} 
-                                            onClick={() => handleSelect(player.guid)}
-                                            locationInfo={player.location?.hex}
-                                            secondaryInfo={group.grouperType === 3 ? player.location?.coordinates : undefined}
-                                        />
-                                    ))}
-                                </div>
-                            )}
+              <div className="flex flex-col gap-6">
+                {isActuallyGrouping && groupedCategories ? (
+                    groupedCategories.map((cat) => (
+                      <div key={cat.categoryName} className="flex flex-col gap-1.5">
+                        {/* Category Header/Divider */}
+                        <div className="flex items-center gap-4 px-2 mb-1">
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 whitespace-nowrap">
+                            {cat.categoryName}
+                          </span>
+                          <div className="h-px w-full bg-neutral-800/50" />
                         </div>
-                        )})
+
+                        {/* Location Groups */}
+                        <div className="flex flex-col gap-1.5">
+                          {cat.locations.map((group) => (
+                             <PlayerLocationGroup 
+                                key={group.key}
+                                title={group.title}
+                                players={group.players}
+                                adminCount={group.adminCount}
+                                categoryOrdinal={group.categoryOrdinal}
+                                variation={group.variation}
+                                landblock={group.landblock}
+                                onSelect={handleSelect}
+                             />
+                          ))}
+                        </div>
+                      </div>
+                    ))
                 ) : (
                     paginatedPlayers.map((player: Character) => {
                       const loc = player.location
@@ -363,30 +385,12 @@ export default function PlayerList() {
       </div>
 
       {/* Pagination Footer - only if not grouping */}
-      {!isActuallyGrouping && totalPages > 1 && (
-        <div className="shrink-0 border-t border-neutral-800 bg-neutral-950/50 backdrop-blur-xl p-4 mt-auto">
-          <div className="max-w-2xl mx-auto flex items-center justify-between">
-            <div className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
-              Page {currentPage} of {totalPages}
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+      {!isActuallyGrouping && (
+          <Pagination 
+            currentPage={currentPage} 
+            totalPages={totalPages} 
+            onPageChange={setCurrentPage} 
+          />
       )}
     </div>
   )

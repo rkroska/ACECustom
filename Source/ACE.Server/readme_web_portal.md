@@ -80,7 +80,17 @@ To ensure thread-safety and high performance under load, the portal utilizes a *
 2. **Lock-Free Processing**: Once the snapshot is captured, the lock is released. The remaining JSON generation for the web request proceeds on the private clone using the **Unified Logic Layer** (`IWeenieExtensions`), which is completely lock-free.
 3. **Model Synchronization**: Data retrieved directly from the `ShardDatabase` (e.g., inventory assets) is automatically converted to logic-rich entity models using `BiotaConverter.ConvertToEntityBiota`. This ensures that all assets—whether live or archived—are processed with the same authoritative logic engines.
 
-## Authoritative Data Sources
+## Technical Gotchas & Standards
+
+### Unsigned 32-bit ID Handling
+Game IDs (e.g., Landblock IDs) are 32-bit unsigned integers. Because JavaScript bitwise operators default to **signed** 32-bit integers, standard right shifts (`>>`) will cause negative hex representations if the high bit is set.
+- **Requirement**: Always use the **Unsigned Zero-Fill Right Shift (`>>>`)** in the frontend when extracting landblock prefixes or manipulating game IDs.
+
+### Location Categorization
+The portal uses a tiered category system for location resolution:
+- **Category 1 (Special)**: High-priority hubs (Marketplace, Apartments).
+- **Category 2 (Outdoors)**: General landscapes and islands.
+- **Category 3 (Dungeons)**: Interior locations grouped by their 16-bit normalized landblock.
 
 1. **`PlayerManager` / Memory-First Inventory**: The primary source for locating online players. For inventory retrieval, the server now follows a **Memory-First** strategy: if a player is online, their live `Inventory` and `EquippedObjects` are captured under a short read-lock from the `Player` object itself, ensuring the portal is authoritative for "dirty" items not yet flushed to the database.
 2. **`AttributeFormula`**: The single source of truth for vitals and skill base-values. Manual math in controllers has been replaced with calls to this centralized logic layer to prevent "logic drift" between the server engine and the web portal.
