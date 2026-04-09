@@ -6,20 +6,29 @@ This document provides a technical overview of the frontend architecture, design
 > **Build Requirement**: Anytime a file in the `ClientApp` directory is modified, you **MUST** execute `npm run build` from the `ClientApp` folder to update the production assets. 
 > - **Note**: During the React 19 transition, always use `npm install --legacy-peer-deps` to resolve stale peer dependencies in third-party libraries.
 
-## 🎨 Design Philosophy & Style
+## 🎨 Design Philosophy & Standards
 
 The application implements a **modern, high-density dashboard aesthetic** optimized for power users (Server Admins and Game Masters).
 
+### The "High-Density" Standard
+To maximize information visibility while maintaining clarity, the following standards must be adhered to:
+- **Compact Padding**: List items and row containers use a standardized `p-2` (8px) padding.
+- **Sizing Tokens**:
+    - **Primary Text**: `text-[13px]` for player and item names.
+    - **Metadata Text**: `text-[11px]` or `text-[10px]` for coordinates, hex codes, and variation labels.
+    - **Icons**: Shared item/player icons are scaled to `w-7 h-7` (28px).
+- **Whitespace**: Minimal vertical gaps between rows to allow for long scrolling lists without excessive paging.
+
+### Palette & Accents
 - **Theme**: Dark-mode primary palette using Tailwind's `neutral-900` and `neutral-950`.
 - **Accents**: 
   - **Blue (`blue-600`)**: Primary actions, active routes, and global highlights.
-  - **Purple (`purple-500`)**: Metadata links and complex property mappings.
-  - **Green/Red**: Real-time session status (Online/Offline) and transaction feedback (Success/Error).
+  - **Purple (`purple-500`)**: Special variations and complex property mappings.
+  - **Amber (`amber-500`)**: Outdoor location categories.
+  - **Emerald (`emerald-500`)**: Special hub locations.
 - **Rich Aesthetics**: 
   - High-fidelity `backdrop-blur-xl` for card surfaces.
   - Interactive scale transitions and custom "glow" effects for interactive elements.
-  - Custom-themed scrollbars for consistent cross-browser density.
-- **Typography**: Heavily utilizes high-contrast font weights (`font-black`) for hierarchy and mono-spaced fonts for technical IDs (GUID, WCID).
 
 ## 🏗️ Technical Architecture
 

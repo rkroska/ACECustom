@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ChevronLeft, LogOut, Award, Star, Info, Activity, Package, ScrollText } from 'lucide-react'
+import { ChevronLeft, LogOut, Award, Star, Info, Activity, Package, ScrollText, MapPin } from 'lucide-react'
 import { api } from '../services/api'
 import { Character } from '../types'
 import CharacterStats from './character/CharacterStats'
@@ -9,6 +9,7 @@ import CharacterInventory from './character/CharacterInventory'
 import CharacterStamps from './character/CharacterStamps'
 import Modal from './common/Modal'
 import TabButton from './common/TabButton'
+import { formatLandblockHex } from '../utils/location'
 
 interface CharacterDetailData extends Character {
 }
@@ -188,13 +189,24 @@ export default function CharacterDetail() {
       {/* Hero Header */}
       <div className="px-8 pt-8 pb-4 bg-gradient-to-b from-neutral-950 to-neutral-900">
         <div className="max-w-6xl mx-auto">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black text-white tracking-tight leading-none">
-              {detail.name}
-            </h1>
-            <div className="text-xs text-neutral-400 font-mono font-bold tracking-widest opacity-70 text-neutral-500 uppercase">
-              ID: {detail.guid.toString()}
+          <div className="space-y-3">
+            <div className="group flex items-baseline gap-4 w-fit px-3">
+              <h1 className="text-3xl font-black text-white tracking-tight leading-none">
+                {detail.name}
+              </h1>
             </div>
+
+            {detail.location && (
+              <div className="flex items-center gap-2 text-blue-400/90 text-[10px] font-bold uppercase tracking-widest bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10 w-fit">
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{detail.location.name || formatLandblockHex(detail.location.landblock) || 'Unknown Location'}</span>
+                {detail.location.coordinates && (
+                  <span className="text-neutral-500 font-medium normal-case tracking-normal ml-0.5">
+                    ({detail.location.coordinates})
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
