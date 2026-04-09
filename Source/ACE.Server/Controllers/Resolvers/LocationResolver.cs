@@ -29,7 +29,7 @@ namespace ACE.Server.Controllers.Resolvers
 
         public static async Task<LocationResolution> ResolveLocationAsync(uint landblockId, int? variationId, bool? isDungeonForced = null)
         {
-            // Normalize: use high 16 bits if present, else low 16 bits
+            // Normalize: use the 16-bit prefix (dungeon range) if it's a 32-bit ID, otherwise use the low bits
             var normalizedLandblock = (ushort)(landblockId >> 16);
             if (normalizedLandblock == 0) normalizedLandblock = (ushort)(landblockId & 0xFFFF);
 
@@ -47,7 +47,6 @@ namespace ACE.Server.Controllers.Resolvers
             // 2. Special: Apartments
             if (LandblockCollections.ApartmentLandblocks.Contains(normalizedLandblock))
             {
-                LandblockCollections.ApartmentBlocks.TryGetValue(normalizedLandblock, out var aptName);
                 return new LocationResolution 
                 { 
                     CategoryName = "Special", 

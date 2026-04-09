@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { Character } from '../../types'
 import CharacterListItem from '../common/CharacterListItem'
 import LocationIcon from '../common/LocationIcon'
+import { formatLandblockHex, formatNormalizedHex, getNormalizedLandblock } from '../../utils/location'
 
 interface PlayerLocationGroupProps {
   title: string;
@@ -15,14 +16,8 @@ interface PlayerLocationGroupProps {
 }
 
 /**
- * PlayerLocationGroup Component
- * ----------------------------
- * Handles the display and interaction for a specific grouped location in the Player List.
- * 
- * Responsibilities:
- * - Manages its own collapse state.
- * - Displays area metadata (Title, Variation, Hex, Player/Admin counts).
- * - Maps individual character rows within the group.
+ * Displays a group of players in a specific location (e.g., Dungeon, Town).
+ * Handles its own expansion state and provides a summary of the occupants.
  */
 export default function PlayerLocationGroup({
   title,
@@ -43,7 +38,7 @@ export default function PlayerLocationGroup({
     const parts = []
     if (admins > 0) parts.push(`${admins} Admin${admins !== 1 ? 's' : ''}`)
     if (playerCount > 0) parts.push(`${playerCount} Player${playerCount !== 1 ? 's' : ''}`)
-    return parts.join(' & ') + ' here'
+    return parts.length > 0 ? parts.join(' & ') + ' here' : 'Empty'
   })()
 
   return (
@@ -79,7 +74,7 @@ export default function PlayerLocationGroup({
         <div className="flex items-center gap-4">
           {categoryOrdinal === 3 && (
             <span className="text-[10px] font-bold text-neutral-600 transition-colors">
-              0x{landblock.toString(16).toUpperCase().padStart(4, '0')}
+              0x{formatNormalizedHex(landblock)}
             </span>
           )}
           <ChevronDown className={`w-4 h-4 text-neutral-600 transition-all duration-300 ${!isCollapsed ? 'rotate-180 text-blue-500' : 'group-hover/header:text-blue-500 group-hover/header:translate-y-0.5'}`} />
@@ -87,16 +82,16 @@ export default function PlayerLocationGroup({
       </button>
       
       {!isCollapsed && (
-        <div className="flex flex-col gap-1.5 pl-4 border-l border-neutral-800/50 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="flex flex-col gap-1 pl-4 border-l border-neutral-800/50 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
           {players.map((player) => (
             <CharacterListItem 
               key={player.guid} 
               character={player} 
               onClick={() => onSelect(player.guid)}
-              locationInfo={categoryOrdinal === 3 ? undefined : player.location?.hex}
+              locationInfo={categoryOrdinal === 3 ? undefined : (player.location?.name || formatLandblockHex(player.location?.landblock))}
               secondaryInfo={
                 categoryOrdinal === 3 
-                  ? `0x${((player.location?.landblock ?? 0) >>> 16).toString(16).toUpperCase().padStart(4, '0')}` 
+                  ? `0x${formatNormalizedHex(getNormalizedLandblock(player.location?.landblock))}` 
                   : (categoryOrdinal === 2 ? player.location?.coordinates : undefined)
               }
             />

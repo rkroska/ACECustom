@@ -9,14 +9,8 @@ interface CharacterListItemProps {
 }
 
 /**
- * HIGH-DENSITY DASHBOARD PRIMITIVE
- * --------------------------------
- * This component is shared between the User Character List and the Admin Player List.
- * It implements the project's "Compact Density" standard:
- * - Padding: p-2 (8px)
- * - Row Height: Visual-only (flex-gap based)
- * - Typography: text-[13px] for names, tiny fonts for metadata.
- * - Icons: Scaled to w-7 h-7 for maximum info per vertical inch.
+ * Shared list item component used for both individual character lists and admin player views.
+ * Follows the high-density aesthetic using tight padding and small typography.
  */
 export default function CharacterListItem({ character, onClick, locationInfo, secondaryInfo }: CharacterListItemProps) {
   const displayName = character.isAdmin && !character.name.startsWith('+') 

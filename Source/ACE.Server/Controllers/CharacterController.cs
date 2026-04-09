@@ -31,17 +31,16 @@ namespace ACE.Server.Controllers
     public class CharacterController : BaseController
     {
         /*
-         *  ARCHITECTURAL NOTE: AUTHORITATIVE ATOMIC PLUCKING
-         *  -------------------------------------------------
-         *  To ensure thread-safety and high performance without the overhead of deep clones,
-         *  we use an "Authoritative Atomic Plucking" pattern for character data retrieval.
+         *  THREAD-SAFE DATA EXTRACTION STRATEGY
+         *  ------------------------------------
+         *  To maintain high performance and avoid complex deep-cloning, we follow a
+         *  "Pluck and Release" pattern for character data:
          *  
-         *  1. Discrete Locking: We enter the character's BiotaDatabaseLock briefly to pluck 
-         *     raw property values or internal dictionary references.
-         *  2. Pluck and Release: The lock is released immediately after extraction.
-         *  3. Authoritative Engines: Calculations (Attributes, Skills, Vitals) that call 
-         *     into authoritative server engines (and acquire their own locks) are performed 
-         *     OUTSIDE the controller-level lock to prevent LockRecursionException.
+         *  1. Discrete Locking: Briefly enter the BiotaDatabaseLock to grab raw values.
+         *  2. Release Immediately: Drop the lock as soon as the raw parameters are copied.
+         *  3. Calculation Pipeline: Heavy math (vitals/skills) is performed outside 
+         *     the initial lock using the server's own logic engines, which manage 
+         *     their own internal concurrency. This prevents potential deadlocks.
          */
 
         private class StatValueDto

@@ -8,13 +8,6 @@ export interface WorldLocation {
   name: string;
   categoryName: string;
   categoryOrdinal: number;
-  hex: string;
-}
-
-export interface LocationResolution {
-  name: string;
-  grouperType: number;
-  hex: string;
 }
 
 export interface Character {

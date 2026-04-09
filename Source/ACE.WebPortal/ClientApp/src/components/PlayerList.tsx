@@ -9,6 +9,7 @@ import PageHeader from './common/PageHeader'
 import SearchHint from './common/SearchHint'
 import Pagination from './common/Pagination'
 import PlayerLocationGroup from './admin/PlayerLocationGroup'
+import { formatLandblockHex, getNormalizedLandblock } from '../utils/location'
 
 const ITEMS_PER_PAGE = 25
 
@@ -29,7 +30,8 @@ export default function PlayerList() {
   const [searchTerm, setSearchTerm] = useState('')
   const debouncedSearchTerm = useDebounce(searchTerm, 500)
   const [currentPage, setCurrentPage] = useState(1)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(true)
+  const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
   // Grouping state - Persisted to localStorage
@@ -50,14 +52,15 @@ export default function PlayerList() {
 
   const fetchOnlinePlayers = async () => {
     try {
-      setIsLoading(true)
+      setError(null)
+      setIsLoadingPlayers(true)
       const data = await api.get<Character[]>('/api/character/all-online')
       // Mark initial online list as online
       setOnlinePlayersBase((data ?? []).map(p => ({ ...p, isOnline: true })))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
-      setIsLoading(false)
+      setIsLoadingPlayers(false)
     }
   }
 
@@ -72,15 +75,15 @@ export default function PlayerList() {
       searchAllPlayers(debouncedSearchTerm)
     } else {
       setSearchResults([])
-      // If we're not searching the global DB, we aren't loading anymore
-      setIsLoading(false)
+      setIsSearching(false)
     }
   }, [debouncedSearchTerm])
 
   const searchAllPlayers = async (name: string) => {
+    // Track each request by ID bit to prevent older API responses from overwriting newer ones if they finish late
     const requestId = ++latestSearchIdRef.current
     try {
-      setIsLoading(true)
+      setIsSearching(true)
       setSearchResults([]) // Clear existing results while searching to show loading state
       const data = await api.get<Character[]>(`/api/character/search-all/${encodeURIComponent(name)}`)
       
@@ -98,30 +101,34 @@ export default function PlayerList() {
       }
     } finally {
       if (requestId === latestSearchIdRef.current) {
-        setIsLoading(false)
+        setIsSearching(false)
       }
     }
   }
 
-  // Derived list based on search term
+  // Derived list based on search term - Authoritatively sorted alphabetically by name
   const effectivePlayersList = useMemo(() => {
+    let list = []
+    
     // Mode switch should be instantaneous (use raw searchTerm)
     if (searchTerm.length >= 3) {
-      return searchResults
+      list = searchResults
+    } else if (!searchTerm.trim()) {
+      list = onlinePlayersBase
+    } else {
+      const lowerSearch = searchTerm.toLowerCase()
+      list = onlinePlayersBase.filter(p => p.name.toLowerCase().includes(lowerSearch))
     }
-    
-    // Otherwise, use local filtering on online players
-    if (!searchTerm.trim()) return onlinePlayersBase
-    
-    const lowerSearch = searchTerm.toLowerCase()
-    return onlinePlayersBase.filter(p => p.name.toLowerCase().includes(lowerSearch))
+
+    return [...list].sort((a, b) => a.name.localeCompare(b.name))
   }, [onlinePlayersBase, searchResults, searchTerm])
 
   // Explicitly override grouping when search is active
   const isActuallyGrouping = isGroupedByLocation && !searchTerm.trim();
 
   const totalPages = Math.ceil(effectivePlayersList.length / ITEMS_PER_PAGE)
-  // Pagination: only applies if not grouping
+  
+  // Pagination logic: only applies when not using the location-based grouping view
   const paginatedPlayers = useMemo(() => {
     if (isActuallyGrouping) return effectivePlayersList
     
@@ -135,26 +142,16 @@ export default function PlayerList() {
     navigate(`/players/${guid}/general`)
   }
 
-  // Header action toggle
+  // Toggle view mode and reset pagination
   const toggleGrouping = () => {
     setIsGroupedByLocation(!isGroupedByLocation)
-    setCurrentPage(1) // Reset to first page when toggling grouping for simplicity
+    setCurrentPage(1)
   }
 
-  // Unused locationKeys and resolvedNames removed as location is now embedded.
+  const isLoading = isLoadingPlayers || isSearching;
 
-  // Grouped logic - Hierarchical Category -> Location
-    /**
-     * Hierarchical Location Grouping Logic
-     * ------------------------------------
-     * Players are organized in a two-tier hierarchy:
-     * 1. Category (sorted by ordinal: Special > Outdoors > Dungeons).
-     * 2. Location (sorted by player count, then title).
-     * 
-     * Technical Consideration: Dungeons (Category 3) are grouped by their 16-bit
-     * normalized landblock ID. This ensures players in the same dungeon area stay
-     * together even if they are in different specific cells.
-     */
+  // Group players by Category (Special -> Outdoors -> Dungeons) then by specific location.
+  // Dungeons are grouped by their 16-bit prefix to keep players in the same area together.
   const groupedCategories = useMemo(() => {
     if (!isActuallyGrouping) return null
 
@@ -164,23 +161,14 @@ export default function PlayerList() {
         const loc = p.location
         const catName = loc?.categoryName || "Unknown"
         const catOrdinal = loc?.categoryOrdinal ?? 99
-        let groupTitle = loc?.name || loc?.hex || "Unknown Location"
+        let groupTitle = loc?.name || (loc ? formatLandblockHex(loc.landblock) : "Unknown Location")
         const variation = loc?.variation ?? null
         const landblock = loc?.landblock ?? 0
         
-        /**
-         * BITWISE SAFETY: Unsigned Right Shift (>>>)
-         * We use >>> instead of >> for all landblock ID manipulations.
-         * JavaScript bitwise operators default to signed 32-bit integers; using >>>
-         * treats the ID as an unsigned value, preventing negative hex display bugs.
-         */
-        const normalizedLandblock = (landblock >>> 16) || (landblock & 0xFFFF)
+        // Use unsigned shift (>>>) to keep landblock hexes positive in JavaScript
+        const normalizedLandblock = getNormalizedLandblock(landblock)
         
-        /**
-         * VARIATION LABELING: (v: N)
-         * If a location has a variation (e.g., specific dungeon wings or apartment floors),
-         * we append a "v: N" suffix to the title for administrative clarity.
-         */
+        // Append variation (v: 1) to distinguish custom dungeons
         if (variation !== null) {
             groupTitle = `${groupTitle} v: ${variation}`
         }
@@ -278,10 +266,10 @@ export default function PlayerList() {
                 const val = e.target.value
                 setSearchTerm(val)
                 if (val.length >= 3) {
-                  setIsLoading(true)
+                  setIsSearching(true)
                 } else {
                   // Instant mode switch back to online list
-                  setIsLoading(false)
+                  setIsSearching(false)
                 }
               }}
               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-12 pr-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all placeholder:text-neutral-700 font-medium text-sm"
@@ -323,10 +311,10 @@ export default function PlayerList() {
             )
           ) : (
             <>
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-1">
                 {isActuallyGrouping && groupedCategories ? (
                     groupedCategories.map((cat) => (
-                      <div key={cat.categoryName} className="flex flex-col gap-1.5">
+                      <div key={cat.categoryName} className="flex flex-col gap-1 mb-4">
                         {/* Category Header/Divider */}
                         <div className="flex items-center gap-4 px-2 mb-1">
                           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 whitespace-nowrap">
@@ -360,7 +348,7 @@ export default function PlayerList() {
                           key={player.guid} 
                           character={player} 
                           onClick={() => handleSelect(player.guid)} 
-                          locationInfo={!isActuallyGrouping && loc ? (loc.name || loc.hex) : undefined}
+                          locationInfo={!isActuallyGrouping && loc ? (loc.name || formatLandblockHex(loc.landblock)) : undefined}
                           secondaryInfo={!isActuallyGrouping && loc ? loc.coordinates : undefined}
                         />
                       )

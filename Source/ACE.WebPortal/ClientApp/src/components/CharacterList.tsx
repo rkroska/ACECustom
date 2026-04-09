@@ -6,6 +6,7 @@ import { Character } from '../types'
 import CharacterListItem from './common/CharacterListItem'
 import PageHeader from './common/PageHeader'
 import Pagination from './common/Pagination'
+import { formatLandblockHex } from '../utils/location'
 
 const ITEMS_PER_PAGE = 25
 
@@ -22,6 +23,7 @@ export default function CharacterList() {
 
   const fetchCharacters = async () => {
     try {
+      setError(null)
       setIsLoading(true)
       const data = await api.get<Character[]>('/api/character/list')
       setCharacters(data ?? [])
@@ -33,10 +35,12 @@ export default function CharacterList() {
   }
 
   const totalPages = Math.ceil(characters.length / ITEMS_PER_PAGE)
-  const paginatedCharacters = characters.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  )
+  const paginatedCharacters = [...characters]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(
+      (currentPage - 1) * ITEMS_PER_PAGE,
+      currentPage * ITEMS_PER_PAGE
+    )
 
   if (isLoading) {
     return (
@@ -80,7 +84,7 @@ export default function CharacterList() {
               key={char.guid}
               character={char}
               onClick={() => navigate(`/characters/${char.guid}/general`)}
-              locationInfo={char.location?.name || char.location?.hex}
+              locationInfo={char.location?.name || formatLandblockHex(char.location?.landblock)}
               secondaryInfo={char.location?.coordinates}
             />
           ))}

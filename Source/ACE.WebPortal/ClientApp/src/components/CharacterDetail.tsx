@@ -9,6 +9,7 @@ import CharacterInventory from './character/CharacterInventory'
 import CharacterStamps from './character/CharacterStamps'
 import Modal from './common/Modal'
 import TabButton from './common/TabButton'
+import { formatLandblockHex } from '../utils/location'
 
 interface CharacterDetailData extends Character {
 }
@@ -198,7 +199,7 @@ export default function CharacterDetail() {
             {detail.location && (
               <div className="flex items-center gap-2 text-blue-400/90 text-[10px] font-bold uppercase tracking-widest bg-blue-500/5 px-3 py-1.5 rounded-lg border border-blue-500/10 w-fit">
                 <MapPin className="w-3.5 h-3.5" />
-                <span>{detail.location.name || detail.location.hex || 'Unknown Location'}</span>
+                <span>{detail.location.name || formatLandblockHex(detail.location.landblock) || 'Unknown Location'}</span>
                 {detail.location.coordinates && (
                   <span className="text-neutral-500 font-medium normal-case tracking-normal ml-0.5">
                     ({detail.location.coordinates})
