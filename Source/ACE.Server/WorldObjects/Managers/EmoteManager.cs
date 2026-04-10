@@ -1835,6 +1835,16 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
+                case EmoteType.JailPlayer:
+                    if (player != null)
+                    {
+                        if (emote.Amount == 1)
+                            player.SendToJail();
+                        else if (emote.Amount == 0)
+                            player.ReleaseFromJail();
+                    }
+                    break;
+
                 case EmoteType.StartBarber:
 
                     if (player != null)
