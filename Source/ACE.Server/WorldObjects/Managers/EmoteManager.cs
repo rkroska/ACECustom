@@ -1842,6 +1842,8 @@ namespace ACE.Server.WorldObjects.Managers
                             player.SendToJail();
                         else if (emote.Amount == 0)
                             player.ReleaseFromJail();
+                        else
+                            log.Debug($"[JailPlayer] Unexpected emote.Amount value of {emote.Amount}");
                     }
                     break;
 
