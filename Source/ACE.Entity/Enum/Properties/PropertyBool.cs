@@ -243,5 +243,6 @@ namespace ACE.Entity.Enum.Properties
         HasPredator                       = 9051,
         HasDeathWish                      = 9052,
         HasChainLightning                 = 9053,
+        HasManaBarrier                   = 9059,
     }
 }

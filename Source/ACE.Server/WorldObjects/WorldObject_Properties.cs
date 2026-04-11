@@ -3268,6 +3268,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.RotationSpeed); else SetProperty(PropertyFloat.RotationSpeed, value.Value); }
         }
 
+        public bool HasManaBarrier
+        {
+            get => GetProperty(PropertyBool.HasManaBarrier) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
+        }
+
         public bool HasMissileFlightPlacement => CSetup.HasMissileFlightPlacement;
 
         /// <summary>

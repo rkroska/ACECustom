@@ -508,6 +508,18 @@ namespace ACE.Server.WorldObjects
                 percent = (float)amount / Health.MaxValue;
             }
 
+            // Mana Barrier
+            if (HasManaBarrier && Mana.Current > 0)
+            {
+                var manaDamage = (uint)Math.Min(amount, Mana.Current);
+                UpdateVitalDelta(Mana, (int)-manaDamage);
+
+                SendMessage($"Your Mana Barrier absorbs {manaDamage} points of damage. ({Mana.Current}/{Mana.MaxValue} mana remaining)", ChatMessageType.Magic);
+
+                amount -= manaDamage;
+                percent = (float)amount / Health.MaxValue;
+            }
+
             // update health
             var damageTaken = (uint)-UpdateVitalDelta(Health, (int)-amount);
             DamageHistory.Add(source, damageType, damageTaken);

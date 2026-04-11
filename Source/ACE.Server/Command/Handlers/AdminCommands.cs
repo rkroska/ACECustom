@@ -7310,5 +7310,24 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat(
                 $"Chain Lightning {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
         }
+
+        [CommandHandler("manabarrier", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Toggles Mana Barrier on yourself or target — absorb damage using mana.",
+            "Usage: /manabarrier [on|off]")]
+        public static void HandleManaBarrier(Session session, params string[] parameters)
+        {
+            if (session.Player == null)
+                return;
+
+            var target = CommandHandlerHelper.GetSelected(session) as Player ?? session.Player;
+
+            bool enable = true;
+            if (parameters.Length > 0)
+                enable = parameters[0].ToLower() != "off";
+
+            target.HasManaBarrier = enable;
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Mana Barrier {(enable ? "enabled" : "disabled")} on {target.Name}.", ChatMessageType.System));
+        }
     }
 }
