@@ -514,6 +514,39 @@ namespace ACE.Server.Managers
             return variation.HasValue && variation.Value > PRESTIGE_VAR_OFFSET;
         }
 
+        /// <summary>
+        /// Prefer <see cref="WorldObject.Location"/>.Variation, then physics position variation, when comparing who should see whom.
+        /// </summary>
+        public static int? GetEffectiveVariationForVisibility(WorldObject wo)
+        {
+            if (wo == null)
+                return null;
+
+            return wo.Location?.Variation ?? wo.PhysicsObj?.Position.Variation;
+        }
+
+        /// <summary>
+        /// True when two variation values should share client <c>CreateObject</c> networking.
+        /// Prestige variations (&gt; <see cref="PRESTIGE_VAR_OFFSET"/>) require an exact nullable match.
+        /// Retail treats <c>null</c> and <c>0</c> as one &quot;base&quot; bucket; explicit retail layers <c>1..PRESTIGE_VAR_OFFSET</c> match only the same value.
+        /// </summary>
+        public static bool SameVariationForVisibility(int? a, int? b)
+        {
+            if (IsPrestigeVariation(a) || IsPrestigeVariation(b))
+                return a == b;
+
+            static int? NormalizeRetailBase(int? v)
+            {
+                if (!v.HasValue || v.Value == 0)
+                    return null;
+                return v;
+            }
+
+            var ca = NormalizeRetailBase(a);
+            var cb = NormalizeRetailBase(b);
+            return ca == cb;
+        }
+
         public static int GetBasePrestigeVariation()
         {
             return PRESTIGE_BASE_VARIATION;

@@ -63,11 +63,11 @@ namespace ACE.Server.WorldObjects
 
             // VARIATION CHECK (Network Boundary)
             // This ensures we never tell the client to create an object from another variation.
-            var myVar = Location.Variation ?? 0;
-            var objVar = worldObject.Location.Variation ?? 0;
-            if (myVar != objVar)
+            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+            var objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
+            if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
             {
-                log.Error($"{Name} (Var {myVar}) tried to TrackObject {worldObject.Name} (Var {objVar}) - BLOCKED network message to prevent client contamination.");
+                log.Error($"{Name} (eff v:{myVar?.ToString() ?? "null"}) tried to TrackObject {worldObject.Name} (eff v:{objVar?.ToString() ?? "null"}) - BLOCKED network message to prevent client contamination.");
                 return;
             }
 
@@ -99,7 +99,9 @@ namespace ACE.Server.WorldObjects
                 //Console.WriteLine($"Player {Name} - AddTrackedObject({worldObject.Name}) skipped, already tracked");
                 return false;
             }
-            if (ObjMaint.PhysicsObj.Position.Variation != worldObject.Location.Variation)
+            if (!PrestigeManager.SameVariationForVisibility(
+                    PrestigeManager.GetEffectiveVariationForVisibility(this),
+                    PrestigeManager.GetEffectiveVariationForVisibility(worldObject)))
             {
                 return false;
             }
