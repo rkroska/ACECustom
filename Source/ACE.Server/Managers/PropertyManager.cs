@@ -336,6 +336,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> trajectory_alt_solver { get; private set; } = new(false, "use the alternate trajectory solver for missiles and spell projectiles");
         public static ConfigProperty<bool> universal_masteries { get; private set; } = new(true, "if TRUE, matches end of retail masteries - players wielding almost any weapon get +5 DR, except if the weapon \"seems tough to master\". " +
                                                                                                  "if FALSE, players start with mastery of 1 melee and 1 ranged weapon type based on heritage, and can later re-select these 2 masteries");
+        public static ConfigProperty<bool> generator_spawn_failure_warn_logging { get; private set; } = new(false, "If TRUE, generator placement failures (EnterWorld returned false) log at WARN instead of DEBUG. Use to diagnose missing bell/NPC spawns without noisy logs in production.");
         public static ConfigProperty<bool> use_generator_rotation_offset { get; private set; } = new(true, "enables or disables using the generator's current rotation when offseting relative positions");
         public static ConfigProperty<bool> use_turbine_chat { get; private set; } = new(true, "enables or disables global chat channels (General, LFG, Roleplay, Trade, Olthoi, Society, Allegience)");
         public static ConfigProperty<bool> use_wield_requirements { get; private set; } = new(true, "disable this to bypass wield requirements. mostly for dev debugging");
