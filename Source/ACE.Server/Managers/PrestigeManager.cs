@@ -522,7 +522,7 @@ namespace ACE.Server.Managers
             if (wo == null)
                 return null;
 
-            return wo.Location.Variation ?? wo.PhysicsObj?.Position.Variation;
+            return wo.Location?.Variation ?? wo.PhysicsObj?.Position.Variation;
         }
 
         /// <summary>

@@ -1,4 +1,13 @@
+using System.Reflection;
+
+using ACE.Entity;
+using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.Managers;
+using ACE.Server.Physics;
+using ACE.Server.WorldObjects;
+
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace ACE.Server.Tests
@@ -6,6 +15,25 @@ namespace ACE.Server.Tests
     [TestClass]
     public class VariationVisibilityTests
     {
+        private static void AssignPhysicsObj(WorldObject wo, PhysicsObj physicsObj)
+        {
+            var prop = typeof(WorldObject).GetProperty(nameof(WorldObject.PhysicsObj), BindingFlags.Instance | BindingFlags.Public);
+            var setter = prop?.GetSetMethod(nonPublic: true);
+            Assert.IsNotNull(setter, "WorldObject.PhysicsObj should expose a setter for tests.");
+            setter.Invoke(wo, new object[] { physicsObj });
+        }
+
+        private static GenericObject CreateTestGenericObject()
+        {
+            var weenie = new Weenie
+            {
+                WeenieClassId = 424242,
+                ClassName = "TestVariationVisibilityWeenie",
+                WeenieType = WeenieType.Generic
+            };
+            return new GenericObject(weenie, new ObjectGuid(0xF0004242));
+        }
+
         [TestMethod]
         public void SameVariationForVisibility_RetailNullAndZero_AreEqual()
         {
@@ -39,6 +67,31 @@ namespace ACE.Server.Tests
         public void GetEffectiveVariationForVisibility_NullWorldObject_ReturnsNull()
         {
             Assert.IsNull(PrestigeManager.GetEffectiveVariationForVisibility(null));
+        }
+
+        [TestMethod]
+        public void GetEffectiveVariationForVisibility_LocationVariationTakesPrecedenceOverPhysics()
+        {
+            const int locationVar = 7;
+            const int physicsVar = 99;
+
+            var wo = CreateTestGenericObject();
+            wo.SetPosition(PositionType.Location, new Position(0x00A80101, 12f, 12f, 12f, 0f, 0f, 0f, 1f, false, locationVar));
+            AssignPhysicsObj(wo, new PhysicsObj(physicsVar));
+
+            Assert.AreEqual(locationVar, PrestigeManager.GetEffectiveVariationForVisibility(wo));
+        }
+
+        [TestMethod]
+        public void GetEffectiveVariationForVisibility_FallsBackToPhysicsWhenLocationVariationUnset()
+        {
+            const int physicsVar = 5;
+
+            var wo = CreateTestGenericObject();
+            wo.SetPosition(PositionType.Location, new Position(0x00A80101, 12f, 12f, 12f, 0f, 0f, 0f, 1f, false, VariationId: null));
+            AssignPhysicsObj(wo, new PhysicsObj(physicsVar));
+
+            Assert.AreEqual(physicsVar, PrestigeManager.GetEffectiveVariationForVisibility(wo));
         }
     }
 }
