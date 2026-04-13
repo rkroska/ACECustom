@@ -205,9 +205,15 @@ namespace ACE.Server.WorldObjects
                 Biota.SetProperty(property, value, BiotaDatabaseLock, out var changed);
 
                 if (changed)
+                {
                     ChangesDetected = true;
+                    OnPropertyStringChanged(property, value);
+                }
             }
         }
+
+        public virtual void OnPropertyStringChanged(PropertyString property, string value) { }
+        public virtual void OnPropertyStringRemoved(PropertyString property) { }
         #endregion
 
         #region RemoveProperty Functions
@@ -299,7 +305,10 @@ namespace ACE.Server.WorldObjects
             else
             {
                 if (Biota.TryRemoveProperty(property, BiotaDatabaseLock))
+                {
                     ChangesDetected = true;
+                    OnPropertyStringRemoved(property);
+                }
             }
         }
         #endregion
@@ -2031,6 +2040,35 @@ namespace ACE.Server.WorldObjects
         {
             get => (CreatureType?)GetProperty(PropertyInt.FoeType);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.FoeType); else SetProperty(PropertyInt.FoeType, (int)value.Value); }
+        }
+        public string FriendTypeString
+        {
+            get => GetProperty(PropertyString.FriendTypeString);
+            set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FriendTypeString); else SetProperty(PropertyString.FriendTypeString, value); }
+        }
+
+        public string FoeTypeString
+        {
+            get => GetProperty(PropertyString.FoeTypeString);
+            set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FoeTypeString); else SetProperty(PropertyString.FoeTypeString, value); }
+        }
+
+        public string FriendlyQuestString
+        {
+            get => GetProperty(PropertyString.FriendlyQuestString);
+            set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FriendlyQuestString); else SetProperty(PropertyString.FriendlyQuestString, value); }
+        }
+
+        public bool? UseCustomTargetingLists
+        {
+            get => GetProperty(PropertyBool.UseCustomTargetingLists);
+            set { if (!value.HasValue) RemoveProperty(PropertyBool.UseCustomTargetingLists); else SetProperty(PropertyBool.UseCustomTargetingLists, value.Value); }
+        }
+
+        public bool? AllowFriendlyPlayerDamage
+        {
+            get => GetProperty(PropertyBool.AllowFriendlyPlayerDamage);
+            set { if (!value.HasValue) RemoveProperty(PropertyBool.AllowFriendlyPlayerDamage); else SetProperty(PropertyBool.AllowFriendlyPlayerDamage, value.Value); }
         }
 
         public string LongDesc

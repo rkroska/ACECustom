@@ -103,6 +103,10 @@ namespace ACE.Entity.Enum
         BlightedMoarsman,
         GearKnight,
         Gurog,
-        Anekshay
+        Anekshay,
+        QuestPlayer = 996,
+        Player = 997,
+        AttackAll = 998,
+        AttackNonSelf = 999
     }
 }

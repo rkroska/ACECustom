@@ -80,6 +80,9 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (sourceCreature != null && sourceCreature.AttackTarget != null)
                 {
+                    if (!sourceCreature.CanDamage(targetCreature))
+                        return;
+
                     // todo: clean this up
                     var targetPlayer = sourceCreature.AttackTarget as Player;
 

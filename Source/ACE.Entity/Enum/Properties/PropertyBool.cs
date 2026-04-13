@@ -190,12 +190,14 @@ namespace ACE.Entity.Enum.Properties
         CanGrapple                       = 9015,
         CanAOE                           = 9016,
         EnragedHotspot                   = 9017,
+        UseCustomTargetingLists          = 9018,
         [AssessmentProperty]
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
         IsSplitArrowKill                 = 9032,
         [AssessmentProperty]
         IsCharm                          = 9040,
+        AllowFriendlyPlayerDamage       = 9041,
         /// <summary>
         /// If TRUE on a weapon, allows multi-strike hits to each roll a proc with decay
         /// </summary>
