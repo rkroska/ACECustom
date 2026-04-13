@@ -1434,7 +1434,7 @@ namespace ACE.Server.WorldObjects
                     return false;
 
                 // Explicit non-player friendship should also override custom hostility rules.
-                if (creature.CreatureType is { } friendType && _cachedFriendTypes.Contains(friendType))
+                if (creature is not Player && creature.CreatureType is { } friendType && _cachedFriendTypes.Contains(friendType))
                     return false;
 
                 // Attack All pseudo-type (998)
@@ -1447,20 +1447,6 @@ namespace ACE.Server.WorldObjects
                 if (creature is Player && _cachedFoeTypes.Contains(ACE.Entity.Enum.CreatureType.Player)) return true;
                 if (creature.CreatureType is { } creatureType && _cachedFoeTypes.Contains(creatureType)) return true;
 
-                // Reciprocal checking (does the target consider us a foe?)
-                creature.EnsureTargetingCacheCurrent();
-                if (creature.IsUsingCustomTargetingLists)
-                {
-                    if (creature._attackAll) return true;
-                    if (creature._attackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
-                    if (this is Player && creature._cachedFoeTypes.Contains(ACE.Entity.Enum.CreatureType.Player)) return true;
-                    if (CreatureType is { } selfType && creature._cachedFoeTypes.Contains(selfType)) return true;
-                }
-                else if (creature.FoeType != null)
-                {
-                    if (creature.FoeType == CreatureType) return true;
-                    if (creature.FoeType == ACE.Entity.Enum.CreatureType.AttackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
-                }
             }
             else
             {
@@ -1470,12 +1456,21 @@ namespace ACE.Server.WorldObjects
                     if (FoeType == creature.CreatureType) return true;
                     if (FoeType == ACE.Entity.Enum.CreatureType.AttackNonSelf && (creature is Player || creature.CreatureType != CreatureType)) return true;
                 }
+            }
 
-                if (creature.FoeType != null)
-                {
-                    if (creature.FoeType == CreatureType) return true;
-                    if (creature.FoeType == ACE.Entity.Enum.CreatureType.AttackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
-                }
+            // Reciprocal checking (does the target consider us a foe?)
+            creature.EnsureTargetingCacheCurrent();
+            if (creature.IsUsingCustomTargetingLists)
+            {
+                if (creature._attackAll) return true;
+                if (creature._attackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
+                if (this is Player && creature._cachedFoeTypes.Contains(ACE.Entity.Enum.CreatureType.Player)) return true;
+                if (CreatureType is { } selfType && creature._cachedFoeTypes.Contains(selfType)) return true;
+            }
+            else if (creature.FoeType != null)
+            {
+                if (creature.FoeType == CreatureType) return true;
+                if (creature.FoeType == ACE.Entity.Enum.CreatureType.AttackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
             }
 
             return false;
@@ -1602,7 +1597,7 @@ namespace ACE.Server.WorldObjects
                     return true;
 
                 // Handle standard defined friends
-                if (creature.CreatureType is { } friendCt && _cachedFriendTypes.Contains(friendCt))
+                if (creature is not Player && creature.CreatureType is { } friendCt && _cachedFriendTypes.Contains(friendCt))
                     return true;
 
                 // If this creature wants to attack everything (998), no one else is a friend.
@@ -1617,10 +1612,10 @@ namespace ACE.Server.WorldObjects
             else
             {
                 // Legacy system handling
-                if (CreatureType != null && CreatureType == creature.CreatureType)
+                if (creature is not Player && CreatureType != null && CreatureType == creature.CreatureType)
                     return true;
 
-                if (FriendType != null && FriendType == creature.CreatureType)
+                if (creature is not Player && FriendType != null && FriendType == creature.CreatureType)
                     return true;
             }
 
