@@ -464,12 +464,15 @@ namespace ACE.Server.Entity
             }
         }
 
-        /// <summary>Character biota ids with PropertyBool.ExcludeFromLeaderboards (9011).</summary>
+        /// <summary>
+        /// Character biota ids excluded from leaderboards.
+        /// Includes <see cref="PropertyBool.ExcludeFromLeaderboards"/> (9011) and <see cref="PropertyBool.IsMule"/> (131).
+        /// </summary>
         private static HashSet<uint> LoadExcludedFromLeaderboardCharacterIds(ShardDbContext context)
         {
             return context.BiotaPropertiesBool
                 .AsNoTracking()
-                .Where(b => b.Type == (ushort)PropertyBool.ExcludeFromLeaderboards && b.Value)
+                .Where(b => (b.Type == (ushort)PropertyBool.ExcludeFromLeaderboards || b.Type == (ushort)PropertyBool.IsMule) && b.Value)
                 .Select(b => b.ObjectId)
                 .ToHashSet();
         }

@@ -13,6 +13,7 @@ namespace ACE.Database.Models.Auth;
 public static class LeaderboardInlineSql
 {
     private const ushort ExcludeFromLeaderboardsBoolType = (ushort)PropertyBool.ExcludeFromLeaderboards;
+    private const ushort IsMuleBoolType = (ushort)PropertyBool.IsMule;
     private const string NonAdminAccountJoin = "INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0";
 
     /// <summary>Output columns must match Leaderboard + AuthDbContext: Score, Account, Character, LeaderboardID.</summary>
@@ -22,7 +23,8 @@ public static class LeaderboardInlineSql
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9005
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -33,7 +35,8 @@ public static class LeaderboardInlineSql
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9004
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -44,7 +47,8 @@ public static class LeaderboardInlineSql
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 25
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -55,7 +59,8 @@ public static class LeaderboardInlineSql
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 390
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -66,7 +71,8 @@ public static class LeaderboardInlineSql
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 262
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -77,7 +83,8 @@ public static class LeaderboardInlineSql
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 43
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -98,6 +105,11 @@ public static class LeaderboardInlineSql
             SELECT 1 FROM ace_shard.character cex
             INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
             WHERE cex.account_Id = a.accountId AND cex.is_Deleted = 0
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM ace_shard.character cm
+            INNER JOIN ace_shard.biota_properties_bool bm ON bm.object_id = cm.id AND bm.type = 131 AND bm.value <> 0
+            WHERE cm.account_Id = a.accountId AND cm.is_Deleted = 0
         )
         ORDER BY COUNT(*) DESC
         LIMIT 25
@@ -122,7 +134,8 @@ public static class LeaderboardInlineSql
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         HAVING Score > 0
         ORDER BY Score DESC
         LIMIT 25
@@ -168,7 +181,8 @@ public static class LeaderboardInlineSql
         FROM ace_shard.character c
         INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = 131
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         HAVING Score > 0
         ORDER BY Score DESC
         LIMIT 25
@@ -181,7 +195,8 @@ public static class LeaderboardInlineSql
         {NonAdminAccountJoin}
         INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = {int64PropertyType}
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -203,10 +218,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9005
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -222,10 +238,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = 9004
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -241,10 +258,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 25
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -260,10 +278,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 390
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -279,10 +298,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 262
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -298,10 +318,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = 43
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -322,13 +343,18 @@ public static class LeaderboardInlineSql
                     ORDER BY c.total_Logins DESC LIMIT 1) AS `Character`,
                    a.accountId AS LeaderboardID
             FROM account_quest a
-            INNER JOIN account acc ON acc.id = a.accountId AND acc.accessLevel = 0
+            INNER JOIN account acc ON acc.accountId = a.accountId AND acc.accessLevel = 0
             GROUP BY a.accountId
             HAVING `Character` IS NOT NULL
             AND NOT EXISTS (
                 SELECT 1 FROM ace_shard.character cex
                 INNER JOIN ace_shard.biota_properties_bool bx ON bx.object_id = cex.id AND bx.type = 9011 AND bx.value <> 0
                 WHERE cex.account_Id = a.accountId AND cex.is_Deleted = 0
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM ace_shard.character cm
+                INNER JOIN ace_shard.biota_properties_bool bm ON bm.object_id = cm.id AND bm.type = 131 AND bm.value <> 0
+                WHERE cm.account_Id = a.accountId AND cm.is_Deleted = 0
             )
           ) agg
         ) ranked
@@ -355,9 +381,10 @@ public static class LeaderboardInlineSql
             c.name AS `Character`,
             c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
             HAVING Score > 0
           ) innerq
         ) ranked
@@ -405,9 +432,10 @@ public static class LeaderboardInlineSql
             c.name AS `Character`,
             c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = 9011
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
             HAVING Score > 0
           ) innerq
         ) ranked
@@ -424,10 +452,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int64 i ON i.object_id = c.id AND i.type = {int64PropertyType}
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}
@@ -442,7 +471,8 @@ public static class LeaderboardInlineSql
         {NonAdminAccountJoin}
         INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = {intPropertyType}
         LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
-        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+        LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+        WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
         ORDER BY i.value DESC
         LIMIT 25
         """;
@@ -459,10 +489,11 @@ public static class LeaderboardInlineSql
           FROM (
             SELECT i.value AS Score, c.account_Id AS Account, c.name AS `Character`, c.id AS LeaderboardID
             FROM ace_shard.character c
-            {NonAdminAccountJoin}
+            INNER JOIN account a ON a.accountId = c.account_Id AND a.accessLevel = 0
             INNER JOIN ace_shard.biota_properties_int i ON i.object_id = c.id AND i.type = {intPropertyType}
             LEFT JOIN ace_shard.biota_properties_bool b ON b.object_id = c.id AND b.type = {ExcludeFromLeaderboardsBoolType}
-            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0)
+            LEFT JOIN ace_shard.biota_properties_bool bm ON bm.object_id = c.id AND bm.type = {IsMuleBoolType}
+            WHERE c.is_Deleted = 0 AND (b.value IS NULL OR b.value = 0) AND (bm.value IS NULL OR bm.value = 0)
           ) innerq
         ) ranked
         WHERE ranked.Account = {accountId}

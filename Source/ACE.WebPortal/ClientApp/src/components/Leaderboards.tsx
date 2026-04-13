@@ -45,6 +45,33 @@ type PetRegistryEntry = {
 
 const DEFAULT_BOARD = 'lum'
 
+type BoardGroup = { title: string; ids: string[] }
+
+const BOARD_GROUPS: BoardGroup[] = [
+  { title: 'Progression', ids: ['level', 'enl', 'attr', 'augs', 'title', 'deaths'] },
+  { title: 'Wealth', ids: ['bank', 'lum', 'enlcoins', 'wenlcoins', 'mkeys', 'lkeys'] },
+  { title: 'Account', ids: ['qb'] },
+  { title: 'Pets', ids: ['pets', 'shinies'] },
+  { title: 'Discipline', ids: ['jails', 'notguilty'] },
+]
+
+function orderBoards(boards: BoardMeta[]): BoardMeta[] {
+  const byId = new Map(boards.map((b) => [b.id, b] as const))
+  const ordered: BoardMeta[] = []
+  for (const g of BOARD_GROUPS) {
+    for (const id of g.ids) {
+      const b = byId.get(id)
+      if (b) ordered.push(b)
+    }
+  }
+  const known = new Set(ordered.map((b) => b.id))
+  const leftovers = boards
+    .filter((b) => !known.has(b.id))
+    .slice()
+    .sort((a, b) => a.title.localeCompare(b.title))
+  return [...ordered, ...leftovers]
+}
+
 function formatScore(boardId: string, score: number): string {
   if (
     boardId === 'bank' ||
@@ -119,7 +146,8 @@ export default function Leaderboards() {
         const res = await api.get<{ boards: BoardMeta[] }>('/api/leaderboard/boards')
         if (cancelled) return
         const boards = res?.boards ?? []
-        setCatalog(boards)
+        setCatalog(orderBoards(boards))
+
         if (boards.length && !boards.some((b) => b.id === boardId)) {
           setBoardId(boards[0].id)
         }
@@ -135,6 +163,19 @@ export default function Leaderboards() {
       cancelled = true
     }
   }, [])
+
+  const groupedCatalog = useMemo(() => {
+    const byId = new Map(catalog.map((b) => [b.id, b] as const))
+    const groups = BOARD_GROUPS.map((g) => ({
+      title: g.title,
+      boards: g.ids.map((id) => byId.get(id)).filter(Boolean) as BoardMeta[],
+    })).filter((g) => g.boards.length > 0)
+
+    const known = new Set(BOARD_GROUPS.flatMap((g) => g.ids))
+    const other = catalog.filter((b) => !known.has(b.id))
+    if (other.length) groups.push({ title: 'Other', boards: other })
+    return groups
+  }, [catalog])
 
   const loadBoard = useCallback(async (id: string) => {
     try {
@@ -264,21 +305,28 @@ export default function Leaderboards() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            {catalog.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setBoardId(b.id)}
-                className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border',
-                  b.id === boardId
-                    ? 'bg-blue-600 border-blue-500 text-white'
-                    : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:border-neutral-600'
-                )}
-              >
-                {b.title}
-              </button>
+          <div className="space-y-3">
+            {groupedCatalog.map((g) => (
+              <div key={g.title} className="space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-neutral-500">{g.title}</div>
+                <div className="flex flex-wrap gap-2">
+                  {g.boards.map((b) => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setBoardId(b.id)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border',
+                        b.id === boardId
+                          ? 'bg-blue-600 border-blue-500 text-white'
+                          : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:border-neutral-600'
+                      )}
+                    >
+                      {b.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
 
@@ -322,7 +370,7 @@ export default function Leaderboards() {
                     )}
                     {payload.rows.map((row) => (
                       <tr
-                        key={`${row.rank}-${row.character}-${row.score}`}
+                        key={`${payload.id}-${row.characterGuid ?? row.account ?? row.character}-${row.rank}`}
                         className={cn(
                           'border-b border-neutral-800/80 last:border-0',
                           row.you && 'bg-blue-600/10'
