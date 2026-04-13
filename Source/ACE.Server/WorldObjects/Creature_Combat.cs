@@ -1433,6 +1433,10 @@ namespace ACE.Server.WorldObjects
                 if (creature is Player player && IsExplicitlyFriendlyPlayer(player))
                     return false;
 
+                // Explicit non-player friendship should also override custom hostility rules.
+                if (creature.CreatureType is { } friendType && _cachedFriendTypes.Contains(friendType))
+                    return false;
+
                 // Attack All pseudo-type (998)
                 if (_attackAll) return true;
 
