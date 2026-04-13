@@ -45,7 +45,7 @@ namespace ACE.Server.WorldObjects
             Console.WriteLine($"Attackable: {monster.Attackable}");
             Console.WriteLine($"Tolerance: {monster.Tolerance}");*/
 
-            if (!string.IsNullOrEmpty(monster.FriendlyQuestString) && QuestManager.HasQuest(monster.FriendlyQuestString))
+            if (monster.IsUsingCustomTargetingLists && monster.IsFriend(this))
                 return;
 
             // faction mobs will retaliate against players belonging to the same faction

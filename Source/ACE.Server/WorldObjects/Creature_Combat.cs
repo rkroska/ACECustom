@@ -1448,12 +1448,18 @@ namespace ACE.Server.WorldObjects
                 if (creature.CreatureType is { } creatureType && _cachedFoeTypes.Contains(creatureType)) return true;
 
                 // Reciprocal checking (does the target consider us a foe?)
+                creature.EnsureTargetingCacheCurrent();
                 if (creature.IsUsingCustomTargetingLists)
                 {
                     if (creature._attackAll) return true;
                     if (creature._attackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
                     if (this is Player && creature._cachedFoeTypes.Contains(ACE.Entity.Enum.CreatureType.Player)) return true;
                     if (CreatureType is { } selfType && creature._cachedFoeTypes.Contains(selfType)) return true;
+                }
+                else if (creature.FoeType != null)
+                {
+                    if (creature.FoeType == CreatureType) return true;
+                    if (creature.FoeType == ACE.Entity.Enum.CreatureType.AttackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
                 }
             }
             else

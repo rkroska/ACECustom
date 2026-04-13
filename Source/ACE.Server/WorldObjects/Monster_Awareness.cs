@@ -30,7 +30,10 @@ namespace ACE.Server.WorldObjects
         /// Enabled only when UseCustomTargetingLists is true, and list/999 data is present.
         /// </summary>
         public bool UsesExtendedFoeTargeting => IsUsingCustomTargetingLists &&
-            (_attackNonSelf || _cachedFoeTypes.Count > 0 || !string.IsNullOrEmpty(FoeTypeString) || !string.IsNullOrEmpty(FriendTypeString));
+            (_attackNonSelf || _cachedFoeTypes.Count > 0 ||
+             !string.IsNullOrEmpty(FoeTypeString) ||
+             !string.IsNullOrEmpty(FriendTypeString) ||
+             !string.IsNullOrEmpty(FriendlyQuestString));
 
         /// <summary>
         /// Cache for visible targets to reduce expensive lookups
@@ -609,7 +612,9 @@ namespace ACE.Server.WorldObjects
                         continue;
                 }
 
-                // Monster-tolerance mobs still scan and may aggro players; skip combat pets only (retail-like pet handling)
+                if (Tolerance.HasFlag(Tolerance.Monster) && !UsesExtendedFoeTargeting && creature is Player)
+                    continue;
+
                 if (Tolerance.HasFlag(Tolerance.Monster) && creature is CombatPet)
                     continue;
 
