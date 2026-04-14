@@ -21,9 +21,6 @@ namespace ACE.Server.Physics.Common
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        /// <summary>Landblocks (e.g. colosseum 0x00B0) where we emit extra indoor spawn diagnostics when log level is DEBUG.</summary>
-        private static bool IndoorSpawnDiagLandblock(uint fullCellId) => (fullCellId >> 16) == 0x00B0;
-
         //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
@@ -133,8 +130,8 @@ namespace ACE.Server.Physics.Common
             //    return; // already built
             //}
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
-            var diagDebug = IndoorSpawnDiagLandblock(ID) && log.IsDebugEnabled;
-            var diagCfg = IndoorPlacementDiagLogging.Enabled && IndoorSpawnDiagLandblock(ID);
+            var diagDebug = IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled;
+            var diagCfg = IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID);
             var visibleListCount = VisibleCellIDs?.Count ?? 0;
             var failedVisibleLoads = 0;
             var tryAddFailed = 0;
@@ -144,7 +141,7 @@ namespace ACE.Server.Physics.Common
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
                 if (cell == null)
                 {
-                    if (log.IsDebugEnabled)
+                    if (diagDebug || diagCfg)
                         log.Debug($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8} (requestedVar:{this.Pos.Variation})");
                     failedVisibleLoads++;
                 }
@@ -267,9 +264,9 @@ namespace ACE.Server.Physics.Common
             {
                 if (VisibleCells == null)
                 {
-                    if (IndoorPlacementDiagLogging.Enabled && IndoorSpawnDiagLandblock(ID))
+                    if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID))
                         log.Info($"[IndoorPlaceDiag] find_visible_child_cell: VisibleCells is null (searchCells). root={ID:X8} posVar={Pos.Variation}");
-                    if (IndoorSpawnDiagLandblock(ID) && log.IsDebugEnabled)
+                    if (IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled)
                         log.Debug($"[SpawnDiag] find_visible_child_cell: VisibleCells is null (searchCells). root={ID:X8} posVar={Pos.Variation}");
                     return null;
                 }
@@ -295,8 +292,8 @@ namespace ACE.Server.Physics.Common
                 }
             }
 
-            var diagFindDebug = IndoorSpawnDiagLandblock(ID) && log.IsDebugEnabled;
-            var diagFindCfg = IndoorPlacementDiagLogging.Enabled && IndoorSpawnDiagLandblock(ID);
+            var diagFindDebug = IndoorPlacementDiagLogging.IsColo(ID) && log.IsDebugEnabled;
+            var diagFindCfg = IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(ID);
             if (diagFindDebug || diagFindCfg)
             {
                 var rootIn = point_in_cell(origin);
