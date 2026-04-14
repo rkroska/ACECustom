@@ -186,13 +186,23 @@ namespace ACE.Server.WorldObjects
             StopExistingMoveToChains();
 
             var item = FindObject(itemGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems | SearchLocations.Landblock);
+
+            Player otherOnlineForDiag = null;
+            if (PlayerManager.GetOnlinePlayer(itemGuid) is Player op && op != this)
+                otherOnlineForDiag = op;
+
             if (item == null)
             {
                 log.Warn($"{itemGuid} not found in {this.Location.LandblockId}, {this.Location.Variation}");
+                if (otherOnlineForDiag != null)
+                    LogPrestigePlayerInteractionDiagnostics("HandleActionUseItem", itemGuid, otherOnlineForDiag, null);
+                log.Debug($"{Name}.HandleActionUseItem({itemGuid:X8}): couldn't find object");
+                SendUseDoneEvent();
+                return;
             }
 
-            if (PlayerManager.GetOnlinePlayer(itemGuid) is Player otherOnline && otherOnline != this)
-                LogPrestigePlayerInteractionDiagnostics("HandleActionUseItem", itemGuid, otherOnline, item);
+            if (otherOnlineForDiag != null)
+                LogPrestigePlayerInteractionDiagnostics("HandleActionUseItem", itemGuid, otherOnlineForDiag, item);
 
             if (IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(ItemsInTradeWindow))
             {
@@ -201,26 +211,18 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (item != null)
+            if (item.CurrentLandblock != null && !item.Visibility && item.Guid != LastOpenedContainerId)
             {
-                if (item.CurrentLandblock != null && !item.Visibility && item.Guid != LastOpenedContainerId)
+                if (IsBusy)
                 {
-                    if (IsBusy)
-                    {
-                        SendUseDoneEvent(WeenieError.YoureTooBusy);
-                        return;
-                    }
-
-                    CreateMoveToChain(item, (success) => TryUseItem(item, success));
+                    SendUseDoneEvent(WeenieError.YoureTooBusy);
+                    return;
                 }
-                else
-                    TryUseItem(item);
+
+                CreateMoveToChain(item, (success) => TryUseItem(item, success));
             }
             else
-            {
-                log.Debug($"{Name}.HandleActionUseItem({itemGuid:X8}): couldn't find object");
-                SendUseDoneEvent();
-            }
+                TryUseItem(item);
         }
 
         public DateTime NextUseTime { get; set; }

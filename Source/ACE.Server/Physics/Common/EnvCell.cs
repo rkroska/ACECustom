@@ -144,7 +144,8 @@ namespace ACE.Server.Physics.Common
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
                 if (cell == null)
                 {
-                    Console.WriteLine($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8} (requestedVar:{this.Pos.Variation})");
+                    if (log.IsDebugEnabled)
+                        log.Debug($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8} (requestedVar:{this.Pos.Variation})");
                     failedVisibleLoads++;
                 }
                 else if (!VisibleCells.TryAdd(visibleCellID, cell))
