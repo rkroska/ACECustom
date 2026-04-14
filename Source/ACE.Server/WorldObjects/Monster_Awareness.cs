@@ -856,8 +856,8 @@ namespace ACE.Server.WorldObjects
                 if (!PotentialFoe(creature))
                     continue;
 
-                player.AlertMonster(this);
-                break;
+                if (player.AlertMonster(this))
+                    break;
             }
         }
     }
