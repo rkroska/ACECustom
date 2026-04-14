@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
+using log4net;
+
 using ACE.Entity.Enum;
 using ACE.Server.Physics.BSP;
 using ACE.Server.Physics.Animation;
@@ -11,11 +13,17 @@ using ACE.Server.Physics.Extensions;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using ACE.Common;
+using ACE.Server.Physics.Util;
 
 namespace ACE.Server.Physics.Common
 {
     public class EnvCell: ObjCell, IEquatable<EnvCell>
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        /// <summary>Landblocks (e.g. colosseum 0x00B0) where we emit extra indoor spawn diagnostics when log level is DEBUG.</summary>
+        private static bool IndoorSpawnDiagLandblock(uint fullCellId) => (fullCellId >> 16) == 0x00B0;
+
         //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
@@ -125,14 +133,53 @@ namespace ACE.Server.Physics.Common
             //    return; // already built
             //}
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
+            var diagDebug = IndoorSpawnDiagLandblock(ID) && log.IsDebugEnabled;
+            var diagCfg = IndoorPlacementDiagLogging.Enabled && IndoorSpawnDiagLandblock(ID);
+            var visibleListCount = VisibleCellIDs?.Count ?? 0;
+            var failedVisibleLoads = 0;
+            var tryAddFailed = 0;
             foreach (var visibleCellID in VisibleCellIDs)
             {
-                var blockCellID = ID & 0xFFFF0000 | visibleCellID;
+                var blockCellID = (ID & 0xFFFF0000) | visibleCellID;
                 var cell = (EnvCell)LScape.get_landcell(blockCellID, this.Pos.Variation);
                 if (cell == null)
-                    Console.WriteLine($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8}");
+                {
+                    Console.WriteLine($"[DEBUG-VIS] EnvCell {ID:X8} (Var:{this.Pos.Variation}): Failed to load VisibleCell {blockCellID:X8} (requestedVar:{this.Pos.Variation})");
+                    failedVisibleLoads++;
+                }
                 else if (!VisibleCells.TryAdd(visibleCellID, cell))
-                    ;// Console.WriteLine($"[DEBUG-VIS] EnvCell {ID:X8}: Failed to add VisibleCell {blockCellID:X8} (Duplicate?)");
+                    tryAddFailed++;// duplicate key — expected rarely when multiple paths register the same stub
+            }
+            if (diagDebug || diagCfg)
+            {
+                var keyMismatch = 0;
+                foreach (var kv in VisibleCells)
+                {
+                    if (kv.Value == null) continue;
+                    if (kv.Key != (kv.Value.ID & 0xFFFF))
+                        keyMismatch++;
+                }
+                var loaded = VisibleCells.Values.Where(v => v != null).ToList();
+                var distinctInstances = 0;
+                for (var i = 0; i < loaded.Count; i++)
+                {
+                    var isNew = true;
+                    for (var j = 0; j < i; j++)
+                    {
+                        if (ReferenceEquals(loaded[i], loaded[j])) { isNew = false; break; }
+                    }
+                    if (isNew) distinctInstances++;
+                }
+                var distinctFullIds = loaded.Select(v => v.ID).Distinct().Count();
+                var distinctOrigins = loaded
+                    .Select(v => $"{v.Pos.Frame.Origin.X:F1},{v.Pos.Frame.Origin.Y:F1},{v.Pos.Frame.Origin.Z:F1}")
+                    .Distinct()
+                    .Count();
+                var msg = $"build_visible_cells: root={ID:X8} posVar={Pos.Variation} visibleIdListCount={visibleListCount} visibleDictCount={VisibleCells.Count} failedLoads={failedVisibleLoads} tryAddDup={tryAddFailed} keyVsValueIdMismatch={keyMismatch} distinctVisibleInstances={distinctInstances} distinctVisibleFullIds={distinctFullIds} distinctVisibleOrigins={distinctOrigins} cellStructNull={CellStructure == null}";
+                if (diagCfg)
+                    log.Info($"[IndoorPlaceDiag] {msg}");
+                if (diagDebug)
+                    log.Debug($"[SpawnDiag] {msg}");
             }
             //Parallel.ForEach(VisibleCellIDs, ConfigManager.Config.Server.Threading.LandblockManagerParallelOptions, visibleCellID =>
             //{
@@ -217,13 +264,24 @@ namespace ACE.Server.Physics.Common
 
             if (searchCells)
             {
+                if (VisibleCells == null)
+                {
+                    if (IndoorPlacementDiagLogging.Enabled && IndoorSpawnDiagLandblock(ID))
+                        log.Info($"[IndoorPlaceDiag] find_visible_child_cell: VisibleCells is null (searchCells). root={ID:X8} posVar={Pos.Variation}");
+                    if (IndoorSpawnDiagLandblock(ID) && log.IsDebugEnabled)
+                        log.Debug($"[SpawnDiag] find_visible_child_cell: VisibleCells is null (searchCells). root={ID:X8} posVar={Pos.Variation}");
+                    return null;
+                }
+
+                // Use the EnvCell instances already stored in VisibleCells. Re-fetching via GetVisible(visibleCell.ID & 0xFFFF)
+                // can miss when dictionary keys ever diverge from (cell.ID & 0xFFFF) after variant-cache refactors (PR #391+),
+                // which would skip point_in_cell tests entirely and break indoor spawns.
                 foreach (var visibleCell in VisibleCells.Values)
                 {
                     if (visibleCell == null) continue;
 
-                    var envCell = GetVisible(visibleCell.ID & 0xFFFF);
-                    if (envCell != null && envCell.point_in_cell(origin))
-                        return envCell;
+                    if (visibleCell.point_in_cell(origin))
+                        return visibleCell;
                 }
             }
             else
@@ -234,6 +292,54 @@ namespace ACE.Server.Physics.Common
                     if (envCell != null && envCell.point_in_cell(origin))
                         return envCell;
                 }
+            }
+
+            var diagFindDebug = IndoorSpawnDiagLandblock(ID) && log.IsDebugEnabled;
+            var diagFindCfg = IndoorPlacementDiagLogging.Enabled && IndoorSpawnDiagLandblock(ID);
+            if (diagFindDebug || diagFindCfg)
+            {
+                var rootIn = point_in_cell(origin);
+                var rootOwnOriginInCell = CellStructure != null && point_in_cell(Pos.Frame.Origin);
+                var childHits = 0;
+                var childStructNull = 0;
+                var ownOriginHits = 0;
+                var ownOriginChecked = 0;
+                if (VisibleCells != null)
+                {
+                    foreach (var vc in VisibleCells.Values)
+                    {
+                        if (vc == null) { childStructNull++; continue; }
+                        if (vc.CellStructure == null) childStructNull++;
+                        else if (vc.point_in_cell(origin)) childHits++;
+
+                        if (vc?.CellStructure != null)
+                        {
+                            ownOriginChecked++;
+                            if (vc.point_in_cell(vc.Pos.Frame.Origin))
+                                ownOriginHits++;
+                        }
+                    }
+                }
+                var lbVar = CurLandblock?.VariationId;
+                uint? adjustCellId = null;
+                string adjustCellOrigin = null;
+                if (diagFindCfg)
+                {
+                    var dungeonId = ID >> 16;
+                    var v = Pos.Variation ?? CurLandblock?.VariationId;
+                    adjustCellId = AdjustCell.Get(dungeonId, v)?.GetCell(origin);
+                    if (adjustCellId != null)
+                    {
+                        var hit = (EnvCell)LScape.get_landcell(adjustCellId.Value, v);
+                        adjustCellOrigin = hit?.Pos.Frame.Origin.ToString();
+                    }
+                }
+                var tail = $"adjustCellGetCell={adjustCellId?.ToString("X8") ?? "n/a"} adjustCellResolvedOrigin={adjustCellOrigin ?? "n/a"}";
+                var body = $"find_visible_child_cell null: root={ID:X8} env={EnvironmentID:X8} cellStruct={CellStructureID} posVar={Pos.Variation} physLandblockVar={lbVar} rootOrigin={Pos.Frame.Origin} origin={origin} distRootOriginToSample={Vector3.Distance(Pos.Frame.Origin, origin)} SeenOutside={SeenOutside} searchCells={searchCells} rootPointInCell={rootIn} rootOwnOriginInCell={rootOwnOriginInCell} rootCellStructNull={CellStructure == null} visibleDict={VisibleCells?.Count} visibleIdList={VisibleCellIDs?.Count} childPointHits={childHits} childOrStructNull={childStructNull} visibleOwnOriginHits={ownOriginHits}/{ownOriginChecked} {tail}";
+                if (diagFindCfg)
+                    log.Info($"[IndoorPlaceDiag] {body}");
+                if (diagFindDebug)
+                    log.Debug($"[SpawnDiag] {body}");
             }
             return null;
         }

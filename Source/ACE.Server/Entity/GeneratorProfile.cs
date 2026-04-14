@@ -381,6 +381,12 @@ namespace ACE.Server.Entity
                     obj.Location = new ACE.Entity.Position(Generator.Location.Cell, Generator.Location.PositionX + Biota.OriginX ?? 0, Generator.Location.PositionY + Biota.OriginY ?? 0, Generator.Location.PositionZ + Biota.OriginZ ?? 0, Biota.AnglesX ?? 0, Biota.AnglesY ?? 0, Biota.AnglesZ ?? 0, Biota.AnglesW ?? 0, false, Generator.Location.Variation);
             }
 
+            if (ServerConfig.indoor_spawn_placement_diag_verbose.Value && obj.Location != null && IndoorPlacementDiagLogging.IsColo(obj.Location.Cell))
+            {
+                var specificCell = (Biota.ObjCellId ?? 0) > 0;
+                log.Info($"[IndoorPlaceDiag] Spawn_Specific gen=0x{Generator.Guid:X8} name={Generator.Name} spawn={obj.Name} wcid={obj.WeenieClassId} profile={LinkId} regen={RegenLocationType} specificCellBranch={specificCell} biotaObjCell=0x{Biota.ObjCellId ?? 0:X8} biotaXYZ=({Biota.OriginX},{Biota.OriginY},{Biota.OriginZ}) genCell=0x{Generator.Location.Cell:X8} genXYZ=({Generator.Location.PositionX},{Generator.Location.PositionY},{Generator.Location.PositionZ}) genVar={Generator.Location.Variation} objCell=0x{obj.Location.Cell:X8} objXYZ=({obj.Location.PositionX},{obj.Location.PositionY},{obj.Location.PositionZ}) objVar={obj.Location.Variation}");
+            }
+
             if (!VerifyLandblock(obj) || !VerifyWalkableSlope(obj))
                 return false;
 

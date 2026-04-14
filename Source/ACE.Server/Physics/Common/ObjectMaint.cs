@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 
 using ACE.Entity.Enum;
+using ACE.Server.Managers;
 using ACE.Server.Physics.Managers;
 using ACE.Server.WorldObjects;
 using log4net;
@@ -197,8 +198,16 @@ namespace ACE.Server.Physics.Common
         public bool AddKnownObject(PhysicsObj obj)
         {
             // Initial sanity checks (no lock needed yet)
-            if (this.PhysicsObj.Position.Variation != obj.Position.Variation)
+            // Must match networking (Player_Tracking / PrestigeManager): retail null vs 0 is one bucket; prestige is exact.
+            if (!PrestigeManager.SameVariationForVisibility(this.PhysicsObj.Position.Variation, obj.Position.Variation))
+            {
+                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                {
+                    log.Warn($"[PrestigeInteraction] ObjMaint.AddKnownObject blocked: viewer={PhysicsObj?.Name}({PhysicsObj?.ID:X8}) v={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} " +
+                             $"target={obj?.Name}({obj?.ID:X8}) v={obj?.Position?.Variation?.ToString() ?? "null"}");
+                }
                 return false;
+            }
 
             // Check if already known (optimistic read to avoid write lock overhead)
             bool alreadyKnown = false;
@@ -482,8 +491,13 @@ namespace ACE.Server.Physics.Common
             rwLock.EnterWriteLock();
             try
             {
-                if (PhysicsObj.Position.Variation != obj.Position.Variation)
+                if (!PrestigeManager.SameVariationForVisibility(PhysicsObj.Position.Variation, obj.Position.Variation))
                 {
+                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                    {
+                        log.Warn($"[PrestigeInteraction] ObjMaint.AddVisibleObject blocked: viewer={PhysicsObj?.Name}({PhysicsObj?.ID:X8}) v={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} " +
+                                 $"target={obj?.Name}({obj?.ID:X8}) v={obj?.Position?.Variation?.ToString() ?? "null"}");
+                    }
                     return false;
                 }
                 if (VisibleObjects.ContainsKey(obj.ID))
@@ -530,7 +544,13 @@ namespace ACE.Server.Physics.Common
 
                 RemoveObjectsToBeDestroyed(objs);
 
-                return AddKnownObjects(visibleAdded);
+                var newlyKnown = AddKnownObjects(visibleAdded);
+                if (ServerConfig.prestige_interaction_diag_verbose.Value && PhysicsObj?.IsPlayer == true)
+                {
+                    log.Warn($"[PrestigeInteraction] ObjMaint.AddVisibleObjects: viewer={PhysicsObj.Name}({PhysicsObj.ID:X8}) v={PhysicsObj.Position?.Variation?.ToString() ?? "null"} " +
+                             $"candidates={objs?.Count.ToString() ?? "null"} newlyVisible={visibleAdded.Count} newlyKnown={newlyKnown?.Count.ToString() ?? "null"}");
+                }
+                return newlyKnown;
             }
             finally
             {
@@ -846,7 +866,7 @@ namespace ACE.Server.Physics.Common
                 log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player for dat object");
                 return false;
             }
-            if (obj.Position.Variation != PhysicsObj.Position.Variation)
+            if (!PrestigeManager.SameVariationForVisibility(obj.Position.Variation, PhysicsObj.Position.Variation))
             {
                 log.Debug($"{PhysicsObj.Name}.ObjectMaint.AddKnownPlayer({obj.Name}): tried to add player in a different Variation");
                 return false;
@@ -876,6 +896,12 @@ namespace ACE.Server.Physics.Common
                         newObjs.Add(obj);
                 }
 
+                if (ServerConfig.prestige_interaction_diag_verbose.Value && PhysicsObj?.IsPlayer == true)
+                {
+                    var list = objs as ICollection<PhysicsObj>;
+                    log.Warn($"[PrestigeInteraction] ObjMaint.AddKnownPlayers: owner={PhysicsObj.Name}({PhysicsObj.ID:X8}) v={PhysicsObj.Position?.Variation?.ToString() ?? "null"} " +
+                             $"candidates={(list?.Count.ToString() ?? "?" )} added={newObjs.Count} totalKnownPlayers={KnownPlayers.Count}");
+                }
                 return newObjs;
             }
             finally

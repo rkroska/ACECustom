@@ -4,11 +4,14 @@ using System.Numerics;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Common;
+using ACE.Server.Physics.Common;
+using log4net;
 
 namespace ACE.Server.Physics.Util
 {
     public class AdjustCell
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public readonly List<Common.EnvCell> EnvCells = [];
         public static readonly ConcurrentDictionary<VariantCacheId, AdjustCell> AdjustCells = new();
 
@@ -45,6 +48,8 @@ namespace ACE.Server.Physics.Util
             {
                 adjustCell = new AdjustCell(dungeonID, variationId);
                 AdjustCells.TryAdd(cacheKey, adjustCell);
+                if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(dungeonID << 16 | 0x100))
+                    log.Info($"[IndoorPlaceDiag] AdjustCell.Get new cache entry dungeon=0x{dungeonID:X4} variationId={variationId?.ToString() ?? "null"} envCellsLoaded={adjustCell.EnvCells.Count}");
             }
             return adjustCell;
         }

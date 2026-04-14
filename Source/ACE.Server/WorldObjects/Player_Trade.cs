@@ -36,7 +36,15 @@ namespace ACE.Server.WorldObjects
             }
 
             var tradePartner = PlayerManager.GetOnlinePlayer(tradePartnerGuid);
-            if (tradePartner == null) return;
+            if (tradePartner == null)
+            {
+                if (initiator)
+                {
+                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                        log.Warn($"[PrestigeInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) tradePartnerGuid={tradePartnerGuid:X8} not in onlinePlayers (no matching session).");
+                }
+                return;
+            }
 
             //Check to see if potential trading partner is an Olthoi player
             if (initiator && tradePartner.IsOlthoiPlayer)
@@ -73,10 +81,14 @@ namespace ACE.Server.WorldObjects
                 {
                     if (!success)
                     {
+                        if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                            log.Warn($"[PrestigeInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) partner={tradePartner.Name}({tradePartner.Guid.Full:X8}) MoveToChain failed (likely range/validTarget).");
                         Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TradeMaxDistanceExceeded));
                         return;
                     }
 
+                    if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                        log.Warn($"[PrestigeInteraction] OpenTradeNegotiations: initiator={Name}({Guid.Full:X8}) partner={tradePartner.Name}({tradePartner.Guid.Full:X8}) MoveToChain success; sending RegisterTrade.");
                     Session.Network.EnqueueSend(new GameEventRegisterTrade(Session, Guid, tradePartner.Guid));
 
                     tradePartner.HandleActionOpenTradeNegotiations(Guid.Full, false);
@@ -95,13 +107,18 @@ namespace ACE.Server.WorldObjects
                 ItemsInTradeWindow.Clear();
                 tradePartner.ItemsInTradeWindow.Clear();
 
-                Session.Network.EnqueueSend(new GameEventRegisterTrade(Session, tradePartner.Guid, tradePartner.Guid));
+                // Must match the initiator's RegisterTrade pair (initiatorGuid, partnerGuid). Stock ACE duplicated
+                // tradePartner.Guid here; clients can reject the trade and immediately send CloseTradeNegotiations.
+                Session.Network.EnqueueSend(new GameEventRegisterTrade(Session, tradePartner.Guid, Guid));
             }
         }
 
         public void HandleActionCloseTradeNegotiations(EndTradeReason endTradeReason = EndTradeReason.Normal)
         {
             if (TradeTransferInProgress) return;
+
+            if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                log.Warn($"[PrestigeInteraction] CloseTradeNegotiations: player={Name}({Guid.Full:X8}) reason={endTradeReason} partnerGuid={(uint)TradePartner.Full:X8} IsTrading={IsTrading}");
 
             IsTrading = false;
             TradeAccepted = false;

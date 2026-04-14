@@ -522,7 +522,35 @@ namespace ACE.Server.Managers
             if (wo == null)
                 return null;
 
-            return wo.Location?.Variation ?? wo.PhysicsObj?.Position.Variation;
+            // Most world objects have a location (or physics position) with a variation.
+            // However, non-spatial objects (inventory items, escrow items, etc.) may not.
+            // For networking boundaries we still need a deterministic "effective variation"
+            // so we inherit it from the closest spatial owner (wielder/container/owner player).
+
+            var direct = wo.Location?.Variation ?? wo.PhysicsObj?.Position.Variation;
+            if (direct.HasValue)
+                return direct;
+
+            // Items can inherit variation from their wielder/container if the reference is present.
+            var viaWielder = wo.Wielder?.Location?.Variation ?? wo.Wielder?.PhysicsObj?.Position.Variation;
+            if (viaWielder.HasValue)
+                return viaWielder;
+
+            var viaContainer = wo.Container?.Location?.Variation ?? wo.Container?.PhysicsObj?.Position.Variation;
+            if (viaContainer.HasValue)
+                return viaContainer;
+
+            // Fallback for typical inventory items: inherit from online player owner.
+            // (OwnerId is usually set for items in a player's inventory/equipment.)
+            if (wo.OwnerId.HasValue)
+            {
+                var ownerPlayer = PlayerManager.GetOnlinePlayer(wo.OwnerId.Value);
+                var viaOwnerPlayer = ownerPlayer?.Location?.Variation ?? ownerPlayer?.PhysicsObj?.Position.Variation;
+                if (viaOwnerPlayer.HasValue)
+                    return viaOwnerPlayer;
+            }
+
+            return null;
         }
 
         /// <summary>

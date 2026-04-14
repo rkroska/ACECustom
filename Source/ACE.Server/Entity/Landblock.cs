@@ -1263,7 +1263,7 @@ namespace ACE.Server.Entity
 
                     if (wo.Generator != null)
                     {
-                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
+                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] at {wo.Location} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name} | [SpawnDiag] landblock=0x{Id.Landblock:X4} this.VariationId={this.VariationId} addWorldObject_VariationId_param={VariationId} wo.Location.Variation={wo.Location.Variation}");
                         wo.NotifyOfEvent(RegenerationType.PickUp); // Notify generator the generated object is effectively destroyed, use Pickup to catch both cases.
                     }
                     else if (wo.IsGenerator) // Some generators will fail random spawns if they're circumference spans over water or cliff edges
@@ -1285,6 +1285,15 @@ namespace ACE.Server.Entity
 
             if (wo is Player player)
             {
+                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                {
+                    // Helpful when one player can't see another: shows whether physics/ObjMaint is even populated yet.
+                    var physVar = player.PhysicsObj?.Position?.Variation;
+                    log.Warn($"[PrestigeInteraction] Landblock.AddWorldObjectInternal(Player): player={player.Name}({player.Guid.Full:X8}) " +
+                             $"lb={Id.Raw:X8} lbVar={VariationId?.ToString() ?? "null"} " +
+                             $"locCell={player.Location?.Cell:X8} locVar={player.Location?.Variation?.ToString() ?? "null"} physVar={physVar?.ToString() ?? "null"} " +
+                             $"knownPlayers={player.ObjMaint?.GetKnownPlayersCount().ToString() ?? "null"} knownObjs={player.ObjMaint?.GetKnownObjectsCount().ToString() ?? "null"}");
+                }
                 player.SetFogColor(FogColor);
             }
             // For player corpses, we prevent a single player from spamming corpses on a single
