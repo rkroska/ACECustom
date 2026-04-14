@@ -352,16 +352,6 @@ namespace ACE.Server.Managers
 
 
         /// <summary>
-        /// Returns the Workmanship/Mana bonus for generated loot.
-        /// </summary>
-        public static float GetLootWorkmanshipBonus(int tier)
-        {
-            if (tier <= 0) return 0.0f;
-            // +1.0 Workmanship per tier (This is significant for loot gen)
-            return tier * 1.0f;
-        }
-
-        /// <summary>
         /// Returns the Value (Pyreal) multiplier for generated loot.
         /// </summary>
         public static float GetLootValueModifier(int tier)
@@ -373,26 +363,17 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Applies scaled bonuses to generated loot based on the monster's prestige tier.
+        /// Does not modify <see cref="WorldObject.ItemWorkmanship"/> (workmanship stays as rolled/generated).
         /// </summary>
         public static void ApplyLootScaling(WorldObject wo, int tier)
         {
             if (tier <= 0) return;
 
-            // 1. Workmanship / Mana bonus
-            var workmanshipBonus = GetLootWorkmanshipBonus(tier);
-            if (workmanshipBonus > 0)
+            // 1. Mana bonus (10% more max mana per tier)
+            if (wo.ItemMaxMana.HasValue)
             {
-                if (wo.ItemWorkmanship.HasValue)
-                {
-                    wo.ItemWorkmanship += (int)Math.Round(workmanshipBonus);
-                }
-
-                // Items with Mana also benefit from Workmanship scaling (e.g. 10% more mana per tier)
-                if (wo.ItemMaxMana.HasValue)
-                {
-                    wo.ItemMaxMana = (int?)Math.Round(wo.ItemMaxMana.Value * (1.0f + tier * 0.1f));
-                    wo.ItemCurMana = wo.ItemMaxMana; // Fill it up
-                }
+                wo.ItemMaxMana = (int?)Math.Round(wo.ItemMaxMana.Value * (1.0f + tier * 0.1f));
+                wo.ItemCurMana = wo.ItemMaxMana; // Fill it up
             }
 
             // 2. Value Bonus
