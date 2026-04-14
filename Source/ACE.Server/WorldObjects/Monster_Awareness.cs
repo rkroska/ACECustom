@@ -24,16 +24,30 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsAwake = false;
 
-        public bool HasTargetingOverride => FoeType != null || _attackNonSelf || _attackAll || _cachedFoeTypes.Count > 0;
+        public bool HasTargetingOverride
+        {
+            get
+            {
+                EnsureTargetingCacheCurrent();
+                return FoeType != null || _attackNonSelf || _attackAll || _cachedFoeTypes.Count > 0;
+            }
+        }
 
         /// <summary>
         /// Enabled only when UseCustomTargetingLists is true, and list/999 data is present.
         /// </summary>
-        public bool UsesExtendedFoeTargeting => IsUsingCustomTargetingLists &&
-            (_attackNonSelf || _cachedFoeTypes.Count > 0 ||
-             !string.IsNullOrEmpty(FoeTypeString) ||
-             !string.IsNullOrEmpty(FriendTypeString) ||
-             !string.IsNullOrEmpty(FriendlyQuestString));
+        public bool UsesExtendedFoeTargeting
+        {
+            get
+            {
+                EnsureTargetingCacheCurrent();
+                return IsUsingCustomTargetingLists &&
+                    (_attackNonSelf || _cachedFoeTypes.Count > 0 ||
+                     !string.IsNullOrEmpty(FoeTypeString) ||
+                     !string.IsNullOrEmpty(FriendTypeString) ||
+                     !string.IsNullOrEmpty(FriendlyQuestString));
+            }
+        }
 
         /// <summary>
         /// Cache for visible targets to reduce expensive lookups
@@ -805,13 +819,19 @@ namespace ACE.Server.WorldObjects
 
                 if (creature is Player player)
                 {
+                    if (player.CloakStatus == CloakStatus.Creature || (player.Hidden ?? false))
+                        continue;
+
                     if (!PotentialFoe(player))
                         continue;
-                    player.AlertMonster(this);
+                    if (player.AlertMonster(this))
+                        break;
                 }
                 else
-                    creature.AlertMonster(this);
-                break;
+                {
+                    if (creature.AlertMonster(this))
+                        break;
+                }
             }
         }
 
