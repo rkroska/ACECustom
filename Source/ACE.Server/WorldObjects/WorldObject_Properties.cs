@@ -2071,6 +2071,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyBool.AllowFriendlyPlayerDamage); else SetProperty(PropertyBool.AllowFriendlyPlayerDamage, value.Value); }
         }
 
+        public bool? BreakPeaceOnHostileAction
+        {
+            get => GetProperty(PropertyBool.BreakPeaceOnHostileAction);
+            set { if (!value.HasValue) RemoveProperty(PropertyBool.BreakPeaceOnHostileAction); else SetProperty(PropertyBool.BreakPeaceOnHostileAction, value.Value); }
+        }
+
         public string LongDesc
         {
             get => GetProperty(PropertyString.LongDesc);

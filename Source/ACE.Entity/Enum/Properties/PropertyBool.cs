@@ -198,6 +198,7 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         IsCharm                          = 9040,
         AllowFriendlyPlayerDamage       = 9041,
+        BreakPeaceOnHostileAction       = 9042,
         /// <summary>
         /// If TRUE on a weapon, allows multi-strike hits to each roll a proc with decay
         /// </summary>

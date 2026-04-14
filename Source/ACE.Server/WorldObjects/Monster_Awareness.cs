@@ -484,7 +484,7 @@ namespace ACE.Server.WorldObjects
             {
                 // Under extended targeting, explicit friend/foe lists should decide if players are valid.
                 if (UsesExtendedFoeTargeting)
-                    return PotentialFoe(creature);
+                    return PotentialFoe(creature) || PhysicsObj.ObjMaint.RetaliateTargetsContainsKey(creature.Guid.Full);
 
                 // Legacy monster behavior remains unchanged for players.
                 return true;
