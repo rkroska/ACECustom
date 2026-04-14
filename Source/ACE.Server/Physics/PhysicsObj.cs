@@ -2341,8 +2341,16 @@ namespace ACE.Server.Physics
             {
                 if (ServerConfig.prestige_interaction_diag_verbose.Value && this.IsPlayer && obj.IsPlayer)
                 {
-                    log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj variation blocked: viewer={Name}({ID:X8}) v={Position?.Variation?.ToString() ?? "null"} " +
-                             $"target={obj.Name}({obj.ID:X8}) v={obj.Position?.Variation?.ToString() ?? "null"}");
+                    var key = ((long)ID << 32) | obj.ID;
+                    var nowMs = System.Environment.TickCount64;
+                    var lastMs = _prestigeVisDiagLastLogMs.GetOrAdd(key, 0);
+                    if (nowMs - lastMs >= 5000)
+                    {
+                        _prestigeVisDiagLastLogMs[key] = nowMs;
+                        PrestigeVisDiagMaybePrune(nowMs);
+                        log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj variation blocked: viewer={Name}({ID:X8}) v={Position?.Variation?.ToString() ?? "null"} " +
+                                 $"target={obj.Name}({obj.ID:X8}) v={obj.Position?.Variation?.ToString() ?? "null"}");
+                    }
                 }
                 isVisible = false;
             }
