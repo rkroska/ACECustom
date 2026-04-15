@@ -34,6 +34,21 @@ namespace ACE.Server.Physics
 
         private static readonly ConcurrentDictionary<long, long> _prestigeVisDiagLastLogMs = new();
 
+        /// <summary> Trim stale throttle keys so long-running servers do not grow this map without bound. </summary>
+        private static void PrestigeVisDiagMaybePrune(long nowMs)
+        {
+            const int maxEntries = 4096;
+            const long staleMs = 120_000;
+            if (_prestigeVisDiagLastLogMs.Count < maxEntries)
+                return;
+
+            foreach (var kv in _prestigeVisDiagLastLogMs.ToArray())
+            {
+                var age = nowMs - kv.Value;
+                if (age > staleMs || age < -staleMs)
+                    _prestigeVisDiagLastLogMs.TryRemove(kv.Key, out _);
+            }
+        }
         public uint ID;
         public ObjectGuid ObjID;
         public PartArray PartArray;
@@ -2325,8 +2340,16 @@ namespace ACE.Server.Physics
             {
                 if (ServerConfig.prestige_interaction_diag_verbose.Value && this.IsPlayer && obj.IsPlayer)
                 {
-                    log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj variation blocked: viewer={Name}({ID:X8}) v={Position?.Variation?.ToString() ?? "null"} " +
-                             $"target={obj.Name}({obj.ID:X8}) v={obj.Position?.Variation?.ToString() ?? "null"}");
+                    var key = ((long)ID << 32) | obj.ID;
+                    var nowMs = System.Environment.TickCount64;
+                    var lastMs = _prestigeVisDiagLastLogMs.GetOrAdd(key, 0);
+                    if (nowMs - lastMs >= 5000)
+                    {
+                        _prestigeVisDiagLastLogMs[key] = nowMs;
+                        PrestigeVisDiagMaybePrune(nowMs);
+                        log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj variation blocked: viewer={Name}({ID:X8}) v={Position?.Variation?.ToString() ?? "null"} " +
+                                 $"target={obj.Name}({obj.ID:X8}) v={obj.Position?.Variation?.ToString() ?? "null"}");
+                    }
                 }
                 isVisible = false;
             }
@@ -2351,6 +2374,7 @@ namespace ACE.Server.Physics
                         if (nowMs - lastMs >= 5000)
                         {
                             _prestigeVisDiagLastLogMs[key] = nowMs;
+                            PrestigeVisDiagMaybePrune(nowMs);
                             log.Warn($"[PrestigeInteraction] PhysicsObj.handle_visible_obj IsVisible=false (nearby): viewer={Name}({ID:X8}) cell={CurCell?.ID:X8} v={Position?.Variation?.ToString() ?? "null"} " +
                                      $"target={obj.Name}({obj.ID:X8}) cell={obj.CurCell?.ID:X8} v={obj.Position?.Variation?.ToString() ?? "null"} dist2d={Math.Sqrt(distSq):0.00}");
                         }

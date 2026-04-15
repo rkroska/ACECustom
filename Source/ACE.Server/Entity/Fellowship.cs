@@ -452,12 +452,26 @@ namespace ACE.Server.Entity
 
             shareType &= ~ShareType.Fellowship;
 
-            // quest turn-ins: flat share (retail default)
+            // quest turn-ins: flat share (retail default), only among fellows on the same prestige/visibility layer
             if (xpType == XpType.Quest && !ServerConfig.fellow_quest_bonus.Value)
             {
-                var perAmount = (long)amount / fellowshipMembers.Count;
-
+                var earnerVar = PrestigeManager.GetEffectiveVariationForVisibility(player);
+                var sameLayer = new List<Player>();
                 foreach (var member in fellowshipMembers.Values)
+                {
+                    if (PrestigeManager.SameVariationForVisibility(earnerVar, PrestigeManager.GetEffectiveVariationForVisibility(member)))
+                        sameLayer.Add(member);
+                }
+
+                if (sameLayer.Count == 0)
+                {
+                    player.GrantXP((long)amount, XpType.Quest, shareType);
+                    return;
+                }
+
+                var perAmount = (long)amount / sameLayer.Count;
+
+                foreach (var member in sameLayer)
                 {
                     long shareAmount = perAmount;
                     if (xpType == XpType.Kill && monsterTier > 0)
@@ -704,6 +718,11 @@ namespace ACE.Server.Entity
         public static double GetDistanceScalar(Player earner, Player fellow, XpType xpType)
         {
             if (earner == null || fellow == null)
+                return 0.0f;
+
+            if (!PrestigeManager.SameVariationForVisibility(
+                    PrestigeManager.GetEffectiveVariationForVisibility(earner),
+                    PrestigeManager.GetEffectiveVariationForVisibility(fellow)))
                 return 0.0f;
 
             if (xpType == XpType.Quest)

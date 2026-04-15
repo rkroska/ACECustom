@@ -352,16 +352,6 @@ namespace ACE.Server.Managers
 
 
         /// <summary>
-        /// Returns the Workmanship/Mana bonus for generated loot.
-        /// </summary>
-        public static float GetLootWorkmanshipBonus(int tier)
-        {
-            if (tier <= 0) return 0.0f;
-            // +1.0 Workmanship per tier (This is significant for loot gen)
-            return tier * 1.0f;
-        }
-
-        /// <summary>
         /// Returns the Value (Pyreal) multiplier for generated loot.
         /// </summary>
         public static float GetLootValueModifier(int tier)
@@ -373,26 +363,17 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Applies scaled bonuses to generated loot based on the monster's prestige tier.
+        /// Does not modify <see cref="WorldObject.ItemWorkmanship"/> (workmanship stays as rolled/generated).
         /// </summary>
         public static void ApplyLootScaling(WorldObject wo, int tier)
         {
             if (tier <= 0) return;
 
-            // 1. Workmanship / Mana bonus
-            var workmanshipBonus = GetLootWorkmanshipBonus(tier);
-            if (workmanshipBonus > 0)
+            // 1. Mana bonus (10% more max mana per tier)
+            if (wo.ItemMaxMana.HasValue)
             {
-                if (wo.ItemWorkmanship.HasValue)
-                {
-                    wo.ItemWorkmanship += (int)Math.Round(workmanshipBonus);
-                }
-
-                // Items with Mana also benefit from Workmanship scaling (e.g. 10% more mana per tier)
-                if (wo.ItemMaxMana.HasValue)
-                {
-                    wo.ItemMaxMana = (int?)Math.Round(wo.ItemMaxMana.Value * (1.0f + tier * 0.1f));
-                    wo.ItemCurMana = wo.ItemMaxMana; // Fill it up
-                }
+                wo.ItemMaxMana = (int?)Math.Round(wo.ItemMaxMana.Value * (1.0f + tier * 0.1f));
+                wo.ItemCurMana = wo.ItemMaxMana; // Fill it up
             }
 
             // 2. Value Bonus
@@ -531,14 +512,24 @@ namespace ACE.Server.Managers
             if (direct.HasValue)
                 return direct;
 
-            // Items can inherit variation from their wielder/container if the reference is present.
-            var viaWielder = wo.Wielder?.Location?.Variation ?? wo.Wielder?.PhysicsObj?.Position.Variation;
-            if (viaWielder.HasValue)
-                return viaWielder;
-
-            var viaContainer = wo.Container?.Location?.Variation ?? wo.Container?.PhysicsObj?.Position.Variation;
-            if (viaContainer.HasValue)
-                return viaContainer;
+            // Walk wielder / container chain (nested packs, etc.): same precedence as single-hop (wielder before container).
+            var visited = new HashSet<uint> { wo.Guid.Full };
+            for (var curr = wo; ; )
+            {
+                WorldObject next = null;
+                if (curr.Wielder != null)
+                    next = curr.Wielder;
+                else if (curr.Container != null)
+                    next = curr.Container;
+                if (next == null)
+                    break;
+                if (!visited.Add(next.Guid.Full))
+                    break;
+                curr = next;
+                var v = curr.Location?.Variation ?? curr.PhysicsObj?.Position.Variation;
+                if (v.HasValue)
+                    return v;
+            }
 
             // Fallback for typical inventory items: inherit from online player owner.
             // (OwnerId is usually set for items in a player's inventory/equipment.)
