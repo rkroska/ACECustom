@@ -49,6 +49,7 @@ namespace ACE.Server.Physics
                     _prestigeVisDiagLastLogMs.TryRemove(kv.Key, out _);
             }
         }
+
         public uint ID;
         public ObjectGuid ObjID;
         public PartArray PartArray;

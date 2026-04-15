@@ -130,6 +130,7 @@ namespace ACE.Server.Physics.Common
                         log.Info($"[IndoorPlaceDiag] get_landcell DBObj.GetEnvCell returned null blockCell={blockCellID:X8} envV={envVariation?.ToString() ?? "null"}");
                     return null;
                 }
+
                 landblock.LandCells.TryAdd(cacheKey, cell);
                 if (!landblock.LandCells.TryGetValue(cacheKey, out var stored) || stored == null)
                     return cell;

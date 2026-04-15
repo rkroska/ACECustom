@@ -20,6 +20,7 @@ namespace ACE.Server.Physics.Common
     public class EnvCell: ObjCell, IEquatable<EnvCell>
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         //public int NumSurfaces;
         //public List<Surface> Surfaces;
         public CellStruct CellStructure;
