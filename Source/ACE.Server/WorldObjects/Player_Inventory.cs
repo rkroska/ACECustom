@@ -567,7 +567,14 @@ namespace ACE.Server.WorldObjects
                 {
                     // Don't describe objects the player can't see
                     if (result.Visibility && !Adminvision)
+                    {
+                        if (result is Player hiddenPlayer)
+                        {
+                            if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                                log.Warn($"[PrestigeInteraction] FindObject(Landblock): actor={Name}({Guid.Full:X8}) cannot use player={hiddenPlayer.Name}({hiddenPlayer.Guid.Full:X8}) — PropertyBool.Visibility (Adminvision={Adminvision}).");
+                        }
                         return null;
+                    }
 
                     return result;
                 }

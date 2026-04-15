@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
 
+using log4net;
+
 using ACE.Common;
 using ACE.Entity;
 using ACE.Server.Managers;
@@ -13,6 +15,7 @@ namespace ACE.Server.Physics.Common
 {
     public static class LScape
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         //private static readonly object landblockMutex = new object();
         /// <summary>
         /// This is not used if PhysicsEngine.Instance.Server is true
@@ -114,18 +117,35 @@ namespace ACE.Server.Physics.Common
             // indoor cells
             else
             {
-                if (landblock.LandCells.TryGetValue(cacheKey, out cell))
+                var cacheHit = landblock.LandCells.TryGetValue(cacheKey, out cell);
+                if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(blockCellID) && log.IsDebugEnabled)
+                    log.Debug($"[IndoorPlaceDiag] get_landcell indoor blockCell={blockCellID:X8} callerV={variationId?.ToString() ?? "null"} landblockV={landblock.VariationId?.ToString() ?? "null"} envV={envVariation?.ToString() ?? "null"} cacheKeyStub={cacheKey.Landblock:X4} cacheKeyVar={cacheKey.Variant?.ToString() ?? "null"} cacheHit={cacheHit}");
+                if (cacheHit)
                     return cell;
 
                 cell = DBObj.GetEnvCell(blockCellID, envVariation);
-                if (cell == null) return null;
-                cell.CurLandblock = landblock;
-                cell.Pos.Variation = envVariation; //todo - gross
-                cell.VariationId = envVariation;
+                if (cell == null)
+                {
+                    if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(blockCellID))
+                        log.Info($"[IndoorPlaceDiag] get_landcell DBObj.GetEnvCell returned null blockCell={blockCellID:X8} envV={envVariation?.ToString() ?? "null"}");
+                    return null;
+                }
+
                 landblock.LandCells.TryAdd(cacheKey, cell);
-                var envCell = (EnvCell)cell;
+                if (!landblock.LandCells.TryGetValue(cacheKey, out var stored) || stored == null)
+                    return cell;
+
+                if (!ReferenceEquals(stored, cell))
+                    return stored;
+
+                stored.CurLandblock = landblock;
+                stored.Pos.Variation = envVariation; //todo - gross
+                stored.VariationId = envVariation;
+                var envCell = (EnvCell)stored;
                 envCell.PostInit(envVariation);
-                
+                if (IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(blockCellID))
+                    log.Info($"[IndoorPlaceDiag] get_landcell loaded new env cell id={stored.ID:X8} origin={envCell.Pos.Frame.Origin} envV={envVariation?.ToString() ?? "null"} cacheKeyVar={cacheKey.Variant?.ToString() ?? "null"}");
+                cell = stored;
             }
             return cell;
         }
