@@ -316,7 +316,7 @@ namespace ACE.Server
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
             
-            if (!string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
+            if (!string.IsNullOrEmpty(ConfigManager.Config.Chat?.DiscordToken))
             {
                 log.Info("Attempting to start Discord Client...");
                 DiscordChatManager.Initialize();

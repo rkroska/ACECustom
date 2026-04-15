@@ -79,6 +79,9 @@ namespace ACE.Server.Physics.Common
 
         public bool PotentialFoe(PhysicsObj obj)
         {
+            if (WorldObject is Creature self && obj.WeenieObj.WorldObject is Creature target)
+                return self.PotentialFoe(target);
+
             return FoeType != null && FoeType == obj.WeenieObj.WorldObject?.CreatureType ||
                 obj.WeenieObj.FoeType != null && obj.WeenieObj.FoeType == WorldObject?.CreatureType;
         }

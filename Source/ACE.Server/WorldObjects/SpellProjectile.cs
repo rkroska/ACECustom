@@ -374,7 +374,7 @@ namespace ACE.Server.WorldObjects
 
             // also called on resist
             if (player != null && targetPlayer == null)
-                player.OnAttackMonster(creatureTarget);
+                player.OnAttackMonster(creatureTarget, Spell.IsHarmful);
 
             if (player == null && targetPlayer == null)
             {

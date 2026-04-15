@@ -901,7 +901,15 @@ namespace ACE.Server.WorldObjects
 
         public override bool CanDamage(Creature target)
         {
-            return target.Attackable && !target.Teleporting && !(target is CombatPet);
+            if (!target.Attackable || target.Teleporting || target is CombatPet)
+                return false;
+
+            // PropertyBool.AllowFriendlyPlayerDamage (9041): when explicitly false, friendly players cannot damage this creature.
+            // (Creature.BlocksFriendlyPlayerDamage's player→creature branch is never invoked from Creature.CanDamage; this is the live check for melee/missile/magic.)
+            if (target.AllowFriendlyPlayerDamage == false && target.IsFriend(this))
+                return false;
+
+            return true;
         }
 
         // http://acpedia.org/wiki/Announcements_-_2002/04_-_Betrayal
