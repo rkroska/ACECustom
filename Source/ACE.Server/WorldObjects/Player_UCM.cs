@@ -4,8 +4,6 @@ using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages.Messages;
 using System;
 using ACE.Common.Extensions;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace ACE.Server.WorldObjects
 {
@@ -13,9 +11,7 @@ namespace ACE.Server.WorldObjects
     {
         None,
         Basic,
-        BotDetection,
-        BankCheck,
-        EquipCheck
+        BotDetection
     }
     public enum UCMCheckFailReason
     {
@@ -235,16 +231,6 @@ namespace ACE.Server.WorldObjects
                     message = "Are you sure you're not a bot?\n\nAttempting to macro these prompts carries higher punishments.";
                     expectedAnswer = true; // Yes, I'm not a bot.
                     break;
-                case UcmStage.BankCheck:
-                    var bankCheck = GetBankCheckDetails();
-                    message = $"Thanks, just to be sure, is your banked enlightened coins currently {bankCheck.shownValue}?";
-                    expectedAnswer = bankCheck.isCorrect;
-                    break;
-                case UcmStage.EquipCheck:
-                    var equip = GetEquipmentCheckDetails();
-                    message = $"And are you wearing {equip.itemName} on your {equip.slotName} slot?";
-                    expectedAnswer = equip.isCorrect;
-                    break;
             }
 
             message += $"\n\nYou have {timeout.GetFriendlyLongString()} to respond.";
@@ -274,12 +260,6 @@ namespace ACE.Server.WorldObjects
                     switch (CurrentStage)
                     {
                         case UcmStage.BotDetection:
-                            StartAdvancedCheckLocked(UcmStage.BankCheck);
-                            break;
-                        case UcmStage.BankCheck:
-                            StartAdvancedCheckLocked(UcmStage.EquipCheck);
-                            break;
-                        case UcmStage.EquipCheck:
                             PassActiveCheckLocked();
                             break;
                         default:
@@ -305,75 +285,6 @@ namespace ACE.Server.WorldObjects
                 // Unexpectedly failed to start, so abort it.
                 EndActiveCheckLocked();
             }
-        }
-
-        private (string shownValue, bool isCorrect) GetBankCheckDetails()
-        {
-            long trueCoins = Self.BankedEnlightenedCoins ?? 0;
-            bool isCorrect = RNG.Next(0, 2) == 0;
-            
-            // 50% chance of being off-by-one.
-            long shownValue = isCorrect ? trueCoins : (trueCoins + 1);
-            
-            // Format with commas for readability (e.g. "1,234,567")
-            return (shownValue.ToString("N0"), isCorrect);
-        }
-
-        private (string slotName, string itemName, bool isCorrect) GetEquipmentCheckDetails()
-        {
-            var allSingleBits = new List<EquipMask>
-            {
-                EquipMask.HeadWear, EquipMask.ChestWear, EquipMask.AbdomenWear,
-                EquipMask.UpperArmWear, EquipMask.LowerArmWear, EquipMask.HandWear,
-                EquipMask.UpperLegWear, EquipMask.LowerLegWear, EquipMask.FootWear,
-                EquipMask.ChestArmor, EquipMask.AbdomenArmor, EquipMask.UpperArmArmor,
-                EquipMask.LowerArmArmor, EquipMask.UpperLegArmor, EquipMask.LowerLegArmor,
-                EquipMask.NeckWear, EquipMask.WristWearLeft, EquipMask.WristWearRight,
-                EquipMask.FingerWearLeft, EquipMask.FingerWearRight, EquipMask.MeleeWeapon,
-                EquipMask.Shield, EquipMask.MissileWeapon, EquipMask.MissileAmmo,
-                EquipMask.Held, EquipMask.TwoHanded, EquipMask.TrinketOne, EquipMask.Cloak,
-                EquipMask.SigilOne, EquipMask.SigilTwo, EquipMask.SigilThree
-            };
-
-            var items = Self.EquippedObjects.Values.ToList();
-            
-            // If naked, handle as a "nothing" check
-            if (items.Count == 0)
-            {
-                var slot = allSingleBits[RNG.Next(allSingleBits.Count)];
-                bool isCorrectNaked = RNG.Next(0, 2) == 0;
-                return (slot.ToFriendlyString(), isCorrectNaked ? "nothing" : "Silk Shirt", isCorrectNaked);
-            }
-
-            // Pick a random item the player HAS
-            var targetItem = items[RNG.Next(items.Count)];
-            var currentLoc = (EquipMask)(targetItem.CurrentWieldedLocation ?? EquipMask.None);
-
-            // 50% chance to ask about its correct slot, 50% to ask about an incorrect one
-            bool askCorrectSlot = RNG.Next(0, 2) == 0;
-            EquipMask querySlot;
-
-            if (askCorrectSlot)
-            {
-                // Pick a slot that this specific item DOES occupy
-                var possibleSlots = allSingleBits.Where(b => (currentLoc & b) != 0).ToList();
-                querySlot = possibleSlots.Count > 0 ? possibleSlots[RNG.Next(possibleSlots.Count)] : allSingleBits[RNG.Next(allSingleBits.Count)];
-            }
-            else
-            {
-                // Pick a slot that this specific item DOES NOT occupy
-                var incorrectSlots = allSingleBits.Where(b => (currentLoc & b) == 0).ToList();
-                querySlot = incorrectSlots.Count > 0 ? incorrectSlots[RNG.Next(incorrectSlots.Count)] : allSingleBits[RNG.Next(allSingleBits.Count)];
-            }
-
-            // Verify what is actually in that slot to determine the definitive correct answer
-            var itemInQuerySlot = items.FirstOrDefault(i => 
-                i.CurrentWieldedLocation != null && ((EquipMask)i.CurrentWieldedLocation & querySlot) != 0);
-            
-            // The answer is YES ONLY if the item in that slot has the same name as our target item
-            bool actualAnswer = itemInQuerySlot?.Name == targetItem.Name;
-
-            return (querySlot.ToFriendlyString(), targetItem.Name, actualAnswer);
         }
 
         /// <summary>
