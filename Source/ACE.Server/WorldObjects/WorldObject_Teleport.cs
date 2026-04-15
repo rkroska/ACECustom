@@ -234,7 +234,10 @@ namespace ACE.Server.WorldObjects
             else
                 SendUpdatePosition(); // Creature always sends?
 
-            LandblockManager.RelocateObjectForPhysics(this, true);
+            // Variant-only teleports can keep the same Cell value while still requiring a landblock/visibility refresh.
+            // Avoid relocating on the per-tick physics update path (Player.UpdateObjectPhysics), since that already queues relocation via movedObjects.
+            if (landblockUpdate && (player == null || !player.InUpdate))
+                LandblockManager.RelocateObjectForPhysics(this, true);
 
             return landblockUpdate;
         }

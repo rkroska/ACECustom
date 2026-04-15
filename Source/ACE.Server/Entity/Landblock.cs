@@ -41,6 +41,23 @@ namespace ACE.Server.Entity
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static readonly ConcurrentDictionary<uint, long> _landblockReaddDiagLastLogMs = new();
+
+        private static void LandblockReaddDiagMaybePrune(long nowMs)
+        {
+            const int maxEntries = 4096;
+            const long staleMs = 120_000;
+            if (_landblockReaddDiagLastLogMs.Count < maxEntries)
+                return;
+
+            foreach (var kv in _landblockReaddDiagLastLogMs.ToArray())
+            {
+                var age = nowMs - kv.Value;
+                if (age > staleMs || age < -staleMs)
+                    _landblockReaddDiagLastLogMs.TryRemove(kv.Key, out _);
+            }
+        }
+
         public int? VariationId { get; set; }
 
         public LandblockId Id { get; }
@@ -1241,6 +1258,25 @@ namespace ACE.Server.Entity
                 }
             }
 
+            var alreadyPresent = wo != null && (worldObjects.ContainsKey(wo.Guid) || pendingAdditions.ContainsKey(wo.Guid));
+            if (alreadyPresent && wo is Player p && ServerConfig.landblock_readd_diag_verbose.Value)
+            {
+                var nowMs = System.Environment.TickCount64;
+                var lastMs = _landblockReaddDiagLastLogMs.GetOrAdd(p.Guid.Full, 0);
+                if (nowMs - lastMs >= 5000)
+                {
+                    _landblockReaddDiagLastLogMs[p.Guid.Full] = nowMs;
+                    LandblockReaddDiagMaybePrune(nowMs);
+                    log.Warn($"[LandblockReAddDiag] Redundant AddWorldObjectInternal(Player): player={p.Name}({p.Guid.Full:X8}) lb={Id.Raw:X8} lbVar={VariationId?.ToString() ?? "null"} loc={p.Location} currentLb={p.CurrentLandblock?.Id.Raw:X8} currentLbVar={p.CurrentLandblock?.VariationId?.ToString() ?? "null"}");
+                    log.Warn(System.Environment.StackTrace);
+                }
+            }
+
+            // Defensive: If a player is already resident in this landblock (and not pending removal), do not re-add/re-init physics or re-notify.
+            // This prevents accidental high-frequency re-add call sites from spamming CreateObject tracking.
+            if (alreadyPresent && wo is Player alreadyHerePlayer && ReferenceEquals(alreadyHerePlayer.CurrentLandblock, this) && !pendingRemovals.Contains(wo.Guid))
+                return true;
+
             wo.CurrentLandblock = this;
             //if (this.Id.ToString().StartsWith("019E"))
             //{
@@ -1281,7 +1317,8 @@ namespace ACE.Server.Entity
                 pendingRemovals.Remove(wo.Guid);
 
             // broadcast to nearby players
-            wo.NotifyPlayers();
+            if (!alreadyPresent)
+                wo.NotifyPlayers();
 
             if (wo is Player player)
             {
