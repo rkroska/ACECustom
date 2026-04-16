@@ -1473,6 +1473,9 @@ namespace ACE.Server.WorldObjects
             creature.EnsureTargetingCacheCurrent();
             if (creature.IsUsingCustomTargetingLists)
             {
+                if (creature.IsFriend(this))
+                    return false;
+
                 if (creature._attackAll) return true;
                 if (creature._attackNonSelf && (this is Player || CreatureType != creature.CreatureType)) return true;
                 if (this is Player && creature._cachedFoeTypes.Contains(ACE.Entity.Enum.CreatureType.Player)) return true;
