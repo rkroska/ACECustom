@@ -543,21 +543,6 @@ namespace ACE.Server.WorldObjects.Managers
                     }
                     break;
 
-                /* sets self's PropertyFloat stat to a specific amount */
-                case EmoteType.SetMyFloatStat:
-
-                    if (WorldObject != null && emote.Stat != null)
-                    {
-                        var floatProperty = (PropertyFloat)emote.Stat;
-                        var newValue = emote.Percent ?? 1.0f; 
-                        
-                        WorldObject.SetProperty(floatProperty, newValue);
-
-                        if (WorldObject is Player selfPlayer)
-                            selfPlayer.Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyFloat(selfPlayer, floatProperty, newValue));
-                    }
-                    break;
-
                 /* inq questbonus amount */
                 case EmoteType.QuestCompletionCount:
 

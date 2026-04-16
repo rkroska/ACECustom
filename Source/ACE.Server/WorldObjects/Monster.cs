@@ -48,7 +48,11 @@ namespace ACE.Server.WorldObjects
 
             IsFactionMob = IsMonster && WeenieType != WeenieType.CombatPet && Faction1Bits != null;
 
-            HasFoeType = IsMonster && FoeType != null;
+            HasFoeType = IsMonster && (FoeType != null
+                || (TargetingFlags & (CustomTargetingBehavior.AttackNonSelf | CustomTargetingBehavior.AttackAll | CustomTargetingBehavior.HostileToAllPlayers)) != 0
+                || (IsUsingCustomTargetingLists && !string.IsNullOrEmpty(FoeTypeString)));
+
+            UpdateTargetingCache();
         }
     }
 }

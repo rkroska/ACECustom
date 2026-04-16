@@ -37,13 +37,28 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Called when this player attacks a monster
         /// </summary>
-        public void OnAttackMonster(Creature monster)
+        public void OnAttackMonster(Creature monster, bool hostileAction = true)
         {
             if (monster == null || !Attackable) return;
 
             /*Console.WriteLine($"{Name}.OnAttackMonster({monster.Name})");
             Console.WriteLine($"Attackable: {monster.Attackable}");
             Console.WriteLine($"Tolerance: {monster.Tolerance}");*/
+
+            if (monster.IsUsingCustomTargetingLists && monster.IsFriend(this))
+            {
+                var breakPeace = hostileAction && monster.BreakPeaceOnHostileAction.GetValueOrDefault(false);
+                if (!breakPeace)
+                    return;
+
+                // Force explicit retaliation target even if the monster is already awake.
+                monster.AddRetaliateTarget(this);
+                monster.AttackTarget = this;
+                if (monster.MonsterState != State.Awake)
+                    monster.WakeUp();
+
+                return;
+            }
 
             // faction mobs will retaliate against players belonging to the same faction
             if (SameFaction(monster))

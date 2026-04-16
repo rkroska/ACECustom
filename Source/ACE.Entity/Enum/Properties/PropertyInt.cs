@@ -713,6 +713,11 @@ namespace ACE.Entity.Enum.Properties
 
         // Portal
         PortalUseCount                          = 9040, // Number of times a portal may be used before destroying itself
+
+        /// <summary>
+        /// Custom targeting behavior flags (<see cref="ACE.Entity.Enum.CustomTargetingBehavior"/>).
+        /// </summary>
+        TargetingFlags                          = 9041,
     }
 
     public static class PropertyIntExtensions
@@ -863,6 +868,9 @@ namespace ACE.Entity.Enum.Properties
 
                 case PropertyInt.HookGroup:
                     return System.Enum.GetName(typeof(HookGroupType), value);
+
+                case PropertyInt.TargetingFlags:
+                    return ((ACE.Entity.Enum.CustomTargetingBehavior)value).ToString();
 
                 //case PropertyInt.TypeOfAlteration:
                 //    return System.Enum.GetName(typeof(SkillAlterationType), value);

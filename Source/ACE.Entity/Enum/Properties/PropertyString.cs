@@ -102,5 +102,8 @@ namespace ACE.Entity.Enum.Properties
         CapturedObjDescAnimParts = 9011,   // Serialized AnimPartChanges
         CapturedObjDescPalettes = 9012,    // Serialized SubPalettes
         CapturedObjDescTextures = 9013,    // Serialized TextureChanges
+        FriendTypeString = 9014,
+        FoeTypeString = 9015,
+        FriendlyQuestString = 9016,
     }
 }

@@ -71,6 +71,10 @@ namespace ACE.Server.WorldObjects
                 if (IsFactionMob || HasFoeType)
                     FactionMob_CheckMonsters();
 
+                // FactionMob_CheckMonsters ignores players; extended foe mobs still need idle proximity wake when the player is standing still
+                if (HasFoeType && UsesExtendedFoeTargeting)
+                    ExtendedFoeWakeFromProximity();
+
                 return;
             }
 
