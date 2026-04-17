@@ -190,7 +190,6 @@ namespace ACE.Entity.Enum.Properties
         CanGrapple                       = 9015,
         CanAOE                           = 9016,
         EnragedHotspot                   = 9017,
-        UseCustomTargetingLists          = 9018,
         [AssessmentProperty]
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
@@ -230,3 +229,4 @@ namespace ACE.Entity.Enum.Properties
         UseDamageCap                      = 9039,
     }
 }
+

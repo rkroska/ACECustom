@@ -2075,13 +2075,6 @@ namespace ACE.Server.WorldObjects
             set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FriendlyQuestString); else SetProperty(PropertyString.FriendlyQuestString, value); }
         }
 
-        [Obsolete("Custom targeting is implied by TargetingFlags and/or friend/foe/quest strings.")]
-        public bool? UseCustomTargetingLists
-        {
-            get => GetProperty(PropertyBool.UseCustomTargetingLists);
-            set { if (!value.HasValue) RemoveProperty(PropertyBool.UseCustomTargetingLists); else SetProperty(PropertyBool.UseCustomTargetingLists, value.Value); }
-        }
-
         public bool? AllowFriendlyPlayerDamage
         {
             get => GetProperty(PropertyBool.AllowFriendlyPlayerDamage);
@@ -3315,3 +3308,5 @@ namespace ACE.Server.WorldObjects
         public int? VendorShopCreateListStackSize;
     }
 }
+
+
