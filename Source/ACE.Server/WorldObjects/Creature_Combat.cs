@@ -1572,6 +1572,11 @@ namespace ACE.Server.WorldObjects
             if (!IsUsingCustomTargetingLists)
                 return;
 
+            // Option 1: preserve legacy explicit foe typing alongside custom lists.
+            // If custom targeting is active, fold non-pseudo legacy Int.73 FoeType into the custom foe cache.
+            if (FoeType is { } legacyFoeType && !IsPseudoTargetingCreatureType(legacyFoeType))
+                _cachedFoeTypes.Add(legacyFoeType);
+
             var friendStr = FriendTypeString;
             if (!string.IsNullOrEmpty(friendStr))
             {
