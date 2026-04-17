@@ -46,6 +46,25 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// True when custom targeting explicitly includes non-player foes.
+        /// Player-only custom modes (for example HostileToAllPlayers) return false.
+        /// </summary>
+        public bool AllowsCustomMonsterTargets
+        {
+            get
+            {
+                EnsureTargetingCacheCurrent();
+                if (!IsUsingCustomTargetingLists)
+                    return false;
+
+                if (_attackAll || _attackNonSelf)
+                    return true;
+
+                return _cachedFoeTypes.Any(ct => ct != ACE.Entity.Enum.CreatureType.Player);
+            }
+        }
+
+        /// <summary>
         /// Cache for visible targets to reduce expensive lookups
         /// </summary>
         private List<Creature> _cachedVisibleTargets = new List<Creature>();

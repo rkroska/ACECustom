@@ -1064,17 +1064,18 @@ namespace ACE.Server.Physics.Common
                 {
                     obj.ObjMaint.AddVisibleTarget(PhysicsObj);
                     // Legacy: observer had no Int.73 foe — only the other mob tracked us.
-                    // Extended / custom targeting (9018 + lists / 999) still needs other monsters in *our*
-                    // VisibleTargets so Random / AI can pick them (e.g. Human weenie + FoeTypeString only).
+                    // Custom targeting should only include other monsters in *our* VisibleTargets when the
+                    // config actually targets non-players (not player-only modes such as HostileToAllPlayers).
                     var selfCreatureInverse = PhysicsObj.WeenieObj.WorldObject as Creature;
-                    if (selfCreatureInverse == null || !selfCreatureInverse.UsesExtendedFoeTargeting)
+                    if (selfCreatureInverse == null || !selfCreatureInverse.AllowsCustomMonsterTargets)
                         return false;
                 }
 
-                // only tracking players and combat pets, unless this creature has legacy or extended foe targeting (Int.73 / 9015 / 999)
+                // only tracking players and combat pets, unless this creature has legacy foe targeting
+                // or custom targeting that explicitly includes non-player foes.
                 var selfCreature = PhysicsObj.WeenieObj.WorldObject as Creature;
                 var allowMonsterTargets = PhysicsObj.WeenieObj.FoeType != null
-                    || (selfCreature != null && selfCreature.UsesExtendedFoeTargeting);
+                    || (selfCreature != null && selfCreature.AllowsCustomMonsterTargets);
 
                 if (!obj.IsPlayer && !obj.WeenieObj.IsCombatPet && !allowMonsterTargets)
                 {
