@@ -88,7 +88,8 @@ namespace ACE.Server.WorldObjects
                     else
                     {
                         // todo: clean this up
-                        var targetPlayer = sourceCreature.AttackTarget as Player;
+                        // Classify by the actual collided target, not sourceCreature.AttackTarget.
+                        var targetPlayer = targetCreature as Player;
 
                         damageEvent = DamageEvent.CalculateDamage(sourceCreature, targetCreature, worldObject);
 
