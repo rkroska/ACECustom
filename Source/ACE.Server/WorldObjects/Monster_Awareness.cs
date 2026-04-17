@@ -510,13 +510,14 @@ namespace ACE.Server.WorldObjects
                 return true;
             }
 
-            // Passive NPC-like creatures should not be considered unless explicitly hostile.
-            if (creature.TargetingTactic == TargetingTactic.None && !PotentialFoe(creature))
-                return false;
-
             // Primary hostility checks for non-player targets.
-            if (PotentialFoe(creature) || AllowFactionCombat(creature))
+            var hostileByFoeOrFaction = PotentialFoe(creature) || AllowFactionCombat(creature);
+            if (hostileByFoeOrFaction)
                 return true;
+
+            // Passive NPC-like creatures should not be considered unless explicitly hostile/factioned.
+            if (creature.TargetingTactic == TargetingTactic.None)
+                return false;
 
             // Retaliate targets can be valid even when not classic foes.
             return PhysicsObj.ObjMaint.RetaliateTargetsContainsKey(creature.Guid.Full);
