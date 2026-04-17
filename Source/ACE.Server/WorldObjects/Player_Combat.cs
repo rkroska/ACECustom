@@ -897,6 +897,9 @@ namespace ACE.Server.WorldObjects
 
         public override bool CanDamage(Creature target)
         {
+            if (target == null)
+                return false;
+
             if (!target.Attackable || target.Teleporting || target is CombatPet)
                 return false;
 
