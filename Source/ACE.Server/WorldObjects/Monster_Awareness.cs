@@ -24,15 +24,6 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool IsAwake = false;
 
-        public bool HasTargetingOverride
-        {
-            get
-            {
-                EnsureTargetingCacheCurrent();
-                return FoeType != null || _attackNonSelf || _attackAll || _cachedFoeTypes.Count > 0;
-            }
-        }
-
         /// <summary>
         /// True when custom targeting is active (flags and/or friend/foe/quest strings).
         /// </summary>
