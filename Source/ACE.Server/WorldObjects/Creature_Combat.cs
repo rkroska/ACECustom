@@ -1470,6 +1470,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Reciprocal checking (does the target consider us a foe?)
+            // Note: IsFriend() is intentionally directional. Reciprocity is handled here in PotentialFoe().
             creature.EnsureTargetingCacheCurrent();
             if (creature.IsUsingCustomTargetingLists)
             {
@@ -1617,8 +1618,13 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns TRUE if the creature is considered a friend
+        /// Returns TRUE if <paramref name="creature"/> is considered a friend by this creature.
         /// </summary>
+        /// <remarks>
+        /// This check is intentionally one-directional. Some callsites need "my policy toward target"
+        /// semantics (for example friendly-fire gating and peace-breaking rules).
+        /// Reciprocal friendliness/hostility is evaluated by <see cref="PotentialFoe(Creature)"/>.
+        /// </remarks>
         public bool IsFriend(Creature creature)
         {
             EnsureTargetingCacheCurrent();
