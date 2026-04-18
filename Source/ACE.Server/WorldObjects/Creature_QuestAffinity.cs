@@ -99,7 +99,21 @@ namespace ACE.Server.WorldObjects
 
             // Idle: alerting via proximity is the natural path.
             if (MonsterState == State.Idle)
+            {
+                // Guard: only alert if the player is actually within visual range and is a valid target.
+                // AlertMonster assumes the caller has already done proximity/visibility filtering;
+                // without this check, erasing a quest stamp could wake mobs far outside awareness range.
+                if (PhysicsObj == null || player.PhysicsObj == null)
+                    return;
+
+                if (!player.Attackable || player.Teleporting || player.CloakStatus == CloakStatus.Creature || (player.Hidden ?? false))
+                    return;
+
+                if (PhysicsObj.get_distance_sq_to_object(player.PhysicsObj, true) > VisualAwarenessRangeSq)
+                    return;
+
                 player.AlertMonster(this);
+            }
             else
                 FindNextTarget();
         }
