@@ -1466,6 +1466,14 @@ namespace ACE.Server.WorldObjects
                 if (creature is Player player && IsExplicitlyFriendlyPlayer(player))
                     return false;
 
+                // When FriendlyQuestString is the only custom targeting in use, a player who is NOT
+                // an explicit ally should still be treated as a valid foe.  Without this guard the
+                // method falls through to the empty _attackAll/_attackNonSelf/_cachedFoeTypes checks
+                // and returns false, permanently preventing GetAttackTargetsUncached / AlertMonster
+                // from re-aggroing a player who lost the quest stamp.
+                if (creature is Player && UsesFriendlyQuestTargeting)
+                    return true;
+
                 // Explicit non-player friendship should also override custom hostility rules.
                 if (creature is not Player && creature.CreatureType is { } friendType && _cachedFriendTypes.Contains(friendType))
                     return false;
