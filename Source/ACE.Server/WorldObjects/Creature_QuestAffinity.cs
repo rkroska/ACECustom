@@ -7,8 +7,8 @@ namespace ACE.Server.WorldObjects
     public partial class Creature
     {
         /// <summary>
-        /// Clears <see cref="AttackTarget"/> when it is <paramref name="player"/> and invalidates
-        /// the target cache.  Called from reconciliation paths so all caches stay consistent.
+        /// Clears <see cref="AttackTarget"/> when it is <paramref name="player"/>.
+        /// Called from reconciliation paths when a player becomes an ally.
         /// </summary>
         private void ClearAttackTargetForQuestAffinityReconcile(Player player)
         {
@@ -16,9 +16,6 @@ namespace ACE.Server.WorldObjects
                 return;
 
             AttackTarget = null;
-            // Invalidate the visible-target cache so the next FindNextTarget() call
-            // re-evaluates the fresh list without the now-friendly player.
-            InvalidateTargetCaches();
         }
 
         /// <summary>
@@ -36,6 +33,7 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             ClearAttackTargetForQuestAffinityReconcile(p);
+            InvalidateTargetCaches();
 
             if (HasRetaliateTarget(p))
                 RemoveRetaliateTarget(p);
@@ -62,6 +60,11 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var isAlly = IsFriendlyQuestAlly(player);
+
+            // Unconditionally invalidate the visible-target caches. The player's quest stamp just changed,
+            // meaning their eligibility as a target has changed. We must ensure subsequent evaluations
+            // (like FindNextTarget or AlertMonster) do not reuse cached data built under the old affinity.
+            InvalidateTargetCaches();
 
             if (isAlly)
             {
