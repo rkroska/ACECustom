@@ -133,6 +133,14 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // ── Ability Charm Toggle ───────────────────────────────────────────────
+            if (IsAbilityCharm && CharmGrantsAbility.HasValue)
+            {
+                HandleAbilityCharmToggle(player);
+                return; // Do NOT consume the item
+            }
+            // ─────────────────────────────────────────────────────────────────────
+
             // trying to use a dispel potion while pk timer is active
             // send error message and cancel - do not consume item
             if (SpellDID != null)
@@ -312,6 +320,35 @@ namespace ACE.Server.WorldObjects
             }
 
             base.OnActivate(activator);
+        }
+        private void HandleAbilityCharmToggle(Player player)
+        {
+            var abilityId = CharmGrantsAbility!.Value;
+            var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? Name;
+
+            if (!IsCharmActivated)
+            {
+                // Activate
+                IsCharmActivated = true;
+                player.ActiveCharmLevel = CharmLevel ?? 1;
+                CharmAbilityRegistry.Apply(player, abilityId, true);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"{abilityName} activated (Level {player.ActiveCharmLevel}).", ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.HealthUp, 1.0f));
+            }
+            else
+            {
+                // Deactivate
+                IsCharmActivated = false;
+                player.ActiveCharmLevel = null;
+                CharmAbilityRegistry.Apply(player, abilityId, false);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"{abilityName} deactivated.", ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown, 1.0f));
+            }
+
+            // Save the per-instance activated state
+            SaveBiotaToDatabase();
         }
     }
 }

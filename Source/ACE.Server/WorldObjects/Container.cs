@@ -658,6 +658,33 @@ namespace ACE.Server.WorldObjects
                     container = null;
                     return false;
                 }
+
+                // ── Unique Charm Constraint ──────────────────────────────────────────
+                var abilityId = CharmAbilityRegistry.GetAbilityIdForWCID(worldObject.WeenieClassId);
+                if (abilityId != null)
+                {
+                    bool alreadyHas = false;
+                    foreach (var possession in player.GetAllPossessions())
+                    {
+                        if (possession.Guid == worldObject.Guid) continue;
+
+                        if (CharmAbilityRegistry.GetAbilityIdForWCID(possession.WeenieClassId) == abilityId)
+                        {
+                            alreadyHas = true;
+                            break;
+                        }
+                    }
+
+                    if (alreadyHas)
+                    {
+                        var charmName = CharmAbilityRegistry.GetDisplayName(abilityId.Value) ?? "this";
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"You can only carry one version of the {charmName} charm.", ChatMessageType.System));
+                        container = null;
+                        return false;
+                    }
+                }
+                // ─────────────────────────────────────────────────────────────────────
             }
 
             List<WorldObject> containerItems;
@@ -1194,7 +1221,10 @@ namespace ACE.Server.WorldObjects
         protected virtual void OnRemoveItem(WorldObject removedItem)
         {
             if (removedItem != null)
-                UpdateCharms(false, removedItem);
+            {
+                UpdateCharms(false, removedItem);        // existing spell-charm cleanup
+                CheckAbilityCharmRemoval(removedItem);   // new: ability charm cleanup
+            }
         }
 
         private void UpdateCharms(bool adding, WorldObject item)
@@ -1287,6 +1317,61 @@ namespace ACE.Server.WorldObjects
             {
                 if (IsOpen)
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(ActivationTalk, ChatMessageType.Broadcast));
+            }
+        }
+
+        private void CheckAbilityCharmRemoval(WorldObject item)
+        {
+            if (GetRootOwner() is not Player player) return;
+            CheckAbilityCharmRemovalRecursively(player, item);
+        }
+
+        private static void CheckAbilityCharmRemovalRecursively(Player player, WorldObject item)
+        {
+            // Only act on activated ability charms
+            if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility.HasValue)
+            {
+                // Delay the check by 1 second to allow for dragging/synthesis moves
+                var actionChain = new ActionChain();
+                actionChain.AddDelaySeconds(1.0f);
+                actionChain.AddAction(player, ActionType.GameMessage_None, () =>
+                {
+                    // Verify the player still exists
+                    if (player.Session == null) return;
+                    
+                    // Check if the item is still owned by the player (in inventory or held)
+                    WorldObject current = item;
+                    while (current.Container != null)
+                        current = current.Container;
+
+                    if (current is Player owner && owner.Guid == player.Guid)
+                    {
+                        // Item is still with the player - suppress deactivation
+                        return;
+                    }
+
+                    // Item is truly gone - deactivate
+                    var abilityId = item.CharmGrantsAbility.Value;
+                    var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? item.Name;
+
+                    CharmAbilityRegistry.Apply(player, abilityId, false);
+                    item.IsCharmActivated = false;
+                    item.SaveBiotaToDatabase();
+
+                    if (!player.Teleporting)
+                    {
+                        string msg = $"Your {item.Name} has left your inventory. {abilityName} has been deactivated.";
+                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+                    }
+                });
+                actionChain.EnqueueChain();
+            }
+
+            // Recurse into containers (side packs, etc.)
+            if (item is Container container)
+            {
+                foreach (var child in container.Inventory.Values)
+                    CheckAbilityCharmRemovalRecursively(player, child);
             }
         }
     }

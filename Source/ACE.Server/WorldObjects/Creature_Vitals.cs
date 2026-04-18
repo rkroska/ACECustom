@@ -130,8 +130,20 @@ namespace ACE.Server.WorldObjects
             if (this is Player player && player.AugmentationFasterRegen > 0)
                 augMod += player.AugmentationFasterRegen;
 
+            // Heavy Swing / Heavy Draw stamina regen penalty
+            var heavyStrikeMod = 1.0f;
+            if (this is Player hp
+                && vital.Vital == PropertyAttribute2nd.MaxStamina
+                && (hp.HasHeavySwing || hp.HasHeavyDraw))
+            {
+                var penalty = hp.HasHeavySwing
+                    ? Player.HeavySwing_RegenPenaltyPct
+                    : Player.HeavyDraw_RegenPenaltyPct;
+                heavyStrikeMod = 1.0f - penalty;
+            }
+
             // cap rate?
-            var currentTick = vital.RegenRate * attributeMod * stanceMod * enchantmentMod * augMod;
+            var currentTick = vital.RegenRate * attributeMod * stanceMod * enchantmentMod * augMod * heavyStrikeMod;
 
             // add in partially accumulated / rounded vitals from previous tick(s)
             var totalTick = currentTick + vital.PartialRegen;

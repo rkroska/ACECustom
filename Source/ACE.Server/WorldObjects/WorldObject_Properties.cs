@@ -2620,6 +2620,56 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasChainLightning); else SetProperty(PropertyBool.HasChainLightning, value); }
         }
 
+        public bool HasInstaCast
+        {
+            get => GetProperty(PropertyBool.HasInstaCast) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasInstaCast); else SetProperty(PropertyBool.HasInstaCast, value); }
+        }
+
+        // ── ILT Ability Charm System (50000–50099) ────────────────────────────────
+
+        public bool IsAbilityCharm
+        {
+            get => GetProperty(PropertyBool.IsAbilityCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsAbilityCharm); else SetProperty(PropertyBool.IsAbilityCharm, value); }
+        }
+
+        public bool IsCharmActivated
+        {
+            get => GetProperty(PropertyBool.IsCharmActivated) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsCharmActivated); else SetProperty(PropertyBool.IsCharmActivated, value); }
+        }
+
+        public bool IsTestCharm
+        {
+            get => GetProperty(PropertyBool.IsTestCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsTestCharm); else SetProperty(PropertyBool.IsTestCharm, value); }
+        }
+
+        public int? CharmGrantsAbility
+        {
+            get => GetProperty(PropertyInt.CharmGrantsAbility);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CharmGrantsAbility); else SetProperty(PropertyInt.CharmGrantsAbility, value.Value); }
+        }
+
+        public bool HasManaBarrier
+        {
+            get => GetProperty(PropertyBool.HasManaBarrier) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
+        }
+
+        public bool HasHeavySwing
+        {
+            get => GetProperty(PropertyBool.HasHeavySwing) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasHeavySwing); else SetProperty(PropertyBool.HasHeavySwing, value); }
+        }
+
+        public bool HasHeavyDraw
+        {
+            get => GetProperty(PropertyBool.HasHeavyDraw) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasHeavyDraw); else SetProperty(PropertyBool.HasHeavyDraw, value); }
+        }
+
         public int? EnrageFogColor
         {
             get => GetProperty(PropertyInt.EnrageFogColor);
@@ -3266,12 +3316,6 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyFloat.RotationSpeed);
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.RotationSpeed); else SetProperty(PropertyFloat.RotationSpeed, value.Value); }
-        }
-
-        public bool HasManaBarrier
-        {
-            get => GetProperty(PropertyBool.HasManaBarrier) ?? false;
-            set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
         }
 
         public bool HasMissileFlightPlacement => CSetup.HasMissileFlightPlacement;

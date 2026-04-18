@@ -1,0 +1,16 @@
+            WriteLog "[$(Get-Date -f 'HH:mm:ss')] Server stopped gracefully."
+        } elseif ($elapsed.TotalSeconds -gt $script:StopGraceSecs) {
+            WriteLog "[$(Get-Date -f 'HH:mm:ss')] Grace period expired ??? force stopping..."
+            $script:Stopping = $false
+            try { $script:ServerProcess.Kill($true) } catch { try { $script:ServerProcess.Kill() } catch { } }
+            $script:ServerProcess = $null
+            $script:StdInWriter   = $null
+            $lblUptimePanel.Text  = ""
+            StopReader
+            RefreshButtons
+            WriteLog "[$(Get-Date -f 'HH:mm:ss')] Server force stopped."
+        }
+        return  # Skip normal poll while stopping
+    }
+
+    # Drain stdout queue from background reader

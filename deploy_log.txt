@@ -1,0 +1,191 @@
+
+-------------------------------------------------------------------------------
+   ROBOCOPY     ::     Robust File Copy for Windows                              
+-------------------------------------------------------------------------------
+
+  Started : Friday, April 17, 2026 11:36:19 PM
+   Source : c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\
+     Dest : C:\ACE\ACEBuild\
+
+    Files : *
+	    
+  Options : /V /NDL /S /E /DCOPY:DA /COPY:DAT /NP /MT:8 /R:3 /W:5 
+
+------------------------------------------------------------------------------
+
+	  *EXTRA File 		    1266	C:\ACE\ACEBuild\.msCoverageSourceRootsMapping_ACE.Database.Tests
+	  *EXTRA File 		    1274	C:\ACE\ACEBuild\.msCoverageSourceRootsMapping_ACE.DatLoader.Tests
+	  *EXTRA File 		    2546	C:\ACE\ACEBuild\.msCoverageSourceRootsMapping_ACE.Server.Tests
+	  *EXTRA File 		   19858	C:\ACE\ACEBuild\ACE.Adapter.deps.json
+	  *EXTRA File 		    7137	C:\ACE\ACEBuild\ACE.Common.deps.json
+	  *EXTRA File 		   40187	C:\ACE\ACEBuild\ACE.Database.deps.json
+	  *EXTRA File 		     411	C:\ACE\ACEBuild\ACE.Database.runtimeconfig.json
+	  *EXTRA File 		   45741	C:\ACE\ACEBuild\ACE.Database.Tests.deps.json
+	  *EXTRA File 		   16896	C:\ACE\ACEBuild\ACE.Database.Tests.dll
+	  *EXTRA File 		   16640	C:\ACE\ACEBuild\ACE.Database.Tests.pdb
+	  *EXTRA File 		     459	C:\ACE\ACEBuild\ACE.Database.Tests.runtimeconfig.json
+	  *EXTRA File 		    9847	C:\ACE\ACEBuild\ACE.DatLoader.deps.json
+	  *EXTRA File 		   36547	C:\ACE\ACEBuild\ACE.DatLoader.Tests.deps.json
+	  *EXTRA File 		   17408	C:\ACE\ACEBuild\ACE.DatLoader.Tests.dll
+	  *EXTRA File 		   15676	C:\ACE\ACEBuild\ACE.DatLoader.Tests.pdb
+	  *EXTRA File 		     390	C:\ACE\ACEBuild\ACE.DatLoader.Tests.runtimeconfig.json
+	  *EXTRA File 		    7516	C:\ACE\ACEBuild\ACE.Entity.deps.json
+	  *EXTRA File 		   70722	C:\ACE\ACEBuild\ACE.Server.Tests.deps.json
+	  *EXTRA File 		  125440	C:\ACE\ACEBuild\ACE.Server.Tests.dll
+	  *EXTRA File 		   52844	C:\ACE\ACEBuild\ACE.Server.Tests.pdb
+	  *EXTRA File 		     575	C:\ACE\ACEBuild\ACE.Server.Tests.runtimeconfig.json
+	  *EXTRA File 		     433	C:\ACE\ACEBuild\ACE.WebPortal.deps.json
+	  *EXTRA File 		    3072	C:\ACE\ACEBuild\ACE.WebPortal.dll
+	  *EXTRA File 		   20956	C:\ACE\ACEBuild\ACE.WebPortal.pdb
+	  *EXTRA File 		   9.9 m	C:\ACE\ACEBuild\ACE_Log.txt
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.10
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.2
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.3
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.4
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.5
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.6
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.7
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.8
+	  *EXTRA File 		  20.0 m	C:\ACE\ACEBuild\ACE_Log.txt.9
+	  *EXTRA File 		    3590	C:\ACE\ACEBuild\Config.js
+	  *EXTRA File 		   15008	C:\ACE\ACEBuild\manager_stdout.tmp
+	  *EXTRA File 		  386080	C:\ACE\ACEBuild\Microsoft.ApplicationInsights.dll
+	  *EXTRA File 		   36624	C:\ACE\ACEBuild\Microsoft.Extensions.Caching.Abstractions.dll
+	  *EXTRA File 		   48944	C:\ACE\ACEBuild\Microsoft.Extensions.Caching.Memory.dll
+	  *EXTRA File 		   29456	C:\ACE\ACEBuild\Microsoft.Extensions.Configuration.Abstractions.dll
+	  *EXTRA File 		   43792	C:\ACE\ACEBuild\Microsoft.Extensions.Configuration.Binder.dll
+	  *EXTRA File 		   45320	C:\ACE\ACEBuild\Microsoft.Extensions.Configuration.dll
+	  *EXTRA File 		   65808	C:\ACE\ACEBuild\Microsoft.Extensions.DependencyInjection.Abstractions.dll
+	  *EXTRA File 		   93456	C:\ACE\ACEBuild\Microsoft.Extensions.DependencyInjection.dll
+	  *EXTRA File 		   31504	C:\ACE\ACEBuild\Microsoft.Extensions.Diagnostics.Abstractions.dll
+	  *EXTRA File 		   67384	C:\ACE\ACEBuild\Microsoft.Extensions.Logging.Abstractions.dll
+	  *EXTRA File 		   28976	C:\ACE\ACEBuild\Microsoft.Extensions.Logging.Configuration.dll
+	  *EXTRA File 		   52488	C:\ACE\ACEBuild\Microsoft.Extensions.Logging.dll
+	  *EXTRA File 		   22280	C:\ACE\ACEBuild\Microsoft.Extensions.Options.ConfigurationExtensions.dll
+	  *EXTRA File 		   66320	C:\ACE\ACEBuild\Microsoft.Extensions.Options.dll
+	  *EXTRA File 		   45328	C:\ACE\ACEBuild\Microsoft.Extensions.Primitives.dll
+	  *EXTRA File 		  156704	C:\ACE\ACEBuild\Microsoft.Testing.Extensions.MSBuild.dll
+	  *EXTRA File 		  119328	C:\ACE\ACEBuild\Microsoft.Testing.Extensions.Telemetry.dll
+	  *EXTRA File 		  102944	C:\ACE\ACEBuild\Microsoft.Testing.Extensions.TrxReport.Abstractions.dll
+	  *EXTRA File 		  189512	C:\ACE\ACEBuild\Microsoft.Testing.Extensions.VSTestBridge.dll
+	  *EXTRA File 		   1.0 m	C:\ACE\ACEBuild\Microsoft.Testing.Platform.dll
+	  *EXTRA File 		  138272	C:\ACE\ACEBuild\Microsoft.TestPlatform.CommunicationUtilities.dll
+	  *EXTRA File 		   99360	C:\ACE\ACEBuild\Microsoft.TestPlatform.CoreUtilities.dll
+	  *EXTRA File 		  318496	C:\ACE\ACEBuild\Microsoft.TestPlatform.CrossPlatEngine.dll
+	  *EXTRA File 		   51736	C:\ACE\ACEBuild\Microsoft.TestPlatform.PlatformAbstractions.dll
+	  *EXTRA File 		   69152	C:\ACE\ACEBuild\Microsoft.TestPlatform.Utilities.dll
+	  *EXTRA File 		   17480	C:\ACE\ACEBuild\Microsoft.VisualStudio.CodeCoverage.Shim.dll
+	  *EXTRA File 		  248904	C:\ACE\ACEBuild\Microsoft.VisualStudio.TestPlatform.Common.dll
+	  *EXTRA File 		   16896	C:\ACE\ACEBuild\Microsoft.VisualStudio.TestPlatform.Extension.Appveyor.TestAdapter.dll
+	  *EXTRA File 		   16896	C:\ACE\ACEBuild\Microsoft.VisualStudio.TestPlatform.Extension.Appveyor.TestLogger.dll
+	  *EXTRA File 		  333344	C:\ACE\ACEBuild\Microsoft.VisualStudio.TestPlatform.ObjectModel.dll
+	  *EXTRA File 		  132128	C:\ACE\ACEBuild\MSTest.TestAdapter.dll
+	  *EXTRA File 		  314400	C:\ACE\ACEBuild\MSTest.TestFramework.dll
+	  *EXTRA File 		  108104	C:\ACE\ACEBuild\MSTest.TestFramework.Extensions.dll
+	  *EXTRA File 		   42673	C:\ACE\ACEBuild\MSTest.TestFramework.Extensions.xml
+	  *EXTRA File 		  451104	C:\ACE\ACEBuild\MSTestAdapter.PlatformServices.dll
+	  *EXTRA File 		   51872	C:\ACE\ACEBuild\System.Diagnostics.EventLog.dll
+	  *EXTRA File 		   49736	C:\ACE\ACEBuild\testhost.dll
+	  *EXTRA File 		  163400	C:\ACE\ACEBuild\testhost.exe
+	  *EXTRA File 		   21928	C:\ACE\ACEBuild\xunit.abstractions.dll
+	  *EXTRA File 		  187088	C:\ACE\ACEBuild\xunit.assert.dll
+	  *EXTRA File 		   70352	C:\ACE\ACEBuild\xunit.core.dll
+	  *EXTRA File 		  279760	C:\ACE\ACEBuild\xunit.execution.dotnet.dll
+	  *EXTRA File 		   1.1 m	C:\ACE\ACEBuild\xunit.runner.visualstudio.testadapter.dll
+	          same		   2.2 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\0Harmony.dll
+	          same		  128512	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Adapter.dll
+	          same		   49872	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Adapter.pdb
+	          same		   66560	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Common.dll
+	          same		   33812	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Common.pdb
+	          same		  873472	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Database.dll
+	          same		  223316	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Database.pdb
+	          same		  179712	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.DatLoader.dll
+	          same		   97512	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.DatLoader.pdb
+	          same		   2.2 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Entity.dll
+	          same		   76432	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Entity.pdb
+	          same		   40746	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Server.deps.json
+	          same		   6.5 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Server.dll
+	          same		  233472	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Server.exe
+	          same		   1.4 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Server.pdb
+	          same		     560	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ACE.Server.runtimeconfig.json
+	          same		  264704	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\BCnEncoder.dll
+	          same		   17408	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\BCnEncoder.NET.ImageSharp.dll
+	          same		   16384	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\BCrypt.Net-Core.dll
+	          same		   4.6 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\BouncyCastle.Cryptography.dll
+	          same		  123176	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\CommunityToolkit.HighPerformance.dll
+	          same		   10356	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Config.js.example
+	          same		  137728	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Discord.Net.Commands.dll
+	          same		  921088	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Discord.Net.Core.dll
+	          same		  240128	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Discord.Net.Interactions.dll
+	          same		   1.4 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Discord.Net.Rest.dll
+	          same		   32256	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Discord.Net.Webhook.dll
+	          same		  939520	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Discord.Net.WebSocket.dll
+	          same		    8704	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\DouglasCrockford.JsMin.dll
+	          same		  497304	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Google.Protobuf.dll
+	          same		   70656	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\K4os.Compression.LZ4.dll
+	          same		   84992	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\K4os.Compression.LZ4.Streams.dll
+	          same		   13312	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\K4os.Hash.xxHash.dll
+	          same		   71903	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\LICENSE
+	          same		  646144	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Lifestoned.DataModel.dll
+	          same		   15360	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Log4Net.Async.dll
+	          same		    1563	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\log4net.config
+	          same		    1572	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\log4net.config.docker
+	          same		    1563	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\log4net.config.example
+	          same		  262144	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\log4net.dll
+	          same		   27648	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\McMaster.NETCore.Plugins.dll
+	          same		   52536	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
+	          same		   16000	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.Bcl.AsyncInterfaces.dll
+	          same		   34848	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.EntityFrameworkCore.Abstractions.dll
+	          same		   2.5 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.EntityFrameworkCore.dll
+	          same		   2.0 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.EntityFrameworkCore.Relational.dll
+	          same		   19488	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.IdentityModel.Abstractions.dll
+	          same		  143392	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.IdentityModel.JsonWebTokens.dll
+	          same		   36784	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.IdentityModel.Logging.dll
+	          same		   40880	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.IdentityModel.Protocols.dll
+	          same		  137144	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+	          same		  329248	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.IdentityModel.Tokens.dll
+	          same		   27920	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Microsoft.Win32.SystemEvents.dll
+	          same		   1.1 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\MySql.Data.dll
+	          same		  857448	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\MySqlConnector.dll
+	          same		  723368	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Newtonsoft.Json.dll
+	          same		   64512	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\OpenTelemetry.Api.dll
+	          same		   23552	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\OpenTelemetry.Api.ProviderBuilderExtensions.dll
+	          same		  229888	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\OpenTelemetry.dll
+	          same		  155648	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\OpenTelemetry.Exporter.OpenTelemetryProtocol.dll
+	          same		   24064	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\OpenTelemetry.Instrumentation.Runtime.dll
+	          same		  526848	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\Pomelo.EntityFrameworkCore.MySql.dll
+	          same		   2.0 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\SixLabors.ImageSharp.dll
+	          same		   38141	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\starterGear.json
+	          same		     175	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\start_server.bat
+	          same		  442632	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Configuration.ConfigurationManager.dll
+	          same		  422664	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Drawing.Common.dll
+	          same		   90032	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.IdentityModel.Tokens.Jwt.dll
+	          same		  230032	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Interactive.Async.dll
+	          same		   1.0 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Linq.Async.dll
+	          same		   1.1 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Private.Windows.Core.dll
+	          same		  169264	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Private.Windows.GdiPlus.dll
+	          same		   1.2 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Reactive.dll
+	          same		   36616	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Security.Cryptography.ProtectedData.dll
+	          same		  114448	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Security.Permissions.dll
+	          same		   27424	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\System.Windows.Extensions.dll
+	          same		   64000	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\TimeZoneConverter.dll
+	          same		  396288	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\ZstdSharp.dll
+	          same		   26240	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win-x64\native\comerr64.dll
+	          same		  403072	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win-x64\native\gssapi64.dll
+	          same		   69248	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win-x64\native\k5sprt64.dll
+	          same		   1.1 m	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win-x64\native\krb5_64.dll
+	          same		  121984	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win-x64\native\krbcc64.dll
+	          same		   81168	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win\lib\net10.0\Microsoft.Win32.SystemEvents.dll
+	  *EXTRA File 		  171784	C:\ACE\ACEBuild\runtimes\win\lib\net8.0\System.Diagnostics.EventLog.dll
+	  *EXTRA File 		  801048	C:\ACE\ACEBuild\runtimes\win\lib\net8.0\System.Diagnostics.EventLog.Messages.dll
+	          same		   72456	c:\ACE\ACECustom\Source\ACE.Server\bin\Debug\net10.0\runtimes\win\lib\net8.0\System.Windows.Extensions.dll
+
+------------------------------------------------------------------------------
+
+               Total    Copied   Skipped  Mismatch    FAILED    Extras
+    Dirs :         8         8         8         0         0        18
+   Files :        85         0        85         0         0        81
+   Bytes :   43.05 m         0   43.05 m         0         0  198.16 m
+   Times :   0:00:00   0:00:00                       0:00:00   0:00:00
+   Ended : Friday, April 17, 2026 11:36:19 PM
+

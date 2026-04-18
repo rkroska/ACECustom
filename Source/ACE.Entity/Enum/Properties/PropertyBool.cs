@@ -243,6 +243,36 @@ namespace ACE.Entity.Enum.Properties
         HasPredator                       = 9051,
         HasDeathWish                      = 9052,
         HasChainLightning                 = 9053,
-        HasManaBarrier                   = 9059,
+
+        /// <summary>
+        /// If TRUE, all player spell casts are instant (no windup or cast animation delay).
+        /// </summary>
+        HasInstaCast                      = 9061,
+
+        // ── ILT Ability Charm System (50000–50099) ────────────────────────────────
+        /// <summary>Marks a charm as the new double-click-to-activate ability charm type.</summary>
+        IsAbilityCharm = 50000,
+
+        /// <summary>Per-instance: TRUE when the player has activated this ability charm.</summary>
+        IsCharmActivated = 50001,
+
+        /// <summary>TRUE on test charms — used to print expiry-specific message on destruction.</summary>
+        IsTestCharm = 50002,
+
+        // ── ILT Ability Flags — players (50010–50059, one per skill) ─────────────
+        /// <summary>ILT Skill #1: Reduces damage taken by consuming mana.</summary>
+        HasManaBarrier = 50010,
+
+        /// <summary>ILT Skill #2: Melee attacks cost stamina for bonus damage.</summary>
+        HasHeavySwing = 50011,
+
+        /// <summary>ILT Skill #3: Missile/bow attacks cost stamina for bonus damage.</summary>
+        HasHeavyDraw = 50012,
+
+        /// <summary>ILT Skill #4: Magic attacks cost mana for bonus damage.</summary>
+        HasFocusedCasting = 50013,
+        HasChaining       = 50014,
+        HasRepeater       = 50015,
+        HasBloodLetting   = 50017,
     }
 }

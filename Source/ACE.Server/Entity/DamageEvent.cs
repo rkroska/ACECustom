@@ -130,6 +130,7 @@ namespace ACE.Server.Entity
         public Creature_BodyPart CreaturePart;
 
         public float Damage;
+        public uint AmountAbsorbed;
 
         public bool GeneralFailure;
 
@@ -515,6 +516,34 @@ namespace ACE.Server.Entity
                             $"Death Wish! You deal 6x damage to {defender.Name}. ({damageBeforeDeathWish:F0} -> {Damage:F0})", ChatMessageType.Combat));
                 }
             }
+
+            // ── Heavy Swing / Heavy Draw ─────────────────────────────────────────────────
+            if (playerAttacker != null)
+            {
+                if (CombatType == CombatType.Melee && playerAttacker.HasHeavySwing)
+                {
+                    var hsResult = playerAttacker.TryApplyHeavySwing();
+                    if (hsResult.Applied)
+                    {
+                        Damage *= hsResult.DamageMultiplier;
+                        playerAttacker.SendMessage(
+                            $"Heavy Swing! You spend {hsResult.StaminaSpent} stamina for double damage.",
+                            ChatMessageType.Combat);
+                    }
+                }
+                else if (CombatType == CombatType.Missile && playerAttacker.HasHeavyDraw)
+                {
+                    var hdResult = playerAttacker.TryApplyHeavyDraw();
+                    if (hdResult.Applied)
+                    {
+                        Damage *= hdResult.DamageMultiplier;
+                        playerAttacker.SendMessage(
+                            $"Heavy Draw! You spend {hdResult.StaminaSpent} stamina for double damage.",
+                            ChatMessageType.Combat);
+                    }
+                }
+            }
+            // ─────────────────────────────────────────────────────────────────────────────
 
             DamageMitigated = DamageBeforeMitigation - Damage;
 

@@ -729,6 +729,16 @@ namespace ACE.Entity.Enum.Properties
         /// </summary>
         [Ephemeral]
         FailedShinyCaptureGuid                  = 9042,
+
+        // ── ILT Ability Charm System (50000–50099) ────────────────────────────────
+        /// <summary>On an IsAbilityCharm item: integer key into CharmAbilityRegistry (1–50).</summary>
+        CharmGrantsAbility = 50000,
+
+        /// <summary>On a charm item: the tier/level of the charm (1, 2, 3).</summary>
+        CharmLevel = 50005,
+
+        /// <summary>On a player: the level of the currently active charm.</summary>
+        ActiveCharmLevel = 50016,
     }
 
     public static class PropertyIntExtensions
