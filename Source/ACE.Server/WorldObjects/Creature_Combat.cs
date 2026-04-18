@@ -1722,18 +1722,7 @@ namespace ACE.Server.WorldObjects
         public void RemoveRetaliateTarget(WorldObject wo)
         {
             if (wo?.PhysicsObj == null) return;
-            // ClearRetaliateTargets removes all; we remove just this one by clearing the full
-            // list only if this is the only entry, otherwise we rebuild without it.
-            var allTargets = PhysicsObj?.ObjMaint?.GetRetaliateTargetsValues();
-            if (allTargets == null) return;
-
-            PhysicsObj.ObjMaint.ClearRetaliateTargets();
-
-            foreach (var t in allTargets)
-            {
-                if (t != wo.PhysicsObj)
-                    PhysicsObj.ObjMaint.AddRetaliateTarget(t);
-            }
+            PhysicsObj?.ObjMaint?.RemoveRetaliateTarget(wo.PhysicsObj);
         }
 
         public void ClearRetaliateTargets()

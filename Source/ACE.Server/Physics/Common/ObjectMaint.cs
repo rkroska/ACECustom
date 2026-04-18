@@ -1235,12 +1235,19 @@ namespace ACE.Server.Physics.Common
                 rwLock.ExitWriteLock();
             }
         }
-
-        private bool RemoveRetaliateTarget(PhysicsObj obj)
+        public bool RemoveRetaliateTarget(PhysicsObj obj)
         {
-            return RetaliateTargets.Remove(obj.ID);
+            rwLock.EnterWriteLock();
+            try
+            {
+                VisibleTargets.Remove(obj.ID);
+                return RetaliateTargets.Remove(obj.ID);
+            }
+            finally
+            {
+                rwLock.ExitWriteLock();
+            }
         }
-
         /// <summary>
         /// Clears all of the ObjMaint tables for an object
         /// </summary>
