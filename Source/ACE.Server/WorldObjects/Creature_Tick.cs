@@ -44,7 +44,14 @@ namespace ACE.Server.WorldObjects
                 expireItem.DeleteObject(this);
 
                 if (this is Player player)
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"Its lifespan finished, your {expireItem.Name} crumbles to dust.", ChatMessageType.Broadcast));
+                {
+                    var msg = $"Its lifespan finished, your {expireItem.Name} crumbles to dust.";
+
+                    if (expireItem.IsTestCharm)
+                        msg += " We hope you enjoyed this trial! Your experience is vital to our development; please share any feedback in the Discord #feedback channel.";
+
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+                }
             }
 
             base.Heartbeat(currentUnixTime);

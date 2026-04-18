@@ -171,27 +171,44 @@ namespace ACE.Server.WorldObjects
                 if (rotateTarget.WielderId != null)
                     rotateTarget = CurrentLandblock?.GetObject(rotateTarget.WielderId.Value);
 
-                var rotateTime = Rotate(rotateTarget);
-                var actionChain = new ActionChain();
-                actionChain.AddDelaySeconds(rotateTime);
-
-                actionChain.AddAction(this, ActionType.PlayerMagic_FinishCast, () =>
+                if (HasInstaCast)
                 {
-                    // ensure target still exists
+                    // Skip Rotate() entirely — TurnToObject sends StopCompletely which halts the client.
+                    // Cast immediately in whatever direction the player is currently facing.
                     targetCategory = GetTargetCategory(targetGuid, spell, out target);
-
                     if (target == null)
                     {
                         SendUseDoneEvent(WeenieError.TargetNotAcquired);
                         MagicState.OnCastDone();
                         return;
                     }
-
                     if (!CreatePlayerSpell(target, targetCategory, spell, casterItem))
                         MagicState.OnCastDone();
-                });
+                }
+                else
+                {
+                    var rotateTime = Rotate(rotateTarget);
+                    var actionChain = new ActionChain();
+                    actionChain.AddDelaySeconds(rotateTime);
 
-                actionChain.EnqueueChain();
+                    actionChain.AddAction(this, ActionType.PlayerMagic_FinishCast, () =>
+                    {
+                        // ensure target still exists
+                        targetCategory = GetTargetCategory(targetGuid, spell, out target);
+
+                        if (target == null)
+                        {
+                            SendUseDoneEvent(WeenieError.TargetNotAcquired);
+                            MagicState.OnCastDone();
+                            return;
+                        }
+
+                        if (!CreatePlayerSpell(target, targetCategory, spell, casterItem))
+                            MagicState.OnCastDone();
+                    });
+
+                    actionChain.EnqueueChain();
+                }
             }
             else
                 TurnTo_Magic(target);
@@ -1044,21 +1061,35 @@ namespace ACE.Server.WorldObjects
             // spell words
             DoSpellWords(spell, isWeaponSpell);
 
-            var spellChain = new ActionChain();
-            //StartPos = new Physics.Common.Position(PhysicsObj.Position);
-
-            // do wind-up gestures: fastcast has no windup (creature enchantments)
-            DoWindupGestures(spell, isWeaponSpell, spellChain);
-
-            // cast spell
-            DoCastGesture(spell, casterItem, spellChain);
-
             MagicState.SetCastParams(spell, casterItem, magicSkill, manaUsed, target, castingPreCheckStatus);
 
-            if (!FastTick)
-                spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(MagicState));
+            if (HasInstaCast)
+            {
+                // Skip all windup and cast-gesture delays.
+                // Set CastGesture so FinishCast() recoil animation still plays correctly.
+                MagicState.CastGesture = spell.Formula.CastGesture;
+                if (MagicState.CastGesture == MotionCommand.Invalid)
+                    MagicState.CastGesture = MotionCommand.Ready;
 
-            spellChain.EnqueueChain();
+                // Call directly (no action chain) — works for both FastTick and non-FastTick players.
+                // checkAngle=false: player was already rotated before CreatePlayerSpell was called.
+                DoCastSpell(MagicState, false);
+            }
+            else
+            {
+                var spellChain = new ActionChain();
+
+                // do wind-up gestures: fastcast has no windup (creature enchantments)
+                DoWindupGestures(spell, isWeaponSpell, spellChain);
+
+                // cast spell
+                DoCastGesture(spell, casterItem, spellChain);
+
+                if (!FastTick)
+                    spellChain.AddAction(this, ActionType.PlayerMagic_DoCastSpell, () => DoCastSpell(MagicState));
+
+                spellChain.EnqueueChain();
+            }
 
             return true;
         }

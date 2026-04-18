@@ -2652,6 +2652,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CharmGrantsAbility); else SetProperty(PropertyInt.CharmGrantsAbility, value.Value); }
         }
 
+        public int? CharmLevel
+        {
+            get => GetProperty(PropertyInt.CharmLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CharmLevel); else SetProperty(PropertyInt.CharmLevel, value.Value); }
+        }
+
         public bool HasManaBarrier
         {
             get => GetProperty(PropertyBool.HasManaBarrier) ?? false;
@@ -2669,6 +2675,37 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyBool.HasHeavyDraw) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasHeavyDraw); else SetProperty(PropertyBool.HasHeavyDraw, value); }
         }
+
+        public bool HasFocusedCasting
+        {
+            get => GetProperty(PropertyBool.HasFocusedCasting) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasFocusedCasting); else SetProperty(PropertyBool.HasFocusedCasting, value); }
+        }
+
+        public bool HasChaining
+        {
+            get => GetProperty(PropertyBool.HasChaining) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasChaining); else SetProperty(PropertyBool.HasChaining, value); }
+        }
+
+        public bool HasRepeater
+        {
+            get => GetProperty(PropertyBool.HasRepeater) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasRepeater); else SetProperty(PropertyBool.HasRepeater, value); }
+        }
+
+        public bool HasBloodLetting
+        {
+            get => GetProperty(PropertyBool.HasBloodLetting) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasBloodLetting); else SetProperty(PropertyBool.HasBloodLetting, value); }
+        }
+
+        public int? ActiveCharmLevel
+        {
+            get => GetProperty(PropertyInt.ActiveCharmLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.ActiveCharmLevel); else SetProperty(PropertyInt.ActiveCharmLevel, value.Value); }
+        }
+
 
         public int? EnrageFogColor
         {

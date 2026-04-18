@@ -1069,7 +1069,9 @@ namespace ACE.Server.WorldObjects
             actionChain.AddAction(this, ActionType.WorldObjectNetworking_EnqueueMotionMagic, () =>
             {
                 if (this is Player player && player.MagicState.IsCasting)
+                {
                     EnqueueBroadcastMotion(motion);
+                }
             });
             actionChain.AddDelaySeconds(animLength);
 

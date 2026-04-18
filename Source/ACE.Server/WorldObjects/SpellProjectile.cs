@@ -820,6 +820,7 @@ namespace ACE.Server.WorldObjects
 
             var amount = 0u;
             var percent = 0.0f;
+            var mbResult = new ManaBarrierResult();
 
             var damageRatingMod = 1.0f;
             var heritageMod = 1.0f;
@@ -924,8 +925,27 @@ namespace ACE.Server.WorldObjects
                 target.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                 target.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 
-                amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
+                // ── Mana Barrier ───────────────────────────────────────────────────────
+                if (targetPlayer != null)
+                    mbResult = targetPlayer.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
+
+                if (mbResult.FullyAbsorbed)
+                {
+                    var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} points of damage!";
+                    targetPlayer.SendMessage(msg, ChatMessageType.Magic);
+                    
+                    if (sourcePlayer != null)
+                        sourcePlayer.SendMessage(msg, ChatMessageType.Magic);
+
+                    // Clear damage rating info or handle as zero-damage
+                    amount = 0;
+                }
+                else
+                {
+                    amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
+                }
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
+                // ─────────────────────────────────────────────────────────────────────
 
                 //if (targetPlayer != null && targetPlayer.Fellowship != null)
                     //targetPlayer.Fellowship.OnVitalUpdate(targetPlayer);
@@ -953,12 +973,13 @@ namespace ACE.Server.WorldObjects
                 var critMsg = critical ? "Critical hit! " : "";
                 var sneakMsg = sneakAttackMod > 1.0f ? "Sneak Attack! " : "";
                 var overpowerMsg = overpower ? "Overpower! " : "";
+                var mbSuffix = targetPlayer?.GetManaBarrierSuffix(mbResult) ?? "";
 
                 if (sourcePlayer != null)
                 {
                     var critProt = critDefended ? " Your critical hit was avoided with their augmentation!" : "";
 
-                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amount} points with {Spell.Name}.{critProt}";
+                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amount} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     // could these crit / sneak attack?
                     if (nonHealth)
@@ -967,7 +988,7 @@ namespace ACE.Server.WorldObjects
                         attackerMsg = $"With {Spell.Name} you drain {amount} points of {vital} from {target.Name}.";
                     }
 
-                    if (!sourcePlayer.SquelchManager.Squelches.Contains(target, ChatMessageType.Magic))
+                    if (!sourcePlayer.SquelchManager.Squelches.Contains(target, ChatMessageType.Magic) && !mbResult.FullyAbsorbed)
                         sourcePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.Magic));
                 }
 
@@ -975,7 +996,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
 
-                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amount} points with {Spell.Name}.{critProt}";
+                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amount} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     if (nonHealth)
                     {
@@ -983,7 +1004,7 @@ namespace ACE.Server.WorldObjects
                         defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amount} points of your {vital}.";
                     }
 
-                    if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic))
+                    if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic) && !mbResult.FullyAbsorbed)
                         targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(defenderMsg, ChatMessageType.Magic));
 
                     if (sourceCreature != null)

@@ -34,7 +34,7 @@ namespace ACE.Server.WorldObjects
         private static readonly Dictionary<uint, int> WCIDToAbilityId = new()
         {
             // Mana Barrier
-            { 777700004, 1 }, { 777700054, 1 }, { 777710004, 1 }, { 777720004, 1 },
+            { 777700001, 1 }, { 777700054, 1 }, { 777710004, 1 }, { 777720004, 1 },
             // Heavy Swing
             { 777700005, 2 }, { 777700055, 2 }, { 777710005, 2 }, { 777720005, 2 },
             // Heavy Draw

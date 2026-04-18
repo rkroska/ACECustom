@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ACE.Common;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -1480,5 +1481,25 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IsVPHardcore); else SetProperty(PropertyBool.IsVPHardcore, value); }
         }
 
+        public void ValidateAbilityCharms()
+        {
+            // Build a set of ability IDs that have at least one activated charm in inventory
+            var activeCharmAbilities = new HashSet<int>();
+            foreach (var item in GetAllPossessions())
+            {
+                if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility.HasValue)
+                    activeCharmAbilities.Add(item.CharmGrantsAbility.Value);
+            }
+
+            // For IDs 1–50, if player has the ability but no activated charm, clear it
+            for (int id = 1; id <= 50; id++)
+            {
+                if (CharmAbilityRegistry.IsActive(this, id) && !activeCharmAbilities.Contains(id))
+                {
+                    CharmAbilityRegistry.Apply(this, id, false);
+                    // Silent clear — no message on login (they'd get spammed if they lost it offline)
+                }
+            }
+        }
     }
 }
