@@ -56,7 +56,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void ReconcileFriendlyQuestAffinityWithPlayer(Player player)
         {
-            if (player == null || string.IsNullOrEmpty(FriendlyQuestString))
+            if (player == null || !UsesFriendlyQuestTargeting)
                 return;
             if (!IsMonster || this is CombatPet)
                 return;
