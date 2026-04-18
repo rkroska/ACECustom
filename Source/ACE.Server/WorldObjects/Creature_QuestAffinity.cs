@@ -109,7 +109,7 @@ namespace ACE.Server.WorldObjects
                 if (PhysicsObj == null || player.PhysicsObj == null)
                     return;
 
-                if (!player.Attackable || player.Teleporting || player.CloakStatus == CloakStatus.Creature || (player.Hidden ?? false))
+                if (!player.Attackable || player.Teleporting || player.CloakStatus == ACE.Entity.Enum.CloakStatus.Creature || (player.Hidden ?? false))
                     return;
 
                 if (PhysicsObj.get_distance_sq_to_object(player.PhysicsObj, true) > VisualAwarenessRangeSq)
