@@ -95,6 +95,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            // If the current attack target became a friendly-quest ally this tick (stamp was just gained),
+            // drop combat before HandleFindTarget runs — otherwise it could immediately re-select the
+            // same player as AttackTarget on this same tick.
+            if (TryBreakOffAttackIfFriendlyQuestAlly())
+                return;
+
             HandleFindTarget();
 
             CheckMissHome();

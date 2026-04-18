@@ -285,6 +285,17 @@ namespace ACE.Server.WorldObjects
                 // Didn't find a target, so return home instead.
                 if (visibleTargets.Count == 0)
                 {
+                    // No valid hostile targets visible; ensure an ally player doesn't remain as AttackTarget.
+                    if (AttackTarget is Player onlyAllyPlayer
+                        && UsesFriendlyQuestTargeting
+                        && IsFriendlyQuestAlly(onlyAllyPlayer))
+                    {
+                        AttackTarget = null;
+                        InvalidateTargetCaches();
+                        if (HasRetaliateTarget(onlyAllyPlayer))
+                            RemoveRetaliateTarget(onlyAllyPlayer);
+                    }
+
                     if (MonsterState != State.Return)
                         MoveToHome();
 
@@ -369,6 +380,18 @@ namespace ACE.Server.WorldObjects
                         break;
                 }
 
+                // Safety: if a tactic (Focused, TopDamager, etc.) left AttackTarget set to an ally player
+                // who is now excluded from the visible list, clear it so we don't continue chasing them.
+                if (AttackTarget is Player remainingAlly
+                    && UsesFriendlyQuestTargeting
+                    && IsFriendlyQuestAlly(remainingAlly))
+                {
+                    AttackTarget = null;
+                    InvalidateTargetCaches();
+                    if (HasRetaliateTarget(remainingAlly))
+                        RemoveRetaliateTarget(remainingAlly);
+                }
+
                 if (AttackTarget != null && AttackTarget != prevAttackTarget)
                     EmoteManager.OnNewEnemy(AttackTarget);
 
@@ -441,6 +464,10 @@ namespace ACE.Server.WorldObjects
                         continue;
                     
                     if (p.Hidden ?? false)
+                        continue;
+
+                    // Skip players who are now friendly-quest allies — they must not appear in the attack list.
+                    if (UsesFriendlyQuestTargeting && IsFriendlyQuestAlly(p))
                         continue;
                 }
 

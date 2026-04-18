@@ -224,6 +224,8 @@ namespace ACE.Server.Managers
                     }
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    // Notify nearby monsters so they can de-aggro mid-combat if this stamp makes the player a quest ally.
+                    player.NotifyQuestAffinityChanged(questName);
                 }
             }
             else
@@ -260,6 +262,8 @@ namespace ACE.Server.Managers
                     }
 
                     player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    // Notify nearby monsters so they can de-aggro mid-combat if this stamp makes the player a quest ally.
+                    player.NotifyQuestAffinityChanged(questName);
                 }
             }
         }
@@ -491,6 +495,8 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     player.ContractManager.NotifyOfQuestUpdate(questName);
+                    // Quest erased: player is no longer a quest ally — notify monsters so they can re-aggro if applicable.
+                    player.NotifyQuestAffinityChanged(questName);
                 }
             }
             else

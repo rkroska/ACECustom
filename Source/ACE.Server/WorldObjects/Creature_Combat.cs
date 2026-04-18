@@ -38,6 +38,23 @@ namespace ACE.Server.WorldObjects
             !string.IsNullOrEmpty(FoeTypeString) ||
             !string.IsNullOrEmpty(FriendlyQuestString);
 
+        /// <summary>
+        /// True when this creature uses FriendlyQuestString to determine player allegiance.
+        /// </summary>
+        public bool UsesFriendlyQuestTargeting => !string.IsNullOrEmpty(FriendlyQuestString);
+
+        /// <summary>
+        /// Returns true if <paramref name="player"/> has the quest stamp named by this creature's FriendlyQuestString,
+        /// making the player a friendly-quest ally (should not be attacked).
+        /// </summary>
+        public bool IsFriendlyQuestAlly(Player player)
+        {
+            if (player == null || string.IsNullOrEmpty(FriendlyQuestString))
+                return false;
+
+            return player.QuestManager.HasQuest(FriendlyQuestString);
+        }
+
         private static bool IsPseudoTargetingCreatureType(ACE.Entity.Enum.CreatureType ct) =>
             ct >= ACE.Entity.Enum.CreatureType.QuestPlayer && ct <= ACE.Entity.Enum.CreatureType.AttackNonSelf;
 
@@ -1684,6 +1701,28 @@ namespace ACE.Server.WorldObjects
                 return PhysicsObj.ObjMaint.RetaliateTargetsContainsKey(wo.Guid.Full);
             else
                 return false;
+        }
+
+        /// <summary>
+        /// Removes a single entry from this creature's retaliate-targets list.
+        /// Wraps the private <c>ObjMaint.RemoveRetaliateTarget</c> so higher layers don't need
+        /// direct access to physics internals.
+        /// </summary>
+        public void RemoveRetaliateTarget(WorldObject wo)
+        {
+            if (wo?.PhysicsObj == null) return;
+            // ClearRetaliateTargets removes all; we remove just this one by clearing the full
+            // list only if this is the only entry, otherwise we rebuild without it.
+            var allTargets = PhysicsObj?.ObjMaint?.GetRetaliateTargetsValues();
+            if (allTargets == null) return;
+
+            PhysicsObj.ObjMaint.ClearRetaliateTargets();
+
+            foreach (var t in allTargets)
+            {
+                if (t != wo.PhysicsObj)
+                    PhysicsObj.ObjMaint.AddRetaliateTarget(t);
+            }
         }
 
         public void ClearRetaliateTargets()
