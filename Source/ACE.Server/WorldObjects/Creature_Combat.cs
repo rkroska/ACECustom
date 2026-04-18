@@ -52,7 +52,12 @@ namespace ACE.Server.WorldObjects
             if (player == null || string.IsNullOrEmpty(FriendlyQuestString))
                 return false;
 
-            return player.QuestManager.HasQuest(FriendlyQuestString);
+            // Normalize before lookup: FriendlyQuestString may carry an @comment suffix
+            // (e.g. "Friendly@some note") that GetQuestName strips. Passing the raw value
+            // to HasQuest would cause a false-negative because HasQuest also normalizes
+            // internally, making the lookup miss a quest that was stamped under the plain name.
+            var questName = QuestManager.GetQuestName(FriendlyQuestString);
+            return !string.IsNullOrEmpty(questName) && player.QuestManager.HasQuest(questName);
         }
 
         private static bool IsPseudoTargetingCreatureType(ACE.Entity.Enum.CreatureType ct) =>
@@ -1517,7 +1522,7 @@ namespace ACE.Server.WorldObjects
                 return true;
 
             // FriendlyQuestString alone exempts players with that stamp (no need for QuestPlayer/996 in FriendTypeString)
-            if (!string.IsNullOrEmpty(FriendlyQuestString) && player.QuestManager.HasQuest(FriendlyQuestString))
+            if (IsFriendlyQuestAlly(player))
                 return true;
 
             return false;
@@ -1525,10 +1530,8 @@ namespace ACE.Server.WorldObjects
 
         private bool MatchesQuestPlayerAffinity(Player player)
         {
-            if (player == null || string.IsNullOrEmpty(FriendlyQuestString))
-                return false;
-
-            return player.QuestManager.HasQuest(FriendlyQuestString);
+            // Delegate to IsFriendlyQuestAlly so normalization and null-guards are applied consistently.
+            return IsFriendlyQuestAlly(player);
         }
 
         private void EnsureTargetingCacheCurrent()
