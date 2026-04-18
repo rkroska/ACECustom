@@ -191,6 +191,18 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Issues both the contract-tracker notification and the quest-affinity notification
+        /// every time a player's quest registry is mutated.  All mutator methods (Update,
+        /// SetQuestCompletions, Decrement, Erase, EraseAll) route through this helper so the
+        /// two notifications are always issued together and can never fall out of sync.
+        /// </summary>
+        private static void NotifyPlayerQuestStateChanged(Player player, string questName)
+        {
+            player.ContractManager.NotifyOfQuestUpdate(questName);
+            player.NotifyQuestAffinityChanged(questName);
+        }
+
+        /// <summary>
         /// Adds or updates a quest completion to the player's registry
         /// </summary>
         public void Update(string questFormat)
@@ -223,9 +235,7 @@ namespace ACE.Server.Managers
                         player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                     }
 
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
-                    // Notify nearby monsters so they can de-aggro mid-combat if this stamp makes the player a quest ally.
-                    player.NotifyQuestAffinityChanged(questName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
                 }
             }
             else
@@ -261,9 +271,7 @@ namespace ACE.Server.Managers
                         }
                     }
 
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
-                    // Notify nearby monsters so they can de-aggro mid-combat if this stamp makes the player a quest ally.
-                    player.NotifyQuestAffinityChanged(questName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
                 }
             }
         }
@@ -303,7 +311,7 @@ namespace ACE.Server.Managers
                     {
                         player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                     }
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
 
                 }
 
@@ -332,7 +340,7 @@ namespace ACE.Server.Managers
                             player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
                 }
             }
         }
@@ -473,7 +481,7 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    player.ContractManager.NotifyOfQuestUpdate(existing.QuestName);
+                    NotifyPlayerQuestStateChanged(player, existing.QuestName);
                 }
             }
         }
@@ -494,9 +502,7 @@ namespace ACE.Server.Managers
                 {
                     player.CharacterChangesDetected = true;
 
-                    player.ContractManager.NotifyOfQuestUpdate(questName);
-                    // Quest erased: player is no longer a quest ally — notify monsters so they can re-aggro if applicable.
-                    player.NotifyQuestAffinityChanged(questName);
+                    NotifyPlayerQuestStateChanged(player, questName);
                 }
             }
             else
@@ -525,7 +531,7 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     foreach (var questName in questNamesErased)
-                        player.ContractManager.NotifyOfQuestUpdate(questName);
+                        NotifyPlayerQuestStateChanged(player, questName);
                 }
             }
             else
