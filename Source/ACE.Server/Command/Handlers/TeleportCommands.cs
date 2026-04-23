@@ -823,8 +823,6 @@ namespace ACE.Server.Command.Handlers
                 var coords = dest.GetMapCoordStr();
                 session.Network.EnqueueSend(new GameMessageSystemChat(
                     $"Teleporting to random outdoor location: {coords}", ChatMessageType.System));
-                PlayerManager.BroadcastToAuditChannel(session.Player,
-                    $"Admin {session.Player.Name} used /telerandomoutside — landed at {coords}.");
                 return;
             }
 
@@ -928,8 +926,6 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat(
                     $"Teleporting deep into: {chosen.Name} (landblock 0x{chosen.DungeonLandblock:X4})",
                     ChatMessageType.System));
-                PlayerManager.BroadcastToAuditChannel(session.Player,
-                    $"Admin {session.Player.Name} used /telerandomdungeon — landed in {chosen.Name} at {dest}.");
                 return;
             }
 
