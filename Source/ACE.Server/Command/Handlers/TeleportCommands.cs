@@ -881,7 +881,7 @@ namespace ACE.Server.Command.Handlers
                 uint blockEnd    = blockStart | 0xFFFFu;
                 uint deepCellMin = blockStart | 0x0100u;  // skip outdoor cell, EnvCells only
 
-                // Query creature/generator spawn positions inside this dungeon's cells
+                // Query creature spawn positions inside this dungeon's cells
                 List<Position> spawnPositions;
                 using (var ctx = new WorldDbContext())
                 {
@@ -900,24 +900,31 @@ namespace ACE.Server.Command.Handlers
                     spawnPositions = spawnQuery.ToList();
                 }
 
-                Position dest;
+                // No creature data — retry with a different dungeon unless this is the last attempt,
+                // in which case use the portal entrance so we still land somewhere valid.
                 if (spawnPositions.Count == 0)
                 {
-                    // No creature data for this dungeon — fall back to entrance and try again next loop
-                    dest = chosen.Entrance;
-                }
-                else
-                {
-                    // Sort all spawn positions by distance from entrance (descending),
-                    // take the furthest 33%, and pick one at random — this lands us deep inside.
-                    var sortedByDepth = spawnPositions
-                        .Select(p => (Pos: p, DistSq: DungeonDistanceSq(p, chosen.Entrance)))
-                        .OrderByDescending(x => x.DistSq)
-                        .ToList();
+                    if (attempt < MaxDungeonAttempts - 1)
+                        continue;
 
-                    int deepCount = Math.Max(1, sortedByDepth.Count / 3);
-                    dest = sortedByDepth[rng.Next(deepCount)].Pos;
+                    session.Player.SetPosition(PositionType.TeleportedCharacter, new Position(session.Player.Location));
+                    session.Player.Teleport(chosen.Entrance);
+                    session.Player.OnTeleportComplete();
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"Teleporting to entrance of: {chosen.Name} (landblock 0x{chosen.DungeonLandblock:X4})",
+                        ChatMessageType.System));
+                    return;
                 }
+
+                // Sort all spawn positions by distance from entrance (descending),
+                // take the furthest 33%, and pick one at random — this lands us deep inside.
+                var sortedByDepth = spawnPositions
+                    .Select(p => (Pos: p, DistSq: DungeonDistanceSq(p, chosen.Entrance)))
+                    .OrderByDescending(x => x.DistSq)
+                    .ToList();
+
+                int deepCount = Math.Max(1, sortedByDepth.Count / 3);
+                var dest = sortedByDepth[rng.Next(deepCount)].Pos;
 
                 session.Player.SetPosition(PositionType.TeleportedCharacter, new Position(session.Player.Location));
                 session.Player.Teleport(dest);
@@ -928,6 +935,7 @@ namespace ACE.Server.Command.Handlers
                     ChatMessageType.System));
                 return;
             }
+
 
             session.Network.EnqueueSend(new GameMessageSystemChat(
                 "Could not find a valid dungeon after several attempts. Try again.", ChatMessageType.System));
