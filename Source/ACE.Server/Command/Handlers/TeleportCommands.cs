@@ -881,24 +881,32 @@ namespace ACE.Server.Command.Handlers
                 uint blockEnd    = blockStart | 0xFFFFu;
                 uint deepCellMin = blockStart | 0x0100u;  // skip outdoor cell, EnvCells only
 
-                // Query creature spawn positions inside this dungeon's cells
+                // Query creature spawn positions inside this dungeon's cells.
+                // Project to anonymous type first (EF-safe), then construct Position in memory.
                 List<Position> spawnPositions;
                 using (var ctx = new WorldDbContext())
                 {
-                    var spawnQuery = from weenie in ctx.Weenie
-                                     join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                                     where weenie.Type == (int)WeenieType.Creature
-                                        && wpos.PositionType == (int)PositionType.Location
-                                        && wpos.ObjCellId   >= deepCellMin
-                                        && wpos.ObjCellId   <= blockEnd
-                                     select new Position(
-                                         wpos.ObjCellId,
-                                         wpos.OriginX, wpos.OriginY, wpos.OriginZ,
-                                         wpos.AnglesX, wpos.AnglesY, wpos.AnglesZ,
-                                         wpos.AnglesW, false, wpos.VariationId);
+                    var rawRows = (from weenie in ctx.Weenie
+                                   join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
+                                   where weenie.Type == (int)WeenieType.Creature
+                                      && wpos.PositionType == (int)PositionType.Location
+                                      && wpos.ObjCellId   >= deepCellMin
+                                      && wpos.ObjCellId   <= blockEnd
+                                   select new
+                                   {
+                                       wpos.ObjCellId,
+                                       wpos.OriginX, wpos.OriginY, wpos.OriginZ,
+                                       wpos.AnglesX, wpos.AnglesY, wpos.AnglesZ,
+                                       wpos.AnglesW, wpos.VariationId
+                                   }).ToList();
 
-                    spawnPositions = spawnQuery.ToList();
+                    spawnPositions = rawRows.Select(r => new Position(
+                        r.ObjCellId,
+                        r.OriginX, r.OriginY, r.OriginZ,
+                        r.AnglesX, r.AnglesY, r.AnglesZ,
+                        r.AnglesW, false, r.VariationId)).ToList();
                 }
+
 
                 // No creature data — retry with a different dungeon unless this is the last attempt,
                 // in which case use the portal entrance so we still land somewhere valid.
