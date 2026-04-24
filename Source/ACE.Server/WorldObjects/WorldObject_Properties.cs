@@ -2117,11 +2117,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.UnlimitedUse); else SetProperty(PropertyBool.UnlimitedUse, value); }
         }
 
-        public bool InfiniteCharges
-        {
-            get => GetProperty(PropertyBool.InfiniteCharges) ?? false;
-            set { if (!value) RemoveProperty(PropertyBool.InfiniteCharges); else SetProperty(PropertyBool.InfiniteCharges, value); }
-        }
 
         public uint? SpellDID
         {

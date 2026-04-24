@@ -134,7 +134,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TryConsumeFromInventoryWithNetworking(WorldObject item, int amount = int.MaxValue)
         {
-            if (item.InfiniteCharges)
+            if (item.UnlimitedUse)
                 return true;
 
             if (amount >= (item.StackSize ?? 1))
