@@ -10,6 +10,7 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Common;
 using ACE.Server.Entity;
 using ACE.Server.WorldObjects;
+using ACE.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -774,7 +775,7 @@ namespace ACE.Server.Command.Handlers
             "Teleport yourself to a random valid location anywhere in the world (outdoor or dungeon).")]
         public static void HandleTeleRandom(Session session, params string[] parameters)
         {
-            if (new Random().Next(2) == 0)
+            if (ThreadSafeRandom.Next(0, 1) == 0)
                 TeleportToRandomOutdoor(session);
             else
                 TeleportToRandomDungeon(session);
@@ -794,14 +795,13 @@ namespace ACE.Server.Command.Handlers
 
         private static void TeleportToRandomOutdoor(Session session)
         {
-            var rng = new Random();
             const int MaxAttempts = 15;
 
             for (int attempt = 0; attempt < MaxAttempts; attempt++)
             {
                 // Full Dereth grid: 0x01-0xFE on both axes
-                byte lbX = (byte)rng.Next(0x01, 0xFF);
-                byte lbY = (byte)rng.Next(0x01, 0xFF);
+                byte lbX = (byte)ThreadSafeRandom.Next(0x01, 0xFE);
+                byte lbY = (byte)ThreadSafeRandom.Next(0x01, 0xFE);
                 uint cellId = ((uint)lbX << 24) | ((uint)lbY << 16) | 0x0001;
 
                 var lb = LScape.get_landblock(cellId, null);
@@ -832,7 +832,6 @@ namespace ACE.Server.Command.Handlers
 
         private static void TeleportToRandomDungeon(Session session)
         {
-            var rng = new Random();
             const int MaxDungeonAttempts = 5;
 
             // --- Step 1: Build accessible dungeon list from the world DB ---
@@ -876,7 +875,7 @@ namespace ACE.Server.Command.Handlers
             // --- Steps 2–4: Pick dungeon, find deep creature spawn positions ---
             for (int attempt = 0; attempt < MaxDungeonAttempts; attempt++)
             {
-                var chosen = accessibleDungeons[rng.Next(accessibleDungeons.Count)];
+                var chosen = accessibleDungeons[ThreadSafeRandom.Next(0, accessibleDungeons.Count - 1)];
                 uint blockStart  = chosen.DungeonLandblock << 16;
                 uint blockEnd    = blockStart | 0xFFFFu;
                 uint deepCellMin = blockStart | 0x0100u;  // skip outdoor cell, EnvCells only
@@ -932,7 +931,7 @@ namespace ACE.Server.Command.Handlers
                     .ToList();
 
                 int deepCount = Math.Max(1, sortedByDepth.Count / 3);
-                var dest = sortedByDepth[rng.Next(deepCount)].Pos;
+                var dest = sortedByDepth[ThreadSafeRandom.Next(0, deepCount - 1)].Pos;
 
                 session.Player.SetPosition(PositionType.TeleportedCharacter, new Position(session.Player.Location));
                 session.Player.Teleport(dest);
