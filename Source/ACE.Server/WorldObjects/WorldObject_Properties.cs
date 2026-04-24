@@ -2117,6 +2117,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.UnlimitedUse); else SetProperty(PropertyBool.UnlimitedUse, value); }
         }
 
+        public bool IsInfiniteItem
+        {
+            get => GetProperty(PropertyBool.IsInfiniteItem) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsInfiniteItem); else SetProperty(PropertyBool.IsInfiniteItem, value); }
+        }
+
 
         public uint? SpellDID
         {

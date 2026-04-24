@@ -258,6 +258,9 @@ namespace ACE.Entity.Enum.Properties
         // ── ILT Ability Flags — players (50010+) ─────────────────────────────────
         /// <summary>Player has the Mana Barrier ability active (absorbs damage using mana).</summary>
         HasManaBarrier   = 50010,
+
+        /* Infinite Spell Components (60000-60099) */
+        IsInfiniteItem                    = 60001,
     }
 }
 
