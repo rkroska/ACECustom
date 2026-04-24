@@ -240,6 +240,12 @@ namespace ACE.Entity.Enum.Properties
         /// Single-use, extremely rare item obtained by exchanging 5000 Flawed Siphon Lenses.
         /// </summary>
         IsGuaranteedCaptureLens           = 9042,
+        AllowFriendlyPlayerDamage       = 9043,
+        BreakPeaceOnHostileAction       = 9044,
+
+        /// <summary>If TRUE, item has unlimited uses and will never be consumed.</summary>
+        [AssessmentProperty]
+        InfiniteCharges                   = 9045,
 
         // ── ILT Ability Charm System (50000–50099) ────────────────────────────────
         /// <summary>On an ability charm item: marks it as an ability-granting charm.</summary>

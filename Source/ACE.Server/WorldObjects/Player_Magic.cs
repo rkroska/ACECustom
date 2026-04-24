@@ -1221,6 +1221,9 @@ namespace ACE.Server.WorldObjects
 
                     continue;
                 }
+                if (item.InfiniteCharges)
+                    continue;
+
                 TryConsumeFromInventoryWithNetworking(item, 1);
             }
 
