@@ -956,6 +956,9 @@ namespace ACE.Server.WorldObjects
             if (target == null)
                 return false;
 
+            if (target is Player player && player.CloakStatus == CloakStatus.Creature)
+                return false;
+
             if (!target.Attackable || target.Teleporting || target is CombatPet)
                 return false;
 
