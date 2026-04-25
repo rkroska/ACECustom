@@ -44,11 +44,17 @@ namespace ACE.Server.WorldObjects
 
         public float GetManaBarrierRatioMod()
         {
-            var level = ActiveCharmLevel ?? 1;
-            if (level <= 1) return 1.0f;
-
-            // -20% mana cost per level (1.0 -> 0.8 -> 0.6)
-            return Math.Max(0.1f, 1.0f - (level - 1) * 0.2f);
+            // Absorption efficiency per tier:
+            // Level 1: 1:1   (1 Mana per 1 Damage)   → ratio mod = 1.000
+            // Level 2: 1.5:1 (1 Mana per 1.5 Damage) → ratio mod = 0.667
+            // Level 3: 2:1   (1 Mana per 2 Damage)   → ratio mod = 0.500
+            return (ActiveCharmLevel ?? 1) switch
+            {
+                1 => 1.000f,
+                2 => 0.667f,
+                3 => 0.500f,
+                _ => 1.000f
+            };
         }
 
         public ManaBarrierResult TryAbsorbWithManaBarrier(ref float amount, DamageType damageType)

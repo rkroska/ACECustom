@@ -378,8 +378,8 @@ namespace ACE.Server.WorldObjects
                     return level switch
                     {
                         1 => "Mana Barrier Level I activated. Your Mana will absorb incoming damage at a 1:1 ratio.",
-                        2 => "Mana Barrier Level II activated. Your Mana will absorb incoming damage at a 1.25:1 ratio (improved efficiency).",
-                        3 => "Mana Barrier Level III activated. Your Mana will absorb incoming damage at a 1.67:1 ratio (maximum efficiency).",
+                        2 => "Mana Barrier Level II activated. Your Mana will absorb incoming damage at a 1.5:1 ratio.",
+                        3 => "Mana Barrier Level III activated. Your Mana will absorb incoming damage at a 2:1 ratio.",
                         _ => $"Mana Barrier Level {level} activated."
                     };
                 }
