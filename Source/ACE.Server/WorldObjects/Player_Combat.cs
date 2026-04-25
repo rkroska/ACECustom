@@ -132,15 +132,16 @@ namespace ACE.Server.WorldObjects
             }
 
             var damageEvent = DamageEvent.CalculateDamage(this, target, damageSource);
+            uint appliedDamage = 0;
 
             if (damageEvent.HasDamage)
             {
                 OnDamageTarget(target, damageEvent.CombatType, damageEvent.IsCritical);
 
                 if (targetPlayer != null)
-                    targetPlayer.TakeDamage(this, damageEvent);
+                    appliedDamage = (uint)Math.Max(0, targetPlayer.TakeDamage(this, damageEvent));
                 else
-                    target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
+                    appliedDamage = target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
             }
             else
             {
@@ -159,19 +160,20 @@ namespace ACE.Server.WorldObjects
                 // notify attacker
                 var intDamage = (uint)Math.Round(damageEvent.Damage);
                 var isVitalDrainDamage = damageEvent.DamageType == DamageType.Stamina || damageEvent.DamageType == DamageType.Mana;
+                var displayedDamage = isVitalDrainDamage ? appliedDamage : intDamage;
                 var defenderVital = GetDefenderVitalForDamageType(target, damageEvent.DamageType);
                 var defenderVitalMax = defenderVital?.MaxValue ?? target.Health.MaxValue;
-                var damagePercent = defenderVitalMax > 0 ? (float)intDamage / defenderVitalMax : 0.0f;
+                var damagePercent = defenderVitalMax > 0 ? (float)displayedDamage / defenderVitalMax : 0.0f;
 
                 if (!isVitalDrainDamage)
                 {
                     if (!SquelchManager.Squelches.Contains(this, ChatMessageType.CombatSelf))
-                        Session.Network.EnqueueSend(new GameEventAttackerNotification(Session, target.Name, damageEvent.DamageType, damagePercent, intDamage, damageEvent.IsCritical, damageEvent.AttackConditions));
+                        Session.Network.EnqueueSend(new GameEventAttackerNotification(Session, target.Name, damageEvent.DamageType, damagePercent, displayedDamage, damageEvent.IsCritical, damageEvent.AttackConditions));
                 }
                 else
                 {
                     var vitalName = GetVitalDisplayName(damageEvent.DamageType);
-                    var attackerDrainMessage = $"You drain {intDamage} points of {vitalName} from {target.Name}.";
+                    var attackerDrainMessage = $"You drain {displayedDamage} points of {vitalName} from {target.Name}.";
                     SendChatMessage(target, attackerDrainMessage, ChatMessageType.CombatSelf);
                 }
 
@@ -569,7 +571,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     var vitalName = GetVitalDisplayName(damageType);
-                    var defenderDrainMessage = $"{creature.Name} drains {amount} points of your {vitalName}.";
+                    var defenderDrainMessage = $"{creature.Name} drains {damageTaken} points of your {vitalName}.";
                     SendChatMessage(creature, defenderDrainMessage, ChatMessageType.CombatEnemy);
                 }
 
