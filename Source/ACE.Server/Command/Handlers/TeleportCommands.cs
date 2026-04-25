@@ -802,7 +802,7 @@ namespace ACE.Server.Command.Handlers
                 // Full Dereth grid: 0x01-0xFE on both axes
                 byte lbX = (byte)ThreadSafeRandom.Next(0x01, 0xFE);
                 byte lbY = (byte)ThreadSafeRandom.Next(0x01, 0xFE);
-                uint cellId = ((uint)lbX << 24) | ((uint)lbY << 16) | 0x0001;
+                uint cellId = ((uint)lbX << 24) | ((uint)lbY << 16) | 0x0000;
 
                 var lb = LScape.get_landblock(cellId, null);
                 if (lb == null) continue;
