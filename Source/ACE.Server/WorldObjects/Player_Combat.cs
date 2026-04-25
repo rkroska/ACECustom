@@ -172,7 +172,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var vitalName = GetVitalDisplayName(damageEvent.DamageType);
                     var attackerDrainMessage = $"You drain {intDamage} points of {vitalName} from {target.Name}.";
-                    SendChatMessage(target, attackerDrainMessage, GetVitalDrainChatMessageType(damageEvent.DamageType));
+                    SendChatMessage(target, attackerDrainMessage, ChatMessageType.CombatSelf);
                 }
 
                 // splatter effects
@@ -570,7 +570,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var vitalName = GetVitalDisplayName(damageType);
                     var defenderDrainMessage = $"{creature.Name} drains {amount} points of your {vitalName}.";
-                    SendChatMessage(creature, defenderDrainMessage, GetVitalDrainChatMessageType(damageType));
+                    SendChatMessage(creature, defenderDrainMessage, ChatMessageType.CombatEnemy);
                 }
 
                 if (!isVitalDrainDamage)
@@ -621,12 +621,6 @@ namespace ACE.Server.WorldObjects
         private static string GetVitalDisplayName(DamageType damageType)
         {
             return damageType == DamageType.Mana ? "mana" : "stamina";
-        }
-
-        private static ChatMessageType GetVitalDrainChatMessageType(DamageType damageType)
-        {
-            // Use yellow for stamina drains and magic blue for mana drains.
-            return damageType == DamageType.Mana ? ChatMessageType.Magic : ChatMessageType.Social;
         }
 
         /// <summary>
