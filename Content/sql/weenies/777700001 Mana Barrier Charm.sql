@@ -25,7 +25,7 @@ VALUES (777700001,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700001,    1, 33558517)  /* Setup - Ember */
      , (777700001,    3, 536870932) /* SoundTable */
-     , (777700001,    8, 100676392) /* Icon - Unified Charm Icon (13096) */
+     , (777700001,    8, 100690339) /* Icon - Charm Tier I */
      , (777700001,   50, 100663297) /* IconOverlay - Outline 1 */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)

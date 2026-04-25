@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 using ACE.Common;
 using ACE.Entity;
@@ -328,6 +329,21 @@ namespace ACE.Server.WorldObjects
 
             if (!IsCharmActivated)
             {
+                // Guard: only one charm per ability allowed in inventory at a time
+                var duplicate = player.GetAllPossessions()
+                    .FirstOrDefault(i => i.Guid != Guid
+                        && i.IsAbilityCharm
+                        && i.CharmGrantsAbility == abilityId
+                        && i.IsCharmActivated);
+
+                if (duplicate != null)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"You already have a {abilityName} charm active. Deactivate it first before using another tier.",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+
                 // Activate
                 IsCharmActivated = true;
                 player.ActiveCharmLevel = CharmLevel ?? 1;
