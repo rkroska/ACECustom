@@ -1,8 +1,8 @@
 -- Mana Barrier Charm Upgrade Recipes
 -- Uses Charm Catalyst (777700010) to upgrade Mana Barrier charms between tiers.
 
-DELETE FROM `recipe` WHERE `id` IN (777701001, 777701002, 777701003);
 DELETE FROM `cook_book` WHERE `recipe_Id` IN (777701001, 777701002, 777701003);
+DELETE FROM `recipe` WHERE `id` IN (777701001, 777701002, 777701003);
 
 -- L1 -> L2 (777701001)
 INSERT INTO `recipe` (`id`, `unknown_1`, `skill`, `difficulty`, `salvage_Type`, `success_W_C_I_D`, `success_Amount`, `success_Message`, `fail_W_C_I_D`, `fail_Amount`, `fail_Message`, `success_Destroy_Source_Chance`, `success_Destroy_Source_Amount`, `success_Destroy_Target_Chance`, `success_Destroy_Target_Amount`, `fail_Destroy_Source_Chance`, `fail_Destroy_Source_Amount`, `fail_Destroy_Target_Chance`, `fail_Destroy_Target_Amount`, `data_Id`)
