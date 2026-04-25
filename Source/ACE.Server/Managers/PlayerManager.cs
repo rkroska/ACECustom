@@ -731,20 +731,17 @@ namespace ACE.Server.Managers
 
         public static void BroadcastToAuditChannel(Player issuer, string message, ACE.Common.DiscordLogLevel requiredLevel = ACE.Common.DiscordLogLevel.Info)
         {
-            var auditChannelId = ConfigManager.Config?.Chat?.AdminAuditId ?? 0;
-            var canSendDiscordAudit = ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel && auditChannelId > 0;
-
             if (issuer != null)
             { 
                 BroadcastToChannel(Channel.Audit, issuer, message, true, true);
-                if (canSendDiscordAudit)
-                    _ = DiscordChatManager.SendDiscordMessage(issuer.Name, message, auditChannelId);
+                if (ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel)
+                    _ = DiscordChatManager.SendDiscordMessage(issuer.Name, message, ConfigManager.Config.Chat.AdminAuditId);
             }
             else
             {
                 BroadcastToChannelFromConsole(Channel.Audit, message);
-                if (canSendDiscordAudit)
-                    _ = DiscordChatManager.SendDiscordMessage("Console", message, auditChannelId);
+                if (ACE.Server.Managers.ServerConfig.discord_audit_level.Value >= (long)requiredLevel)
+                    _ = DiscordChatManager.SendDiscordMessage("Console", message, ConfigManager.Config.Chat.AdminAuditId);
             }
                 
 

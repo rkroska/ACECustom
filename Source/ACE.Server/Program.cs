@@ -306,16 +306,13 @@ namespace ACE.Server
             log.Info("Initializing GuidManager...");
             GuidManager.Initialize();
             
-            var config = ConfigManager.Config;
-            var discordToken = config?.Chat?.DiscordToken;
-
-            if (!string.IsNullOrEmpty(discordToken))
+            if (!string.IsNullOrEmpty(ConfigManager.Config.Chat.DiscordToken))
             {
                 log.Info("Attempting to start Discord Client...");
                 DiscordChatManager.Initialize();
             }
 
-            if (config?.Server?.ServerPerformanceMonitorAutoStart ?? false)
+            if (ConfigManager.Config.Server.ServerPerformanceMonitorAutoStart)
             {
                 log.Info("Server Performance Monitor auto starting...");
                 ServerPerformanceMonitor.Start();
