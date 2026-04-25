@@ -26,7 +26,7 @@ VALUES (777710001,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710001,    1, 33558517)  /* Setup - Ember */
      , (777710001,    3, 536870932) /* SoundTable */
-     , (777710001,    8, 100676392) /* Icon - Unified Charm Icon (13096) */
+     , (777710001,    8, 100690340) /* Icon - Greater Charm Icon (II) */
      , (777710001,   50, 100663297) /* IconOverlay - Outline 1 */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
@@ -61,7 +61,7 @@ VALUES (777720001,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720001,    1, 33558517)  /* Setup - Ember */
      , (777720001,    3, 536870932) /* SoundTable */
-     , (777720001,    8, 100676392) /* Icon - Unified Charm Icon (13096) */
+     , (777720001,    8, 100690341) /* Icon - Master Charm Icon (III) */
      , (777720001,   50, 100663297) /* IconOverlay - Outline 1 */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
