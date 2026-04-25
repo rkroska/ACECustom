@@ -348,8 +348,9 @@ namespace ACE.Server.WorldObjects
                 IsCharmActivated = true;
                 player.ActiveCharmLevel = CharmLevel ?? 1;
                 CharmAbilityRegistry.Apply(player, abilityId, true);
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"{abilityName} activated (Level {player.ActiveCharmLevel}).", ChatMessageType.Broadcast));
+
+                var activateMsg = BuildActivationMessage(abilityId, player.ActiveCharmLevel.Value, true);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(activateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.HealthUp, 1.0f));
             }
             else
@@ -358,13 +359,41 @@ namespace ACE.Server.WorldObjects
                 IsCharmActivated = false;
                 player.ActiveCharmLevel = null;
                 CharmAbilityRegistry.Apply(player, abilityId, false);
-                player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                    $"{abilityName} deactivated.", ChatMessageType.Broadcast));
+                var deactivateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, false);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(deactivateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown, 1.0f));
             }
 
             // Save the per-instance activated state
             SaveBiotaToDatabase();
+        }
+
+        private static string BuildActivationMessage(int abilityId, int level, bool activating)
+        {
+            // Mana Barrier: provide tier-specific ratio descriptions
+            if (abilityId == 1)
+            {
+                if (activating)
+                {
+                    return level switch
+                    {
+                        1 => "Mana Barrier Level I activated. Your Mana will absorb incoming damage at a 1:1 ratio.",
+                        2 => "Mana Barrier Level II activated. Your Mana will absorb incoming damage at a 1.25:1 ratio (improved efficiency).",
+                        3 => "Mana Barrier Level III activated. Your Mana will absorb incoming damage at a 1.67:1 ratio (maximum efficiency).",
+                        _ => $"Mana Barrier Level {level} activated."
+                    };
+                }
+                else
+                {
+                    return $"Mana Barrier Level {level} deactivated. Your Mana is no longer absorbing damage.";
+                }
+            }
+
+            // Generic format for all other abilities
+            var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
+            return activating
+                ? $"{name} Level {level} activated."
+                : $"{name} deactivated.";
         }
     }
 }

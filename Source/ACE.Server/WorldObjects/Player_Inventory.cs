@@ -89,6 +89,24 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool TryCreateInInventoryWithNetworking(WorldObject item, out Container container)
         {
+            // Block duplicate ability charms - only one charm per ability allowed in inventory
+            if (item.IsAbilityCharm && item.CharmGrantsAbility.HasValue)
+            {
+                var abilityId = item.CharmGrantsAbility.Value;
+                var existing = GetAllPossessions()
+                    .FirstOrDefault(i => i.IsAbilityCharm && i.CharmGrantsAbility == abilityId);
+
+                if (existing != null)
+                {
+                    var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? item.Name;
+                    Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"You already have a {abilityName} charm in your inventory. You may only carry one charm per ability.",
+                        ChatMessageType.Broadcast));
+                    container = null;
+                    return false;
+                }
+            }
+
             if (!TryAddToInventory(item, out container)) // We don't have enough burden available or no empty pack slot.
                 return false;
 
