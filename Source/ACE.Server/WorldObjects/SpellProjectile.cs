@@ -893,14 +893,15 @@ namespace ACE.Server.WorldObjects
                 if (sourcePlayer != null)
                 {
                     var critProt = critDefended ? " Your critical hit was avoided with their augmentation!" : "";
+                    var amtStr = Creature.FormatDamage(amount, sourcePlayer.UseTruncatedDamageNumbers);
 
-                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {displayAmount} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     // could these crit / sneak attack?
                     if (nonHealth)
                     {
                         var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
-                        attackerMsg = $"With {Spell.Name} you drain {displayAmount} points of {vital} from {target.Name}.";
+                        attackerMsg = $"With {Spell.Name} you drain {amtStr} points of {vital} from {target.Name}.";
                     }
 
                     if (!sourcePlayer.SquelchManager.Squelches.Contains(target, ChatMessageType.Magic))
@@ -910,13 +911,16 @@ namespace ACE.Server.WorldObjects
                 if (targetPlayer != null)
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
+                    var amtStr = Creature.FormatDamage(amount, targetPlayer.UseTruncatedDamageNumbers);
 
-                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {displayAmount} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
+
 
                     if (nonHealth)
                     {
                         var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
-                        defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {displayAmount} points of your {vital}.";
+                        defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amtStr} points of your {vital}.";
+
                     }
 
                     if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic))
