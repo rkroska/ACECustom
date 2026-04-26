@@ -28,6 +28,18 @@ namespace ACE.Server.WorldObjects
             { DamageType.Undef,     1.0f },
         };
 
+        // ── Shared damage number formatter ─────────────────────────────────────
+        /// <summary>Formats a damage number as exact (below 10K) or truncated K/M.</summary>
+        public static string FormatDamage(ulong value, bool truncated)
+        {
+            if (!truncated || value < 10_000)          return $"{value:N0}";
+            if (value >= 1_000_000_000_000_000UL)      return $"{value / 1_000_000_000_000_000.0:0.#}Q";
+            if (value >= 1_000_000_000_000UL)          return $"{value / 1_000_000_000_000.0:0.#}T";
+            if (value >= 1_000_000_000UL)              return $"{value / 1_000_000_000.0:0.#}B";
+            if (value >= 1_000_000UL)                  return $"{value / 1_000_000.0:0.#}M";
+            return $"{value / 1_000.0:0.#}K";
+        }
+
         public virtual float GetManaBarrierRatioMod()
         {
             // Monsters use a fixed 1:1 ratio (1 mana per 1 damage absorbed)

@@ -39,7 +39,8 @@ namespace ACE.Server.WorldObjects
         public string GetManaBarrierSuffix(ManaBarrierResult result)
         {
             if (result.AmountAbsorbed == 0) return "";
-            return $" (Mana Barrier absorbed {result.AmountAbsorbed})";
+            var dmg = Creature.FormatDamage(result.AmountAbsorbed, UseTruncatedDamageNumbers);
+            return $" (Mana Barrier absorbed {dmg})";
         }
 
         public float GetManaBarrierRatioMod()

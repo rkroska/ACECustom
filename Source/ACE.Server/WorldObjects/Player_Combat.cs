@@ -196,7 +196,16 @@ namespace ACE.Server.WorldObjects
                     }
                     else
                     {
-                        Session.Network.EnqueueSend(new GameEventAttackerNotification(Session, target.Name, damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, intDamage, damageEvent.IsCritical, damageEvent.AttackConditions));
+                        var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
+                        string verb = "", plural = "";
+                        Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
+                        var dmgStr = Creature.FormatDamage(intDamage, UseTruncatedDamageNumbers);
+                        if (UseTruncatedDamageNumbers)
+                            Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"{critMsg}You {verb} {target.Name} for {dmgStr} points of {damageEvent.DamageType.ToString().ToLower()} damage!",
+                                ChatMessageType.CombatSelf));
+                        else
+                            Session.Network.EnqueueSend(new GameEventAttackerNotification(Session, target.Name, damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, intDamage, damageEvent.IsCritical, damageEvent.AttackConditions));
                     }
                 }
 
@@ -602,6 +611,26 @@ namespace ACE.Server.WorldObjects
 
             if (Health.Current <= 0)
             {
+                // ILT: killing blow message with overkill
+                if (source is Creature killer)
+                {
+                    var overkill = amount > damageTaken ? amount - damageTaken : 0;
+                    string verb = "", plural = "";
+                    Strings.GetAttackVerb(damageType, (float)amount / Health.MaxValue, ref verb, ref plural);
+                    var partName = bodyPart switch
+                    {
+                        BodyPart.UpperArm => "upper arm",
+                        BodyPart.LowerArm => "lower arm",
+                        BodyPart.UpperLeg => "upper leg",
+                        BodyPart.LowerLeg => "lower leg",
+                        _ => bodyPart.ToString().ToLower()
+                    };
+                    var critMsg = crit ? "Critical hit! " : "";
+                    var dmgStr = Creature.FormatDamage(amount, UseTruncatedDamageNumbers);
+                    var overkillSuffix = overkill > 0 ? $" [Overkill: {Creature.FormatDamage(overkill, UseTruncatedDamageNumbers)}]" : "";
+                    SendMessage($"{critMsg}{killer.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{overkillSuffix}", ChatMessageType.CombatEnemy);
+                }
+
                 OnDeath(new DamageHistoryInfo(source), damageType, crit);
                 Die();
                 return (int)damageTaken;
@@ -633,13 +662,33 @@ namespace ACE.Server.WorldObjects
 
                     var critMsg = crit ? "Critical hit! " : "";
                     var mbSuffix = GetManaBarrierSuffix(mbResult);
-                    var msg = $"{critMsg}{creature.Name} {plural} your {partName} for {amount} points of {damageType.ToString().ToLower()} damage!{mbSuffix}";
-                    SendMessage(msg, ChatMessageType.Combat);
+                    var dmgStr = Creature.FormatDamage(amount, UseTruncatedDamageNumbers);
+                    var msg = $"{critMsg}{creature.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{mbSuffix}";
+                    SendMessage(msg, ChatMessageType.CombatEnemy);
                 }
                 else if (amount > 0)
                 {
                     if (!SquelchManager.Squelches.Contains(source, ChatMessageType.CombatEnemy))
-                        Session.Network.EnqueueSend(new GameEventDefenderNotification(Session, creature.Name, damageType, percent, amount, damageLocation, crit, attackConditions));
+                    {
+                        if (UseTruncatedDamageNumbers)
+                        {
+                            string verb = "", plural = "";
+                            Strings.GetAttackVerb(damageType, percent, ref verb, ref plural);
+                            var partName = bodyPart switch
+                            {
+                                BodyPart.UpperArm => "upper arm",
+                                BodyPart.LowerArm => "lower arm",
+                                BodyPart.UpperLeg => "upper leg",
+                                BodyPart.LowerLeg => "lower leg",
+                                _ => bodyPart.ToString().ToLower()
+                            };
+                            var critMsg = crit ? "Critical hit! " : "";
+                            var dmgStr = Creature.FormatDamage(amount, true);
+                            SendMessage($"{critMsg}{creature.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!", ChatMessageType.CombatEnemy);
+                        }
+                        else
+                            Session.Network.EnqueueSend(new GameEventDefenderNotification(Session, creature.Name, damageType, percent, amount, damageLocation, crit, attackConditions));
+                    }
                 }
 
                 var hitSound = new GameMessageSound(Guid, GetHitSound(source, bodyPart), 1.0f);

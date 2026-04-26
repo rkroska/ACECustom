@@ -274,5 +274,9 @@ namespace ACE.Entity.Enum.Properties
         HasChaining       = 50014,
         HasRepeater       = 50015,
         HasBloodLetting   = 50017,
+
+        // ── ILT Player UI Preferences (50100+) ──────────────────────────────────
+        /// <summary>Player prefers truncated (K/M) damage numbers in combat chat.</summary>
+        UseTruncatedDamageNumbers = 50100,
     }
 }

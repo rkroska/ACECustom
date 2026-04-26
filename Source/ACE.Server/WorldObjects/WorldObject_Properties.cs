@@ -3363,5 +3363,12 @@ namespace ACE.Server.WorldObjects
         /// If not unlimited, client will only allow you to buy or add to buy list up this number of items for a single transaction.
         /// </summary>
         public int? VendorShopCreateListStackSize;
+
+        // ── ILT Player UI Preferences ────────────────────────────────────────────
+        public bool UseTruncatedDamageNumbers
+        {
+            get => GetProperty(PropertyBool.UseTruncatedDamageNumbers) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.UseTruncatedDamageNumbers); else SetProperty(PropertyBool.UseTruncatedDamageNumbers, value); }
+        }
     }
 }
