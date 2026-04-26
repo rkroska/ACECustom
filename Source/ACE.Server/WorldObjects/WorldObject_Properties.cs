@@ -3314,8 +3314,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public int? VendorShopCreateListStackSize;
 
-<<<<<<< HEAD
-        // ── ILT Ability Charm System ──────────────────────────────────────────────
+        // ΓöÇΓöÇ ILT Ability Charm System ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
         public int? CharmGrantsAbility
         {
             get => GetProperty(PropertyInt.CharmGrantsAbility);
@@ -3361,14 +3360,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
         }
 
-        // ── ILT Player UI Preferences ────────────────────────────────────────────
-        public bool UseTruncatedDamageNumbers
+        // ΓöÇΓöÇ ILT Player UI Preferences ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+        /// <summary>0 = default (vanilla), 1 = commas, 2 = short (K/M/B/T/Q)</summary>
+        public int DamageNumberFormat
         {
-            get => GetProperty(PropertyBool.UseTruncatedDamageNumbers) ?? false;
-            set { if (!value) RemoveProperty(PropertyBool.UseTruncatedDamageNumbers); else SetProperty(PropertyBool.UseTruncatedDamageNumbers, value); }
-        }
+            get => GetProperty(PropertyInt.DamageNumberFormat) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyInt.DamageNumberFormat); else SetProperty(PropertyInt.DamageNumberFormat, value); }
         }
     }
 }
-
 

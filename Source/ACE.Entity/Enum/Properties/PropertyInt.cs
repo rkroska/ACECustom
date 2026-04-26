@@ -752,6 +752,15 @@ namespace ACE.Entity.Enum.Properties
 
         /// <summary>On a player: the level of the currently active charm.</summary>
         ActiveCharmLevel = 50016,
+
+        // ── ILT Player UI Preferences (50101+) ──────────────────────────────────
+        /// <summary>
+        /// Player's damage number display mode.
+        /// 0 = Default (vanilla, no formatting)
+        /// 1 = Commas (1,247)
+        /// 2 = Short (1.2K / 2.2M / 1.5B / 3.2T / 1Q)
+        /// </summary>
+        DamageNumberFormat = 50101,
     }
 
     public static class PropertyIntExtensions

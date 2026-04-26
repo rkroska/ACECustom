@@ -142,7 +142,7 @@ namespace ACE.Server.WorldObjects
                     appliedDamage = (uint)Math.Max(0, targetPlayer.TakeDamage(this, damageEvent));
                 else
                 {
-                    // ILT: Monster Mana Barrier ‚Äî pre-absorb before damage lands
+                    // ILT: Monster Mana Barrier G«ˆ pre-absorb before damage lands
                     if (target.HasManaBarrier)
                     {
                         var mbResult = target.TryAbsorbWithManaBarrier(ref damageEvent.Damage, damageEvent.DamageType);
@@ -186,7 +186,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (intDamage > 0)
                         {
-                            // partial absorption ‚Äî build custom message with MB suffix
+                            // partial absorption G«ˆ build custom message with MB suffix
                             var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
                             string verb = "", plural = "";
                             Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
@@ -198,21 +198,21 @@ namespace ACE.Server.WorldObjects
                         }
                         else if (targetPlayer == null)
                         {
-                            // monster fully absorbed ‚Äî TakeDamage doesn't send this message
+                            // monster fully absorbed G«ˆ TakeDamage doesn't send this message
                             var ptWord = damageEvent.AmountAbsorbed == 1 ? "point" : "points";
                             var cur = target.Mana?.Current ?? 0;
                             var max = target.Mana?.MaxValue ?? 0;
                             SendMessage($"{target.Name}'s Mana Barrier absorbed {damageEvent.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
                         }
-                        // else: player target fully absorbed ‚Äî handled in Player.TakeDamage
+                        // else: player target fully absorbed G«ˆ handled in Player.TakeDamage
                     }
                     else
                     {
                         var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
                         string verb = "", plural = "";
                         Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
-                        var dmgStr = Creature.FormatDamage(intDamage, UseTruncatedDamageNumbers);
-                        if (UseTruncatedDamageNumbers)
+                        var dmgStr = Creature.FormatDamage(intDamage, DamageNumberFormat);
+                        if (DamageNumberFormat != 0)
                             Session.Network.EnqueueSend(new GameMessageSystemChat(
                                 $"{critMsg}You {verb} {target.Name} for {dmgStr} points of {damageEvent.DamageType.ToString().ToLower()} damage!",
                                 ChatMessageType.CombatSelf));
@@ -485,9 +485,9 @@ namespace ACE.Server.WorldObjects
             var amount = (uint)Math.Round(_amount);
             var percent = (float)amount / Health.MaxValue;
 
-            // ‚îÄ‚îÄ Mana Barrier ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ
+            // Gˆ«Gˆ« Mana Barrier Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«
             var mbDotResult = TryAbsorbWithManaBarrier(ref _amount, damageType);
-            // ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ
+            // Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«
 
             amount = (uint)Math.Round(_amount);
             percent = (float)amount / Health.MaxValue;
@@ -598,10 +598,10 @@ namespace ACE.Server.WorldObjects
                 damageTaken = (uint)-UpdateVitalDelta(Mana, (int)-amount);
             else
             {
-                // ‚îÄ‚îÄ Mana Barrier ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ
+                // Gˆ«Gˆ« Mana Barrier Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«
                 mbResult = TryAbsorbWithManaBarrier(ref amount, damageType);
                 amountAbsorbed = mbResult.AmountAbsorbed;
-                // ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ
+                // Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«Gˆ«
 
                 // update health (skip if fully absorbed, but don't early-return so messages still fire)
                 damageTaken = 0;
@@ -642,8 +642,8 @@ namespace ACE.Server.WorldObjects
                         _ => bodyPart.ToString().ToLower()
                     };
                     var critMsg = crit ? "Critical hit! " : "";
-                    var dmgStr = Creature.FormatDamage(amount, UseTruncatedDamageNumbers);
-                    var overkillSuffix = overkill > 0 ? $" [Overkill: {Creature.FormatDamage(overkill, UseTruncatedDamageNumbers)}]" : "";
+                    var dmgStr = Creature.FormatDamage(amount, DamageNumberFormat);
+                    var overkillSuffix = overkill > 0 ? $" [Overkill: {Creature.FormatDamage(overkill, DamageNumberFormat)}]" : "";
                     SendMessage($"{critMsg}{killer.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{overkillSuffix}", ChatMessageType.CombatEnemy);
                 }
 
@@ -681,7 +681,7 @@ namespace ACE.Server.WorldObjects
 
                         var critMsg = crit ? "Critical hit! " : "";
                         var mbSuffix = GetManaBarrierSuffix(mbResult);
-                        var dmgStr = Creature.FormatDamage(displayAmount, UseTruncatedDamageNumbers);
+                        var dmgStr = Creature.FormatDamage(displayAmount, DamageNumberFormat);
                         var msg = $"{critMsg}{creature.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{mbSuffix}";
                         SendMessage(msg, ChatMessageType.CombatEnemy);
                     }
@@ -689,12 +689,12 @@ namespace ACE.Server.WorldObjects
                     {
                         if (!SquelchManager.Squelches.Contains(source, ChatMessageType.CombatEnemy))
                         {
-                            if (UseTruncatedDamageNumbers)
+                            if (DamageNumberFormat != 0)
                             {
                                 string verb2 = "", plural2 = "";
                                 Strings.GetAttackVerb(damageType, percent, ref verb2, ref plural2);
                                 var critMsg2 = crit ? "Critical hit! " : "";
-                                var dmgStr2 = Creature.FormatDamage(amount, true);
+                                var dmgStr2 = Creature.FormatDamage(amount, DamageNumberFormat);
                                 SendMessage($"{critMsg2}{creature.Name} {plural2} your {bodyPart.ToString().ToLower()} for {dmgStr2} points of {damageType.ToString().ToLower()} damage!", ChatMessageType.CombatEnemy);
                             }
                             else
@@ -705,7 +705,7 @@ namespace ACE.Server.WorldObjects
                 else
                 {
                     var vitalName = GetVitalDisplayName(damageType);
-                    var defenderDrainMessage = $"{creature.Name} drains {Creature.FormatDamage(damageTaken, UseTruncatedDamageNumbers)} points of your {vitalName}.";
+                    var defenderDrainMessage = $"{creature.Name} drains {Creature.FormatDamage(damageTaken, DamageNumberFormat)} points of your {vitalName}.";
                     SendChatMessage(creature, defenderDrainMessage, ChatMessageType.CombatEnemy);
                 }
 
@@ -1130,7 +1130,7 @@ namespace ACE.Server.WorldObjects
                 return 1.0f;
 
             // http://acpedia.org/wiki/Announcements_-_11th_Anniversary_Preview#Void_Magic_and_You.21
-            // Creatures under Asheron√¢‚Ç¨‚Ñ¢s protection take half damage from any nether type spell.
+            // Creatures under Asheron+ÛGÈºG‰Ûs protection take half damage from any nether type spell.
             if (damageType == DamageType.Nether)
                 return 0.5f;
 

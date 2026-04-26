@@ -240,8 +240,6 @@ namespace ACE.Entity.Enum.Properties
         /// Single-use, extremely rare item obtained by exchanging 5000 Flawed Siphon Lenses.
         /// </summary>
         IsGuaranteedCaptureLens           = 9042,
-        AllowFriendlyPlayerDamage       = 9043,
-        BreakPeaceOnHostileAction       = 9044,
 
         /// <summary>If TRUE, item has unlimited uses and will never be consumed.</summary>
         [AssessmentProperty]
@@ -274,9 +272,7 @@ namespace ACE.Entity.Enum.Properties
         HasRepeater       = 50015,
         HasBloodLetting   = 50017,
 
-        // ── ILT Player UI Preferences (50100+) ──────────────────────────────────
-        /// <summary>Player prefers truncated (K/M) damage numbers in combat chat.</summary>
-        UseTruncatedDamageNumbers = 50100,
+        // ── ILT Player UI Preferences → see PropertyInt.DamageNumberFormat (50101) ───
     }
 }
 

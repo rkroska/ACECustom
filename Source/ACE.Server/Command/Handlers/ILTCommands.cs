@@ -39,30 +39,37 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features           View a list of custom ILT server features.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenums             Toggle between full and short (K/M/B/T/Q) damage numbers.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenums short       Enable short damage number format (K/M/B/T/Q).", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenums default     Restore full damage numbers.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenumbers             Cycle through damage number modes (default → commas → short).", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenumbers default     Vanilla damage numbers (no formatting).", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenumbers commas      Enable comma-separated numbers (1,247).", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenumbers short       Enable short format (K/M/B/T/Q).", ChatMessageType.System));
             }
         }
 
-        [CommandHandler("damagenums", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
-            "Toggle between full and truncated (K/M) damage numbers in combat chat.",
-            "Usage: /damagenums [short|default]")]
+        [CommandHandler("damagenumbers", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
+            "Set combat damage number format. Cycles through modes if no argument given.",
+            "Usage: /damagenumbers [default|commas|short]")]
         public static void HandleDamageNums(Session session, params string[] parameters)
         {
             var player = session.Player;
             if (player == null) return;
 
-            bool truncated;
+            int mode;
             if (parameters.Length == 0)
-                truncated = !player.UseTruncatedDamageNumbers;  // toggle
+                mode = (player.DamageNumberFormat + 1) % 3;  // cycle 0 → 1 → 2 → 0
             else
-                truncated = parameters[0].ToLower() == "short";
+                mode = parameters[0].ToLower() switch
+                {
+                    "commas"  => 1,
+                    "short"   => 2,
+                    _         => 0   // "default" or anything else
+                };
 
-            player.UseTruncatedDamageNumbers = truncated;
+            player.DamageNumberFormat = mode;
 
+            var label = mode switch { 1 => "commas (1,247)", 2 => "short (K/M/B/T/Q)", _ => "default (vanilla)" };
             session.Network.EnqueueSend(new GameMessageSystemChat(
-                $"Damage numbers set to {(truncated ? "short (K/M/B/T/Q)" : "default (full)")}.", ChatMessageType.System));
+                $"Damage numbers set to {label}.", ChatMessageType.System));
         }
     }
 }

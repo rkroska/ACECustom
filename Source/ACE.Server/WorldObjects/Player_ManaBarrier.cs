@@ -39,16 +39,16 @@ namespace ACE.Server.WorldObjects
         public string GetManaBarrierSuffix(ManaBarrierResult result)
         {
             if (result.AmountAbsorbed == 0) return "";
-            var dmg = Creature.FormatDamage(result.AmountAbsorbed, UseTruncatedDamageNumbers);
+            var dmg = Creature.FormatDamage(result.AmountAbsorbed, DamageNumberFormat);
             return $" [Mana Barrier Absorbed {dmg}]";
         }
 
         public float GetManaBarrierRatioMod()
         {
             // Absorption efficiency per tier:
-            // Level 1: 1:1   (1 Mana per 1 Damage)   â†’ ratio mod = 1.000
-            // Level 2: 1.5:1 (1 Mana per 1.5 Damage) â†’ ratio mod = 0.667
-            // Level 3: 2:1   (1 Mana per 2 Damage)   â†’ ratio mod = 0.500
+            // Level 1: 1:1   (1 Mana per 1 Damage)   GåÆ ratio mod = 1.000
+            // Level 2: 1.5:1 (1 Mana per 1.5 Damage) GåÆ ratio mod = 0.667
+            // Level 3: 2:1   (1 Mana per 2 Damage)   GåÆ ratio mod = 0.500
             return (ActiveCharmLevel ?? 1) switch
             {
                 1 => 1.000f,

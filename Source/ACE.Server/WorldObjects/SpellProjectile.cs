@@ -893,7 +893,7 @@ namespace ACE.Server.WorldObjects
                 if (sourcePlayer != null)
                 {
                     var critProt = critDefended ? " Your critical hit was avoided with their augmentation!" : "";
-                    var amtStr = Creature.FormatDamage(amount, sourcePlayer.UseTruncatedDamageNumbers);
+                    var amtStr = Creature.FormatDamage(amount, sourcePlayer.DamageNumberFormat);
 
                     var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
@@ -911,7 +911,7 @@ namespace ACE.Server.WorldObjects
                 if (targetPlayer != null)
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
-                    var amtStr = Creature.FormatDamage(amount, targetPlayer.UseTruncatedDamageNumbers);
+                    var amtStr = Creature.FormatDamage(amount, targetPlayer.DamageNumberFormat);
 
                     var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 

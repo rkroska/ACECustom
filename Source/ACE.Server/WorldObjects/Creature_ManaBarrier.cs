@@ -29,14 +29,20 @@ namespace ACE.Server.WorldObjects
         };
 
         // ── Shared damage number formatter ─────────────────────────────────────
-        /// <summary>Formats a damage number as exact (below 10K) or truncated K/M.</summary>
-        public static string FormatDamage(ulong value, bool truncated)
+        /// <summary>
+        /// Formats a damage value based on the player's DamageNumberFormat setting.
+        /// 0 = vanilla (no commas), 1 = commas, 2 = short K/M/B/T/Q (exact with commas below 10K)
+        /// </summary>
+        public static string FormatDamage(ulong value, int mode)
         {
-            if (!truncated || value < 10_000)          return $"{value:N0}";
-            if (value >= 1_000_000_000_000_000UL)      return $"{value / 1_000_000_000_000_000.0:0.#}Q";
-            if (value >= 1_000_000_000_000UL)          return $"{value / 1_000_000_000_000.0:0.#}T";
-            if (value >= 1_000_000_000UL)              return $"{value / 1_000_000_000.0:0.#}B";
-            if (value >= 1_000_000UL)                  return $"{value / 1_000_000.0:0.#}M";
+            if (mode == 0)                                 return $"{value}";
+            if (mode == 1)                                 return $"{value:N0}";
+            // mode 2: short — exact with commas below 10K, abbreviated above
+            if (value < 10_000)                            return $"{value:N0}";
+            if (value >= 1_000_000_000_000_000UL)          return $"{value / 1_000_000_000_000_000.0:0.#}Q";
+            if (value >= 1_000_000_000_000UL)              return $"{value / 1_000_000_000_000.0:0.#}T";
+            if (value >= 1_000_000_000UL)                  return $"{value / 1_000_000_000.0:0.#}B";
+            if (value >= 1_000_000UL)                      return $"{value / 1_000_000.0:0.#}M";
             return $"{value / 1_000.0:0.#}K";
         }
 
