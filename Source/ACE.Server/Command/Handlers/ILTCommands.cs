@@ -22,5 +22,25 @@ namespace ACE.Server.Command.Handlers
             session.Network.EnqueueSend(new GameMessageSystemChat(
                 $"Mana Barrier {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
         }
+
+        [CommandHandler("damagenums", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
+            "Toggle between full and truncated (K/M) damage numbers in combat chat.",
+            "Usage: /damagenums [short|default]")]
+        public static void HandleDamageNums(Session session, params string[] parameters)
+        {
+            var player = session.Player;
+            if (player == null) return;
+
+            bool truncated;
+            if (parameters.Length == 0)
+                truncated = !player.UseTruncatedDamageNumbers;  // toggle
+            else
+                truncated = parameters[0].ToLower() == "short";
+
+            player.UseTruncatedDamageNumbers = truncated;
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"Damage numbers set to {(truncated ? "short (K/M/B/T/Q)" : "default (full)")}.", ChatMessageType.System));
+        }
     }
 }

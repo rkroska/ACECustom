@@ -3314,6 +3314,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public int? VendorShopCreateListStackSize;
 
+<<<<<<< HEAD
         // ── ILT Ability Charm System ──────────────────────────────────────────────
         public int? CharmGrantsAbility
         {
@@ -3358,6 +3359,14 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyBool.HasManaBarrier) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
+        }
+
+        // ── ILT Player UI Preferences ────────────────────────────────────────────
+        public bool UseTruncatedDamageNumbers
+        {
+            get => GetProperty(PropertyBool.UseTruncatedDamageNumbers) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.UseTruncatedDamageNumbers); else SetProperty(PropertyBool.UseTruncatedDamageNumbers, value); }
+        }
         }
     }
 }
