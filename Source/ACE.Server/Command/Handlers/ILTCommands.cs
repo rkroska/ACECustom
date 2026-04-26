@@ -38,6 +38,28 @@ namespace ACE.Server.Command.Handlers
                 $"Mana Barrier {(enable ? "enabled" : "disabled")}.", ChatMessageType.System));
         }
 
+        [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
+            "Displays ILT custom server commands and features.",
+            "Usage: /ilt [help|features]")]
+        public static void HandleILT(Session session, params string[] parameters)
+        {
+            var sub = parameters.Length > 0 ? parameters[0].ToLower() : "help";
+
+            if (sub == "features")
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Features ===", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  Coming Soon", ChatMessageType.System));
+            }
+            else
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features           View a list of custom ILT server features.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenums             Toggle between full and short (K/M/B/T/Q) damage numbers.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenums short       Enable short damage number format (K/M/B/T/Q).", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /damagenums default     Restore full damage numbers.", ChatMessageType.System));
+            }
+        }
+
         [CommandHandler("damagenums", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "Toggle between full and truncated (K/M) damage numbers in combat chat.",
             "Usage: /damagenums [short|default]")]
