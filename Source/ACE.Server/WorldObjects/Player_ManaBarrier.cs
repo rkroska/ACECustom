@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using ACE.Entity.Enum;
 using ACE.Server.Network.GameMessages.Messages;
@@ -39,7 +39,7 @@ namespace ACE.Server.WorldObjects
         public string GetManaBarrierSuffix(ManaBarrierResult result)
         {
             if (result.AmountAbsorbed == 0) return "";
-            return $" (Mana Barrier absorbed {result.AmountAbsorbed})";
+            return $" [Mana Barrier Absorbed {result.AmountAbsorbed}]";
         }
 
         public float GetManaBarrierRatioMod()

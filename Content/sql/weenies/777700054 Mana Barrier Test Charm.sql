@@ -1,4 +1,4 @@
-﻿DELETE FROM `weenie` WHERE `class_Id` = 777700054;
+DELETE FROM `weenie` WHERE `class_Id` = 777700054;
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
 VALUES (777700054, 'ilt_manabarriertestcharm', 38, '2026-04-15 00:00:00');
 
@@ -26,7 +26,9 @@ INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700054,    1, 33558517)  /* Setup - Ember */
      , (777700054,    3, 536870932) /* SoundTable */
      , (777700054,    6, 67111919)  /* PaletteBase */
-     , (777700054,    8, 100676392) /* Icon */;
+     , (777700054,    8, 100691356) /* Icon */
+     , (777700054,   48, 100676435) /* IconUnderlay */
+     , (777700054,   50, 100690996) /* IconOverlay - "1" badge */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700054,    1, 'Mana Barrier Test Charm')

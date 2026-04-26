@@ -565,19 +565,16 @@ namespace ACE.Server.WorldObjects
 
             // ── Mana Barrier (Harm-type spells) ──────────────────────────────────────────────────
             var mbResult = new ManaBarrierResult();
-            if (targetCreature is Player targetPlayerMB && spell.VitalDamageType == DamageType.Health && tryBoost < 0)
+            var preAbsorbHarm = 0f;
+            if (spell.VitalDamageType == DamageType.Health && tryBoost < 0)
             {
                 float fDamage = -tryBoost;
-                mbResult = targetPlayerMB.TryAbsorbWithManaBarrier(ref fDamage, DamageType.Health);
+                preAbsorbHarm = fDamage; // preserve original for messaging
+                if (targetCreature is Player targetPlayerMB)
+                    mbResult = targetPlayerMB.TryAbsorbWithManaBarrier(ref fDamage, DamageType.Health);
+                else if (targetCreature.HasManaBarrier)
+                    mbResult = targetCreature.TryAbsorbWithManaBarrier(ref fDamage, DamageType.Health);
                 tryBoost = -(int)Math.Round(fDamage);
-
-                if (mbResult.FullyAbsorbed)
-                {
-                    var ptWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
-                    var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage!";
-                    targetPlayerMB.SendMessage(msg, ChatMessageType.Magic);
-                    if (player != null) player.SendMessage(msg, ChatMessageType.Magic);
-                }
             }
             // ─────────────────────────────────────────────────────────────────────
 
@@ -622,8 +619,9 @@ namespace ACE.Server.WorldObjects
                         casterMessage = $"With {spell.Name} you restore {boost} points of {srcVital} to {targetCreature.Name}.";
                     else
                     {
-                        var mbSuffix = targetCreature is Player tP ? tP.GetManaBarrierSuffix(mbResult) : "";
-                        casterMessage = $"With {spell.Name} you drain {Math.Abs(boost)} points of {srcVital} from {targetCreature.Name}.{mbSuffix}";
+                        var displayHarm = mbResult.FullyAbsorbed ? (int)Math.Round(preAbsorbHarm) : Math.Abs(boost);
+                        var mbSuffix = targetCreature is Player tP ? tP.GetManaBarrierSuffix(mbResult) : (mbResult.AmountAbsorbed > 0 ? $" [Barrier Remaining: {targetCreature.Mana.Current:N0}/{targetCreature.Mana.MaxValue:N0}]" : "");
+                        casterMessage = $"With {spell.Name} you drain {displayHarm} points of {srcVital} from {targetCreature.Name}.{mbSuffix}";
                     }
                 }
                 else
@@ -644,15 +642,15 @@ namespace ACE.Server.WorldObjects
                     targetMessage = $"{Name} casts {spell.Name} and restores {boost} points of your {srcVital}.";
                 else
                 {
+                    var displayHarm = mbResult.FullyAbsorbed ? (int)Math.Round(preAbsorbHarm) : Math.Abs(boost);
                     var mbSuffix = targetPlayer.GetManaBarrierSuffix(mbResult);
-                    targetMessage = $"{Name} casts {spell.Name} and drains {Math.Abs(boost)} points of your {srcVital}.{mbSuffix}";
+                    targetMessage = $"{Name} casts {spell.Name} and drains {displayHarm} points of your {srcVital}.{mbSuffix}";
 
                     if (creature != null)
                         targetPlayer.SetCurrentAttacker(creature);
                 }
 
-                if (!mbResult.FullyAbsorbed)
-                    targetPlayer.SendChatMessage(player, targetMessage, ChatMessageType.Magic);
+                targetPlayer.SendChatMessage(player, targetMessage, ChatMessageType.Magic);
             }
 
             if (targetCreature != this && boost < 0)

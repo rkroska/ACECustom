@@ -770,6 +770,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // handle life projectiles for stamina / mana
+            float preAbsorbDamage = 0f; // set inside health block for MB messaging
             if (Spell.Category == SpellCategory.StaminaLowering)
             {
                 percent = damage / target.Stamina.MaxValue;
@@ -843,34 +844,17 @@ namespace ACE.Server.WorldObjects
                 }
 
                 // ── Mana Barrier ─────────────────────────────────────────────────────
+                preAbsorbDamage = damage; // preserve for messaging
                 if (targetPlayer != null)
                     mbResult = targetPlayer.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
                 else if (target.HasManaBarrier)
                     mbResult = target.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
 
                 if (mbResult.FullyAbsorbed)
-                {
-                    var ptWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
-                    if (targetPlayer != null)
-                    {
-                        var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage!";
-                        targetPlayer.SendMessage(msg, ChatMessageType.Magic);
-                        if (sourcePlayer != null)
-                            sourcePlayer.SendMessage(msg, ChatMessageType.Magic);
-                    }
-                    else if (sourcePlayer != null)
-                    {
-                        // Monster mana barrier fully absorbed — notify attacker
-                        var cur = target.Mana?.Current ?? 0;
-                        var max = target.Mana?.MaxValue ?? 0;
-                        sourcePlayer.SendMessage($"{target.Name}'s Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
-                    }
                     amount = 0;
-                }
                 else
-                {
                     amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
-                }
+
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
                 // ───────────────────────────────────────────────────────────────────
 
@@ -900,22 +884,26 @@ namespace ACE.Server.WorldObjects
                 var critMsg = critical ? "Critical hit! " : "";
                 var sneakMsg = sneakAttackMod > 1.0f ? "Sneak Attack! " : "";
                 var overpowerMsg = overpower ? "Overpower! " : "";
-                var mbSuffix = targetPlayer?.GetManaBarrierSuffix(mbResult) ?? "";
+                var mbSuffix = targetPlayer != null ? targetPlayer.GetManaBarrierSuffix(mbResult)
+                    : (mbResult.AmountAbsorbed > 0 ? $" [Barrier Remaining: {target.Mana.Current:N0}/{target.Mana.MaxValue:N0}]" : "");
+
+                // use original damage for display if fully absorbed
+                var displayAmount = mbResult.FullyAbsorbed ? (uint)Math.Round(preAbsorbDamage) : amount;
 
                 if (sourcePlayer != null)
                 {
                     var critProt = critDefended ? " Your critical hit was avoided with their augmentation!" : "";
 
-                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amount} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {displayAmount} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     // could these crit / sneak attack?
                     if (nonHealth)
                     {
                         var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
-                        attackerMsg = $"With {Spell.Name} you drain {amount} points of {vital} from {target.Name}.";
+                        attackerMsg = $"With {Spell.Name} you drain {displayAmount} points of {vital} from {target.Name}.";
                     }
 
-                    if (!sourcePlayer.SquelchManager.Squelches.Contains(target, ChatMessageType.Magic) && !mbResult.FullyAbsorbed)
+                    if (!sourcePlayer.SquelchManager.Squelches.Contains(target, ChatMessageType.Magic))
                         sourcePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.Magic));
                 }
 
@@ -923,15 +911,15 @@ namespace ACE.Server.WorldObjects
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
 
-                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amount} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {displayAmount} points with {Spell.Name}.{critProt}{mbSuffix}";
 
                     if (nonHealth)
                     {
                         var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
-                        defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amount} points of your {vital}.";
+                        defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {displayAmount} points of your {vital}.";
                     }
 
-                    if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic) && !mbResult.FullyAbsorbed)
+                    if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic))
                         targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(defenderMsg, ChatMessageType.Magic));
 
                     if (sourceCreature != null)

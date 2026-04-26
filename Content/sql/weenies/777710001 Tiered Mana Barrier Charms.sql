@@ -1,4 +1,4 @@
-﻿-- Greater Mana Barrier (Level 2)
+-- Greater Mana Barrier (Level 2)
 DELETE FROM `weenie` WHERE `class_Id` = 777710001;
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
 VALUES (777710001, 'ilt_manabarriercharm_level2', 38, '2026-04-25 00:00:00');
@@ -26,8 +26,9 @@ VALUES (777710001,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710001,    1, 33558517)  /* Setup - Ember */
      , (777710001,    3, 536870932) /* SoundTable */
-     , (777710001,    8, 100690340) /* Icon - Greater Charm Icon (II) */
-     , (777710001,   50, 100663297) /* IconOverlay - Outline 1 */;
+     , (777710001,    8, 100691356) /* Icon */
+     , (777710001,   48, 100676435) /* IconUnderlay */
+     , (777710001,   50, 100667551) /* IconOverlay - Tier 2 */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777710001,    1, 'Greater Mana Barrier Charm')
@@ -61,8 +62,9 @@ VALUES (777720001,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720001,    1, 33558517)  /* Setup - Ember */
      , (777720001,    3, 536870932) /* SoundTable */
-     , (777720001,    8, 100690341) /* Icon - Master Charm Icon (III) */
-     , (777720001,   50, 100663297) /* IconOverlay - Outline 1 */;
+     , (777720001,    8, 100691356) /* Icon */
+     , (777720001,   48, 100676435) /* IconUnderlay */
+     , (777720001,   50, 100667552) /* IconOverlay - Tier 3 */;
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777720001,    1, 'Master Mana Barrier Charm')

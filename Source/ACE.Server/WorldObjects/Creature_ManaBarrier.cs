@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using ACE.Entity.Enum;
 
@@ -39,7 +39,7 @@ namespace ACE.Server.WorldObjects
             if (result.AmountAbsorbed == 0) return "";
             var cur = Mana?.Current ?? 0;
             var max = Mana?.MaxValue ?? 0;
-            return $" [Barrier: -{result.AmountAbsorbed} | Remaining: {cur:N0}/{max:N0}]";
+            return $" [Barrier Remaining: {cur:N0}/{max:N0}]";
         }
 
         public ManaBarrierResult TryAbsorbWithManaBarrier(ref float amount, DamageType damageType)

@@ -478,19 +478,14 @@ namespace ACE.Server.WorldObjects
 
             // ── Mana Barrier ─────────────────────────────────────────────────────────────────────
             var mbDotResult = TryAbsorbWithManaBarrier(ref _amount, damageType);
-            if (mbDotResult.FullyAbsorbed)
-            {
-                var mbPtWord = mbDotResult.AmountAbsorbed == 1 ? "point" : "points";
-                SendMessage($"Mana Barrier absorbed {mbDotResult.AmountAbsorbed} {mbPtWord} of periodic damage!", ChatMessageType.Magic);
-                return;
-            }
             // ─────────────────────────────────────────────────────────────────────
 
             amount = (uint)Math.Round(_amount);
             percent = (float)amount / Health.MaxValue;
 
-            // update health
-            UpdateVitalDelta(Health, (int)-amount);
+            // update health (skip if fully absorbed)
+            if (!mbDotResult.FullyAbsorbed)
+                UpdateVitalDelta(Health, (int)-amount);
 
             // update stamina
             //UpdateVitalDelta(Stamina, -1);
@@ -504,7 +499,8 @@ namespace ACE.Server.WorldObjects
                 var nether = damageType == DamageType.Nether ? "nether " : "";
                 var chatMessageType = damageType == DamageType.Nether ? ChatMessageType.Magic : ChatMessageType.Combat;
                 var mbSuffix = GetManaBarrierSuffix(mbDotResult);
-                var text = $"You receive {amount} points of periodic {nether}damage.{mbSuffix}";
+                var dotDisplayAmount = mbDotResult.AmountAbsorbed > 0 ? mbDotResult.AmountAbsorbed : amount;
+                var text = $"You receive {dotDisplayAmount} points of periodic {nether}damage.{mbSuffix}";
                 SendMessage(text, chatMessageType);
             //}
 
@@ -585,6 +581,7 @@ namespace ACE.Server.WorldObjects
             }
 
             var mbResult = new ManaBarrierResult();
+            var preAbsorbAmount = amount; // preserve original for messaging when fully absorbed
             uint damageTaken;
             if (damageType == DamageType.Stamina)
                 damageTaken = (uint)-UpdateVitalDelta(Stamina, (int)-amount);
@@ -595,22 +592,15 @@ namespace ACE.Server.WorldObjects
                 // ── Mana Barrier ─────────────────────────────────────────────────────────────────────
                 mbResult = TryAbsorbWithManaBarrier(ref amount, damageType);
                 amountAbsorbed = mbResult.AmountAbsorbed;
-
-                if (mbResult.FullyAbsorbed)
-                {
-                    var ptWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
-                    var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage!";
-                    SendMessage(msg, ChatMessageType.Magic);
-
-                    if (source is Player sourcePlayer)
-                        sourcePlayer.SendMessage(msg, ChatMessageType.Magic);
-
-                    return 0;
-                }
                 // ─────────────────────────────────────────────────────────────────────
 
-                damageTaken = (uint)-UpdateVitalDelta(Health, (int)-amount);
-                DamageHistory.Add(source, damageType, damageTaken);
+                // update health (skip if fully absorbed, but don't early-return so messages still fire)
+                damageTaken = 0;
+                if (!mbResult.FullyAbsorbed)
+                {
+                    damageTaken = (uint)-UpdateVitalDelta(Health, (int)-amount);
+                    DamageHistory.Add(source, damageType, damageTaken);
+                }
             }
 
             // update stamina
@@ -645,11 +635,11 @@ namespace ACE.Server.WorldObjects
             {
                 if (!isVitalDrainDamage)
                 {
-                    if (mbResult.AmountAbsorbed > 0 && amount > 0)
+                    if (mbResult.AmountAbsorbed > 0)
                     {
-                        // partial MB absorption — build custom defender message with suffix
                         string verb = "", plural = "";
-                        Strings.GetAttackVerb(damageType, (float)amount / Health.MaxValue, ref verb, ref plural);
+                        var displayAmount = mbResult.FullyAbsorbed ? preAbsorbAmount : amount;
+                        Strings.GetAttackVerb(damageType, (float)displayAmount / Health.MaxValue, ref verb, ref plural);
 
                         var partName = bodyPart switch
                         {
@@ -662,7 +652,7 @@ namespace ACE.Server.WorldObjects
 
                         var critMsg = crit ? "Critical hit! " : "";
                         var mbSuffix = GetManaBarrierSuffix(mbResult);
-                        var msg = $"{critMsg}{creature.Name} {plural} your {partName} for {amount} points of {damageType.ToString().ToLower()} damage!{mbSuffix}";
+                        var msg = $"{critMsg}{creature.Name} {plural} your {partName} for {displayAmount} points of {damageType.ToString().ToLower()} damage!{mbSuffix}";
                         SendMessage(msg, ChatMessageType.Combat);
                     }
                     else if (amount > 0)
