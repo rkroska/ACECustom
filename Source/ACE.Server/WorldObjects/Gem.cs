@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+
 
 using ACE.Common;
 using ACE.Entity;
@@ -132,6 +134,14 @@ namespace ACE.Server.WorldObjects
                 player.SendTransientError($"Cannot find the {Name}");   // custom message
                 return;
             }
+
+            // ── Ability Charm Toggle ───────────────────────────────────────────────
+            if (IsAbilityCharm && CharmGrantsAbility.HasValue)
+            {
+                HandleAbilityCharmToggle(player);
+                return; // Do NOT consume the item
+            }
+            // ─────────────────────────────────────────────────────────────────────
 
             // trying to use a dispel potion while pk timer is active
             // send error message and cancel - do not consume item
@@ -312,6 +322,71 @@ namespace ACE.Server.WorldObjects
             }
 
             base.OnActivate(activator);
+        }
+        private void HandleAbilityCharmToggle(Player player)
+        {
+            var abilityId = CharmGrantsAbility!.Value;
+            var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? Name;
+
+            if (!IsCharmActivated)
+            {
+                // Guard: only one charm per ability may be active at a time
+                var duplicate = player.GetAllPossessions()
+                    .FirstOrDefault(i => i.Guid != Guid
+                        && i.IsAbilityCharm
+                        && i.CharmGrantsAbility == abilityId
+                        && i.IsCharmActivated);
+
+                if (duplicate != null)
+                {
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"You already have a {abilityName} charm active. Deactivate it first.",
+                        ChatMessageType.Broadcast));
+                    return;
+                }
+
+                // Activate
+                IsCharmActivated = true;
+                player.ActiveCharmLevel = CharmLevel ?? 1;
+                CharmAbilityRegistry.Apply(player, abilityId, true);
+
+                var activateMsg = BuildActivationMessage(abilityId, player.ActiveCharmLevel.Value, true);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(activateMsg, ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.HealthUp, 1.0f));
+            }
+            else
+            {
+                // Deactivate
+                IsCharmActivated = false;
+                player.ActiveCharmLevel = null;
+                CharmAbilityRegistry.Apply(player, abilityId, false);
+                var deactivateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, false);
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat(deactivateMsg, ChatMessageType.Broadcast));
+                player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown, 1.0f));
+            }
+
+            SaveBiotaToDatabase();
+        }
+
+        private static string BuildActivationMessage(int abilityId, int level, bool activating)
+        {
+            if (abilityId == 1) // Mana Barrier
+            {
+                if (activating)
+                {
+                    return level switch
+                    {
+                        1 => "Mana Barrier Level I activated. Your Mana will absorb incoming damage at a 1:1 ratio.",
+                        2 => "Mana Barrier Level II activated. Your Mana will absorb incoming damage at a 1.5:1 ratio.",
+                        3 => "Mana Barrier Level III activated. Your Mana will absorb incoming damage at a 2:1 ratio.",
+                        _ => $"Mana Barrier Level {level} activated."
+                    };
+                }
+                return $"Mana Barrier Level {level} deactivated. Your Mana is no longer absorbing damage.";
+            }
+
+            var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
+            return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }
     }
 }

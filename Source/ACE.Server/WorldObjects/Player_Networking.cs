@@ -151,6 +151,8 @@ namespace ACE.Server.WorldObjects
                 actionChain.EnqueueChain();
             }
 
+            ValidateAbilityCharms();
+
             log.Debug($"[LOGIN] Account {Account.AccountName} entered the world with character {Name} (0x{Guid}) at {DateTime.Now}.");
         }
 

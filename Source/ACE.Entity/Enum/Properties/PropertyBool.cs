@@ -240,6 +240,18 @@ namespace ACE.Entity.Enum.Properties
         /// Single-use, extremely rare item obtained by exchanging 5000 Flawed Siphon Lenses.
         /// </summary>
         IsGuaranteedCaptureLens           = 9042,
+
+        // ── ILT Ability Charm System (50000–50099) ────────────────────────────────
+        /// <summary>On an ability charm item: marks it as an ability-granting charm.</summary>
+        IsAbilityCharm   = 50000,
+        /// <summary>On an ability charm item: true when the charm has been activated/consumed.</summary>
+        IsCharmActivated = 50001,
+        /// <summary>On an ability charm item: true for limited trial charms that expire.</summary>
+        IsTestCharm      = 50002,
+
+        // ── ILT Ability Flags — players (50010+) ─────────────────────────────────
+        /// <summary>Player has the Mana Barrier ability active (absorbs damage using mana).</summary>
+        HasManaBarrier   = 50010,
     }
 }
 

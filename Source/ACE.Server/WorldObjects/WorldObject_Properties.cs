@@ -3306,6 +3306,52 @@ namespace ACE.Server.WorldObjects
         /// If not unlimited, client will only allow you to buy or add to buy list up this number of items for a single transaction.
         /// </summary>
         public int? VendorShopCreateListStackSize;
+
+        // ── ILT Ability Charm System ──────────────────────────────────────────────
+        public int? CharmGrantsAbility
+        {
+            get => GetProperty(PropertyInt.CharmGrantsAbility);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CharmGrantsAbility); else SetProperty(PropertyInt.CharmGrantsAbility, value.Value); }
+        }
+
+        public int? CharmLevel
+        {
+            get => GetProperty(PropertyInt.CharmLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CharmLevel); else SetProperty(PropertyInt.CharmLevel, value.Value); }
+        }
+
+        public int? ActiveCharmLevel
+        {
+            get => GetProperty(PropertyInt.ActiveCharmLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.ActiveCharmLevel); else SetProperty(PropertyInt.ActiveCharmLevel, value.Value); }
+        }
+
+        /// <summary>True if this item is an ability-granting charm.</summary>
+        public bool IsAbilityCharm
+        {
+            get => GetProperty(PropertyBool.IsAbilityCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsAbilityCharm); else SetProperty(PropertyBool.IsAbilityCharm, value); }
+        }
+
+        /// <summary>True when this charm has been activated (ability granted to player).</summary>
+        public bool IsCharmActivated
+        {
+            get => GetProperty(PropertyBool.IsCharmActivated) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsCharmActivated); else SetProperty(PropertyBool.IsCharmActivated, value); }
+        }
+
+        /// <summary>True for limited trial charms that expire after use.</summary>
+        public bool IsTestCharm
+        {
+            get => GetProperty(PropertyBool.IsTestCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.IsTestCharm); else SetProperty(PropertyBool.IsTestCharm, value); }
+        }
+
+        public bool HasManaBarrier
+        {
+            get => GetProperty(PropertyBool.HasManaBarrier) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
+        }
     }
 }
 

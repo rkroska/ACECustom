@@ -1480,5 +1480,26 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IsVPHardcore); else SetProperty(PropertyBool.IsVPHardcore, value); }
         }
 
+        // ── ILT Ability Charm System ──────────────────────────────────────────────
+        /// <summary>
+        /// On login: ensures no ability is active without a corresponding activated charm in inventory.
+        /// Silently clears orphaned abilities (e.g., charm lost offline).
+        /// </summary>
+        public void ValidateAbilityCharms()
+        {
+            var activeCharmAbilities = new System.Collections.Generic.HashSet<int>();
+            foreach (var item in GetAllPossessions())
+            {
+                if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility.HasValue)
+                    activeCharmAbilities.Add(item.CharmGrantsAbility.Value);
+            }
+
+            for (int id = 1; id <= 50; id++)
+            {
+                if (CharmAbilityRegistry.IsActive(this, id) && !activeCharmAbilities.Contains(id))
+                    CharmAbilityRegistry.Apply(this, id, false);
+            }
+        }
+
     }
 }

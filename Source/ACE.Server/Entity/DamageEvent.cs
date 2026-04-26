@@ -106,6 +106,9 @@ namespace ACE.Server.Entity
 
         public float DamageMitigated;
 
+        /// <summary>Amount of damage absorbed by Mana Barrier on the defending player this hit.</summary>
+        public uint AmountAbsorbed;
+
         // creature attacker
         public MotionCommand? AttackMotion;
         public AttackHook AttackHook;
