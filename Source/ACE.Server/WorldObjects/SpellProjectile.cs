@@ -928,16 +928,26 @@ namespace ACE.Server.WorldObjects
                 // ── Mana Barrier ───────────────────────────────────────────────────────
                 if (targetPlayer != null)
                     mbResult = targetPlayer.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
+                else if (target.HasManaBarrier)
+                    mbResult = target.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
 
                 if (mbResult.FullyAbsorbed)
                 {
-                    var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} points of damage!";
-                    targetPlayer.SendMessage(msg, ChatMessageType.Magic);
-                    
-                    if (sourcePlayer != null)
-                        sourcePlayer.SendMessage(msg, ChatMessageType.Magic);
-
-                    // Clear damage rating info or handle as zero-damage
+                    var ptWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
+                    if (targetPlayer != null)
+                    {
+                        var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage!";
+                        targetPlayer.SendMessage(msg, ChatMessageType.Magic);
+                        if (sourcePlayer != null)
+                            sourcePlayer.SendMessage(msg, ChatMessageType.Magic);
+                    }
+                    else if (sourcePlayer != null)
+                    {
+                        // Monster mana barrier fully absorbed — notify attacker
+                        var cur = target.Mana?.Current ?? 0;
+                        var max = target.Mana?.MaxValue ?? 0;
+                        sourcePlayer.SendMessage($"{target.Name}'s Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
+                    }
                     amount = 0;
                 }
                 else

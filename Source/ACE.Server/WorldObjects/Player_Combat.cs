@@ -140,7 +140,16 @@ namespace ACE.Server.WorldObjects
                 if (targetPlayer != null)
                     targetPlayer.TakeDamage(this, damageEvent);
                 else
+                {
+                    // ILT: Monster Mana Barrier — pre-absorb before damage lands
+                    if (target.GetProperty(ACE.Entity.Enum.Properties.PropertyBool.HasManaBarrier) == true)
+                    {
+                        var mbResult = target.TryAbsorbWithManaBarrier(ref damageEvent.Damage, damageEvent.DamageType);
+                        if (mbResult.AmountAbsorbed > 0)
+                            damageEvent.AmountAbsorbed = mbResult.AmountAbsorbed;
+                    }
                     target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
+                }
             }
             else
             {
@@ -168,12 +177,22 @@ namespace ACE.Server.WorldObjects
                             var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
                             string verb = "", plural = "";
                             Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
-                            var mbSuffix = targetPlayer?.GetManaBarrierSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed }) ?? "";
+                            var mbSuffix = targetPlayer != null
+                                ? targetPlayer.GetManaBarrierSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed })
+                                : target.GetManaShieldSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed });
                             var attackerMsg = $"{critMsg}You {verb} {target.Name} for {intDamage} points of {damageEvent.DamageType.ToString().ToLower()} damage!{mbSuffix}";
 
                             Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.Combat));
                         }
-                        // else (intDamage == 0) - fully absorbed, already handled in TakeDamage
+                        else if (targetPlayer == null)
+                        {
+                            // Monster fully absorbed — player TakeDamage doesn't send this message
+                            var ptWord = damageEvent.AmountAbsorbed == 1 ? "point" : "points";
+                            var cur = target.Mana?.Current ?? 0;
+                            var max = target.Mana?.MaxValue ?? 0;
+                            SendMessage($"{target.Name}'s Mana Barrier absorbed {damageEvent.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
+                        }
+                        // else: player target fully absorbed — already handled in Player.TakeDamage
                     }
                     else
                     {
@@ -439,7 +458,8 @@ namespace ACE.Server.WorldObjects
             var mbResult = TryAbsorbWithManaBarrier(ref _amount, damageType);
             if (mbResult.FullyAbsorbed)
             {
-                SendMessage($"Mana Barrier absorbed {mbResult.AmountAbsorbed} points of periodic damage!", ChatMessageType.Magic);
+                var mbPtWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
+                SendMessage($"Mana Barrier absorbed {mbResult.AmountAbsorbed} {mbPtWord} of periodic damage!", ChatMessageType.Magic);
                 return;
             }
             // ─────────────────────────────────────────────────────────────────────
@@ -552,7 +572,8 @@ namespace ACE.Server.WorldObjects
 
             if (mbResult.FullyAbsorbed)
             {
-                var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} points of damage!";
+                var ptWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
+                var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage!";
                 SendMessage(msg, ChatMessageType.Magic);
                 
                 if (source is Player sourcePlayer)
@@ -596,7 +617,7 @@ namespace ACE.Server.WorldObjects
             // send network messages
             if (source is Creature creature)
             {
-                if (mbResult.AmountAbsorbed > 0)
+                if (mbResult.AmountAbsorbed > 0 && amount > 0)
                 {
                     string verb = "", plural = "";
                     Strings.GetAttackVerb(damageType, (float)amount / Health.MaxValue, ref verb, ref plural);
@@ -615,7 +636,7 @@ namespace ACE.Server.WorldObjects
                     var msg = $"{critMsg}{creature.Name} {plural} your {partName} for {amount} points of {damageType.ToString().ToLower()} damage!{mbSuffix}";
                     SendMessage(msg, ChatMessageType.Combat);
                 }
-                else
+                else if (amount > 0)
                 {
                     if (!SquelchManager.Squelches.Contains(source, ChatMessageType.CombatEnemy))
                         Session.Network.EnqueueSend(new GameEventDefenderNotification(Session, creature.Name, damageType, percent, amount, damageLocation, crit, attackConditions));

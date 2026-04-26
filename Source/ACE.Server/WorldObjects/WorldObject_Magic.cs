@@ -573,7 +573,8 @@ namespace ACE.Server.WorldObjects
 
                 if (mbResult.FullyAbsorbed)
                 {
-                    var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} points of damage!";
+                    var ptWord = mbResult.AmountAbsorbed == 1 ? "point" : "points";
+                    var msg = $"Mana Barrier absorbed {mbResult.AmountAbsorbed} {ptWord} of damage!";
                     targetPlayer.SendMessage(msg, ChatMessageType.Magic);
                     if (player != null) player.SendMessage(msg, ChatMessageType.Magic);
                 }
