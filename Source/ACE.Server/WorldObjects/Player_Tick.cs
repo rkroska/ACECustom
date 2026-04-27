@@ -16,6 +16,7 @@ using ACE.Server.Network.Structure;
 using ACE.Server.Physics;
 using ACE.Server.Physics.Animation;
 using ACE.Server.Physics.Common;
+using ACE.Database;
 
 namespace ACE.Server.WorldObjects
 {
@@ -62,7 +63,19 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            UCMChecker.Tick(this);
+            UCMChecker.Tick();
+            TickJail();
+
+            var recoverySecs = ServerConfig.PortalStuckRecoverySecondsEffective;
+            if (Teleporting && PortalSpaceEnteredUtc.HasValue && recoverySecs > 0)
+            {
+                var elapsed = (DateTime.UtcNow - PortalSpaceEnteredUtc.Value).TotalSeconds;
+                if (elapsed >= recoverySecs && !portalStuckRecoveryAttempted)
+                {
+                    portalStuckRecoveryAttempted = true;
+                    ForceEndPortalSpaceStuck($"no LoginComplete within {recoverySecs}s (portal_stuck_recovery_seconds, effective)");
+                }
+            }
 
             actionQueue.RunActions();
 
@@ -103,9 +116,15 @@ namespace ACE.Server.WorldObjects
                 else if (houseRentWarnTimestamp == 0)
                     houseRentWarnTimestamp = Time.GetFutureUnixTime(houseRentWarnInterval);
             }
+            
+            
+            // Sync Location with Physics before boundary checks; skip prestige logic when physics has no cell (stale Location).
+            if (PhysicsObj?.CurCell != null)
+            {
+                SyncLocationWithPhysics();
+                CheckPrestigeBoundary();
+            }
         }
-
-        private static readonly TimeSpan MaximumTeleportTime = TimeSpan.FromMinutes(5);
 
         /// <summary>
         /// Called every ~5 seconds for Players
@@ -133,12 +152,18 @@ namespace ACE.Server.WorldObjects
             if (LastRequestedDatabaseSave.AddSeconds(PlayerSaveIntervalSecs + ThreadSafeRandom.Next(15, 120)) <= DateTime.UtcNow) //vary the save duration to prevent DB slamming
                 SavePlayerToDatabase();
 
-            if (Teleporting && DateTime.UtcNow > Time.GetDateTimeFromTimestamp(LastTeleportStartTimestamp ?? 0).Add(MaximumTeleportTime))
+            var kickSecs = ServerConfig.PortalStuckKickSecondsEffective;
+            if (Teleporting && PortalSpaceEnteredUtc.HasValue && kickSecs > 0)
             {
-                if (Session != null)
-                    Session.LogOffPlayer(true);
-                else
-                    LogOut();
+                var kickAfter = TimeSpan.FromSeconds(kickSecs);
+                if (DateTime.UtcNow - PortalSpaceEnteredUtc.Value > kickAfter)
+                {
+                    log.Warn($"[PORTAL STUCK] {Name} (0x{Guid}) kicking session after {kickSecs}s Teleporting (portal_stuck_kick_seconds, effective).");
+                    if (Session != null)
+                        Session.LogOffPlayer(true);
+                    else
+                        LogOut();
+                }
             }
 
             base.Heartbeat(currentUnixTime);
@@ -434,12 +459,311 @@ namespace ACE.Server.WorldObjects
             return true;
         }
 
+        private double _lastPrestigeBoundaryCheck;
+        private double _lastForbiddenLandblockLog;
+        private double _lastForbiddenZonePunishmentTime;
+
+        private void CheckPrestigeBoundary()
+        {
+            // Throttle to every 2 seconds
+            if (Time.GetUnixTime() - _lastPrestigeBoundaryCheck < 2.0)
+                return;
+
+            _lastPrestigeBoundaryCheck = Time.GetUnixTime();
+
+            var variation = Location.Variation;
+            var currentLBVal = (ushort)(Location.Cell >> 16);
+
+            if (!PrestigeManager.IsPrestigeVariation(variation))
+                return;
+
+            if (currentLBVal == 0)
+                return;
+
+            if (!PrestigeManager.IsLandblockAllowed(variation, currentLBVal))
+            {
+                // PUNISHMENT ZONE
+                var nowOob = Time.GetUnixTime();
+                if (_outOfBoundsEntryTime == 0) _outOfBoundsEntryTime = nowOob;
+                _lastDangerTime = nowOob;
+
+                // Enqueue everything to ensure thread safety (AddWorldObjectInternal must be main thread)
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                {
+                    if (Session == null || Session.State != SessionState.WorldConnected || Health == null)
+                        return;
+                    var cell = Location?.Cell ?? 0;
+                    var lbVal = (ushort)(cell >> 16);
+                    if (lbVal != currentLBVal || Location?.Variation != variation)
+                        return;
+                    if (PrestigeManager.IsLandblockAllowed(variation, lbVal))
+                        return;
+
+                    var nowExec = Time.GetUnixTime();
+                    const double forbiddenPunishCooldown = 2.0;
+                    if (nowExec - _outOfBoundsEntryTime <= forbiddenPunishCooldown)
+                        return;
+                    if (_lastForbiddenZonePunishmentTime > 0 && nowExec - _lastForbiddenZonePunishmentTime < forbiddenPunishCooldown)
+                        return;
+
+                    _lastForbiddenZonePunishmentTime = nowExec;
+
+                    if (nowExec - _lastForbiddenLandblockLog >= 10.0)
+                    {
+                       log.Info($"Player {Name} ({Guid}) is in FORBIDDEN landblock {currentLBVal:X4} (Var: {variation})");
+                       _lastForbiddenLandblockLog = nowExec;
+                    }
+
+                    // 1. Visuals: Void Particles (no fog — avoids fog/teleport interaction with prestige boundary)
+                    Session.Network.EnqueueSend(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.HealthDownVoid));
+
+                    // 2. Text: Center Screen (Yellow) ONLY
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, 
+                        "!!! YOU ARE LEAVING THE PRESTIGE ZONE! RETURN IMMEDIATELY! !!!"));
+
+                    // 3. Damage: Force update vital (Direct HP reduction)
+                    var dmg = (int)(Health.MaxValue * 0.05f);
+                    if (dmg < 10) dmg = 10;
+                    
+                    UpdateVitalDelta(Health, -dmg);
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameMessages.Messages.GameMessagePrivateUpdateVital(this, Health));
+
+                    UpdateGuideWisp(true, variation);
+                    
+                    if (Health.Current <= 0 && !IsInDeathProcess)
+                    {
+                        OnDeath(new DamageHistoryInfo(this), DamageType.Nether, false);
+                        Die();
+                        CleanupPrestigeEffects();
+                    }
+                }));
+            }
+            else
+            {
+                _outOfBoundsEntryTime = 0;
+                _lastForbiddenZonePunishmentTime = 0;
+
+                // Edge proximity and/or forbidden current landblock (re-checked live in wisp spawn lambda)
+                var danger = IsPrestigeGuideDangerState(variation);
+
+                if (danger)
+                {
+                    Session.Network.EnqueueSend(new ACE.Server.Network.GameEvent.Events.GameEventCommunicationTransientString(
+                        Session, "!!! PRESTIGE BOUNDARY NEARBY !!!"));
+                }
+                else
+                {
+                    SetFogColor(CurrentLandblock?.FogColor ?? EnvironChangeType.Clear);
+                }
+
+                // Track when we last had danger (for wisp persistence)
+                if (danger)
+                    _lastDangerTime = Time.GetUnixTime();
+
+                // Wisp with 10s persistence after reaching safety — use full danger (edge + forbidden when re-checked in spawn lambda)
+                UpdateGuideWisp(danger, variation);
+
+                // Note: Boundary markers are now spawned by the Landblock at load time,
+                // so no per-player marker logic is needed here.
+            }
+        }
+        
+        private Creature _guideWisp;
+        private double _outOfBoundsEntryTime;
+        private double _lastDangerTime;
+
+        /// <summary>
+        /// True when in a forbidden prestige landblock or within 20m of a map edge that borders a forbidden neighbor.
+        /// Used for guide wisp spawn checks so proximity danger still spawns when the current landblock is allowed.
+        /// </summary>
+        private bool IsPrestigeGuideDangerState(int? variation)
+        {
+            var lbId = new ACE.Entity.LandblockId(Location.Cell);
+            var pos = Location.Pos;
+
+            if (pos.X > 182.0f && lbId.LandblockX < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock))
+                return true;
+            if (pos.X < 10.0f && lbId.LandblockX > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock))
+                return true;
+            if (pos.Y > 182.0f && lbId.LandblockY < 255 && !PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock))
+                return true;
+            if (pos.Y < 10.0f && lbId.LandblockY > 0 && !PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock))
+                return true;
+
+            return !PrestigeManager.IsLandblockAllowed(variation, lbId.Landblock);
+        }
+
+        /// <summary>
+        /// Cleans up player-specific prestige effects (guide wisp).
+        /// Boundary markers are now landblock-owned and don't need per-player cleanup.
+        /// </summary>
+        public void CleanupPrestigeEffects()
+        {
+            var capturedWisp = _guideWisp;
+            if (capturedWisp == null)
+                return;
+
+            WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+            {
+                capturedWisp.Destroy();
+                if (_guideWisp == capturedWisp)
+                    _guideWisp = null;
+            }));
+        }
+
+        private void UpdateGuideWisp(bool danger, int? variation)
+        {
+            if (danger)
+            {
+                if (_guideWisp == null)
+                {
+                    // Spawn Wisp
+                    var weenie = DatabaseManager.World.GetCachedWeenie((uint)ACE.Entity.Enum.WeenieClassName.W_WISPETHEREAL_CLASS);
+                    if (weenie != null)
+                    {
+                        // Capture state for thread safety
+                        var playerPos = Location.Pos; // Exact player position
+                        var cell = Location.Cell;
+                        var lbId = new ACE.Entity.LandblockId(cell);
+
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                        {
+                            if (Session == null || Session.State != SessionState.WorldConnected)
+                                return;
+
+                            // Double check inside queue
+                            if (_guideWisp != null)
+                                return;
+
+                            var liveCell = Location?.Cell ?? 0;
+                            if (liveCell != cell || Location?.Variation != variation)
+                                return;
+
+                            if (!IsPrestigeGuideDangerState(variation))
+                                return;
+
+                            var wisp = Factories.WorldObjectFactory.CreateNewWorldObject(weenie) as Creature;
+                            if (wisp != null)
+                            {
+                                wisp.Name = "Prestige Guide";
+                                wisp.SetProperty(PropertyBool.Invincible, true);
+                                wisp.SetProperty(PropertyBool.IgnoreCollisions, true);
+                                wisp.SetProperty(PropertyBool.Attackable, false);
+                                wisp.SetProperty(PropertyBool.NeverAttack, true);
+                                
+                                var spawnPos = playerPos + (Vector3.UnitZ * 0.2f);
+                                wisp.Location = new ACE.Entity.Position(cell, spawnPos.X, spawnPos.Y, spawnPos.Z, 0, 0, 0, 0, false, variation);
+
+                                if (!wisp.EnterWorld() || wisp.CurrentLandblock == null)
+                                {
+                                    log.Warn($"[Prestige] Failed to enter world for prestige guide wisp (player {Name} 0x{Guid.Full:X8}).");
+                                    wisp.Destroy();
+                                    return;
+                                }
+
+                                _guideWisp = wisp;
+
+                                // Calculate "Smart" Safe Spot
+                                uint targetCell = cell;
+                                float targetX = 96.0f;
+                                float targetY = 96.0f;
+                                string safeDir = "None";
+
+                                // Check cardinal neighbors for safety
+                                bool eAllowed = lbId.LandblockX < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.East.Landblock);
+                                bool wAllowed = lbId.LandblockX > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.West.Landblock);
+                                bool nAllowed = lbId.LandblockY < 255 && PrestigeManager.IsLandblockAllowed(variation, lbId.North.Landblock);
+                                bool sAllowed = lbId.LandblockY > 0 && PrestigeManager.IsLandblockAllowed(variation, lbId.South.Landblock);
+
+                                if (eAllowed)
+                                {
+                                    targetCell = lbId.East.Raw;
+                                    targetX = 5.0f; 
+                                    targetY = playerPos.Y;
+                                    safeDir = "East";
+                                }
+                                else if (wAllowed)
+                                {
+                                    targetCell = lbId.West.Raw;
+                                    targetX = 187.0f;
+                                    targetY = playerPos.Y;
+                                    safeDir = "West";
+                                }
+                                else if (nAllowed)
+                                {
+                                    targetCell = lbId.North.Raw;
+                                    targetX = playerPos.X;
+                                    targetY = 5.0f;
+                                    safeDir = "North";
+                                }
+                                else if (sAllowed)
+                                {
+                                    targetCell = lbId.South.Raw;
+                                    targetX = playerPos.X;
+                                    targetY = 187.0f;
+                                    safeDir = "South";
+                                }
+                                else
+                                {
+                                    safeDir = "Fallback(Center)";
+                                }
+
+                                var safePos = new ACE.Entity.Position(targetCell, targetX, targetY, spawnPos.Z, 0, 0, 0, 0, false, variation);
+
+                                log.Debug($"[Prestige] Wisp: Spawned at {lbId}. Safe direction: {safeDir}. Move to {safePos} (cell {targetCell:X8}).");
+
+                                wisp.MoveToPosition(safePos);
+                                
+                                Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                    "Follow the Wisp to safety!", ChatMessageType.Broadcast));
+                            }
+                        }));
+                    }
+                }
+            }
+            else
+            {
+                // Only destroy wisp if we've been safe for 10+ seconds
+                if (_guideWisp != null)
+                {
+                    var timeSinceDanger = Time.GetUnixTime() - _lastDangerTime;
+
+                    if (timeSinceDanger >= 10.0)
+                    {
+                        var wispAtEnqueue = _guideWisp;
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(ActionType.Landblock_CreateWorldObjects, () =>
+                        {
+                            if (Session == null || Session.State != SessionState.WorldConnected)
+                                return;
+
+                            if (Time.GetUnixTime() - _lastDangerTime < 10.0)
+                                return;
+
+                            if (wispAtEnqueue == null || _guideWisp != wispAtEnqueue)
+                                return;
+
+                            var msg = new GameMessageHearSpeech("Do try to stay on the path next time...", wispAtEnqueue.Name, wispAtEnqueue.Guid.Full, ChatMessageType.Speech);
+                            Session.Network.EnqueueSend(msg);
+
+                            wispAtEnqueue.Destroy();
+                            _guideWisp = null;
+                        }));
+                    }
+                }
+                else
+                {
+                    // No wisp, no danger - nothing to do (don't log this, too spammy)
+                }
+            }
+        }
 
         public bool SyncLocationWithPhysics()
         {
-            if (PhysicsObj.CurCell == null)
+            if (PhysicsObj?.CurCell == null)
             {
-                Console.WriteLine($"{Name}.SyncLocationWithPhysics(): CurCell is null!");
+                if (PhysicsObj != null)
+                    Console.WriteLine($"{Name}.SyncLocationWithPhysics(): CurCell is null!");
                 return false;
             }
 
@@ -448,7 +772,8 @@ namespace ACE.Server.WorldObjects
             var rotate = PhysicsObj.Position.Frame.Orientation;
             var variation = PhysicsObj.Position.Variation;
 
-            var landblockUpdate = blockcell << 16 != CurrentLandblock.Id.Landblock;
+            // CurrentLandblock can be null briefly during teleport/recall while physics has already updated
+            var landblockUpdate = CurrentLandblock != null && (ushort)(blockcell >> 16) != CurrentLandblock.Id.Landblock;
 
             Location = new ACE.Entity.Position(blockcell, pos, rotate, variation);
 

@@ -18,6 +18,8 @@ namespace ACE.Database
 
         public static ShardConfigDatabase ShardConfig { get; } = new ShardConfigDatabase();
 
+        public static EnlightenmentTierDatabase EnlightenmentTiers { get; } = new EnlightenmentTierDatabase();
+
         public static bool InitializationFailure = false;
 
         public static void Initialize(bool autoRetry = true)

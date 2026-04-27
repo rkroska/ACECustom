@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using ACE.Entity.Enum;
 
@@ -24,11 +25,17 @@ namespace ACE.Server.Physics.Common
             StabList = bldPortal.StabList;
         }
 
-        public EnvCell GetOtherCell(uint landblockID)
+        public EnvCell GetOtherCell(uint landblockID, int? variationId)
         {
             var blockCellID = landblockID & 0xFFFF0000 | OtherCellId;
 
-            return (EnvCell)LScape.get_landcell(blockCellID, null);
+            //if (variationId == 12) Console.WriteLine($"[DEBUG-PORT] GetOtherCell: LB={landblockID:X8} Var={variationId} -> Target={blockCellID:X8}");
+            var cell = (EnvCell)LScape.get_landcell(blockCellID, variationId);
+            
+            if (cell == null && (variationId == 12 || variationId == 15))
+                 Console.WriteLine($"[DEBUG-PORT] GetOtherCell FAILED: LB={landblockID:X8} Var={variationId} -> Target={blockCellID:X8}");
+            
+            return cell;
         }
 
         public void add_to_stablist(ref List<ushort> stabList, ref uint maxSize, ref uint stabNum)

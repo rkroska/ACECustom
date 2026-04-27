@@ -80,51 +80,60 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (sourceCreature != null && sourceCreature.AttackTarget != null)
                 {
-                    // todo: clean this up
-                    var targetPlayer = sourceCreature.AttackTarget as Player;
-
-                    damageEvent = DamageEvent.CalculateDamage(sourceCreature, targetCreature, worldObject);
-
-                    if (targetPlayer != null)
+                    if (!sourceCreature.CanDamage(targetCreature))
                     {
-                        // monster damage player
-                        if (damageEvent.HasDamage)
-                        {
-                            targetPlayer.TakeDamage(sourceCreature, damageEvent);
-
-                            // blood splatter?
-
-                            if (damageEvent.ShieldMod != 1.0f)
-                            {
-                                var shieldSkill = targetPlayer.GetCreatureSkill(Skill.Shield);
-                                Proficiency.OnSuccessUse(targetPlayer, shieldSkill, shieldSkill.Current);   // ??
-                            }
-
-                            // handle Dirty Fighting
-                            if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
-                                sourceCreature.FightDirty(targetPlayer, damageEvent.Weapon);
-                        }
-                        else
-                            targetPlayer.OnEvade(sourceCreature, CombatType.Missile);
+                        // Blocked by targeting rules; do not apply damage,
+                        // but still continue to shared projectile cleanup below.
                     }
                     else
                     {
-                        // monster damage pet
-                        if (damageEvent.HasDamage)
+                        // todo: clean this up
+                        // Classify by the actual collided target, not sourceCreature.AttackTarget.
+                        var targetPlayer = targetCreature as Player;
+
+                        damageEvent = DamageEvent.CalculateDamage(sourceCreature, targetCreature, worldObject);
+
+                        if (targetPlayer != null)
                         {
-                            targetCreature.TakeDamage(sourceCreature, damageEvent.DamageType, damageEvent.Damage);
+                            // monster damage player
+                            if (damageEvent.HasDamage)
+                            {
+                                targetPlayer.TakeDamage(sourceCreature, damageEvent);
 
-                            // blood splatter?
+                                // blood splatter?
 
-                            // handle Dirty Fighting
-                            if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
-                                sourceCreature.FightDirty(targetCreature, damageEvent.Weapon);
+                                if (damageEvent.ShieldMod != 1.0f)
+                                {
+                                    var shieldSkill = targetPlayer.GetCreatureSkill(Skill.Shield);
+                                    Proficiency.OnSuccessUse(targetPlayer, shieldSkill, shieldSkill.Current);   // ??
+                                }
+
+                                // handle Dirty Fighting
+                                if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
+                                    sourceCreature.FightDirty(targetPlayer, damageEvent.Weapon);
+                            }
+                            else
+                                targetPlayer.OnEvade(sourceCreature, CombatType.Missile);
                         }
-
-                        if (!(targetCreature is CombatPet))
+                        else
                         {
-                            // faction mobs and foetype
-                            sourceCreature.MonsterOnAttackMonster(targetCreature);
+                            // monster damage pet
+                            if (damageEvent.HasDamage)
+                            {
+                                targetCreature.TakeDamage(sourceCreature, damageEvent.DamageType, damageEvent.Damage);
+
+                                // blood splatter?
+
+                                // handle Dirty Fighting
+                                if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
+                                    sourceCreature.FightDirty(targetCreature, damageEvent.Weapon);
+                            }
+
+                            if (!(targetCreature is CombatPet))
+                            {
+                                // faction mobs and foetype
+                                sourceCreature.MonsterOnAttackMonster(targetCreature);
+                            }
                         }
                     }
                 }

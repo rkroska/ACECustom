@@ -10,8 +10,9 @@ namespace ACE.Common
 
         public OfflineConfiguration Offline { get; set; } = new OfflineConfiguration();
 
-        public ChatConfiguration Chat { get; set; }
+        public ChatConfiguration Chat { get; set; } = new ChatConfiguration();
 
         public DDDConfiguration DDD { get; set; } = new DDDConfiguration();
+        
     }
 }

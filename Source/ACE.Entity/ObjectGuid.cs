@@ -26,16 +26,34 @@ namespace ACE.Entity
         // PY 16 has these ranges 0x70003000 - 0x7FADA053
         // They are organized by landblock where 0x7AABB000 is landblock AABB
         // These represent items that come from the World db
-        public static uint StaticObjectMin { get; } = 0x70000000;
-        public static uint StaticObjectMax { get; } = 0x7FFFFFFF;
+        /// <summary>OR mask base for landblock-packed static instance GUIDs (0x7xxxxx00); within <see cref="StaticObjectMin"/>–<see cref="StaticObjectMax"/>.</summary>
+        public static uint LandblockInstanceGuidBase { get; } = 0x70000000;
 
-        // These represent items are generated in the world. Some of them will be saved to the Shard db.
-        public static uint DynamicMin { get; } = 0x80000000;
+        public static uint StaticObjectMin { get; } = 0x01000000;
+        // Static world DB object space includes legacy ranges up through 0xEFFFFFFF (excluding legacy dynamic; see below).
+        public static uint StaticObjectMax { get; } = 0xEFFFFFFF;
+
+        /// <summary>Pre-change shards may still contain runtime dynamic GUIDs in this range (not static world DB).</summary>
+        public static uint LegacyDynamicMin { get; } = 0x80000000;
+        public static uint LegacyDynamicMax { get; } = 0xEFFFFFFF;
+
+        // Runtime-assigned dynamic GUIDs start at 0xF0000000.
+        public static uint DynamicMin { get; } = 0xF0000000;
         public static uint DynamicMax { get; } = 0xFFFFFFFE; // Ends at E because uint.Max is reserved for "invalid"
 
         public static bool IsPlayer(uint guid) { return (guid >= PlayerMin && guid <= PlayerMax); }
-        public static bool IsStatic(uint guid) { return (guid >= StaticObjectMin && guid <= StaticObjectMax); }
-        public static bool IsDynamic(uint guid) { return (guid >= DynamicMin && guid <= DynamicMax); }
+
+        public static bool IsDynamic(uint guid)
+        {
+            return (guid >= DynamicMin && guid <= DynamicMax)
+                || (guid >= LegacyDynamicMin && guid <= LegacyDynamicMax);
+        }
+
+        /// <summary>World/static DB band excluding players and legacy or new dynamic allocations.</summary>
+        public static bool IsStatic(uint guid)
+        {
+            return (guid >= StaticObjectMin && guid <= StaticObjectMax) && !IsPlayer(guid) && !IsDynamic(guid);
+        }
 
         public uint Full { get; }
         public uint Low => Full & 0xFFFFFF;

@@ -25,9 +25,14 @@ namespace ACE.Server.WorldObjects
             if (player != null && player.HandleFogBeforeTeleport(_newPosition))
                 return;
 
+            // After fog deferral path returns false: cleanup runs with the real teleport (not ~1s early on a no-op).
+            player?.CleanupPrestigeEffects();
+
             Teleporting = true;
             var timestamp = Time.GetUnixTime();
             SetProperty(PropertyFloat.LastTeleportStartTimestamp, timestamp);
+
+            player?.MarkPortalSpaceEntered();
 
             if (player != null)
                 player.LastTeleportTime = DateTime.UtcNow;
@@ -74,6 +79,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public virtual void OnTeleportComplete()
         {
+            (this as Player)?.ClearPortalSpaceEntered();
+
             // set materialize physics state
             // this takes the player from pink bubbles -> fully materialized
             // Only re-enable collisions if not cloaked (admin/GM)
@@ -227,7 +234,10 @@ namespace ACE.Server.WorldObjects
             else
                 SendUpdatePosition(); // Creature always sends?
 
-            LandblockManager.RelocateObjectForPhysics(this, true);
+            // Variant-only teleports can keep the same Cell value while still requiring a landblock/visibility refresh.
+            // Avoid relocating on the per-tick physics update path (Player.UpdateObjectPhysics), since that already queues relocation via movedObjects.
+            if (landblockUpdate && (player == null || !player.InUpdate))
+                LandblockManager.RelocateObjectForPhysics(this, true);
 
             return landblockUpdate;
         }

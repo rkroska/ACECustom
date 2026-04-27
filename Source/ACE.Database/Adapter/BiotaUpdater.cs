@@ -791,6 +791,7 @@ namespace ACE.Database.Adapter
             existingValue.VendorType = (int?)value.VendorType;
             existingValue.MinHealth = value.MinHealth;
             existingValue.MaxHealth = value.MaxHealth;
+            existingValue.DamageType = (int?)value.DamageType;
         }
 
         private static void CopyValueInto(ACE.Entity.Models.PropertiesEmoteAction value, ACE.Database.Models.Shard.BiotaPropertiesEmoteAction existingValue, uint order)

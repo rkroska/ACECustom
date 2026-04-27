@@ -8,7 +8,9 @@ using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Physics.Common;
+using ACE.Server.Entity;
 using ACE.Server.WorldObjects;
+using ACE.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,7 +31,7 @@ namespace ACE.Server.Command.Handlers
                                               "  player <name>\n" +
                                               "  dungeon <name|hex>\n" +
                                               "  poi <name>\n" +
-                                              "  variant <id>\n" +
+                                              "  variant <retail|default|null|id> (retail/default/null = base; 0 = variation 0)\n" +
                                               "  xyz <cell> <x> <y> <z>...\n" +
                                               "  type <id>\n" +
                                               "  dist <distance>\n" +
@@ -49,7 +51,7 @@ namespace ACE.Server.Command.Handlers
                                                 "  player <name>\n" +
                                                 "  dungeon <name|hex>\n" +
                                                 "  poi <name>\n" +
-                                                "  variant <id>\n" +
+                                                "  variant <retail|default|null|id> (retail/default/null = base; 0 = variation 0)\n" +
                                                 "  xyz <cell> <x> <y> <z>...\n" +
                                                 "  type <id>\n" +
                                                 "  dist <distance>\n" +
@@ -187,12 +189,22 @@ namespace ACE.Server.Command.Handlers
             "Example: /teleallto Bob")]
         public static void HandleTeleAllTo(Session session, params string[] parameters)
         {
-            Player destinationPlayer = null;
+            Player destinationPlayer;
 
             if (parameters.Length > 0)
-                destinationPlayer = PlayerManager.GetOnlinePlayer(string.Join(" ", parameters));
-
-            destinationPlayer ??= session.Player;
+            {
+                var targetName = string.Join(" ", parameters);
+                destinationPlayer = PlayerManager.GetOnlinePlayer(targetName);
+                if (destinationPlayer == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Player '{targetName}' was not found.", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+            else
+            {
+                destinationPlayer = session.Player;
+            }
 
             foreach (var player in PlayerManager.GetAllOnline())
             {
@@ -250,20 +262,24 @@ namespace ACE.Server.Command.Handlers
 
             if (args.Length > 0)
             {
-                if (args[0] == "null")
+                var a = args[0].Trim();
+                // Same semantics as @televariant: retail/default/null => unlayered base; 0 is explicit variation 0
+                if (string.Equals(a, "null", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a, "retail", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a, "default", StringComparison.OrdinalIgnoreCase))
                 {
                     pos.Variation = null;
-                    name = "variant null";
+                    name = "variant base (retail/default/null)";
                     return true;
                 }
-                if (int.TryParse(args[0], out var variant))
+                if (int.TryParse(a, out var variant))
                 {
                     pos.Variation = variant;
-                    name = $"variant {pos.Variation}";
+                    name = $"variant {variant}";
                     return true;
                 }
             }
-            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: ... to variant <value or null>", ChatMessageType.System));
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: ... to variant <retail|default|null|integer id>", ChatMessageType.System));
             return false;
         }
 
@@ -738,6 +754,210 @@ namespace ACE.Server.Command.Handlers
             }
             if (!suppressErrors) session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find POI {name}", ChatMessageType.System));
             return false;
+        }
+
+
+        // ==========================================================================================
+        // RANDOM TELEPORT COMMANDS
+        // ==========================================================================================
+
+        /// <summary>
+        /// Portal names containing these strings are excluded from random dungeon selection
+        /// (housing, private instances, dev/test areas).
+        /// </summary>
+        private static readonly HashSet<string> DungeonNameExclusions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "House", "Apartment", "Mansion", "Cottage", "Villa", "Penthouse",
+            "Hovel", "Test", "Admin", "Dev", "Instance"
+        };
+
+        [CommandHandler("telerandom", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Teleport yourself to a random valid location anywhere in the world (outdoor or dungeon).")]
+        public static void HandleTeleRandom(Session session, params string[] parameters)
+        {
+            if (ThreadSafeRandom.Next(0, 1) == 0)
+                TeleportToRandomOutdoor(session);
+            else
+                TeleportToRandomDungeon(session);
+        }
+
+        [CommandHandler("telerandomoutside", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Teleport yourself to a random outdoor location anywhere in Dereth.")]
+        public static void HandleTeleRandomOutside(Session session, params string[] parameters)
+            => TeleportToRandomOutdoor(session);
+
+        [CommandHandler("telerandomdungeon", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0,
+            "Teleport yourself deep inside a random accessible dungeon.")]
+        public static void HandleTeleRandomDungeon(Session session, params string[] parameters)
+            => TeleportToRandomDungeon(session);
+
+        // ------------------------------------------------------------------------------------------
+
+        private static void TeleportToRandomOutdoor(Session session)
+        {
+            const int MaxAttempts = 15;
+
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                // Full Dereth grid: 0x01-0xFE on both axes
+                byte lbX = (byte)ThreadSafeRandom.Next(0x01, 0xFE);
+                byte lbY = (byte)ThreadSafeRandom.Next(0x01, 0xFE);
+                uint cellId = ((uint)lbX << 24) | ((uint)lbY << 16) | 0x0000;
+
+                var lb = LScape.get_landblock(cellId, null);
+                if (lb == null) continue;
+                if (lb.WaterType == LandDefs.WaterType.EntirelyWater) continue;
+                if (lb.IsDungeon) continue;
+
+                // Sample terrain height at the center of the landblock
+                float localX = 96.0f, localY = 96.0f;
+                float z = lb.GetZ(new System.Numerics.Vector3(localX, localY, 0f)) + 1.0f;
+
+                var dest = new Position(cellId, localX, localY, z, 0f, 0f, 0f, 1f);
+                if (!ValidateDestination(session, dest)) continue;
+
+                session.Player.SetPosition(PositionType.TeleportedCharacter, new Position(session.Player.Location));
+                session.Player.Teleport(dest);
+                session.Player.OnTeleportComplete();
+
+                var coords = dest.GetMapCoordStr();
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Teleporting to random outdoor location: {coords}", ChatMessageType.System));
+                return;
+            }
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                "Could not find a valid outdoor location after several attempts. Try again.", ChatMessageType.System));
+        }
+
+        private static void TeleportToRandomDungeon(Session session)
+        {
+            const int MaxDungeonAttempts = 5;
+
+            // --- Step 1: Build accessible dungeon list from the world DB ---
+            // We pull all portal Destination positions that land inside an EnvCell (dungeon interior),
+            // then filter out housing/private portals by name.
+            List<(string Name, uint DungeonLandblock, Position Entrance)> accessibleDungeons;
+            using (var ctx = new WorldDbContext())
+            {
+                var query = from weenie in ctx.Weenie
+                            join wstr in ctx.WeeniePropertiesString   on weenie.ClassId equals wstr.ObjectId
+                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
+                            where weenie.Type        == (int)WeenieType.Portal
+                               && wstr.Type         == (int)PropertyString.Name
+                               && wpos.PositionType == (int)PositionType.Destination
+                               && (wpos.ObjCellId & 0x0000FFFFu) >= 0x0100u  // EnvCell = dungeon interior
+                            select new { wstr.Value, wpos };
+
+                accessibleDungeons = query
+                    .AsEnumerable()
+                    .Where(r => !DungeonNameExclusions.Any(ex =>
+                        r.Value.Contains(ex, StringComparison.OrdinalIgnoreCase)))
+                    .Select(r => (
+                        Name:             r.Value,
+                        DungeonLandblock: r.wpos.ObjCellId >> 16,
+                        Entrance:         new Position(
+                                              r.wpos.ObjCellId,
+                                              r.wpos.OriginX, r.wpos.OriginY, r.wpos.OriginZ,
+                                              r.wpos.AnglesX, r.wpos.AnglesY, r.wpos.AnglesZ,
+                                              r.wpos.AnglesW, false, r.wpos.VariationId)
+                    ))
+                    .ToList();
+            }
+
+            if (accessibleDungeons.Count == 0)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    "No accessible dungeons found in the database.", ChatMessageType.System));
+                return;
+            }
+
+            // --- Steps 2–4: Pick dungeon, find deep creature spawn positions ---
+            for (int attempt = 0; attempt < MaxDungeonAttempts; attempt++)
+            {
+                var chosen = accessibleDungeons[ThreadSafeRandom.Next(0, accessibleDungeons.Count - 1)];
+                uint blockStart  = chosen.DungeonLandblock << 16;
+                uint blockEnd    = blockStart | 0xFFFFu;
+                uint deepCellMin = blockStart | 0x0100u;  // skip outdoor cell, EnvCells only
+
+                // Query creature spawn positions inside this dungeon's cells.
+                // Project to anonymous type first (EF-safe), then construct Position in memory.
+                List<Position> spawnPositions;
+                using (var ctx = new WorldDbContext())
+                {
+                    var rawRows = (from weenie in ctx.Weenie
+                                   join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
+                                   where weenie.Type == (int)WeenieType.Creature
+                                      && wpos.PositionType == (int)PositionType.Location
+                                      && wpos.ObjCellId   >= deepCellMin
+                                      && wpos.ObjCellId   <= blockEnd
+                                   select new
+                                   {
+                                       wpos.ObjCellId,
+                                       wpos.OriginX, wpos.OriginY, wpos.OriginZ,
+                                       wpos.AnglesX, wpos.AnglesY, wpos.AnglesZ,
+                                       wpos.AnglesW, wpos.VariationId
+                                   }).ToList();
+
+                    spawnPositions = rawRows.Select(r => new Position(
+                        r.ObjCellId,
+                        r.OriginX, r.OriginY, r.OriginZ,
+                        r.AnglesX, r.AnglesY, r.AnglesZ,
+                        r.AnglesW, false, r.VariationId)).ToList();
+                }
+
+
+                // No creature data — retry with a different dungeon unless this is the last attempt,
+                // in which case use the portal entrance so we still land somewhere valid.
+                if (spawnPositions.Count == 0)
+                {
+                    if (attempt < MaxDungeonAttempts - 1)
+                        continue;
+
+                    session.Player.SetPosition(PositionType.TeleportedCharacter, new Position(session.Player.Location));
+                    session.Player.Teleport(chosen.Entrance);
+                    session.Player.OnTeleportComplete();
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"Teleporting to entrance of: {chosen.Name} (landblock 0x{chosen.DungeonLandblock:X4})",
+                        ChatMessageType.System));
+                    return;
+                }
+
+                // Sort all spawn positions by distance from entrance (descending),
+                // take the furthest 33%, and pick one at random — this lands us deep inside.
+                var sortedByDepth = spawnPositions
+                    .Select(p => (Pos: p, DistSq: DungeonDistanceSq(p, chosen.Entrance)))
+                    .OrderByDescending(x => x.DistSq)
+                    .ToList();
+
+                int deepCount = Math.Max(1, sortedByDepth.Count / 3);
+                var dest = sortedByDepth[ThreadSafeRandom.Next(0, deepCount - 1)].Pos;
+
+                session.Player.SetPosition(PositionType.TeleportedCharacter, new Position(session.Player.Location));
+                session.Player.Teleport(dest);
+                session.Player.OnTeleportComplete();
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"Teleporting deep into: {chosen.Name} (landblock 0x{chosen.DungeonLandblock:X4})",
+                    ChatMessageType.System));
+                return;
+            }
+
+
+            session.Network.EnqueueSend(new GameMessageSystemChat(
+                "Could not find a valid dungeon after several attempts. Try again.", ChatMessageType.System));
+        }
+
+        /// <summary>
+        /// Squared XYZ distance between two positions within the same dungeon landblock.
+        /// Using squared distance avoids sqrt and is sufficient for relative ordering.
+        /// </summary>
+        private static float DungeonDistanceSq(Position a, Position b)
+        {
+            float dx = a.Pos.X - b.Pos.X;
+            float dy = a.Pos.Y - b.Pos.Y;
+            float dz = a.Pos.Z - b.Pos.Z;
+            return dx * dx + dy * dy + dz * dz;
         }
 
     }

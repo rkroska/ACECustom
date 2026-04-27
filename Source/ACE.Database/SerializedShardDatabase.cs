@@ -448,5 +448,13 @@ namespace ACE.Database
         }
 
 
+        public void GetLandblockName(uint landblockId, int? variationId, Action<string> callback)
+        {
+            _readOnlyQueue.Add(new Task((x) =>
+            {
+                var result = BaseDatabase.GetLandblockName(landblockId, variationId);
+                callback?.Invoke(result);
+            }, $"GetLandblockName: {landblockId}.{variationId}"));
+        }
     }
 }

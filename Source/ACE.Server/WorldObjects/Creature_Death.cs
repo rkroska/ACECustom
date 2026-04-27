@@ -206,6 +206,8 @@ namespace ACE.Server.WorldObjects
             if (totalHealth == 0)
                 return;
 
+            var monsterTier = PrestigeManager.GetKillScalingMonsterTier(this);
+
             foreach (var kvp in DamageHistory.TotalDamage)
             {
                 var damager = kvp.Value.TryGetAttacker();
@@ -224,13 +226,15 @@ namespace ACE.Server.WorldObjects
 
                 var totalXP = (XpOverride ?? 0) * damagePercent;
 
-                playerDamager.EarnXP((long)Math.Round(totalXP), XpType.Kill);
+                // Prestige reward multiplier is applied in GrantXP / Fellowship.SplitXp (and GrantLuminance / SplitLuminance) to avoid double-applying for fellowship kills.
+                playerDamager.EarnXP((long)Math.Round(totalXP), XpType.Kill, ShareType.All, monsterTier);
 
                 // handle luminance
                 if (LuminanceAward != null)
                 {
-                    var totalLuminance = (long)Math.Round(LuminanceAward.Value * damagePercent);
-                    playerDamager.EarnLuminance(totalLuminance, XpType.Kill);
+                    var totalLuminance = LuminanceAward.Value * damagePercent;
+
+                    playerDamager.EarnLuminance((long)Math.Round(totalLuminance), XpType.Kill, ShareType.All, monsterTier);
                 }
             }
         }
@@ -774,13 +778,18 @@ namespace ACE.Server.WorldObjects
         private List<WorldObject> GenerateTreasure(DamageHistoryInfo killer, Corpse corpse)
         {
             var droppedItems = new List<WorldObject>();
+            var tier = PrestigeManager.GetKillScalingMonsterTier(this);
 
             // create death treasure from loot generation factory
             if (DeathTreasure != null)
             {
                 List<WorldObject> items = LootGenerationFactory.CreateRandomLootObjects(DeathTreasure);
+
                 foreach (WorldObject wo in items)
                 {
+                    if (tier > 0)
+                        PrestigeManager.ApplyLootScaling(wo, tier);
+
                     if (corpse != null)
                         corpse.TryAddToInventory(wo);
                     else
@@ -839,6 +848,9 @@ namespace ACE.Server.WorldObjects
 
                     if (wo != null)
                     {
+                        if (tier > 0)
+                            PrestigeManager.ApplyLootScaling(wo, tier);
+
                         if (corpse != null)
                             corpse.TryAddToInventory(wo);
                         else

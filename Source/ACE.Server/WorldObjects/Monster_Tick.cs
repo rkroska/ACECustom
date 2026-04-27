@@ -71,6 +71,10 @@ namespace ACE.Server.WorldObjects
                 if (IsFactionMob || HasFoeType)
                     FactionMob_CheckMonsters();
 
+                // FactionMob_CheckMonsters ignores players; extended foe mobs still need idle proximity wake when the player is standing still
+                if (HasFoeType && UsesExtendedFoeTargeting)
+                    ExtendedFoeWakeFromProximity();
+
                 return;
             }
 
@@ -90,6 +94,12 @@ namespace ACE.Server.WorldObjects
                 HandleFindTarget();
                 return;
             }
+
+            // If the current attack target became a friendly-quest ally this tick (stamp was just gained),
+            // drop combat before HandleFindTarget runs — otherwise it could immediately re-select the
+            // same player as AttackTarget on this same tick.
+            if (TryBreakOffAttackIfFriendlyQuestAlly())
+                return;
 
             HandleFindTarget();
 

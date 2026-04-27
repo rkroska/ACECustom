@@ -153,7 +153,10 @@ namespace ACE.Server.Physics.Animation
             SpherePath.InsertType = InsertType.Placement;
             SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell);
 
-            return obj.FindObjCollisions(this) != TransitionState.OK;
+            var result = obj.FindObjCollisions(this) != TransitionState.OK;
+            if (result && (SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                 Console.WriteLine($"[DEBUG-PHYS] CheckCollisions FAILED for DA55 obj. Collided with: {obj.Name} ({obj.ID:X8})");
+            return result;
         }
 
         public TransitionState CheckOtherCells(ObjCell currCell)
@@ -362,7 +365,14 @@ namespace ACE.Server.Physics.Animation
                 return true;
 
             if (!SpherePath.PlacementAllowsSliding)
+            {
+                if ((SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                     Console.WriteLine($"[DEBUG-PHYS] FindPlacementPos: Initial validation FAILED (State: {transitionState}), PlacementAllowsSliding=FALSE. Aborting.");
                 return false;
+            }
+
+            if ((SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                 Console.WriteLine($"[DEBUG-PHYS] FindPlacementPos: Initial validation FAILED (State: {transitionState}). Attempting sliding search. PlacementAllowsSliding=TRUE.");
 
             var adjustDist = 4.0f;
             var adjustRad = adjustDist;
@@ -431,6 +441,8 @@ namespace ACE.Server.Physics.Animation
                     }
                 }
             }
+            if ((SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                 Console.WriteLine($"[DEBUG-PHYS] FindPlacementPos: Sliding search exhausted all positions. No valid position found.");
             return false;
         }
 
@@ -450,12 +462,24 @@ namespace ACE.Server.Physics.Animation
             else
                 transitionState = TransitionState.Collided;
 
+            if (transitionState != TransitionState.OK && (SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                 Console.WriteLine($"[DEBUG-PHYS] FindPlacementPosition: InsertIntoCell/CheckOtherCells FAILED. State: {transitionState}. CheckCell: {SpherePath.CheckCell?.ID:X8}");
+
             var result = ValidatePlacement(transitionState, true);
             if (result != TransitionState.OK)
+            {
+                if ((SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                     Console.WriteLine($"[DEBUG-PHYS] FindPlacementPosition: ValidatePlacement (Initial) FAILED. Result: {result}");
                 return false;
+            }
 
             SpherePath.InsertType = InsertType.Placement;
-            if (!FindPlacementPos()) return false;
+            if (!FindPlacementPos())
+            {
+                 if ((SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                     Console.WriteLine($"[DEBUG-PHYS] FindPlacementPosition: FindPlacementPos (Sliding/Search) FAILED.");
+                 return false;
+            }
 
             if (!ObjectInfo.StepDown)
             {
@@ -606,7 +630,12 @@ namespace ACE.Server.Physics.Animation
             if (SpherePath.InsertType == InsertType.Transition)
                 return FindTransitionalPosition();
             else
-                return FindPlacementPosition();
+            {
+                var result = FindPlacementPosition();
+                if (!result && (SpherePath.CheckPos.ObjCellID & 0xFFFF0000) == 0xDA550000)
+                    Console.WriteLine($"[DEBUG-PHYS] FindValidPosition (Placement) FAILED for DA55 obj. CheckCell: {SpherePath.CheckCell?.ID:X8}");
+                return result;
+            }
         }
 
         public void InitContactPlane(uint cellID, Plane contactPlane, bool isWater)

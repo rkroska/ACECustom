@@ -17,7 +17,7 @@ namespace ACE.Server.Physics.Common
 {
     public class ObjCell: PartCell, IEquatable<ObjCell>
     {
-        //private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public uint ID;
         public LandDefs.WaterType WaterType;
@@ -185,7 +185,10 @@ namespace ACE.Server.Physics.Common
                return EnvCell.get_visible(cellID);
             else
                 return LandCell.Get(cellID);*/
-            return LScape.get_landcell(cellID, variationId);
+            var cell = LScape.get_landcell(cellID, variationId);
+            if (cell == null && IndoorPlacementDiagLogging.Enabled && IndoorPlacementDiagLogging.IsColo(cellID))
+                log.Info($"[IndoorPlaceDiag] GetVisible null cellID={cellID:X8} variationId={variationId?.ToString() ?? "null"}");
+            return cell;
         }
 
         public void Init()

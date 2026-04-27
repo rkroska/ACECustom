@@ -13,207 +13,50 @@ namespace ACE.Entity.Models
         // Bool, DID, Float, IID, Int, Int64, String, Position
         // =====================================
 
-        public static bool? GetProperty(this Weenie weenie, PropertyBool property)
-        {
-            if (weenie.PropertiesBool == null)
-                return null;
+        public static bool? GetProperty(this Weenie weenie, PropertyBool property) => ((IWeenie)weenie).GetProperty(property);
 
-            if (weenie.PropertiesBool.TryGetValue(property, out var value))
-                return value;
+        public static uint? GetProperty(this Weenie weenie, PropertyDataId property) => ((IWeenie)weenie).GetProperty(property);
 
-            return null;
-        }
+        public static double? GetProperty(this Weenie weenie, PropertyFloat property) => ((IWeenie)weenie).GetProperty(property);
 
-        public static uint? GetProperty(this Weenie weenie, PropertyDataId property)
-        {
-            if (weenie.PropertiesDID == null)
-                return null;
+        public static uint? GetProperty(this Weenie weenie, PropertyInstanceId property) => ((IWeenie)weenie).GetProperty(property);
 
-            if (weenie.PropertiesDID.TryGetValue(property, out var value))
-                return value;
+        public static int? GetProperty(this Weenie weenie, PropertyInt property) => ((IWeenie)weenie).GetProperty(property);
 
-            return null;
-        }
+        public static long? GetProperty(this Weenie weenie, PropertyInt64 property) => ((IWeenie)weenie).GetProperty(property);
 
-        public static double? GetProperty(this Weenie weenie, PropertyFloat property)
-        {
-            if (weenie.PropertiesFloat == null)
-                return null;
+        public static string? GetProperty(this Weenie weenie, PropertyString property) => ((IWeenie)weenie).GetProperty(property);
 
-            if (weenie.PropertiesFloat.TryGetValue(property, out var value))
-                return value;
+        public static PropertiesPosition? GetProperty(this Weenie weenie, PositionType property) => ((IWeenie)weenie).GetProperty(property);
 
-            return null;
-        }
-
-        public static uint? GetProperty(this Weenie weenie, PropertyInstanceId property)
-        {
-            if (weenie.PropertiesIID == null)
-                return null;
-
-            if (weenie.PropertiesIID.TryGetValue(property, out var value))
-                return value;
-
-            return null;
-        }
-
-        public static int? GetProperty(this Weenie weenie, PropertyInt property)
-        {
-            if (weenie.PropertiesInt == null)
-                return null;
-
-            if (weenie.PropertiesInt.TryGetValue(property, out var value))
-                return value;
-
-            return null;
-        }
-
-        public static long? GetProperty(this Weenie weenie, PropertyInt64 property)
-        {
-            if (weenie.PropertiesInt64 == null)
-                return null;
-
-            if (weenie.PropertiesInt64.TryGetValue(property, out var value))
-                return value;
-
-            return null;
-        }
-
-        public static string? GetProperty(this Weenie weenie, PropertyString property)
-        {
-            if (weenie.PropertiesString == null)
-                return null;
-
-            if (weenie.PropertiesString.TryGetValue(property, out var value))
-                return value;
-
-            return null;
-        }
-
-        public static PropertiesPosition? GetProperty(this Weenie weenie, PositionType property)
-        {
-            if (weenie.PropertiesPosition == null)
-                return null;
-
-            if (weenie.PropertiesPosition.TryGetValue(property, out var value))
-                return value;
-
-            return null;
-        }
-
-        public static Position? GetPosition(this Weenie weenie, PositionType property)
-        {
-            if (weenie.PropertiesPosition == null)
-                return null;
-
-            if (weenie.PropertiesPosition.TryGetValue(property, out var value))
-                return new Position(value.ObjCellId, value.PositionX, value.PositionY, value.PositionZ, value.RotationX, value.RotationY, value.RotationZ, value.RotationW);
-
-            return null;
-        }
-
+        public static Position? GetPosition(this Weenie weenie, PositionType property) => ((IWeenie)weenie).GetPosition(property);
 
         // =====================================
         // Utility
         // =====================================
 
-        public static string? GetName(this Weenie weenie)
-        {
-            var name = weenie.GetProperty(PropertyString.Name);
+        public static string? GetName(this Weenie weenie) => ((IWeenie)weenie).GetName();
 
-            return name;
-        }
+        public static string? GetPluralName(this Weenie weenie) => ((IWeenie)weenie).GetPluralName();
 
-        public static string? GetPluralName(this Weenie weenie)
-        {
-            var pluralName = weenie.GetProperty(PropertyString.PluralName);
-            pluralName ??= weenie.GetProperty(PropertyString.Name)?.Pluralize();
-            return pluralName;
-        }
+        public static ItemType GetItemType(this Weenie weenie) => ((IWeenie)weenie).GetItemType();
 
-        public static ItemType GetItemType(this Weenie weenie)
-        {
-            var itemType = weenie.GetProperty(PropertyInt.ItemType) ?? 0;
+        public static int? GetValue(this Weenie weenie) => ((IWeenie)weenie).GetValue();
 
-            return (ItemType)itemType;
-        }
+        public static bool IsStackable(this Weenie weenie) => ((IWeenie)weenie).IsStackable();
 
-        public static int? GetValue(this Weenie weenie)
-        {
-            var value = weenie.GetProperty(PropertyInt.Value);
+        public static bool IsStuck(this Weenie weenie) => ((IWeenie)weenie).IsStuck();
 
-            return value;
-        }
+        public static bool DisableCreate(this Weenie weenie) => ((IWeenie)weenie).DisableCreate();
 
-        public static bool IsStackable(this Weenie weenie)
-        {
-            switch (weenie.WeenieType)
-            {
-                case WeenieType.Stackable:
-                case WeenieType.Ammunition:
-                case WeenieType.Coin:
-                case WeenieType.CraftTool:
-                case WeenieType.Food:
-                case WeenieType.Gem:
-                case WeenieType.Missile:
-                case WeenieType.SpellComponent:
+        public static bool RequiresBackpackSlotOrIsContainer(this Weenie weenie) => ((IWeenie)weenie).RequiresBackpackSlotOrIsContainer();
 
-                    return true;
-            }
-            return false;
-        }
+        public static bool IsVendorService(this Weenie weenie) => ((IWeenie)weenie).IsVendorService();
 
-        public static bool IsStuck(this Weenie weenie)
-        {
-            return weenie.GetProperty(PropertyBool.Stuck) ?? false;
-        }
+        public static int GetStackUnitEncumbrance(this Weenie weenie) => ((IWeenie)weenie).GetStackUnitEncumbrance();
 
-        public static bool DisableCreate(this Weenie weenie)
-        {
-            return weenie.GetProperty(PropertyBool.DisableCreate) ?? false;
-        }
+        public static int GetMaxStackSize(this Weenie weenie) => ((IWeenie)weenie).GetMaxStackSize();
 
-        public static bool RequiresBackpackSlotOrIsContainer(this Weenie weenie)
-        {
-            var requiresBackPackSlot = weenie.GetProperty(PropertyBool.RequiresBackpackSlot) ?? false;
-
-            return requiresBackPackSlot || weenie.WeenieType == WeenieType.Container;
-        }
-
-        public static bool IsVendorService(this Weenie weenie)
-        {
-            return weenie.GetProperty(PropertyBool.VendorService) ?? false;
-        }
-
-        public static int GetStackUnitEncumbrance(this Weenie weenie)
-        {
-            if (weenie.IsStackable())
-            {
-                var stackUnitEncumbrance = weenie.GetProperty(PropertyInt.StackUnitEncumbrance);
-
-                if (stackUnitEncumbrance != null)
-                    return stackUnitEncumbrance.Value;
-            }
-            return weenie.GetProperty(PropertyInt.EncumbranceVal) ?? 0;
-        }
-
-        public static int GetMaxStackSize(this Weenie weenie)
-        {
-            if (weenie.IsStackable())
-            {
-                var maxStackSize = weenie.GetProperty(PropertyInt.MaxStackSize);
-
-                if (maxStackSize != null)
-                    return maxStackSize.Value;
-            }
-            return 1;
-        }
-
-        public static int? GetMaxStructure(this Weenie weenie)
-        {
-            var value = weenie.GetProperty(PropertyInt.MaxStructure);
-
-            return value;
-        }
+        public static int? GetMaxStructure(this Weenie weenie) => ((IWeenie)weenie).GetMaxStructure();
     }
 }

@@ -205,9 +205,15 @@ namespace ACE.Server.WorldObjects
                 Biota.SetProperty(property, value, BiotaDatabaseLock, out var changed);
 
                 if (changed)
+                {
                     ChangesDetected = true;
+                    OnPropertyStringChanged(property, value);
+                }
             }
         }
+
+        public virtual void OnPropertyStringChanged(PropertyString property, string value) { }
+        public virtual void OnPropertyStringRemoved(PropertyString property) { }
         #endregion
 
         #region RemoveProperty Functions
@@ -299,7 +305,10 @@ namespace ACE.Server.WorldObjects
             else
             {
                 if (Biota.TryRemoveProperty(property, BiotaDatabaseLock))
+                {
                     ChangesDetected = true;
+                    OnPropertyStringRemoved(property);
+                }
             }
         }
         #endregion
@@ -1318,7 +1327,7 @@ namespace ACE.Server.WorldObjects
 
         public RadarColor? RadarColor
         {
-            get => (RadarColor?)GetProperty(PropertyInt.RadarBlipColor);
+            get { if (this is Player player && player.IsInJail()) return ACE.Entity.Enum.RadarColor.Red; else return (RadarColor?)GetProperty(PropertyInt.RadarBlipColor); }
             set { if (!value.HasValue) RemoveProperty(PropertyInt.RadarBlipColor); else SetProperty(PropertyInt.RadarBlipColor, (int)value.Value); }
         }
 
@@ -2033,6 +2042,51 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.FoeType); else SetProperty(PropertyInt.FoeType, (int)value.Value); }
         }
 
+        /// <summary>
+        /// Custom targeting pseudo-types (AttackAll, AttackNonSelf, friend/foe player modes) as flags.
+        /// </summary>
+        public CustomTargetingBehavior TargetingFlags
+        {
+            get => (CustomTargetingBehavior)(GetProperty(PropertyInt.TargetingFlags) ?? 0);
+            set
+            {
+                if (value == CustomTargetingBehavior.None)
+                    RemoveProperty(PropertyInt.TargetingFlags);
+                else
+                    SetProperty(PropertyInt.TargetingFlags, (int)value);
+            }
+        }
+
+        public string FriendTypeString
+        {
+            get => GetProperty(PropertyString.FriendTypeString);
+            set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FriendTypeString); else SetProperty(PropertyString.FriendTypeString, value); }
+        }
+
+        public string FoeTypeString
+        {
+            get => GetProperty(PropertyString.FoeTypeString);
+            set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FoeTypeString); else SetProperty(PropertyString.FoeTypeString, value); }
+        }
+
+        public string FriendlyQuestString
+        {
+            get => GetProperty(PropertyString.FriendlyQuestString);
+            set { if (string.IsNullOrEmpty(value)) RemoveProperty(PropertyString.FriendlyQuestString); else SetProperty(PropertyString.FriendlyQuestString, value); }
+        }
+
+        public bool? AllowFriendlyPlayerDamage
+        {
+            get => GetProperty(PropertyBool.AllowFriendlyPlayerDamage);
+            set { if (!value.HasValue) RemoveProperty(PropertyBool.AllowFriendlyPlayerDamage); else SetProperty(PropertyBool.AllowFriendlyPlayerDamage, value.Value); }
+        }
+
+        public bool? BreakPeaceOnHostileAction
+        {
+            get => GetProperty(PropertyBool.BreakPeaceOnHostileAction);
+            set { if (!value.HasValue) RemoveProperty(PropertyBool.BreakPeaceOnHostileAction); else SetProperty(PropertyBool.BreakPeaceOnHostileAction, value.Value); }
+        }
+
         public string LongDesc
         {
             get => GetProperty(PropertyString.LongDesc);
@@ -2548,10 +2602,10 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PortalReqMaxValue); else SetProperty(PropertyInt.PortalReqMaxValue, value.Value); }
         }
 
-        public PortalRequirement2 PortalReqType2
+        public PortalRequirement PortalReqType2
         {
-            get => (PortalRequirement2)(GetProperty(PropertyInt.PortalReqType2) ?? 0);
-            set { if (value == PortalRequirement2.None) RemoveProperty(PropertyInt.PortalReqType2); else SetProperty(PropertyInt.PortalReqType2, (int)value); }
+            get => (PortalRequirement)(GetProperty(PropertyInt.PortalReqType2) ?? 0);
+            set { if (value == PortalRequirement.None) RemoveProperty(PropertyInt.PortalReqType2); else SetProperty(PropertyInt.PortalReqType2, (int)value); }
         }
 
         public int? PortalReqValue2
@@ -3254,3 +3308,5 @@ namespace ACE.Server.WorldObjects
         public int? VendorShopCreateListStackSize;
     }
 }
+
+

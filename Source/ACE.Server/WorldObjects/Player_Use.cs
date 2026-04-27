@@ -50,6 +50,9 @@ namespace ACE.Server.WorldObjects
 
             if (target == null)
             {
+                if (PlayerManager.GetOnlinePlayer(targetObjectGuid) is Player otherOnline && otherOnline != this)
+                    LogPrestigePlayerInteractionDiagnostics("HandleActionUseWithTarget", targetObjectGuid, otherOnline, null);
+
                 //log.Warn($"{Name}.HandleActionUseWithTarget({sourceObjectGuid:X8}, {targetObjectGuid:X8}): couldn't find {targetObjectGuid:X8}");
                 SendUseDoneEvent();
                 return;
@@ -183,10 +186,23 @@ namespace ACE.Server.WorldObjects
             StopExistingMoveToChains();
 
             var item = FindObject(itemGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems | SearchLocations.Landblock);
+
+            Player otherOnlineForDiag = null;
+            if (PlayerManager.GetOnlinePlayer(itemGuid) is Player op && op != this)
+                otherOnlineForDiag = op;
+
             if (item == null)
             {
                 log.Warn($"{itemGuid} not found in {this.Location.LandblockId}, {this.Location.Variation}");
+                if (otherOnlineForDiag != null)
+                    LogPrestigePlayerInteractionDiagnostics("HandleActionUseItem", itemGuid, otherOnlineForDiag, null);
+                log.Debug($"{Name}.HandleActionUseItem({itemGuid:X8}): couldn't find object");
+                SendUseDoneEvent();
+                return;
             }
+
+            if (otherOnlineForDiag != null)
+                LogPrestigePlayerInteractionDiagnostics("HandleActionUseItem", itemGuid, otherOnlineForDiag, item);
 
             if (IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(ItemsInTradeWindow))
             {
@@ -195,26 +211,18 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (item != null)
+            if (item.CurrentLandblock != null && !item.Visibility && item.Guid != LastOpenedContainerId)
             {
-                if (item.CurrentLandblock != null && !item.Visibility && item.Guid != LastOpenedContainerId)
+                if (IsBusy)
                 {
-                    if (IsBusy)
-                    {
-                        SendUseDoneEvent(WeenieError.YoureTooBusy);
-                        return;
-                    }
-
-                    CreateMoveToChain(item, (success) => TryUseItem(item, success));
+                    SendUseDoneEvent(WeenieError.YoureTooBusy);
+                    return;
                 }
-                else
-                    TryUseItem(item);
+
+                CreateMoveToChain(item, (success) => TryUseItem(item, success));
             }
             else
-            {
-                log.Debug($"{Name}.HandleActionUseItem({itemGuid:X8}): couldn't find object");
-                SendUseDoneEvent();
-            }
+                TryUseItem(item);
         }
 
         public DateTime NextUseTime { get; set; }
@@ -350,6 +358,57 @@ namespace ACE.Server.WorldObjects
 
             // manually managed
             LastUseTime = float.MinValue;
+        }
+
+        /// <summary>
+        /// Logs landblock / variation / ObjMaint state when the use target is another online player (prestige interaction debugging).
+        /// </summary>
+        private void LogPrestigePlayerInteractionDiagnostics(string source, uint targetGuidFull, Player other, WorldObject findObjectResult)
+        {
+            if (other == null || other == this)
+                return;
+
+            var og = new ObjectGuid(targetGuidFull);
+            var rawOnActorLandblock = CurrentLandblock?.GetObject(og, true, true);
+            var effSelf = PrestigeManager.GetEffectiveVariationForVisibility(this);
+            var effOther = PrestigeManager.GetEffectiveVariationForVisibility(other);
+            var sameVar = PrestigeManager.SameVariationForVisibility(effSelf, effOther);
+            var dist = (Location != null && other.Location != null) ? Location.DistanceTo(other.Location) : float.NaN;
+
+            var actorMaint = ObjMaint;
+            var otherMaint = other.ObjMaint;
+            var aKnowsB = actorMaint != null && actorMaint.KnownObjectsContainsKey(other.Guid.Full);
+            var bKnowsA = otherMaint != null && otherMaint.KnownObjectsContainsKey(Guid.Full);
+            var aVisibleB = actorMaint != null && actorMaint.VisibleObjectsContainsKey(other.Guid.Full);
+            var bVisibleA = otherMaint != null && otherMaint.VisibleObjectsContainsKey(Guid.Full);
+
+            string ResolutionNote()
+            {
+                if (findObjectResult != null)
+                    return $"FindObject ok -> {findObjectResult.Name}";
+                if (rawOnActorLandblock == null)
+                    return "FindObject=null: CurrentLandblock.GetObject returned null (not on this landblock graph, pending removal, or wrong instance)";
+                if (rawOnActorLandblock.Visibility && !Adminvision)
+                    return $"FindObject=null: landblock had {rawOnActorLandblock.Name} but PropertyBool.Visibility hides it from use resolution";
+                return $"FindObject=null: unexpected; raw object {rawOnActorLandblock.Name} ({rawOnActorLandblock.GetType().Name})";
+            }
+
+            var actorCell = Location != null ? $"{Location.Cell:X8}" : "?";
+            var otherCell = other.Location != null ? $"{other.Location.Cell:X8}" : "?";
+            var actorLb = CurrentLandblock != null ? $"{CurrentLandblock.Id.Landblock:X4}" : "null";
+            var otherLb = other.CurrentLandblock != null ? $"{other.CurrentLandblock.Id.Landblock:X4}" : "null";
+
+            if (!ServerConfig.prestige_interaction_diag_verbose.Value)
+                return;
+
+            log.Warn(
+                $"[PrestigeInteraction] {source}: actor={Name}({Guid.Full:X8}) other={other.Name}({other.Guid.Full:X8}) targetGuid={targetGuidFull:X8} " +
+                $"distance={(float.IsNaN(dist) ? "n/a" : dist.ToString("N1"))} " +
+                $"actorCell={actorCell} actorLocVar={Location?.Variation?.ToString() ?? "null"} actorLB={actorLb} actorLB.InstanceVar={CurrentLandblock?.VariationId?.ToString() ?? "null"} " +
+                $"otherCell={otherCell} otherLocVar={other.Location?.Variation?.ToString() ?? "null"} otherLB={otherLb} otherLB.InstanceVar={other.CurrentLandblock?.VariationId?.ToString() ?? "null"} " +
+                $"effVisVar_self={effSelf?.ToString() ?? "null"} effVisVar_other={effOther?.ToString() ?? "null"} sameVariationForVisibility={sameVar} sameLandblockInstance={ReferenceEquals(CurrentLandblock, other.CurrentLandblock)} " +
+                $"ObjMaint A:knowsB={aKnowsB} A:visibleB={aVisibleB} B:knowsA={bKnowsA} B:visibleA={bVisibleA} " +
+                $"{ResolutionNote()}");
         }
 
         public void HandleMotionDone_UseConsumable(uint motionID, bool success)

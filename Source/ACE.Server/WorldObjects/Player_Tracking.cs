@@ -19,6 +19,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private WorldObjectInfo selectedTarget { get; set; }
 
+        public WorldObject SelectedTarget => selectedTarget?.TryGetWorldObject();
+
         /// <summary>
         /// This dictionary is used to keep track of the last use of any item that implemented shared cooldown.
         /// It is session specific.   I think (could be wrong) cooldowns reset if you logged out and back in.
@@ -29,6 +31,14 @@ namespace ACE.Server.WorldObjects
         /// is greater than or equal to the cooldown, we can do the use - if not you must wait message.   Og II
         /// </summary>
         public Dictionary<int, DateTime> LastUseTracker { get; set; }
+
+        /// <summary>
+        /// ObjMaint can mark another Player as known before NotifyPlayers runs; we resend CreateObject from that reconcile path.
+        /// Without throttling, every Landblock/physics re-notify would enqueue duplicate CreateObject messages.
+        /// </summary>
+        private readonly Dictionary<uint, long> _lastDuplicateKnownPlayerTrackMs = new();
+
+        private const int DuplicateKnownPlayerTrackDebounceMs = 750;
 
         /// <summary>
         /// The link to this player's Object Maintenance
@@ -59,6 +69,16 @@ namespace ACE.Server.WorldObjects
             if (worldObject == null || worldObject.Guid == Guid)
                 return;
 
+            // VARIATION CHECK (Network Boundary)
+            // This ensures we never tell the client to create an object from another variation.
+            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+            var objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
+            if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
+            {
+                log.Error($"{Name} (eff v:{myVar?.ToString() ?? "null"}) tried to TrackObject {worldObject.Name} (eff v:{objVar?.ToString() ?? "null"}) - BLOCKED network message to prevent client contamination.");
+                return;
+            }
+
             // If Visibility is true, do not send object to client, object is meant for server side only, unless Adminvision is true.
             if (worldObject.Visibility && !Adminvision)
                 return;
@@ -81,14 +101,61 @@ namespace ACE.Server.WorldObjects
 
         public bool AddTrackedObject(WorldObject worldObject)
         {
-            // does this work for equipped objects?
+            if (worldObject?.PhysicsObj == null || PhysicsObj == null)
+                return false;
+
+            var myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+            var objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
+
+            // ObjMaint can still list the other PhysicsObj from before a variation / visibility-domain change.
+            // The old early-out here skipped TrackObject entirely, so clients never got DO+CO and stayed wrong.
             if (ObjMaint.KnownObjectsContainsValue(worldObject.PhysicsObj))
             {
-                //Console.WriteLine($"Player {Name} - AddTrackedObject({worldObject.Name}) skipped, already tracked");
-                return false;
+                if (PrestigeManager.SameVariationForVisibility(myVar, objVar))
+                {
+                    // Physics can call ObjMaint.AddKnownObject (handle_visible_obj / AddVisibleObject) before
+                    // NotifyPlayers runs. ObjMaint then reports "already known" but the client never got CreateObject.
+                    if (worldObject is Player)
+                    {
+                        var key = worldObject.Guid.Full;
+                        var now = System.Environment.TickCount64;
+                        if (_lastDuplicateKnownPlayerTrackMs.TryGetValue(key, out var last) &&
+                            now - last < DuplicateKnownPlayerTrackDebounceMs)
+                            return false;
+
+                        TrackObject(worldObject);
+                        _lastDuplicateKnownPlayerTrackMs[key] = now;
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                {
+                    log.Warn($"[PrestigeInteraction] AddTrackedObject purging stale ObjMaint link: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
+                             $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"}");
+                }
+
+                _lastDuplicateKnownPlayerTrackMs.Remove(worldObject.Guid.Full);
+
+                worldObject.PhysicsObj.ObjMaint?.RemoveObject(PhysicsObj);
+                if (worldObject is Player knownPlayer)
+                    knownPlayer.RemoveTrackedObject(this, false);
+                ObjMaint.RemoveObject(worldObject.PhysicsObj);
+                RemoveTrackedObject(worldObject, false);
+
+                myVar = PrestigeManager.GetEffectiveVariationForVisibility(this);
+                objVar = PrestigeManager.GetEffectiveVariationForVisibility(worldObject);
             }
-            if (ObjMaint.PhysicsObj.Position.Variation != worldObject.Location.Variation)
+
+            if (!PrestigeManager.SameVariationForVisibility(myVar, objVar))
             {
+                if (ServerConfig.prestige_interaction_diag_verbose.Value)
+                {
+                    log.Warn($"[PrestigeInteraction] AddTrackedObject skipped: viewer={Name}({Guid.Full:X8}) target={worldObject.Name}({worldObject.Guid.Full:X8}) " +
+                             $"effVar_viewer={myVar?.ToString() ?? "null"} effVar_target={objVar?.ToString() ?? "null"} " +
+                             $"(SameVariationForVisibility=false; client would not receive CreateObject).");
+                }
                 return false;
             }
 
@@ -102,6 +169,9 @@ namespace ACE.Server.WorldObjects
         public void RemoveTrackedObject(WorldObject wo, bool fromPickup)
         {
             //log.Info($"{Name}.RemoveTrackedObject({wo.Name} ({wo.Guid}), {fromPickup})");
+
+            if (wo != null)
+                _lastDuplicateKnownPlayerTrackMs.Remove(wo.Guid.Full);
 
             if (fromPickup)
             {
@@ -257,8 +327,22 @@ namespace ACE.Server.WorldObjects
             // disabled by default
             if (fixLevel < 1) return;
 
-            if (Location.Cell == newPosition.Cell)
+            // Variation-only teleports can keep the same Cell value while still requiring a visibility reset.
+            // If we skip here, clients can end up with stale known/visible object state across variations.
+            if (Location.Cell == newPosition.Cell && PrestigeManager.SameVariationForVisibility(Location?.Variation, newPosition?.Variation))
                 return;
+
+            if (ServerConfig.prestige_interaction_diag_verbose.Value)
+            {
+                log.Warn($"[PrestigeInteraction] PreTeleportVisibility: player={Name}({Guid.Full:X8}) fixLevel={fixLevel} " +
+                         $"fromCell={Location.Cell:X8} fromVar={Location?.Variation?.ToString() ?? "null"} " +
+                         $"toCell={newPosition.Cell:X8} toVar={newPosition?.Variation?.ToString() ?? "null"} " +
+                         $"knownCount={ObjMaint?.GetKnownObjectsCount().ToString() ?? "null"}");
+            }
+
+            // ObjMaint is empty but duplicate-known debounce may still hold guids from before a hard reset.
+            if (ObjMaint?.GetKnownObjectsCount() == 0)
+                _lastDuplicateKnownPlayerTrackMs.Clear();
 
             var knownObjs = GetKnownObjects();
 

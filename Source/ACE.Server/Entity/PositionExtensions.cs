@@ -298,7 +298,10 @@ namespace ACE.Server.Entity
         {
             if (p.Indoors) return true;
 
-            var landcell = (LandCell)LScape.get_landcell(p.Cell, p.Variation);
+            var cellID = (p.Cell & 0xFFFF) == 0xFFFF ? p.GetOutdoorCell() : p.Cell;
+            var landcell = (LandCell)LScape.get_landcell(cellID, p.Variation);
+
+            if (landcell == null) return false;
 
             Physics.Polygon walkable = null;
             var terrainPoly = landcell.find_terrain_poly(p.Pos, ref walkable);

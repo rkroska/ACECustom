@@ -191,9 +191,24 @@ namespace ACE.Server.Managers
         }
 
         /// <summary>
+        /// Issues both the contract-tracker notification and the quest-affinity notification
+        /// every time a player's quest registry is mutated.  All mutator methods (Update,
+        /// SetQuestCompletions, Decrement, Erase, EraseAll) route through this helper so the
+        /// two notifications are always issued together and can never fall out of sync.
+        /// </summary>
+        private static void NotifyPlayerQuestStateChanged(Player player, string questName)
+        {
+            player.ContractManager.NotifyOfQuestUpdate(questName);
+            player.NotifyQuestAffinityChanged(questName);
+        }
+
+        /// <summary>
         /// Adds or updates a quest completion to the player's registry
         /// </summary>
-        public void Update(string questFormat)
+        /// <param name="questFormat">A quest name with an optional @comment on the end. The @comment is ignored for quest registry purposes, but can be used to differentiate stamp messages for the same quest (e.g. "ColoArena@win" vs "ColoArena@loss")</param>
+        /// <param name="onlyStampFirstCompletion"></param>if true, only stamps the first completion - existing completions makes this a no-op. This is a cheap "MaxSolves = 1"</param>
+        /// <returns>The quest solve count after this attempted completion (may not increment if MaxSolves is hit).</returns>
+        public int Update(string questFormat, bool onlyStampFirstCompletion = false)
         {
             var questName = GetQuestName(questFormat);
 
@@ -223,15 +238,15 @@ namespace ACE.Server.Managers
                         player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                     }
 
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
                 }
             }
             else
             {
-                if (IsMaxSolves(questName))
+                if (IsMaxSolves(questName) || onlyStampFirstCompletion)
                 {
-                    if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): can not update existing quest. IsMaxSolves({questName}) is true.");
-                    return;
+                    if (Debug) Console.WriteLine($"{Name}.QuestManager.Update({quest}): can not solve {questName} again.");
+                    return quest.NumTimesCompleted;
                 }
 
                 // update existing quest
@@ -259,9 +274,11 @@ namespace ACE.Server.Managers
                         }
                     }
 
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
                 }
             }
+
+            return quest.NumTimesCompleted;
         }
 
         /// <summary>
@@ -299,7 +316,7 @@ namespace ACE.Server.Managers
                     {
                         player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                     }
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
 
                 }
 
@@ -328,7 +345,7 @@ namespace ACE.Server.Managers
                             player.SendMessage($"You've stamped {questName} on first completion!", ChatMessageType.Advancement);//quest name
                         }
                     }
-                    player.ContractManager.NotifyOfQuestUpdate(quest.QuestName);
+                    NotifyPlayerQuestStateChanged(player, quest.QuestName);
                 }
             }
         }
@@ -469,7 +486,7 @@ namespace ACE.Server.Managers
                 if (Creature is Player player)
                 {
                     player.CharacterChangesDetected = true;
-                    player.ContractManager.NotifyOfQuestUpdate(existing.QuestName);
+                    NotifyPlayerQuestStateChanged(player, existing.QuestName);
                 }
             }
         }
@@ -490,7 +507,7 @@ namespace ACE.Server.Managers
                 {
                     player.CharacterChangesDetected = true;
 
-                    player.ContractManager.NotifyOfQuestUpdate(questName);
+                    NotifyPlayerQuestStateChanged(player, questName);
                 }
             }
             else
@@ -519,7 +536,7 @@ namespace ACE.Server.Managers
                     player.CharacterChangesDetected = true;
 
                     foreach (var questName in questNamesErased)
-                        player.ContractManager.NotifyOfQuestUpdate(questName);
+                        NotifyPlayerQuestStateChanged(player, questName);
                 }
             }
             else
@@ -554,10 +571,22 @@ namespace ACE.Server.Managers
             }
         }
 
-        public void Stamp(string questFormat)
+        /// <summary>
+        /// Alias for the Update method.
+        /// </summary>
+        public int Stamp(string questFormat)
         {
             var questName = GetQuestName(questFormat);
-            Update(questName);  // ??
+            return Update(questName);
+        }
+
+        /// <summary>
+        /// Alias for the Update method with onlyStampFirstCompletion set to true.
+        /// </summary>
+        public int StampFirst(string questFormat)
+        {
+            var questName = GetQuestName(questFormat);
+            return Update(questName, onlyStampFirstCompletion: true);
         }
 
         /// <summary>

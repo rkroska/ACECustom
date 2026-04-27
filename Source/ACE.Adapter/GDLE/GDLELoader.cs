@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 
 using ACE.Database.Models.World;
+using ACE.Entity;
 
 namespace ACE.Adapter.GDLE
 {
@@ -114,7 +115,7 @@ namespace ACE.Adapter.GDLE
 
                 foreach (var weenie in landblock.value.weenies)
                 {
-                    var newGuid = (0x70000000 | ((weenie.pos.objcell_id & 0xFFFF0000) >> 4) | currentOffset);
+                    var newGuid = (ObjectGuid.LandblockInstanceGuidBase | ((weenie.pos.objcell_id & 0xFFFF0000) >> 4) | currentOffset);
                     currentOffset++;
 
                     if (!idChanges[landblock.key].ContainsKey(weenie.id))

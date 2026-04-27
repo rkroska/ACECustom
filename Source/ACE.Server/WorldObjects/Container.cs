@@ -144,12 +144,13 @@ namespace ACE.Server.WorldObjects
         protected void SortBiotasIntoInventory(IEnumerable<ACE.Database.Models.Shard.Biota> biotas)
         {
             var worldObjects = new List<WorldObject>();
+            var nullBiotaCount = 0;
 
             foreach (var biota in biotas)
             {
                 if (biota == null)
                 {
-                    log.Error($"Null biota detected in inventory loading for container {Name} (0x{Guid:X8}). Skipping null biota.");
+                    nullBiotaCount++;
                     continue;
                 }
                 
@@ -171,8 +172,14 @@ namespace ACE.Server.WorldObjects
                     worldObjects.Add(worldObject);
                 }
                 else
-                    log.Warn($"Failed to create WorldObject from biota {biota.Id} (WeenieClassId: {biota.WeenieClassId}, WeenieType: {biota.WeenieType}) in container {Guid}");
+                {
+                    var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
+                    log.Warn($"Failed to create WorldObject from biota {biota.Id} (WeenieClassId: {biota.WeenieClassId}, WeenieType: {biota.WeenieType}) in container {Guid}; GetCachedWeenie={(weenie == null ? "null" : "ok")}");
+                }
             }
+
+            if (nullBiotaCount > 0)
+                log.Error($"Null biota entries in inventory loading for container {Name} (0x{Guid:X8}): count={nullBiotaCount}. Skipped (no shard id/WCID). If this persists after deploy, capture full login logs; historically this often followed unsafe parallel aggregation of inventory lists.");
 
             SortWorldObjectsIntoInventory(worldObjects);
 
@@ -692,7 +699,7 @@ namespace ACE.Server.WorldObjects
                                 return true;
                             }
                         }
-                        
+
                         // log.Debug($"[SAVE DEBUG] TryAddToInventory FAILED for {itemInfo} - all side packs full in {containerInfo}");
                     }
                     else
@@ -727,7 +734,7 @@ namespace ACE.Server.WorldObjects
             var newContainerId = worldObject.ContainerId;
             var containerBiotaId = Biota.Id;
             // log.Debug($"[SAVE DEBUG] TryAddToInventory setting ContainerId for {itemInfo} | Old ContainerId={oldContainerId} (0x{(oldContainerId ?? 0):X8}) | Set ContainerId={Biota.Id} (0x{Biota.Id:X8}) | Read back ContainerId={newContainerId} (0x{(newContainerId ?? 0):X8}) | Container={containerInfo} | Container Biota.Id={containerBiotaId} (0x{containerBiotaId:X8})");
-            
+
             // Ensure ContainerId property matches Container's Biota.Id - if they don't match, fix it
             if (worldObject.ContainerId != Biota.Id)
             {

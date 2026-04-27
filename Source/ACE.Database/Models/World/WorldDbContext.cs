@@ -78,7 +78,7 @@ namespace ACE.Database.Models.World
             {
                 var config = Common.ConfigManager.Config.MySql.World;
 
-                var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=None;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator";
+                var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=Disabled;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator";
 
                 optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
                 {
@@ -1770,6 +1770,8 @@ namespace ACE.Database.Models.World
                 entity.Property(e => e.Style).HasColumnName("style");
 
                 entity.Property(e => e.Substyle).HasColumnName("substyle");
+
+                entity.Property(e => e.DamageType).HasColumnName("damage_type");
 
                 entity.Property(e => e.VendorType).HasColumnName("vendor_Type");
 

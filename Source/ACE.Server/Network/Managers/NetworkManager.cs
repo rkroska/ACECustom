@@ -14,6 +14,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network.Packets;
 using ACE.Server.Network.Handlers;
 using ACE.Server.Network.Enum;
+using ACE.Server.Diagnostics;
 
 namespace ACE.Server.Network.Managers
 {
@@ -143,7 +144,8 @@ namespace ACE.Server.Network.Managers
                             }
                             else
                             {
-                                log.InfoFormat("Login Request from {0} rejected. Failed to find or create session.", endPoint);
+                                log.InfoFormat("Login Request from {0} rejected. Session pool exhausted ({1}/{2} slots in use). Increase MaximumAllowedSessions or clear stale sessions.",
+                                    endPoint, GetSessionCount(), sessionMap.Length);
                                 SendLoginRequestReject(connectionListener, endPoint, CharacterError.LogonServerFull);
                             }
                         }
@@ -274,35 +276,43 @@ namespace ACE.Server.Network.Managers
         {
             Session session;
 
-            sessionLock.EnterUpgradeableReadLock();
+            sessionLock.EnterReadLock();
             try
             {
                 session = sessionMap.SingleOrDefault(s => s != null && endPoint.Equals(s.EndPoint));
-                if (session == null)
-                {
-                    sessionLock.EnterWriteLock();
-                    try
-                    {
-                        for (ushort i = 0; i < sessionMap.Length; i++)
-                        {
-                            if (sessionMap[i] == null)
-                            {
-                                log.DebugFormat("Creating new session for {0} with id {1}", endPoint, i);
-                                session = new Session(connectionListener, endPoint, i, ServerId);
-                                sessionMap[i] = session;
-                                break;
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        sessionLock.ExitWriteLock();
-                    }
-                }
             }
             finally
             {
-                sessionLock.ExitUpgradeableReadLock();
+                sessionLock.ExitReadLock();
+            }
+
+            if (session != null)
+                return session;
+
+            sessionLock.EnterWriteLock();
+            try
+            {
+                session = sessionMap.SingleOrDefault(s => s != null && endPoint.Equals(s.EndPoint));
+                if (session != null)
+                    return session;
+
+                for (ushort i = 0; i < sessionMap.Length; i++)
+                {
+                    if (sessionMap[i] == null)
+                    {
+                        log.DebugFormat("Creating new session for {0} with id {1}", endPoint, i);
+                        session = new Session(connectionListener, endPoint, i, ServerId);
+                        sessionMap[i] = session;
+                        break;
+                    }
+                }
+
+                if (session == null)
+                    Interlocked.Increment(ref ServerDiagnostics.SessionLoginRejectedSessionPoolFull);
+            }
+            finally
+            {
+                sessionLock.ExitWriteLock();
             }
 
             return session;

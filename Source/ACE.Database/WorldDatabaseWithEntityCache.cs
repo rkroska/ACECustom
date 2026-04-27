@@ -705,7 +705,7 @@ namespace ACE.Database
 
         public bool ClearCachedInstancesByLandblock(ushort Landblock, int? variationId)
         {
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = Landblock, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = Landblock, Variant = variationId };
             return cachedLandblockInstances.TryRemove(cacheKey, out _);
         }
 
@@ -739,27 +739,15 @@ namespace ACE.Database
 
         public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, int? variation = null)
         {
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblock, Variant = variation ?? 0 };
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblock, Variant = variation };
             if (cachedLandblockInstances.TryGetValue(cacheKey, out var value))
                 return value;
 
-            List<LandblockInstance> results;
-            if (variation.HasValue)
-            {
-                results = context.LandblockInstance
-                    .Include(r => r.LandblockInstanceLink)
-                    .AsNoTracking()
-                    .Where(r => r.Landblock == landblock && r.VariationId == variation)
-                    .ToList();
-            }
-            else
-            {
-                results = context.LandblockInstance
-                    .Include(r => r.LandblockInstanceLink)
-                    .AsNoTracking()
-                    .Where(r => r.Landblock == landblock && r.VariationId == null)
-                    .ToList();
-            }
+            var results = context.LandblockInstance
+                .Include(r => r.LandblockInstanceLink)
+                .AsNoTracking()
+                .Where(r => r.Landblock == landblock && r.VariationId == variation)
+                .ToList();
 
             cachedLandblockInstances.TryAdd(cacheKey, results);
 
@@ -813,7 +801,7 @@ namespace ACE.Database
             int count = 0;
 
             // 1. Clear Landblock Instances
-            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockId, Variant = variationId ?? 0 };
+            VariantCacheId cacheKey = new VariantCacheId { Landblock = landblockId, Variant = variationId };
             if (cachedLandblockInstances.TryRemove(cacheKey, out var instances))
             {
                 count += instances.Count;
@@ -829,7 +817,8 @@ namespace ACE.Database
             // If the variationId is NOT null/0, we should be careful.
             // But usually Unload is called for the whole landblock when it's empty.
 
-            if (variationId == null || variationId == 0)
+            // Only the true unlayered landblock (null variation) shares these landblock-wide caches; explicit layer 0 is distinct.
+            if (variationId == null)
             {
                 // 2. Clear Encounters
                 if (cachedEncounters.TryRemove(landblockId, out var encounters))

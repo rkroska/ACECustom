@@ -462,6 +462,9 @@ namespace ACE.Server.Entity.Actions
         ControlFlowLoop,
         ControlFlowConditional,
         ControlFlowDelay,
+
+        // Always append new ActionTypes to avoid renumbering existing values.
+        Landblock_Relocate_RemoveForPhysics,
     }
     public static class ActionTypeConverter
     {

@@ -322,6 +322,49 @@ namespace ACE.Database
             }
         }
 
+        public string GetLandblockName(uint landblockId, int? variationId)
+        {
+            var lb = landblockId >> 16;
+            if (lb == 0) lb = landblockId;
+
+            uint min = lb << 16;
+            uint max = min | 0xFFFF;
+
+            using (var context = new ShardDbContext())
+            {
+                // Try to find an exact match first (LB + Variation)
+                var name = (from pos in context.BiotaPropertiesPosition
+                            join str in context.BiotaPropertiesString on pos.ObjectId equals str.ObjectId
+                            where pos.ObjCellId >= min && pos.ObjCellId <= max
+                               && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
+                               && pos.VariationId == variationId
+                               && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            orderby pos.ObjectId
+                            select str.Value).FirstOrDefault();
+
+                if (name != null)
+                    return name;
+
+                // If not found and we were looking for a specific variation, try the base landblock name (VariationId == null)
+                if (variationId.HasValue)
+                {
+                    name = (from pos in context.BiotaPropertiesPosition
+                            join str in context.BiotaPropertiesString on pos.ObjectId equals str.ObjectId
+                            where pos.ObjCellId >= min && pos.ObjCellId <= max
+                               && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
+                               && pos.VariationId == null
+                               && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            orderby pos.ObjectId
+                            select str.Value).FirstOrDefault();
+
+                    if (name != null)
+                        return $"{name} (v: {variationId.Value})";
+                }
+
+                return null;
+            }
+        }
+
         protected bool DoSaveBiota(ShardDbContext context, Biota biota)
         {
             SetBiotaPopulatedCollections(biota);
@@ -480,7 +523,8 @@ namespace ACE.Database
                     .Select(r => r.ObjectId)
                     .ToList();
 
-                var inventory = new List<Biota>();
+                // List<T> is not thread-safe; parallel Add/AddRange corrupts backing storage and can yield null slots when enumerated.
+                var inventory = new ConcurrentBag<Biota>();
 
                 Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
@@ -493,12 +537,13 @@ namespace ACE.Database
                         if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
                         {
                             var subItems = GetInventoryInParallel(biota.Id, false);
-                            inventory.AddRange(subItems);
+                            foreach (var sub in subItems)
+                                inventory.Add(sub);
                         }
                     }
                 });
 
-                return inventory;
+                return inventory.ToList();
             }
         }
 
@@ -548,18 +593,9 @@ namespace ACE.Database
                 foreach (var result in results)
                 {
                     var biota = GetBiota(result);
-                    if (variationId.HasValue)
-                    {
-                        if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId)) //filter to only the objects that are the correct variation
-                        {
-                            staticObjects.Add(biota);
-                        }
-                    }
-                    else //no variation id specified, so return all objects`
-                    {
-                        staticObjects.Add(biota);
-                    }
 
+                    if (biota.BiotaPropertiesPosition.Any(x => x.VariationId == variationId))
+                        staticObjects.Add(biota);
                 }
             }
 
@@ -577,8 +613,13 @@ namespace ACE.Database
             {
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
+                // Nullable equality: EF translates to null-safe comparison (match when both null or same value)
                 var results = context.BiotaPropertiesPosition
-                    .Where(p => p.PositionType == 1 && p.ObjCellId >= min && p.ObjCellId <= max && p.ObjectId >= 0x80000000 && p.VariationId == variationId)
+                    .Where(p => p.PositionType == 1 &&
+                                p.ObjCellId >= min &&
+                                p.ObjCellId <= max &&
+                                p.ObjectId >= 0x80000000 &&
+                                p.VariationId == variationId)
                     .Select(r => r.ObjectId)
                     .ToList();
 
@@ -715,6 +756,37 @@ namespace ACE.Database
                 .FirstOrDefault(r => r.Name == name && !r.IsDeleted);
 
             return result;
+        }
+
+        public List<LoginCharacter> GetCharacterStubsByPartialName(string name, int limit = 50)
+        {
+            using var context = new ShardDbContext();
+            
+            var query = context.Character.AsNoTracking().Where(r => !r.IsDeleted);
+
+            if (name.StartsWith('+'))
+            {
+                query = query
+                    .Where(r => r.IsPlussed)
+                    .Where(r => r.Name.StartsWith(name.Substring(1)));
+            }
+            else
+            {
+                query = query.Where(r => r.Name.Contains(name));
+            }
+
+            return query
+                .OrderBy(r => r.Name)
+                .Take(limit)
+                .Select(x => new LoginCharacter 
+                { 
+                    Id = x.Id, 
+                    AccountId = x.AccountId, 
+                    Name = x.Name, 
+                    IsPlussed = x.IsPlussed,
+                    LastLoginTimestamp = x.LastLoginTimestamp 
+                })
+                .ToList();
         }
 
         public Character GetCharacterStubByGuid(uint guid)

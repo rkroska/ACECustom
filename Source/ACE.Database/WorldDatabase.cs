@@ -11,6 +11,7 @@ using log4net;
 
 using ACE.Database.Entity;
 using ACE.Database.Models.World;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 
@@ -589,7 +590,13 @@ namespace ACE.Database
 
         public bool IsWorldDatabaseGuidRangeValid(WorldDbContext context)
         {
-            return context.LandblockInstance.AsNoTracking().FirstOrDefault(i => i.Guid >= 0xF0000000) == null;
+            // Keep this EF-translatable: avoid custom method calls in LINQ-to-SQL.
+            // Only reject the new dynamic allocator band (0xF0000000+). Do not use LegacyDynamicMin here:
+            // world static instance GUIDs may still appear in 0x80000000–0xEFFFFFFF on real shards; those
+            // are not GuidManager dynamic assignments. See ObjectGuid.LandblockInstanceGuidBase / StaticObjectMax.
+            return !context.LandblockInstance
+                .AsNoTracking()
+                .Any(i => i.Guid >= ObjectGuid.DynamicMin);
         }
 
         public bool IsWorldDatabaseGuidRangeValid()
@@ -599,6 +606,49 @@ namespace ACE.Database
                 context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
 
                 return IsWorldDatabaseGuidRangeValid(context);
+            }
+        }
+
+        public string GetLandblockName(uint landblockId, int? variationId)
+        {
+            var lb = landblockId >> 16;
+            if (lb == 0) lb = landblockId;
+
+            uint min = lb << 16;
+            uint max = min | 0xFFFF;
+
+            using (var context = new WorldDbContext())
+            {
+                // Try to find an exact match first (LB + Variation)
+                var name = (from pos in context.WeeniePropertiesPosition
+                            join str in context.WeeniePropertiesString on pos.ObjectId equals str.ObjectId
+                            where pos.ObjCellId >= min && pos.ObjCellId <= max
+                               && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
+                               && pos.VariationId == variationId
+                               && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            orderby str.ObjectId
+                            select str.Value).FirstOrDefault();
+
+                if (name != null)
+                    return name;
+
+                // Fallback to base landblock name if variation provided but not found
+                if (variationId.HasValue)
+                {
+                    name = (from pos in context.WeeniePropertiesPosition
+                            join str in context.WeeniePropertiesString on pos.ObjectId equals str.ObjectId
+                            where pos.ObjCellId >= min && pos.ObjCellId <= max
+                               && pos.PositionType == (ushort)ACE.Entity.Enum.Properties.PositionType.Destination
+                               && pos.VariationId == null
+                               && str.Type == (ushort)ACE.Entity.Enum.Properties.PropertyString.Name
+                            orderby str.ObjectId
+                            select str.Value).FirstOrDefault();
+
+                    if (name != null)
+                        return $"{name} (v: {variationId.Value})";
+                }
+
+                return null;
             }
         }
     }

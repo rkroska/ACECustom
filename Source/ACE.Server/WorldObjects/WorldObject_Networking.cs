@@ -838,8 +838,13 @@ namespace ACE.Server.WorldObjects
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Inscribable, Inscribable);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Stuck, Stuck);
 
-            if (WeenieType == WeenieType.Admin || WeenieType == WeenieType.Sentinel)
-                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Player, CloakStatus < CloakStatus.Creature);
+            if (this is Player player) {
+                bool attackableByPlayers =
+                    CloakStatus == CloakStatus.Creature ||
+                    CloakStatus == CloakStatus.Hybrid ||
+                    player.IsInJail();
+                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Player, !attackableByPlayers);
+            }
 
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Attackable, Attackable);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.PlayerKiller, PlayerKillerStatus == PlayerKillerStatus.PK);
@@ -847,7 +852,7 @@ namespace ACE.Server.WorldObjects
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.UiHidden, UiHidden);
 
             if (WeenieType == WeenieType.Admin || WeenieType == WeenieType.Sentinel)
-                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Admin, CloakStatus < CloakStatus.Player);
+                UpdateObjectDescriptionFlag(ObjectDescriptionFlag.Admin, CloakStatus < CloakStatus.Player); 
 
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.FreePkStatus, PlayerKillerStatus == PlayerKillerStatus.Free);
             UpdateObjectDescriptionFlag(ObjectDescriptionFlag.ImmuneCellRestrictions, IgnoreHouseBarriers);
@@ -1448,8 +1453,19 @@ namespace ACE.Server.WorldObjects
         public void NotifyPlayers()
         {
             // send create object network message to visible players
-            foreach (var player in PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
-                player.AddTrackedObject(this);
+            var viewers = PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer();
+            if (ServerConfig.prestige_interaction_diag_verbose.Value && this is Player)
+            {
+                log.Warn($"[PrestigeInteraction] NotifyPlayers(Player): target={Name}({Guid.Full:X8}) cell={Location?.Cell:X8} locVar={Location?.Variation?.ToString() ?? "null"} physVar={PhysicsObj?.Position?.Variation?.ToString() ?? "null"} viewers={viewers?.Count.ToString() ?? "null"}");
+            }
+            foreach (var player in viewers)
+            {
+                var added = player.AddTrackedObject(this);
+                if (ServerConfig.prestige_interaction_diag_verbose.Value && this is Player)
+                {
+                    log.Warn($"[PrestigeInteraction] NotifyPlayers -> AddTrackedObject: viewer={player.Name}({player.Guid.Full:X8}) target={Name}({Guid.Full:X8}) result={(added ? "added" : "skipped")}");
+                }
+            }
 
             if (this is Creature creature && !(this is Player))
                 creature.CheckTargets();

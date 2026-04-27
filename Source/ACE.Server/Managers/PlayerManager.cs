@@ -542,6 +542,7 @@ namespace ACE.Server.Managers
             }
 
             player.SendFriendStatusUpdates(false);
+            player.CleanupPrestigeEffects();
             player.HandleAllegianceOnLogout();
 
             return true;

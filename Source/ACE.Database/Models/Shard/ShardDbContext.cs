@@ -67,6 +67,7 @@ namespace ACE.Database.Models.Shard
         public virtual DbSet<BankCommandBlacklist> BankCommandBlacklist { get; set; }
         public virtual DbSet<CharTracker> CharTracker { get; set; }
         public virtual DbSet<PetRegistry> PetRegistry { get; set; }
+        public virtual DbSet<ConfigEnlightenmentTier> ConfigEnlightenmentTier { get; set; }
         public virtual DbSet<CreatureBlacklist> CreatureBlacklist { get; set; }
 
         private static readonly int[] zeroInts = [0, 0];
@@ -77,7 +78,7 @@ namespace ACE.Database.Models.Shard
             {
                 var config = Common.ConfigManager.Config.MySql.Shard;
 
-                var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=None;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator;MaximumPoolSize=200;MinimumPoolSize=10;ConnectionLifetime=300";
+                var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={config.Database};TreatTinyAsBoolean=False;SslMode=Disabled;AllowPublicKeyRetrieval=true;ApplicationName=ACEmulator;MaximumPoolSize=200;MinimumPoolSize=10;ConnectionLifetime=300";
 
                 optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), builder =>
                 {
@@ -128,6 +129,16 @@ namespace ACE.Database.Models.Shard
                 entity.ToTable("pet_registry");
                 entity.HasKey(e => new { e.AccountId, e.Wcid, e.IsShiny });
                 entity.HasIndex(e => e.AccountId, "IX_pet_registry_AccountId");
+            });
+
+            modelBuilder.Entity<ConfigEnlightenmentTier>(entity =>
+            {
+                entity.ToTable("config_enlightenment_tier");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.MinTargetEnl, "IX_config_enlightenment_tier_min");
+                entity.Property(e => e.ItemLabel).HasCharSet("utf8mb4").UseCollation("utf8mb4_unicode_ci");
+                entity.Property(e => e.QuestStamp).HasCharSet("utf8mb4").UseCollation("utf8mb4_unicode_ci");
+                entity.Property(e => e.QuestFailureMessage).HasCharSet("utf8mb4").UseCollation("utf8mb4_unicode_ci");
             });
 
             // Creature Blacklist - blocks capture and/or shiny variants
@@ -597,6 +608,8 @@ namespace ACE.Database.Models.Shard
                 entity.Property(e => e.Style).HasColumnName("style");
 
                 entity.Property(e => e.Substyle).HasColumnName("substyle");
+
+                entity.Property(e => e.DamageType).HasColumnName("damage_type");
 
                 entity.Property(e => e.VendorType).HasColumnName("vendor_Type");
 

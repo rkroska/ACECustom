@@ -15,7 +15,14 @@ namespace ACE.Server.WorldObjects
 
         public bool IsFactionMob { get; set; }
 
-        public bool HasFoeType { get; set; }
+        /// <summary>
+        /// True when this monster should run foe-based idle scans (classic FoeType, attack flags, or custom foe list).
+        /// Computed so it stays in sync when targeting properties change after <see cref="SetMonsterState"/>.
+        /// </summary>
+        public bool HasFoeType =>
+            IsMonster && (FoeType != null
+                || (TargetingFlags & (CustomTargetingBehavior.AttackNonSelf | CustomTargetingBehavior.AttackAll | CustomTargetingBehavior.HostileToAllPlayers)) != 0
+                || (IsUsingCustomTargetingLists && !string.IsNullOrEmpty(FoeTypeString)));
 
         /// <summary>
         /// The exclusive state of the monster
@@ -48,7 +55,7 @@ namespace ACE.Server.WorldObjects
 
             IsFactionMob = IsMonster && WeenieType != WeenieType.CombatPet && Faction1Bits != null;
 
-            HasFoeType = IsMonster && FoeType != null;
+            UpdateTargetingCache();
         }
     }
 }

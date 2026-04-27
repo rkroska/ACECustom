@@ -237,6 +237,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> allow_summoning_killtask_multicredit { get; private set; } = new(true, "enables retail behavior where a summoner can get multiple killtask credits from a monster");
         public static ConfigProperty<bool> assess_creature_mod { get; private set; } = new(false, "(non-retail function) If enabled, re-enables former skill formula, when assess creature skill is not trained or spec'ed");
         public static ConfigProperty<bool> attribute_augmentation_safety_cap { get; private set; } = new(true, "if TRUE players are not able to use attribute augmentations if the innate value of the target attribute is >= 96. All normal restrictions to these augmentations still apply.");
+        /// <summary>When true, <c>/createinst</c> from prestige variation 11 auto-adds instances for variations 12 through max configured. When false (default), only explicit <c>-mirror</c>/<c>-mv</c> lists mirror; use <c>/modifybool</c>.</summary>
+        public static ConfigProperty<bool> createinst_auto_mirror_higher_prestige_variants { get; private set; } = new(false, "createinst from var 11 auto-mirrors to 12..max when TRUE. Default FALSE: mirror only with -mirror list. Retail (null/0-10) never mirrors.");
         public static ConfigProperty<bool> chat_disable_general { get; private set; } = new(false, "disable general global chat channel");
         public static ConfigProperty<bool> chat_disable_lfg { get; private set; } = new(false, "disable lfg global chat channel");
         public static ConfigProperty<bool> chat_disable_olthoi { get; private set; } = new(false, "disable olthoi global chat channel");
@@ -300,6 +302,8 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> npc_hairstyle_fullrange { get; private set; } = new(false, "if TRUE, allows generated creatures to use full range of hairstyles. Retail only allowed first nine (0-8) out of 51");
         public static ConfigProperty<bool> offline_xp_passup_limit { get; private set; } = new(true, "if FALSE, allows unlimited xp to passup to offline characters in allegiances");
         public static ConfigProperty<bool> olthoi_play_disabled { get; private set; } = new(false, "if false, allows players to create and play as olthoi characters");
+        public static ConfigProperty<bool> encounter_spawn_base_variation_only { get; private set; } = new(false, "if TRUE, world encounter table spawns are skipped only on prestige landblock variations (variation > 10). Retail variations 0-10 and unlayered base (NULL) still run encounters. FALSE = same encounter rows for all variations (stock ACE).");
+        public static ConfigProperty<bool> encounter_spawn_base_layer_only { get; private set; } = new(true, "if TRUE, world encounter table spawns (outdoor random generators from the encounter DB) run only on the unlayered landblock: VariationId NULL (not the same as retail layer 0). Skips retail layers 0-10 and prestige 11+. FALSE = stock ACE (encounters on every variation unless encounter_spawn_base_variation_only blocks prestige).");
         public static ConfigProperty<bool> override_encounter_spawn_rates { get; private set; } = new(false, "if enabled, landblock encounter spawns are overidden by double properties below.");
         public static ConfigProperty<bool> permit_corpse_all { get; private set; } = new(false, "If TRUE, /permit grants permittees access to all corpses of the permitter. Defaults to FALSE as per retail, where /permit only grants access to 1 locked corpse");
         public static ConfigProperty<bool> persist_movement { get; private set; } = new(false, "If TRUE, persists autonomous movements such as turns and sidesteps through non-autonomous server actions. Retail didn't appear to do this, but some players may prefer this.");
@@ -332,6 +336,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> trajectory_alt_solver { get; private set; } = new(false, "use the alternate trajectory solver for missiles and spell projectiles");
         public static ConfigProperty<bool> universal_masteries { get; private set; } = new(true, "if TRUE, matches end of retail masteries - players wielding almost any weapon get +5 DR, except if the weapon \"seems tough to master\". " +
                                                                                                  "if FALSE, players start with mastery of 1 melee and 1 ranged weapon type based on heritage, and can later re-select these 2 masteries");
+        public static ConfigProperty<bool> generator_spawn_failure_warn_logging { get; private set; } = new(false, "If TRUE, generator placement failures (EnterWorld returned false) log at WARN instead of DEBUG. Use to diagnose missing bell/NPC spawns without noisy logs in production.");
+        public static ConfigProperty<bool> prestige_interaction_diag_verbose { get; private set; } = new(false, "If TRUE, emits WARN-level [PrestigeInteraction] traces for: TrackObject/AddTrackedObject variation blocks, FindObject visibility blocks, UseItem/UseWithTarget player resolution, and trade open/close. Toggle live: /modifybool prestige_interaction_diag_verbose true");
+        public static ConfigProperty<bool> indoor_spawn_placement_diag_verbose { get; private set; } = new(false, "If TRUE, emits verbose INFO/DEBUG traces for indoor placement on landblock 0x00B0 (colosseum): generator Specific payloads, LScape.get_landcell cache keys, GetVisible misses, build_visible_cells stats, find_visible_child_cell + AdjustCell probe. Toggle live: /modifybool indoor_spawn_placement_diag_verbose true");
+        public static ConfigProperty<bool> landblock_readd_diag_verbose { get; private set; } = new(false, "If TRUE, emits throttled WARN-level diagnostics (incl. stack traces) when a Player is redundantly re-added to the same landblock / NotifyPlayers would re-fire. Toggle live: /modifybool landblock_readd_diag_verbose true");
         public static ConfigProperty<bool> use_generator_rotation_offset { get; private set; } = new(true, "enables or disables using the generator's current rotation when offseting relative positions");
         public static ConfigProperty<bool> use_turbine_chat { get; private set; } = new(true, "enables or disables global chat channels (General, LFG, Roleplay, Trade, Olthoi, Society, Allegience)");
         public static ConfigProperty<bool> use_wield_requirements { get; private set; } = new(true, "disable this to bypass wield requirements. mostly for dev debugging");
@@ -341,6 +349,7 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> enl_removes_society { get; private set; } = new(true, "if true, enlightenment will remove society flags");
         public static ConfigProperty<bool> action_queue_tracking_enabled { get; private set; } = new(false, "if TRUE, enables runtime performance tracking for ActionQueue to identify slow actions. Zero overhead when disabled.");
         public static ConfigProperty<bool> siphon_lens_enabled { get; private set; } = new(false, "if TRUE, enables siphon lens drops from all creature deaths. Use /modifybool siphon_lens_enabled true to activate.");
+        public static ConfigProperty<bool> enable_web_portal { get; private set; } = new(true, "If FALSE, the web portal API is disabled and all requests will return an error.");
         public static ConfigProperty<long> char_delete_time { get; private set; } = new(3600, "the amount of time in seconds a deleted character can be restored");
         public static ConfigProperty<long> chat_requires_account_time_seconds { get; private set; } = new(0, "the amount of time in seconds an account is required to have existed for for global chat privileges");
         public static ConfigProperty<long> chat_requires_player_age { get; private set; } = new(0, "the amount of time in seconds a player is required to have played for global chat privileges");
@@ -357,9 +366,9 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> rares_max_seconds_between { get; private set; } = new(5256000, "for rares_real_time: the maximum number of seconds a player can go before a second chance at a rare is allowed on rare eligible creature kills that did not generate a rare");
         public static ConfigProperty<long> summoning_killtask_multicredit_cap { get; private set; } = new(2, "if allow_summoning_killtask_multicredit is enabled, the maximum # of killtask credits a player can receive from 1 kill");
         public static ConfigProperty<long> teleport_visibility_fix { get; private set; } = new(0, "Fixes some possible issues with invisible players and mobs. 0 = default / disabled, 1 = players only, 2 = creatures, 3 = all world objects");
-        public static ConfigProperty<long> enl_50_base_lum_cost { get; private set; } = new(100000000, "the base luminance cost for each enlighten after 50, this will be multiplied by the target enlightenment level");
-        public static ConfigProperty<long> enl_150_base_lum_cost { get; private set; } = new(1000000000, "the base luminance cost for each enlighten after 150, this will be multiplied by the target enlightenment level");
-        public static ConfigProperty<long> enl_300_base_lum_cost { get; private set; } = new(2000000000, "the base luminance cost for each enlighten after 300, this will be multiplied by the target enlightenment level");
+        public static ConfigProperty<long> enl_50_base_lum_cost { get; private set; } = new(100000000, "LEGACY (unused): luminance enlightenment cost is defined per row in shard table config_enlightenment_tier (lum_base_per_target). Kept for reference / tooling.");
+        public static ConfigProperty<long> enl_150_base_lum_cost { get; private set; } = new(1000000000, "LEGACY (unused): see config_enlightenment_tier. Kept for reference / tooling.");
+        public static ConfigProperty<long> enl_300_base_lum_cost { get; private set; } = new(2000000000, "LEGACY (unused): see config_enlightenment_tier. Kept for reference / tooling.");
         public static ConfigProperty<long> dynamic_quest_repeat_hours { get; private set; } = new(20, "the number of hours before a player can do another dynamic quest");
         public static ConfigProperty<long> dynamic_quest_max_xp { get; private set; } = new(5000000000, "the maximum base xp rewarded from a dynamic quest");
         public static ConfigProperty<long> max_nether_dot_damage_rating { get; private set; } = new(50, "the maximum damage rating from Void DoTs");
@@ -449,7 +458,10 @@ namespace ACE.Server.Managers
         public static ConfigProperty<string> server_motd { get; private set; } = new("", "Server message of the day");
 
         // UCM Configuration
+        public static ConfigProperty<double> ucm_jail_duration_seconds { get; private set; } = new(900.0, "The number of seconds a player who fails a UCM check is punished");
+        public static ConfigProperty<double> ucm_jail_size { get; private set; } = new(30.0, "The lengths of the bounding box sides around the ucm jail center where a jailed player is allowed to move before being teleported back");
         public static ConfigProperty<string> ucm_check_fail_teleport_location { get; private set; } = new("", "The location to send a player to when failing a UCM check. If blank, the player will be sent to the lifestone.");
+        public static ConfigProperty<string> ucm_check_jail_center_location { get; private set; } = new("", "The center location of the jail used for rubberbanding distance checks. If blank, uses ucm_check_fail_teleport_location.");
         public static ConfigProperty<long> ucm_check_timeout_seconds { get; private set; } = new(60, "The amount of time a player has to respond to a UCM check before failing to timeout.");
         public static ConfigProperty<long> ucm_check_combat_eligibility_seconds { get; private set; } = new(60, "A player is only eligible for a UCM check if they took a combat action in the prior N seconds.");
         public static ConfigProperty<long> ucm_check_cooldown_seconds { get; private set; } = new(3600 /* 60 min */, "The minimum amount of time in seconds between random UCM checks on a single player.");
@@ -460,6 +472,50 @@ namespace ACE.Server.Managers
         public static ConfigProperty<long> discord_audit_level { get; private set; } = new(1, "Controls Admin Audit logs. 0=None, 1=Info (Bans/Kicks), 2=Verbose (All commands).");
         public static ConfigProperty<long> discord_broadcast_level { get; private set; } = new(1, "Controls World Broadcasts. 0=None, 1=Info (@broadcast/@event), 2=Verbose.");
         public static ConfigProperty<long> discord_performance_level { get; private set; } = new(1, "Controls Performance Alerts. 0=None, 1=Info (Overload/Queue), 2=Verbose (ActionLag/SlowSave).");
+
+        // Network Throttle Configuration
+        public static ConfigProperty<long> net_max_packets_per_tick { get; private set; } = new(50, "Maximum UDP packets sent to a single client per server tick. Default: 50 (vanilla). Lower values reduce burst during mass spawns at the cost of latency. Use /modifylong net_max_packets_per_tick <value>.");
+        public static ConfigProperty<long> net_min_bundle_interval_ms { get; private set; } = new(5, "Minimum milliseconds between outbound network bundle flushes per session. Default: 5 (vanilla). Higher values pace packet flow during heavy events. Use /modifylong net_min_bundle_interval_ms <value>.");
+        public static ConfigProperty<long> net_retransmit_warn_threshold { get; private set; } = new(75, "Log a RETRANSMIT warning when ACK prunes more than this many cached packets. Default: 75. Lower to 20 (vanilla) for stricter monitoring, or raise further during events with mass spawns. Use /modifylong net_retransmit_warn_threshold <value>.");
+
+        /// <summary>If the client never sends LoginComplete after this many seconds in Teleporting state, the server forces materialize. 0=off. Stored value when &gt;0 is clamped to 15–3600s at runtime. Default 45. Use /modifylong portal_stuck_recovery_seconds.</summary>
+        public static ConfigProperty<long> portal_stuck_recovery_seconds { get; private set; } = new(45, "Seconds without LoginComplete before server forces materialize. 0=off. When enabled, effective range 15–3600s. Default 45.");
+
+        /// <summary>Optional forced logoff if still Teleporting after this many seconds. 0=disabled (default): recover only, no kick. When enabled, effective value is clamped 60–86400 and never below recovery+30s if recovery is on. Use /modifylong portal_stuck_kick_seconds.</summary>
+        public static ConfigProperty<long> portal_stuck_kick_seconds { get; private set; } = new(0, "Seconds in Teleporting before forced logoff. 0=off (default). Set e.g. 600 only if you want a last-resort disconnect after recovery is disabled or insufficient.");
+
+        private const long PortalStuckRecoveryMinSeconds = 15;
+        private const long PortalStuckRecoveryMaxSeconds = 3600;
+        private const long PortalStuckKickMinSeconds = 60;
+        private const long PortalStuckKickMaxSeconds = 86400;
+
+        /// <summary>0 = recovery disabled. Otherwise raw <see cref="portal_stuck_recovery_seconds"/> clamped to [15, 3600] so misconfiguration cannot fire every tick or stall for days.</summary>
+        public static long PortalStuckRecoverySecondsEffective
+        {
+            get
+            {
+                var raw = portal_stuck_recovery_seconds.Value;
+                if (raw <= 0)
+                    return 0;
+                return Math.Clamp(raw, PortalStuckRecoveryMinSeconds, PortalStuckRecoveryMaxSeconds);
+            }
+        }
+
+        /// <summary>0 = kick disabled. Otherwise raw <see cref="portal_stuck_kick_seconds"/> clamped to [60, 86400]. If recovery is enabled, effective kick is at least recovery+30s so kick does not beat recovery.</summary>
+        public static long PortalStuckKickSecondsEffective
+        {
+            get
+            {
+                var raw = portal_stuck_kick_seconds.Value;
+                if (raw <= 0)
+                    return 0;
+                var clamped = Math.Clamp(raw, PortalStuckKickMinSeconds, PortalStuckKickMaxSeconds);
+                var recovery = PortalStuckRecoverySecondsEffective;
+                if (recovery > 0)
+                    clamped = Math.Max(clamped, recovery + 30);
+                return Math.Min(clamped, PortalStuckKickMaxSeconds);
+            }
+        }
     }
 
     public static class PropertyManager

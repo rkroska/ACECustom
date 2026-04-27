@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 
 using log4net;
 
 using ACE.Database;
+using ACE.Server.Diagnostics;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -29,7 +31,7 @@ namespace ACE.Server.Entity
         /// </summary>
         public uint Id;
 
-        public string LinkId => Id > 0x70000000 ? $"0x{Id:X8}" : $"{Id}";
+        public string LinkId => ObjectGuid.IsStatic(Id) ? $"0x{Id:X8}" : $"{Id}";
 
         /// <summary>
         /// The biota with all the generator profile info
@@ -259,15 +261,34 @@ namespace ACE.Server.Entity
             }
             else
             {
+                if (Biota.WeenieClassId == 0)
+                {
+                    Interlocked.Increment(ref ServerDiagnostics.GeneratorSpawnFailuresRecorded);
+                    if (LogRateLimiter.ShouldEmit($"gen_wcid0:{Generator.Guid.Full}:{LinkId}", TimeSpan.FromMinutes(1), out var suppressed))
+                    {
+                        log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): invalid wcid 0 in profile {LinkId} at {Generator.Location?.ToString() ?? "null"}");
+                        if (suppressed > 0)
+                            log.Warn($"[GENERATOR] Rate-limiter: {suppressed} similar invalid-wcid-0 messages were suppressed for this generator profile before this log window.");
+                    }
+                    return null;
+                }
+
                 var wo = WorldObjectFactory.CreateNewWorldObject(Biota.WeenieClassId);
                 if (wo == null)
                 {
-                    log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to create wcid {Biota.WeenieClassId}");
+                    Interlocked.Increment(ref ServerDiagnostics.GeneratorSpawnFailuresRecorded);
+                    if (LogRateLimiter.ShouldEmit($"gen_spawn_fail:{Generator.Guid.Full}:{Biota.WeenieClassId}", TimeSpan.FromSeconds(30), out var suppressed))
+                    {
+                        log.Warn($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to create wcid {Biota.WeenieClassId} (profile {LinkId}, gen LOC {Generator.Location?.ToString() ?? "null"})");
+                        if (suppressed > 0)
+                            log.Warn($"[GENERATOR] Rate-limiter: {suppressed} similar \"failed to create wcid\" messages were suppressed for this generator/wcid in the last 30s.");
+                    }
                     return null;
                 }
                 if (wo is Creature creature && creature.IsMonster && creature.Attackable)
                 {
                     CreatureVariantHelper.MaybeApplyRandomVariant(creature, (float)ServerConfig.creature_variant_chance.Value);
+                    PrestigeManager.ApplyPrestigeScaling(creature, Generator.Location.Variation);
                 }
 
                 if (Biota.PaletteId.HasValue && Biota.PaletteId > 0)
@@ -319,7 +340,11 @@ namespace ACE.Server.Entity
                 // This object still may be returned in the spawned collection if FirstSpawn is true. This is to prevent retry spam.
                 if (!success)
                 {
-                    log.Debug($"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to spawn {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) from profile {LinkId} at {RegenLocationType}{(obj.Location != null ? $"\n Gen LOC: {Generator.Location}\n Obj LOC: {obj.Location}" : "")}");
+                    var msg = $"[GENERATOR] 0x{Generator.Guid}:{Generator.WeenieClassId} {Generator.Name}.Spawn(): failed to spawn {obj.Name} (0x{obj.Guid}:{obj.WeenieClassId}) from profile {LinkId} at {RegenLocationType}{(obj.Location != null ? $"\n Gen LOC: {Generator.Location}\n Obj LOC: {obj.Location}" : "")}";
+                    if (ServerConfig.generator_spawn_failure_warn_logging.Value)
+                        log.Warn(msg);
+                    else
+                        log.Debug(msg);
                     obj.Destroy();
                 }
             }
@@ -354,6 +379,12 @@ namespace ACE.Server.Entity
                 }
                 else
                     obj.Location = new ACE.Entity.Position(Generator.Location.Cell, Generator.Location.PositionX + Biota.OriginX ?? 0, Generator.Location.PositionY + Biota.OriginY ?? 0, Generator.Location.PositionZ + Biota.OriginZ ?? 0, Biota.AnglesX ?? 0, Biota.AnglesY ?? 0, Biota.AnglesZ ?? 0, Biota.AnglesW ?? 0, false, Generator.Location.Variation);
+            }
+
+            if (IndoorPlacementDiagLogging.Enabled && obj.Location != null && IndoorPlacementDiagLogging.IsColo(obj.Location.Cell))
+            {
+                var specificCell = (Biota.ObjCellId ?? 0) > 0;
+                log.Info($"[IndoorPlaceDiag] Spawn_Specific gen=0x{Generator.Guid:X8} name={Generator.Name} spawn={obj.Name} wcid={obj.WeenieClassId} profile={LinkId} regen={RegenLocationType} specificCellBranch={specificCell} biotaObjCell=0x{Biota.ObjCellId ?? 0:X8} biotaXYZ=({Biota.OriginX},{Biota.OriginY},{Biota.OriginZ}) genCell=0x{Generator.Location.Cell:X8} genXYZ=({Generator.Location.PositionX},{Generator.Location.PositionY},{Generator.Location.PositionZ}) genVar={Generator.Location.Variation} objCell=0x{obj.Location.Cell:X8} objXYZ=({obj.Location.PositionX},{obj.Location.PositionY},{obj.Location.PositionZ}) objVar={obj.Location.Variation}");
             }
 
             if (!VerifyLandblock(obj) || !VerifyWalkableSlope(obj))

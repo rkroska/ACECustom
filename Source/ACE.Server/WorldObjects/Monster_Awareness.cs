@@ -25,6 +25,37 @@ namespace ACE.Server.WorldObjects
         public bool IsAwake = false;
 
         /// <summary>
+        /// True when custom targeting is active (flags and/or friend/foe/quest strings).
+        /// </summary>
+        public bool UsesExtendedFoeTargeting
+        {
+            get
+            {
+                EnsureTargetingCacheCurrent();
+                return IsUsingCustomTargetingLists;
+            }
+        }
+
+        /// <summary>
+        /// True when custom targeting explicitly includes non-player foes.
+        /// Player-only custom modes (for example HostileToAllPlayers) return false.
+        /// </summary>
+        public bool AllowsCustomMonsterTargets
+        {
+            get
+            {
+                EnsureTargetingCacheCurrent();
+                if (!IsUsingCustomTargetingLists)
+                    return false;
+
+                if (_attackAll || _attackNonSelf)
+                    return true;
+
+                return _cachedFoeTypes.Any(ct => ct != ACE.Entity.Enum.CreatureType.Player);
+            }
+        }
+
+        /// <summary>
         /// Cache for visible targets to reduce expensive lookups
         /// </summary>
         private List<Creature> _cachedVisibleTargets = new List<Creature>();
@@ -254,6 +285,17 @@ namespace ACE.Server.WorldObjects
                 // Didn't find a target, so return home instead.
                 if (visibleTargets.Count == 0)
                 {
+                    // No valid hostile targets visible; ensure an ally player doesn't remain as AttackTarget.
+                    if (AttackTarget is Player onlyAllyPlayer
+                        && UsesFriendlyQuestTargeting
+                        && IsFriendlyQuestAlly(onlyAllyPlayer))
+                    {
+                        AttackTarget = null;
+                        InvalidateTargetCaches();
+                        if (HasRetaliateTarget(onlyAllyPlayer))
+                            RemoveRetaliateTarget(onlyAllyPlayer);
+                    }
+
                     if (MonsterState != State.Return)
                         MoveToHome();
 
@@ -300,7 +342,7 @@ namespace ACE.Server.WorldObjects
                     case TargetingTactic.LastDamager:
 
                         var lastDamager = DamageHistory.LastDamager?.TryGetAttacker() as Creature;
-                        if (lastDamager != null)
+                        if (lastDamager != null && visibleTargets.Contains(lastDamager))
                         {
                             SetAttackTargetAndInvalidate(lastDamager);
                         }
@@ -309,7 +351,7 @@ namespace ACE.Server.WorldObjects
                     case TargetingTactic.TopDamager:
 
                         var topDamager = DamageHistory.TopDamager?.TryGetAttacker() as Creature;
-                        if (topDamager != null)
+                        if (topDamager != null && visibleTargets.Contains(topDamager))
                         {
                             SetAttackTargetAndInvalidate(topDamager);
                         }
@@ -336,6 +378,18 @@ namespace ACE.Server.WorldObjects
                         var nearest = BuildTargetDistance(visibleTargets);
                         SetAttackTargetAndInvalidate(nearest[0].Target);
                         break;
+                }
+
+                // Safety: if a tactic (Focused, TopDamager, etc.) left AttackTarget set to an ally player
+                // who is now excluded from the visible list, clear it so we don't continue chasing them.
+                if (AttackTarget is Player remainingAlly
+                    && UsesFriendlyQuestTargeting
+                    && IsFriendlyQuestAlly(remainingAlly))
+                {
+                    AttackTarget = null;
+                    InvalidateTargetCaches();
+                    if (HasRetaliateTarget(remainingAlly))
+                        RemoveRetaliateTarget(remainingAlly);
                 }
 
                 if (AttackTarget != null && AttackTarget != prevAttackTarget)
@@ -411,10 +465,14 @@ namespace ACE.Server.WorldObjects
                     
                     if (p.Hidden ?? false)
                         continue;
+
+                    // Skip players who are now friendly-quest allies — they must not appear in the attack list.
+                    if (UsesFriendlyQuestTargeting && IsFriendlyQuestAlly(p))
+                        continue;
                 }
-                    
-                // Only apply TargetingTactic-based skip to non-players (players are excluded above)
-                if (creature.TargetingTactic == TargetingTactic.None && !(creature is Player))
+
+                // Retail: Int.67 Monster + Int.73-only foe = do not select players. Extended foe (9015 / 999 / multi-type) overrides.
+                if (Tolerance.HasFlag(Tolerance.Monster) && !UsesExtendedFoeTargeting && creature is Player)
                     continue;
                     
                 if (creature.Teleporting)
@@ -451,13 +509,45 @@ namespace ACE.Server.WorldObjects
                 if (Tolerance.HasFlag(Tolerance.Target) && creature != AttackTarget)
                     continue;
 
-                // can only target other monsters with Tolerance.Monster -- cannot target players or combat pets
-                if (Tolerance.HasFlag(Tolerance.Monster) && (creature is Player || creature is CombatPet))
+                if (!IsValidAttackCandidate(creature))
                     continue;
 
                 visibleTargets.Add(creature);
             }
             return visibleTargets;
+        }
+
+        /// <summary>
+        /// Determines whether a creature should be included in the attack-candidate list.
+        /// Keeps legacy player behavior while applying strict foe validation for custom targeting.
+        /// </summary>
+        private bool IsValidAttackCandidate(Creature creature)
+        {
+            // Preserve existing behavior for active target lock/switching paths.
+            if (creature == AttackTarget)
+                return true;
+
+            if (creature is Player)
+            {
+                // Under extended targeting, explicit friend/foe lists should decide if players are valid.
+                if (UsesExtendedFoeTargeting)
+                    return PotentialFoe(creature) || PhysicsObj.ObjMaint.RetaliateTargetsContainsKey(creature.Guid.Full);
+
+                // Legacy monster behavior remains unchanged for players.
+                return true;
+            }
+
+            // Primary hostility checks for non-player targets.
+            var hostileByFoeOrFaction = PotentialFoe(creature) || AllowFactionCombat(creature);
+            if (hostileByFoeOrFaction)
+                return true;
+
+            // Passive NPC-like creatures should not be considered unless explicitly hostile/factioned.
+            if (creature.TargetingTactic == TargetingTactic.None)
+                return false;
+
+            // Retaliate targets can be valid even when not classic foes.
+            return PhysicsObj.ObjMaint.RetaliateTargetsContainsKey(creature.Guid.Full);
         }
 
         /// <summary>
@@ -570,7 +660,14 @@ namespace ACE.Server.WorldObjects
                         continue;
                 }
 
-                if (Tolerance.HasFlag(Tolerance.Monster) && (creature is Player || creature is CombatPet))
+                if (Tolerance.HasFlag(Tolerance.Monster) && !UsesExtendedFoeTargeting && creature is Player)
+                    continue;
+
+                if (Tolerance.HasFlag(Tolerance.Monster) && creature is CombatPet)
+                    continue;
+
+                // Keep spawn-in target acquisition aligned with regular attack candidate filtering.
+                if (!IsValidAttackCandidate(creature))
                     continue;
 
                 //var distSq = Location.SquaredDistanceTo(creature.Location);
@@ -677,8 +774,7 @@ namespace ACE.Server.WorldObjects
                 if ((nearbyCreature.Tolerance & AlertExclude) != 0)
                     continue;
 
-                if (CreatureType != null && CreatureType == nearbyCreature.CreatureType ||
-                      FriendType != null && FriendType == nearbyCreature.CreatureType)
+                if (nearbyCreature.IsFriend(this))
                 {
                     //var distSq = Location.SquaredDistanceTo(nearbyCreature.Location);
                     var distSq = PhysicsObj.get_distance_sq_to_object(nearbyCreature.PhysicsObj, true);
@@ -731,8 +827,11 @@ namespace ACE.Server.WorldObjects
 
             foreach (var creature in creatures)
             {
-                // ensure type isn't already handled elsewhere
-                if (creature is Player || creature is CombatPet)
+                if (creature is CombatPet)
+                    continue;
+
+                // Retail monster+foe wake only from other mobs; extended foe (9015 / 999) also wakes from valid players
+                if (creature is Player && !UsesExtendedFoeTargeting)
                     continue;
 
                 // ensure valid/attackable
@@ -752,8 +851,47 @@ namespace ACE.Server.WorldObjects
                 if (PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true) > VisualAwarenessRangeSq)
                     continue;
 
-                creature.AlertMonster(this);
-                break;
+                if (creature is Player player)
+                {
+                    if (player.CloakStatus == CloakStatus.Creature || (player.Hidden ?? false))
+                        continue;
+
+                    if (!PotentialFoe(player))
+                        continue;
+                    if (player.AlertMonster(this))
+                        break;
+                }
+                else
+                {
+                    if (creature.AlertMonster(this))
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Wakes this monster when a valid player is in range (idle tick). Legacy Int.73-only foes skip players entirely.
+        /// </summary>
+        public void ExtendedFoeWakeFromProximity()
+        {
+            if (MonsterState != State.Idle || IsAwake || !UsesExtendedFoeTargeting)
+                return;
+
+            foreach (var creature in PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature())
+            {
+                if (creature is not Player player)
+                    continue;
+                if (player.CloakStatus == CloakStatus.Creature)
+                    continue;
+                if (!player.Attackable || player.Teleporting || (player.Hidden ?? false))
+                    continue;
+                if (PhysicsObj.get_distance_sq_to_object(creature.PhysicsObj, true) > VisualAwarenessRangeSq)
+                    continue;
+                if (!PotentialFoe(creature))
+                    continue;
+
+                if (player.AlertMonster(this))
+                    break;
             }
         }
     }
