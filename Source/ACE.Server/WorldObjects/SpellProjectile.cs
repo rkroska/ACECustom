@@ -893,7 +893,7 @@ namespace ACE.Server.WorldObjects
                 if (sourcePlayer != null)
                 {
                     var critProt = critDefended ? " Your critical hit was avoided with their augmentation!" : "";
-                    var amtStr = Creature.FormatDamage(amount, sourcePlayer.DamageNumberFormat);
+                    var amtStr = Creature.FormatDamage(displayAmount, sourcePlayer.DamageNumberFormat);
 
                     var attackerMsg = $"{critMsg}{overpowerMsg}{sneakMsg}You {verb} {target.Name} for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
@@ -911,16 +911,23 @@ namespace ACE.Server.WorldObjects
                 if (targetPlayer != null)
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
-                    var amtStr = Creature.FormatDamage(amount, targetPlayer.DamageNumberFormat);
+                    var amtStr = Creature.FormatDamage(displayAmount, targetPlayer.DamageNumberFormat);
 
-                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
-
-
-                    if (nonHealth)
+                    string defenderMsg;
+                    if (mbResult.FullyAbsorbed)
                     {
-                        var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
-                        defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amtStr} points of your {vital}.";
+                        // Spell was completely absorbed — skip the "X points" format entirely
+                        defenderMsg = $"Mana Barrier fully absorbed {Spell.Name}!{mbSuffix}";
+                    }
+                    else
+                    {
+                        defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
+                        if (nonHealth)
+                        {
+                            var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
+                            defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amtStr} points of your {vital}.";
+                        }
                     }
 
                     if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic))
