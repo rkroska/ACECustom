@@ -94,7 +94,7 @@ namespace ACE.Server.WorldObjects
             {
                 var abilityId = item.CharmGrantsAbility.Value;
                 var existing = GetAllPossessions()
-                    .FirstOrDefault(i => i.IsAbilityCharm && i.CharmGrantsAbility == abilityId);
+                    .FirstOrDefault(i => i.Guid != item.Guid && i.IsAbilityCharm && i.CharmGrantsAbility == abilityId && i.OwnerId != null && i.OwnerId != 0); // skip items removed by recipe but not yet GC'd
 
                 if (existing != null)
                 {
