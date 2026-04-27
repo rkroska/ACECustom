@@ -1109,7 +1109,19 @@ namespace ACE.Server.Managers
         {
             if (item.OwnerId == player.Guid.Full || player.GetInventoryItem(item.Guid) != null)
             {
-                if (!player.TryConsumeFromInventoryWithNetworking(item, (int)amount))
+                // UnlimitedUse items (e.g. ability charms) are skipped by TryConsumeFromInventoryWithNetworking.
+                // Force-remove them directly so recipe upgrades can replace them.
+                if (item.UnlimitedUse)
+                {
+                    if (player.TryRemoveFromInventory(item.Guid, out var removed))
+                    {
+                        player.Session.Network.EnqueueSend(new Network.GameMessages.Messages.GameMessageInventoryRemoveObject(removed));
+                        removed.Destroy();
+                    }
+                    else
+                        log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to force-remove UnlimitedUse item {item.Name}");
+                }
+                else if (!player.TryConsumeFromInventoryWithNetworking(item, (int)amount))
                     log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to remove {item.Name}");
             }
             else if (item.WielderId == player.Guid.Full)
