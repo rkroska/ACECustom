@@ -913,21 +913,12 @@ namespace ACE.Server.WorldObjects
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
                     var amtStr = Creature.FormatDamage(displayAmount, targetPlayer.DamageNumberFormat);
 
-                    string defenderMsg;
-                    if (mbResult.FullyAbsorbed)
-                    {
-                        // Spell was completely absorbed — skip the "X points" format entirely
-                        defenderMsg = $"Mana Barrier fully absorbed {Spell.Name}!{mbSuffix}";
-                    }
-                    else
-                    {
-                        defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
+                    var defenderMsg = $"{critMsg}{overpowerMsg}{sneakMsg}{ProjectileSource.Name} {plural} you for {amtStr} points with {Spell.Name}.{critProt}{mbSuffix}";
 
-                        if (nonHealth)
-                        {
-                            var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
-                            defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amtStr} points of your {vital}.";
-                        }
+                    if (nonHealth)
+                    {
+                        var vital = Spell.Category == SpellCategory.StaminaLowering ? "stamina" : "mana";
+                        defenderMsg = $"{ProjectileSource.Name} casts {Spell.Name} and drains {amtStr} points of your {vital}.";
                     }
 
                     if (!targetPlayer.SquelchManager.Squelches.Contains(ProjectileSource, ChatMessageType.Magic))
