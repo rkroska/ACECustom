@@ -667,6 +667,9 @@ namespace ACE.Server.WorldObjects
                     foreach (var possession in player.GetAllPossessions())
                     {
                         if (possession.Guid == worldObject.Guid) continue;
+                        // Skip items that have been removed from inventory (e.g. destroyed by a recipe)
+                        // but whose WorldObject instance still briefly exists in memory.
+                        if (possession.OwnerId == null || possession.OwnerId == 0) continue;
                         if (CharmAbilityRegistry.GetAbilityIdForWCID(possession.WeenieClassId) == abilityId)
                         {
                             alreadyHas = true;
