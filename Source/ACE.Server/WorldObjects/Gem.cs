@@ -350,6 +350,13 @@ namespace ACE.Server.WorldObjects
                 player.ActiveCharmLevel = CharmLevel ?? 1;
                 CharmAbilityRegistry.Apply(player, abilityId, true);
 
+                // ILT: Infinite Casting — tell the client comps are no longer required
+                if (abilityId == 16)
+                {
+                    player.SpellComponentsRequired = false;
+                    player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, false));
+                }
+
                 var activateMsg = BuildActivationMessage(abilityId, player.ActiveCharmLevel.Value, true);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(activateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.HealthUp, 1.0f));
@@ -360,6 +367,14 @@ namespace ACE.Server.WorldObjects
                 IsCharmActivated = false;
                 player.ActiveCharmLevel = null;
                 CharmAbilityRegistry.Apply(player, abilityId, false);
+
+                // ILT: Infinite Casting — restore client comp requirement
+                if (abilityId == 16)
+                {
+                    player.SpellComponentsRequired = true;
+                    player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
+                }
+
                 var deactivateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, false);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(deactivateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown, 1.0f));
@@ -383,6 +398,13 @@ namespace ACE.Server.WorldObjects
                     };
                 }
                 return $"Mana Barrier Level {level} deactivated. Your Mana is no longer absorbing damage.";
+            }
+
+            if (abilityId == 16) // Infinite Casting Stone
+            {
+                return activating
+                    ? "Infinite Casting Stone activated. Spells will be cast without consuming components."
+                    : "Infinite Casting Stone deactivated. Spell components will be consumed normally.";
             }
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";

@@ -98,9 +98,8 @@ namespace ACE.Server.WorldObjects
 
                 if (existing != null)
                 {
-                    var abilityName = CharmAbilityRegistry.GetDisplayName(abilityId) ?? item.Name;
                     Session.Network.EnqueueSend(new GameMessageSystemChat(
-                        $"You already have a {abilityName} charm in your inventory. You may only carry one charm per ability.",
+                        $"You already have an {item.Name} in your inventory. You may only carry one at a time.",
                         ChatMessageType.Broadcast));
                     container = null;
                     return false;

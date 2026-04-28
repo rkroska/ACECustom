@@ -755,6 +755,7 @@ namespace ACE.Server.WorldObjects
                 return (uint)Math.Max(0, manaDamage);
             }
 
+            var preHitHealth = (uint)Math.Max(0, Health.Current);
             var damage = -UpdateVitalDelta(Health, -tryDamage);
 
             // TODO: update monster stamina?
@@ -788,7 +789,12 @@ namespace ACE.Server.WorldObjects
 
             if (Health.Current <= 0)
             {
-                OnDeath(DamageHistory.LastDamager, damageType, crit);
+                // ILT: record overkill amount on the last damager for the kill notification
+                var lastDamager = DamageHistory.LastDamager;
+                if (lastDamager != null)
+                    lastDamager.OverkillAmount = tryDamage > (int)preHitHealth ? (uint)(tryDamage - (int)preHitHealth) : 0;
+
+                OnDeath(lastDamager, damageType, crit);
 
                 Die();
             }

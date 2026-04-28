@@ -91,7 +91,16 @@ namespace ACE.Server.WorldObjects
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
                 if (lastDamager is Player playerKiller && playerKiller.Session != null)
+                {
+                    // ILT: overkill suffix on kill notification
+                    if (playerKiller.ShowOverkill && lastDamagerInfo.OverkillAmount > 0)
+                    {
+                        var overkillStr = Creature.FormatDamage(lastDamagerInfo.OverkillAmount, playerKiller.DamageNumberFormat);
+                        killerMsg = killerMsg.TrimEnd('!', '.', ' ') + $" [Overkill: {overkillStr}]!";
+                    }
+
                     playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
+                }
             }
             return deathMessage;
         }

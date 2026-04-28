@@ -2117,12 +2117,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.UnlimitedUse); else SetProperty(PropertyBool.UnlimitedUse, value); }
         }
 
-        public bool IsInfiniteItem
-        {
-            get => GetProperty(PropertyBool.IsInfiniteItem) ?? false;
-            set { if (!value) RemoveProperty(PropertyBool.IsInfiniteItem); else SetProperty(PropertyBool.IsInfiniteItem, value); }
-        }
-
 
         public uint? SpellDID
         {
@@ -3360,6 +3354,21 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasManaBarrier); else SetProperty(PropertyBool.HasManaBarrier, value); }
         }
 
+        public bool HasInfiniteCasting
+        {
+            get => GetProperty(PropertyBool.HasInfiniteCasting) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasInfiniteCasting); else SetProperty(PropertyBool.HasInfiniteCasting, value); }
+        }
+
+        /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
+        public bool ShowOverkill
+        {
+            get => GetProperty(PropertyBool.ShowOverkill) ?? true;
+            set { if (value) RemoveProperty(PropertyBool.ShowOverkill); else SetProperty(PropertyBool.ShowOverkill, false); }
+        }
+
+
+
         // ΓöÇΓöÇ ILT Player UI Preferences ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
         /// <summary>0 = default (vanilla), 1 = commas, 2 = short (K/M/B/T/Q)</summary>
         public int DamageNumberFormat
@@ -3367,6 +3376,11 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.DamageNumberFormat) ?? 0;
             set { if (value == 0) RemoveProperty(PropertyInt.DamageNumberFormat); else SetProperty(PropertyInt.DamageNumberFormat, value); }
         }
+
+        // Transient (non-persisted) spell overkill scratch fields — set by SpellProjectile.DamageTarget
+        // immediately before the kill branch executes, cleared implicitly on creature death/despawn.
+        public uint SpellKillPreHitHealth { get; set; }
+        public uint SpellKillDamage       { get; set; }
     }
 }
 

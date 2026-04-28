@@ -20,6 +20,9 @@ namespace ACE.Server.Entity
 
         public readonly bool IsOlthoiPlayer;
 
+        /// <summary>ILT: Excess damage beyond the target's remaining HP on the killing blow. Set by Monster_Combat.TakeDamage.</summary>
+        public uint OverkillAmount { get; set; }
+
         public DamageHistoryInfo(WorldObject attacker, float totalDamage = 0.0f)
         {
             Attacker = new WeakReference<WorldObject>(attacker);

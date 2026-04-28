@@ -257,9 +257,6 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Player has the Mana Barrier ability active (absorbs damage using mana).</summary>
         HasManaBarrier   = 50010,
 
-        /* Infinite Spell Components (60000-60099) */
-        IsInfiniteItem                    = 60001,
-
         /// <summary>ILT Skill #2: Melee attacks cost stamina for bonus damage.</summary>
         HasHeavySwing = 50011,
 
@@ -271,6 +268,12 @@ namespace ACE.Entity.Enum.Properties
         HasChaining       = 50014,
         HasRepeater       = 50015,
         HasBloodLetting   = 50017,
+
+        /// <summary>ILT Skill #16: Spells are cast without consuming components while charm is in inventory.</summary>
+        HasInfiniteCasting = 50028,
+
+        /// <summary>ILT Player Pref: Show [Overkill] suffix on kill/death messages. Default ON.</summary>
+        ShowOverkill = 50029,
 
         // ── ILT Player UI Preferences → see PropertyInt.DamageNumberFormat (50101) ───
     }

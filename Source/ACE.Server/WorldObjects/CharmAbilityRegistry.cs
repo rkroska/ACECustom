@@ -22,13 +22,16 @@ namespace ACE.Server.WorldObjects
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
             // Format: { abilityId, (getter, setter, "Display Name") }
-            { 1, new AbilityEntry(p => p.HasManaBarrier, (p, v) => p.HasManaBarrier = v, "Mana Barrier") },
+            { 1, new AbilityEntry(p => p.HasManaBarrier,      (p, v) => p.HasManaBarrier      = v, "Mana Barrier")     },
+            { 16, new AbilityEntry(p => p.HasInfiniteCasting, (p, v) => p.HasInfiniteCasting = v, "Infinite Casting") },
         };
 
         private static readonly Dictionary<uint, int> WCIDToAbilityId = new()
         {
             // Mana Barrier
             { 777700001, 1 }, { 777700054, 1 }, { 777710004, 1 }, { 777720004, 1 },
+            // Infinite Casting Stone
+            { 777700019, 16 },
         };
 
         /// <summary>

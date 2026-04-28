@@ -142,7 +142,7 @@ namespace ACE.Server.WorldObjects
                     appliedDamage = (uint)Math.Max(0, targetPlayer.TakeDamage(this, damageEvent));
                 else
                 {
-                    // ILT: Monster Mana Barrier GÇö pre-absorb before damage lands
+                    // ILT: Monster Mana Barrier Gï¿½ï¿½ pre-absorb before damage lands
                     if (target.HasManaBarrier)
                     {
                         var mbResult = target.TryAbsorbWithManaBarrier(ref damageEvent.Damage, damageEvent.DamageType);
@@ -186,7 +186,7 @@ namespace ACE.Server.WorldObjects
                     {
                         if (intDamage > 0)
                         {
-                            // partial absorption GÇö build custom message with MB suffix
+                            // partial absorption Gï¿½ï¿½ build custom message with MB suffix
                             var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
                             string verb = "", plural = "";
                             Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
@@ -198,13 +198,13 @@ namespace ACE.Server.WorldObjects
                         }
                         else if (targetPlayer == null)
                         {
-                            // monster fully absorbed GÇö TakeDamage doesn't send this message
+                            // monster fully absorbed Gï¿½ï¿½ TakeDamage doesn't send this message
                             var ptWord = damageEvent.AmountAbsorbed == 1 ? "point" : "points";
                             var cur = target.Mana?.Current ?? 0;
                             var max = target.Mana?.MaxValue ?? 0;
                             SendMessage($"{target.Name}'s Mana Barrier absorbed {damageEvent.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
                         }
-                        // else: player target fully absorbed GÇö handled in Player.TakeDamage
+                        // else: player target fully absorbed Gï¿½ï¿½ handled in Player.TakeDamage
                     }
                     else
                     {
@@ -485,9 +485,9 @@ namespace ACE.Server.WorldObjects
             var amount = (uint)Math.Round(_amount);
             var percent = (float)amount / Health.MaxValue;
 
-            // GöÇGöÇ Mana Barrier GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+            // Gï¿½ï¿½Gï¿½ï¿½ Mana Barrier Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½
             var mbDotResult = TryAbsorbWithManaBarrier(ref _amount, damageType);
-            // GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+            // Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½
 
             amount = (uint)Math.Round(_amount);
             percent = (float)amount / Health.MaxValue;
@@ -598,10 +598,10 @@ namespace ACE.Server.WorldObjects
                 damageTaken = (uint)-UpdateVitalDelta(Mana, (int)-amount);
             else
             {
-                // GöÇGöÇ Mana Barrier GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+                // Gï¿½ï¿½Gï¿½ï¿½ Mana Barrier Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½
                 mbResult = TryAbsorbWithManaBarrier(ref amount, damageType);
                 amountAbsorbed = mbResult.AmountAbsorbed;
-                // GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+                // Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½Gï¿½ï¿½
 
                 // update health (skip if fully absorbed, but don't early-return so messages still fire)
                 damageTaken = 0;
@@ -643,7 +643,9 @@ namespace ACE.Server.WorldObjects
                     };
                     var critMsg = crit ? "Critical hit! " : "";
                     var dmgStr = Creature.FormatDamage(amount, DamageNumberFormat);
-                    var overkillSuffix = overkill > 0 ? $" [Overkill: {Creature.FormatDamage(overkill, DamageNumberFormat)}]" : "";
+                    var overkillSuffix = (overkill > 0 && ShowOverkill)
+                        ? $" [Overkill: {Creature.FormatDamage(overkill, DamageNumberFormat)}]"
+                        : "";
                     SendMessage($"{critMsg}{killer.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{overkillSuffix}", ChatMessageType.CombatEnemy);
                 }
 
@@ -1130,7 +1132,7 @@ namespace ACE.Server.WorldObjects
                 return 1.0f;
 
             // http://acpedia.org/wiki/Announcements_-_11th_Anniversary_Preview#Void_Magic_and_You.21
-            // Creatures under Asheron+óGé¼Gäós protection take half damage from any nether type spell.
+            // Creatures under Asheron+ï¿½Gï¿½Gï¿½ï¿½s protection take half damage from any nether type spell.
             if (damageType == DamageType.Nether)
                 return 0.5f;
 

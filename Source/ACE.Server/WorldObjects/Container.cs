@@ -679,9 +679,8 @@ namespace ACE.Server.WorldObjects
 
                     if (alreadyHas)
                     {
-                        var charmName = CharmAbilityRegistry.GetDisplayName(abilityId.Value) ?? "this";
                         player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                            $"You can only carry one version of the {charmName} charm.", ChatMessageType.System));
+                            $"You already have an {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
                         container = null;
                         return false;
                     }
@@ -1351,6 +1350,13 @@ namespace ACE.Server.WorldObjects
                     CharmAbilityRegistry.Apply(player, id, false);
                     item.IsCharmActivated = false;
                     item.SaveBiotaToDatabase();
+
+                    // ILT: Infinite Casting — restore client comp requirement when stone leaves inventory
+                    if (id == 16)
+                    {
+                        player.SpellComponentsRequired = true;
+                        player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
+                    }
 
                     if (!player.Teleporting)
                     {

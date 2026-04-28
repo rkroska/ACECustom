@@ -853,7 +853,13 @@ namespace ACE.Server.WorldObjects
                 if (mbResult.FullyAbsorbed)
                     amount = 0;
                 else
+                {
+                    var preHitHealth = (uint)Math.Max(0, target.Health.Current);
                     amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
+                    // ILT: store pre-hit health on the target transiently so the kill branch can compute overkill
+                    target.SpellKillPreHitHealth = preHitHealth;
+                    target.SpellKillDamage = (uint)Math.Round(damage);
+                }
 
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
                 // ───────────────────────────────────────────────────────────────────
@@ -937,6 +943,12 @@ namespace ACE.Server.WorldObjects
             else
             {
                 var lastDamager = ProjectileSource != null ? new DamageHistoryInfo(ProjectileSource) : null;
+
+                // ILT: overkill for spell kills — spell path bypasses Monster_Combat.TakeDamage.
+                // Use the pre-hit health captured just before UpdateVitalDelta above.
+                if (lastDamager != null && target.SpellKillDamage > target.SpellKillPreHitHealth)
+                    lastDamager.OverkillAmount = target.SpellKillDamage - target.SpellKillPreHitHealth;
+
                 target.OnDeath(lastDamager, Spell.DamageType, critical);
                 target.Die();
             }
