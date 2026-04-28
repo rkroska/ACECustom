@@ -2117,7 +2117,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.UnlimitedUse); else SetProperty(PropertyBool.UnlimitedUse, value); }
         }
 
-
         public uint? SpellDID
         {
             get => GetProperty(PropertyDataId.Spell);
@@ -3368,7 +3367,6 @@ namespace ACE.Server.WorldObjects
             // SetProperty is only needed when the player turns it OFF (value = false).
             set { if (value) RemoveProperty(PropertyBool.ShowOverkill); else SetProperty(PropertyBool.ShowOverkill, false); }
         }
-
 
         // ΓöÇΓöÇ ILT Player UI Preferences ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
         /// <summary>0 = default (vanilla), 1 = commas, 2 = short (K/M/B/T/Q)</summary>

@@ -56,10 +56,19 @@ namespace ACE.Server.Command.Handlers
             {
                 // Toggle or set ShowOverkill (controls both kill and death overkill suffixes)
                 bool newValue;
-                if (parameters.Length >= 2 && parameters[1].ToLower() == "on")
-                    newValue = true;
-                else if (parameters.Length >= 2 && parameters[1].ToLower() == "off")
-                    newValue = false;
+                if (parameters.Length >= 2)
+                {
+                    if (parameters[1].ToLower() == "on")
+                        newValue = true;
+                    else if (parameters[1].ToLower() == "off")
+                        newValue = false;
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Unknown value '{parameters[1]}'. Valid options: on, off.", ChatMessageType.System));
+                        return;
+                    }
+                }
                 else
                     newValue = !player.ShowOverkill; // toggle
 
