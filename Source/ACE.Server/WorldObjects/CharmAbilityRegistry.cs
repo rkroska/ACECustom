@@ -19,22 +19,23 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        // ── Ability ID constants — use these instead of raw ints ──────────────
+        public const int ManaBarrierAbilityId     = 1;
+        public const int InfiniteCastingAbilityId = 16;
+
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
             // Format: { abilityId, (getter, setter, "Display Name") }
-            { 1,  new AbilityEntry(p => p.HasManaBarrier,      (p, v) => p.HasManaBarrier      = v, "Mana Barrier")     },
-            { 16, new AbilityEntry(p => p.HasInfiniteCasting,  (p, v) => p.HasInfiniteCasting  = v, "Infinite Casting") },
+            { ManaBarrierAbilityId,     new AbilityEntry(p => p.HasManaBarrier,     (p, v) => p.HasManaBarrier     = v, "Mana Barrier")     },
+            { InfiniteCastingAbilityId, new AbilityEntry(p => p.HasInfiniteCasting, (p, v) => p.HasInfiniteCasting = v, "Infinite Casting") },
         };
-
-        /// <summary>Ability ID for the Infinite Casting Stone charm. Use this constant instead of the magic number 16.</summary>
-        public const int InfiniteCastingAbilityId = 16;
 
         private static readonly Dictionary<uint, int> WCIDToAbilityId = new()
         {
             // Mana Barrier
-            { 777700001, 1 }, { 777700054, 1 }, { 777710004, 1 }, { 777720004, 1 },
+            { 777700001, ManaBarrierAbilityId }, { 777700054, ManaBarrierAbilityId }, { 777710004, ManaBarrierAbilityId }, { 777720004, ManaBarrierAbilityId },
             // Infinite Casting Stone
-            { 777700019, 16 },
+            { 777700019, InfiniteCastingAbilityId },
         };
 
         /// <summary>

@@ -679,7 +679,7 @@ namespace ACE.Server.WorldObjects
 
                     if (alreadyHas)
                     {
-                        var article = "aeiouAEIOU".Contains(worldObject.Name[0]) ? "an" : "a";
+                        var article = (!string.IsNullOrEmpty(worldObject.Name) && "aeiouAEIOU".Contains(worldObject.Name[0])) ? "an" : "a";
                         player.Session.Network.EnqueueSend(new GameMessageSystemChat(
                             $"You already have {article} {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
                         container = null;

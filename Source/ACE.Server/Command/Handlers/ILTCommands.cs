@@ -28,12 +28,22 @@ namespace ACE.Server.Command.Handlers
                 // Cycle or set damage number format
                 int mode;
                 if (parameters.Length >= 2)
+                {
                     mode = parameters[1].ToLower() switch
                     {
                         "commas"  => 1,
                         "short"   => 2,
-                        _         => 0  // "default" or anything else
+                        "default" => 0,
+                        _ => -1   // unknown
                     };
+
+                    if (mode == -1)
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"Unknown format '{parameters[1]}'. Valid options: default, commas, short.", ChatMessageType.System));
+                        return;
+                    }
+                }
                 else
                     mode = (player.DamageNumberFormat + 1) % 3;  // cycle 0 → 1 → 2 → 0
 

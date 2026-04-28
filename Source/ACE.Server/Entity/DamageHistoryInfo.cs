@@ -20,7 +20,11 @@ namespace ACE.Server.Entity
 
         public readonly bool IsOlthoiPlayer;
 
-        /// <summary>ILT: Excess damage beyond the target's remaining HP on the killing blow. Set by Monster_Combat.TakeDamage.</summary>
+        /// <summary>
+        /// Excess damage beyond the target's remaining HP on the killing blow.
+        /// Set on the killing blow's damager entry only — zero on all other hits.
+        /// Populated by Monster_Combat.TakeDamage (melee/missile) and SpellProjectile.DamageTarget (spells).
+        /// </summary>
         public uint OverkillAmount { get; set; }
 
         public DamageHistoryInfo(WorldObject attacker, float totalDamage = 0.0f)

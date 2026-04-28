@@ -98,7 +98,7 @@ namespace ACE.Server.WorldObjects
 
                 if (existing != null)
                 {
-                    var article = "aeiouAEIOU".Contains(item.Name[0]) ? "an" : "a";
+                    var article = (!string.IsNullOrEmpty(item.Name) && "aeiouAEIOU".Contains(item.Name[0])) ? "an" : "a";
                     Session.Network.EnqueueSend(new GameMessageSystemChat(
                         $"You already have {article} {item.Name} in your inventory. You may only carry one at a time.",
                         ChatMessageType.Broadcast));
