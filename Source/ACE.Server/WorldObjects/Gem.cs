@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 
 
@@ -135,13 +135,13 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            // ── Ability Charm Toggle ───────────────────────────────────────────────
+            // â”€â”€ Ability Charm Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if (IsAbilityCharm && CharmGrantsAbility.HasValue)
             {
                 HandleAbilityCharmToggle(player);
                 return; // Do NOT consume the item
             }
-            // ─────────────────────────────────────────────────────────────────────
+            // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
             // trying to use a dispel potion while pk timer is active
             // send error message and cancel - do not consume item
@@ -350,8 +350,8 @@ namespace ACE.Server.WorldObjects
                 player.ActiveCharmLevel = CharmLevel ?? 1;
                 CharmAbilityRegistry.Apply(player, abilityId, true);
 
-                // ILT: Infinite Casting — tell the client comps are no longer required
-                if (abilityId == 16)
+                // ILT: Infinite Casting â€” tell the client comps are no longer required
+                if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
                 {
                     player.SpellComponentsRequired = false;
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, false));
@@ -368,8 +368,8 @@ namespace ACE.Server.WorldObjects
                 player.ActiveCharmLevel = null;
                 CharmAbilityRegistry.Apply(player, abilityId, false);
 
-                // ILT: Infinite Casting — restore client comp requirement
-                if (abilityId == 16)
+                // ILT: Infinite Casting â€” restore client comp requirement
+                if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
                 {
                     player.SpellComponentsRequired = true;
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
@@ -400,7 +400,7 @@ namespace ACE.Server.WorldObjects
                 return $"Mana Barrier Level {level} deactivated. Your Mana is no longer absorbing damage.";
             }
 
-            if (abilityId == 16) // Infinite Casting Stone
+            if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId) // Infinite Casting Stone
             {
                 return activating
                     ? "Infinite Casting Stone activated. Spells will be cast without consuming components."

@@ -659,7 +659,7 @@ namespace ACE.Server.WorldObjects
                     return false;
                 }
 
-                // ── Unique Charm Constraint ──────────────────────────────────────────
+                // â”€â”€ Unique Charm Constraint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 var abilityId = CharmAbilityRegistry.GetAbilityIdForWCID(worldObject.WeenieClassId);
                 if (abilityId != null)
                 {
@@ -679,13 +679,14 @@ namespace ACE.Server.WorldObjects
 
                     if (alreadyHas)
                     {
+                        var article = "aeiouAEIOU".Contains(worldObject.Name[0]) ? "an" : "a";
                         player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                            $"You already have an {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
+                            $"You already have {article} {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
                         container = null;
                         return false;
                     }
                 }
-                // ─────────────────────────────────────────────────────────────────────
+                // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             }
 
             List<WorldObject> containerItems;
@@ -1342,7 +1343,7 @@ namespace ACE.Server.WorldObjects
                         current = current.Container;
 
                     if (current is Player owner && owner.Guid == player.Guid)
-                        return; // item still with player — suppress deactivation
+                        return; // item still with player â€” suppress deactivation
 
                     var id = item.CharmGrantsAbility.Value;
                     var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
@@ -1351,8 +1352,8 @@ namespace ACE.Server.WorldObjects
                     item.IsCharmActivated = false;
                     item.SaveBiotaToDatabase();
 
-                    // ILT: Infinite Casting — restore client comp requirement when stone leaves inventory
-                    if (id == 16)
+                    // ILT: Infinite Casting â€” restore client comp requirement when stone leaves inventory
+                    if (id == CharmAbilityRegistry.InfiniteCastingAbilityId)
                     {
                         player.SpellComponentsRequired = true;
                         player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));

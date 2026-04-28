@@ -771,6 +771,8 @@ namespace ACE.Server.WorldObjects
 
             // handle life projectiles for stamina / mana
             float preAbsorbDamage = 0f; // set inside health block for MB messaging
+            // ILT: method-scoped locals for overkill tracking (avoids instance field thread-safety concern)
+            uint spellPreHitHealth = 0, spellRoundedDamage = 0;
             if (Spell.Category == SpellCategory.StaminaLowering)
             {
                 percent = damage / target.Stamina.MaxValue;
@@ -854,11 +856,9 @@ namespace ACE.Server.WorldObjects
                     amount = 0;
                 else
                 {
-                    var preHitHealth = (uint)Math.Max(0, target.Health.Current);
+                    spellPreHitHealth = (uint)Math.Max(0, target.Health.Current);
                     amount = (uint)-target.UpdateVitalDelta(target.Health, (int)-Math.Round(damage));
-                    // ILT: store pre-hit health on the target transiently so the kill branch can compute overkill
-                    target.SpellKillPreHitHealth = preHitHealth;
-                    target.SpellKillDamage = (uint)Math.Round(damage);
+                    spellRoundedDamage = (uint)Math.Round(damage);
                 }
 
                 target.DamageHistory.Add(ProjectileSource, Spell.DamageType, amount);
@@ -945,9 +945,9 @@ namespace ACE.Server.WorldObjects
                 var lastDamager = ProjectileSource != null ? new DamageHistoryInfo(ProjectileSource) : null;
 
                 // ILT: overkill for spell kills — spell path bypasses Monster_Combat.TakeDamage.
-                // Use the pre-hit health captured just before UpdateVitalDelta above.
-                if (lastDamager != null && target.SpellKillDamage > target.SpellKillPreHitHealth)
-                    lastDamager.OverkillAmount = target.SpellKillDamage - target.SpellKillPreHitHealth;
+                // Pre-hit health and rounded damage captured as locals above before UpdateVitalDelta.
+                if (lastDamager != null && spellRoundedDamage > spellPreHitHealth)
+                    lastDamager.OverkillAmount = spellRoundedDamage - spellPreHitHealth;
 
                 target.OnDeath(lastDamager, Spell.DamageType, critical);
                 target.Die();

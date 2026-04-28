@@ -22,9 +22,12 @@ namespace ACE.Server.WorldObjects
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
             // Format: { abilityId, (getter, setter, "Display Name") }
-            { 1, new AbilityEntry(p => p.HasManaBarrier,      (p, v) => p.HasManaBarrier      = v, "Mana Barrier")     },
-            { 16, new AbilityEntry(p => p.HasInfiniteCasting, (p, v) => p.HasInfiniteCasting = v, "Infinite Casting") },
+            { 1,  new AbilityEntry(p => p.HasManaBarrier,      (p, v) => p.HasManaBarrier      = v, "Mana Barrier")     },
+            { 16, new AbilityEntry(p => p.HasInfiniteCasting,  (p, v) => p.HasInfiniteCasting  = v, "Infinite Casting") },
         };
+
+        /// <summary>Ability ID for the Infinite Casting Stone charm. Use this constant instead of the magic number 16.</summary>
+        public const int InfiniteCastingAbilityId = 16;
 
         private static readonly Dictionary<uint, int> WCIDToAbilityId = new()
         {

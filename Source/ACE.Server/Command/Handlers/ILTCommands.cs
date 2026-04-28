@@ -64,9 +64,9 @@ namespace ACE.Server.Command.Handlers
                 var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
                 var okLabel   = player.ShowOverkill ? "ON" : "OFF";
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features                      View a list of custom ILT server features.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]  Set damage number style. (currently: {dmgLabel})", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]          Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features                          View a list of custom ILT server features.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]   Set damage number style.               (currently: {dmgLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]              Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
             }
         }
     }

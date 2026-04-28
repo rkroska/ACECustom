@@ -3364,9 +3364,10 @@ namespace ACE.Server.WorldObjects
         public bool ShowOverkill
         {
             get => GetProperty(PropertyBool.ShowOverkill) ?? true;
+            // Default is ON: removing the row lets the getter fall back to ?? true.
+            // SetProperty is only needed when the player turns it OFF (value = false).
             set { if (value) RemoveProperty(PropertyBool.ShowOverkill); else SetProperty(PropertyBool.ShowOverkill, false); }
         }
-
 
 
         // ΓöÇΓöÇ ILT Player UI Preferences ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -3376,11 +3377,5 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.DamageNumberFormat) ?? 0;
             set { if (value == 0) RemoveProperty(PropertyInt.DamageNumberFormat); else SetProperty(PropertyInt.DamageNumberFormat, value); }
         }
-
-        // Transient (non-persisted) spell overkill scratch fields — set by SpellProjectile.DamageTarget
-        // immediately before the kill branch executes, cleared implicitly on creature death/despawn.
-        public uint SpellKillPreHitHealth { get; set; }
-        public uint SpellKillDamage       { get; set; }
     }
 }
-
