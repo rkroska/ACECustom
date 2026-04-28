@@ -341,6 +341,11 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
+                    // Clear split arrow kill tracking before hitting — ensures melee killing blows don't show split arrow death message
+                    creature?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                    creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                    creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+
                     var damageEvent = DamageTarget(creature, weapon);
 
                     // Only increment successful hit counter when we actually deal damage
@@ -394,6 +399,11 @@ namespace ACE.Server.WorldObjects
                             // Skip null cleave targets
                             if (cleaveHit == null)
                                 continue;
+
+                            // Clear split arrow tracking on cleave targets before hitting
+                            cleaveHit?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                            cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                            cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 
                             // Apply cast on strike effects to cleaved targets
                             var cleaveDamageEvent = DamageTarget(cleaveHit, weapon);

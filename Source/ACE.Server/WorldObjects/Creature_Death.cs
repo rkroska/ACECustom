@@ -34,7 +34,7 @@ namespace ACE.Server.WorldObjects
         public virtual DeathMessage OnDeath(DamageHistoryInfo lastDamager, DamageType damageType, bool criticalHit = false)
         {
             if (onDeathEntered)
-                return GetDeathMessage(lastDamager, damageType, criticalHit);
+                return Strings.GetDeathMessage(damageType, criticalHit); // re-entry: return without sending killer notification
 
             onDeathEntered = true;
 
@@ -90,6 +90,14 @@ namespace ACE.Server.WorldObjects
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
+                var isSplitArrowKill = GetProperty(PropertyBool.IsSplitArrowKill) == true;
+                if (isSplitArrowKill)
+                {
+                    RemoveProperty(PropertyBool.IsSplitArrowKill);
+                    RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                    RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+                }
+
                 if (lastDamager is Player playerKiller && playerKiller.Session != null)
                 {
                     // ILT: overkill suffix on kill notification
@@ -99,8 +107,9 @@ namespace ACE.Server.WorldObjects
                         killerMsg = killerMsg.TrimEnd('!', '.', ' ') + $" [Overkill: {overkillStr}]!";
                     }
 
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, Guid));
+                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, isSplitArrowKill));
                 }
+
             }
             return deathMessage;
         }

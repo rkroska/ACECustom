@@ -845,7 +845,13 @@ namespace ACE.Server.WorldObjects
                     percent = damage / target.Health.MaxValue;
                 }
 
-                // ── Mana Barrier ─────────────────────────────────────────────────────
+                // ILT: clear stale split arrow kill tracking before UpdateVitalDelta
+                // so the death message path sees the correct weapon type.
+                target.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                target.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                target.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+
+                // ── Mana Barrier ───────────────────────────────────────────────────────
                 preAbsorbDamage = damage; // preserve for messaging
                 if (targetPlayer != null)
                     mbResult = targetPlayer.TryAbsorbWithManaBarrier(ref damage, Spell.DamageType);
