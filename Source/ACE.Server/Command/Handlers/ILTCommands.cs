@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using ACE.DatLoader;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Command;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
@@ -38,7 +40,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|xp level]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -49,6 +51,10 @@ namespace ACE.Server.Command.Handlers
             // Aliases: /ilt xp level  and  /ilt xp  both map to levelskills
             if (sub == "xp" && (parameters.Length < 2 || parameters[1].ToLower() == "level"))
                 sub = "levelskills";
+
+            // Alias: /ilt train -> /ilt trainskills
+            if (sub == "train")
+                sub = "trainskills";
 
             if (sub == "features")
             {
@@ -161,6 +167,68 @@ namespace ACE.Server.Command.Handlers
                         "No XP was spent — not enough available for the next rank in any skill.",
                         ChatMessageType.System));
             }
+            else if (sub == "trainskills")
+            {
+                if ((player.AvailableSkillCredits ?? 0) <= 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "You have no skill credits to spend.", ChatMessageType.System));
+                    return;
+                }
+
+                // Untrained skills sorted by the same LevelSkillsPriority table, then alphabetically
+                var sortedSkills = player.Skills.Values
+                    .Where(s => s.AdvancementClass == SkillAdvancementClass.Untrained)
+                    .OrderBy(s => LevelSkillsPriority.TryGetValue(s.Skill, out var p) ? p : int.MaxValue)
+                    .ThenBy(s => s.Skill.ToString())
+                    .ToList();
+
+                if (sortedSkills.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "All of your skills are already trained or better.", ChatMessageType.System));
+                    return;
+                }
+
+                int skillsUpdated = 0;
+                foreach (var skill in sortedSkills)
+                {
+                    // Look up the credit cost for this skill from the dat tables
+                    if (!DatManager.PortalDat.SkillTable.SkillBaseHash.TryGetValue((uint)skill.Skill, out var skillBase))
+                        continue; // dat data missing — skip silently
+
+                    var cost = skillBase.TrainedCost;
+                    if (cost <= 0)
+                        continue; // free/always-trained skill, already handled
+
+                    // Bail if we can't afford the next priority skill — player can run again later
+                    if (cost > (player.AvailableSkillCredits ?? 0))
+                        break;
+
+                    if (player.TrainSkill(skill.Skill, cost))
+                    {
+                        skillsUpdated++;
+                        session.Network.EnqueueSend(new GameMessagePrivateUpdateSkill(player, skill));
+                    }
+                }
+
+                if (skillsUpdated > 0)
+                {
+                    // One credit update after all training is complete
+                    session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(
+                        player, PropertyInt.AvailableSkillCredits, player.AvailableSkillCredits ?? 0));
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"Trained {skillsUpdated} skill{(skillsUpdated == 1 ? "" : "s")}. " +
+                        $"You now have {player.AvailableSkillCredits ?? 0} credits remaining.",
+                        ChatMessageType.Advancement));
+                    // Persist immediately — prevents loss if server crashes before auto-save
+                    player.SaveBiotaToDatabase(enqueueSave: true);
+                }
+                else
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "No skills were trained — not enough credits for the next skill in the priority list.",
+                        ChatMessageType.System));
+            }
             else
             {
                 var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
@@ -171,6 +239,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]              Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills                        Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("    aliases: /ilt xp level  |  /ilt xp", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt trainskills                       Train all affordable untrained skills using skill credits.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("    alias:   /ilt train", ChatMessageType.System));
             }
         }
     }
