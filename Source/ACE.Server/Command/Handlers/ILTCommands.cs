@@ -231,16 +231,19 @@ namespace ACE.Server.Command.Handlers
             }
             else
             {
-                var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
-                var okLabel   = player.ShowOverkill ? "ON" : "OFF";
+                var dmgLabel = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
+                var okLabel  = player.ShowOverkill ? "ON" : "OFF";
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features                          View a list of custom ILT server features.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]   Set damage number style.               (currently: {dmgLabel})", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]              Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills                        Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("    aliases: /ilt xp level  |  /ilt xp", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt trainskills                       Train all affordable untrained skills using skill credits.", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("    alias:   /ilt train", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("      View a list of custom ILT server features.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Set your damage number display style. (currently: {dmgLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle the [Overkill] suffix on kill and death messages. (currently: {okLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills  |  /ilt xp level  |  /ilt xp", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("      Spend all available XP into trained and specialized skills, in priority order.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt trainskills  |  /ilt train", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("      Train all affordable untrained skills using skill credits, in priority order.", ChatMessageType.System));
             }
         }
     }
