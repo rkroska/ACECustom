@@ -40,7 +40,7 @@ echo Binaries deployed.
 echo.
 echo [3/3] Syncing SQL weenies to ACEBuild...
 if exist "C:\ACE\ACECustom\Content\sql\weenies\" (
-    xcopy /E /Y /I /Q "C:\ACE\ACECustom\Content\sql\weenies\*" "%BUILD_OUT%\Content\sql\weenies\"
+    robocopy "C:\ACE\ACECustom\Content\sql\weenies" "%BUILD_OUT%\Content\sql\weenies" /MIR /NJH /NJS /NFL /NDL >nul
     echo SQL weenies synced.
 ) else (
     echo No weenies folder found, skipping.
