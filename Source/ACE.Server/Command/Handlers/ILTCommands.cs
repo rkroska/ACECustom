@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using ACE.Entity.Enum;
 using ACE.Server.Command;
 using ACE.Server.Network;
@@ -8,9 +10,31 @@ namespace ACE.Server.Command.Handlers
 {
     public static class ILTCommands
     {
+        // Priority order for /ilt levelskills — skills earlier in this list are filled first.
+        // Specialized skills always take priority over Trained regardless of position.
+        private static readonly Dictionary<Skill, int> LevelSkillsPriority = new()
+        {
+            { Skill.Leadership,           1  },
+            { Skill.Loyalty,              2  },
+            { Skill.CreatureEnchantment,  3  },
+            { Skill.LifeMagic,            4  },
+            { Skill.ItemEnchantment,      5  },
+            { Skill.WarMagic,             6  },
+            { Skill.VoidMagic,            7  },
+            { Skill.ManaConversion,       8  },
+            { Skill.MeleeDefense,         9  },
+            { Skill.MissileWeapons,       10 },
+            { Skill.FinesseWeapons,       11 },
+            { Skill.HeavyWeapons,         12 },
+            { Skill.LightWeapons,         13 },
+            { Skill.ArcaneLore,           14 },
+            { Skill.MagicDefense,         15 },
+            { Skill.MissileDefense,       16 },
+        };
+
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -78,6 +102,53 @@ namespace ACE.Server.Command.Handlers
                     $"Show Overkill: {state}. The [Overkill] suffix will {(newValue ? "now" : "no longer")} appear on kill and death messages.",
                     ChatMessageType.System));
             }
+            else if (sub == "levelskills")
+            {
+                if (player.AvailableExperience <= 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "You have no available XP to spend.", ChatMessageType.System));
+                    return;
+                }
+
+                var sortedSkills = player.Skills.Values
+                    .Where(s => s.AdvancementClass >= SkillAdvancementClass.Trained && !s.IsMaxRank)
+                    .OrderByDescending(s => s.AdvancementClass)  // Specialized (4) before Trained (3)
+                    .ThenBy(s => LevelSkillsPriority.TryGetValue(s.Skill, out var p) ? p : int.MaxValue)
+                    .ThenBy(s => s.Skill.ToString())              // alphabetical fallback
+                    .ToList();
+
+                if (sortedSkills.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "All of your skills are already maxed or not trained.", ChatMessageType.System));
+                    return;
+                }
+
+                int skillsUpdated = 0;
+                foreach (var skill in sortedSkills)
+                {
+                    if (player.AvailableExperience <= 0) break;
+
+                    uint startingXp = skill.ExperienceSpent;
+                    player.SpendAllAvailableSkillXp(skill, sendNetworkUpdate: false);
+
+                    if (skill.ExperienceSpent > startingXp)
+                    {
+                        skillsUpdated++;
+                        session.Network.EnqueueSend(new GameMessagePrivateUpdateSkill(player, skill));
+                    }
+                }
+
+                if (skillsUpdated > 0)
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"Successfully spent XP into {skillsUpdated} skill{(skillsUpdated == 1 ? "" : "s")}.",
+                        ChatMessageType.Advancement));
+                else
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        "No XP was spent — not enough available for the next rank in any skill.",
+                        ChatMessageType.System));
+            }
             else
             {
                 var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
@@ -86,6 +157,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features                          View a list of custom ILT server features.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]   Set damage number style.               (currently: {dmgLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]              Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills                        Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
             }
         }
     }
