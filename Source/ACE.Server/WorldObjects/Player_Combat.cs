@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -173,9 +173,6 @@ namespace ACE.Server.WorldObjects
                 var defenderVital = GetDefenderVitalForDamageType(target, damageEvent.DamageType);
                 var defenderVitalMax = defenderVital?.MaxValue ?? target.Health.MaxValue;
                 var damagePercent = defenderVitalMax > 0 ? (float)displayedDamage / defenderVitalMax : 0.0f;
-                // ILT: check if this hit came from a split arrow projectile
-                var isSplitArrowHit = target.GetProperty(PropertyBool.IsSplitArrowKill) == true;
-
                 if (isVitalDrainDamage)
                 {
                     var vitalName = GetVitalDisplayName(damageEvent.DamageType);
@@ -184,15 +181,18 @@ namespace ACE.Server.WorldObjects
                 }
                 else if (!SquelchManager.Squelches.Contains(this, ChatMessageType.CombatSelf))
                 {
+                    // ILT: compute shared message components once for both message paths
+                    var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
+                    string verb = "", plural = "";
+                    Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
+                    var isSplitArrowHit = target.GetProperty(PropertyBool.LastHitWasSplitArrow) is true;
+                    var attackerSubject = isSplitArrowHit ? $"Your split arrow {plural}" : $"You {verb}";
+
                     if (damageEvent.AmountAbsorbed > 0)
                     {
                         if (intDamage > 0)
                         {
-                            // partial absorption G�� build custom message with MB suffix
-                            var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
-                            string verb = "", plural = "";
-                            Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
-                            var attackerSubject = isSplitArrowHit ? $"Your split arrow {plural}" : $"You {verb}";
+                            // partial absorption — build custom message with MB suffix
                             var mbSuffix = targetPlayer != null
                                 ? targetPlayer.GetManaBarrierSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed })
                                 : target.GetManaShieldSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed });
@@ -201,21 +201,17 @@ namespace ACE.Server.WorldObjects
                         }
                         else if (targetPlayer == null)
                         {
-                            // monster fully absorbed G�� TakeDamage doesn't send this message
+                            // monster fully absorbed — TakeDamage doesn't send this message
                             var ptWord = damageEvent.AmountAbsorbed == 1 ? "point" : "points";
                             var cur = target.Mana?.Current ?? 0;
                             var max = target.Mana?.MaxValue ?? 0;
                             SendMessage($"{target.Name}'s Mana Barrier absorbed {damageEvent.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
                         }
-                        // else: player target fully absorbed G�� handled in Player.TakeDamage
+                        // else: player target fully absorbed — handled in Player.TakeDamage
                     }
                     else
                     {
-                        var critMsg = damageEvent.IsCritical ? "Critical hit! " : "";
-                        string verb = "", plural = "";
-                        Strings.GetAttackVerb(damageEvent.DamageType, (float)intDamage / target.Health.MaxValue, ref verb, ref plural);
                         var dmgStr = Creature.FormatDamage(intDamage, DamageNumberFormat);
-                        var attackerSubject = isSplitArrowHit ? $"Your split arrow {plural}" : $"You {verb}";
                         if (DamageNumberFormat != 0)
                             Session.Network.EnqueueSend(new GameMessageSystemChat(
                                 $"{critMsg}{attackerSubject} {target.Name} for {dmgStr} points of {damageEvent.DamageType.ToString().ToLower()} damage!",

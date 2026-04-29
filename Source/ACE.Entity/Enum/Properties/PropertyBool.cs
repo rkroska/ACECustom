@@ -193,7 +193,7 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
-        IsSplitArrowKill                 = 9032,
+        LastHitWasSplitArrow             = 9032,
         [AssessmentProperty]
         IsCharm                          = 9040,
         AllowFriendlyPlayerDamage       = 9043,

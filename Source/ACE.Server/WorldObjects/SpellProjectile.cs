@@ -847,7 +847,7 @@ namespace ACE.Server.WorldObjects
 
                 // ILT: clear stale split arrow kill tracking before UpdateVitalDelta
                 // so the death message path sees the correct weapon type.
-                target.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                target.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
                 target.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                 target.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 

@@ -90,10 +90,10 @@ namespace ACE.Server.WorldObjects
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
 
-                var isSplitArrowKill = GetProperty(PropertyBool.IsSplitArrowKill) == true;
-                if (isSplitArrowKill)
+                var lastHitWasSplitArrow = GetProperty(PropertyBool.LastHitWasSplitArrow) is true;
+                if (lastHitWasSplitArrow)
                 {
-                    RemoveProperty(PropertyBool.IsSplitArrowKill);
+                    RemoveProperty(PropertyBool.LastHitWasSplitArrow);
                     RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                     RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
                 }
@@ -107,7 +107,7 @@ namespace ACE.Server.WorldObjects
                         : "";
 
                     playerKiller.Session.Network.EnqueueSend(
-                        new GameEventKillerNotification(playerKiller.Session, killerMsg, isSplitArrowKill, overkillSuffix));
+                        new GameEventKillerNotification(playerKiller.Session, killerMsg, lastHitWasSplitArrow, overkillSuffix));
                 }
 
             }

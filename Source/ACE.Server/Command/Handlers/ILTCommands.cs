@@ -10,8 +10,12 @@ namespace ACE.Server.Command.Handlers
 {
     public static class ILTCommands
     {
-        // Priority order for /ilt levelskills — skills earlier in this list are filled first.
-        // Specialized skills always take priority over Trained regardless of position.
+        /// <summary>
+        /// Priority order used by the <c>levelskills</c> sub-command.
+        /// Specialized skills are always prioritised over Trained skills regardless of
+        /// position in this table. Skills absent from this table fill alphabetically
+        /// after all listed skills.
+        /// </summary>
         private static readonly Dictionary<Skill, int> LevelSkillsPriority = new()
         {
             { Skill.Leadership,           1  },
@@ -42,8 +46,8 @@ namespace ACE.Server.Command.Handlers
 
             var sub = parameters.Length > 0 ? parameters[0].ToLower() : "help";
 
-            // Alias: /ilt xp level → /ilt levelskills
-            if (sub == "xp" && parameters.Length > 1 && parameters[1].ToLower() == "level")
+            // Aliases: /ilt xp level  and  /ilt xp  both map to levelskills
+            if (sub == "xp" && (parameters.Length < 2 || parameters[1].ToLower() == "level"))
                 sub = "levelskills";
 
             if (sub == "features")
@@ -145,9 +149,13 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 if (skillsUpdated > 0)
+                {
                     session.Network.EnqueueSend(new GameMessageSystemChat(
                         $"Successfully spent XP into {skillsUpdated} skill{(skillsUpdated == 1 ? "" : "s")}.",
                         ChatMessageType.Advancement));
+                    // Persist immediately — prevents XP loss if the server crashes before the auto-save fires.
+                    player.SaveBiotaToDatabase(enqueueSave: true);
+                }
                 else
                     session.Network.EnqueueSend(new GameMessageSystemChat(
                         "No XP was spent — not enough available for the next rank in any skill.",
@@ -161,7 +169,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features                          View a list of custom ILT server features.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]   Set damage number style.               (currently: {dmgLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]              Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills  (or: /ilt xp level)     Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills                        Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("    aliases: /ilt xp level  |  /ilt xp", ChatMessageType.System));
             }
         }
     }

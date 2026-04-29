@@ -62,14 +62,14 @@ namespace ACE.Server.WorldObjects
 
                         if (projectileIsSplitArrow)
                         {
-                            targetCreature.SetProperty(PropertyBool.IsSplitArrowKill, true);
+                            targetCreature.SetProperty(PropertyBool.LastHitWasSplitArrow, true);
                             targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
                             targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
                         }
                         else
                         {
                             // Non-split-arrow projectile — clear any stale split arrow tracking
-                            targetCreature.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                            targetCreature.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
                             targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                             targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
                         }

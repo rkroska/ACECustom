@@ -342,7 +342,7 @@ namespace ACE.Server.WorldObjects
                     }
 
                     // Clear split arrow kill tracking before hitting — ensures melee killing blows don't show split arrow death message
-                    creature?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                    creature?.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
                     creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                     creature?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 
@@ -401,7 +401,7 @@ namespace ACE.Server.WorldObjects
                                 continue;
 
                             // Clear split arrow tracking on cleave targets before hitting
-                            cleaveHit?.RemoveProperty(PropertyBool.IsSplitArrowKill);
+                            cleaveHit?.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
                             cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
                             cleaveHit?.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
 
