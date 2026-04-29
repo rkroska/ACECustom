@@ -16,7 +16,7 @@ namespace ACE.Server.Network.GameEvent.Events
             var modifiedMessage = wasKilledBySplitArrow ? ModifyDeathMessageForSplitArrow(deathMessage) : deathMessage;
             // 2. Append overkill LAST so it's never buried inside split arrow suffix
             if (!string.IsNullOrEmpty(overkillSuffix))
-                modifiedMessage = modifiedMessage.TrimEnd('!', '.', ' ') + overkillSuffix + "!";
+                modifiedMessage = modifiedMessage.TrimEnd(' ') + overkillSuffix;
             Writer.WriteString16L(modifiedMessage);
         }
         
