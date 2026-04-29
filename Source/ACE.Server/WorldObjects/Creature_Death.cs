@@ -100,14 +100,14 @@ namespace ACE.Server.WorldObjects
 
                 if (lastDamager is Player playerKiller && playerKiller.Session != null)
                 {
-                    // ILT: overkill suffix on kill notification
-                    if (playerKiller.ShowOverkill && lastDamagerInfo.OverkillAmount > 0)
-                    {
-                        var overkillStr = Creature.FormatDamage(lastDamagerInfo.OverkillAmount, playerKiller.DamageNumberFormat);
-                        killerMsg = killerMsg.TrimEnd('!', '.', ' ') + $" [Overkill: {overkillStr}]!";
-                    }
+                    // ILT: build overkill suffix — applied AFTER split arrow text transformation
+                    // inside GameEventKillerNotification, so [Overkill: N] is always last.
+                    var overkillSuffix = (playerKiller.ShowOverkill && lastDamagerInfo.OverkillAmount > 0)
+                        ? $" [Overkill: {Creature.FormatDamage(lastDamagerInfo.OverkillAmount, playerKiller.DamageNumberFormat)}]"
+                        : "";
 
-                    playerKiller.Session.Network.EnqueueSend(new GameEventKillerNotification(playerKiller.Session, killerMsg, isSplitArrowKill));
+                    playerKiller.Session.Network.EnqueueSend(
+                        new GameEventKillerNotification(playerKiller.Session, killerMsg, isSplitArrowKill, overkillSuffix));
                 }
 
             }

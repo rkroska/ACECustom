@@ -9,10 +9,14 @@ namespace ACE.Server.Network.GameEvent.Events
 {
     public class GameEventKillerNotification : GameEventMessage
     {
-        public GameEventKillerNotification(Session session, string deathMessage, bool wasKilledBySplitArrow = false)
+        public GameEventKillerNotification(Session session, string deathMessage, bool wasKilledBySplitArrow = false, string overkillSuffix = "")
             : base(GameEventType.KillerNotification, GameMessageGroup.UIQueue, session)
         {
+            // 1. Apply split arrow text transformation (weapon attribution)
             var modifiedMessage = wasKilledBySplitArrow ? ModifyDeathMessageForSplitArrow(deathMessage) : deathMessage;
+            // 2. Append overkill LAST so it's never buried inside split arrow suffix
+            if (!string.IsNullOrEmpty(overkillSuffix))
+                modifiedMessage = modifiedMessage.TrimEnd('!', '.', ' ') + overkillSuffix + "!";
             Writer.WriteString16L(modifiedMessage);
         }
         
