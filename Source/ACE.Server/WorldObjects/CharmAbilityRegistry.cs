@@ -30,6 +30,9 @@ namespace ACE.Server.WorldObjects
             { InfiniteCastingAbilityId, new AbilityEntry(p => p.HasInfiniteCasting, (p, v) => p.HasInfiniteCasting = v, "Infinite Casting") },
         };
 
+        /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
+        public static IEnumerable<int> RegisteredIds => Registry.Keys;
+
         private static readonly Dictionary<uint, int> WCIDToAbilityId = new()
         {
             // Mana Barrier

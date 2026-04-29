@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 
@@ -381,11 +381,12 @@ namespace ACE.Server.WorldObjects
             }
 
             SaveBiotaToDatabase();
+            player.SaveBiotaToDatabase(enqueueSave: true);
         }
 
         private static string BuildActivationMessage(int abilityId, int level, bool activating)
         {
-            if (abilityId == 1) // Mana Barrier
+            if (abilityId == CharmAbilityRegistry.ManaBarrierAbilityId)
             {
                 if (activating)
                 {

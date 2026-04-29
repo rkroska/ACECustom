@@ -620,7 +620,7 @@ namespace ACE.Server.WorldObjects
                     else
                     {
                         var displayHarm = mbResult.FullyAbsorbed ? (int)Math.Round(preAbsorbHarm) : Math.Abs(boost);
-                        var mbSuffix = targetCreature is Player tP ? tP.GetManaBarrierSuffix(mbResult) : (mbResult.AmountAbsorbed > 0 ? $" [Barrier Remaining: {targetCreature.Mana.Current:N0}/{targetCreature.Mana.MaxValue:N0}]" : "");
+                        var mbSuffix = targetCreature is Player tP ? tP.GetManaBarrierSuffix(mbResult) : targetCreature.GetManaShieldSuffix(mbResult);
                         casterMessage = $"With {spell.Name} you drain {displayHarm} points of {srcVital} from {targetCreature.Name}.{mbSuffix}";
                     }
                 }

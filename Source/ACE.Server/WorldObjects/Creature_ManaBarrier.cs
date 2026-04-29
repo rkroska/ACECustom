@@ -4,6 +4,14 @@ using ACE.Entity.Enum;
 
 namespace ACE.Server.WorldObjects
 {
+    /// <summary>Stores the result of a Mana Barrier absorption attempt.</summary>
+    public struct ManaBarrierResult
+    {
+        public uint AmountAbsorbed;
+        public uint ManaSpent;
+        public bool FullyAbsorbed;
+    }
+
     public partial class Creature
     {
         // Customizable absorption ratios: Costs X Mana per 1 Damage
@@ -93,7 +101,7 @@ namespace ACE.Server.WorldObjects
             {
                 result.AmountAbsorbed = (uint)Math.Round(damageToAbsorb);
                 result.ManaSpent = manaRequired;
-                
+
                 UpdateVitalDelta(Mana, (int)-result.ManaSpent);
                 amount -= damageToAbsorb;
 

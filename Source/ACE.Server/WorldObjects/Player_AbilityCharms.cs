@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ACE.Server.WorldObjects
 {
@@ -41,6 +42,26 @@ namespace ACE.Server.WorldObjects
             var level = ActiveCharmLevel ?? 1;
             if (level <= 1) return baseCost;
             return Math.Max(0.02f, baseCost - (level - 1) * 0.02f);
+        }
+
+        /// <summary>
+        /// On login: ensures no ability is active without a corresponding activated charm in inventory.
+        /// Silently clears orphaned abilities (e.g., charm lost or removed while offline).
+        /// </summary>
+        public void ValidateAbilityCharms()
+        {
+            var activeCharmAbilities = new HashSet<int>();
+            foreach (var item in GetAllPossessions())
+            {
+                if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility.HasValue)
+                    activeCharmAbilities.Add(item.CharmGrantsAbility.Value);
+            }
+
+            foreach (var id in CharmAbilityRegistry.RegisteredIds)
+            {
+                if (CharmAbilityRegistry.IsActive(this, id) && !activeCharmAbilities.Contains(id))
+                    CharmAbilityRegistry.Apply(this, id, false);
+            }
         }
     }
 }

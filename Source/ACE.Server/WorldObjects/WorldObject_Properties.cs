@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
@@ -3307,7 +3307,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public int? VendorShopCreateListStackSize;
 
-        // ΓöÇΓöÇ ILT Ability Charm System ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+        // ── ILT Ability Charm System ──────────────────────────────────────────────────
         public int? CharmGrantsAbility
         {
             get => GetProperty(PropertyInt.CharmGrantsAbility);
@@ -3368,7 +3368,7 @@ namespace ACE.Server.WorldObjects
             set { if (value) RemoveProperty(PropertyBool.ShowOverkill); else SetProperty(PropertyBool.ShowOverkill, false); }
         }
 
-        // ΓöÇΓöÇ ILT Player UI Preferences ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+        // ── ILT Player UI Preferences ────────────────────────────────────────────────
         /// <summary>0 = default (vanilla), 1 = commas, 2 = short (K/M/B/T/Q)</summary>
         public int DamageNumberFormat
         {
