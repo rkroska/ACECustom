@@ -34,13 +34,17 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|xp level]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
             if (player == null) return;
 
             var sub = parameters.Length > 0 ? parameters[0].ToLower() : "help";
+
+            // Alias: /ilt xp level → /ilt levelskills
+            if (sub == "xp" && parameters.Length > 1 && parameters[1].ToLower() == "level")
+                sub = "levelskills";
 
             if (sub == "features")
             {
@@ -157,7 +161,7 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features                          View a list of custom ILT server features.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt dmgformat [default|commas|short]   Set damage number style.               (currently: {dmgLabel})", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt showoverkill [on|off]              Toggle [Overkill] on kill/death messages. (currently: {okLabel})", ChatMessageType.System));
-                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills                        Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt levelskills  (or: /ilt xp level)     Spend all available XP into trained/specialized skills instantly.", ChatMessageType.System));
             }
         }
     }

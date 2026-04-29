@@ -771,7 +771,7 @@ namespace ACE.Server.Command.Handlers
             "Hovel", "Test", "Admin", "Dev", "Instance"
         };
 
-        [CommandHandler("telerandom", AccessLevel.Advocate, CommandHandlerFlag.RequiresWorld, 0,
+        [CommandHandler("telerandom", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Teleport yourself to a random valid location anywhere in the world (outdoor or dungeon).")]
         public static void HandleTeleRandom(Session session, params string[] parameters)
         {
@@ -781,12 +781,12 @@ namespace ACE.Server.Command.Handlers
                 TeleportToRandomDungeon(session);
         }
 
-        [CommandHandler("telerandomoutside", AccessLevel.Advocate, CommandHandlerFlag.RequiresWorld, 0,
+        [CommandHandler("telerandomoutside", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Teleport yourself to a random outdoor location anywhere in Dereth.")]
         public static void HandleTeleRandomOutside(Session session, params string[] parameters)
             => TeleportToRandomOutdoor(session);
 
-        [CommandHandler("telerandomdungeon", AccessLevel.Advocate, CommandHandlerFlag.RequiresWorld, 0,
+        [CommandHandler("telerandomdungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0,
             "Teleport yourself deep inside a random accessible dungeon.")]
         public static void HandleTeleRandomDungeon(Session session, params string[] parameters)
             => TeleportToRandomDungeon(session);
