@@ -565,11 +565,9 @@ namespace ACE.Server.WorldObjects
 
             // ── Mana Barrier (Harm-type spells) ──────────────────────────────────────────────────
             var mbResult = new ManaBarrierResult();
-            var preAbsorbHarm = 0f;
             if (spell.VitalDamageType == DamageType.Health && tryBoost < 0)
             {
                 float fDamage = -tryBoost;
-                preAbsorbHarm = fDamage; // preserve original for messaging
                 if (targetCreature is Player targetPlayerMB)
                     mbResult = targetPlayerMB.TryAbsorbWithManaBarrier(ref fDamage, DamageType.Health);
                 else if (targetCreature.HasManaBarrier)

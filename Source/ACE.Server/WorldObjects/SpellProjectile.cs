@@ -899,8 +899,8 @@ namespace ACE.Server.WorldObjects
                 var mbSuffix = targetPlayer != null ? targetPlayer.GetManaBarrierSuffix(mbResult)
                     : (mbResult.AmountAbsorbed > 0 ? $" [Barrier Remaining: {target.Mana.Current:N0}/{target.Mana.MaxValue:N0}]" : "");
 
-                // use original damage for display if fully absorbed
-                var displayAmount = mbResult.FullyAbsorbed ? (uint)Math.Round(preAbsorbDamage) : amount;
+                // Show actual damage landed (0 when fully absorbed); mbSuffix describes what the barrier blocked.
+                var displayAmount = amount;
 
                 if (sourcePlayer != null)
                 {
