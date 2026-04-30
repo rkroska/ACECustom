@@ -1355,6 +1355,9 @@ namespace ACE.Server.WorldObjects
 
                     var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
 
+                    // Guard: item may have been re-activated within the 1-second delay window
+                    if (item.IsCharmActivated) return;
+
                     CharmAbilityRegistry.Apply(player, id, false);
                     item.IsCharmActivated = false;
                     item.SaveBiotaToDatabase();
