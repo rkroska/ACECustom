@@ -1336,7 +1336,7 @@ namespace ACE.Server.WorldObjects
                     if (player.Session == null) return;
 
                     // Use GetRootOwner() — depth-bounded, consistent with TryAddToInventory
-                    var current = item.Container?.GetRootOwner() ?? item;
+                    var current = (item.Container as Container)?.GetRootOwner() ?? item;
 
                     if (current is Player owner && owner.Guid == player.Guid)
                         return; // item still with player â€” suppress deactivation
