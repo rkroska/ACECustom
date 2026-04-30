@@ -619,7 +619,8 @@ namespace ACE.Server.WorldObjects
                         casterMessage = $"With {spell.Name} you restore {boost} points of {srcVital} to {targetCreature.Name}.";
                     else
                     {
-                        var displayHarm = mbResult.FullyAbsorbed ? (int)Math.Round(preAbsorbHarm) : Math.Abs(boost);
+                        // Show actual damage landed after absorption; mbSuffix describes what the barrier blocked.
+                        var displayHarm = Math.Abs(boost);
                         var mbSuffix = targetCreature is Player tP ? tP.GetManaBarrierSuffix(mbResult) : targetCreature.GetManaShieldSuffix(mbResult);
                         casterMessage = $"With {spell.Name} you drain {displayHarm} points of {srcVital} from {targetCreature.Name}.{mbSuffix}";
                     }
@@ -642,7 +643,8 @@ namespace ACE.Server.WorldObjects
                     targetMessage = $"{Name} casts {spell.Name} and restores {boost} points of your {srcVital}.";
                 else
                 {
-                    var displayHarm = mbResult.FullyAbsorbed ? (int)Math.Round(preAbsorbHarm) : Math.Abs(boost);
+                    // Show actual damage landed after absorption; mbSuffix describes what the barrier blocked.
+                    var displayHarm = Math.Abs(boost);
                     var mbSuffix = targetPlayer.GetManaBarrierSuffix(mbResult);
                     targetMessage = $"{Name} casts {spell.Name} and drains {displayHarm} points of your {srcVital}.{mbSuffix}";
 

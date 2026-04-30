@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -646,6 +646,7 @@ namespace ACE.Server.WorldObjects
                     var overkillSuffix = (overkill > 0 && ShowOverkill)
                         ? $" [Overkill: {Creature.FormatDamage(overkill, DamageNumberFormat)}]"
                         : "";
+                    // Death notifications intentionally bypass squelch — a player should always see what killed them.
                     SendMessage($"{critMsg}{killer.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{overkillSuffix}", ChatMessageType.CombatEnemy);
                 }
 
@@ -666,7 +667,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (!isVitalDrainDamage)
                 {
-                    if (mbResult.AmountAbsorbed > 0)
+                    if (mbResult.AmountAbsorbed > 0 && !SquelchManager.Squelches.Contains(source, ChatMessageType.CombatEnemy))
                     {
                         string verb = "", plural = "";
                         var displayAmount = mbResult.FullyAbsorbed ? preAbsorbAmount : amount;
@@ -1132,7 +1133,7 @@ namespace ACE.Server.WorldObjects
                 return 1.0f;
 
             // http://acpedia.org/wiki/Announcements_-_11th_Anniversary_Preview#Void_Magic_and_You.21
-            // Creatures under Asheron+�G�G��s protection take half damage from any nether type spell.
+            // Creatures under Asheron's protection take half damage from any nether type spell.
             if (damageType == DamageType.Nether)
                 return 0.5f;
 

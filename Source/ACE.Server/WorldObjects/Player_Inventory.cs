@@ -134,6 +134,7 @@ namespace ACE.Server.WorldObjects
 
         public bool TryConsumeFromInventoryWithNetworking(WorldObject item, int amount = int.MaxValue)
         {
+            // Unlimited-use items (e.g. Ability Charms) are never consumed — return success without removing from inventory.
             if (item.UnlimitedUse)
                 return true;
 

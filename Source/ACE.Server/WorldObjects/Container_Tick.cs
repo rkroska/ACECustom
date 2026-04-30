@@ -8,6 +8,8 @@ namespace ACE.Server.WorldObjects
 {
     partial class Container
     {
+        private const string TestCharmExpiredSuffix = " We hope you enjoyed this trial! Please share any feedback in the #feedback channel on Discord.";
+
         public override void Heartbeat(double currentUnixTime)
         {
             // TODO: fix bug for landblock containers w/ no heartbeat
@@ -68,7 +70,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var msg = $"Its lifespan finished, your {expireItem.Name} crumbles to dust.";
                     if (expireItem.IsTestCharm)
-                        msg += " We hope you enjoyed this trial! Please share any feedback in the Discord #feedback channel.";
+                        msg += TestCharmExpiredSuffix;
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
                 }
             }
