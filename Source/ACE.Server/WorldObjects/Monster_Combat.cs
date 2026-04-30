@@ -791,7 +791,7 @@ namespace ACE.Server.WorldObjects
             {
                 // ILT: record overkill amount on the last damager for the kill notification
                 var lastDamager = DamageHistory.LastDamager;
-                if (lastDamager != null)
+                if (lastDamager != null && source != null)
                     lastDamager.OverkillAmount = tryDamage > preHitHealth ? (uint)(tryDamage - preHitHealth) : 0;
 
                 OnDeath(lastDamager, damageType, crit);

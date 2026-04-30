@@ -17,7 +17,7 @@ VALUES (777700010,     1,    128) /* ItemType - Misc (0x80) */
      , (777700010,    11,      1) /* MaxStackSize */
      , (777700010,    12,      1) /* StackSize */
      , (777700010,    13,      1) /* NumItemsInMaterial (stack unit) */
-     , (777700010,    19,     10) /* UiEffects - Magical */
+     , (777700010,    18,     10) /* UiEffects - Magical */
      , (777700010,    33,      1) /* Bonded - Bonded */
      , (777700010,    16, 524296) /* ItemUseable - SourceContainedTargetContained (0x80008) - triggers "Use On" targeting cursor */
      , (777700010,    93,   1044) /* PhysicsState */

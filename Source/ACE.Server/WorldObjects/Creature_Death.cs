@@ -82,6 +82,15 @@ namespace ACE.Server.WorldObjects
 
             var deathMessage = Strings.GetDeathMessage(damageType, criticalHit);
 
+            // ILT: always clear split arrow tracking — killer may not be a player
+            var lastHitWasSplitArrow = GetProperty(PropertyBool.LastHitWasSplitArrow) is true;
+            if (lastHitWasSplitArrow)
+            {
+                RemoveProperty(PropertyBool.LastHitWasSplitArrow);
+                RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+            }
+
             // if killed by a player, send them a message
             if (lastDamagerInfo.IsPlayer)
             {
@@ -89,14 +98,6 @@ namespace ACE.Server.WorldObjects
                     deathMessage = Strings.PKCritical[0];
 
                 var killerMsg = string.Format(deathMessage.Killer, Name);
-
-                var lastHitWasSplitArrow = GetProperty(PropertyBool.LastHitWasSplitArrow) is true;
-                if (lastHitWasSplitArrow)
-                {
-                    RemoveProperty(PropertyBool.LastHitWasSplitArrow);
-                    RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
-                    RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
-                }
 
                 if (lastDamager is Player playerKiller && playerKiller.Session != null)
                 {

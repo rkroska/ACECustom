@@ -193,6 +193,7 @@ namespace ACE.Entity.Enum.Properties
         [AssessmentProperty]
         SplitArrows                      = 9030,
         IsSplitArrow                     = 9031,
+        [Ephemeral]
         LastHitWasSplitArrow             = 9032,
         [AssessmentProperty]
         IsCharm                          = 9040,

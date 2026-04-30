@@ -53,32 +53,30 @@ namespace ACE.Server.WorldObjects
             {
                 DamageEvent damageEvent = null;
 
+                // ILT: track/clear split arrow state for every projectile hit, regardless of source type
+                try
+                {
+                    var projectileIsSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
+                    if (projectileIsSplitArrow && sourcePlayer != null)
+                    {
+                        targetCreature.SetProperty(PropertyBool.LastHitWasSplitArrow, true);
+                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
+                        targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
+                    }
+                    else if (!projectileIsSplitArrow)
+                    {
+                        targetCreature.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
+                        targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
+                        targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error setting projectile tracking: {ex.Message}", ex);
+                }
+
                 if (sourcePlayer != null)
                 {
-                    // Track the last projectile that hit this creature for death message modification
-                    try
-                    {
-                        var projectileIsSplitArrow = worldObject.GetProperty(PropertyBool.IsSplitArrow) == true;
-
-                        if (projectileIsSplitArrow)
-                        {
-                            targetCreature.SetProperty(PropertyBool.LastHitWasSplitArrow, true);
-                            targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowProjectile, worldObject.Guid.Full);
-                            targetCreature.SetProperty(PropertyInstanceId.LastSplitArrowShooter, sourcePlayer.Guid.Full);
-                        }
-                        else
-                        {
-                            // Non-split-arrow projectile — clear any stale split arrow tracking
-                            targetCreature.RemoveProperty(PropertyBool.LastHitWasSplitArrow);
-                            targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowProjectile);
-                            targetCreature.RemoveProperty(PropertyInstanceId.LastSplitArrowShooter);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Error($"Error setting projectile tracking: {ex.Message}", ex);
-                    }
-                    
                     // player damage monster or player
                     damageEvent = sourcePlayer.DamageTarget(targetCreature, worldObject);
 

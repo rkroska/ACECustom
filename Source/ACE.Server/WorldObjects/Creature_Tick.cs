@@ -47,7 +47,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var msg = $"Its lifespan finished, your {expireItem.Name} crumbles to dust.";
                     if (expireItem.IsTestCharm)
-                        msg += " We hope you enjoyed this trial! Please share any feedback in the Discord #feedback channel.";
+                        msg += " We hope you enjoyed this trial! Please share any feedback in the #feedback channel on Discord.";
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
                 }
             }

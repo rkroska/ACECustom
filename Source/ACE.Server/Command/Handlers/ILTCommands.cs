@@ -156,6 +156,9 @@ namespace ACE.Server.Command.Handlers
 
                 if (skillsUpdated > 0)
                 {
+                    // Send updated available XP total so the client UI stays in sync
+                    session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt64(
+                        player, PropertyInt64.AvailableExperience, player.AvailableExperience ?? 0));
                     session.Network.EnqueueSend(new GameMessageSystemChat(
                         $"Successfully spent XP into {skillsUpdated} skill{(skillsUpdated == 1 ? "" : "s")}.",
                         ChatMessageType.Advancement));

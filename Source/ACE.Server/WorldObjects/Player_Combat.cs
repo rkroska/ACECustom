@@ -508,7 +508,7 @@ namespace ACE.Server.WorldObjects
                 var nether = damageType == DamageType.Nether ? "nether " : "";
                 var chatMessageType = damageType == DamageType.Nether ? ChatMessageType.Magic : ChatMessageType.Combat;
                 var mbSuffix = GetManaBarrierSuffix(mbDotResult);
-                var dotDisplayAmount = mbDotResult.AmountAbsorbed > 0 ? mbDotResult.AmountAbsorbed : amount;
+                var dotDisplayAmount = amount;
                 var text = $"You receive {dotDisplayAmount} points of periodic {nether}damage.{mbSuffix}";
                 SendMessage(text, chatMessageType);
             //}

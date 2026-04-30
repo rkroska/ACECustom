@@ -15,7 +15,7 @@ VALUES (777710001,     1, 2048) /* ItemType - Gem */
      , (777710001,     5,     5) /* EncumbranceVal */
      , (777710001,     8,     5) /* Mass */
      , (777710001,    16,     8) /* ItemUseable - Contained */
-     , (777710001,    19,     1) /* UiEffects - Magical */
+     , (777710001,    18,     1) /* UiEffects - Magical */
      , (777710001,    33,     1) /* Bonded - Bonded */
      , (777710001,    83,     2) /* ActivationResponse - Use */
      , (777710001,    93,  1044) /* PhysicsState */
@@ -51,7 +51,7 @@ VALUES (777720001,     1, 2048) /* ItemType - Gem */
      , (777720001,     5,     5) /* EncumbranceVal */
      , (777720001,     8,     5) /* Mass */
      , (777720001,    16,     8) /* ItemUseable - Contained */
-     , (777720001,    19,     1) /* UiEffects - Magical */
+     , (777720001,    18,     1) /* UiEffects - Magical */
      , (777720001,    33,     1) /* Bonded - Bonded */
      , (777720001,    83,     2) /* ActivationResponse - Use */
      , (777720001,    93,  1044) /* PhysicsState */

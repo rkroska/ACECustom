@@ -8,13 +8,29 @@ namespace ACE.Server.WorldObjects
         /// Level 2: 1.5:1 (1 Mana per 1.5 Damage) -> ratio mod = 0.667
         /// Level 3: 2:1   (1 Mana per 2 Damage)   -> ratio mod = 0.500
         /// </summary>
-        public override float GetManaBarrierRatioMod() => (ActiveCharmLevel ?? 1) switch
+        public override float GetManaBarrierRatioMod()
         {
-            1 => 1.000f,
-            2 => 0.667f,
-            3 => 0.500f,
-            _ => 1.000f
-        };
+            // Read level from the activated MB charm directly — ActiveCharmLevel is a single
+            // global field and can be overwritten when a second charm (e.g. Infinite Casting)
+            // is toggled on or off.
+            var mbAbilityId = CharmAbilityRegistry.ManaBarrierAbilityId;
+            var level = 1;
+            foreach (var item in GetAllPossessions())
+            {
+                if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility == mbAbilityId)
+                {
+                    level = item.CharmLevel ?? 1;
+                    break;
+                }
+            }
+            return level switch
+            {
+                1 => 1.000f,
+                2 => 0.667f,
+                3 => 0.500f,
+                _ => 1.000f
+            };
+        }
 
         /// <summary>
         /// Returns the Mana Barrier suffix shown to the attacking player.
@@ -25,7 +41,7 @@ namespace ACE.Server.WorldObjects
             if (result.AmountAbsorbed == 0) return "";
             var cur = Mana?.Current ?? 0;
             var max = Mana?.MaxValue ?? 0;
-            return $" [Barrier: {cur:N0} / {max:N0}]";
+            return $" [Barrier: {FormatDamage((ulong)cur, DamageNumberFormat)} / {FormatDamage((ulong)max, DamageNumberFormat)}]";
         }
     }
 }

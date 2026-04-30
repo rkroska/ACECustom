@@ -72,7 +72,7 @@ namespace ACE.Server.WorldObjects
         {
             var result = new ManaBarrierResult();
 
-            if (!HasManaBarrier || amount <= 0 || Mana.Current <= 0)
+            if (!HasManaBarrier || amount <= 0 || Mana == null || Mana.Current <= 0)
                 return result;
 
             // Look up ratio, default to 1:1 if not found

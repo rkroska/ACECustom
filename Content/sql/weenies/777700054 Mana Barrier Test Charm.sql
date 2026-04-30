@@ -14,8 +14,8 @@ VALUES (777700054,     1, 65536) /* ItemType - Misc */
      , (777700054,     5,     5) /* EncumbranceVal */
      , (777700054,     8,     5) /* Mass */
      , (777700054,    16,     8) /* ItemUseable - Contained */
-     , (777700054,    18,     2) /* ActivationResponse - Use */
-     , (777700054,    19,     1) /* UiEffects - Magical */
+     , (777700054,    83,     2) /* ActivationResponse - Use */
+     , (777700054,    18,     1) /* UiEffects - Magical */
      , (777700054,    33,     1) /* Bonded - Bonded */
      , (777700054,    93,  1044) /* PhysicsState */
      , (777700054,   114,     1) /* Attuned - Attuned */

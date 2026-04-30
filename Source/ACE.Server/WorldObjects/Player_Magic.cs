@@ -1226,7 +1226,10 @@ namespace ACE.Server.WorldObjects
                     continue;
                 }
                 if (item.UnlimitedUse)
+                {
+                    burned.RemoveAt(i); // don't report infinite-use items as consumed
                     continue;
+                }
 
                 TryConsumeFromInventoryWithNetworking(item, 1);
             }
