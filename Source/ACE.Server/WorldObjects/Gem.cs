@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 
 
@@ -347,7 +347,6 @@ namespace ACE.Server.WorldObjects
 
                 // Activate
                 IsCharmActivated = true;
-                player.ActiveCharmLevel = CharmLevel ?? 1;
                 CharmAbilityRegistry.Apply(player, abilityId, true);
 
                 // ILT: Infinite Casting â€” tell the client comps are no longer required
@@ -357,7 +356,7 @@ namespace ACE.Server.WorldObjects
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, false));
                 }
 
-                var activateMsg = BuildActivationMessage(abilityId, player.ActiveCharmLevel.Value, true);
+                var activateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, true);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(activateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.HealthUp, 1.0f));
             }
@@ -365,7 +364,6 @@ namespace ACE.Server.WorldObjects
             {
                 // Deactivate
                 IsCharmActivated = false;
-                player.ActiveCharmLevel = null;
                 CharmAbilityRegistry.Apply(player, abilityId, false);
 
                 // ILT: Infinite Casting â€” restore client comp requirement

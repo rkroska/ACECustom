@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -1346,6 +1346,17 @@ namespace ACE.Server.WorldObjects
                         return; // item still with player â€” suppress deactivation
 
                     var id = item.CharmGrantsAbility.Value;
+
+                    // Suppress if a replacement activated charm for the same ability
+                    // is already in inventory (e.g. tier-upgrade recipe: old removed, new added)
+                    var hasReplacement = player.GetAllPossessions()
+                        .Any(p => p.Guid != item.Guid
+                               && p.IsAbilityCharm
+                               && p.IsCharmActivated
+                               && p.CharmGrantsAbility == id);
+                    if (hasReplacement)
+                        return;
+
                     var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
 
                     CharmAbilityRegistry.Apply(player, id, false);
