@@ -40,5 +40,5 @@ INSERT INTO weenie_properties_d_i_d (object_Id, type, value) VALUES
 (777700019,  1, 33558517),   -- Setup
 (777700019,  3, 536870932),  -- SoundTable
 (777700019,  6, 67111919),   -- PaletteBase
-(777700019,  8, 100691813),  -- Icon (0x06006F65)
+(777700019,  8, 100691460),  -- Icon (0x06006E04)
 (777700019, 50, 100663297);  -- SoundTable/IconOverlay
