@@ -204,9 +204,9 @@ namespace ACE.Server.Command.Handlers
                     if (cost <= 0)
                         continue; // free/always-trained skill, already handled
 
-                    // Bail if we can't afford the next priority skill — player can run again later
+                    // Skip unaffordable skills — cheaper lower-priority skills may still be trainable
                     if (cost > (player.AvailableSkillCredits ?? 0))
-                        break;
+                        continue;
 
                     if (player.TrainSkill(skill.Skill, cost))
                     {
