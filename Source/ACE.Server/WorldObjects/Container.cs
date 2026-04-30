@@ -649,6 +649,31 @@ namespace ACE.Server.WorldObjects
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             // log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
+            // \u2500\u2500 Unique Charm Constraint (root-owner aware \u2014 runs for main pack AND side packs) \u2500\u2500
+            var _charmAbilityId = CharmAbilityRegistry.GetAbilityIdForWCID(worldObject.WeenieClassId);
+            if (_charmAbilityId != null && GetRootOwner() is Player _rootPlayerForCharm)
+            {
+                bool _charmAlreadyHas = false;
+                foreach (var _possession in _rootPlayerForCharm.GetAllPossessions())
+                {
+                    if (_possession.Guid == worldObject.Guid) continue;
+                    if (_possession.OwnerId == null || _possession.OwnerId == 0) continue;
+                    if (CharmAbilityRegistry.GetAbilityIdForWCID(_possession.WeenieClassId) == _charmAbilityId)
+                    {
+                        _charmAlreadyHas = true;
+                        break;
+                    }
+                }
+                if (_charmAlreadyHas)
+                {
+                    var _article = (!string.IsNullOrEmpty(worldObject.Name) && "aeiouAEIOU".Contains(worldObject.Name[0])) ? "an" : "a";
+                    _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"You already have {_article} {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
+                    container = null;
+                    return false;
+                }
+            }
+
             // bug: should be root owner
             if (this is Player player && burdenCheck)
             {
@@ -659,34 +684,6 @@ namespace ACE.Server.WorldObjects
                     return false;
                 }
 
-                // â”€â”€ Unique Charm Constraint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                var abilityId = CharmAbilityRegistry.GetAbilityIdForWCID(worldObject.WeenieClassId);
-                if (abilityId != null)
-                {
-                    bool alreadyHas = false;
-                    foreach (var possession in player.GetAllPossessions())
-                    {
-                        if (possession.Guid == worldObject.Guid) continue;
-                        // Skip items that have been removed from inventory (e.g. destroyed by a recipe)
-                        // but whose WorldObject instance still briefly exists in memory.
-                        if (possession.OwnerId == null || possession.OwnerId == 0) continue;
-                        if (CharmAbilityRegistry.GetAbilityIdForWCID(possession.WeenieClassId) == abilityId)
-                        {
-                            alreadyHas = true;
-                            break;
-                        }
-                    }
-
-                    if (alreadyHas)
-                    {
-                        var article = (!string.IsNullOrEmpty(worldObject.Name) && "aeiouAEIOU".Contains(worldObject.Name[0])) ? "an" : "a";
-                        player.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                            $"You already have {article} {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
-                        container = null;
-                        return false;
-                    }
-                }
-                // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             }
 
             List<WorldObject> containerItems;
