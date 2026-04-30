@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -1354,9 +1354,6 @@ namespace ACE.Server.WorldObjects
                         return;
 
                     var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
-
-                    // Guard: item may have been re-activated within the 1-second delay window
-                    if (item.IsCharmActivated) return;
 
                     CharmAbilityRegistry.Apply(player, id, false);
                     item.IsCharmActivated = false;

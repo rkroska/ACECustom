@@ -7,6 +7,17 @@
 -- ============================================================
 
 DELETE FROM weenie WHERE class_Id = 777700019;
+DELETE FROM weenie_properties_bool WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_int WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_float WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_string WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_d_i_d WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_i_i_d WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_attribute WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_attribute_2nd WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_skill WHERE object_Id = 777700019;
+DELETE FROM weenie_properties_book WHERE object_Id = 777700019;
+
 INSERT INTO weenie (class_Id, class_Name, type, last_Modified)
 VALUES (777700019, 'ilt_infinitecastingstone', 38, NOW());
 
@@ -33,12 +44,13 @@ INSERT INTO weenie_properties_int (object_Id, type, value) VALUES
 -- Strings
 INSERT INTO weenie_properties_string (object_Id, type, value) VALUES
 (777700019,  1, 'Infinite Casting Stone'),
-(777700019, 14, 'Double-click to activate. While this stone is in your pack, spells are cast without consuming components.');
+(777700019, 14, 'A smooth, obsidian-like stone that hums with the infinite echoes of a thousand cast spells. It seems to draw energy from the very air around it.'),
+(777700019, 16, 'Double-click to activate. While this stone is in your possession, spells are cast without consuming components.');
 
 -- DataIds (visuals — matching Mana Barrier charm)
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value) VALUES
-(777700019,  1, 33558517),   -- Setup
+(777700019,  1, 33554975),   -- Setup (0x0200021F - Focus Stone)
 (777700019,  3, 536870932),  -- SoundTable
 (777700019,  6, 67111919),   -- PaletteBase
-(777700019,  8, 100691460),  -- Icon (0x06006E04)
+(777700019,  8, 100689608),  -- Icon (0x060066C8)
 (777700019, 50, 100663297);  -- SoundTable/IconOverlay

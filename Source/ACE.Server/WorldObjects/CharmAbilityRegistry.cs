@@ -38,7 +38,7 @@ namespace ACE.Server.WorldObjects
             // Mana Barrier
             { 777700001, ManaBarrierAbilityId }, { 777700054, ManaBarrierAbilityId }, { 777710004, ManaBarrierAbilityId }, { 777720004, ManaBarrierAbilityId },
             // Infinite Casting Stone
-            { 777700019, InfiniteCastingAbilityId },
+            { 777700019, InfiniteCastingAbilityId }, { 777700055, InfiniteCastingAbilityId },
         };
 
         /// <summary>
