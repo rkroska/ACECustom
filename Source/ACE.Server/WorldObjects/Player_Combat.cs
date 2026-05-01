@@ -537,7 +537,9 @@ namespace ACE.Server.WorldObjects
         public int TakeDamage(WorldObject source, DamageEvent damageEvent)
         {
             var result = TakeDamageInternal(source, damageEvent.DamageType, damageEvent.Damage, damageEvent.BodyPart, out var absorbed, damageEvent.IsCritical, damageEvent.AttackConditions);
-            damageEvent.Damage -= absorbed;
+            // ILT: TakeDamageInternal rounds the float to uint before Mana Barrier runs,
+            // so subtract from the rounded value to avoid fractional mismatches in attacker messaging.
+            damageEvent.Damage = Math.Max(0, (float)Math.Round(damageEvent.Damage) - absorbed);
             damageEvent.AmountAbsorbed = absorbed;
             return result;
         }

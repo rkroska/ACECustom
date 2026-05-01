@@ -8,7 +8,7 @@ namespace ACE.Server.WorldObjects
 {
     partial class Container
     {
-        private const string TestCharmExpiredSuffix = " We hope you enjoyed this trial! Please share any feedback in the #feedback channel on Discord.";
+        internal const string TestCharmExpiredSuffix = " We hope you enjoyed this trial! Please share any feedback in the #feedback channel on Discord.";
 
         public override void Heartbeat(double currentUnixTime)
         {

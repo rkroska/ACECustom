@@ -1118,6 +1118,12 @@ namespace ACE.Server.Managers
                         player.Session.Network.EnqueueSend(new Network.GameMessages.Messages.GameMessageInventoryRemoveObject(removed));
                         removed.Destroy();
                     }
+                    else if (item.WielderId == player.Guid.Full)
+                    {
+                        // item is worn/equipped — fall back to dequip-consume path
+                        if (!player.TryDequipObjectWithNetworking(item.Guid, out _, Player.DequipObjectAction.ConsumeItem))
+                            log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to dequip-consume UnlimitedUse item {item.Name}");
+                    }
                     else
                         log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to force-remove UnlimitedUse item {item.Name}");
                 }
