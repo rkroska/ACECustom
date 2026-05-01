@@ -1116,6 +1116,7 @@ namespace ACE.Server.Managers
                     if (player.TryRemoveFromInventory(item.Guid, out var removed))
                     {
                         player.Session.Network.EnqueueSend(new Network.GameMessages.Messages.GameMessageInventoryRemoveObject(removed));
+                        player.Session.Network.EnqueueSend(new Network.GameMessages.Messages.GameMessagePrivateUpdatePropertyInt(player, ACE.Entity.Enum.Properties.PropertyInt.EncumbranceVal, player.EncumbranceVal ?? 0));
                         removed.Destroy();
                     }
                     else if (item.WielderId == player.Guid.Full)

@@ -53,13 +53,14 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// On login: ensures no ability is active without a corresponding activated charm in inventory.
         /// Silently clears orphaned abilities (e.g., charm lost or removed while offline).
+        /// Performs a deep recursive scan so charms inside nested containers are detected.
         /// </summary>
         public void ValidateAbilityCharms()
         {
             ActiveCharmLevels.Clear();
             var activeCharmAbilities = new Dictionary<int, int>();
 
-            foreach (var item in GetAllPossessions())
+            foreach (var item in GetAllPossessionsDeep())
             {
                 if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility.HasValue)
                 {
@@ -108,6 +109,38 @@ namespace ACE.Server.WorldObjects
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Returns all items in the player's possession, recursively descending into nested containers.
+        /// Unlike <see cref="GetAllPossessions"/>, this includes items inside bags-within-bags.
+        /// </summary>
+        public IEnumerable<WorldObject> GetAllPossessionsDeep()
+        {
+            foreach (var item in GetAllPossessions())
+            {
+                yield return item;
+
+                if (item is Container bag)
+                {
+                    foreach (var nested in GetContainerContentsDeep(bag))
+                        yield return nested;
+                }
+            }
+        }
+
+        private static IEnumerable<WorldObject> GetContainerContentsDeep(Container container)
+        {
+            foreach (var child in container.Inventory.Values)
+            {
+                yield return child;
+
+                if (child is Container nested)
+                {
+                    foreach (var deeper in GetContainerContentsDeep(nested))
+                        yield return deeper;
+                }
+            }
         }
     }
 }
