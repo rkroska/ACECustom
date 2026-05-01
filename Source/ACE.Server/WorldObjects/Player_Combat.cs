@@ -192,12 +192,13 @@ namespace ACE.Server.WorldObjects
                     {
                         if (intDamage > 0)
                         {
-                            // partial absorption — build custom message with MB suffix
+                            // partial absorption — build custom message with MB suffix, honoring /ilt dmgformat
                             var mbSuffix = targetPlayer != null
                                 ? targetPlayer.GetManaBarrierSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed })
                                 : target.GetManaShieldSuffix(new ManaBarrierResult { AmountAbsorbed = damageEvent.AmountAbsorbed });
-                            var attackerMsg = $"{critMsg}{attackerSubject} {target.Name} for {intDamage} points of {damageEvent.DamageType.ToString().ToLower()} damage!{mbSuffix}";
-                            Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.Combat));
+                            var dmgStrMb = Creature.FormatDamage(intDamage, DamageNumberFormat);
+                            var attackerMsg = $"{critMsg}{attackerSubject} {target.Name} for {dmgStrMb} points of {damageEvent.DamageType.ToString().ToLower()} damage!{mbSuffix}";
+                            Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.CombatSelf));
                         }
                         else if (targetPlayer == null)
                         {
@@ -207,7 +208,15 @@ namespace ACE.Server.WorldObjects
                             var max = target.Mana?.MaxValue ?? 0;
                             SendMessage($"{target.Name}'s Mana Barrier absorbed {damageEvent.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
                         }
-                        // else: player target fully absorbed — handled in Player.TakeDamage
+                        else
+                        {
+                            // player target fully absorbed — TakeDamage sends the defender message;
+                            // send the attacker a complementary notification so they get feedback too.
+                            var ptWord = damageEvent.AmountAbsorbed == 1 ? "point" : "points";
+                            var cur = targetPlayer.Mana?.Current ?? 0;
+                            var max = targetPlayer.Mana?.MaxValue ?? 0;
+                            SendMessage($"{target.Name}'s Mana Barrier absorbed {damageEvent.AmountAbsorbed} {ptWord} of damage! [Barrier Remaining: {cur:N0} / {max:N0}]", ChatMessageType.Magic);
+                        }
                     }
                     else
                     {
