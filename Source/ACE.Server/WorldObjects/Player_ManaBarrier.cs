@@ -10,19 +10,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override float GetManaBarrierRatioMod()
         {
-            // Read level from the activated MB charm directly — ActiveCharmLevel is a single
-            // global field and can be overwritten when a second charm (e.g. Infinite Casting)
-            // is toggled on or off.
-            var mbAbilityId = CharmAbilityRegistry.ManaBarrierAbilityId;
-            var level = 1;
-            foreach (var item in GetAllPossessions())
-            {
-                if (item.IsAbilityCharm && item.IsCharmActivated && item.CharmGrantsAbility == mbAbilityId)
-                {
-                    level = item.CharmLevel ?? 1;
-                    break;
-                }
-            }
+            // Use the cached runtime level map instead of walking the inventory.
+            if (!ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ManaBarrierAbilityId, out var level))
+                return 1.000f;
+
             return level switch
             {
                 1 => 1.000f,

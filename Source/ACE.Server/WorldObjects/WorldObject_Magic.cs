@@ -806,6 +806,20 @@ namespace ACE.Server.WorldObjects
 
             destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
 
+            // ── Mana Barrier (Drain-type spells) ──────────────────────────────────────────────────
+            var mbResult = new ManaBarrierResult();
+            if (isDrain && spell.Source == PropertyAttribute2nd.Health && srcVitalChange > 0)
+            {
+                float fDamage = srcVitalChange;
+                mbResult = transferSource.TryAbsorbWithManaBarrier(ref fDamage, DamageType.Health);
+                srcVitalChange = (uint)Math.Round(fDamage);
+
+                // Re-calculate destination gain based on actual health drained.
+                // If Mana Barrier absorbed it all, the caster gains nothing.
+                destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
+            }
+            // ─────────────────────────────────────────────────────────────────────
+
             // scale srcVitalChange to destVitalChange?
             var missingDest = destination.GetCreatureVital(spell.Destination).Missing;
 
@@ -954,10 +968,16 @@ namespace ACE.Server.WorldObjects
             }
 
             if (player != null && sourceMsg != null)
-                player.SendChatMessage(player, sourceMsg, ChatMessageType.Magic);
+            {
+                var mbSuffix = isDrain && transferSource != player ? (transferSource is Player tP ? tP.GetManaBarrierSuffix(mbResult) : transferSource.GetManaShieldSuffix(mbResult)) : "";
+                player.SendChatMessage(player, sourceMsg + mbSuffix, ChatMessageType.Magic);
+            }
 
             if (targetCreature is Player targetPlayer && targetMsg != null)
-                targetPlayer.SendChatMessage(caster, targetMsg, ChatMessageType.Magic);
+            {
+                var mbSuffix = isDrain && transferSource == targetPlayer ? targetPlayer.GetManaBarrierSuffix(mbResult) : "";
+                targetPlayer.SendChatMessage(caster, targetMsg + mbSuffix, ChatMessageType.Magic);
+            }
 
             if (isDrain && srcVitalChange > 0)
             {

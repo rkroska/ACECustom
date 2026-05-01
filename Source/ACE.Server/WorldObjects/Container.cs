@@ -649,28 +649,45 @@ namespace ACE.Server.WorldObjects
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             // log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
-            // \u2500\u2500 Unique Charm Constraint (root-owner aware \u2014 runs for main pack AND side packs) \u2500\u2500
-            var _charmAbilityId = CharmAbilityRegistry.GetAbilityIdForWCID(worldObject.WeenieClassId);
-            if (_charmAbilityId != null && GetRootOwner() is Player _rootPlayerForCharm)
+            // ── Unique Charm Constraint (recursive check — prevents bypass via containers) ──
+            if (GetRootOwner() is Player _rootPlayerForCharm)
             {
-                bool _charmAlreadyHas = false;
-                foreach (var _possession in _rootPlayerForCharm.GetAllPossessions())
+                foreach (var abilityId in CharmAbilityRegistry.RegisteredIds)
                 {
-                    if (_possession.Guid == worldObject.Guid) continue;
-                    if (_possession.OwnerId == null || _possession.OwnerId == 0) continue;
-                    if (CharmAbilityRegistry.GetAbilityIdForWCID(_possession.WeenieClassId) == _charmAbilityId)
+                    // Check if the incoming item (or anything inside it) contains a charm for this ability
+                    var incomingCharm = Player.FindCharmInObject(worldObject, abilityId);
+                    if (incomingCharm == null) continue;
+
+                    // Check if the player already has a charm for this ability (excluding the one being moved)
+                    var existingCharm = _rootPlayerForCharm.GetAllPossessions()
+                        .FirstOrDefault(p => p.Guid != incomingCharm.Guid && CharmAbilityRegistry.GetAbilityIdForWCID(p.WeenieClassId) == abilityId);
+
+                    if (existingCharm != null)
                     {
-                        _charmAlreadyHas = true;
-                        break;
+                        var charmName = incomingCharm.Name ?? "Ability Charm";
+                        var article = "aeiouAEIOU".Contains(charmName[0]) ? "an" : "a";
+                        _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                            $"You already have {article} {charmName} in your inventory. You may only carry one at a time.", ChatMessageType.System));
+                        container = null;
+                        return false;
                     }
-                }
-                if (_charmAlreadyHas)
-                {
-                    var _article = (!string.IsNullOrEmpty(worldObject.Name) && "aeiouAEIOU".Contains(worldObject.Name[0])) ? "an" : "a";
-                    _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                        $"You already have {_article} {worldObject.Name} in your inventory. You may only carry one at a time.", ChatMessageType.System));
-                    container = null;
-                    return false;
+
+                    // Also check for internal conflicts: does the incoming container have MULTIPLE charms for the same ability?
+                    // (This is rare but possible if a container was manipulated externally or spawned via script)
+                    if (worldObject is Container incomingContainer)
+                    {
+                        var internalConflicts = incomingContainer.Inventory.Values
+                            .Where(i => i.Guid != incomingCharm.Guid && CharmAbilityRegistry.GetAbilityIdForWCID(i.WeenieClassId) == abilityId)
+                            .ToList();
+
+                        if (internalConflicts.Any())
+                        {
+                            _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
+                                $"The item contains multiple {incomingCharm.Name}s. You may only carry one at a time.", ChatMessageType.System));
+                            container = null;
+                            return false;
+                        }
+                    }
                 }
             }
 

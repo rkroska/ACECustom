@@ -52,10 +52,15 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Apply or remove an ability on the player for the given ability ID.
         /// </summary>
-        public static void Apply(Player player, int abilityId, bool enable)
+        public static void Apply(Player player, int abilityId, bool enable, int level = 1)
         {
             if (Registry.TryGetValue(abilityId, out var entry))
                 entry.Set(player, enable);
+
+            if (enable)
+                player.ActiveCharmLevels[abilityId] = level;
+            else
+                player.ActiveCharmLevels.Remove(abilityId);
         }
 
         /// <summary>

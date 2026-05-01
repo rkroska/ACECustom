@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 
 
@@ -347,7 +347,7 @@ namespace ACE.Server.WorldObjects
 
                 // Activate
                 IsCharmActivated = true;
-                CharmAbilityRegistry.Apply(player, abilityId, true);
+                CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
 
                 // ILT: Infinite Casting â€” tell the client comps are no longer required
                 if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
