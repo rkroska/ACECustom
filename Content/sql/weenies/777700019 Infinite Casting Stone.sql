@@ -52,5 +52,5 @@ INSERT INTO weenie_properties_d_i_d (object_Id, type, value) VALUES
 (777700019,  1, 33554975),   -- Setup (0x0200021F - Focus Stone)
 (777700019,  3, 536870932),  -- SoundTable
 (777700019,  6, 67111919),   -- PaletteBase
-(777700019,  8, 100689608),  -- Icon (0x060066C8)
+(777700019,  8, 100689503),  -- Icon (0x0600665F)
 (777700019, 50, 100663297);  -- SoundTable/IconOverlay
