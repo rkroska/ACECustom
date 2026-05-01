@@ -649,44 +649,35 @@ namespace ACE.Server.WorldObjects
             var itemInfo = worldObject is Player itemPlayer ? $"Player {itemPlayer.Name}" : $"{worldObject.Name} (0x{worldObject.Guid})";
             // log.Debug($"[SAVE DEBUG] TryAddToInventory START for {itemInfo} | Target container={containerInfo} | limitToMainPackOnly={limitToMainPackOnly} | burdenCheck={burdenCheck} | placementPosition={placementPosition}");
             
-            // ── Unique Charm Constraint (recursive check — prevents bypass via containers) ──
+            // ── Unique Charm Constraint ──
+            // Collect all ability IDs from the incoming object (or its nested contents),
+            // using both the WCID registry and the IsAbilityCharm/CharmGrantsAbility data-driven
+            // properties so that charm bags and non-registry charms can't bypass the rule.
             if (GetRootOwner() is Player _rootPlayerForCharm)
             {
-                foreach (var abilityId in CharmAbilityRegistry.RegisteredIds)
+                var _incomingAbilityIds = new System.Collections.Generic.HashSet<int>();
+                var _incomingGuids     = new System.Collections.Generic.HashSet<ObjectGuid>();
+                CollectIncomingAbilityCharms(worldObject, _incomingAbilityIds, _incomingGuids);
+
+                if (_incomingAbilityIds.Count > 0)
                 {
-                    // Check if the incoming item (or anything inside it) contains a charm for this ability
-                    var incomingCharm = Player.FindCharmInObject(worldObject, abilityId);
-                    if (incomingCharm == null) continue;
+                    var _conflict = _rootPlayerForCharm.GetAllPossessions().FirstOrDefault(possession =>
+                        !_incomingGuids.Contains(possession.Guid) &&
+                        possession.OwnerId != null &&
+                        possession.OwnerId != 0 &&
+                        possession.IsAbilityCharm &&
+                        possession.CharmGrantsAbility.HasValue &&
+                        _incomingAbilityIds.Contains(possession.CharmGrantsAbility.Value));
 
-                    // Check if the player already has a charm for this ability (excluding the one being moved)
-                    var existingCharm = _rootPlayerForCharm.GetAllPossessions()
-                        .FirstOrDefault(p => p.Guid != incomingCharm.Guid && CharmAbilityRegistry.GetAbilityIdForWCID(p.WeenieClassId) == abilityId);
-
-                    if (existingCharm != null)
+                    if (_conflict != null)
                     {
-                        var charmName = incomingCharm.Name ?? "Ability Charm";
-                        var article = "aeiouAEIOU".Contains(charmName[0]) ? "an" : "a";
+                        var _charmName = worldObject.Name ?? "Ability Charm";
+                        var _article   = (!string.IsNullOrEmpty(_charmName) && "aeiouAEIOU".Contains(_charmName[0])) ? "an" : "a";
                         _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                            $"You already have {article} {charmName} in your inventory. You may only carry one at a time.", ChatMessageType.System));
+                            $"You already have {_article} {_charmName} in your inventory. You may only carry one at a time.",
+                            ChatMessageType.System));
                         container = null;
                         return false;
-                    }
-
-                    // Also check for internal conflicts: does the incoming container have MULTIPLE charms for the same ability?
-                    // (This is rare but possible if a container was manipulated externally or spawned via script)
-                    if (worldObject is Container incomingContainer)
-                    {
-                        var internalConflicts = incomingContainer.Inventory.Values
-                            .Where(i => i.Guid != incomingCharm.Guid && CharmAbilityRegistry.GetAbilityIdForWCID(i.WeenieClassId) == abilityId)
-                            .ToList();
-
-                        if (internalConflicts.Any())
-                        {
-                            _rootPlayerForCharm.Session.Network.EnqueueSend(new GameMessageSystemChat(
-                                $"The item contains multiple {incomingCharm.Name}s. You may only carry one at a time.", ChatMessageType.System));
-                            container = null;
-                            return false;
-                        }
                     }
                 }
             }
@@ -1336,6 +1327,35 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        /// <summary>
+        /// Recursively collects all ability IDs and object GUIDs found in the incoming world object
+        /// (and any nested containers), using both the WCID registry and the data-driven
+        /// IsAbilityCharm / CharmGrantsAbility properties.  Used by TryAddToInventory to enforce
+        /// the one-charm-per-ability constraint against data-driven and nested charms.
+        /// </summary>
+        private static void CollectIncomingAbilityCharms(WorldObject node,
+            System.Collections.Generic.HashSet<int> abilityIds,
+            System.Collections.Generic.HashSet<ObjectGuid> guids)
+        {
+            guids.Add(node.Guid);
+
+            // Data-driven: charm declares its own ability directly
+            if (node.IsAbilityCharm && node.CharmGrantsAbility.HasValue)
+                abilityIds.Add(node.CharmGrantsAbility.Value);
+
+            // Registry fallback: charm WCID is mapped to an ability ID
+            var wcidAbility = CharmAbilityRegistry.GetAbilityIdForWCID(node.WeenieClassId);
+            if (wcidAbility.HasValue)
+                abilityIds.Add(wcidAbility.Value);
+
+            // Recurse into nested containers (e.g. a backpack containing a charm)
+            if (node is Container nested)
+            {
+                foreach (var child in nested.Inventory.Values)
+                    CollectIncomingAbilityCharms(child, abilityIds, guids);
+            }
+        }
+
         private void CheckAbilityCharmRemoval(WorldObject item)
         {
             if (GetRootOwner() is not Player player) return;
@@ -1373,8 +1393,18 @@ namespace ACE.Server.WorldObjects
                     var abilityName = CharmAbilityRegistry.GetDisplayName(id) ?? item.Name;
 
                     CharmAbilityRegistry.Apply(player, id, false);
-                    item.IsCharmActivated = false;
-                    item.SaveBiotaToDatabase();
+
+                    // Only clear the item's activation flag when the new holder hasn't already
+                    // re-activated it — avoids clobbering state after a trade during the delay.
+                    var newOwner = (item.Container as Container)?.GetRootOwner() as Player;
+                    var reactivatedByNewOwner = newOwner != null
+                        && newOwner.Guid != player.Guid
+                        && item.IsCharmActivated;
+                    if (!reactivatedByNewOwner)
+                    {
+                        item.IsCharmActivated = false;
+                        item.SaveBiotaToDatabase();
+                    }
 
                     // ILT: Infinite Casting â€” restore client comp requirement when stone leaves inventory
                     if (id == CharmAbilityRegistry.InfiniteCastingAbilityId)
