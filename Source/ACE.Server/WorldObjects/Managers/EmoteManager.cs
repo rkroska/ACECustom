@@ -3081,23 +3081,23 @@ namespace ACE.Server.WorldObjects.Managers
                                         long currentAugCount = summonAugs + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        // Same tier breakpoints as Item (not Creature): 1250 / 2000 / 3000 / 3500 → 4x / 8x / 16x / 24x
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 5250)
+                                        if (currentAugCount >= 3500)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 5250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
                                         }
-                                        else if (currentAugCount >= 4750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 4750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
-                                        else if (currentAugCount >= 4000)
+                                        else if (currentAugCount >= 2000)
                                         {
-                                            multiplier = 8; // Apply 8x multiplier for augments >= 4000
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 1250)
                                         {
-                                            multiplier = 4; // Apply 4x multiplier for augments >= 2750
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1250
                                         }
 
                                         totalCost += augCost * multiplier;
