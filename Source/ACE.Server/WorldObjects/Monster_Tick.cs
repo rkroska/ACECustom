@@ -81,6 +81,12 @@ namespace ACE.Server.WorldObjects
 
             if (IsDead) return;
 
+            // Engaged combat pets skip Pet.SlowTick; apply the same max owner distance despawn as idle pets (~1 Hz).
+            if (this is CombatPet engagedRangePet
+                && engagedRangePet.AttackTarget != null
+                && engagedRangePet.TryDespawnIfOwnerBeyondMaxFollowThrottled(currentUnixTime))
+                return;
+
             if (EmoteManager.IsBusy) return;
 
             // Owner leash while engaged: monster AI never runs Pet follow while AttackTarget is set; if the owner walks away, drop target so idle follow runs.

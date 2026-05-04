@@ -474,30 +474,28 @@ namespace ACE.Server.WorldObjects
                 return;
 
             var blockSec = ServerConfig.pet_combat_recall_block_after_damage_seconds.Value;
-            if (blockSec <= 0)
+            if (blockSec > 0)
             {
+                var now = Time.GetUnixTime();
+                _ownerFollowRecallBlockedUntilUnix = now + blockSec;
+
                 if (ServerConfig.pet_combat_recall_block_debug.Value)
-                    TraceRecallBlock(sourceTag, $"skipped_block_seconds_is_0 dealt={dealt}");
-                return;
+                    TraceRecallBlock(sourceTag, $"armed dealt={dealt} blockSec={blockSec} untilUnix={_ownerFollowRecallBlockedUntilUnix:F0} now={now:F0}");
             }
+            else if (ServerConfig.pet_combat_recall_block_debug.Value)
+                TraceRecallBlock(sourceTag, $"skipped_recall_block_seconds_is_0 dealt={dealt}");
 
-            var now = Time.GetUnixTime();
-            _ownerFollowRecallBlockedUntilUnix = now + blockSec;
-
-            if (ServerConfig.pet_combat_recall_block_debug.Value)
-                TraceRecallBlock(sourceTag, $"armed dealt={dealt} blockSec={blockSec} untilUnix={_ownerFollowRecallBlockedUntilUnix:F0} now={now:F0}");
-
-            TryRefreshRecallBlockSummoningDeviceCooldown();
+            TryRefreshCombatEssenceSharedCooldownRingFromDamage();
         }
 
         /// <summary>
-        /// Uses <see cref="ServerConfig.pet_combat_essence_damage_cooldown_ring_seconds"/> for the essence UI ring (independent of recall-block duration).
+        /// Refreshes the summoning essence SharedCooldown ring after combat (outgoing or incoming damage).
+        /// Duration is <see cref="ServerConfig.pet_combat_essence_damage_cooldown_ring_seconds"/> capped by
+        /// <see cref="PetDevice.GetEssenceSharedCooldownCapSeconds"/> (essence <see cref="PropertyFloat.CooldownDuration"/> or 45s).
+        /// Independent of recall-block duration and of <see cref="ServerConfig.pet_combat_recall_block_device_cooldown_visual"/>.
         /// </summary>
-        private void TryRefreshRecallBlockSummoningDeviceCooldown()
+        private void TryRefreshCombatEssenceSharedCooldownRingFromDamage()
         {
-            if (!ServerConfig.pet_combat_recall_block_device_cooldown_visual.Value)
-                return;
-
             var ringSec = (float)ServerConfig.pet_combat_essence_damage_cooldown_ring_seconds.Value;
             if (ringSec <= 0)
                 return;
@@ -511,7 +509,13 @@ namespace ACE.Server.WorldObjects
             if (device?.CooldownId == null)
                 return;
 
-            owner.EnchantmentManager.StartOrRefreshItemCooldown(device.Guid.Full, device.CooldownId.Value, ringSec);
+            var cap = PetDevice.GetEssenceSharedCooldownCapSeconds(device);
+            var duration = Math.Min(ringSec, cap);
+
+            if (ServerConfig.pet_combat_recall_block_debug.Value && duration < ringSec)
+                TraceRecallBlock("EssenceRingCap", $"ringSec={ringSec} cappedTo={duration:F1}");
+
+            owner.EnchantmentManager.StartOrRefreshItemCooldown(device.Guid.Full, device.CooldownId.Value, duration);
         }
 
         internal static void TraceRecallBlockStatic(CombatPet pet, string stage, string detail)
@@ -982,17 +986,22 @@ namespace ACE.Server.WorldObjects
                     ChatMessageType.System));
             }
 
-            // Match recall-block path: refresh-in-place so combat recall cooldown + death do not stack duplicate enchantments.
+            // Match combat ring path: refresh-in-place so combat pings and death do not stack duplicate enchantments.
             // Require Session: StartCooldown uses Session unconditionally; offline owner cannot receive cooldown packet anyway.
-            if (ServerConfig.pet_summon_cooldown_on_pet_death_only.Value && P_PetOwner != null && P_PetOwner.Session != null && SummoningDeviceGuid != ObjectGuid.Invalid)
+            var deathCooldownFromPet =
+                ServerConfig.pet_summon_cooldown_on_pet_death_only.Value
+                || ServerConfig.pet_combat_summon_skips_shared_cooldown.Value;
+
+            if (deathCooldownFromPet && P_PetOwner != null && P_PetOwner.Session != null && SummoningDeviceGuid != ObjectGuid.Invalid)
             {
                 var device = P_PetOwner.FindObject(SummoningDeviceGuid.Full, Player.SearchLocations.Everywhere) as PetDevice;
                 device ??= TryGetSummoningDevice();
                 if (device != null && device.CooldownId != null)
                 {
                     var deathSeconds = (float)(device.CooldownDuration ?? 0);
+                    var cap = PetDevice.GetEssenceSharedCooldownCapSeconds(device);
                     if (deathSeconds > 0)
-                        P_PetOwner.EnchantmentManager.StartOrRefreshItemCooldown(device.Guid.Full, device.CooldownId.Value, deathSeconds);
+                        P_PetOwner.EnchantmentManager.StartOrRefreshItemCooldown(device.Guid.Full, device.CooldownId.Value, Math.Min(deathSeconds, cap));
                     else
                         P_PetOwner.EnchantmentManager.StartCooldown(device);
                 }
