@@ -82,8 +82,9 @@ namespace ACE.Server.WorldObjects
             if (IsDead) return;
 
             // Engaged combat pets skip Pet.SlowTick; apply the same max owner distance despawn as idle pets (~1 Hz).
+            // Include State.Return (pet walking home with no AttackTarget) so returning pets are not exempt from despawn.
             if (this is CombatPet engagedRangePet
-                && engagedRangePet.AttackTarget != null
+                && (engagedRangePet.AttackTarget != null || engagedRangePet.MonsterState == State.Return)
                 && engagedRangePet.TryDespawnIfOwnerBeyondMaxFollowThrottled(currentUnixTime))
                 return;
 

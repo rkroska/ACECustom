@@ -149,7 +149,16 @@ namespace ACE.Server.WorldObjects.Managers
             }
 
             // GetWeenie reloads from MySQL and refreshes the entity cache (GetCachedWeenie alone can be stale).
-            DatabaseManager.World.GetWeenie(augmentGem.WeenieClassId);
+            try
+            {
+                DatabaseManager.World.GetWeenie(augmentGem.WeenieClassId);
+            }
+            catch (Exception ex)
+            {
+                var msg = $"GetPromptAddAugmentEconomy: GetWeenie failed for wcid={augmentGem.WeenieClassId}: {ex.Message}";
+                log.Warn(msg, ex);
+                AugmentEconomyTrace(msg);
+            }
             var weenie = DatabaseManager.World.GetCachedWeenie(augmentGem.WeenieClassId);
             AugmentEconomyTrace($"after GetWeenie: weenie null={weenie == null} weenieType={weenie?.WeenieType} emoteSetCount={(weenie?.PropertiesEmote?.Count ?? 0)}");
 

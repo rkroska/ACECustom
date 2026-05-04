@@ -1000,10 +1000,16 @@ namespace ACE.Server.WorldObjects
                 {
                     var deathSeconds = (float)(device.CooldownDuration ?? 0);
                     var cap = PetDevice.GetEssenceSharedCooldownCapSeconds(device);
+                    float duration;
                     if (deathSeconds > 0)
-                        P_PetOwner.EnchantmentManager.StartOrRefreshItemCooldown(device.Guid.Full, device.CooldownId.Value, Math.Min(deathSeconds, cap));
+                        duration = Math.Min(deathSeconds, cap);
                     else
-                        P_PetOwner.EnchantmentManager.StartCooldown(device);
+                    {
+                        var ringSec = (float)ServerConfig.pet_combat_essence_damage_cooldown_ring_seconds.Value;
+                        duration = ringSec > 0 ? Math.Min(ringSec, cap) : cap;
+                    }
+                    if (duration > 0)
+                        P_PetOwner.EnchantmentManager.StartOrRefreshItemCooldown(device.Guid.Full, device.CooldownId.Value, duration);
                 }
             }
 
