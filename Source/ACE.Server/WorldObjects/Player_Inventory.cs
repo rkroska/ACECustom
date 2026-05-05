@@ -134,8 +134,11 @@ namespace ACE.Server.WorldObjects
 
         public bool TryConsumeFromInventoryWithNetworking(WorldObject item, int amount = int.MaxValue)
         {
-            // Unlimited-use items (e.g. Ability Charms) are never consumed — return success without removing from inventory.
-            if (item.UnlimitedUse)
+            // ILT unlimited ability charms (IsAbilityCharm + UnlimitedUse) stay in inventory on normal
+            // “consume” paths (casting, vendors, etc.). Recipe upgrades use RecipeManager.DestroyItem
+            // to force-remove. Other UnlimitedUse items (infinite scarabs, ammo, etc.) are handled at
+            // their call sites or here like vanilla ACE.
+            if (item.IsAbilityCharm && item.UnlimitedUse)
                 return true;
 
             if (amount >= (item.StackSize ?? 1))

@@ -1109,9 +1109,9 @@ namespace ACE.Server.Managers
         {
             if (item.OwnerId == player.Guid.Full || player.GetInventoryItem(item.Guid) != null)
             {
-                // UnlimitedUse items (e.g. ability charms) are skipped by TryConsumeFromInventoryWithNetworking.
-                // Force-remove them directly so recipe upgrades can replace them.
-                if (item.UnlimitedUse)
+                // Unlimited ability charms are skipped by TryConsumeFromInventoryWithNetworking; force-remove
+                // so recipe upgrades can replace them. Must match Player.TryConsumeFromInventoryWithNetworking.
+                if (item.IsAbilityCharm && item.UnlimitedUse)
                 {
                     if (player.TryRemoveFromInventory(item.Guid, out var removed))
                     {
@@ -1123,10 +1123,10 @@ namespace ACE.Server.Managers
                     {
                         // item is worn/equipped — fall back to dequip-consume path
                         if (!player.TryDequipObjectWithNetworking(item.Guid, out _, Player.DequipObjectAction.ConsumeItem))
-                            log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to dequip-consume UnlimitedUse item {item.Name}");
+                            log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to dequip-consume ability charm {item.Name}");
                     }
                     else
-                        log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to force-remove UnlimitedUse item {item.Name}");
+                        log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to force-remove ability charm {item.Name}");
                 }
                 else if (!player.TryConsumeFromInventoryWithNetworking(item, (int)amount))
                     log.Warn($"RecipeManager.DestroyItem({player.Name}, {item.Name}, {amount}, {msg}): failed to remove {item.Name}");
