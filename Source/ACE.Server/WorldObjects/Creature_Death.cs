@@ -166,7 +166,8 @@ namespace ACE.Server.WorldObjects
             var deathAnimLength = ExecuteMotion(motionDeath);
 
             // Try to generate Siphon Lens before death emotes (which might destroy the creature)
-            GenerateSiphonLens(topDamager);
+            if (!(this is Pet))
+                GenerateSiphonLens(topDamager);
 
             if (EmoteManager != null)
             {
@@ -571,6 +572,10 @@ namespace ACE.Server.WorldObjects
             if (NoCorpse)
             {
                 if (killer != null && killer.IsOlthoiPlayer) return;
+
+                // PetDevice summons (Pet / CombatPet): no death treasure or ground drops (DeathTreasure, createlist, siphon lens)
+                if (this is Pet)
+                    return;
 
                 var loot = GenerateTreasure(killer, null);
 

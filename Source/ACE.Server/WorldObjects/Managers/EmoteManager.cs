@@ -57,6 +57,197 @@ namespace ACE.Server.WorldObjects.Managers
         }
 
         /// <summary>
+        /// Augmentation gems snapshot Use-emotes onto item biota when spawned; world DB changes don't reach existing stacks.
+        /// For luminance cost, read the live weenie row (GetWeenie) so <c>weenie_properties_emote_action.amount/percent</c> edits apply.
+        /// If we cannot match a template action, we fall back to the biota snapshot (looks like "DB changes do nothing").
+        /// Template matching requires the same emote <c>Type</c> as the runtime biota action (e.g. <see cref="EmoteType.PromptAddAugment"/> / 123).
+        /// </summary>
+
+        /// <summary>Verbose PromptAddAugment economy tracing (console + log file). Toggle: /modifybool prompt_add_augment_economy_console_debug true</summary>
+        private static void AugmentEconomyTrace(string line)
+        {
+            if (!ServerConfig.prompt_add_augment_economy_console_debug.Value)
+                return;
+            var text = $"[AugmentEconomy] {line}";
+            Console.WriteLine(text);
+            log.Debug(text);
+        }
+
+        private static void DumpWeenieEmotesForAugmentEconomy(WorldObject augmentGem, Weenie weenie, PropertiesEmoteAction emoteFromBiota, string biotaMsg)
+        {
+            try
+            {
+                var wcfg = Common.ConfigManager.Config?.MySql?.World;
+                AugmentEconomyTrace($"world DB (from config): host={wcfg?.Host} port={wcfg?.Port} database={wcfg?.Database}");
+            }
+            catch
+            {
+                AugmentEconomyTrace("world DB config: (unavailable)");
+            }
+
+            AugmentEconomyTrace($"cached template weenie: ClassId={weenie.WeenieClassId} ClassName={weenie.ClassName} WeenieType={weenie.WeenieType} | item wcid={augmentGem.WeenieClassId} (should match ClassId)");
+            AugmentEconomyTrace($"runtime biota emote: Type={emoteFromBiota.Type} ({(EmoteType)emoteFromBiota.Type}) Message(len={emoteFromBiota.Message?.Length ?? 0})='{emoteFromBiota.Message}' Amount={emoteFromBiota.Amount} Percent={emoteFromBiota.Percent} DbRecordId={emoteFromBiota.DatabaseRecordId}");
+            AugmentEconomyTrace($"compare key: biotaMsg(trimmed)='{biotaMsg}'");
+
+            if (weenie.PropertiesEmote == null || weenie.PropertiesEmote.Count == 0)
+            {
+                AugmentEconomyTrace("weenie.PropertiesEmote: empty or null");
+                return;
+            }
+
+            var setIdx = 0;
+            foreach (var emoteSet in weenie.PropertiesEmote)
+            {
+                var ac = emoteSet.PropertiesEmoteAction?.Count ?? 0;
+                AugmentEconomyTrace($"emoteSet[{setIdx}] category={(uint)emoteSet.Category} ({emoteSet.Category}) probability={emoteSet.Probability} quest='{emoteSet.Quest}' vendorType={emoteSet.VendorType} style={emoteSet.Style} actions={ac}");
+
+                if (emoteSet.PropertiesEmoteAction == null)
+                {
+                    setIdx++;
+                    continue;
+                }
+
+                var ai = 0;
+                foreach (var a in emoteSet.PropertiesEmoteAction)
+                {
+                    var tmplMsg = a.Message?.Trim();
+                    var typeCompat = a.Type == emoteFromBiota.Type;
+                    var msgCompat = string.Equals(tmplMsg, biotaMsg, StringComparison.OrdinalIgnoreCase);
+                    var candidate = typeCompat && msgCompat && emoteSet.Category == EmoteCategory.Use;
+                    var msgDetail = msgCompat
+                        ? "msg OK"
+                        : $"msg MISMATCH template(len={tmplMsg?.Length ?? 0})='{tmplMsg}' vs runtime(len={biotaMsg?.Length ?? 0})='{biotaMsg}'";
+
+                    AugmentEconomyTrace($"  action[{ai}] type={a.Type} ({(EmoteType)a.Type}) delay={a.Delay} extent={a.Extent} amount={a.Amount} percent={a.Percent} templateMsg='{a.Message}'");
+                    AugmentEconomyTrace($"           typeCompat={typeCompat} msgCompat={msgCompat} ({msgDetail}) useCategory={(emoteSet.Category == EmoteCategory.Use)} => candidate={candidate}");
+
+                    ai++;
+                }
+
+                setIdx++;
+            }
+        }
+
+        private static void GetPromptAddAugmentEconomy(WorldObject augmentGem, PropertiesEmoteAction emoteFromBiota, out double baseCost, out double percentIncrease)
+        {
+            baseCost = emoteFromBiota.Amount.HasValue ? emoteFromBiota.Amount.Value : 0;
+            percentIncrease = emoteFromBiota.Percent ?? 0;
+
+            if (augmentGem == null)
+            {
+                AugmentEconomyTrace("augmentGem is null; using biota defaults.");
+                return;
+            }
+
+            var biotaMsg = emoteFromBiota.Message?.Trim();
+
+            if (ServerConfig.prompt_add_augment_economy_console_debug.Value)
+            {
+                AugmentEconomyTrace("======== GetPromptAddAugmentEconomy START ========");
+                AugmentEconomyTrace($"{DateTime.UtcNow:O} UTC | object Guid={augmentGem.Guid} wcid={augmentGem.WeenieClassId} name={augmentGem.Name ?? "?"} stacksize={augmentGem.StackSize}");
+                AugmentEconomyTrace($"biota snapshot (inputs): amount={baseCost} percent={percentIncrease} emoteType={emoteFromBiota.Type} msg='{biotaMsg}'");
+            }
+
+            // GetWeenie reloads from MySQL and refreshes the entity cache (GetCachedWeenie alone can be stale).
+            try
+            {
+                DatabaseManager.World.GetWeenie(augmentGem.WeenieClassId);
+            }
+            catch (Exception ex)
+            {
+                var msg = $"GetPromptAddAugmentEconomy: GetWeenie failed for wcid={augmentGem.WeenieClassId}: {ex.Message}";
+                log.Warn(msg, ex);
+                AugmentEconomyTrace(msg);
+            }
+            var weenie = DatabaseManager.World.GetCachedWeenie(augmentGem.WeenieClassId);
+            AugmentEconomyTrace($"after GetWeenie: weenie null={weenie == null} weenieType={weenie?.WeenieType} emoteSetCount={(weenie?.PropertiesEmote?.Count ?? 0)}");
+
+            if (weenie?.PropertiesEmote == null)
+            {
+                log.Debug($"GetPromptAddAugmentEconomy: weenie {augmentGem.WeenieClassId} has no PropertiesEmote; using biota amount {baseCost}, percent {percentIncrease}.");
+                AugmentEconomyTrace($"FALLBACK no PropertiesEmote on weenie -> using biota amount={baseCost} percent={percentIncrease}");
+                AugmentEconomyTrace("======== GetPromptAddAugmentEconomy END (no template emotes) ========");
+                return;
+            }
+
+            if (ServerConfig.prompt_add_augment_economy_console_debug.Value)
+                DumpWeenieEmotesForAugmentEconomy(augmentGem, weenie, emoteFromBiota, biotaMsg);
+
+            // Collect every Use + type/msg match. Multiple rows are possible (duplicate emote sets); we take the
+            // template with the highest base amount so an old 500k/0.25 row cannot shadow 1M/0.65 from a second set.
+            var templateMatches = new List<PropertiesEmoteAction>();
+            foreach (var emoteSet in weenie.PropertiesEmote)
+            {
+                if (emoteSet.Category != EmoteCategory.Use)
+                    continue;
+                if (emoteSet.PropertiesEmoteAction == null)
+                    continue;
+
+                foreach (var a in emoteSet.PropertiesEmoteAction)
+                {
+                    if (a.Type != emoteFromBiota.Type)
+                        continue;
+                    if (!string.Equals(a.Message?.Trim(), biotaMsg, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    templateMatches.Add(a);
+                }
+            }
+
+            if (templateMatches.Count > 0)
+            {
+                AugmentEconomyTrace($"match phase: {templateMatches.Count} template row(s) matched (Use + same emote type + message). Sorting by Amount desc, then Percent desc.");
+
+                for (var i = 0; i < templateMatches.Count; i++)
+                {
+                    var m = templateMatches[i];
+                    AugmentEconomyTrace($"  match[{i}] amount={m.Amount} percent={m.Percent} type={m.Type} msg='{m.Message?.Trim()}'");
+                }
+
+                var best = templateMatches
+                    .OrderByDescending(a => a.Amount ?? int.MinValue)
+                    .ThenByDescending(a => a.Percent ?? double.MinValue)
+                    .First();
+
+                if (best.Amount.HasValue)
+                    baseCost = best.Amount.Value;
+                if (best.Percent.HasValue)
+                    percentIncrease = best.Percent.Value;
+
+                AugmentEconomyTrace($"SELECTED best: amount={baseCost} percent={percentIncrease} type={best.Type} ({(EmoteType)best.Type}) msg='{best.Message?.Trim()}'");
+
+                if (templateMatches.Count > 1)
+                    AugmentEconomyTrace($"NOTE: {templateMatches.Count} duplicate matching rows in world DB — highest amount wins. Consider deleting stale emote sets.");
+
+                AugmentEconomyTrace($"======== GetPromptAddAugmentEconomy END (template ok) ========");
+                return;
+            }
+
+            log.Debug($"GetPromptAddAugmentEconomy: no Use emote action matched WCID {augmentGem.WeenieClassId} (msg '{biotaMsg}', type {emoteFromBiota.Type}); using biota amount {baseCost}, percent {percentIncrease}.");
+
+            AugmentEconomyTrace("match phase: ZERO template rows matched Use + same emote type + message — falling back to biota snapshot values.");
+            if (ServerConfig.prompt_add_augment_economy_console_debug.Value)
+            {
+                var rows = new List<string>();
+                foreach (var emoteSet in weenie.PropertiesEmote)
+                {
+                    if (emoteSet.Category != EmoteCategory.Use || emoteSet.PropertiesEmoteAction == null)
+                        continue;
+                    foreach (var a in emoteSet.PropertiesEmoteAction)
+                    {
+                        if ((EmoteType)a.Type != EmoteType.PromptAddAugment)
+                            continue;
+                        rows.Add($"type={a.Type} msg='{a.Message?.Trim()}' amt={a.Amount} pct={a.Percent}");
+                    }
+                }
+
+                AugmentEconomyTrace($"FALLBACK wcid={augmentGem.WeenieClassId} using biota amount={baseCost} pct={percentIncrease}; runtime msg='{biotaMsg}' type={emoteFromBiota.Type}");
+                AugmentEconomyTrace($"Weenie Use-category PromptAddAugment (type 123) rows only: {(rows.Count == 0 ? "(none)" : string.Join(" | ", rows))}");
+            }
+
+            AugmentEconomyTrace("======== GetPromptAddAugmentEconomy END (fallback biota) ========");
+        }
+
+        /// <summary>
         /// Executes an emote
         /// </summary>
         /// <param name="emoteSet">The parent set of this emote</param>
@@ -2135,9 +2326,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Creature50" ? 50 :
                                                    emote.Message == "Creature100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent; // Scaling factor per augmentation
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2221,9 +2411,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Item50" ? 50 :
                                                    emote.Message == "Item100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2306,9 +2495,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Life50" ? 50 :
                                                    emote.Message == "Life100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2391,9 +2579,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "War50" ? 50 :
                                                    emote.Message == "War100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2475,9 +2662,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Void50" ? 50 :
                                                    emote.Message == "Void100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2559,9 +2745,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Melee50" ? 50 :
                                                    emote.Message == "Melee100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2643,9 +2828,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Missile50" ? 50 :
                                                    emote.Message == "Missile100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2730,9 +2914,8 @@ namespace ACE.Server.WorldObjects.Managers
                                     // Calculate total duration increase (e.g., 5% per augmentation)
                                     double durationIncreasePercent = augCount * 5.0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2814,9 +2997,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Specialize50" ? 50 :
                                                    emote.Message == "Specialize100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2898,9 +3080,8 @@ namespace ACE.Server.WorldObjects.Managers
                                                    emote.Message == "Summon50" ? 50 :
                                                    emote.Message == "Summon100" ? 100 : 0;
 
-                                    // Base cost per augmentation
-                                    double baseCost = (double)emote.Amount;
-                                    double percentIncrease = (double)emote.Percent;
+                                    // Base cost per augmentation (prefers live cached weenie over biota snapshot)
+                                    GetPromptAddAugmentEconomy(WorldObject, emote, out double baseCost, out double percentIncrease);
                                     double totalCost = 0;
 
                                     // Calculate cumulative cost with per-augmentation multipliers
@@ -2909,23 +3090,23 @@ namespace ACE.Server.WorldObjects.Managers
                                         long currentAugCount = summonAugs + i;
                                         double augCost = baseCost + (currentAugCount * (baseCost * (1 + percentIncrease)));
 
-                                        // Apply cost multiplier based on augmentation threshold at THIS point
+                                        // Same tier breakpoints as Item (not Creature): 1250 / 2000 / 3000 / 3500 → 4x / 8x / 16x / 24x
                                         double multiplier = 1.0;
-                                        if (currentAugCount >= 5250)
+                                        if (currentAugCount >= 3500)
                                         {
-                                            multiplier = 24; // Apply 24x multiplier for augments >= 5250
+                                            multiplier = 24; // Apply 24x multiplier for augments >= 3500
                                         }
-                                        else if (currentAugCount >= 4750)
+                                        else if (currentAugCount >= 3000)
                                         {
-                                            multiplier = 16; // Apply 16x multiplier for augments >= 4750
+                                            multiplier = 16; // Apply 16x multiplier for augments >= 3000
                                         }
-                                        else if (currentAugCount >= 4000)
+                                        else if (currentAugCount >= 2000)
                                         {
-                                            multiplier = 8; // Apply 8x multiplier for augments >= 4000
+                                            multiplier = 8; // Apply 8x multiplier for augments >= 2000
                                         }
-                                        else if (currentAugCount >= 2750)
+                                        else if (currentAugCount >= 1250)
                                         {
-                                            multiplier = 4; // Apply 4x multiplier for augments >= 2750
+                                            multiplier = 4; // Apply 4x multiplier for augments >= 1250
                                         }
 
                                         totalCost += augCost * multiplier;

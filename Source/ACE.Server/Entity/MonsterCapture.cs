@@ -39,6 +39,14 @@ namespace ACE.Server.Entity
         private const int TIER_DEBUG = 4;
         private const int TIER_RESONANCE = 5;
         private const int TIER_ASHERONS = 6;
+
+        /// <summary>
+        /// Captured appearance scale on essence (<see cref="PropertyFloat.CapturedScale"/>) is normalized to this height (meters).
+        /// <see cref="ApplyAppearanceToCrate"/> scales up combat pet crates to <see cref="CapturedAppearanceCombatTargetHeightM"/>.
+        /// </summary>
+        private const float CapturedAppearancePassiveTargetHeightM = 0.75f;
+
+        private const float CapturedAppearanceCombatTargetHeightM = 1.5f;
         /// <summary>
         /// Siphon Lens System - Capture creature appearance
         /// Handles all lens tiers including Resonance (second-chance) and Asheron's (guaranteed)
@@ -739,12 +747,12 @@ namespace ACE.Server.Entity
         }
         
         /// <summary>
-        /// Normalize creature scale based on PHYSICAL HEIGHT
-        /// Targets a standard pet size (~0.75m tall) regardless of original model size
+        /// Normalize creature scale based on PHYSICAL HEIGHT (canonical passive-pet target).
+        /// Combat pet devices receive a larger scale when essence is applied (see <see cref="ApplyAppearanceToCrate"/>).
         /// </summary>
         private static float NormalizeScaleForPet(Creature creature, Player player)
         {
-            const float TARGET_HEIGHT = 0.75f; // Target height in meters (compact pet size)
+            const float TARGET_HEIGHT = CapturedAppearancePassiveTargetHeightM;
             const float MIN_SCALE = 0.01f;     // Allow massive creatures to shrink to target (75m → 0.75m)
             const float MAX_SCALE = 15.0f;     // Allow tiny creatures (rabbits, bugs) to scale up to target
             
@@ -827,7 +835,17 @@ namespace ACE.Server.Entity
             // Don't copy VisualOverrideIcon - we set the crate icon directly below
             crate.VisualOverridePaletteTemplate = capPaletteTemplate;
             crate.VisualOverrideShade = capShade;
-            crate.VisualOverrideScale = capScale;
+            // Essence scale is normalized to passive height (0.75m). Combat pet crates use 1.5m standard (2x).
+            if (capScale.HasValue)
+            {
+                var passiveNorm = capScale.Value;
+                crate.VisualOverrideScale = crate.IsCombatPetDevice()
+                    ? passiveNorm * (CapturedAppearanceCombatTargetHeightM / CapturedAppearancePassiveTargetHeightM)
+                    : passiveNorm;
+            }
+            else
+                crate.VisualOverrideScale = null;
+
             crate.VisualOverrideName = capCreatureName;
             crate.VisualOverrideCreatureVariant = capCreatureVariant;
             crate.VisualOverrideCapturedItems = capCapturedItems;
@@ -948,6 +966,20 @@ namespace ACE.Server.Entity
             {
                 player.UpdateProperty(crate, PropertyBool.PetBondAttuned, crate.PetBondAttuned);
                 player.UpdateProperty(crate, PropertyInt64.PetBondAttunedCharacterId, crate.PetBondAttunedCharacterId);
+            }
+
+            // Full object snapshot: the client caches name/icon data for inventory items; per-property
+            // string updates are not always enough (see Player.UpdateProperty for PropertyString). Same
+            // pattern as RecipeManager.UpdateObj for modified items.
+            player.EnqueueBroadcast(new GameMessageUpdateObject(crate));
+            if (crate.CurrentWieldedLocation != null)
+            {
+                player.EnqueueBroadcast(new GameMessageObjDescEvent(player));
+            }
+            else if (player.FindObject(crate.Guid.Full, Player.SearchLocations.MyInventory) != null)
+            {
+                // Client moves the item to the first container slot when it receives UpdateObject; mirror on server.
+                player.MoveItemToFirstContainerSlot(crate);
             }
 
             // Save the crate with updated icons

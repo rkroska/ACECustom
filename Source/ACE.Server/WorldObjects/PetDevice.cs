@@ -347,12 +347,45 @@ namespace ACE.Server.WorldObjects
         {
         }
 
-        protected override bool ShouldApplyActivationCooldown(Player player)
-        {
-            if (ServerConfig.pet_summon_cooldown_on_pet_death_only.Value && IsCombatPetDevice())
-                return false;
+        /// <summary>
+        /// Base <see cref="WorldObject.OnActivate"/> starts item cooldown before <see cref="ActOnUse"/>, which charged
+        /// cooldown on failed spawns, stow-only activations, and retail two-click passive flow. Pet devices defer
+        /// cooldown until <see cref="SummonCreature"/> completes with success. When
+        /// <see cref="ServerConfig.pet_summon_cooldown_on_pet_death_only"/> is enabled for combat pets, cooldown is
+        /// applied from <see cref="CombatPet.Die"/> only — not on summon.
+        /// When <see cref="ServerConfig.pet_combat_summon_skips_shared_cooldown"/> is enabled for combat pets, no
+        /// SharedCooldown is started on summon; combat pings and death handle timing instead.
+        /// </summary>
+        protected override bool ShouldApplyActivationCooldown(Player player) => false;
 
-            return base.ShouldApplyActivationCooldown(player);
+        /// <summary>
+        /// Upper bound (seconds) for this essence's SharedCooldown timers from combat refresh or death.
+        /// Uses <see cref="PropertyFloat.CooldownDuration"/> when positive; otherwise 45s default.
+        /// </summary>
+        public static float GetEssenceSharedCooldownCapSeconds(PetDevice device)
+        {
+            if (device == null)
+                return 0f;
+
+            var d = device.CooldownDuration;
+            if (d.HasValue && d.Value > 0)
+                return (float)d.Value;
+
+            return 45f;
+        }
+
+        private void TryApplySummonActivationCooldown(Player player)
+        {
+            if (player?.EnchantmentManager == null || CooldownId == null)
+                return;
+
+            if (ServerConfig.pet_summon_cooldown_on_pet_death_only.Value && IsCombatPetDevice())
+                return;
+
+            if (ServerConfig.pet_combat_summon_skips_shared_cooldown.Value && IsCombatPetDevice())
+                return;
+
+            player.EnchantmentManager.StartCooldown(this);
         }
 
         /// <summary>
@@ -508,6 +541,8 @@ namespace ACE.Server.WorldObjects
 
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyInt(this, PropertyInt.Structure, Structure.Value));
                 }
+
+                TryApplySummonActivationCooldown(player);
             }
             else
             {

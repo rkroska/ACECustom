@@ -43,7 +43,8 @@ namespace ACE.Server.WorldObjects
 
         private void SetEphemeralValues()
         {
-            Ethereal = true;
+            // Solid collision so pets respect doors and world geometry like normal creatures (ethereal walked through doors).
+            Ethereal = false;
             RadarBehavior = ACE.Entity.Enum.RadarBehavior.ShowNever;
             ItemUseable = Usable.No;
 
@@ -159,7 +160,10 @@ namespace ACE.Server.WorldObjects
                     if (CombatPet.TryDenyOwnerStowFromRecallBlock(player, combatPetEssenceStow, "HandleCurrentActivePet_Retail.combat_essence_stow"))
                         return false;
 
+                    // Same creature template: stow only (no resummon this activation). Different template: despawn and continue Init so another essence can replace on one click.
+                    var sameCreature = WeenieClassId == combatPetEssenceStow.WeenieClassId;
                     player.CurrentActivePet.Destroy();
+                    return !sameCreature;
                 }
                 else
                 {
@@ -196,6 +200,49 @@ namespace ACE.Server.WorldObjects
         private double nextSlowTickTime;
 
         /// <summary>
+        /// Engaged combat pets skip <see cref="SlowTick"/>; max-follow despawn is evaluated here at the same ~1 Hz as idle pets.
+        /// </summary>
+        private double _nextEngagedOwnerFollowDespawnCheckUnix;
+
+        /// <summary>
+        /// Destroy this pet if the owner is missing/invalid or farther than <see cref="ServerConfig.pet_owner_max_follow_distance_m"/> (same rule as idle <see cref="SlowTick"/>).
+        /// </summary>
+        /// <returns>True if this object was destroyed.</returns>
+        protected bool TryDestroyIfBeyondOwnerMaxFollowDistance()
+        {
+            if (P_PetOwner?.PhysicsObj == null)
+            {
+                log.Error($"{Name} ({Guid}).TryDestroyIfBeyondOwnerMaxFollowDistance() - P_PetOwner: {P_PetOwner}, P_PetOwner.PhysicsObj: {P_PetOwner?.PhysicsObj}");
+                Destroy();
+                return true;
+            }
+
+            var dist = GetCylinderDistance(P_PetOwner);
+
+            if (dist > PetFollowMaxDistanceMeters)
+            {
+                Destroy();
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// While <see cref="Creature.AttackTarget"/> is set, <see cref="Monster_Tick"/> does not run <see cref="SlowTick"/>;
+        /// call this at ~1 Hz so max-distance despawn matches idle pets.
+        /// </summary>
+        internal bool TryDespawnIfOwnerBeyondMaxFollowThrottled(double currentUnixTime)
+        {
+            if (currentUnixTime < _nextEngagedOwnerFollowDespawnCheckUnix)
+                return false;
+
+            _nextEngagedOwnerFollowDespawnCheckUnix = currentUnixTime + slowTickSeconds;
+
+            return TryDestroyIfBeyondOwnerMaxFollowDistance();
+        }
+
+        /// <summary>
         /// Called 1x per second
         /// </summary>
         public void SlowTick(double currentUnixTime)
@@ -204,20 +251,10 @@ namespace ACE.Server.WorldObjects
 
             nextSlowTickTime += slowTickSeconds;
 
-            if (P_PetOwner?.PhysicsObj == null)
-            {
-                log.Error($"{Name} ({Guid}).SlowTick() - P_PetOwner: {P_PetOwner}, P_PetOwner.PhysicsObj: {P_PetOwner?.PhysicsObj}");
-                Destroy();
+            if (TryDestroyIfBeyondOwnerMaxFollowDistance())
                 return;
-            }
 
             var dist = GetCylinderDistance(P_PetOwner);
-
-            if (dist > PetFollowMaxDistance)
-            {
-                Destroy();
-                return;
-            }
 
             if (!IsMoving && dist > PetFollowMinDistance)
             {
@@ -235,7 +272,11 @@ namespace ACE.Server.WorldObjects
         // it will turn and start running torwards its owner
 
         protected const float PetFollowMinDistance = 2.0f;
-        protected const float PetFollowMaxDistance = 192.0f;
+
+        /// <summary>
+        /// Max distance from owner before auto-despawn; see <see cref="ServerConfig.pet_owner_max_follow_distance_m"/>. Values &lt;= 0 in config clamp to 1m.
+        /// </summary>
+        protected float PetFollowMaxDistanceMeters => (float)Math.Max(1.0, ServerConfig.pet_owner_max_follow_distance_m.Value);
 
         /// <summary>
         /// Client motion for following the owner. Passive pets always use this; combat pets use it for
