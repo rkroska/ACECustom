@@ -385,6 +385,20 @@ namespace ACE.Server.WorldObjects
             if (ServerConfig.pet_combat_summon_skips_shared_cooldown.Value && IsCombatPetDevice())
                 return;
 
+            // Optional global override: let combat pet essences have a short shared cooldown on summon
+            // without editing each device's CooldownDuration in the DB. Death cooldown is handled elsewhere.
+            if (IsCombatPetDevice())
+            {
+                var overrideSeconds = (float)ServerConfig.pet_combat_summon_initial_shared_cooldown_seconds.Value;
+                if (overrideSeconds > 0)
+                {
+                    var cap = GetEssenceSharedCooldownCapSeconds(this);
+                    var duration = cap > 0 ? Math.Min(overrideSeconds, cap) : overrideSeconds;
+                    player.EnchantmentManager.StartOrRefreshItemCooldown(Guid.Full, CooldownId.Value, duration);
+                    return;
+                }
+            }
+
             player.EnchantmentManager.StartCooldown(this);
         }
 

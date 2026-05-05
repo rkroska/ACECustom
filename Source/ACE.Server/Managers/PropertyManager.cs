@@ -326,10 +326,11 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_device_pyreal_auto_refill_enabled { get; private set; } = new(false, "If TRUE, players may pay pyreals to refill empty summoning essence charges when enrolled.");
 
         public static ConfigProperty<long> pet_bond_level_cap { get; private set; } = new(1000, "Maximum pet bond level.");
-        public static ConfigProperty<long> pet_summon_lifespan_seconds_per_aug { get; private set; } = new(0, "Seconds of combat pet lifespan added per summoning augmentation.");
-        public static ConfigProperty<long> pet_combat_lifespan_seconds_per_duration_aug { get; private set; } = new(0, "Seconds of lifespan added per duration augmentation on essence.");
+        public static ConfigProperty<double> pet_summon_lifespan_seconds_per_aug { get; private set; } = new(0.0, "Seconds of combat pet lifespan added per summoning augmentation.");
+        public static ConfigProperty<double> pet_combat_lifespan_seconds_per_duration_aug { get; private set; } = new(0.0, "Seconds of lifespan added per duration augmentation on essence.");
         public static ConfigProperty<long> pet_combat_recall_block_after_damage_seconds { get; private set; } = new(0, "Seconds after combat pet damage during which owner recall/stow may be blocked (0 = off).");
         public static ConfigProperty<long> pet_combat_essence_damage_cooldown_ring_seconds { get; private set; } = new(5, "Summoning essence cooldown ring duration (seconds) after combat pet deals or takes damage. Separate from pet_combat_recall_block_after_damage_seconds. 0 = no damage-triggered ring.");
+        public static ConfigProperty<long> pet_combat_summon_initial_shared_cooldown_seconds { get; private set; } = new(0, "If > 0, overrides the summoning essence SharedCooldown duration (seconds) on successful combat pet summon only; does not affect death cooldown or damage-triggered ring refresh.");
         public static ConfigProperty<long> pet_bond_xp_min_award { get; private set; } = new(1, "Minimum bond XP awarded per qualifying kill.");
 
         public static ConfigProperty<double> pet_combat_summon_aug_spell_mitigation_max { get; private set; } = new(0.5, "Upper cap on aug spell mitigation fraction for combat pets.");
