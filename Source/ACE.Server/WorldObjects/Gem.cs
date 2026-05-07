@@ -344,17 +344,20 @@ namespace ACE.Server.WorldObjects
                         ChatMessageType.Broadcast));
                     return;
                 }
-
                 // Activate
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
 
-                // ILT: Infinite Casting â€” tell the client comps are no longer required
+                // ILT: Infinite Casting — tell the client comps are no longer required
                 if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
                 {
                     player.SpellComponentsRequired = false;
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, false));
                 }
+
+                // ILT: Asheron's Favor — apply Health + Natural Armor enchantments
+                if (abilityId == CharmAbilityRegistry.AsheronsFavorAbilityId)
+                    player.ApplyAsheronsFavorEnchantments();
 
                 var activateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, true);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(activateMsg, ChatMessageType.Broadcast));
@@ -366,12 +369,16 @@ namespace ACE.Server.WorldObjects
                 IsCharmActivated = false;
                 CharmAbilityRegistry.Apply(player, abilityId, false);
 
-                // ILT: Infinite Casting â€” restore client comp requirement
+                // ILT: Infinite Casting — restore client comp requirement
                 if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
                 {
                     player.SpellComponentsRequired = true;
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
                 }
+
+                // ILT: Asheron's Favor — remove Health + Natural Armor enchantments
+                if (abilityId == CharmAbilityRegistry.AsheronsFavorAbilityId)
+                    player.RemoveAsheronsFavorEnchantments();
 
                 var deactivateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, false);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(deactivateMsg, ChatMessageType.Broadcast));
@@ -399,11 +406,26 @@ namespace ACE.Server.WorldObjects
                 return $"Mana Barrier Level {level} deactivated. Your Mana is no longer absorbing damage.";
             }
 
-            if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId) // Infinite Casting Stone
+            if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
             {
                 return activating
                     ? "Infinite Casting Stone activated. Spells will be cast without consuming components."
                     : "Infinite Casting Stone deactivated. Spell components will be consumed normally.";
+            }
+
+            if (abilityId == CharmAbilityRegistry.AsheronsFavorAbilityId)
+            {
+                if (activating)
+                {
+                    return level switch
+                    {
+                        1 => "Asheron's Favor activated. Asheron's lesser blessing bolsters your Health, and Blackmoor's Favor hardens your skin.",
+                        2 => "Greater Asheron's Favor activated. The twin blessings of Dereth's greatest protectors strengthen your body and resolve.",
+                        3 => "Asheron's Blessing activated. The full might of Asheron's gift and Blackmoor's legacy flow through you. Your Health and Natural Armor are greatly enhanced.",
+                        _ => "Asheron's Favor activated."
+                    };
+                }
+                return $"Asheron's Favor (Level {level}) deactivated. The protective blessings have faded.";
             }
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
