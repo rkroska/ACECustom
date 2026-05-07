@@ -1,9 +1,13 @@
 -- ============================================================
 -- Greater Asheron's Favor (Tier 2) — WCID 777710002
--- Greater Asheron's Favor (+15% Health, +75 Natural Armor)
--- ============================================================
-
+-- Greater Asheron's Favor (+15% Health, +100 Natural Armor)
+-- Asheron's Blessing    (Tier 3) — WCID 777720002
+-- Asheron's Blessing    (+20% Health, +250 Natural Armor)
 DELETE FROM `weenie` WHERE `class_Id` = 777710002;
+DELETE FROM `weenie_properties_bool`   WHERE `object_Id` = 777710002;
+DELETE FROM `weenie_properties_int`    WHERE `object_Id` = 777710002;
+DELETE FROM `weenie_properties_d_i_d`  WHERE `object_Id` = 777710002;
+DELETE FROM `weenie_properties_string` WHERE `object_Id` = 777710002;
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
 VALUES (777710002, 'ilt_asheronsfavorcharm_level2', 38, NOW());
 
@@ -47,6 +51,10 @@ While held, your maximum Health is bolstered by 15% and your Natural Armor is ha
 -- ============================================================
 
 DELETE FROM `weenie` WHERE `class_Id` = 777720002;
+DELETE FROM `weenie_properties_bool`   WHERE `object_Id` = 777720002;
+DELETE FROM `weenie_properties_int`    WHERE `object_Id` = 777720002;
+DELETE FROM `weenie_properties_d_i_d`  WHERE `object_Id` = 777720002;
+DELETE FROM `weenie_properties_string` WHERE `object_Id` = 777720002;
 INSERT INTO `weenie` (`class_Id`, `class_Name`, `type`, `last_Modified`)
 VALUES (777720002, 'ilt_asheronsfavorcharm_level3', 38, NOW());
 

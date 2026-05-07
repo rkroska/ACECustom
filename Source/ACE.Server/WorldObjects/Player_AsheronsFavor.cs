@@ -11,9 +11,9 @@ namespace ACE.Server.WorldObjects
         private const uint AsheronsFavorSpell_Armor  = 3811; // Blackmoor's Favor             (+Natural Armor)
 
         // ── Tier scaling ───────────────────────────────────────────────────────
-        // Tier 1: +10% Health, +50  Natural Armor (base spell values)
-        // Tier 2: +15% Health, +75  Natural Armor
-        // Tier 3: +20% Health, +100 Natural Armor
+        // Tier 1: +10% Health, +50  Natural Armor
+        // Tier 2: +15% Health, +100 Natural Armor
+        // Tier 3: +20% Health, +250 Natural Armor
 
         private static float GetAsheronsFavorHealthMod(int level) => level switch
         {
@@ -93,12 +93,17 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private void DispelAsheronsFavorSpell(uint spellId)
         {
+            const int maxAttempts = 10;
+            var attempts = 0;
             var entry = EnchantmentManager.GetEnchantment(spellId);
-            while (entry != null)
+            while (entry != null && attempts < maxAttempts)
             {
                 EnchantmentManager.Dispel(entry);
+                attempts++;
                 entry = EnchantmentManager.GetEnchantment(spellId);
             }
+            if (attempts >= maxAttempts)
+                log.Warn($"[AsheronsFavor] DispelAsheronsFavorSpell: spell {spellId} still present after {maxAttempts} dispel attempts — possible EnchantmentManager issue.");
         }
     }
 }

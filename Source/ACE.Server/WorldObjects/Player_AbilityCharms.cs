@@ -93,7 +93,7 @@ namespace ACE.Server.WorldObjects
             // but re-apply if somehow missing (e.g. biota rollback, first activation after upgrade).
             if (CharmAbilityRegistry.IsActive(this, CharmAbilityRegistry.AsheronsFavorAbilityId))
             {
-                if (!EnchantmentManager.HasSpell(4024) || !EnchantmentManager.HasSpell(3811))
+                if (!EnchantmentManager.HasSpell(AsheronsFavorSpell_Health) || !EnchantmentManager.HasSpell(AsheronsFavorSpell_Armor))
                     ApplyAsheronsFavorEnchantments();
             }
         }
