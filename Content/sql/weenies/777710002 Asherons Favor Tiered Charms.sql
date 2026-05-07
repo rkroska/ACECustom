@@ -16,6 +16,7 @@ VALUES (777710002,    11, 1)
      , (777710002,    13, 1)
      , (777710002,    14, 1)
      , (777710002,    63, 1)
+     , (777710002,  9040, 1)  /* IsCharm — allows AuditItemSpells to find enchantments via allPossessions */
      , (777710002, 50000, 1);
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
@@ -63,6 +64,7 @@ VALUES (777720002,    11, 1)
      , (777720002,    13, 1)
      , (777720002,    14, 1)
      , (777720002,    63, 1)
+     , (777720002,  9040, 1)  /* IsCharm — allows AuditItemSpells to find enchantments via allPossessions */
      , (777720002, 50000, 1);
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)

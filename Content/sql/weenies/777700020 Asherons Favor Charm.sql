@@ -14,6 +14,7 @@ VALUES (777700020,    11, 1)  /* IgnoreCollisions */
      , (777700020,    13, 1)  /* Ethereal */
      , (777700020,    14, 1)  /* GravityStatus */
      , (777700020,    63, 1)  /* UnlimitedUse */
+     , (777700020,  9040, 1)  /* IsCharm — allows AuditItemSpells to find enchantments via allPossessions */
      , (777700020, 50000, 1); /* IsAbilityCharm */
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)

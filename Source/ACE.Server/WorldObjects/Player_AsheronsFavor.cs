@@ -1,3 +1,5 @@
+using System.Linq;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.Structure;
@@ -34,10 +36,16 @@ namespace ACE.Server.WorldObjects
         /// Dispels any existing copies of both spells, then re-applies them as
         /// infinite-duration enchantments scaled to the active charm tier.
         /// </summary>
-        public void ApplyAsheronsFavorEnchantments()
+        public void ApplyAsheronsFavorEnchantments(WorldObject charm = null)
         {
             ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.AsheronsFavorAbilityId, out var level);
             if (level < 1) level = 1;
+
+            // Resolve the charm item — needed so EnchantmentManager records it as CasterObjectId,
+            // which lets AuditItemSpells find it in allPossessions and keep the enchantments.
+            charm ??= GetAllPossessions().FirstOrDefault(i =>
+                (i.GetProperty(PropertyBool.IsAbilityCharm) ?? false) &&
+                (i.GetProperty(PropertyInt.CharmGrantsAbility) ?? 0) == CharmAbilityRegistry.AsheronsFavorAbilityId);
 
             var spell4024 = new Spell(AsheronsFavorSpell_Health);
             var spell3811 = new Spell(AsheronsFavorSpell_Armor);
@@ -53,7 +61,8 @@ namespace ACE.Server.WorldObjects
             DispelAsheronsFavorSpell(AsheronsFavorSpell_Armor);
 
             // Apply spell 4024 with infinite duration + tier-scaled StatModValue.
-            var result4024 = EnchantmentManager.Add(spell4024, this, null);
+            // Pass charm as caster so CasterObjectId = charm GUID (survives AuditItemSpells).
+            var result4024 = EnchantmentManager.Add(spell4024, charm, null);
             if (result4024?.Enchantment != null)
             {
                 result4024.Enchantment.StatModValue = GetAsheronsFavorHealthMod(level);
@@ -64,7 +73,7 @@ namespace ACE.Server.WorldObjects
             }
 
             // Apply spell 3811 with infinite duration + tier-scaled StatModValue.
-            var result3811 = EnchantmentManager.Add(spell3811, this, null);
+            var result3811 = EnchantmentManager.Add(spell3811, charm, null);
             if (result3811?.Enchantment != null)
             {
                 result3811.Enchantment.StatModValue = GetAsheronsFavorArmorMod(level);
