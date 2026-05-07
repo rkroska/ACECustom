@@ -38,4 +38,6 @@ VALUES (777700020,    1, 33558517)  /* Setup - Ember */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700020,  1, 'Asheron''s Favor')
-     , (777700020, 14, 'Once carried by emissaries of Asheron himself, this charm resonates with the combined blessings of two of Dereth''s greatest protectors. Double-click to activate. While held, your maximum Health is bolstered by Asheron''s Lesser Benediction and your skin is hardened by the enduring resolve of Blackmoor''s Favor. The blessings persist as long as this charm rests in your possession.');
+     , (777700020, 14, '[Tier 1] Double click to activate.
+
+While held, your maximum Health is bolstered by 10% and your Natural Armor is hardened by 50 points through the combined blessings of Asheron and Antius Blackmoor.');
