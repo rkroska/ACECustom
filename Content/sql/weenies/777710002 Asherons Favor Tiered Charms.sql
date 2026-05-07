@@ -36,7 +36,7 @@ VALUES (777710002,    1, 33558517)
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777710002,  1, 'Greater Asheron''s Favor')
-     , (777710002, 14, '[Tier 2] The twin blessings of Dereth''s greatest protectors burn brighter within this charm. Double-click to activate. While held, your maximum Health is increased by 15% and your Natural Armor is hardened by 75 points through the combined will of Asheron and Antius Blackmoor.');
+     , (777710002, 14, '[Tier 2] The twin blessings of Dereth''s greatest protectors burn brighter within this charm. Double-click to activate. While held, your maximum Health is increased by 15% and your Natural Armor is hardened by 100 points through the combined will of Asheron and Antius Blackmoor.');
 
 -- ============================================================
 -- Asheron's Blessing (Tier 3) — WCID 777720002
@@ -76,4 +76,4 @@ VALUES (777720002,    1, 33558517)
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777720002,  1, 'Asheron''s Blessing')
-     , (777720002, 14, '[Tier 3] The fullest expression of Asheron''s grace upon a mortal soul. Double-click to activate. While held, your maximum Health swells by 20% and your flesh is fortified by 100 points of Natural Armor — the combined legacy of two of the mightiest figures in Dereth''s history, sustained without end.');
+     , (777720002, 14, '[Tier 3] The fullest expression of Asheron''s grace upon a mortal soul. Double-click to activate. While held, your maximum Health swells by 20% and your flesh is fortified by 250 points of Natural Armor — the combined legacy of two of the mightiest figures in Dereth''s history, sustained without end.');

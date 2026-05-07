@@ -24,8 +24,8 @@ namespace ACE.Server.WorldObjects
 
         private static float GetAsheronsFavorArmorMod(int level) => level switch
         {
-            2 => 75f,
-            3 => 100f,
+            2 => 100f,
+            3 => 250f,
             _ => 50f,    // Tier 1 default
         };
 

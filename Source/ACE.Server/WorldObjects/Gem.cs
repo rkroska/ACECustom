@@ -420,8 +420,8 @@ namespace ACE.Server.WorldObjects
                     return level switch
                     {
                         1 => "Asheron's Favor activated. 10% HP + 50 Armor",
-                        2 => "Greater Asheron's Favor activated. 15% HP + 75 Armor",
-                        3 => "Asheron's Blessing activated. 20% HP + 100 Armor",
+                        2 => "Greater Asheron's Favor activated. 15% HP + 100 Armor",
+                        3 => "Asheron's Blessing activated. 20% HP + 250 Armor",
                         _ => "Asheron's Favor activated."
                     };
                 }
