@@ -38,7 +38,8 @@ INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777710002,  1, 'Greater Asheron''s Favor')
      , (777710002, 14, '[Tier 2] Double click to activate.
 
-While held, your maximum Health is bolstered by 15% and your Natural Armor is hardened by 100 points through the combined blessings of Asheron and Antius Blackmoor.');
+While held, your maximum Health is bolstered by 15% and your Natural Armor is hardened by 100 points through the combined blessings of Asheron and Antius Blackmoor.
+');
 
 -- ============================================================
 -- Asheron's Blessing (Tier 3) — WCID 777720002
@@ -80,4 +81,5 @@ INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777720002,  1, 'Asheron''s Blessing')
      , (777720002, 14, '[Tier 3] Double click to activate.
 
-While held, your maximum Health is bolstered by 20% and your Natural Armor is hardened by 250 points through the combined blessings of Asheron and Antius Blackmoor.');
+While held, your maximum Health is bolstered by 20% and your Natural Armor is hardened by 250 points through the combined blessings of Asheron and Antius Blackmoor.
+');
