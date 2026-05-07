@@ -32,7 +32,7 @@ VALUES (777700020,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700020,    1, 33558517)  /* Setup - Ember */
      , (777700020,    3, 536870932) /* SoundTable */
-     , (777700020,    8, 100691356) /* Icon */
+     , (777700020,    8, 100683150) /* Icon - Asheron's Lesser Benediction */
      , (777700020,   48, 100676435) /* IconUnderlay */
      , (777700020,   50, 100667550); /* IconOverlay - Tier 1 */
 

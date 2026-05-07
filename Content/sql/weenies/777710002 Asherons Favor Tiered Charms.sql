@@ -30,7 +30,7 @@ VALUES (777710002,     1, 2048)
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710002,    1, 33558517)
      , (777710002,    3, 536870932)
-     , (777710002,    8, 100691356)
+     , (777710002,    8, 100683150) /* Icon - Asheron's Lesser Benediction */
      , (777710002,   48, 100676435)
      , (777710002,   50, 100667551); /* IconOverlay - Tier 2 */
 
@@ -72,7 +72,7 @@ VALUES (777720002,     1, 2048)
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720002,    1, 33558517)
      , (777720002,    3, 536870932)
-     , (777720002,    8, 100691356)
+     , (777720002,    8, 100683150) /* Icon - Asheron's Lesser Benediction */
      , (777720002,   48, 100676435)
      , (777720002,   50, 100667552); /* IconOverlay - Tier 3 */
 
