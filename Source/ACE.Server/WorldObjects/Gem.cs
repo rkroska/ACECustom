@@ -419,7 +419,7 @@ namespace ACE.Server.WorldObjects
                 {
                     return level switch
                     {
-                        1 => "Asheron's Favor activated. Asheron's lesser blessing bolsters your Health, and Blackmoor's Favor hardens your skin.",
+                        1 => "Asheron's Favor activated. Asheron's Lesser Blessing bolsters your Health, and Blackmoor's Favor hardens your skin.",
                         2 => "Greater Asheron's Favor activated. The twin blessings of Dereth's greatest protectors strengthen your body and resolve.",
                         3 => "Asheron's Blessing activated. The full might of Asheron's gift and Blackmoor's legacy flow through you. Your Health and Natural Armor are greatly enhanced.",
                         _ => "Asheron's Favor activated."

@@ -58,6 +58,7 @@ namespace ACE.Server.WorldObjects
             {
                 result4024.Enchantment.StatModValue = GetAsheronsFavorHealthMod(level);
                 result4024.Enchantment.Duration     = -1.0;
+                result4024.Enchantment.PowerLevel   = int.MaxValue; // Ensure manual gem use is always Surpassed
                 Session?.Network.EnqueueSend(
                     new GameEventMagicUpdateEnchantment(Session, new Enchantment(this, result4024.Enchantment)));
             }
@@ -68,6 +69,7 @@ namespace ACE.Server.WorldObjects
             {
                 result3811.Enchantment.StatModValue = GetAsheronsFavorArmorMod(level);
                 result3811.Enchantment.Duration     = -1.0;
+                result3811.Enchantment.PowerLevel   = int.MaxValue; // Ensure manual gem use is always Surpassed
                 Session?.Network.EnqueueSend(
                     new GameEventMagicUpdateEnchantment(Session, new Enchantment(this, result3811.Enchantment)));
             }
