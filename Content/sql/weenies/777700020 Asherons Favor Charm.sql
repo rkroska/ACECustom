@@ -39,7 +39,6 @@ VALUES (777700020,    1, 33558517)  /* Setup - Ember */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700020,  1, 'Asheron''s Favor')
-     , (777700020, 14, '[Tier 1] Double click to activate.
-
+     , (777700020, 14, '
 While held, your maximum Health is bolstered by 10% and your Natural Armor is hardened by 50 points through the combined blessings of Asheron and Antius Blackmoor.
 ');

@@ -435,10 +435,21 @@ namespace ACE.Server.Network.Structure
 
             if (wo.GetProperty(PropertyBool.IsCharm) == true)
             {
-                if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse))
-                    PropertiesString[PropertyString.Use] = $"Charm: Holding this item grants its magical effects.\n{existingUse}";
+                string charmHeader;
+                if (wo.GetProperty(PropertyBool.IsAbilityCharm) == true)
+                {
+                    var tier = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
+                    charmHeader = $"Charm [Tier {tier}]: Double click to activate (toggles).";
+                }
                 else
-                    PropertiesString[PropertyString.Use] = "Charm: Holding this item grants its magical effects.";
+                {
+                    charmHeader = "Charm: Holding this item grants its magical effects.";
+                }
+
+                if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse))
+                    PropertiesString[PropertyString.Use] = $"{charmHeader}\n{existingUse}";
+                else
+                    PropertiesString[PropertyString.Use] = charmHeader;
             }
 
             if (wo is CraftTool && (wo.ItemType == ItemType.TinkeringMaterial || wo.WeenieClassId >= 36619 && wo.WeenieClassId <= 36628 || wo.WeenieClassId >= 36634 && wo.WeenieClassId <= 36636))
