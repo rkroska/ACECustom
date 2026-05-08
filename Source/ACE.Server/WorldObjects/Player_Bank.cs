@@ -1670,6 +1670,13 @@ namespace ACE.Server.WorldObjects
                 return false;
             }
             
+            if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                LogTransfer("TransferPyreals", "Pyreals", Amount, CharacterDestination, false, "Self-transfer attempted");
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
+                return false;
+            }
+            
             log.Info($"[BANK_DEBUG] Player: {Name} | Target player found | Name: {tarplayer.Name} | Type: {(tarplayer is OfflinePlayer ? "Offline" : "Online")}");
             
             long oldBalance = BankedPyreals ?? 0;
@@ -1799,6 +1806,12 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"Character '{CharacterDestination}' not found.", ChatMessageType.System));
                 return false;
             }
+            
+            if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
+                return false;
+            }
             else
             {
                 if (tarplayer is OfflinePlayer)
@@ -1878,6 +1891,12 @@ namespace ACE.Server.WorldObjects
             if (tarplayer == null)
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"Character '{CharacterDestination}' not found.", ChatMessageType.System));
+                return false;
+            }
+            
+            if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
                 return false;
             }
             else
@@ -1969,6 +1988,12 @@ namespace ACE.Server.WorldObjects
             if (tarplayer == null)
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"Character '{CharacterDestination}' not found.", ChatMessageType.System));
+                return false;
+            }
+            
+            if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
                 return false;
             }
             
@@ -2074,6 +2099,12 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"Character '{CharacterDestination}' not found.", ChatMessageType.System));
                 return false;
             }
+            
+            if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
+                return false;
+            }
             else
             {
                 if (tarplayer is OfflinePlayer)
@@ -2162,6 +2193,12 @@ namespace ACE.Server.WorldObjects
             if (tarplayer == null)
             {
                 Session.Network.EnqueueSend(new GameMessageSystemChat($"Character '{CharacterDestination}' not found.", ChatMessageType.System));
+                return false;
+            }
+            
+            if (string.Equals(tarplayer.Name, this.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("You cannot transfer currency to yourself.", ChatMessageType.System));
                 return false;
             }
             else
