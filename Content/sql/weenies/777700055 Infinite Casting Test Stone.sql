@@ -41,6 +41,7 @@ INSERT INTO weenie_properties_int (object_Id, type, value) VALUES
 (777700055,   114,     1),  -- Attuned
 (777700055,   267,  3600),  -- Lifespan: 60 minutes
 (777700055, 50000,    16),  -- CharmGrantsAbility: ID 16 = Infinite Casting
+(777700055, 50005,     1),  -- CharmLevel: 1
 (777700055, 50006,     1);  -- CharmMaxLevel: 1 tier only
 
 -- Strings

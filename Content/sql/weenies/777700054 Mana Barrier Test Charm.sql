@@ -22,6 +22,7 @@ VALUES (777700054,     1, 65536) /* ItemType - Misc */
      , (777700054,   114,     1) /* Attuned - Attuned */
      , (777700054, 50000,     1) /* CharmGrantsAbility - ID 1 = Mana Barrier */
      , (777700054,   267,  3600) /* Lifespan - 3600 seconds = 60 minutes */
+     , (777700054, 50005,     1) /* CharmLevel - 1 */
      , (777700054, 50006,     3) /* CharmMaxLevel - 3 tiers total */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
