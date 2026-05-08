@@ -30,7 +30,8 @@ VALUES (777710002,     1, 2048)
      , (777710002,    93, 1044)
      , (777710002,   114,    1)
      , (777710002, 50000,   17) /* CharmGrantsAbility - 17 */
-     , (777710002, 50005,    2); /* CharmLevel - 2 */
+     , (777710002, 50005,    2) /* CharmLevel - 2 */
+     , (777710002, 50006,    3); /* CharmMaxLevel - 3 tiers total */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710002,    1, 33558517)
@@ -77,7 +78,8 @@ VALUES (777720002,     1, 2048)
      , (777720002,    93, 1044)
      , (777720002,   114,    1)
      , (777720002, 50000,   17) /* CharmGrantsAbility - 17 */
-     , (777720002, 50005,    3); /* CharmLevel - 3 */
+     , (777720002, 50005,    3) /* CharmLevel - 3 */
+     , (777720002, 50006,    3); /* CharmMaxLevel - 3 tiers total */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720002,    1, 33558517)

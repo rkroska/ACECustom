@@ -41,7 +41,8 @@ INSERT INTO weenie_properties_int (object_Id, type, value) VALUES
 (777700019,    93,  1044),  -- PhysicsState
 (777700019,   114,     1),  -- Attuned
 (777700019, 50000,    16),  -- CharmGrantsAbility: ID 16 = Infinite Casting
-(777700019, 50005,     1);  -- CharmLevel: 1
+(777700019, 50005,     1),  -- CharmLevel: 1
+(777700019, 50006,     1);  -- CharmMaxLevel: 1 tier only
 
 -- Strings
 INSERT INTO weenie_properties_string (object_Id, type, value) VALUES

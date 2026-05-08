@@ -28,7 +28,8 @@ VALUES (777700020,     1, 2048) /* ItemType - Gem */
      , (777700020,    93, 1044) /* PhysicsState */
      , (777700020,   114,    1) /* Attuned */
      , (777700020, 50000,   17) /* CharmGrantsAbility - ID 17 = Asheron's Favor */
-     , (777700020, 50005,    1); /* CharmLevel - 1 */
+     , (777700020, 50005,    1) /* CharmLevel - 1 */
+     , (777700020, 50006,    3); /* CharmMaxLevel - 3 tiers total */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700020,    1, 33558517)  /* Setup - Ember */

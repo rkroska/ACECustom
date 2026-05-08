@@ -21,7 +21,8 @@ VALUES (777700001,     1, 2048) /* ItemType - Gem */
      , (777700001,    93,  1044) /* PhysicsState */
      , (777700001,   114,     1) /* Attuned - Attuned */
      , (777700001, 50000,     1) /* CharmGrantsAbility - ID 1 = Mana Barrier */
-     , (777700001, 50005,     1) /* CharmLevel - 1 */;
+     , (777700001, 50005,     1) /* CharmLevel - 1 */
+     , (777700001, 50006,     3) /* CharmMaxLevel - 3 tiers total */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700001,    1, 33558517)  /* Setup - Ember */
