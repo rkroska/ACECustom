@@ -441,7 +441,9 @@ namespace ACE.Server.Network.Structure
                     var tier    = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
                     var maxTier = wo.GetProperty(PropertyInt.CharmMaxLevel);
                     var tierStr = maxTier.HasValue ? $"{tier}/{maxTier}" : $"{tier}";
-                    charmHeader = $"Charm [Tier {tierStr}]\n\nDouble click to toggle ability on / off.";
+                    var isOn    = wo.GetProperty(PropertyBool.IsCharmActivated) == true;
+                    var status  = isOn ? "Status: ON" : "Status: OFF";
+                    charmHeader = $"Charm [Tier {tierStr}]\n\n{status}\n\nDouble click to toggle ability on / off.";
                 }
                 else
                 {
