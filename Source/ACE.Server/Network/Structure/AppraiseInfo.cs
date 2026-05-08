@@ -439,7 +439,7 @@ namespace ACE.Server.Network.Structure
                 if (wo.GetProperty(PropertyBool.IsAbilityCharm) == true)
                 {
                     var tier = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
-                    charmHeader = $"Charm [Tier {tier}]: Double click to activate (toggles).";
+                    charmHeader = $"Charm [Tier {tier}]: Double click to toggle ability on / off.";
                 }
                 else
                 {
