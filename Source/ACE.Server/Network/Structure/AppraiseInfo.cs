@@ -439,7 +439,7 @@ namespace ACE.Server.Network.Structure
                 if (wo.GetProperty(PropertyBool.IsAbilityCharm) == true)
                 {
                     var tier = wo.GetProperty(PropertyInt.CharmLevel) ?? 1;
-                    charmHeader = $"Charm [Tier {tier}]: Double click to toggle ability on / off.";
+                    charmHeader = $"Charm [Tier {tier}]\n\nDouble click to toggle ability on / off.";
                 }
                 else
                 {
@@ -447,7 +447,7 @@ namespace ACE.Server.Network.Structure
                 }
 
                 if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse))
-                    PropertiesString[PropertyString.Use] = $"{charmHeader}\n{existingUse}";
+                    PropertiesString[PropertyString.Use] = $"{charmHeader}\n\n{existingUse.TrimStart('\n')}";
                 else
                     PropertiesString[PropertyString.Use] = charmHeader;
             }
