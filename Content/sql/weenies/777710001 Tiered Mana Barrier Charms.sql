@@ -7,7 +7,8 @@ INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
 VALUES (777710001,    11, 1) /* IgnoreCollisions */
      , (777710001,    13, 1) /* Ethereal */
      , (777710001,    14, 1) /* GravityStatus */
-     , (777710001,   63, 1) /* UnlimitedUse */
+     , (777710001,    63, 1) /* UnlimitedUse */
+     , (777710001,  9040, 1) /* IsCharm — enables tier-aware appraise header */
      , (777710001, 50000, 1) /* IsAbilityCharm */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
@@ -32,7 +33,9 @@ VALUES (777710001,    1, 33558517)  /* Setup - Ember */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777710001,    1, 'Greater Mana Barrier Charm')
-     , (777710001,   14, 'Double-click to activate or deactivate Mana Barrier. [Tier 2] Absorbs more damage per mana point consumed.');
+     , (777710001,   14, '
+Absorbs more damage per mana point consumed.
+');
 
 -- Master Mana Barrier (Level 3)
 DELETE FROM `weenie` WHERE `class_Id` = 777720001;
@@ -43,7 +46,8 @@ INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
 VALUES (777720001,    11, 1) /* IgnoreCollisions */
      , (777720001,    13, 1) /* Ethereal */
      , (777720001,    14, 1) /* GravityStatus */
-     , (777720001,   63, 1) /* UnlimitedUse */
+     , (777720001,    63, 1) /* UnlimitedUse */
+     , (777720001,  9040, 1) /* IsCharm — enables tier-aware appraise header */
      , (777720001, 50000, 1) /* IsAbilityCharm */;
 
 INSERT INTO `weenie_properties_int` (`object_Id`, `type`, `value`)
@@ -68,4 +72,6 @@ VALUES (777720001,    1, 33558517)  /* Setup - Ember */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777720001,    1, 'Master Mana Barrier Charm')
-     , (777720001,   14, 'Double-click to activate or deactivate Mana Barrier. [Tier 3] Absorbs significantly more damage per mana point consumed.');
+     , (777720001,   14, '
+Absorbs significantly more damage per mana point consumed.
+');

@@ -24,6 +24,7 @@ INSERT INTO weenie_properties_bool (object_Id, type, value) VALUES
 (777700055,    11, 1),  -- IgnoreCollisions
 (777700055,    13, 1),  -- Ethereal
 (777700055,    14, 1),  -- GravityStatus
+(777700055,  9040, 1),  -- IsCharm — enables tier-aware appraise header
 (777700055, 50000, 1),  -- IsAbilityCharm
 (777700055, 50002, 1);  -- IsTestCharm (triggers expiry message)
 
@@ -44,8 +45,9 @@ INSERT INTO weenie_properties_int (object_Id, type, value) VALUES
 -- Strings
 INSERT INTO weenie_properties_string (object_Id, type, value) VALUES
 (777700055,  1, 'Infinite Casting Test Stone'),
-(777700055, 14, 'A smooth, obsidian-like stone that hums with the infinite echoes of a thousand cast spells. It seems to draw energy from the very air around it.'),
-(777700055, 16, 'TEST — Expires after 60 minutes. Double-click to activate. While this stone is in your possession, spells are cast without consuming components.');
+(777700055, 14, '
+TEST — Expires after 60 minutes. While this stone is in your possession, spells are cast without consuming components.
+');
 
 -- DataIds
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value) VALUES
