@@ -447,7 +447,7 @@ namespace ACE.Server.Network.Structure
                 }
 
                 if (PropertiesString.TryGetValue(PropertyString.Use, out var existingUse))
-                    PropertiesString[PropertyString.Use] = $"{charmHeader}\n\n{existingUse.TrimStart('\n')}";
+                    PropertiesString[PropertyString.Use] = $"{charmHeader}\n\n{existingUse.TrimStart('\r', '\n')}";
                 else
                     PropertiesString[PropertyString.Use] = charmHeader;
             }
