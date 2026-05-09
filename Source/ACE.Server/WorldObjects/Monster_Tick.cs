@@ -122,6 +122,8 @@ namespace ACE.Server.WorldObjects
             {
                 hardLeashPet.AttackTarget = null;
                 hardLeashPet.ResetAttack();
+                ((Pet)hardLeashPet).Tick(currentUnixTime);
+                return;
             }
 
             // Idle combat pets: use the same Pet.Tick path as passive pets (physics cadence + SlowTick recall),

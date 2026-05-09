@@ -6869,6 +6869,21 @@ namespace ACE.Server.Command.Handlers
             foreach (var rawLine in text.Split('\n'))
             {
                 var line = rawLine.TrimEnd('\r');
+                if (line.Length > maxChunkLen)
+                {
+                    if (chunk.Length > 0)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, chunk.ToString());
+                        chunk.Clear();
+                    }
+                    for (var i = 0; i < line.Length; i += maxChunkLen)
+                    {
+                        var take = Math.Min(maxChunkLen, line.Length - i);
+                        CommandHandlerHelper.WriteOutputInfo(session, line.Substring(i, take));
+                    }
+                    continue;
+                }
+
                 var add = chunk.Length == 0 ? line : "\n" + line;
                 if (chunk.Length + add.Length > maxChunkLen && chunk.Length > 0)
                 {

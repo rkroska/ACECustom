@@ -705,6 +705,7 @@ namespace ACE.Server.Entity
             {
                 PropertyDataId.CapturedSetup,
                 PropertyDataId.CapturedMotionTable,
+                PropertyDataId.CapturedCombatTable,
                 PropertyDataId.CapturedSoundTable,
                 PropertyDataId.CapturedPaletteBase,
                 PropertyDataId.CapturedClothingBase

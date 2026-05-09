@@ -121,7 +121,10 @@ namespace ACE.Server.Managers
                 SetValue(c.Key, c.Value, markModified: false);
 
             foreach (ConfigPropertiesLong c in DatabaseManager.ShardConfig.GetAllLongs())
-                SetValue(c.Key, c.Value, markModified: false);
+            {
+                if (!SetValue(c.Key, c.Value, markModified: false) && GetPropertyInfo<double>(c.Key) != null)
+                    SetValue(c.Key, (double)c.Value, markModified: false);
+            }
 
             foreach (ConfigPropertiesDouble c in DatabaseManager.ShardConfig.GetAllDoubles())
                 SetValue(c.Key, c.Value, markModified: false);

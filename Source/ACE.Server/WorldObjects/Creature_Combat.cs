@@ -1391,7 +1391,7 @@ namespace ACE.Server.WorldObjects
             var effDefense = GetEffectiveDefenseSkillForOverpowerResist(attacker, defender);
             if (effDefense > OverpowerResistAdditionThreshold)
             {
-                overpowerResistChance += (int)(effDefense - OverpowerResistAdditionThreshold) / 50;
+                overpowerResistChance += (float)(effDefense - OverpowerResistAdditionThreshold) / 5000.0f;
             }
 
             return overpowerChance * (1.0f - overpowerResistChance);

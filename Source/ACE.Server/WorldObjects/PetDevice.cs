@@ -652,8 +652,13 @@ namespace ACE.Server.WorldObjects
 
                 if (VisualOverrideCombatTable.HasValue)
                 {
-                    pet.CombatTableDID = VisualOverrideCombatTable.Value;
-                    pet.GetCombatTable();
+                    if (VisualOverrideCombatTable.Value > 0)
+                    {
+                        pet.CombatTableDID = VisualOverrideCombatTable.Value;
+                        pet.GetCombatTable();
+                    }
+                    else
+                        log.Warn($"{nameof(SummonCreature)}: {nameof(VisualOverrideCombatTable)} is 0 for device {Name} ({Guid}) — skipping combat table override.");
                 }
 
                 if (VisualOverrideSoundTable.HasValue)

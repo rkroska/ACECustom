@@ -575,7 +575,7 @@ namespace ACE.Server.Entity
 
                 var m = combatPetPhysical.GetPhysicalDamageTakenMultiplier();
                 DebugCombatPetPhysicalMitigationMultiplier = m;
-                if (m < 1.0f)
+                if (m > 0 && !float.IsNaN(m) && !float.IsInfinity(m) && m != 1.0f)
                     Damage *= m;
             }
 
