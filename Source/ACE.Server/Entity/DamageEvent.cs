@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 using log4net;
 
@@ -136,6 +137,24 @@ namespace ACE.Server.Entity
 
         public bool GeneralFailure;
 
+        /// <summary>Flat luminance melee/missile damage bonus added to base damage (for diagnostics).</summary>
+        public long DebugLuminanceFlatDamageBonus;
+
+        /// <summary>Damage immediately before combat-pet-only physical mitigation multipliers (same as final for player defenders).</summary>
+        public float DebugDamagePrePetPhysicalMitigation;
+
+        /// <summary><see cref="CombatPet.GetPhysicalDamageTakenMultiplier"/> used on this hit (1 if not applicable).</summary>
+        public float DebugCombatPetPhysicalMitigationMultiplier = 1.0f;
+
+        /// <summary>Additional crit-only multiplier applied when defender is a CombatPet (1 if not applicable).</summary>
+        public float DebugCombatPetCritDamageTakenMultiplier = 1.0f;
+
+        /// <summary>Owner resistance mod computed via Player.GetResistanceMod when defender is a CombatPet (NaN if not computed).</summary>
+        public float DebugCombatPetOwnerResistanceMod = float.NaN;
+
+        /// <summary>Resistance mod actually applied after optional owner borrowing.</summary>
+        public float DebugAppliedResistanceMod = float.NaN;
+
         public bool HasDamage => !Evaded && !LifestoneProtection;
 
         public bool CriticalDefended;
@@ -149,6 +168,8 @@ namespace ACE.Server.Entity
                 damageSource = attacker;
 
             damageEvent.DoCalculateDamage(attacker, defender, damageSource);
+
+            damageEvent.HandleExtensiveDebugLogging(attacker, defender);
 
             damageEvent.HandleLogging(attacker, defender);
 
@@ -303,6 +324,7 @@ namespace ACE.Server.Entity
             }
 
             BaseDamage += damageBonus;
+            DebugLuminanceFlatDamageBonus = damageBonus;
 
             // get damage modifiers
             PowerMod = attacker.GetPowerMod(Weapon);
@@ -454,7 +476,43 @@ namespace ACE.Server.Entity
             {
                 var resistanceType = Creature.GetResistanceType(DamageType);
                 ResistanceMod = (float)Math.Max(0.0f, defender.GetResistanceMod(resistanceType, Attacker, Weapon, WeaponResistanceMod));
+
+                // Combat pets can optionally borrow the owner's player resistance pipeline.
+                // This helps align pet damage taken with the owner's buffs (prots/vulns/natural resist), avoiding brute-force global multipliers.
+                if (defender is CombatPet pet
+                    && ServerConfig.pet_combat_resistance_use_owner_pipeline.Value
+                    && pet.P_PetOwner is Player owner
+                    && (DamageType == DamageType.Slash || DamageType == DamageType.Pierce || DamageType == DamageType.Bludgeon
+                        || DamageType == DamageType.Fire || DamageType == DamageType.Cold || DamageType == DamageType.Acid || DamageType == DamageType.Electric
+                        || DamageType == DamageType.Nether))
+                {
+                    var ownerResist = owner.GetResistanceMod(DamageType, Attacker, Weapon, WeaponResistanceMod);
+                    DebugCombatPetOwnerResistanceMod = ownerResist;
+
+                    var blend = Math.Clamp(ServerConfig.pet_combat_resistance_owner_blend.Value, 0.0, 1.0);
+                    if (blend > 0
+                        && ServerConfig.pet_combat_resistance_owner_blend_scale_with_bond.Value
+                        && ServerConfig.pet_bond_enabled.Value)
+                    {
+                        var device = pet.TryGetSummoningDevice();
+                        var bond = device?.PetBondLevel ?? 0;
+                        if (bond < 0) bond = 0;
+                        var scale = ServerConfig.pet_combat_resistance_owner_blend_bond_scale.Value;
+                        if (scale > 0)
+                        {
+                            var towardCap = 1.0 - Math.Exp(-bond / scale);
+                            blend *= towardCap;
+                        }
+                    }
+                    // Smooth scaling: blend=0 => 1.0; blend=1 => ownerResist; 0<blend<1 => partial strength.
+                    var borrowed = (float)Math.Pow(Math.Max(ownerResist, 0.000001f), blend);
+
+                    // Use the stronger (lower) resistance mod.
+                    ResistanceMod = Math.Min(ResistanceMod, borrowed);
+                }
             }
+
+            DebugAppliedResistanceMod = ResistanceMod;
 
             // damage resistance rating
             DamageResistanceRatingMod = DamageResistanceRatingBaseMod = defender.GetDamageResistRatingMod(CombatType);
@@ -495,6 +553,30 @@ namespace ACE.Server.Entity
                 var damageReduction = defender.EnrageDamageReduction ?? 0.0f; // Default to no reduction
                 Damage *= (1.0f - damageReduction); // Apply reduction (e.g., 0.5 = 50% reduction)
                 //Console.WriteLine($"[DEBUG] Final Mob Defender Enrage Damage Reduction Applied: {damageReduction * 100}%, Final Damage: {Damage}");
+            }
+
+            DebugDamagePrePetPhysicalMitigation = Damage;
+            DebugCombatPetPhysicalMitigationMultiplier = 1.0f;
+            DebugCombatPetCritDamageTakenMultiplier = 1.0f;
+
+            // Combat pets: optional melee/missile mitigation from summon augs (parallel to SpellProjectile spell mitigation).
+            if (Damage > 0 && defender is CombatPet combatPetPhysical
+                && (!ServerConfig.pet_combat_summon_aug_physical_mitigation_players_only.Value || playerAttacker != null))
+            {
+                if (IsCritical)
+                {
+                    var cm = (float)ServerConfig.pet_combat_crit_damage_taken_multiplier.Value;
+                    if (cm > 0 && !float.IsNaN(cm) && !float.IsInfinity(cm) && cm != 1.0f)
+                    {
+                        DebugCombatPetCritDamageTakenMultiplier = cm;
+                        Damage *= cm;
+                    }
+                }
+
+                var m = combatPetPhysical.GetPhysicalDamageTakenMultiplier();
+                DebugCombatPetPhysicalMitigationMultiplier = m;
+                if (m > 0 && !float.IsNaN(m) && !float.IsInfinity(m) && m != 1.0f)
+                    Damage *= m;
             }
 
             DamageMitigated = DamageBeforeMitigation - Damage;
@@ -808,6 +890,125 @@ namespace ACE.Server.Entity
             {
                 ShowInfo(defender);
             }
+        }
+
+        private void HandleExtensiveDebugLogging(Creature attacker, Creature defender)
+        {
+            if (!ServerConfig.damage_event_debug_server_log.Value || attacker == null || defender == null)
+                return;
+            if (ServerConfig.damage_event_debug_only_nonplayer_attackers.Value && attacker is Player)
+                return;
+            if (defender is not Player && defender is not CombatPet)
+                return;
+
+            log.Info(BuildExtensiveDebugLog(attacker, defender));
+        }
+
+        private string BuildExtensiveDebugLog(Creature attacker, Creature defender)
+        {
+            var sb = new StringBuilder(3072);
+            sb.AppendLine("=== DamageEvent.Debug melee/missile ===");
+            AppendCreatureLine(sb, "Attacker", attacker);
+            AppendCreatureLine(sb, "Defender", defender);
+            if (defender is CombatPet cpOwner)
+            {
+                var o = cpOwner.P_PetOwner;
+                sb.AppendLine($"PetOwner: {(o == null ? "<null>" : $"{o.Name} ({o.Guid})")}");
+            }
+
+            sb.AppendLine(
+                $"combatType={CombatType} damageType={DamageType} attackType={AttackType} attackHeight={AttackHeight} generalFailure={GeneralFailure}");
+            sb.AppendLine(
+                $"defender.invincible={defender.Invincible} lifestone={LifestoneProtection} overpower={Overpower} evaded={Evaded} crit={IsCritical} critDefended={CriticalDefended}");
+
+            sb.AppendLine(
+                $"evasion: chance={EvasionChance:F4} effAtk={EffectiveAttackSkill} effDef={EffectiveDefenseSkill} accuracyMod={AccuracyMod:F4}");
+            if (Weapon != null)
+                sb.AppendLine($"weapon: {Weapon.Name} ({Weapon.Guid}) wcid={Weapon.WeenieClassId} missile={Weapon.IsMissileWeapon}");
+            else
+                sb.AppendLine("weapon: <none>");
+
+            if (BaseDamageMod != null)
+                sb.AppendLine($"baseDamage: rolled={BaseDamage} range={BaseDamageMod.Range} lumFlatBonus={DebugLuminanceFlatDamageBonus} bonus={BaseDamageMod.DamageBonus} mod={BaseDamageMod.DamageMod:F4} elemental={BaseDamageMod.ElementalBonus}");
+            else
+                sb.AppendLine($"baseDamage: rolled={BaseDamage} (no BaseDamageMod) lumFlatBonus={DebugLuminanceFlatDamageBonus}");
+
+            sb.AppendLine(
+                $"preArmor: attrMod={AttributeMod:F4} powerMod={PowerMod:F4} slayerMod={SlayerMod:F4} dmgRatingMod={DamageRatingMod:F4} (baseDR={DamageRatingBaseMod:F4} reck={RecklessnessMod:F4} sneak={SneakAttackMod:F4} heritage={HeritageMod:F4} pkDR={PkDamageMod:F4})");
+            if (IsCritical)
+                sb.AppendLine(
+                    $"crit: chance={CriticalChance:F4} critDmgMod={CriticalDamageMod:F4} critDRatingMod={CriticalDamageRatingMod:F4}");
+            sb.AppendLine($"DamageBeforeMitigation={DamageBeforeMitigation:F4}");
+
+            if (BodyPart != 0)
+                sb.AppendLine($"bodyPart(player)={BodyPart}");
+            if (CreaturePart != null)
+                sb.AppendLine($"bodyPart(creature)={PropertiesBodyPart.Key} baseArmor={CreaturePart.Biota.Value.BaseArmor}");
+            if (Armor != null && Armor.Count > 0)
+                sb.AppendLine($"armorLayers: count={Armor.Count} names={string.Join(", ", Armor.Take(8).Select(a => a.Name))}");
+
+            var ownerResistNote = float.IsNaN(DebugCombatPetOwnerResistanceMod) ? "" : $" ownerResistMod={DebugCombatPetOwnerResistanceMod:F4}";
+            sb.AppendLine(
+                $"mitigation: armorMod={ArmorMod:F4} resistMod={ResistanceMod:F4}{ownerResistNote} shieldMod={ShieldMod:F4} weapResistMod={WeaponResistanceMod:F4} drrMod={DamageResistanceRatingMod:F4} (drrBase={DamageResistanceRatingBaseMod:F4} critDRR={CriticalDamageResistanceRatingMod:F4} pkDRR={PkDamageResistanceMod:F4})");
+
+            if (defender.IsEnraged && defender is not Player)
+                sb.AppendLine($"defender enrage damageReduction={defender.EnrageDamageReduction:F4} (applied to final Damage before pet mit)");
+
+            if (DamageSource?.GetProperty(PropertyBool.IsSplitArrow) == true)
+                sb.AppendLine("splitArrow: multiplier applied to final Damage");
+
+            sb.AppendLine(
+                $"final: prePetPhysicalMit={DebugDamagePrePetPhysicalMitigation:F4} petCritMult={DebugCombatPetCritDamageTakenMultiplier:F4} petPhysicalMult={DebugCombatPetPhysicalMitigationMultiplier:F4} Damage={Damage:F4} mitigated(from preArmor pipeline)={DamageMitigated:F4}");
+            sb.AppendLine($"defenderHealth: current={defender.Health.Current} max={defender.Health.MaxValue}");
+
+            AppendLuminanceCombatSnapshot(sb, "Attacker luminance", attacker);
+            AppendLuminanceCombatSnapshot(sb, "Defender luminance", defender);
+            if (defender is CombatPet pet)
+            {
+                sb.AppendLine(
+                    $"CombatPet itemAug: attackMod={pet.ItemAugAttackMod:F4} defenseMod={pet.ItemAugDefenseMod:F4} dmgBonus={pet.ItemAugDamageBonus} armorBonus={pet.ItemAugArmorBonus} lifeAugPR={pet.LifeAugProtectionRating:F4}");
+                sb.AppendLine(
+                    $"CombatPet mit config: augPhys enabled={ServerConfig.pet_combat_summon_aug_physical_mitigation_enabled.Value} playersOnly={ServerConfig.pet_combat_summon_aug_physical_mitigation_players_only.Value} bondPhys enabled={ServerConfig.pet_bond_physical_mitigation_enabled.Value} physMult={ServerConfig.pet_combat_physical_damage_taken_multiplier.Value:F4} critMult={ServerConfig.pet_combat_crit_damage_taken_multiplier.Value:F4}");
+                sb.AppendLine(
+                    $"CombatPet resist config: useOwnerPipeline={ServerConfig.pet_combat_resistance_use_owner_pipeline.Value} ownerBlend={ServerConfig.pet_combat_resistance_owner_blend.Value:F4} appliedResistMod={DebugAppliedResistanceMod:F4}");
+                sb.AppendLine(
+                    $"CombatPet resist bond scaling: enabled={ServerConfig.pet_combat_resistance_owner_blend_scale_with_bond.Value} scale={ServerConfig.pet_combat_resistance_owner_blend_bond_scale.Value:F4}");
+            }
+
+            if (attacker is not Player && AttackPart.Value != null)
+                sb.AppendLine($"creature attackPart={AttackPart.Key}");
+
+            sb.AppendLine("=== end DamageEvent.Debug ===");
+            return sb.ToString();
+        }
+
+        private static void AppendCreatureLine(StringBuilder sb, string label, Creature c)
+        {
+            if (c == null)
+            {
+                sb.AppendLine($"{label}: <null>");
+                return;
+            }
+            string kind;
+            if (c is Player)
+                kind = "Player";
+            else if (c is CombatPet)
+                kind = "CombatPet";
+            else
+                kind = "Creature";
+            sb.AppendLine($"{label}: {c.Name} ({c.Guid}) kind={kind} wcid={c.WeenieClassId} level={c.Level}");
+        }
+
+        private static void AppendLuminanceCombatSnapshot(StringBuilder sb, string label, Creature c)
+        {
+            if (c == null)
+                return;
+            sb.AppendLine(
+                $"{label}: summon={(c.LuminanceAugmentSummonCount ?? 0)} melee={(c.LuminanceAugmentMeleeCount ?? 0)} missile={(c.LuminanceAugmentMissileCount ?? 0)} meleeD={(c.LuminanceAugmentMeleeDefenseCount ?? 0)} missileD={(c.LuminanceAugmentMissileDefenseCount ?? 0)} war={(c.LuminanceAugmentWarCount ?? 0)} void={(c.LuminanceAugmentVoidCount ?? 0)}");
+            var md = c.GetCreatureSkill(Skill.MeleeDefense);
+            var mid = c.GetCreatureSkill(Skill.MissileDefense);
+            sb.AppendLine(
+                $"{label} skills: MeleeDefense.current={(md?.Current ?? 0)} MissileDefense.current={(mid?.Current ?? 0)}");
         }
 
         public AttackConditions AttackConditions

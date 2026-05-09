@@ -183,8 +183,8 @@ namespace ACE.Server.WorldObjects
             if (bondedCharacterId.HasValue && owner != null && bondedCharacterId.Value != (long)owner.Character.Id)
                 return false;
 
-            var levelCap = (int)ServerConfig.pet_bond_level_cap.Value;
-            if (levelCap < 1) levelCap = 1;
+            var levelCapRaw = (int)ServerConfig.pet_bond_level_cap.Value;
+            var levelCap = levelCapRaw <= 0 ? int.MaxValue : Math.Max(1, levelCapRaw);
 
             var level = PetBondLevel.GetValueOrDefault(1);
             if (level < 1) level = 1;
@@ -243,6 +243,12 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyDataId.VisualOverrideMotionTable);
             set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideMotionTable); else SetProperty(PropertyDataId.VisualOverrideMotionTable, value.Value); }
+        }
+
+        public uint? VisualOverrideCombatTable
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideCombatTable);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideCombatTable); else SetProperty(PropertyDataId.VisualOverrideCombatTable, value.Value); }
         }
 
         public uint? VisualOverrideSoundTable
@@ -385,6 +391,19 @@ namespace ACE.Server.WorldObjects
             if (ServerConfig.pet_combat_summon_skips_shared_cooldown.Value && IsCombatPetDevice())
                 return;
 
+            // Optional global override: let combat pet essences have a short shared cooldown on summon
+            // without editing each device's CooldownDuration in the DB. Death cooldown is handled elsewhere.
+            if (IsCombatPetDevice())
+            {
+                var overrideSeconds = (float)ServerConfig.pet_combat_summon_initial_shared_cooldown_seconds.Value;
+                if (overrideSeconds > 0)
+                {
+                    var cap = GetEssenceSharedCooldownCapSeconds(this);
+                    var duration = cap > 0 ? Math.Min(overrideSeconds, cap) : overrideSeconds;
+                    player.EnchantmentManager.StartOrRefreshItemCooldown(Guid.Full, CooldownId.Value, duration);
+                    return;
+                }
+            }
             player.EnchantmentManager.StartCooldown(this);
         }
 
@@ -630,6 +649,17 @@ namespace ACE.Server.WorldObjects
 
                 if (VisualOverrideMotionTable.HasValue)
                     pet.MotionTableId = VisualOverrideMotionTable.Value;
+
+                if (VisualOverrideCombatTable.HasValue)
+                {
+                    if (VisualOverrideCombatTable.Value > 0)
+                    {
+                        pet.CombatTableDID = VisualOverrideCombatTable.Value;
+                        pet.GetCombatTable();
+                    }
+                    else
+                        log.Warn($"{nameof(SummonCreature)}: {nameof(VisualOverrideCombatTable)} is 0 for device {Name} ({Guid}) — skipping combat table override.");
+                }
 
                 if (VisualOverrideSoundTable.HasValue)
                     pet.SoundTableId = VisualOverrideSoundTable.Value;

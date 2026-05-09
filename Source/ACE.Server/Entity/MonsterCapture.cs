@@ -538,6 +538,9 @@ namespace ACE.Server.Entity
             
             if (creature.MotionTableId != 0)
                 item.SetProperty(PropertyDataId.CapturedMotionTable, creature.MotionTableId);
+
+            if (creature.CombatTableDID.HasValue)
+                item.SetProperty(PropertyDataId.CapturedCombatTable, creature.CombatTableDID.Value);
             
             if (creature.SoundTableId != 0)
                 item.SetProperty(PropertyDataId.CapturedSoundTable, creature.SoundTableId);
@@ -702,6 +705,7 @@ namespace ACE.Server.Entity
             {
                 PropertyDataId.CapturedSetup,
                 PropertyDataId.CapturedMotionTable,
+                PropertyDataId.CapturedCombatTable,
                 PropertyDataId.CapturedSoundTable,
                 PropertyDataId.CapturedPaletteBase,
                 PropertyDataId.CapturedClothingBase
@@ -800,6 +804,7 @@ namespace ACE.Server.Entity
             var capSound = capturedItem.GetProperty(PropertyDataId.CapturedSoundTable);
             var capPaletteBase = capturedItem.GetProperty(PropertyDataId.CapturedPaletteBase);
             var capClothingBase = capturedItem.GetProperty(PropertyDataId.CapturedClothingBase);
+            var capCombatTable = capturedItem.GetProperty(PropertyDataId.CapturedCombatTable);
             var capPaletteTemplate = capturedItem.GetProperty(PropertyInt.CapturedPaletteTemplate);
             var capShade = capturedItem.GetProperty(PropertyFloat.CapturedShade);
             var capScale = capturedItem.GetProperty(PropertyFloat.CapturedScale);
@@ -832,6 +837,7 @@ namespace ACE.Server.Entity
             crate.VisualOverrideSoundTable = capSound;
             crate.VisualOverridePaletteBase = capPaletteBase;
             crate.VisualOverrideClothingBase = capClothingBase;
+            crate.VisualOverrideCombatTable = capCombatTable;
             // Don't copy VisualOverrideIcon - we set the crate icon directly below
             crate.VisualOverridePaletteTemplate = capPaletteTemplate;
             crate.VisualOverrideShade = capShade;
@@ -886,6 +892,9 @@ namespace ACE.Server.Entity
                 {
                     crate.PetBondAttuned = true;
                     crate.PetBondAttunedCharacterId = (long)player.Character.Id;
+                    // Persist starting bond tier (TryAwardBondXp also uses GetValueOrDefault(1)); leaderboard SQL expects 9053 or COALESCEs to 1.
+                    var bondLvl = crate.PetBondLevel.GetValueOrDefault(1);
+                    crate.PetBondLevel = bondLvl < 1 ? 1 : bondLvl;
                     if (crate.Attuned != AttunedStatus.Attuned)
                         crate.Attuned = AttunedStatus.Attuned;
                     if (crate.Bonded != BondedStatus.Bonded)
@@ -966,6 +975,7 @@ namespace ACE.Server.Entity
             {
                 player.UpdateProperty(crate, PropertyBool.PetBondAttuned, crate.PetBondAttuned);
                 player.UpdateProperty(crate, PropertyInt64.PetBondAttunedCharacterId, crate.PetBondAttunedCharacterId);
+                player.UpdateProperty(crate, PropertyInt.PetBondLevel, crate.PetBondLevel ?? 1);
             }
 
             // Full object snapshot: the client caches name/icon data for inventory items; per-property

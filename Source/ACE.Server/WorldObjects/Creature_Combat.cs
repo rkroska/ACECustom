@@ -1305,6 +1305,28 @@ namespace ACE.Server.WorldObjects
             return rng < overpowerChance * 0.01f;
         }
 
+        /// <summary>
+        /// Effective defense used only for Overpower method B resist (after the Overpower proc succeeds).
+        /// Optionally lets combat pets borrow part of the owner's EMD/missile defense so they are not trivially Overpowered by the same mobs as the owner.
+        /// </summary>
+        private static uint GetEffectiveDefenseSkillForOverpowerResist(Creature attacker, Creature defender)
+        {
+            var combatType = attacker.GetCombatType();
+            var eff = defender.GetEffectiveDefenseSkill(combatType);
+
+            if (defender is CombatPet pet
+                && ServerConfig.pet_combat_overpower_resist_use_owner_effective_defense.Value
+                && pet.P_PetOwner is Player owner)
+            {
+                var ownerEff = owner.GetEffectiveDefenseSkill(combatType);
+                var frac = Math.Clamp(ServerConfig.pet_combat_overpower_resist_owner_defense_fraction.Value, 0.0, 1.0);
+                var borrowed = (uint)Math.Round(ownerEff * frac);
+                eff = Math.Max(eff, borrowed);
+            }
+
+            return eff;
+        }
+
         public static bool GetOverpower_Method_B(Creature attacker, Creature defender)
         {
             // implemented similar to critical defense
@@ -1325,9 +1347,10 @@ namespace ACE.Server.WorldObjects
             {
                  resistChance = defender.OverpowerResist.Value;
             }
-            if (defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) > OverpowerResistAdditionThreshold)
+            var effDefense = GetEffectiveDefenseSkillForOverpowerResist(attacker, defender);
+            if (effDefense > OverpowerResistAdditionThreshold)
             {
-                resistChance += (int)(defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) - OverpowerResistAdditionThreshold) / 50;
+                resistChance += (int)(effDefense - OverpowerResistAdditionThreshold) / 50;
             }
 
             rng = ThreadSafeRandom.Next(0.0f, 1.0f);
@@ -1365,9 +1388,10 @@ namespace ACE.Server.WorldObjects
 
             var overpowerChance = (attacker.Overpower ?? 0) * 0.01f;
             float overpowerResistChance = (defender.OverpowerResist ?? 0) * 0.01f;
-            if (defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) > OverpowerResistAdditionThreshold)
+            var effDefense = GetEffectiveDefenseSkillForOverpowerResist(attacker, defender);
+            if (effDefense > OverpowerResistAdditionThreshold)
             {
-                overpowerResistChance += (int)(defender.GetEffectiveDefenseSkill(attacker.GetCombatType()) - OverpowerResistAdditionThreshold) / 50;
+                overpowerResistChance += (float)(effDefense - OverpowerResistAdditionThreshold) / 5000.0f;
             }
 
             return overpowerChance * (1.0f - overpowerResistChance);

@@ -44,21 +44,21 @@ namespace ACE.Server.WorldObjects
         public ObjectGuid SummoningDeviceGuid => _summoningDeviceGuid;
 
         /// <summary>
-        /// Multiplier applied to harmful spell projectile damage (after normal resists/absorb).
-        /// Uses <see cref="LuminanceAugmentSummonCount"/> (copied from owner at summon) with diminishing returns; asymptotic cap from ServerConfig.
+        /// Diminishing-returns damage multiplier from summon augs (1.0 = no extra mitigation).
+        /// Shared math for spell-projectile and melee/missile paths.
         /// </summary>
-        public float GetSpellProjectileDamageTakenMultiplier()
+        private float GetSummonAugMitigationMultiplier(bool enabled, double maxRedRaw, double scaleRaw)
         {
-            if (!ServerConfig.pet_combat_summon_aug_spell_mitigation_enabled.Value)
+            if (!enabled)
                 return 1.0f;
 
-            var maxRed = (float)ServerConfig.pet_combat_summon_aug_spell_mitigation_max.Value;
+            var maxRed = (float)maxRedRaw;
             if (maxRed <= 0)
                 return 1.0f;
 
             maxRed = Math.Clamp(maxRed, 0f, 0.999f);
 
-            var scale = ServerConfig.pet_combat_summon_aug_spell_mitigation_scale.Value;
+            var scale = scaleRaw;
             if (scale <= 0)
                 return 1.0f;
 
@@ -66,10 +66,85 @@ namespace ACE.Server.WorldObjects
             if (aug <= 0)
                 return 1.0f;
 
-            // Diminishing returns: fraction of cap reached -> 1 - exp(-aug/scale); never exceeds maxRed.
             var towardCap = 1.0 - Math.Exp(-aug / scale);
             var reduction = maxRed * towardCap;
             return (float)(1.0 - reduction);
+        }
+
+        /// <summary>
+        /// Diminishing-returns mitigation multiplier from the bond level on the summoning essence.
+        /// This is intended to help combat pets keep up with endgame creature damage without changing monster tuning.
+        /// </summary>
+        private float GetBondMitigationMultiplier(bool enabled, double maxRedRaw, double scaleRaw)
+        {
+            if (!enabled || !ServerConfig.pet_bond_enabled.Value)
+                return 1.0f;
+
+            var maxRed = (float)maxRedRaw;
+            if (maxRed <= 0)
+                return 1.0f;
+
+            maxRed = Math.Clamp(maxRed, 0f, 0.999f);
+
+            var scale = scaleRaw;
+            if (scale <= 0)
+                return 1.0f;
+
+            var device = TryGetSummoningDevice();
+            if (device == null || !device.IsCombatPetDevice() || !device.IsPetBondAttuned)
+                return 1.0f;
+
+            var capRaw = (int)ServerConfig.pet_bond_level_cap.Value;
+            var cap = capRaw <= 0 ? int.MaxValue : Math.Max(1, capRaw);
+
+            var bond = device.PetBondLevel ?? 0;
+            if (bond < 0)
+                bond = 0;
+            if (bond > cap)
+                bond = cap;
+
+            if (bond <= 0)
+                return 1.0f;
+
+            var towardCap = 1.0 - Math.Exp(-bond / scale);
+            var reduction = maxRed * towardCap;
+            return (float)(1.0 - reduction);
+        }
+
+        /// <summary>
+        /// Multiplier applied to harmful spell projectile damage (after normal resists/absorb).
+        /// Uses <see cref="LuminanceAugmentSummonCount"/> (copied from owner at summon) with diminishing returns; asymptotic cap from ServerConfig.
+        /// </summary>
+        public float GetSpellProjectileDamageTakenMultiplier()
+        {
+            return GetSummonAugMitigationMultiplier(
+                ServerConfig.pet_combat_summon_aug_spell_mitigation_enabled.Value,
+                ServerConfig.pet_combat_summon_aug_spell_mitigation_max.Value,
+                ServerConfig.pet_combat_summon_aug_spell_mitigation_scale.Value);
+        }
+
+        /// <summary>
+        /// Multiplier applied to melee/missile damage computed via <see cref="ACE.Server.Entity.DamageEvent"/> (after armor/resist pipeline).
+        /// Independent toggles from spell projectile mitigation.
+        /// </summary>
+        public float GetPhysicalDamageTakenMultiplier()
+        {
+            // Multiply independent mitigations: e.g. 30% bond mitigation + 30% aug mitigation => 0.7 * 0.7 = 0.49 (51% total).
+            var augMult = GetSummonAugMitigationMultiplier(
+                ServerConfig.pet_combat_summon_aug_physical_mitigation_enabled.Value,
+                ServerConfig.pet_combat_summon_aug_physical_mitigation_max.Value,
+                ServerConfig.pet_combat_summon_aug_physical_mitigation_scale.Value);
+
+            var bondMult = GetBondMitigationMultiplier(
+                ServerConfig.pet_bond_physical_mitigation_enabled.Value,
+                ServerConfig.pet_bond_physical_mitigation_max.Value,
+                ServerConfig.pet_bond_physical_mitigation_scale.Value);
+
+            var globalMult = (float)ServerConfig.pet_combat_physical_damage_taken_multiplier.Value;
+            if (globalMult <= 0 || float.IsNaN(globalMult) || float.IsInfinity(globalMult))
+                globalMult = 1.0f;
+
+            return augMult * bondMult * globalMult;
         }
 
         // Store augmentation bonuses directly (not as enchantments)
@@ -193,6 +268,17 @@ namespace ACE.Server.WorldObjects
             // that Gear* is present; assigning null would RemoveProperty and wipe the creature weenie defaults.
             if (petDevice != null)
             {
+                static int ScaleRating(int value, double multRaw)
+                {
+                    var mult = multRaw;
+                    if (mult <= 0 || double.IsNaN(mult) || double.IsInfinity(mult))
+                        mult = 1.0;
+                    var scaled = (long)Math.Round(value * mult, MidpointRounding.AwayFromZero);
+                    if (scaled > int.MaxValue) return int.MaxValue;
+                    if (scaled < int.MinValue) return int.MinValue;
+                    return (int)scaled;
+                }
+
                 if (petDevice.GearDamage.HasValue)
                     DamageRating = petDevice.GearDamage;
                 if (petDevice.GearDamageResist.HasValue)
@@ -225,6 +311,20 @@ namespace ACE.Server.WorldObjects
                     DamageRating = (DamageRating ?? 0) + bondD;
                     CritDamageRating = (CritDamageRating ?? 0) + bondCd;
                 }
+
+                // Apply configurable rating multipliers at summon-time so tuning can be done live via /modifydouble + resummon.
+                if (DamageRating.HasValue)
+                    DamageRating = ScaleRating(DamageRating.Value, ServerConfig.pet_combat_rating_mult_damage.Value);
+                if (DamageResistRating.HasValue)
+                    DamageResistRating = ScaleRating(DamageResistRating.Value, ServerConfig.pet_combat_rating_mult_damage_resist.Value);
+                if (CritDamageRating.HasValue)
+                    CritDamageRating = ScaleRating(CritDamageRating.Value, ServerConfig.pet_combat_rating_mult_crit_damage.Value);
+                if (CritDamageResistRating.HasValue)
+                    CritDamageResistRating = ScaleRating(CritDamageResistRating.Value, ServerConfig.pet_combat_rating_mult_crit_damage_resist.Value);
+                if (CritRating.HasValue)
+                    CritRating = ScaleRating(CritRating.Value, ServerConfig.pet_combat_rating_mult_crit.Value);
+                if (CritResistRating.HasValue)
+                    CritResistRating = ScaleRating(CritResistRating.Value, ServerConfig.pet_combat_rating_mult_crit_resist.Value);
             }
 
             // copy augmentation counts from player (for damage scaling)
@@ -238,37 +338,37 @@ namespace ACE.Server.WorldObjects
             LuminanceAugmentMissileCount = Math.Min(summonAugCount, player.LuminanceAugmentMissileCount ?? 0);
             LuminanceAugmentWarCount = Math.Min(summonAugCount, player.LuminanceAugmentWarCount ?? 0);
             LuminanceAugmentVoidCount = Math.Min(summonAugCount, player.LuminanceAugmentVoidCount ?? 0);
+            // Match Creature_Combat.GetEffectiveDefenseSkill: flat +MeleeD/+MissileD luminance aug counts (capped like other tracks).
+            LuminanceAugmentMeleeDefenseCount = Math.Min(summonAugCount, player.LuminanceAugmentMeleeDefenseCount ?? 0);
+            LuminanceAugmentMissileDefenseCount = Math.Min(summonAugCount, player.LuminanceAugmentMissileDefenseCount ?? 0);
 
-            // Apply summoning augmentation bonuses: +1 to all attributes and +1 to all skills per summoning augmentation level
-            var augCount = (int)summonAugCount;
-            if (augCount > 0)
+            // Apply summoning augmentation bonuses: +attributes / +skills scaled by luminance Summon aug count × pet_combat_summon_aug_benefit_multiplier (default 1 = +1 per aug).
+            var benefitMult = Math.Clamp(ServerConfig.pet_combat_summon_aug_benefit_multiplier.Value, 0.0, 10.0);
+            var augBonusPoints = (int)Math.Round(summonAugCount * benefitMult, MidpointRounding.AwayFromZero);
+            if (augBonusPoints > 0)
             {
-                // Apply +1 to all 6 attributes per augmentation level (Base and Current)
-                // Modifying StartingValue affects both Base (Ranks + StartingValue) and Current (derived from Base)
-                var allAttributes = new[] 
-                { 
-                    PropertyAttribute.Strength, 
-                    PropertyAttribute.Endurance, 
-                    PropertyAttribute.Coordination, 
-                    PropertyAttribute.Quickness, 
-                    PropertyAttribute.Focus, 
-                    PropertyAttribute.Self 
+                // Apply to all 6 attributes (Base and Current via StartingValue).
+                var allAttributes = new[]
+                {
+                    PropertyAttribute.Strength,
+                    PropertyAttribute.Endurance,
+                    PropertyAttribute.Coordination,
+                    PropertyAttribute.Quickness,
+                    PropertyAttribute.Focus,
+                    PropertyAttribute.Self
                 };
 
                 foreach (var attr in allAttributes)
                 {
                     var creatureAttr = Attributes[attr];
-                    creatureAttr.StartingValue = (uint)(creatureAttr.StartingValue + augCount);
+                    creatureAttr.StartingValue = (uint)(creatureAttr.StartingValue + augBonusPoints);
                 }
 
-                // Apply +1 to all valid skills per augmentation level (InitLevel)
                 foreach (var skill in SkillHelper.ValidSkills)
                 {
                     var creatureSkill = GetCreatureSkill(skill);
                     if (creatureSkill != null)
-                    {
-                        creatureSkill.InitLevel = (uint)(creatureSkill.InitLevel + augCount);
-                    }
+                        creatureSkill.InitLevel = (uint)(creatureSkill.InitLevel + augBonusPoints);
                 }
             }
 
@@ -285,11 +385,30 @@ namespace ACE.Server.WorldObjects
                 // Calculate base damage: +20 × (1 + I × scaling factor)
                 _itemAugDamageBonus = (int)(20.0f * (1.0f + itemAugPercentage));
 
-                // Calculate armor bonus: +200 base + (200 × scaling factor)
-                // At level 1 item aug: +200 base, then scaling on top
-                _itemAugArmorBonus = 200 + (int)(200.0f * itemAugPercentage);
+                // Synthetic effective AL (armor pipeline only): tunable toward player-like buffed AL without scaling pet offense.
+                var legacyArmor = 200.0 + 200.0 * itemAugPercentage;
+                var armorMult = Math.Max(0.0, ServerConfig.pet_combat_item_aug_synthetic_armor_multiplier.Value);
+                var linearArmor = Math.Max(0.0, ServerConfig.pet_combat_item_aug_synthetic_armor_per_effective_aug.Value) * itemAugEffective;
+                var combinedArmor = legacyArmor * armorMult + linearArmor;
+                var armorCap = ServerConfig.pet_combat_item_aug_synthetic_armor_max.Value;
+                if (armorCap > 0 && combinedArmor > armorCap)
+                    combinedArmor = armorCap;
+
+                combinedArmor = Math.Clamp(combinedArmor, 0.0, int.MaxValue);
+                _itemAugArmorBonus = (int)Math.Round(combinedArmor);
             }
             // Note: If itemAugEffective is 0, _itemAug* fields remain at 0 (already reset above)
+
+            // Combat pet missile weapons: ensure Split Arrows is disabled so the pet can only attack one target per shot.
+            // Split arrows are implemented in Creature_Missile via the weapon's SplitArrows/SplitArrowCount properties.
+            var missileWeapon = GetEquippedMissileWeapon();
+            if (missileWeapon != null)
+            {
+                missileWeapon.SplitArrows = false;
+                missileWeapon.SplitArrowCount = 0;
+                missileWeapon.SplitArrowRange = 0.0;
+                missileWeapon.SplitArrowDamageMultiplier = 1.0;
+            }
 
             // Store life augmentation protection rating directly (not as enchantments), capped by summoning aug count.
             var lifeAugCount = (long)(player.LuminanceAugmentLifeCount ?? 0);
@@ -602,6 +721,9 @@ namespace ACE.Server.WorldObjects
             var monsters = new List<Creature>();
             var listOfCreatures = PhysicsObj.ObjMaint.GetVisibleTargetsValuesOfTypeCreature();
 
+            var leashRadius = (float)ServerConfig.pet_combat_leash_radius_m.Value;
+            var leashEnabled = leashRadius > 0 && P_PetOwner?.PhysicsObj != null;
+
             foreach (var creature in listOfCreatures)
             {
                 // why does this need to be in here?
@@ -618,6 +740,9 @@ namespace ACE.Server.WorldObjects
                     if (!creature.HasRetaliateTarget(P_PetOwner) && !creature.HasRetaliateTarget(this))
                         continue;
                 }
+
+                if (leashEnabled && creature.GetCylinderDistance(P_PetOwner) > leashRadius)
+                    continue;
 
                 monsters.Add(creature);
             }
@@ -678,7 +803,14 @@ namespace ACE.Server.WorldObjects
             if (creatureSkill == null)
                 return 0;
 
-            var effectiveDefense = (uint)Math.Round(creatureSkill.Current * defenseMod * burdenMod * stanceMod + defenseImbues);
+            long lumAugDefense = 0;
+            if (combatType == CombatType.Melee)
+                lumAugDefense = LuminanceAugmentMeleeDefenseCount ?? 0;
+            else if (combatType == CombatType.Missile)
+                lumAugDefense = LuminanceAugmentMissileDefenseCount ?? 0;
+
+            // Same structure as Creature.GetEffectiveDefenseSkill: skill × mods + imbues + flat luminance defense aug.
+            var effectiveDefense = (uint)Math.Round(creatureSkill.Current * defenseMod * burdenMod * stanceMod + defenseImbues + lumAugDefense);
 
             if (IsExhausted) effectiveDefense = 0;
 

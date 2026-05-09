@@ -436,6 +436,20 @@ namespace ACE.Server.Physics
             return TransitionState.OK;
         }
 
+        /// <summary>True when one collision participant is a <see cref="Pet"/> and the other is its <see cref="Pet.P_PetOwner"/>.</summary>
+        private static bool IsOwnedPetVsOwnerCollision(PhysicsObj self, PhysicsObj? other)
+        {
+            if (self?.WeenieObj?.WorldObject == null || other?.WeenieObj?.WorldObject == null)
+                return false;
+            var a = self.WeenieObj.WorldObject;
+            var b = other.WeenieObj.WorldObject;
+            if (a is Pet petA && b is Player plB && petA.P_PetOwner == plB)
+                return true;
+            if (b is Pet petB && a is Player plA && petB.P_PetOwner == plA)
+                return true;
+            return false;
+        }
+
         public TransitionState FindObjCollisions_Inner(Transition transition, TransitionState result, bool ethereal, bool isCreature)
         {
             if (!transition.SpherePath.StepDown)
@@ -445,7 +459,9 @@ namespace ACE.Server.Physics
                     if (!transition.ObjectInfo.State.HasFlag(ObjectInfoState.Contact))
                         transition.CollisionInfo.CollidedWithEnvironment = true;
                 }
-                else if (ethereal || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
+                else if (ethereal
+                    || IsOwnedPetVsOwnerCollision(this, transition.ObjectInfo.Object)
+                    || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
                 {
                     result = TransitionState.OK;
                     transition.CollisionInfo.CollisionNormalValid = false;

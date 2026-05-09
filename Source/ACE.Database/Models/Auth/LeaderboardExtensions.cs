@@ -174,6 +174,38 @@ namespace ACE.Database.Models.Auth
                 return new List<Leaderboard>();
             }
         }
+
+        /// <summary>
+        /// Max pet bond level (per attuned essence) per character.
+        /// </summary>
+        public static async Task<List<Leaderboard>> GetTopBondsLeaderboardAsync(AuthDbContext context)
+        {
+            try
+            {
+                return await context.Leaderboard.FromSql($"CALL TopBonds").AsNoTracking().ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to get TopBonds leaderboard: {ex.Message}");
+                return new List<Leaderboard>();
+            }
+        }
+
+        /// <summary>
+        /// Sum of pet bond levels across attuned essences per character.
+        /// </summary>
+        public static async Task<List<Leaderboard>> GetTopSumBondsLeaderboardAsync(AuthDbContext context)
+        {
+            try
+            {
+                return await context.Leaderboard.FromSql($"CALL TopSumBonds").AsNoTracking().ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to get TopSumBonds leaderboard: {ex.Message}");
+                return new List<Leaderboard>();
+            }
+        }
     }
 
     /// <summary>
@@ -196,6 +228,8 @@ namespace ACE.Database.Models.Auth
         private static readonly SemaphoreSlim _bankCacheSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _lumCacheSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _attrCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _bondsCacheSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _sumBondsCacheSemaphore = new SemaphoreSlim(1, 1);
 
         static LeaderboardCache()
         {
@@ -225,6 +259,8 @@ namespace ACE.Database.Models.Auth
         public List<Leaderboard> BankCache = new List<Leaderboard>();
         public List<Leaderboard> LumCache = new List<Leaderboard>();
         public List<Leaderboard> AttrCache = new List<Leaderboard>();
+        public List<Leaderboard> BondsCache = new List<Leaderboard>();
+        public List<Leaderboard> SumBondsCache = new List<Leaderboard>();
 
         /// <summary>
         /// Timestamp indicating when the cache was last updated (UTC). This represents the time when the cache was refreshed with new data from the database.
@@ -238,6 +274,8 @@ namespace ACE.Database.Models.Auth
         public DateTime BanksLastUpdate = DateTime.UtcNow;
         public DateTime LumLastUpdate = DateTime.UtcNow;
         public DateTime AttrLastUpdate = DateTime.UtcNow;
+        public DateTime BondsLastUpdate = DateTime.UtcNow;
+        public DateTime SumBondsLastUpdate = DateTime.UtcNow;
 
         /// <summary>
         /// Updates the QB cache with new data and sets the next update time with variance to prevent database load spikes.
@@ -327,7 +365,19 @@ namespace ACE.Database.Models.Auth
         {
             AttrCache = list;
             AttrLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120)); //vary the cache duration to prevent DB slamming
-        }   
+        }
+
+        public void UpdateBondsCache(List<Leaderboard> list)
+        {
+            BondsCache = list;
+            BondsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
+        }
+
+        public void UpdateSumBondsCache(List<Leaderboard> list)
+        {
+            SumBondsCache = list;
+            SumBondsLastUpdate = DateTime.UtcNow.AddMinutes(cacheTimeout).AddSeconds(ThreadSafeRandom.Next(15, 120));
+        }
 
         /// <summary>
         /// Gets the top players by quest bonus count from cache, refreshing if necessary.
@@ -669,6 +719,48 @@ namespace ACE.Database.Models.Auth
                 log.Debug($"Attributes Cache hit - using {AttrCache.Count} cached records, last updated: {AttrLastUpdate:yyyy-MM-dd HH:mm:ss} UTC");
             }
             return AttrCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopBondsAsync(AuthDbContext context)
+        {
+            if (BondsCache.Count == 0 || BondsLastUpdate < DateTime.UtcNow)
+            {
+                await _bondsCacheSemaphore.WaitAsync();
+                try
+                {
+                    if (BondsCache.Count == 0 || BondsLastUpdate < DateTime.UtcNow)
+                    {
+                        var result = await Leaderboard.GetTopBondsLeaderboardAsync(context);
+                        UpdateBondsCache(result);
+                    }
+                }
+                finally
+                {
+                    _bondsCacheSemaphore.Release();
+                }
+            }
+            return BondsCache;
+        }
+
+        public async Task<List<Leaderboard>> GetTopSumBondsAsync(AuthDbContext context)
+        {
+            if (SumBondsCache.Count == 0 || SumBondsLastUpdate < DateTime.UtcNow)
+            {
+                await _sumBondsCacheSemaphore.WaitAsync();
+                try
+                {
+                    if (SumBondsCache.Count == 0 || SumBondsLastUpdate < DateTime.UtcNow)
+                    {
+                        var result = await Leaderboard.GetTopSumBondsLeaderboardAsync(context);
+                        UpdateSumBondsCache(result);
+                    }
+                }
+                finally
+                {
+                    _sumBondsCacheSemaphore.Release();
+                }
+            }
+            return SumBondsCache;
         }
     }
 }

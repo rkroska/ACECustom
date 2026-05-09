@@ -6853,6 +6853,50 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, ServerConfig.DebugString());
         }
 
+        [CommandHandler("petserverconfig", AccessLevel.Admin, CommandHandlerFlag.None, 0, "Lists effective ServerConfig values for pet_*, damage_event_debug*, and mob_awareness_range (with /modify* lines for prod replication)")]
+        public static void HandlePetServerConfigDump(Session session, params string[] parameters)
+        {
+            var text = ServerConfig.CombatPetRelatedServerConfigDump();
+            // Long system chat strings render poorly in the AC client; split on line boundaries.
+            const int maxChunkLen = 3200;
+            if (session == null || text.Length <= maxChunkLen)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, text);
+                return;
+            }
+
+            var chunk = new System.Text.StringBuilder();
+            foreach (var rawLine in text.Split('\n'))
+            {
+                var line = rawLine.TrimEnd('\r');
+                if (line.Length > maxChunkLen)
+                {
+                    if (chunk.Length > 0)
+                    {
+                        CommandHandlerHelper.WriteOutputInfo(session, chunk.ToString());
+                        chunk.Clear();
+                    }
+                    for (var i = 0; i < line.Length; i += maxChunkLen)
+                    {
+                        var take = Math.Min(maxChunkLen, line.Length - i);
+                        CommandHandlerHelper.WriteOutputInfo(session, line.Substring(i, take));
+                    }
+                    continue;
+                }
+
+                var add = chunk.Length == 0 ? line : "\n" + line;
+                if (chunk.Length + add.Length > maxChunkLen && chunk.Length > 0)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, chunk.ToString());
+                    chunk.Clear();
+                    add = line;
+                }
+                chunk.Append(add);
+            }
+            if (chunk.Length > 0)
+                CommandHandlerHelper.WriteOutputInfo(session, chunk.ToString());
+        }
+
         [CommandHandler("modifybool", AccessLevel.Admin, CommandHandlerFlag.None, 2, "Modifies a server property that is a bool", "modifybool (string) (bool)")]
         public static void HandleModifyServerBoolProperty(Session session, params string[] parameters)
         {

@@ -4,6 +4,7 @@ using log4net;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -120,7 +121,10 @@ namespace ACE.Server.Managers
                 SetValue(c.Key, c.Value, markModified: false);
 
             foreach (ConfigPropertiesLong c in DatabaseManager.ShardConfig.GetAllLongs())
-                SetValue(c.Key, c.Value, markModified: false);
+            {
+                if (!SetValue(c.Key, c.Value, markModified: false) && GetPropertyInfo<double>(c.Key) != null)
+                    SetValue(c.Key, (double)c.Value, markModified: false);
+            }
 
             foreach (ConfigPropertiesDouble c in DatabaseManager.ShardConfig.GetAllDoubles())
                 SetValue(c.Key, c.Value, markModified: false);
@@ -210,6 +214,105 @@ namespace ACE.Server.Managers
                 foreach (var detail in kvp.Value) sb.AppendLine(detail);
             }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Human-readable dump of combat-pet-related server properties (current effective values + copy-paste /modify* lines).
+        /// Includes <c>pet_*</c>, <c>damage_event_debug*</c>, and <c>mob_awareness_range</c> (scales creature awareness used by combat pet targeting).
+        /// </summary>
+        public static string CombatPetRelatedServerConfigDump()
+        {
+            static bool IncludeKey(string name) =>
+                name.StartsWith("pet_", StringComparison.Ordinal)
+                || name.StartsWith("damage_event_debug", StringComparison.Ordinal)
+                || string.Equals(name, "mob_awareness_range", StringComparison.Ordinal);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("=== ServerConfig: combat pets & related ===");
+            sb.AppendLine("Effective values = code defaults overridden by shard config DB + any /modify* this process.");
+            sb.AppendLine("Keys: pet_*, damage_event_debug*, mob_awareness_range");
+            sb.AppendLine();
+
+            var props = typeof(ServerConfig).GetProperties(BindingFlags.Public | BindingFlags.Static)
+                .Where(p => IncludeKey(p.Name))
+                .OrderBy(p => p.Name, StringComparer.Ordinal)
+                .ToList();
+
+            foreach (var pi in props)
+            {
+                if (!pi.PropertyType.IsGenericType || pi.PropertyType.GetGenericTypeDefinition() != typeof(ConfigProperty<>))
+                    continue;
+
+                var cfgObj = pi.GetValue(null);
+                if (cfgObj == null)
+                    continue;
+
+                // ConfigProperty<T> exposes HasValue/Default as public fields; Value is a property.
+                const BindingFlags instancePublic = BindingFlags.Public | BindingFlags.Instance;
+                var cfgType = cfgObj.GetType();
+                var hasValueField = cfgType.GetField(nameof(ConfigProperty<bool>.HasValue), instancePublic);
+                var defaultField = cfgType.GetField(nameof(ConfigProperty<bool>.Default), instancePublic);
+                var valueProp = cfgType.GetProperty(nameof(ConfigProperty<bool>.Value), instancePublic);
+                if (hasValueField == null || defaultField == null || valueProp == null)
+                    continue;
+
+                var hasValue = (bool)hasValueField.GetValue(cfgObj)!;
+                var val = valueProp.GetValue(cfgObj);
+                var def = defaultField.GetValue(cfgObj);
+                var valueType = pi.PropertyType.GetGenericArguments()[0];
+
+                var source = hasValue ? "override (DB or /modify)" : "code default";
+
+                sb.AppendLine($"{pi.Name}: {FormatConfigValueForDump(val, valueType)} (default {FormatConfigValueForDump(def, valueType)}, {source})");
+                sb.AppendLine(BuildModifyCommandLine(pi.Name, val, valueType));
+                sb.AppendLine();
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Compact double formatting for in-game chat (avoids binary float noise like 0.84999999999999998).
+        /// </summary>
+        private static string FormatDoubleForPetConfigDump(double d)
+        {
+            if (double.IsNaN(d) || double.IsInfinity(d))
+                return d.ToString(CultureInfo.InvariantCulture);
+
+            var r = Math.Round(d, 6, MidpointRounding.AwayFromZero);
+            if (Math.Abs(r - Math.Truncate(r)) < 1e-9)
+                return ((long)Math.Truncate(r)).ToString(CultureInfo.InvariantCulture);
+
+            return r.ToString("0.######", CultureInfo.InvariantCulture);
+        }
+
+        private static string FormatConfigValueForDump(object? value, Type valueType)
+        {
+            if (value == null)
+                return "null";
+            if (valueType == typeof(double))
+                return FormatDoubleForPetConfigDump((double)value);
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
+        }
+
+        private static string BuildModifyCommandLine(string key, object? value, Type valueType)
+        {
+            if (value == null)
+                return $"# (no value) {key}";
+
+            if (valueType == typeof(bool))
+                return $"/modifybool {key} {((bool)value).ToString().ToLowerInvariant()}";
+            if (valueType == typeof(long))
+                return $"/modifylong {key} {Convert.ToInt64(value, CultureInfo.InvariantCulture)}";
+            if (valueType == typeof(double))
+                return $"/modifydouble {key} {FormatDoubleForPetConfigDump((double)value)}";
+            if (valueType == typeof(string))
+            {
+                var s = (string)value;
+                return $"/modifystring {key} {s}";
+            }
+
+            return $"# {key} ({valueType.Name})";
         }
 
         /// <summary>
@@ -315,7 +418,30 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_combat_unlimited_lifespan { get; private set; } = new(false, "If TRUE, combat pets ignore summoned lifespan decay.");
         public static ConfigProperty<bool> pet_combat_summon_aug_spell_mitigation_enabled { get; private set; } = new(false, "If TRUE, reduce spell damage to combat pets from augmentation scaling.");
         public static ConfigProperty<bool> pet_combat_summon_aug_spell_mitigation_players_only { get; private set; } = new(true, "If TRUE, aug mitigation applies only when spell source is a player.");
+        public static ConfigProperty<bool> pet_combat_summon_aug_physical_mitigation_enabled { get; private set; } = new(false, "If TRUE, reduce melee/missile (DamageEvent) damage to combat pets from summon aug mitigation.");
+        public static ConfigProperty<bool> pet_combat_summon_aug_physical_mitigation_players_only { get; private set; } = new(true, "If TRUE, physical mitigation applies only when the attacker is a player.");
+        /// <summary>When TRUE, Overpower resist (method B) uses max(pet EMD/MissileD, owner EMD/MissileD × fraction) so high-level owners help pets vs Overpower mobs. Default FALSE preserves stock behavior.</summary>
+        public static ConfigProperty<bool> pet_combat_overpower_resist_use_owner_effective_defense { get; private set; } = new(false, "If TRUE, CombatPet Overpower resist uses the higher of pet or (owner effective melee/missile defense × pet_combat_overpower_resist_owner_defense_fraction). Stock=FALSE.");
+        public static ConfigProperty<double> pet_combat_overpower_resist_owner_defense_fraction { get; private set; } = new(0.5, "Scales owner GetEffectiveDefenseSkill when pet_combat_overpower_resist_use_owner_effective_defense is TRUE (0–1, clamped server-side). Try 0.45–0.65.");
+        public static ConfigProperty<double> pet_combat_rating_mult_damage { get; private set; } = new(1.0, "Multiplier applied to combat pet DamageRating at summon (after GearDamage + bond additions). 1.0 = unchanged. Use /modifydouble.");
+        public static ConfigProperty<double> pet_combat_rating_mult_damage_resist { get; private set; } = new(1.0, "Multiplier applied to combat pet DamageResistRating at summon (after GearDamageResist + bond additions). 1.0 = unchanged. Use /modifydouble.");
+        public static ConfigProperty<double> pet_combat_rating_mult_crit_damage { get; private set; } = new(1.0, "Multiplier applied to combat pet CritDamageRating at summon (after GearCritDamage + bond additions). 1.0 = unchanged. Use /modifydouble.");
+        public static ConfigProperty<double> pet_combat_rating_mult_crit_damage_resist { get; private set; } = new(1.0, "Multiplier applied to combat pet CritDamageResistRating at summon (after GearCritDamageResist + bond additions). 1.0 = unchanged. Use /modifydouble.");
+        public static ConfigProperty<double> pet_combat_rating_mult_crit { get; private set; } = new(1.0, "Multiplier applied to combat pet CritRating at summon (after GearCrit). 1.0 = unchanged. Use /modifydouble.");
+        public static ConfigProperty<double> pet_combat_rating_mult_crit_resist { get; private set; } = new(1.0, "Multiplier applied to combat pet CritResistRating at summon (after GearCritResist). 1.0 = unchanged. Use /modifydouble.");
+        /// <summary>Additional global multiplier applied to melee/missile damage taken by combat pets after the normal DamageEvent armor/resist pipeline (and after aug/bond mitigation). 1.0 = unchanged.</summary>
+        public static ConfigProperty<double> pet_combat_physical_damage_taken_multiplier { get; private set; } = new(1.0, "Multiplier applied to combat pet melee/missile damage taken after aug/bond mitigation. 1.0 = unchanged. Use /modifydouble pet_combat_physical_damage_taken_multiplier.");
+        /// <summary>Additional multiplier applied only to critical-hit damage taken by combat pets (physical DamageEvent path). 1.0 = unchanged.</summary>
+        public static ConfigProperty<double> pet_combat_crit_damage_taken_multiplier { get; private set; } = new(1.0, "Multiplier applied to combat pet physical critical hit damage taken. 1.0 = unchanged. Use /modifydouble pet_combat_crit_damage_taken_multiplier.");
+        /// <summary>When TRUE, combat pet resistance mod in DamageEvent may borrow the owner's <see cref="Player.GetResistanceMod"/> pipeline (life prots/vulns/natural resists) for physical/elemental/nether damage types.</summary>
+        public static ConfigProperty<bool> pet_combat_resistance_use_owner_pipeline { get; private set; } = new(false, "If TRUE, CombatPet resistance uses owner Player.GetResistanceMod blended by pet_combat_resistance_owner_blend (0..1) for Slash/Pierce/Bludgeon/Fire/Cold/Acid/Electric/Nether. Default FALSE.");
+        public static ConfigProperty<double> pet_combat_resistance_owner_blend { get; private set; } = new(1.0, "Blend fraction (0..1) for owner resistance when pet_combat_resistance_use_owner_pipeline is TRUE. 0=ignore owner (1.0). 1=full owner resistance. Implemented as pow(ownerResistMod, blend) for smooth scaling.");
+        public static ConfigProperty<bool> pet_combat_resistance_owner_blend_scale_with_bond { get; private set; } = new(false, "If TRUE, scales pet_combat_resistance_owner_blend by bond level using a diminishing-returns curve (requires pet_bond_enabled).");
+        public static ConfigProperty<double> pet_combat_resistance_owner_blend_bond_scale { get; private set; } = new(250.0, "Bond scale for scaling owner-blend: towardCap = 1-exp(-bond/scale). Higher = slower ramp.");
         public static ConfigProperty<bool> pet_combat_damage_debug_chat { get; private set; } = new(false, "If TRUE, sends combat pet damage debug lines to owner chat.");
+        /// <summary>Verbose melee/missile <see cref="ACE.Server.Entity.DamageEvent"/> lines in server log for Player or CombatPet defenders (see also damage_event_debug_only_nonplayer_attackers).</summary>
+        public static ConfigProperty<bool> damage_event_debug_server_log { get; private set; } = new(false, "If TRUE, logs extensive melee/missile DamageEvent detail to the server log when the defender is a Player or CombatPet. /modifybool damage_event_debug_server_log.");
+        public static ConfigProperty<bool> damage_event_debug_only_nonplayer_attackers { get; private set; } = new(true, "If TRUE, damage_event_debug_server_log only runs when the attacker is not a Player (mob→player vs mob→pet). Set FALSE to log player attackers (PvP).");
         public static ConfigProperty<bool> pet_combat_recall_block_debug { get; private set; } = new(false, "If TRUE, logs recall-block diagnostics (server log only).");
         public static ConfigProperty<bool> pet_combat_recall_block_device_cooldown_visual { get; private set; } = new(false, "Legacy/no-op for refresh logic: damage-triggered essence cooldown uses pet_combat_essence_damage_cooldown_ring_seconds whenever that value is > 0. Kept for config compatibility.");
         public static ConfigProperty<bool> pet_melee_motion_dps_normalize { get; private set; } = new(false, "If TRUE, scales combat pet melee damage to normalize DPS vs motion table changes.");
@@ -325,21 +451,39 @@ namespace ACE.Server.Managers
         public static ConfigProperty<bool> pet_combat_summon_skips_shared_cooldown { get; private set; } = new(false, "If TRUE, a successful combat pet summon does not start the essence SharedCooldown; use pet_combat_essence_damage_cooldown_ring_seconds for combat pings and death (or pet_summon_cooldown_on_pet_death_only) for full essence duration.");
         public static ConfigProperty<bool> pet_device_pyreal_auto_refill_enabled { get; private set; } = new(false, "If TRUE, players may pay pyreals to refill empty summoning essence charges when enrolled.");
 
-        public static ConfigProperty<long> pet_bond_level_cap { get; private set; } = new(1000, "Maximum pet bond level.");
-        public static ConfigProperty<long> pet_summon_lifespan_seconds_per_aug { get; private set; } = new(0, "Seconds of combat pet lifespan added per summoning augmentation.");
-        public static ConfigProperty<long> pet_combat_lifespan_seconds_per_duration_aug { get; private set; } = new(0, "Seconds of lifespan added per duration augmentation on essence.");
+        public static ConfigProperty<long> pet_bond_level_cap { get; private set; } = new(1000, "Maximum pet bond level. Set to 0 (or negative) for unlimited.");
+        public static ConfigProperty<double> pet_summon_lifespan_seconds_per_aug { get; private set; } = new(0.0, "Seconds of combat pet lifespan added per summoning augmentation.");
+        public static ConfigProperty<double> pet_combat_lifespan_seconds_per_duration_aug { get; private set; } = new(0.0, "Seconds of lifespan added per duration augmentation on essence.");
         public static ConfigProperty<long> pet_combat_recall_block_after_damage_seconds { get; private set; } = new(0, "Seconds after combat pet damage during which owner recall/stow may be blocked (0 = off).");
         public static ConfigProperty<long> pet_combat_essence_damage_cooldown_ring_seconds { get; private set; } = new(5, "Summoning essence cooldown ring duration (seconds) after combat pet deals or takes damage. Separate from pet_combat_recall_block_after_damage_seconds. 0 = no damage-triggered ring.");
+        public static ConfigProperty<long> pet_combat_summon_initial_shared_cooldown_seconds { get; private set; } = new(0, "If > 0, overrides the summoning essence SharedCooldown duration (seconds) on successful combat pet summon only; does not affect death cooldown or damage-triggered ring refresh.");
         public static ConfigProperty<long> pet_bond_xp_min_award { get; private set; } = new(1, "Minimum bond XP awarded per qualifying kill.");
 
+        public static ConfigProperty<double> pet_combat_summon_aug_benefit_multiplier { get; private set; } = new(1.0, "Scales combat pet summon-aug bonuses (+all attributes / +all skills per luminance Summon aug). 1.0 = current behavior (+1 per aug). Clamped server-side to 0–10. Use /modifydouble.");
         public static ConfigProperty<double> pet_combat_summon_aug_spell_mitigation_max { get; private set; } = new(0.5, "Upper cap on aug spell mitigation fraction for combat pets.");
         public static ConfigProperty<double> pet_combat_summon_aug_spell_mitigation_scale { get; private set; } = new(1.0, "Scales aug spell mitigation applied to combat pets.");
+        public static ConfigProperty<double> pet_combat_summon_aug_physical_mitigation_max { get; private set; } = new(0.5, "Upper cap on aug physical (melee/missile) mitigation fraction for combat pets.");
+        public static ConfigProperty<double> pet_combat_summon_aug_physical_mitigation_scale { get; private set; } = new(1.0, "Scales aug physical mitigation applied to combat pets.");
+
+        /// <summary>
+        /// Synthetic effective AL added in Creature_BodyPart for combat pets (armor pipeline), from owner item augs at summon.
+        /// Does not change attack/defense/damage item-aug bonuses — those still use GetItemAugPercentageRating only.
+        /// </summary>
+        public static ConfigProperty<double> pet_combat_item_aug_synthetic_armor_multiplier { get; private set; } = new(1.0, "Multiplies the legacy item-aug armor term (200 + 200×rating) before linear add. 1.0 = stock behavior for that term.");
+        public static ConfigProperty<double> pet_combat_item_aug_synthetic_armor_per_effective_aug { get; private set; } = new(0.0, "Adds this much effective AL per effective item aug (min with summon augs). 0 = off. Use for linear parity with high item-aug players without buffing pet offense.");
+        public static ConfigProperty<long> pet_combat_item_aug_synthetic_armor_max { get; private set; } = new(0, "Caps total synthetic item-aug armor after multiplier + linear (0 = no cap).");
+
+        // Additional combat pet mitigation from bond level (applies to melee/missile via DamageEvent).
+        public static ConfigProperty<bool> pet_bond_physical_mitigation_enabled { get; private set; } = new(false, "If TRUE, reduce melee/missile (DamageEvent) damage to combat pets from bond level (PetBondLevel).");
+        public static ConfigProperty<double> pet_bond_physical_mitigation_max { get; private set; } = new(0.6, "Upper cap on bond physical (melee/missile) mitigation fraction for combat pets.");
+        public static ConfigProperty<double> pet_bond_physical_mitigation_scale { get; private set; } = new(200.0, "Scales bond physical mitigation applied to combat pets (higher = slower approach to cap).");
         public static ConfigProperty<double> pet_bond_xp_multiplier { get; private set; } = new(1.0, "Multiplier for bond XP from creature kills.");
         public static ConfigProperty<double> pet_bond_cdr_cap { get; private set; } = new(0.0, "Bond level bonus cap for cooldown reduction (interpreted by PetDevice).");
         public static ConfigProperty<double> pet_bond_cd_cap { get; private set; } = new(0.0, "Bond level bonus cap for cooldown (seconds or fraction per design).");
         public static ConfigProperty<double> pet_bond_vitality_per_level { get; private set; } = new(0.0, "Vitality scaling per bond level.");
         public static ConfigProperty<long> pet_device_pyreal_auto_refill_cost_per_charge { get; private set; } = new(1, "Pyreal cost per restored essence charge when auto-refill is enabled.");
         public static ConfigProperty<double> pet_combat_owner_recall_distance_m { get; private set; } = new(0.0, "Owner distance (m) past which engaged combat pet may drop target for idle follow (0 = disabled).");
+        public static ConfigProperty<double> pet_combat_leash_radius_m { get; private set; } = new(0.0, "If > 0, combat pets will not select targets beyond this distance from owner and will drop AttackTarget if they move beyond this leash radius (0 = disabled).");
         public static ConfigProperty<double> pet_owner_max_follow_distance_m { get; private set; } = new(70.0, "Max distance (m) from owner before passive or combat pet auto-despawns (idle SlowTick and engaged combat checks). Values <= 0 are treated as 1. Use /modifydouble.");
         public static ConfigProperty<double> pet_melee_motion_dps_normalize_min { get; private set; } = new(0.5, "Minimum melee DPS normalization factor.");
         public static ConfigProperty<double> pet_melee_motion_dps_normalize_max { get; private set; } = new(2.0, "Maximum melee DPS normalization factor.");

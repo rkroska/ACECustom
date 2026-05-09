@@ -113,6 +113,19 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            // Hard leash radius (independent of idle-follow toggle): if configured, drop target when pet strays too far from owner.
+            if (this is CombatPet hardLeashPet
+                && ServerConfig.pet_combat_leash_radius_m.Value > 0
+                && hardLeashPet.AttackTarget != null
+                && hardLeashPet.P_PetOwner?.PhysicsObj != null
+                && hardLeashPet.GetCylinderDistance(hardLeashPet.P_PetOwner) > (float)ServerConfig.pet_combat_leash_radius_m.Value)
+            {
+                hardLeashPet.AttackTarget = null;
+                hardLeashPet.ResetAttack();
+                ((Pet)hardLeashPet).Tick(currentUnixTime);
+                return;
+            }
+
             // Idle combat pets: use the same Pet.Tick path as passive pets (physics cadence + SlowTick recall),
             // then only run target search. Without this, idle undamaged pets hit ShouldSkipIdleMonsterTick and
             // never reach follow logic; physics also diverged from passive Pet.Tick.
