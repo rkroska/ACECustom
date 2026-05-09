@@ -34,7 +34,7 @@ VALUES (777710003,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777710003,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777710003,    3, 536870932) /* SoundTable */
-     , (777710003,    8, 100683150) /* Icon */
+     , (777710003,    8, 100672851) /* Icon - 0x06001953 */
      , (777710003,   48, 100676435) /* IconUnderlay */
      , (777710003,   50, 100667551); /* IconOverlay - Tier 2 badge */
 
@@ -78,7 +78,7 @@ VALUES (777720003,     1, 2048) /* ItemType - Gem */
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777720003,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777720003,    3, 536870932) /* SoundTable */
-     , (777720003,    8, 100683150) /* Icon */
+     , (777720003,    8, 100672851) /* Icon - 0x06001953 */
      , (777720003,   48, 100676435) /* IconUnderlay */
      , (777720003,   50, 100667552); /* IconOverlay - Tier 3 badge */
 
