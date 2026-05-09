@@ -654,11 +654,12 @@ namespace ACE.Server.WorldObjects
                     };
                     var critMsg = crit ? "Critical hit! " : "";
                     var dmgStr = Creature.FormatDamage(amount, DamageNumberFormat);
+                    var mbSuffix = GetManaBarrierSuffix(mbResult);
                     var overkillSuffix = (overkill > 0 && ShowOverkill)
                         ? $" [Overkill: {Creature.FormatDamage(overkill, DamageNumberFormat)}]"
                         : "";
                     // Death notifications intentionally bypass squelch — a player should always see what killed them.
-                    SendMessage($"{critMsg}{killer.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{overkillSuffix}", ChatMessageType.CombatEnemy);
+                    SendMessage($"{critMsg}{killer.Name} {plural} your {partName} for {dmgStr} points of {damageType.ToString().ToLower()} damage!{mbSuffix}{overkillSuffix}", ChatMessageType.CombatEnemy);
                 }
 
                 OnDeath(new DamageHistoryInfo(source), damageType, crit);
