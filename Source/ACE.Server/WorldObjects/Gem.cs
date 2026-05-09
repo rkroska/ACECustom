@@ -428,6 +428,13 @@ namespace ACE.Server.WorldObjects
                 return $"Asheron's Favor (Level {level}) deactivated. The protective blessings have faded.";
             }
 
+            if (abilityId == CharmAbilityRegistry.ShrapnelCharmAbilityId)
+            {
+                return activating
+                    ? "Shrapnel Charm activated. Tectonic Rifts will be cast as Rocky Shrapnel."
+                    : "Shrapnel Charm deactivated. Tectonic Rifts will cast normally.";
+            }
+
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }
