@@ -1164,9 +1164,9 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ─────────────────────
-            // Substitution is after all validity/range checks (which pass for the original Tectonic
-            // Rifts) but before GetCastingPreCheckStatus so Rocky Shrapnel's difficulty (400),
-            // cast speed, mana, and damage all apply. Requires Rocky Shrapnel in spellbook.
+            Session.Network.EnqueueSend(new GameMessageSystemChat(
+                $"[SHRAPNEL-DBG] spellId={spell.Id} hasCharm={HasShrapnelCharm} knowsRS={SpellIsKnown(6152u)}",
+                ChatMessageType.System));
             if (HasShrapnelCharm && SpellIsKnown(6152u)
                 && (spell.Id == 1789 || spell.Id == 6196))
             {
@@ -1301,6 +1301,17 @@ namespace ACE.Server.WorldObjects
 
             // get player's current magic skill
             var magicSkill = GetCreatureSkill(spell.School).Current;
+
+            // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ─────────────────────
+            // Ring spells use the untargeted path. Substitution is after validity checks but
+            // before GetCastingPreCheckStatus so Rocky Shrapnel's difficulty, cast speed,
+            // mana, and damage all apply. Requires Rocky Shrapnel (6152) in spellbook.
+            if (HasShrapnelCharm && SpellIsKnown(6152u)
+                && (spell.Id == 1789 || spell.Id == 6196))
+            {
+                spell = new Spell(6152);
+            }
+            // ─────────────────────────────────────────────────────────────────────────────────────────
 
             var castingPreCheckStatus = GetCastingPreCheckStatus(spell, magicSkill, false);
 
