@@ -1164,9 +1164,6 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ─────────────────────
-            Session.Network.EnqueueSend(new GameMessageSystemChat(
-                $"[SHRAPNEL-DBG] spellId={spell.Id} hasCharm={HasShrapnelCharm} knowsRS={SpellIsKnown(6152u)}",
-                ChatMessageType.System));
             if (HasShrapnelCharm && SpellIsKnown(6152u)
                 && (spell.Id == 1789 || spell.Id == 6196))
             {
