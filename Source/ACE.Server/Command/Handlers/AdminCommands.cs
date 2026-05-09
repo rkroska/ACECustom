@@ -3091,7 +3091,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             var spell = new Entity.Spell(spellId, false);
-            if (spell.NotFound)
+            if (spell._spellBase == null)
             {
                 session.Player.SendMessage($"Spell {spellId} not found.");
                 return;
