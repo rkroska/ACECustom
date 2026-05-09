@@ -23,6 +23,7 @@ namespace ACE.Server.WorldObjects
         public const int ManaBarrierAbilityId     = 1;
         public const int InfiniteCastingAbilityId = 16;
         public const int AsheronsFavorAbilityId   = 17;
+        public const int ArtisansCharmAbilityId   = 18;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -30,6 +31,7 @@ namespace ACE.Server.WorldObjects
             { ManaBarrierAbilityId,     new AbilityEntry(p => p.HasManaBarrier,     (p, v) => p.HasManaBarrier     = v, "Mana Barrier")     },
             { InfiniteCastingAbilityId, new AbilityEntry(p => p.HasInfiniteCasting, (p, v) => p.HasInfiniteCasting = v, "Infinite Casting") },
             { AsheronsFavorAbilityId,   new AbilityEntry(p => p.HasAsheronsFavor,   (p, v) => p.HasAsheronsFavor   = v, "Asheron's Favor")  },
+            { ArtisansCharmAbilityId,   new AbilityEntry(p => p.HasArtisanCharm,    (p, v) => p.HasArtisanCharm    = v, "Artisan's Charm")  },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -43,6 +45,8 @@ namespace ACE.Server.WorldObjects
             { 777700019, InfiniteCastingAbilityId }, { 777700055, InfiniteCastingAbilityId },
             // Asheron's Favor (Tiers 1–3)
             { 777700020, AsheronsFavorAbilityId }, { 777710002, AsheronsFavorAbilityId }, { 777720002, AsheronsFavorAbilityId },
+            // Artisan's Charm (Tiers 1–3)
+            { 777700021, ArtisansCharmAbilityId }, { 777710003, ArtisansCharmAbilityId }, { 777720003, ArtisansCharmAbilityId },
         };
 
         /// <summary>

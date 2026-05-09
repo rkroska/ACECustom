@@ -289,6 +289,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>Player has Asheron's Favor active — permanently maintains Asheron's Lesser Benediction (+Health) and Blackmoor's Favor (+Natural Armor).</summary>
         HasAsheronsFavor = 50030,
 
+        /// <summary>ILT Skill #18: Imbue success chance is increased while charm is in inventory.</summary>
+        HasArtisanCharm  = 50031,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

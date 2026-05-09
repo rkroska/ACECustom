@@ -239,6 +239,13 @@ namespace ACE.Server.Managers
 
                 if (player.AugmentationBonusImbueChance > 0)
                     successChance += player.AugmentationBonusImbueChance * 0.05f;
+
+                // Artisan's Charm: +4% per tier (T1 +4%, T2 +8%, T3 +12%)
+                if (player.HasArtisanCharm)
+                {
+                    player.ActiveCharmLevels.TryGetValue(CharmAbilityRegistry.ArtisansCharmAbilityId, out var artisanTier);
+                    successChance += artisanTier * 0.04f;
+                }
             }
 
             // todo: remove this once foolproof salvage recipes are updated
