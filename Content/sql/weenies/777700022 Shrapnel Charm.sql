@@ -40,4 +40,6 @@ VALUES (777700022,    1, 33554556)  /* Setup - Coffer/Chest */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700022,  1, 'Shrapnel Charm')
-     , (777700022, 14, 'While held, casting Tectonic Rifts I or II will fire Rocky Shrapnel instead. Requires Rocky Shrapnel to be in your spellbook.');
+     , (777700022, 14, '
+While held, casting Tectonic Rifts I or II will fire Rocky Shrapnel instead. Requires Rocky Shrapnel to be in your spellbook.
+');

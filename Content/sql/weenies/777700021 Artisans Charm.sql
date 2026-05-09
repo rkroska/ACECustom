@@ -40,4 +40,6 @@ VALUES (777700021,    1, 33554556)  /* Setup - Coffer/Chest */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700021,  1, 'Artisan''s Charm')
-     , (777700021, 14, 'While held, your imbue success chance is increased by 4%.');
+     , (777700021, 14, '
+While held, your imbue success chance is increased by 4%.
+');

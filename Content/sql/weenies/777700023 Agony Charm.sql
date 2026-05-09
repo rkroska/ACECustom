@@ -41,4 +41,6 @@ VALUES (777700023,    1, 33554556)  /* Setup - Coffer/Chest */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700023,  1, 'Agony Charm')
-     , (777700023, 14, 'While held, casting Tectonic Rifts I or II will fire Ring of Unspeakable Agony instead. Rocky Shrapnel takes priority if the Shrapnel Charm is also active. Requires Ring of Unspeakable Agony to be in your spellbook.');
+     , (777700023, 14, '
+While held, casting Tectonic Rifts I or II will fire Ring of Unspeakable Agony instead. Rocky Shrapnel takes priority if the Shrapnel Charm is also active. Requires Ring of Unspeakable Agony to be in your spellbook.
+');

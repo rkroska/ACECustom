@@ -40,7 +40,9 @@ VALUES (777710003,    1, 33554556)  /* Setup - Coffer/Chest */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777710003,  1, 'Greater Artisan''s Charm')
-     , (777710003, 14, 'While held, your imbue success chance is increased by 8%.');
+     , (777710003, 14, '
+While held, your imbue success chance is increased by 8%.
+');
 
 -- ============================================================
 -- Master Artisan's Charm (Tier 3) — WCID 777720003
@@ -84,4 +86,6 @@ VALUES (777720003,    1, 33554556)  /* Setup - Coffer/Chest */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777720003,  1, 'Master Artisan''s Charm')
-     , (777720003, 14, 'While held, your imbue success chance is increased by 12%.');
+     , (777720003, 14, '
+While held, your imbue success chance is increased by 12%.
+');

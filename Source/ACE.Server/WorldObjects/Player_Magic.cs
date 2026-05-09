@@ -1163,13 +1163,16 @@ namespace ACE.Server.WorldObjects
             if (!VerifySpellRange(target, targetCategory, spell, casterItem, magicSkill))
                 return false;
 
-            // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ─────────────────────
-            if (HasShrapnelCharm && SpellIsKnown(6152u)
-                && (spell.Id == 1789 || spell.Id == 6196))
+            // ── Charm redirect: Tectonic Rifts I/II → Rocky Shrapnel (priority) or Agony (fallback) ──
+            if (spell.Id == 1789 || spell.Id == 6196)
             {
-                spell = new Spell(6152);
+                if (HasShrapnelCharm && SpellIsKnown(6152u))
+                    spell = new Spell(6152);         // Rocky Shrapnel — priority
+                else if (HasAgonyCharm && SpellIsKnown(2673u))
+                    spell = new Spell(2673);         // Ring of Unspeakable Agony — fallback
             }
-            // ─────────────────────────────────────────────────────────────────────────────────────────
+            // ──────────────────────────────────────────────────────────────────────────────────────────
+
 
             // get casting pre-check status
             var castingPreCheckStatus = GetCastingPreCheckStatus(spell, magicSkill, isWeaponSpell);
