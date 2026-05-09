@@ -34,7 +34,7 @@ VALUES (777710002,     1, 2048)
      , (777710002, 50006,    3); /* CharmMaxLevel - 3 tiers total */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777710002,    1, 33558517)
+VALUES (777710002,    1, 33558552)
      , (777710002,    3, 536870932)
      , (777710002,    8, 100683150) /* Icon - Asheron's Lesser Benediction */
      , (777710002,   48, 100676435)
@@ -82,7 +82,7 @@ VALUES (777720002,     1, 2048)
      , (777720002, 50006,    3); /* CharmMaxLevel - 3 tiers total */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777720002,    1, 33558517)
+VALUES (777720002,    1, 33558552)
      , (777720002,    3, 536870932)
      , (777720002,    8, 100683150) /* Icon - Asheron's Lesser Benediction */
      , (777720002,   48, 100676435)

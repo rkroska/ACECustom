@@ -26,7 +26,7 @@ VALUES (777710001,     1, 2048) /* ItemType - Gem */
      , (777710001, 50006,     3) /* CharmMaxLevel - 3 tiers total */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777710001,    1, 33558517)  /* Setup - Ember */
+VALUES (777710001,    1, 33558552)  /* Setup - Ember */
      , (777710001,    3, 536870932) /* SoundTable */
      , (777710001,    8, 100691356) /* Icon */
      , (777710001,   48, 100676435) /* IconUnderlay */
@@ -66,7 +66,7 @@ VALUES (777720001,     1, 2048) /* ItemType - Gem */
      , (777720001, 50006,     3) /* CharmMaxLevel - 3 tiers total */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777720001,    1, 33558517)  /* Setup - Ember */
+VALUES (777720001,    1, 33558552)  /* Setup - Ember */
      , (777720001,    3, 536870932) /* SoundTable */
      , (777720001,    8, 100691356) /* Icon */
      , (777720001,   48, 100676435) /* IconUnderlay */

@@ -32,9 +32,9 @@ VALUES (777700022,     1, 2048) /* ItemType - Gem */
      , (777700022, 50006,    1); /* CharmMaxLevel - 1 tier */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777700022,    1, 33558517)  /* Setup - Ember */
+VALUES (777700022,    1, 33558552)  /* Setup - Ember */
      , (777700022,    3, 536870932) /* SoundTable */
-     , (777700022,    8, 100683150) /* Icon */
+     , (777700022,    8, 100670073) /* Icon - 0x06001A79 */
      , (777700022,   48, 100676435) /* IconUnderlay */
      , (777700022,   50, 100667550); /* IconOverlay - Tier 1 badge */
 
