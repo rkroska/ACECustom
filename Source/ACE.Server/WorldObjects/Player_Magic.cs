@@ -1138,6 +1138,16 @@ namespace ACE.Server.WorldObjects
         /// <param name="builtInSpell">If TRUE, casting a built-in spell from a weapon</param>
         private bool CreatePlayerSpell(WorldObject target, TargetCategory targetCategory, Spell spell, WorldObject casterItem)
         {
+            // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ─────────────────────
+            // Full substitution: Rocky Shrapnel's difficulty, cast speed, damage, and mana all apply.
+            // Requires: HasShrapnelCharm active + Rocky Shrapnel (6152) in the player's spellbook.
+            if (HasShrapnelCharm && SpellIsKnown(6152u)
+                && (spell.Id == 1789 || spell.Id == 6196))
+            {
+                spell = new Spell(6152);
+            }
+            // ─────────────────────────────────────────────────────────────────────────────────────────
+
             var creatureTarget = target as Creature;
 
             if (!IsValidSpell(spell, casterItem != null))
