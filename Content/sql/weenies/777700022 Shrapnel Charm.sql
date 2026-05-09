@@ -32,7 +32,7 @@ VALUES (777700022,     1, 2048) /* ItemType - Gem */
      , (777700022, 50006,    1); /* CharmMaxLevel - 1 tier */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777700022,    1, 33558552)  /* Setup - Ember */
+VALUES (777700022,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700022,    3, 536870932) /* SoundTable */
      , (777700022,    8, 100670704) /* Icon - 0x06001CF0 (Rocky Shrapnel spell icon) */
      , (777700022,   48, 100676435) /* IconUnderlay */

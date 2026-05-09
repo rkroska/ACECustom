@@ -33,7 +33,7 @@ VALUES (777700023,     1, 2048) /* ItemType - Gem */
      , (777700023, 50006,    1); /* CharmMaxLevel - 1 tier */
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777700023,    1, 33558552)  /* Setup - ground model */
+VALUES (777700023,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700023,    3, 536870932) /* SoundTable */
      , (777700023,    8, 100670704) /* Icon - 0x06001CF0 (Ring of Unspeakable Agony spell icon) */
      , (777700023,   48, 100676435) /* IconUnderlay */
