@@ -1,9 +1,8 @@
 -- ============================================================
 -- Shrapnel Charm (Tier 1) — WCID 777700022
 -- ILT Ability Charm — Ability ID 19 (HasShrapnelCharm)
--- While active, Tectonic Rifts I (1789) and II (6196) are
--- redirected to cast Rocky Shrapnel (6152) instead.
--- Requires Rocky Shrapnel to be in the player's spellbook.
+-- While active, Tectonic Rifts I/II fire Rocky Shrapnel instead.
+-- Requires Rocky Shrapnel (6152) to be in the player's spellbook.
 -- ============================================================
 
 DELETE FROM `weenie` WHERE `class_Id` = 777700022;
@@ -26,20 +25,19 @@ VALUES (777700022,     1, 2048) /* ItemType - Gem */
      , (777700022,    19,    1) /* UiEffects - Magical */
      , (777700022,    33,    1) /* Bonded */
      , (777700022,    83,    2) /* ActivationResponse - Use */
-     , (777700022,  9041,   19) /* AbilityId = 19 (ShrapnelCharm) */
-     , (777700022, 50005,    1) /* CharmLevel - Tier 1 of 1 */
-     , (777700022, 50006,    1) /* CharmMaxLevel */
-     , (777700022,   188,    1) /* HookType */
-     , (777700022,   187, 41943040); /* ValidHookTypes */
+     , (777700022,    93, 1044) /* PhysicsState */
+     , (777700022,   114,    1) /* Attuned */
+     , (777700022, 50000,   19) /* CharmGrantsAbility - ID 19 = Shrapnel Charm */
+     , (777700022, 50005,    1) /* CharmLevel - 1 */
+     , (777700022, 50006,    1); /* CharmMaxLevel - 1 tier */
 
-INSERT INTO `weenie_properties_float` (`object_Id`, `type`, `value`)
-VALUES (777700022, 54, 1.0); /* DefaultScale */
+INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
+VALUES (777700022,    1, 33558517)  /* Setup - Ember */
+     , (777700022,    3, 536870932) /* SoundTable */
+     , (777700022,    8, 100683150) /* Icon */
+     , (777700022,   48, 100676435) /* IconUnderlay */
+     , (777700022,   50, 100667550); /* IconOverlay - Tier 1 badge */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700022,  1, 'Shrapnel Charm')
-     , (777700022, 16, 'A charm that redirects the earth''s fury. While active, casting Tectonic Rifts I or II will instead unleash Rocky Shrapnel — provided you have learned that spell.');
-
-INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777700022,  1, 0x02000001)  /* Setup */
-     , (777700022,  8, 0x06002B33)  /* Icon - gem icon */
-     , (777700022, 22, 0x20000001); /* PhysicsEffectTable */
+     , (777700022, 14, 'While held, casting Tectonic Rifts I or II will fire Rocky Shrapnel instead. Requires Rocky Shrapnel to be in your spellbook.');
