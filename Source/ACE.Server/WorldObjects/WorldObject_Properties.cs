@@ -3426,6 +3426,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasArtisanCharm); else SetProperty(PropertyBool.HasArtisanCharm, value); }
         }
 
+        /// <summary>True while the Shrapnel Charm is activated — Tectonic Rifts I/II are redirected to Rocky Shrapnel (requires Rocky Shrapnel learned).</summary>
+        public bool HasShrapnelCharm
+        {
+            get => GetProperty(PropertyBool.HasShrapnelCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasShrapnelCharm); else SetProperty(PropertyBool.HasShrapnelCharm, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

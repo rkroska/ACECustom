@@ -263,6 +263,24 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         protected bool HandleCastSpell(Spell spell, WorldObject target, WorldObject itemCaster = null, WorldObject weapon = null, bool isWeaponSpell = false, bool fromProc = false, bool equip = false)
         {
+            // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ───────────────────
+            // The skill check and casting animation already used the original spell's difficulty.
+            // We substitute only the execution spell here, so the player benefits from their own
+            // difficulty without being penalised by Rocky Shrapnel's higher difficulty (400).
+            // Requires: HasShrapnelCharm active + Rocky Shrapnel (6152) in the player's spellbook.
+            const uint TectonicRiftsI  = 1789;
+            const uint TectonicRiftsII = 6196;
+            const uint RockyShrapnel   = 6152;
+
+            if (this is Player shrapnelCaster
+                && shrapnelCaster.HasShrapnelCharm
+                && shrapnelCaster.SpellIsKnown(RockyShrapnel)
+                && (spell.Id == TectonicRiftsI || spell.Id == TectonicRiftsII))
+            {
+                spell = new Spell(RockyShrapnel);
+            }
+            // ─────────────────────────────────────────────────────────────────────────────────────
+
             var targetCreature = !spell.IsSelfTargeted || spell.IsFellowshipSpell ? target as Creature : this as Creature;
 
             if (this is Gem || this is Food || this is Hook)

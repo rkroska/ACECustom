@@ -292,6 +292,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>ILT Skill #18: Imbue success chance is increased while charm is in inventory.</summary>
         HasArtisanCharm  = 50031,
 
+        /// <summary>ILT Skill #19: Tectonic Rifts I/II are redirected to Rocky Shrapnel while charm is active (requires Rocky Shrapnel learned).</summary>
+        HasShrapnelCharm = 50032,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }
