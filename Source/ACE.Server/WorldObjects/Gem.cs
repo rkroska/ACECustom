@@ -442,6 +442,26 @@ namespace ACE.Server.WorldObjects
                     : "Agony Charm deactivated. Tectonic Rifts will cast normally.";
             }
 
+            if (abilityId == CharmAbilityRegistry.ArtisansCharmAbilityId)
+            {
+                if (activating)
+                    return level switch
+                    {
+                        1 => "Artisan's Charm activated. Imbue success chance increased by 4%.",
+                        2 => "Greater Artisan's Charm activated. Imbue success chance increased by 8%.",
+                        3 => "Master Artisan's Charm activated. Imbue success chance increased by 12%.",
+                        _ => $"Artisan's Charm (Level {level}) activated."
+                    };
+                return level switch
+                {
+                    1 => "Artisan's Charm deactivated.",
+                    2 => "Greater Artisan's Charm deactivated.",
+                    3 => "Master Artisan's Charm deactivated.",
+                    _ => "Artisan's Charm deactivated."
+                };
+            }
+
+
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }
