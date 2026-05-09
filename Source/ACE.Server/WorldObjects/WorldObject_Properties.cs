@@ -3412,6 +3412,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasInfiniteCasting); else SetProperty(PropertyBool.HasInfiniteCasting, value); }
         }
 
+        /// <summary>True while the Asheron's Favor charm is activated — maintained enchantments (Health +%, Natural Armor +) are active.</summary>
+        public bool HasAsheronsFavor
+        {
+            get => GetProperty(PropertyBool.HasAsheronsFavor) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasAsheronsFavor); else SetProperty(PropertyBool.HasAsheronsFavor, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

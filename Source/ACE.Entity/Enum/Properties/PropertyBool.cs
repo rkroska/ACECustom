@@ -286,6 +286,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>ILT Player Pref: Show [Overkill] suffix on kill/death messages. Default ON.</summary>
         ShowOverkill = 50029,
 
+        /// <summary>Player has Asheron's Favor active — permanently maintains Asheron's Lesser Benediction (+Health) and Blackmoor's Favor (+Natural Armor).</summary>
+        HasAsheronsFavor = 50030,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

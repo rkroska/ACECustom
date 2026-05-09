@@ -6,6 +6,7 @@ INSERT INTO `weenie_properties_bool` (`object_Id`, `type`, `value`)
 VALUES (777700054,    11, 1) /* IgnoreCollisions */
      , (777700054,    13, 1) /* Ethereal */
      , (777700054,    14, 1) /* GravityStatus */
+     , (777700054,  9040, 1) /* IsCharm — enables tier-aware appraise header */
      , (777700054, 50000, 1) /* IsAbilityCharm — ILT system */
      , (777700054, 50002, 1) /* IsTestCharm — triggers expiry message */;
 
@@ -20,7 +21,9 @@ VALUES (777700054,     1, 65536) /* ItemType - Misc */
      , (777700054,    93,  1044) /* PhysicsState */
      , (777700054,   114,     1) /* Attuned - Attuned */
      , (777700054, 50000,     1) /* CharmGrantsAbility - ID 1 = Mana Barrier */
-     , (777700054,   267,  3600) /* Lifespan - 3600 seconds = 60 minutes */;
+     , (777700054,   267,  3600) /* Lifespan - 3600 seconds = 60 minutes */
+     , (777700054, 50005,     1) /* CharmLevel - 1 */
+     , (777700054, 50006,     3) /* CharmMaxLevel - 3 tiers total */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
 VALUES (777700054,    1, 33558517)  /* Setup - Ember */
@@ -32,4 +35,6 @@ VALUES (777700054,    1, 33558517)  /* Setup - Ember */
 
 INSERT INTO `weenie_properties_string` (`object_Id`, `type`, `value`)
 VALUES (777700054,    1, 'Mana Barrier Test Charm')
-     , (777700054,   14, 'TEST — Expires after 60 minutes. Double-click to activate Mana Barrier. Ability deactivates when this charm expires or leaves your inventory.');
+     , (777700054,   14, '
+TEST — Expires after 60 minutes. Ability deactivates when this charm expires or leaves your inventory.
+');

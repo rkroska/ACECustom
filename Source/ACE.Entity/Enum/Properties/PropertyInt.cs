@@ -760,6 +760,9 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>On a charm item: the tier/level of the charm (1, 2, 3).</summary>
         CharmLevel = 50005,
 
+        /// <summary>On a charm item: the maximum tier available for this ability (e.g. 3 for a 3-tier charm).</summary>
+        CharmMaxLevel = 50006,
+
         /// <summary>On a player: the level of the currently active charm.</summary>
         ActiveCharmLevel = 50016,
 
