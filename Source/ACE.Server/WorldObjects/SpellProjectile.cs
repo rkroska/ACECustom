@@ -938,7 +938,7 @@ namespace ACE.Server.WorldObjects
                         sourcePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.Magic));
                 }
 
-                if (targetPlayer != null)
+                if (targetPlayer != null && ProjectileSource != null)
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
                     var amtStr = Creature.FormatDamage(displayAmount, targetPlayer.DamageNumberFormat);
