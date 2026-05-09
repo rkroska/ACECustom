@@ -3440,7 +3440,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
         }
 
-
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {
