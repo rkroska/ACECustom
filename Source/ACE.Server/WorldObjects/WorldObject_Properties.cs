@@ -3419,6 +3419,7 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAsheronsFavor); else SetProperty(PropertyBool.HasAsheronsFavor, value); }
         }
 
+
         /// <summary>True while the Artisan's Charm is activated — imbue success chance is increased by tier * 4%.</summary>
         public bool HasArtisanCharm
         {
@@ -3433,11 +3434,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasShrapnelCharm); else SetProperty(PropertyBool.HasShrapnelCharm, value); }
         }
 
+        /// <summary>True while the Agony Charm is activated — Tectonic Rifts I/II are redirected to Ring of Unspeakable Agony. Rocky Shrapnel takes priority if both charms are active.</summary>
         public bool HasAgonyCharm
         {
             get => GetProperty(PropertyBool.HasAgonyCharm) ?? false;
             set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
         }
+
 
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
