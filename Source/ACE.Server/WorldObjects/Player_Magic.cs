@@ -1139,12 +1139,34 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Redirects Tectonic Rifts I/II to Rocky Shrapnel (priority) or Ring of Unspeakable Agony (fallback)
+        /// when the corresponding charm is active and the spell is known. Called at the very start of both
+        /// CreatePlayerSpell overloads so all downstream validation (range, components, mana) runs against
+        /// the redirected spell rather than the original.
+        /// </summary>
+        private Spell TryRedirectTectonicRifts(Spell spell)
+        {
+            if (spell.Id != SpellId_TectonicRiftsI && spell.Id != SpellId_TectonicRiftsII)
+                return spell;
+
+            if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
+                return new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
+
+            if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
+                return new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
+
+            return spell;
+        }
+
+        /// <summary>
         /// Method used for handling player targeted spell casts
         /// </summary>
         /// <param name="builtInSpell">If TRUE, casting a built-in spell from a weapon</param>
         private bool CreatePlayerSpell(WorldObject target, TargetCategory targetCategory, Spell spell, WorldObject casterItem)
         {
             var creatureTarget = target as Creature;
+
+            spell = TryRedirectTectonicRifts(spell);
 
             if (!IsValidSpell(spell, casterItem != null))
                 return false;
@@ -1168,16 +1190,6 @@ namespace ACE.Server.WorldObjects
             // verify spell range
             if (!VerifySpellRange(target, targetCategory, spell, casterItem, magicSkill))
                 return false;
-
-            // ── Charm redirect: Tectonic Rifts I/II → Rocky Shrapnel (priority) or Agony (fallback) ──
-            if (spell.Id == SpellId_TectonicRiftsI || spell.Id == SpellId_TectonicRiftsII)
-            {
-                if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
-                    spell = new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
-                else if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
-                    spell = new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
-            }
-            // ──────────────────────────────────────────────────────────────────────────────────────────
 
             // get casting pre-check status
             var castingPreCheckStatus = GetCastingPreCheckStatus(spell, magicSkill, isWeaponSpell);
@@ -1298,6 +1310,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private bool CreatePlayerSpell(Spell spell)
         {
+            spell = TryRedirectTectonicRifts(spell);
+
             if (!IsValidSpell(spell))
                 return false;
 
@@ -1306,18 +1320,6 @@ namespace ACE.Server.WorldObjects
 
             // get player's current magic skill
             var magicSkill = GetCreatureSkill(spell.School).Current;
-
-            // ── Charm redirect: Tectonic Rifts I/II → Rocky Shrapnel (priority) or Agony (fallback) ──
-            // Rocky Shrapnel always wins if the Shrapnel Charm is active and the spell is known.
-            // Agony Charm fires only if Rocky Shrapnel is not available. Both require Tectonic Rifts I/II.
-            if (spell.Id == SpellId_TectonicRiftsI || spell.Id == SpellId_TectonicRiftsII)
-            {
-                if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
-                    spell = new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
-                else if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
-                    spell = new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
-            }
-            // ──────────────────────────────────────────────────────────────────────────────────────────
 
             var castingPreCheckStatus = GetCastingPreCheckStatus(spell, magicSkill, false);
 

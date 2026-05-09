@@ -430,8 +430,11 @@ namespace ACE.Server.WorldObjects
 
             if (abilityId == CharmAbilityRegistry.ShrapnelCharmAbilityId)
             {
+                var knowsShrapnel = player?.SpellIsKnown(6152u) == true; // Rocky Shrapnel
                 if (activating)
                 {
+                    if (!knowsShrapnel)
+                        return "Shrapnel Charm activated. Learn Rocky Shrapnel to enable Tectonic Rifts redirection.";
                     var agonyActive = player?.HasAgonyCharm == true;
                     return agonyActive
                         ? "Shrapnel Charm activated. Rocky Shrapnel takes priority — Tectonic Rifts will cast as Rocky Shrapnel while both charms are active."
@@ -439,8 +442,8 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    var agonyActive = player?.HasAgonyCharm == true;
-                    return agonyActive
+                    var agonyFallback = player?.HasAgonyCharm == true && player?.SpellIsKnown(2673u) == true;
+                    return agonyFallback
                         ? "Shrapnel Charm deactivated. Tectonic Rifts will now cast as Ring of Unspeakable Agony."
                         : "Shrapnel Charm deactivated. Tectonic Rifts will cast normally.";
                 }
@@ -448,8 +451,11 @@ namespace ACE.Server.WorldObjects
 
             if (abilityId == CharmAbilityRegistry.AgonyCharmAbilityId)
             {
+                var knowsAgony = player?.SpellIsKnown(2673u) == true; // Ring of Unspeakable Agony
                 if (activating)
                 {
+                    if (!knowsAgony)
+                        return "Agony Charm activated. Learn Ring of Unspeakable Agony to enable Tectonic Rifts redirection.";
                     var shrapnelActive = player?.HasShrapnelCharm == true;
                     return shrapnelActive
                         ? "Agony Charm activated. Note: Rocky Shrapnel takes priority while the Shrapnel Charm is also active."
