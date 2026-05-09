@@ -483,7 +483,6 @@ namespace ACE.Server.WorldObjects
                 };
             }
 
-
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }

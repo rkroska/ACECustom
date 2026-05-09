@@ -3419,7 +3419,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasAsheronsFavor); else SetProperty(PropertyBool.HasAsheronsFavor, value); }
         }
 
-
         /// <summary>True while the Artisan's Charm is activated — imbue success chance is increased by tier * 4%.</summary>
         public bool HasArtisanCharm
         {

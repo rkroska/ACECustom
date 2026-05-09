@@ -17,6 +17,12 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        // ── Charm redirect spell IDs ───────────────────────────────────────────
+        private const uint SpellId_TectonicRiftsI  = 1789u;
+        private const uint SpellId_TectonicRiftsII = 6196u;
+        private const uint SpellId_RockyShrapnel   = 6152u;
+        private const uint SpellId_RingOfAgony     = 2673u;
+
         // TODO: get rid of this, only used for determining if TurnTo is required
         public enum TargetCategory
         {
@@ -1164,15 +1170,14 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             // ── Charm redirect: Tectonic Rifts I/II → Rocky Shrapnel (priority) or Agony (fallback) ──
-            if (spell.Id == 1789 || spell.Id == 6196)
+            if (spell.Id == SpellId_TectonicRiftsI || spell.Id == SpellId_TectonicRiftsII)
             {
-                if (HasShrapnelCharm && SpellIsKnown(6152u))
-                    spell = new Spell(6152);         // Rocky Shrapnel — priority
-                else if (HasAgonyCharm && SpellIsKnown(2673u))
-                    spell = new Spell(2673);         // Ring of Unspeakable Agony — fallback
+                if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
+                    spell = new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
+                else if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
+                    spell = new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
             }
             // ──────────────────────────────────────────────────────────────────────────────────────────
-
 
             // get casting pre-check status
             var castingPreCheckStatus = GetCastingPreCheckStatus(spell, magicSkill, isWeaponSpell);
@@ -1302,17 +1307,17 @@ namespace ACE.Server.WorldObjects
             // get player's current magic skill
             var magicSkill = GetCreatureSkill(spell.School).Current;
 
-            // ── Bludgeon Ring Spell Redirect: Rocky Shrapnel (priority) → Agony (fallback) ───────────
+            // ── Charm redirect: Tectonic Rifts I/II → Rocky Shrapnel (priority) or Agony (fallback) ──
             // Rocky Shrapnel always wins if the Shrapnel Charm is active and the spell is known.
             // Agony Charm fires only if Rocky Shrapnel is not available. Both require Tectonic Rifts I/II.
-            if (spell.Id == 1789 || spell.Id == 6196)
+            if (spell.Id == SpellId_TectonicRiftsI || spell.Id == SpellId_TectonicRiftsII)
             {
-                if (HasShrapnelCharm && SpellIsKnown(6152u))
-                    spell = new Spell(6152);         // Rocky Shrapnel
-                else if (HasAgonyCharm && SpellIsKnown(2673u))
-                    spell = new Spell(2673);         // Ring of Unspeakable Agony
+                if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
+                    spell = new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
+                else if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
+                    spell = new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
             }
-            // ─────────────────────────────────────────────────────────────────────────────────────────
+            // ──────────────────────────────────────────────────────────────────────────────────────────
 
             var castingPreCheckStatus = GetCastingPreCheckStatus(spell, magicSkill, false);
 
