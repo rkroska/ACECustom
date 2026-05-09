@@ -1416,12 +1416,13 @@ namespace ACE.Server.Command.Handlers
 
         }
 
-        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments")]
+        [CommandHandler("top", AccessLevel.Player, CommandHandlerFlag.None, "Show current leaderboards", "use top qb to list top quest bonus count, top level to list top character levels, enl for enlightenments; bond(s) / sumbond(s) for pet bond rankings")]
         public static async void DisplayTop(Session session, params string[] parameters)
         {
             try
             {
                 List<Leaderboard> list = [];
+                var sqlLeaderboardRequested = false;
                 LeaderboardCache cache = LeaderboardCache.Instance;
                 if (parameters.Length < 1)
                 {
@@ -1433,6 +1434,7 @@ namespace ACE.Server.Command.Handlers
                     var key = parameters[0].ToLowerInvariant();
                     if (key == "qb")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopQBAsync(context);
                         if (list.Count > 0)
                         {
@@ -1441,6 +1443,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "level")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopLevelAsync(context);
                         if (list.Count > 0)
                         {
@@ -1449,6 +1452,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "enl")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopEnlAsync(context);
                         if (list.Count > 0)
                         {
@@ -1457,6 +1461,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "title")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopTitleAsync(context);
                         if (list.Count > 0)
                         {
@@ -1465,6 +1470,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "augs")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopAugsAsync(context);
                         if (list.Count > 0)
                         {
@@ -1473,6 +1479,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "deaths")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopDeathsAsync(context);
                         if (list.Count > 0)
                         {
@@ -1481,6 +1488,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "bank")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopBankAsync(context);
                         if (list.Count > 0)
                         {
@@ -1489,6 +1497,7 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "lum")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopLumAsync(context);
                         if (list.Count > 0)
                         {
@@ -1497,10 +1506,29 @@ namespace ACE.Server.Command.Handlers
                     }
                     else if (key == "attr")
                     {
+                        sqlLeaderboardRequested = true;
                         list = await cache.GetTopAttrAsync(context);
                         if (list.Count > 0)
                         {
                             session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Raised Attributes:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "bonds" || key == "bond")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopBondsAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Highest Pet Bond Level:", ChatMessageType.Broadcast));
+                        }
+                    }
+                    else if (key == "sumbonds" || key == "sumbond")
+                    {
+                        sqlLeaderboardRequested = true;
+                        list = await cache.GetTopSumBondsAsync(context);
+                        if (list.Count > 0)
+                        {
+                            session.Network.EnqueueSend(new GameMessageSystemChat("Top 25 Players by Sum of Pet Bond Levels:", ChatMessageType.Broadcast));
                         }
                     }
                     else if (key == "pets")
@@ -1543,11 +1571,21 @@ namespace ACE.Server.Command.Handlers
                     {
                         session.Network.EnqueueSend(new GameMessageSystemChat("Top 1 Player named Gymnos: Gymnos", ChatMessageType.Broadcast));
                     }
+                    else
+                    {
+                        session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] Unknown leaderboard. Use: qb, level, enl, title, augs, deaths, bank, lum, attr, bond(s), sumbond(s), pets, shinies", ChatMessageType.Broadcast));
+                        return;
+                    }
                 }
 
                 for (int i = 0; i < list.Count; i++)
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"{i + 1}: {list[i].Score:N0} - {list[i].Character}", ChatMessageType.Broadcast));
+                }
+
+                if (sqlLeaderboardRequested && list.Count == 0)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[TOP] No entries on this leaderboard yet.", ChatMessageType.Broadcast));
                 }
             }
             catch (Exception ex)

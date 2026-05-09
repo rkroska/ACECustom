@@ -445,7 +445,10 @@ namespace ACE.Server.Physics
                     if (!transition.ObjectInfo.State.HasFlag(ObjectInfoState.Contact))
                         transition.CollisionInfo.CollidedWithEnvironment = true;
                 }
-                else if (ethereal || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
+                else if (ethereal
+                    || (transition.ObjectInfo.Object?.WeenieObj?.IsPlayer ?? false) && (WeenieObj?.WorldObject is ACE.Server.WorldObjects.Pet)
+                    || (transition.ObjectInfo.Object?.WeenieObj?.WorldObject is ACE.Server.WorldObjects.Pet) && (WeenieObj?.IsPlayer ?? false)
+                    || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
                 {
                     result = TransitionState.OK;
                     transition.CollisionInfo.CollisionNormalValid = false;

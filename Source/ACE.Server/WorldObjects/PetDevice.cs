@@ -183,8 +183,8 @@ namespace ACE.Server.WorldObjects
             if (bondedCharacterId.HasValue && owner != null && bondedCharacterId.Value != (long)owner.Character.Id)
                 return false;
 
-            var levelCap = (int)ServerConfig.pet_bond_level_cap.Value;
-            if (levelCap < 1) levelCap = 1;
+            var levelCapRaw = (int)ServerConfig.pet_bond_level_cap.Value;
+            var levelCap = levelCapRaw <= 0 ? int.MaxValue : Math.Max(1, levelCapRaw);
 
             var level = PetBondLevel.GetValueOrDefault(1);
             if (level < 1) level = 1;
@@ -243,6 +243,12 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyDataId.VisualOverrideMotionTable);
             set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideMotionTable); else SetProperty(PropertyDataId.VisualOverrideMotionTable, value.Value); }
+        }
+
+        public uint? VisualOverrideCombatTable
+        {
+            get => GetProperty(PropertyDataId.VisualOverrideCombatTable);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.VisualOverrideCombatTable); else SetProperty(PropertyDataId.VisualOverrideCombatTable, value.Value); }
         }
 
         public uint? VisualOverrideSoundTable
@@ -398,7 +404,6 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
             }
-
             player.EnchantmentManager.StartCooldown(this);
         }
 
@@ -644,6 +649,12 @@ namespace ACE.Server.WorldObjects
 
                 if (VisualOverrideMotionTable.HasValue)
                     pet.MotionTableId = VisualOverrideMotionTable.Value;
+
+                if (VisualOverrideCombatTable.HasValue)
+                {
+                    pet.CombatTableDID = VisualOverrideCombatTable.Value;
+                    pet.GetCombatTable();
+                }
 
                 if (VisualOverrideSoundTable.HasValue)
                     pet.SoundTableId = VisualOverrideSoundTable.Value;

@@ -111,7 +111,9 @@ namespace ACE.Entity.Enum.Properties
         VisualOverrideSoundTable         = 9035,
         VisualOverridePaletteBase        = 9036,
         VisualOverrideClothingBase       = 9037,
-        VisualOverrideIcon               = 9038
+        VisualOverrideIcon               = 9038,
+        CapturedCombatTable              = 9039,
+        VisualOverrideCombatTable        = 9040
 
         //[ServerOnly]
         //HairTexture                = 9001,
