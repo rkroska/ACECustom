@@ -435,6 +435,13 @@ namespace ACE.Server.WorldObjects
                     : "Shrapnel Charm deactivated. Tectonic Rifts will cast normally.";
             }
 
+            if (abilityId == CharmAbilityRegistry.AgonyCharmAbilityId)
+            {
+                return activating
+                    ? "Agony Charm activated. Tectonic Rifts will be cast as Ring of Unspeakable Agony."
+                    : "Agony Charm deactivated. Tectonic Rifts will cast normally.";
+            }
+
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";
             return activating ? $"{name} Level {level} activated." : $"{name} deactivated.";
         }

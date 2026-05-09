@@ -1299,14 +1299,15 @@ namespace ACE.Server.WorldObjects
             // get player's current magic skill
             var magicSkill = GetCreatureSkill(spell.School).Current;
 
-            // ── Shrapnel Charm: redirect Tectonic Rifts I/II → Rocky Shrapnel ─────────────────────
-            // Ring spells use the untargeted path. Substitution is after validity checks but
-            // before GetCastingPreCheckStatus so Rocky Shrapnel's difficulty, cast speed,
-            // mana, and damage all apply. Requires Rocky Shrapnel (6152) in spellbook.
-            if (HasShrapnelCharm && SpellIsKnown(6152u)
-                && (spell.Id == 1789 || spell.Id == 6196))
+            // ── Bludgeon Ring Spell Redirect: Rocky Shrapnel (priority) → Agony (fallback) ───────────
+            // Rocky Shrapnel always wins if the Shrapnel Charm is active and the spell is known.
+            // Agony Charm fires only if Rocky Shrapnel is not available. Both require Tectonic Rifts I/II.
+            if (spell.Id == 1789 || spell.Id == 6196)
             {
-                spell = new Spell(6152);
+                if (HasShrapnelCharm && SpellIsKnown(6152u))
+                    spell = new Spell(6152);         // Rocky Shrapnel
+                else if (HasAgonyCharm && SpellIsKnown(2673u))
+                    spell = new Spell(2673);         // Ring of Unspeakable Agony
             }
             // ─────────────────────────────────────────────────────────────────────────────────────────
 

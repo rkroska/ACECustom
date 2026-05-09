@@ -25,6 +25,7 @@ namespace ACE.Server.WorldObjects
         public const int AsheronsFavorAbilityId   = 17;
         public const int ArtisansCharmAbilityId   = 18;
         public const int ShrapnelCharmAbilityId   = 19;
+        public const int AgonyCharmAbilityId      = 20;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
@@ -34,6 +35,7 @@ namespace ACE.Server.WorldObjects
             { AsheronsFavorAbilityId,   new AbilityEntry(p => p.HasAsheronsFavor,   (p, v) => p.HasAsheronsFavor   = v, "Asheron's Favor")  },
             { ArtisansCharmAbilityId,   new AbilityEntry(p => p.HasArtisanCharm,    (p, v) => p.HasArtisanCharm    = v, "Artisan's Charm")  },
             { ShrapnelCharmAbilityId,   new AbilityEntry(p => p.HasShrapnelCharm,   (p, v) => p.HasShrapnelCharm   = v, "Shrapnel Charm")   },
+            { AgonyCharmAbilityId,       new AbilityEntry(p => p.HasAgonyCharm,      (p, v) => p.HasAgonyCharm      = v, "Agony Charm")      },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -51,6 +53,8 @@ namespace ACE.Server.WorldObjects
             { 777700021, ArtisansCharmAbilityId }, { 777710003, ArtisansCharmAbilityId }, { 777720003, ArtisansCharmAbilityId },
             // Shrapnel Charm (Tier 1 only)
             { 777700022, ShrapnelCharmAbilityId },
+            // Agony Charm (Tier 1 only)
+            { 777700023, AgonyCharmAbilityId },
         };
 
         /// <summary>
