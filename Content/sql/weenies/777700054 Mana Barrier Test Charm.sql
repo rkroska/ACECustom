@@ -26,7 +26,7 @@ VALUES (777700054,     1, 65536) /* ItemType - Misc */
      , (777700054, 50006,     3) /* CharmMaxLevel - 3 tiers total */;
 
 INSERT INTO `weenie_properties_d_i_d` (`object_Id`, `type`, `value`)
-VALUES (777700054,    1, 33558517)  /* Setup - Ember */
+VALUES (777700054,    1, 33554556)  /* Setup - Coffer/Chest */
      , (777700054,    3, 536870932) /* SoundTable */
      , (777700054,    6, 67111919)  /* PaletteBase */
      , (777700054,    8, 100691356) /* Icon */

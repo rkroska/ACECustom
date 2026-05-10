@@ -17,6 +17,12 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
+        // ── Charm redirect spell IDs ───────────────────────────────────────────
+        private const uint SpellId_TectonicRiftsI  = 1789u;
+        private const uint SpellId_TectonicRiftsII = 6196u;
+        private const uint SpellId_RockyShrapnel   = 6152u;
+        private const uint SpellId_RingOfAgony     = 2673u;
+
         // TODO: get rid of this, only used for determining if TurnTo is required
         public enum TargetCategory
         {
@@ -1133,12 +1139,34 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Redirects Tectonic Rifts I/II to Rocky Shrapnel (priority) or Ring of Unspeakable Agony (fallback)
+        /// when the corresponding charm is active and the spell is known. Called at the very start of both
+        /// CreatePlayerSpell overloads so all downstream validation (range, components, mana) runs against
+        /// the redirected spell rather than the original.
+        /// </summary>
+        private Spell TryRedirectTectonicRifts(Spell spell)
+        {
+            if (spell.Id != SpellId_TectonicRiftsI && spell.Id != SpellId_TectonicRiftsII)
+                return spell;
+
+            if (HasShrapnelCharm && SpellIsKnown(SpellId_RockyShrapnel))
+                return new Spell(SpellId_RockyShrapnel);   // Rocky Shrapnel — priority
+
+            if (HasAgonyCharm && SpellIsKnown(SpellId_RingOfAgony))
+                return new Spell(SpellId_RingOfAgony);     // Ring of Unspeakable Agony — fallback
+
+            return spell;
+        }
+
+        /// <summary>
         /// Method used for handling player targeted spell casts
         /// </summary>
         /// <param name="builtInSpell">If TRUE, casting a built-in spell from a weapon</param>
         private bool CreatePlayerSpell(WorldObject target, TargetCategory targetCategory, Spell spell, WorldObject casterItem)
         {
             var creatureTarget = target as Creature;
+
+            spell = TryRedirectTectonicRifts(spell);
 
             if (!IsValidSpell(spell, casterItem != null))
                 return false;
@@ -1282,6 +1310,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private bool CreatePlayerSpell(Spell spell)
         {
+            spell = TryRedirectTectonicRifts(spell);
+
             if (!IsValidSpell(spell))
                 return false;
 
