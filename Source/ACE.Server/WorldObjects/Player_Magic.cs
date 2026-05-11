@@ -1168,6 +1168,14 @@ namespace ACE.Server.WorldObjects
 
             spell = TryRedirectTectonicRifts(spell);
 
+            // Ring of Agony and Shrapnel fire a 360° ring from the caster.  If cast through the
+            // targeted path the selected enemy is passed down to CreateSpellProjectiles, causing
+            // all ring projectiles to converge on that single creature instead of radiating
+            // outward.  Route through the untargeted overload so target = null and the ring hits
+            // everything in range as intended.
+            if (spell.Id == SpellId_RingOfAgony || spell.Id == SpellId_RockyShrapnel)
+                return CreatePlayerSpell(spell);
+
             if (!IsValidSpell(spell, casterItem != null))
                 return false;
 
