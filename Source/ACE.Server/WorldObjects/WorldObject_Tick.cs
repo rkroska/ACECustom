@@ -369,8 +369,18 @@ namespace ACE.Server.WorldObjects
                     if (spellProjectile.SpellType == ProjectileSpellType.Ring)
                     {
                         var dist = spellProjectile.SpawnPos.DistanceTo(Location);
-                        var maxRange = spellProjectile.Spell.BaseRangeConstant;
-                        //Console.WriteLine("Max range: " + maxRange);
+
+                        // For player ring spells, use our server-controlled radius so the visual
+                        // matches the kill radius exactly.  Monster rings keep the DAT value.
+                        float maxRange;
+                        if (spellProjectile.ProjectileSource is Player playerCaster)
+                        {
+                            var multiplier = (float)(playerCaster.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+                            maxRange = Player.DefaultRingAoeRadius * multiplier;
+                        }
+                        else
+                            maxRange = spellProjectile.Spell.BaseRangeConstant;
+
                         if (dist > maxRange)
                         {
                             PhysicsObj.set_active(false);

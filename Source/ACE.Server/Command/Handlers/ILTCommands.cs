@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ACE.DatLoader;
+using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Command;
@@ -40,7 +42,7 @@ namespace ACE.Server.Command.Handlers
 
         [CommandHandler("ilt", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0,
             "ILT custom server commands and player preferences.",
-            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train]")]
+            "Usage: /ilt [help|features|dmgformat|showoverkill|levelskills|trainskills|xp level|train|ringmode]")]
         public static void HandleILT(Session session, params string[] parameters)
         {
             var player = session.Player;
@@ -60,6 +62,26 @@ namespace ACE.Server.Command.Handlers
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Features ===", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  Coming Soon", ChatMessageType.System));
+            }
+            else if (sub == "ringmode")
+            {
+                var classic = player.GetProperty(PropertyBool.ClassicRingAoe) ?? false;
+                classic = !classic;  // toggle
+                player.SetProperty(PropertyBool.ClassicRingAoe, classic);
+                player.SaveBiotaToDatabase();
+
+                var msg = classic
+                    ? "Ring Spell Mode: Classic (physics collision \u2014 can multi-hit, rings may miss monsters)"
+                    : "Ring Spell Mode: New (all targets in range guaranteed to hit once, no multi-hit)";
+                session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.System));
+            }
+            else if (sub == "ringdebug")
+            {
+                player.RingAoeDebug = !player.RingAoeDebug;
+                var state = player.RingAoeDebug ? "ON" : "OFF";
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"[RingAOE] Debug broadcast {state}. Cast any ring spell to see AOE stats.",
+                    ChatMessageType.System));
             }
             else if (sub == "dmgformat")
             {
@@ -232,10 +254,54 @@ namespace ACE.Server.Command.Handlers
                         "No skills were trained — not enough credits for the next skill in the priority list.",
                         ChatMessageType.System));
             }
+            else if (sub == "ringrange")
+            {
+                // Admin-only diagnostic — not listed in player help.
+                if (session.AccessLevel < AccessLevel.Admin)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[RingRange] Admin only.", ChatMessageType.System));
+                    return;
+                }
+
+                // Scan for all known creatures within the player's ring AOE radius.
+                const float ringRadius = Player.DefaultRingAoeRadius;
+                var radius = ringRadius * (float)(player.GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+
+                if (player.Location == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat("[RingRange] Player location unavailable.", ChatMessageType.System));
+                    return;
+                }
+
+                var known = player.PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+                var inRange = known
+                    .Where(c => c != null && c != player && c.Location != null
+                                && Math.Abs(player.Location.PositionZ - c.Location.PositionZ) <= Player.RingAoeMaxHeightDelta
+                                && player.Location.Distance2D(c.Location) <= radius
+                                && player.CanDamage(c))
+                    .OrderBy(c => player.Location.Distance2D(c.Location))
+                    .ToList();
+
+                session.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"[RingRange] Radius: {radius:F1}m | Vertical: {Player.RingAoeMaxHeightDelta:F1}m | Creatures in range: {inRange.Count}",
+                    ChatMessageType.System));
+
+                foreach (var c in inRange)
+                {
+                    var dist = player.Location.Distance2D(c.Location);
+                    session.Network.EnqueueSend(new GameMessageSystemChat(
+                        $"  {c.Name}  ({dist:F1}m)",
+                        ChatMessageType.System));
+                }
+
+                if (inRange.Count == 0)
+                    session.Network.EnqueueSend(new GameMessageSystemChat("  None found.", ChatMessageType.System));
+            }
             else
             {
-                var dmgLabel = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
-                var okLabel  = player.ShowOverkill ? "ON" : "OFF";
+                var dmgLabel  = player.DamageNumberFormat switch { 1 => "commas", 2 => "short", _ => "default" };
+                var okLabel   = player.ShowOverkill ? "ON" : "OFF";
+                var ringLabel = (player.GetProperty(PropertyBool.ClassicRingAoe) ?? false) ? "Classic" : "New";
                 session.Network.EnqueueSend(new GameMessageSystemChat("=== ILT Custom Commands ===", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt features", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("      View a list of custom ILT server features.", ChatMessageType.System));
@@ -247,6 +313,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Spend all available XP into trained and specialized skills, in priority order.", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("  /ilt trainskills  |  /ilt train", ChatMessageType.System));
                 session.Network.EnqueueSend(new GameMessageSystemChat("      Train all affordable untrained skills using skill credits, in priority order.", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"  /ilt ringmode", ChatMessageType.System));
+                session.Network.EnqueueSend(new GameMessageSystemChat($"      Toggle ring spell mode between New (guaranteed AOE) and Classic (physics multi-hit). (currently: {ringLabel})", ChatMessageType.System));
             }
         }
     }

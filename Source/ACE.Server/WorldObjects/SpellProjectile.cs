@@ -276,7 +276,18 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(Info.ToString(), ChatMessageType.Broadcast));
             }
 
+            // ProjectileImpact() is intentionally called first so the projectile sets NoDraw,
+            // deactivates physics, and cleans itself up — even though no damage will be dealt.
             ProjectileImpact();
+
+            // Ring spells cast by a player use server-side radius-based area damage
+            // (Player.ApplyRingSpellAreaDamage).  The projectiles are visual-only so that
+            // every enemy within range is guaranteed one hit regardless of angular gaps.
+            // Exception: if the player has opted into Classic mode, allow physics damage through.
+            if (SpellType == ProjectileSpellType.Ring
+                && ProjectileSource is Player ringSourcePlayer
+                && !(ringSourcePlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                return;
 
             // ensure valid creature target
             var creatureTarget = target as Creature;

@@ -6,6 +6,7 @@ using ACE.Common;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Managers;
@@ -1631,6 +1632,130 @@ namespace ACE.Server.WorldObjects
 
             if (!SquelchManager.Squelches.Contains(source, msgType))
                 Session.Network.EnqueueSend(new GameMessageSystemChat(msg, msgType));
+        }
+
+        // ── Ring AOE radius (meters). Scaled by AoeRangeMultiplier charm (PropertyFloat 9048). ──
+        internal const float DefaultRingAoeRadius    =  5.0f;
+        // ── Max vertical delta (meters) — prevents hitting creatures on a different floor. ──
+        internal const float RingAoeMaxHeightDelta   =  4.0f;
+        // ── Per-player debug broadcast toggle (off by default). ──
+        public bool RingAoeDebug { get; set; } = false;
+
+        /// <summary>
+        /// Applies one war-magic damage roll to every valid creature within the ring spell's
+        /// effective radius.  Called immediately after the visual ring projectiles are spawned;
+        /// the projectiles themselves are made non-damaging in SpellProjectile.OnCollideObject.
+        /// </summary>
+        internal void ApplyRingSpellAreaDamage(Spell spell)
+        {
+            if (Location == null) return;
+
+            // Ring radius — scaled by the future AoeRangeMultiplier charm.
+            var radius = DefaultRingAoeRadius * (float)(GetProperty(PropertyFloat.AoeRangeMultiplier) ?? 1.0f);
+
+            var magicSkill    = GetCreatureSkill(spell.School).Current;
+            var resistanceType = Creature.GetResistanceType(spell.DamageType);
+            var weapon        = GetEquippedWand();
+
+            var visibleCreatures = PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature();
+            var dbgHit = 0; var dbgResist = 0;
+
+            // Compute attribute bonus once — Focus/Self don't change mid-cast.
+            var attribBonus = 1.0f;
+            attribBonus += SkillFormula.GetAttributeMod((int)Focus.Current) * SpellProjectile.DefaultSpellAttributeMult;
+            attribBonus += SkillFormula.GetAttributeMod((int)Self.Current)  * SpellProjectile.DefaultSpellAttributeMult;
+
+            foreach (var creature in visibleCreatures)
+            {
+                if (creature == null || creature == this) continue;
+                if (creature.Location == null)            continue;
+
+                // Distance gate: horizontal ring radius (2D) + vertical height cap.
+                // 2D keeps creatures on uneven terrain / slight slopes within range.
+                // Height cap prevents hitting creatures on a completely different floor.
+                var dz = Math.Abs(Location.PositionZ - creature.Location.PositionZ);
+                if (dz > RingAoeMaxHeightDelta) continue;
+                if (Location.Distance2D(creature.Location) > radius) continue;
+
+                if (!CanDamage(creature)) continue;
+
+                // PK status check (mirrors SpellProjectile.OnCollideObject).
+                var pkError = CheckPKStatusVsTarget(creature, spell);
+                if (pkError != null) continue;
+
+                // Resist check — sends the resist message automatically.
+                var resisted = TryResistSpell(creature, spell, null, true);
+
+                // Notify the creature that it was attacked (triggers aggro) whether or not it resisted.
+                if (creature is not Player)
+                    OnAttackMonster(creature, spell.IsHarmful);
+
+                if (resisted) { dbgResist++; continue; }
+
+                // ── War-magic damage calculation (mirrors SpellProjectile.CalculateDamage) ──
+                var criticalHit      = false;
+                var critDamageBonus  = 0.0f;
+                var skillBonus       = 0.0f;
+
+                // 2% base crit chance (no weapon for ring spells).
+                if (ThreadSafeRandom.Next(0.0f, 1.0f) < 0.02f)
+                {
+                    criticalHit     = true;
+                    critDamageBonus = spell.MaxDamage * 0.5f; // PvE: 50% of max damage
+                }
+
+                // Skill-based damage bonus.
+                if (magicSkill > spell.Power)
+                    skillBonus = spell.MinDamage * (magicSkill - spell.Power) / 1000.0f;
+
+                long baseDamage = ThreadSafeRandom.Next(spell.MinDamage, spell.MaxDamage);
+
+                // Luminance War augment.
+                if (LuminanceAugmentWarCount.HasValue && LuminanceAugmentWarCount >= 1)
+                    baseDamage += LuminanceAugmentWarCount.Value;
+
+                // Elemental modifier (wand-centric, no separate weapon for ring spells).
+                var elementalMod  = GetCasterElementalDamageModifier(weapon, this as Creature, creature, spell.DamageType);
+
+                // Target resistance.
+                var resistanceMod = (float)Math.Max(0.0f, creature.GetResistanceMod(resistanceType, null, null, 1.0f));
+
+                // Attribute bonus (Focus + Self) — pre-computed before the loop.
+                var finalDamage = (baseDamage + critDamageBonus + skillBonus) * elementalMod * resistanceMod * attribBonus;
+
+                if (finalDamage <= 0) continue;
+
+                creature.TakeDamage(this, spell.DamageType, finalDamage, criticalHit);
+
+                // Only send "You hit X for Y" if the target survived — mirrors SpellProjectile.DamageTarget
+                // which gates the attacker message on target.IsAlive (line 920).
+                // On a kill, TakeDamage already sent the quest counter and overkill message.
+                if (creature.IsAlive)
+                {
+                    var displayAmt  = (uint)Math.Round(finalDamage);
+                    var amtStr      = Creature.FormatDamage(displayAmt, DamageNumberFormat);
+                    var percent     = (float)displayAmt / creature.Health.MaxValue;
+                    string verb = null, plural = null;
+                    Strings.GetAttackVerb(spell.DamageType, percent, ref verb, ref plural);
+                    var critMsg     = criticalHit ? "Critical hit! " : "";
+                    var attackerMsg = $"{critMsg}You {verb} {creature.Name} for {amtStr} points with {spell.Name}.";
+                    if (!SquelchManager.Squelches.Contains(creature, ACE.Entity.Enum.ChatMessageType.Magic))
+                        Session?.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ACE.Entity.Enum.ChatMessageType.Magic));
+                }
+
+                dbgHit++;
+            }
+
+            // Award one proficiency tick for the cast if at least one target was hit.
+            // Intentionally outside the loop — ring spells should not award N ticks for N targets.
+            if (dbgHit > 0)
+                Proficiency.OnSuccessUse(this, GetCreatureSkill(spell.School), spell.PowerMod);
+
+            // DEBUG — broadcast ring AOE summary to caster (only when RingAoeDebug is enabled via /ilt ringdebug)
+            if (RingAoeDebug)
+                Session?.Network.EnqueueSend(new GameMessageSystemChat(
+                    $"[RingAOE] inRange={dbgHit + dbgResist} resisted={dbgResist} hit={dbgHit} radius={radius:F1}m vertical={RingAoeMaxHeightDelta:F1}m",
+                    ACE.Entity.Enum.ChatMessageType.Broadcast));
         }
     }
 }

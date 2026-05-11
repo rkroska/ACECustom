@@ -276,5 +276,10 @@ namespace ACE.Entity.Enum.Properties
         /// Monster capture: ObjScale normalized to ~1.5m physical height for combat pet summons (parallel to CapturedScale at ~0.75m).
         /// </summary>
         CapturedScaleCombatPet = 9047,
+        /// <summary>
+        /// Multiplier applied to the effective radius of player ring AOE spells (SpreadAngle == 360).
+        /// Used by ring-specific charms to increase coverage. Defaults to 1.0 if not set.
+        /// </summary>
+        AoeRangeMultiplier = 9048,
     }
 }

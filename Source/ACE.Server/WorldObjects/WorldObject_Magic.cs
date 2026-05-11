@@ -1090,6 +1090,13 @@ namespace ACE.Server.WorldObjects
 
             CreateSpellProjectiles(spell, target, weapon, isWeaponSpell, fromProc, damage);
 
+            // For ring spells cast by a player, apply guaranteed radius-based area damage
+            // unless the player has opted into Classic mode (physics collision / multi-hit).
+            if (SpellProjectile.GetProjectileSpellType(spell.Id) == ProjectileSpellType.Ring
+                && this is Player ringPlayer
+                && !(ringPlayer.GetProperty(PropertyBool.ClassicRingAoe) ?? false))
+                ringPlayer.ApplyRingSpellAreaDamage(spell);
+
             if (spell.School == MagicSchool.LifeMagic)
             {
                 if (caster.Health.Current <= 0)
@@ -1971,6 +1978,7 @@ namespace ACE.Server.WorldObjects
                 sp.SpawnPos = new Position(sp.Location);
 
                 sp.LifeProjectileDamage = lifeProjectileDamage;
+
 
                 if (!LandblockManager.AddObject(sp))
                 {
