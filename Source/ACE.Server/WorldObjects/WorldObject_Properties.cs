@@ -3412,6 +3412,34 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.HasInfiniteCasting); else SetProperty(PropertyBool.HasInfiniteCasting, value); }
         }
 
+        /// <summary>True while the Asheron's Favor charm is activated — maintained enchantments (Health +%, Natural Armor +) are active.</summary>
+        public bool HasAsheronsFavor
+        {
+            get => GetProperty(PropertyBool.HasAsheronsFavor) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasAsheronsFavor); else SetProperty(PropertyBool.HasAsheronsFavor, value); }
+        }
+
+        /// <summary>True while the Artisan's Charm is activated — imbue success chance is increased by tier * 4%.</summary>
+        public bool HasArtisanCharm
+        {
+            get => GetProperty(PropertyBool.HasArtisanCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasArtisanCharm); else SetProperty(PropertyBool.HasArtisanCharm, value); }
+        }
+
+        /// <summary>True while the Shrapnel Charm is activated — Tectonic Rifts I/II are redirected to Rocky Shrapnel (requires Rocky Shrapnel learned).</summary>
+        public bool HasShrapnelCharm
+        {
+            get => GetProperty(PropertyBool.HasShrapnelCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasShrapnelCharm); else SetProperty(PropertyBool.HasShrapnelCharm, value); }
+        }
+
+        /// <summary>True while the Agony Charm is activated — Tectonic Rifts I/II are redirected to Ring of Unspeakable Agony. Rocky Shrapnel takes priority if both charms are active.</summary>
+        public bool HasAgonyCharm
+        {
+            get => GetProperty(PropertyBool.HasAgonyCharm) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.HasAgonyCharm); else SetProperty(PropertyBool.HasAgonyCharm, value); }
+        }
+
         /// <summary>Show [Overkill] suffix on kill and death messages. Default ON.</summary>
         public bool ShowOverkill
         {

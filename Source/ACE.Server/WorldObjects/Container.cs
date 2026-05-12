@@ -1406,12 +1406,16 @@ namespace ACE.Server.WorldObjects
                         item.SaveBiotaToDatabase();
                     }
 
-                    // ILT: Infinite Casting â€” restore client comp requirement when stone leaves inventory
+                    // ILT: Infinite Casting — restore client comp requirement when stone leaves inventory
                     if (id == CharmAbilityRegistry.InfiniteCastingAbilityId)
                     {
                         player.SpellComponentsRequired = true;
                         player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
                     }
+
+                    // ILT: Asheron's Favor — remove Health + Natural Armor enchantments when charm leaves inventory
+                    if (id == CharmAbilityRegistry.AsheronsFavorAbilityId)
+                        player.RemoveAsheronsFavorEnchantments();
 
                     if (!player.Teleporting)
                     {

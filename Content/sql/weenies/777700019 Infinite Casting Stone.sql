@@ -26,6 +26,7 @@ INSERT INTO weenie_properties_bool (object_Id, type, value) VALUES
 (777700019,    11, 1),  -- IgnoreCollisions
 (777700019,    13, 1),  -- Ethereal
 (777700019,    14, 1),  -- GravityStatus
+(777700019,  9040, 1),  -- IsCharm — enables tier-aware appraise header
 (777700019, 50000, 1);  -- IsAbilityCharm
 
 -- Ints
@@ -39,13 +40,16 @@ INSERT INTO weenie_properties_int (object_Id, type, value) VALUES
 (777700019,    33,     1),  -- Bonded
 (777700019,    93,  1044),  -- PhysicsState
 (777700019,   114,     1),  -- Attuned
-(777700019, 50000,    16);  -- CharmGrantsAbility: ID 16 = Infinite Casting
+(777700019, 50000,    16),  -- CharmGrantsAbility: ID 16 = Infinite Casting
+(777700019, 50005,     1),  -- CharmLevel: 1
+(777700019, 50006,     1);  -- CharmMaxLevel: 1 tier only
 
 -- Strings
 INSERT INTO weenie_properties_string (object_Id, type, value) VALUES
 (777700019,  1, 'Infinite Casting Stone'),
-(777700019, 14, 'A smooth, obsidian-like stone that hums with the infinite echoes of a thousand cast spells. It seems to draw energy from the very air around it.'),
-(777700019, 16, 'Double-click to activate. While this stone is in your possession, spells are cast without consuming components.');
+(777700019, 14, '
+While this stone is in your possession, spells are cast without consuming components.
+');
 
 -- DataIds (visuals — matching Mana Barrier charm)
 INSERT INTO weenie_properties_d_i_d (object_Id, type, value) VALUES

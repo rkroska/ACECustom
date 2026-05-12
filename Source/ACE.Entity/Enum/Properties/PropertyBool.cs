@@ -286,6 +286,18 @@ namespace ACE.Entity.Enum.Properties
         /// <summary>ILT Player Pref: Show [Overkill] suffix on kill/death messages. Default ON.</summary>
         ShowOverkill = 50029,
 
+        /// <summary>Player has Asheron's Favor active — permanently maintains Asheron's Lesser Benediction (+Health) and Blackmoor's Favor (+Natural Armor).</summary>
+        HasAsheronsFavor = 50030,
+
+        /// <summary>ILT Skill #18: Imbue success chance is increased while charm is in inventory.</summary>
+        HasArtisanCharm  = 50031,
+
+        /// <summary>ILT Skill #19: Tectonic Rifts I/II are redirected to Rocky Shrapnel while charm is active (requires Rocky Shrapnel learned).</summary>
+        HasShrapnelCharm = 50032,
+
+        /// <summary>ILT Skill #20: Tectonic Rifts I is redirected to Ring of Unspeakable Agony while charm is active (requires Agony learned). Rocky Shrapnel takes priority if both charms are active.</summary>
+        HasAgonyCharm    = 50033,
+
         // -- ILT Player UI Preferences -> see PropertyInt.DamageNumberFormat (50101) --
     }
 }

@@ -22,12 +22,20 @@ namespace ACE.Server.WorldObjects
         // ── Ability ID constants — use these instead of raw ints ──────────────
         public const int ManaBarrierAbilityId     = 1;
         public const int InfiniteCastingAbilityId = 16;
+        public const int AsheronsFavorAbilityId   = 17;
+        public const int ArtisansCharmAbilityId   = 18;
+        public const int ShrapnelCharmAbilityId   = 19;
+        public const int AgonyCharmAbilityId      = 20;
 
         private static readonly Dictionary<int, AbilityEntry> Registry = new()
         {
             // Format: { abilityId, (getter, setter, "Display Name") }
             { ManaBarrierAbilityId,     new AbilityEntry(p => p.HasManaBarrier,     (p, v) => p.HasManaBarrier     = v, "Mana Barrier")     },
             { InfiniteCastingAbilityId, new AbilityEntry(p => p.HasInfiniteCasting, (p, v) => p.HasInfiniteCasting = v, "Infinite Casting") },
+            { AsheronsFavorAbilityId,   new AbilityEntry(p => p.HasAsheronsFavor,   (p, v) => p.HasAsheronsFavor   = v, "Asheron's Favor")  },
+            { ArtisansCharmAbilityId,   new AbilityEntry(p => p.HasArtisanCharm,    (p, v) => p.HasArtisanCharm    = v, "Artisan's Charm")  },
+            { ShrapnelCharmAbilityId,   new AbilityEntry(p => p.HasShrapnelCharm,   (p, v) => p.HasShrapnelCharm   = v, "Shrapnel Charm")   },
+            { AgonyCharmAbilityId,       new AbilityEntry(p => p.HasAgonyCharm,      (p, v) => p.HasAgonyCharm      = v, "Agony Charm")      },
         };
 
         /// <summary>Returns all registered ability IDs. Prefer this over hardcoded numeric ranges.</summary>
@@ -39,6 +47,14 @@ namespace ACE.Server.WorldObjects
             { 777700001, ManaBarrierAbilityId }, { 777700054, ManaBarrierAbilityId }, { 777710004, ManaBarrierAbilityId }, { 777720004, ManaBarrierAbilityId },
             // Infinite Casting Stone
             { 777700019, InfiniteCastingAbilityId }, { 777700055, InfiniteCastingAbilityId },
+            // Asheron's Favor (Tiers 1–3)
+            { 777700020, AsheronsFavorAbilityId }, { 777710002, AsheronsFavorAbilityId }, { 777720002, AsheronsFavorAbilityId },
+            // Artisan's Charm (Tiers 1–3)
+            { 777700021, ArtisansCharmAbilityId }, { 777710003, ArtisansCharmAbilityId }, { 777720003, ArtisansCharmAbilityId },
+            // Shrapnel Charm (Tier 1 only)
+            { 777700022, ShrapnelCharmAbilityId },
+            // Agony Charm (Tier 1 only)
+            { 777700023, AgonyCharmAbilityId },
         };
 
         /// <summary>

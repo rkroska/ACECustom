@@ -344,19 +344,22 @@ namespace ACE.Server.WorldObjects
                         ChatMessageType.Broadcast));
                     return;
                 }
-
                 // Activate
                 IsCharmActivated = true;
                 CharmAbilityRegistry.Apply(player, abilityId, true, CharmLevel ?? 1);
 
-                // ILT: Infinite Casting â€” tell the client comps are no longer required
+                // ILT: Infinite Casting — tell the client comps are no longer required
                 if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
                 {
                     player.SpellComponentsRequired = false;
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, false));
                 }
 
-                var activateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, true);
+                // ILT: Asheron's Favor — apply Health + Natural Armor enchantments
+                if (abilityId == CharmAbilityRegistry.AsheronsFavorAbilityId)
+                    player.ApplyAsheronsFavorEnchantments();
+
+                var activateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, true, player);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(activateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.HealthUp, 1.0f));
             }
@@ -366,14 +369,18 @@ namespace ACE.Server.WorldObjects
                 IsCharmActivated = false;
                 CharmAbilityRegistry.Apply(player, abilityId, false);
 
-                // ILT: Infinite Casting â€” restore client comp requirement
+                // ILT: Infinite Casting — restore client comp requirement
                 if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
                 {
                     player.SpellComponentsRequired = true;
                     player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyBool(player, PropertyBool.SpellComponentsRequired, true));
                 }
 
-                var deactivateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, false);
+                // ILT: Asheron's Favor — remove Health + Natural Armor enchantments
+                if (abilityId == CharmAbilityRegistry.AsheronsFavorAbilityId)
+                    player.RemoveAsheronsFavorEnchantments();
+
+                var deactivateMsg = BuildActivationMessage(abilityId, CharmLevel ?? 1, false, player);
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat(deactivateMsg, ChatMessageType.Broadcast));
                 player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ShieldDown, 1.0f));
             }
@@ -382,7 +389,7 @@ namespace ACE.Server.WorldObjects
             player.SaveBiotaToDatabase(enqueueSave: true);
         }
 
-        private static string BuildActivationMessage(int abilityId, int level, bool activating)
+        private static string BuildActivationMessage(int abilityId, int level, bool activating, Player player = null)
         {
             if (abilityId == CharmAbilityRegistry.ManaBarrierAbilityId)
             {
@@ -399,11 +406,87 @@ namespace ACE.Server.WorldObjects
                 return $"Mana Barrier Level {level} deactivated. Your Mana is no longer absorbing damage.";
             }
 
-            if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId) // Infinite Casting Stone
+            if (abilityId == CharmAbilityRegistry.InfiniteCastingAbilityId)
             {
                 return activating
                     ? "Infinite Casting Stone activated. Spells will be cast without consuming components."
                     : "Infinite Casting Stone deactivated. Spell components will be consumed normally.";
+            }
+
+            if (abilityId == CharmAbilityRegistry.AsheronsFavorAbilityId)
+            {
+                if (activating)
+                {
+                    return level switch
+                    {
+                        1 => "Asheron's Favor activated. 10% HP + 50 Armor",
+                        2 => "Greater Asheron's Favor activated. 15% HP + 100 Armor",
+                        3 => "Asheron's Blessing activated. 20% HP + 250 Armor",
+                        _ => "Asheron's Favor activated."
+                    };
+                }
+                return $"Asheron's Favor (Level {level}) deactivated. The protective blessings have faded.";
+            }
+
+            if (abilityId == CharmAbilityRegistry.ShrapnelCharmAbilityId)
+            {
+                var knowsShrapnel = player?.SpellIsKnown(6152u) == true; // Rocky Shrapnel
+                if (activating)
+                {
+                    if (!knowsShrapnel)
+                        return "Shrapnel Charm activated. Learn Rocky Shrapnel to enable Tectonic Rifts redirection.";
+                    var agonyActive = player?.HasAgonyCharm == true;
+                    return agonyActive
+                        ? "Shrapnel Charm activated. Rocky Shrapnel takes priority — Tectonic Rifts will cast as Rocky Shrapnel while both charms are active."
+                        : "Shrapnel Charm activated. Tectonic Rifts will be cast as Rocky Shrapnel.";
+                }
+                else
+                {
+                    var agonyFallback = player?.HasAgonyCharm == true && player?.SpellIsKnown(2673u) == true;
+                    return agonyFallback
+                        ? "Shrapnel Charm deactivated. Tectonic Rifts will now cast as Ring of Unspeakable Agony."
+                        : "Shrapnel Charm deactivated. Tectonic Rifts will cast normally.";
+                }
+            }
+
+            if (abilityId == CharmAbilityRegistry.AgonyCharmAbilityId)
+            {
+                var knowsAgony = player?.SpellIsKnown(2673u) == true; // Ring of Unspeakable Agony
+                if (activating)
+                {
+                    if (!knowsAgony)
+                        return "Agony Charm activated. Learn Ring of Unspeakable Agony to enable Tectonic Rifts redirection.";
+                    var shrapnelActive = player?.HasShrapnelCharm == true;
+                    return shrapnelActive
+                        ? "Agony Charm activated. Note: Rocky Shrapnel takes priority while the Shrapnel Charm is also active."
+                        : "Agony Charm activated. Tectonic Rifts will be cast as Ring of Unspeakable Agony.";
+                }
+                else
+                {
+                    var shrapnelActive = player?.HasShrapnelCharm == true;
+                    return shrapnelActive
+                        ? "Agony Charm deactivated. Tectonic Rifts will continue casting as Rocky Shrapnel."
+                        : "Agony Charm deactivated. Tectonic Rifts will cast normally.";
+                }
+            }
+
+            if (abilityId == CharmAbilityRegistry.ArtisansCharmAbilityId)
+            {
+                if (activating)
+                    return level switch
+                    {
+                        1 => "Artisan's Charm activated. Imbue success chance increased by 4%.",
+                        2 => "Greater Artisan's Charm activated. Imbue success chance increased by 8%.",
+                        3 => "Master Artisan's Charm activated. Imbue success chance increased by 12%.",
+                        _ => $"Artisan's Charm (Level {level}) activated."
+                    };
+                return level switch
+                {
+                    1 => "Artisan's Charm deactivated.",
+                    2 => "Greater Artisan's Charm deactivated.",
+                    3 => "Master Artisan's Charm deactivated.",
+                    _ => "Artisan's Charm deactivated."
+                };
             }
 
             var name = CharmAbilityRegistry.GetDisplayName(abilityId) ?? "Ability";

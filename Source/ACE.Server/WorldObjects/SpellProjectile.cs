@@ -938,7 +938,7 @@ namespace ACE.Server.WorldObjects
                         sourcePlayer.Session.Network.EnqueueSend(new GameMessageSystemChat(attackerMsg, ChatMessageType.Magic));
                 }
 
-                if (targetPlayer != null)
+                if (targetPlayer != null && ProjectileSource != null)
                 {
                     var critProt = critDefended ? " Your augmentation allows you to avoid a critical hit!" : "";
                     var amtStr = Creature.FormatDamage(displayAmount, targetPlayer.DamageNumberFormat);
@@ -972,6 +972,27 @@ namespace ACE.Server.WorldObjects
                 // Pre-hit health and rounded damage captured as locals above before UpdateVitalDelta.
                 if (lastDamager != null && spellRoundedDamage > spellPreHitHealth)
                     lastDamager.OverkillAmount = spellRoundedDamage - spellPreHitHealth;
+
+                // ILT: victim-side killing blow message (mirrors Player_Combat.TakeDamageInternal).
+                // The alive-path message block is skipped when the target dies, so send it here.
+                if (targetPlayer != null && spellRoundedDamage > 0)
+                {
+                    string killVerb = null, killPlural = null;
+                    Strings.GetAttackVerb(Spell.DamageType, percent, ref killVerb, ref killPlural);
+                    var killCritMsg      = critical ? "Critical hit! " : "";
+                    var killOverpowerMsg = overpower ? "Overpower! " : "";
+                    var killSneakMsg     = sneakAttackMod > 1.0f ? "Sneak Attack! " : "";
+                    var overkill         = spellRoundedDamage > spellPreHitHealth ? spellRoundedDamage - spellPreHitHealth : 0u;
+                    var killAmtStr       = Creature.FormatDamage(spellRoundedDamage, targetPlayer.DamageNumberFormat);
+                    var killMbSuffix     = targetPlayer.GetManaBarrierSuffix(mbResult);
+                    var overkillSuffix   = (overkill > 0 && targetPlayer.ShowOverkill)
+                        ? $" [Overkill: {Creature.FormatDamage(overkill, targetPlayer.DamageNumberFormat)}]"
+                        : "";
+                    // Death notifications intentionally bypass squelch — player should always see what killed them.
+                    targetPlayer.SendMessage(
+                        $"{killCritMsg}{killOverpowerMsg}{killSneakMsg}{ProjectileSource.Name} {killPlural} you for {killAmtStr} points with {Spell.Name}!{killMbSuffix}{overkillSuffix}",
+                        ChatMessageType.CombatEnemy);
+                }
 
                 target.OnDeath(lastDamager, Spell.DamageType, critical);
                 target.Die();

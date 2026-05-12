@@ -88,6 +88,14 @@ namespace ACE.Server.WorldObjects
                     CharmAbilityRegistry.Apply(this, id, false);
                 }
             }
+
+            // Asheron's Favor: enchantments are Duration=-1 so they survive login in biota,
+            // but re-apply if somehow missing (e.g. biota rollback, first activation after upgrade).
+            if (CharmAbilityRegistry.IsActive(this, CharmAbilityRegistry.AsheronsFavorAbilityId))
+            {
+                if (!EnchantmentManager.HasSpell(AsheronsFavorSpell_Health) || !EnchantmentManager.HasSpell(AsheronsFavorSpell_Armor))
+                    ApplyAsheronsFavorEnchantments();
+            }
         }
 
         /// <summary>

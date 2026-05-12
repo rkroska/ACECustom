@@ -3079,6 +3079,28 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You don't know that spell!", ChatMessageType.Broadcast));
         }
 
+        [CommandHandler("spellicon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
+            "Prints the icon DID for a spell (useful for setting charm inventory icons).",
+            "<spellId>")]
+        public static void HandleSpellIcon(Session session, params string[] parameters)
+        {
+            if (!uint.TryParse(parameters[0], out var spellId))
+            {
+                session.Player.SendMessage($"Invalid spell id: {parameters[0]}");
+                return;
+            }
+
+            var spell = new Entity.Spell(spellId, false);
+            if (spell._spellBase == null)
+            {
+                session.Player.SendMessage($"Spell {spellId} not found.");
+                return;
+            }
+
+            var icon = spell._spellBase.Icon;
+            session.Player.SendMessage($"{spell.Name} (id {spellId}): Icon = 0x{icon:X8} ({icon})");
+        }
+
         // adminhouse
         [CommandHandler("adminhouse", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "House management tools for admins.")]
         public static void HandleAdminhouse(Session session, params string[] parameters)
