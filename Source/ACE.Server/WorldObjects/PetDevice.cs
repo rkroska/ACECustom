@@ -84,7 +84,7 @@ namespace ACE.Server.WorldObjects
 
         /// <summary>
         /// Bond-derived combat bonuses for a summoned CombatPet (additive on top of gem gear ratings).
-        /// DR uses (level+2)/3; CDR/CD ramp linearly 0→cap over bond level cap; D uses the agreed low-level table then +1 per 3 levels from 15+.
+        /// DR uses (level+2)/3; CDR/CD ramp linearly 0→cap over bond level cap (if cap is unlimited, ramp uses 1000 levels so bonuses reach their configured caps at finite bond); D uses the agreed low-level table then +1 per 3 levels from 15+.
         /// Vitality bonus is bondLevel × pet_bond_vitality_per_level (applied as flat max health in CombatPet.Init).
         /// </summary>
         public static void GetBondCombatStatBonuses(int bondLevel, int levelCap, out int damageResistRating, out int critDamageResistRating, out int damageRating, out int critDamageRating, out int vitalityToMaxHealth)
@@ -113,8 +113,11 @@ namespace ACE.Server.WorldObjects
             if (cdCap < 0)
                 cdCap = 0;
 
-            critDamageResistRating = (int)Math.Min(cdrCap, (long)bondLevel * cdrCap / levelCap);
-            critDamageRating = (int)Math.Min(cdCap, (long)bondLevel * cdCap / levelCap);
+            // Unlimited bond level uses int.MaxValue as cap; do not divide by that or CDR/CD stay ~0 until enormous bond.
+            var linearRampLevels = levelCap == int.MaxValue ? 1000 : levelCap;
+
+            critDamageResistRating = (int)Math.Min(cdrCap, (long)bondLevel * cdrCap / linearRampLevels);
+            critDamageRating = (int)Math.Min(cdCap, (long)bondLevel * cdCap / linearRampLevels);
 
             damageRating = GetBondDamageRatingBonus(bondLevel);
 

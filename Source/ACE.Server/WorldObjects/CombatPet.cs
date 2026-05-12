@@ -294,9 +294,8 @@ namespace ACE.Server.WorldObjects
 
                 if (ServerConfig.pet_bond_enabled.Value && petDevice.IsCombatPetDevice() && petDevice.IsPetBondAttuned)
                 {
-                    var cap = (int)ServerConfig.pet_bond_level_cap.Value;
-                    if (cap < 1)
-                        cap = 1;
+                    var capRaw = (int)ServerConfig.pet_bond_level_cap.Value;
+                    var cap = capRaw <= 0 ? int.MaxValue : Math.Max(1, capRaw);
 
                     var bondLevel = petDevice.PetBondLevel ?? 0;
                     if (bondLevel < 0)
