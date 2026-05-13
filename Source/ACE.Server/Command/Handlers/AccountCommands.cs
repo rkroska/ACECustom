@@ -366,9 +366,9 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            // --- Stamp cooldown on every invocation (not just on success) ---
-            // Prevents spam on the "nothing found" path as well as the boot path.
-            _unstuckCooldowns[accountId] = now;
+            // NOTE: Cooldown is stamped ONLY after a real boot (below).
+            // The "nothing found" path is a read-only no-op with negligible cost
+            // and no reason to penalise the player for checking.
 
             // --- Find all OTHER sessions on this account ---
             // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
@@ -386,7 +386,10 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // --- Boot each session ---
+            // --- Boot each session and stamp cooldown ---
+            // Cooldown is applied here — only when a real boot actually occurs.
+            _unstuckCooldowns[accountId] = now;
+
             var kickedNames = new System.Collections.Generic.List<string>();
             foreach (var s in sessionsToKick)
             {
