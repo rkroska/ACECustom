@@ -370,18 +370,18 @@ namespace ACE.Server.Command.Handlers
             // Prevents spam on the "nothing found" path as well as the boot path.
             _unstuckCooldowns[accountId] = now;
 
-            // --- Find all sessions on this account ---
+            // --- Find all OTHER sessions on this account ---
             // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
             // so that zombie/stuck sessions (no attached Player object) are also caught.
-            // NOTE: For testing, this includes the caller's own session so the boot
-            // mechanism can be verified by self-kicking. Re-add the exclusion after testing:
-            //   .Where(s => s != session)
-            var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId);
+            // The caller's own session is excluded — only other sessions on the account are booted.
+            var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId)
+                .Where(s => s != session)
+                .ToList();
 
             if (sessionsToKick.Count == 0)
             {
                 CommandHandlerHelper.WriteOutputInfo(session,
-                    "Silas the Unsticker whispers: \"Hmm... I don't see any sessions from your account out there. You look fine to me!\"",
+                    "Silas the Unsticker whispers: \"Hmm... I don't see any other characters from your account stuck out there. You look fine to me!\"",
                     ChatMessageType.Broadcast);
                 return;
             }
