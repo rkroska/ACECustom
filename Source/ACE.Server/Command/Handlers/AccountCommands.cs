@@ -366,6 +366,10 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
+            // --- Stamp cooldown on every invocation (not just on success) ---
+            // Prevents spam on the "nothing found" path as well as the boot path.
+            _unstuckCooldowns[accountId] = now;
+
             // --- Find other stuck characters on this account ---
             // Scoped strictly to the caller's AccountId — no IP matching, no account name argument.
             // A player can only ever unstuck their own account.
@@ -397,9 +401,6 @@ namespace ACE.Server.Command.Handlers
 
                 kickedNames.Add(stuckName);
             }
-
-            // --- Apply cooldown ---
-            _unstuckCooldowns[accountId] = now;
 
             // --- Audit log ---
             PlayerManager.BroadcastToAuditChannel(session.Player,
