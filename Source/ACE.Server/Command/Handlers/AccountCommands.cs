@@ -332,11 +332,17 @@ namespace ACE.Server.Command.Handlers
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// Per-account cooldown tracker for /unstuck. Keyed by AccountId.
-        /// ConcurrentDictionary avoids the lock overhead of the previous implementation.
+        /// Per-account cooldown tracker for @unstuck. Keyed by AccountId.
         /// </summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, DateTime> _unstuckCooldowns
             = new System.Collections.Concurrent.ConcurrentDictionary<uint, DateTime>();
+
+        /// <summary>
+        /// Per-account lock gates for @unstuck. Ensures the cooldown check, boot, and stamp
+        /// are serialized per account so two concurrent calls cannot both pass the cooldown check.
+        /// </summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, object> _unstuckLocks
+            = new System.Collections.Concurrent.ConcurrentDictionary<uint, object>();
 
         private static readonly TimeSpan UnstuckCooldownDuration = TimeSpan.FromMinutes(5);
 
@@ -350,80 +356,88 @@ namespace ACE.Server.Command.Handlers
         public static void HandleUnstuck(Session session, params string[] parameters)
         {
             var accountId = session.AccountId;
-            var now = DateTime.UtcNow;
 
-            // --- Cooldown check ---
-            if (_unstuckCooldowns.TryGetValue(accountId, out var lastUsed))
+            // Acquire a per-account gate so the cooldown check → boot → stamp sequence
+            // is atomic. Without this, two concurrent @unstuck calls on the same account
+            // could both pass the cooldown check before either stamps it.
+            var gate = _unstuckLocks.GetOrAdd(accountId, _ => new object());
+            lock (gate)
             {
-                var elapsed = now - lastUsed;
-                if (elapsed < UnstuckCooldownDuration)
+                var now = DateTime.UtcNow;
+
+                // --- Cooldown check ---
+                if (_unstuckCooldowns.TryGetValue(accountId, out var lastUsed))
                 {
-                    var remaining = Math.Max(1, (int)(UnstuckCooldownDuration - elapsed).TotalSeconds);
+                    var elapsed = now - lastUsed;
+                    if (elapsed < UnstuckCooldownDuration)
+                    {
+                        var remaining = Math.Max(1, (int)(UnstuckCooldownDuration - elapsed).TotalSeconds);
+                        CommandHandlerHelper.WriteOutputInfo(session,
+                            $"Silas the Unsticker whispers: \"Easy there — I just helped you. Give it another {remaining} second{(remaining == 1 ? "" : "s")} before asking again.\"",
+                            ChatMessageType.Broadcast);
+                        return;
+                    }
+                }
+
+                // NOTE: Cooldown is stamped ONLY after a real boot (below).
+                // The "nothing found" path is a read-only no-op with negligible cost
+                // and no reason to penalise the player for checking.
+
+                // --- Find all OTHER sessions on this account ---
+                // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
+                // so that zombie/stuck sessions (no attached Player object) are also caught.
+                // The caller's own session is excluded — only other sessions on the account are booted.
+                var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId)
+                    .Where(s => s != session)
+                    .ToList();
+
+                if (sessionsToKick.Count == 0)
+                {
                     CommandHandlerHelper.WriteOutputInfo(session,
-                        $"Silas the Unsticker whispers: \"Easy there — I just helped you. Give it another {remaining} second{(remaining == 1 ? "" : "s")} before asking again.\"",
+                        "Silas the Unsticker whispers: \"Hmm... I don't see any other characters from your account stuck out there. You look fine to me!\"",
                         ChatMessageType.Broadcast);
                     return;
                 }
-            }
 
-            // NOTE: Cooldown is stamped ONLY after a real boot (below).
-            // The "nothing found" path is a read-only no-op with negligible cost
-            // and no reason to penalise the player for checking.
+                // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
+                var callerName = session.Player.Name;
 
-            // --- Find all OTHER sessions on this account ---
-            // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
-            // so that zombie/stuck sessions (no attached Player object) are also caught.
-            // The caller's own session is excluded — only other sessions on the account are booted.
-            var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId)
-                .Where(s => s != session)
-                .ToList();
+                var kickedNames = new List<string>(sessionsToKick.Count);
+                foreach (var stuckSession in sessionsToKick)
+                {
+                    // stuckSession.Player may be null for zombie sessions — fall back to account info.
+                    var charName = stuckSession.Player?.Name ?? $"[session:{stuckSession.AccountId}]";
+                    log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
 
-            if (sessionsToKick.Count == 0)
-            {
+                    stuckSession.Terminate(
+                        ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
+                        new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount(
+                            " - Freed by Silas the Unsticker at your request."));
+
+                    kickedNames.Add(charName);
+                }
+
+                // Prune entries older than the cooldown window to keep the dictionary
+                // bounded over long server uptimes. Filter first, then remove — avoids
+                // a redundant TryGetValue inside the loop.
+                var staleKeys = _unstuckCooldowns
+                    .Where(kvp => (now - kvp.Value) > UnstuckCooldownDuration)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+                foreach (var staleKey in staleKeys)
+                    _unstuckCooldowns.TryRemove(staleKey, out _);
+                _unstuckCooldowns[accountId] = now;
+
+                // --- Audit log ---
+                PlayerManager.BroadcastToAuditChannel(session.Player,
+                    $"[Unstuck] {callerName} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account ?? "[unknown]"}': {string.Join(", ", kickedNames)}");
+
+                // --- Confirmation to the player ---
+                var names = string.Join(", ", kickedNames);
                 CommandHandlerHelper.WriteOutputInfo(session,
-                    "Silas the Unsticker whispers: \"Hmm... I don't see any other characters from your account stuck out there. You look fine to me!\"",
+                    $"Silas the Unsticker whispers: \"Consider it done! I've sent {names} packing. They should be free to log back in now.\"",
                     ChatMessageType.Broadcast);
-                return;
             }
-
-            // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
-            var callerName = session.Player.Name;
-
-            var kickedNames = new List<string>(sessionsToKick.Count);
-            foreach (var stuckSession in sessionsToKick)
-            {
-                // stuckSession.Player may be null for zombie sessions — fall back to account info.
-                var charName = stuckSession.Player?.Name ?? $"[session:{stuckSession.AccountId}]";
-                log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
-
-                stuckSession.Terminate(
-                    ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
-                    new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount(
-                        " - Freed by Silas the Unsticker at your request."));
-
-                kickedNames.Add(charName);
-            }
-
-            // Prune entries older than the cooldown window to keep the dictionary
-            // bounded over long server uptimes. Filter first, then remove — avoids
-            // a redundant TryGetValue inside the loop.
-            var staleKeys = _unstuckCooldowns
-                .Where(kvp => (now - kvp.Value) > UnstuckCooldownDuration)
-                .Select(kvp => kvp.Key)
-                .ToList();
-            foreach (var staleKey in staleKeys)
-                _unstuckCooldowns.TryRemove(staleKey, out _);
-            _unstuckCooldowns[accountId] = now;
-
-            // --- Audit log ---
-            PlayerManager.BroadcastToAuditChannel(session.Player,
-                $"[Unstuck] {callerName} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account ?? "[unknown]"}': {string.Join(", ", kickedNames)}");
-
-            // --- Confirmation to the player ---
-            var names = string.Join(", ", kickedNames);
-            CommandHandlerHelper.WriteOutputInfo(session,
-                $"Silas the Unsticker whispers: \"Consider it done! I've sent {names} packing. They should be free to log back in now.\"",
-                ChatMessageType.Broadcast);
         }
     }
 }
