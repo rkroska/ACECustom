@@ -370,41 +370,40 @@ namespace ACE.Server.Command.Handlers
             // Prevents spam on the "nothing found" path as well as the boot path.
             _unstuckCooldowns[accountId] = now;
 
-            // --- Find other stuck characters on this account ---
-            // Scoped strictly to the caller's AccountId — no IP matching, no account name argument.
-            // A player can only ever unstuck their own account.
-            var stuckPlayers = PlayerManager.GetAllOnline()
-                .Where(p => p.Account != null
-                    && p.Account.AccountId == accountId
-                    && p.Session != session)
-                .ToList();
+            // --- Find all sessions on this account ---
+            // Uses NetworkManager.FindAllByAccount() instead of PlayerManager.GetAllOnline()
+            // so that zombie/stuck sessions (no attached Player object) are also caught.
+            // NOTE: For testing, this includes the caller's own session so the boot
+            // mechanism can be verified by self-kicking. Re-add the exclusion after testing:
+            //   .Where(s => s != session)
+            var sessionsToKick = ACE.Server.Network.Managers.NetworkManager.FindAllByAccount(accountId);
 
-            if (stuckPlayers.Count == 0)
+            if (sessionsToKick.Count == 0)
             {
                 CommandHandlerHelper.WriteOutputInfo(session,
-                    "Silas the Unsticker whispers: \"Hmm... I don't see any other characters from your account stuck out there. You look fine to me!\"",
+                    "Silas the Unsticker whispers: \"Hmm... I don't see any sessions from your account out there. You look fine to me!\"",
                     ChatMessageType.Broadcast);
                 return;
             }
 
-            // --- Boot each stuck character ---
+            // --- Boot each session ---
             var kickedNames = new System.Collections.Generic.List<string>();
-            foreach (var stuck in stuckPlayers)
+            foreach (var s in sessionsToKick)
             {
-                var stuckName = stuck.Name;
-                log.Info($"[Unstuck] Booting stuck character '{stuckName}' (Account: {session.Account}, AccountId: {accountId}) requested by '{session.Player.Name}'.");
+                var charName = s.Player?.Name ?? $"[session:{s.AccountId}]";
+                log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account}, AccountId: {accountId}) requested by '{session.Player?.Name}'.");
 
-                stuck.Session?.Terminate(
+                s.Terminate(
                     ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
                     new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount(
                         " - Freed by Silas the Unsticker at your request."));
 
-                kickedNames.Add(stuckName);
+                kickedNames.Add(charName);
             }
 
             // --- Audit log ---
             PlayerManager.BroadcastToAuditChannel(session.Player,
-                $"[Unstuck] {session.Player.Name} used @unstuck — booted {kickedNames.Count} stuck character(s) on account '{session.Account}': {string.Join(", ", kickedNames)}");
+                $"[Unstuck] {session.Player?.Name} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account}': {string.Join(", ", kickedNames)}");
 
             // --- Confirmation to the player ---
             var names = string.Join(", ", kickedNames);
