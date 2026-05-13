@@ -386,15 +386,15 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // --- Boot each session and stamp cooldown ---
-            // Cooldown is applied here — only when a real boot actually occurs.
-            _unstuckCooldowns[accountId] = now;
+            // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
+            var callerName = session.Player.Name;
 
             var kickedNames = new System.Collections.Generic.List<string>();
             foreach (var s in sessionsToKick)
             {
+                // s.Player may be null for zombie sessions — fall back to account info.
                 var charName = s.Player?.Name ?? $"[session:{s.AccountId}]";
-                log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account}, AccountId: {accountId}) requested by '{session.Player?.Name}'.");
+                log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account}, AccountId: {accountId}) requested by '{callerName}'.");
 
                 s.Terminate(
                     ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
@@ -404,9 +404,21 @@ namespace ACE.Server.Command.Handlers
                 kickedNames.Add(charName);
             }
 
+            // --- Stamp cooldown after all boots complete ---
+            // Stamped after the loop so a mid-loop exception doesn't lock the player
+            // out of a 5-minute cooldown when boots may not have fully fired.
+            // Prune entries older than the cooldown window to keep the dictionary
+            // bounded over long server uptimes (avoids unbounded growth).
+            foreach (var staleKey in _unstuckCooldowns.Keys)
+            {
+                if (_unstuckCooldowns.TryGetValue(staleKey, out var ts) && (now - ts) > UnstuckCooldownDuration)
+                    _unstuckCooldowns.TryRemove(staleKey, out _);
+            }
+            _unstuckCooldowns[accountId] = now;
+
             // --- Audit log ---
             PlayerManager.BroadcastToAuditChannel(session.Player,
-                $"[Unstuck] {session.Player?.Name} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account}': {string.Join(", ", kickedNames)}");
+                $"[Unstuck] {callerName} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account}': {string.Join(", ", kickedNames)}");
 
             // --- Confirmation to the player ---
             var names = string.Join(", ", kickedNames);
