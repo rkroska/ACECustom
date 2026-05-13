@@ -358,7 +358,7 @@ namespace ACE.Server.Command.Handlers
                 var elapsed = now - lastUsed;
                 if (elapsed < UnstuckCooldownDuration)
                 {
-                    var remaining = (int)(UnstuckCooldownDuration - elapsed).TotalSeconds;
+                    var remaining = Math.Max(1, (int)(UnstuckCooldownDuration - elapsed).TotalSeconds);
                     CommandHandlerHelper.WriteOutputInfo(session,
                         $"Silas the Unsticker whispers: \"Easy there — I just helped you. Give it another {remaining} second{(remaining == 1 ? "" : "s")} before asking again.\"",
                         ChatMessageType.Broadcast);
@@ -404,16 +404,15 @@ namespace ACE.Server.Command.Handlers
                 kickedNames.Add(charName);
             }
 
-            // --- Stamp cooldown after all boots complete ---
-            // Stamped after the loop so a mid-loop exception doesn't lock the player
-            // out of a 5-minute cooldown when boots may not have fully fired.
             // Prune entries older than the cooldown window to keep the dictionary
-            // bounded over long server uptimes (avoids unbounded growth).
-            foreach (var staleKey in _unstuckCooldowns.Keys)
-            {
-                if (_unstuckCooldowns.TryGetValue(staleKey, out var ts) && (now - ts) > UnstuckCooldownDuration)
-                    _unstuckCooldowns.TryRemove(staleKey, out _);
-            }
+            // bounded over long server uptimes. Filter first, then remove — avoids
+            // a redundant TryGetValue inside the loop.
+            var staleKeys = _unstuckCooldowns
+                .Where(kvp => (now - kvp.Value) > UnstuckCooldownDuration)
+                .Select(kvp => kvp.Key)
+                .ToList();
+            foreach (var staleKey in staleKeys)
+                _unstuckCooldowns.TryRemove(staleKey, out _);
             _unstuckCooldowns[accountId] = now;
 
             // --- Audit log ---
