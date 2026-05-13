@@ -389,7 +389,7 @@ namespace ACE.Server.Command.Handlers
             // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
             var callerName = session.Player.Name;
 
-            var kickedNames = new System.Collections.Generic.List<string>();
+            var kickedNames = new List<string>();
             foreach (var s in sessionsToKick)
             {
                 // s.Player may be null for zombie sessions — fall back to account info.
