@@ -394,7 +394,7 @@ namespace ACE.Server.Command.Handlers
             {
                 // s.Player may be null for zombie sessions — fall back to account info.
                 var charName = s.Player?.Name ?? $"[session:{s.AccountId}]";
-                log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account}, AccountId: {accountId}) requested by '{callerName}'.");
+                log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
 
                 s.Terminate(
                     ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
@@ -417,7 +417,7 @@ namespace ACE.Server.Command.Handlers
 
             // --- Audit log ---
             PlayerManager.BroadcastToAuditChannel(session.Player,
-                $"[Unstuck] {callerName} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account}': {string.Join(", ", kickedNames)}");
+                $"[Unstuck] {callerName} used @unstuck — booted {kickedNames.Count} session(s) on account '{session.Account ?? "[unknown]"}': {string.Join(", ", kickedNames)}");
 
             // --- Confirmation to the player ---
             var names = string.Join(", ", kickedNames);
