@@ -346,7 +346,7 @@ namespace ACE.Server.Command.Handlers
             "If another character on your account is stuck and preventing you from logging in,\n" +
             "log in to any other character and type @unstuck. The stuck character will be\n" +
             "disconnected and you will be able to log back in to them normally.\n" +
-            "This command has a 5-minute cooldown.")]
+            "A 5-minute cooldown applies after a successful boot. Checking when nothing is stuck is always free.")]
         public static void HandleUnstuck(Session session, params string[] parameters)
         {
             var accountId = session.AccountId;
@@ -389,14 +389,14 @@ namespace ACE.Server.Command.Handlers
             // session.Player is guaranteed non-null by CommandHandlerFlag.RequiresWorld.
             var callerName = session.Player.Name;
 
-            var kickedNames = new List<string>();
-            foreach (var s in sessionsToKick)
+            var kickedNames = new List<string>(sessionsToKick.Count);
+            foreach (var stuckSession in sessionsToKick)
             {
-                // s.Player may be null for zombie sessions — fall back to account info.
-                var charName = s.Player?.Name ?? $"[session:{s.AccountId}]";
+                // stuckSession.Player may be null for zombie sessions — fall back to account info.
+                var charName = stuckSession.Player?.Name ?? $"[session:{stuckSession.AccountId}]";
                 log.Info($"[Unstuck] Booting session for '{charName}' (Account: {session.Account ?? "[unknown]"}, AccountId: {accountId}) requested by '{callerName}'.");
 
-                s.Terminate(
+                stuckSession.Terminate(
                     ACE.Server.Network.Enum.SessionTerminationReason.AccountBooted,
                     new ACE.Server.Network.GameMessages.Messages.GameMessageBootAccount(
                         " - Freed by Silas the Unsticker at your request."));
