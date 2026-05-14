@@ -113,9 +113,9 @@ namespace ACE.Server.WorldObjects
         public DateTime LastJumpTime;
 
         /// <summary>
-        /// When true, rejected jumps and motion-path jump suppression while <see cref="WorldObject.Teleporting"/> emit <c>[PortalJumpSuppress]</c> lines to the console (for testing).
+        /// When true, portal/jump suppression emits <c>[PortalJumpSuppress]</c> at log4net <b>Debug</b> (see <see cref="ApplyTeleportJumpGate"/> and related paths).
         /// </summary>
-        public static bool LogPortalJumpSuppressToConsole = true;
+        public static bool LogPortalJumpSuppressToConsole = false;
 
         private long _portalJumpSuppressMotionLastLogTicks;
 
@@ -132,7 +132,7 @@ namespace ACE.Server.WorldObjects
 
             allowJump = false;
 
-            if (!LogPortalJumpSuppressToConsole)
+            if (!LogPortalJumpSuppressToConsole || !log.IsDebugEnabled)
                 return;
 
             var now = DateTime.UtcNow.Ticks;
@@ -142,7 +142,7 @@ namespace ACE.Server.WorldObjects
 
             var po = PhysicsObj;
             var ts = po?.TransientState;
-            Console.WriteLine(
+            log.Debug(
                 $"[PortalJumpSuppress][{channel}] player={Name} guid=0x{Guid.Full:X8} Teleporting=true -> allowJump forced false. {detail} " +
                 $"LocCell=0x{Location?.Cell ?? 0:X8} var={Location?.Variation?.ToString() ?? "null"} FastTick={FastTick} " +
                 $"Hidden={Hidden} IgnoreCollisions={IgnoreCollisions} ReportCollisions={ReportCollisions} " +
@@ -1005,11 +1005,11 @@ namespace ACE.Server.WorldObjects
         {
             if (Teleporting)
             {
-                if (LogPortalJumpSuppressToConsole)
+                if (LogPortalJumpSuppressToConsole && log.IsDebugEnabled)
                 {
                     var po = PhysicsObj;
                     var ts = po?.TransientState;
-                    Console.WriteLine(
+                    log.Debug(
                         $"[PortalJumpSuppress][GameActionJump] REJECT player={Name} guid=0x{Guid.Full:X8} Teleporting=true (jump ignored; no stamina spent). " +
                         $"jumpExtent={jump.Extent:F4} jumpVel=({jump.Velocity.X:F4},{jump.Velocity.Y:F4},{jump.Velocity.Z:F4}) " +
                         $"LocCell=0x{Location?.Cell ?? 0:X8} var={Location?.Variation?.ToString() ?? "null"} FastTick={FastTick} " +

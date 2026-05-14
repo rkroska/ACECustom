@@ -419,16 +419,20 @@ namespace ACE.Server.Physics.Common
 
         public EnvCell? add_visible_cell(uint cellID, int? Variation)
         {
-            var envCell = DBObj.GetEnvCell(cellID, Variation);
+            // VisibleCells keys are low 16 bits (same as BuildVisibleCellsCore / GetVisible(portal.OtherCellId) / IsVisibleIndoors).
+            var loadCellId = (cellID & 0xFFFF0000) != 0 ? cellID : (uint)((ID & 0xFFFF0000) | (cellID & 0xFFFF));
+            var key = loadCellId & 0xFFFFU;
+
+            var envCell = DBObj.GetEnvCell(loadCellId, Variation);
             if (envCell == null)
             {
                 PhysicsLogGates.AddVisibleCellNull.Warn(
-                    () => $"[PHYSICS] add_visible_cell: DBObj.GetEnvCell returned null for cellID=0x{cellID:X8} variation={Variation?.ToString() ?? "null"} (parent 0x{ID:X8})",
+                    () => $"[PHYSICS] add_visible_cell: DBObj.GetEnvCell returned null for loadCellId=0x{loadCellId:X8} (arg cellID=0x{cellID:X8}) variation={Variation?.ToString() ?? "null"} (parent 0x{ID:X8})",
                     10_000);
                 return null;
             }
             VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
-            VisibleCells.TryAdd(cellID, envCell);
+            VisibleCells.TryAdd(key, envCell);
             return envCell;
         }
 
