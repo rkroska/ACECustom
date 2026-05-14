@@ -22,9 +22,11 @@ namespace ACE.Server.Physics.Common
             if (!Log.IsWarnEnabled)
                 return;
 
-            var nowTicks = DateTime.UtcNow.Ticks;
-            string message;
-            int suppressed;
+            // Single clock read for admission vs. window extension (avoids mixed UtcNow instants).
+            var utcNow = DateTime.UtcNow;
+            var nowTicks = utcNow.Ticks;
+
+            int suppressedSnapshot;
 
             lock (_lock)
             {
@@ -34,14 +36,35 @@ namespace ACE.Server.Physics.Common
                     return;
                 }
 
-                suppressed = _suppressed;
+                suppressedSnapshot = _suppressed;
                 _suppressed = 0;
-                _nextLogUtcTicks = DateTime.UtcNow.AddMilliseconds(minIntervalMs).Ticks;
-                message = messageFactory();
             }
 
-            if (suppressed > 0)
-                Log.Warn($"{message} [suppressed {suppressed} similar in interval]");
+            string message;
+            try
+            {
+                // Outside lock: message builders may be slow; failures must not leave counters wedged.
+                message = messageFactory();
+            }
+            catch
+            {
+                lock (_lock)
+                {
+                    _suppressed += suppressedSnapshot;
+                }
+                throw;
+            }
+
+            var nextTicks = utcNow.AddMilliseconds(minIntervalMs).Ticks;
+
+            lock (_lock)
+            {
+                // Monotonic: concurrent admissions use their own utcNow; never move the window backward.
+                _nextLogUtcTicks = Math.Max(_nextLogUtcTicks, nextTicks);
+            }
+
+            if (suppressedSnapshot > 0)
+                Log.Warn($"{message} [suppressed {suppressedSnapshot} similar in interval]");
             else
                 Log.Warn(message);
         }
