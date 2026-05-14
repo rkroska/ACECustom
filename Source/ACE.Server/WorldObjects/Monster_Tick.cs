@@ -105,6 +105,9 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
+                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                        CombatPet.DebugFollowAiConsole(ownerLeashPet,
+                            $"owner_recall_drop atk={(ownerLeashPet.AttackTarget as Creature)?.Name} ownerDist={ownerLeashPet.GetCylinderDistance(ownerLeashPet.P_PetOwner):F1}m > {ServerConfig.pet_combat_owner_recall_distance_m.Value:F0}m");
                     ownerLeashPet.AttackTarget = null;
                     ownerLeashPet.ResetAttack();
                     ((Pet)ownerLeashPet).Tick(currentUnixTime);
@@ -123,6 +126,7 @@ namespace ACE.Server.WorldObjects
                 hardLeashPet.AttackTarget = null;
                 hardLeashPet.ResetAttack();
                 ((Pet)hardLeashPet).Tick(currentUnixTime);
+                HandleFindTarget();
                 return;
             }
 
@@ -134,6 +138,12 @@ namespace ACE.Server.WorldObjects
                 && AttackTarget == null
                 && MonsterState != State.Return)
             {
+                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                {
+                    var od = combatPetRecall.P_PetOwner != null ? combatPetRecall.GetCylinderDistance(combatPetRecall.P_PetOwner) : -1f;
+                    CombatPet.DebugFollowAiConsole(combatPetRecall,
+                        $"idle_follow_tick IsMoving={combatPetRecall.IsMoving} IsAnimating={combatPetRecall.IsAnimating} firstUpdate={firstUpdate} ownerDist={od:F1}m");
+                }
                 ((Pet)combatPetRecall).Tick(currentUnixTime);
                 HandleFindTarget();
                 return;
@@ -234,9 +244,14 @@ namespace ACE.Server.WorldObjects
 
                 if (IsAnimating)
                 {
-                    //PhysicsObj.ShowPendingMotions();
+                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value && this is CombatPet animPet)
+                        CombatPet.DebugFollowAiConsole(animPet, "firstUpdate IsAnimating=true after DoAttackStance");
+
                     PhysicsObj.update_object();
-                    return;
+                    if (this is not CombatPet)
+                        return;
+                    // CombatPet: stance polish can keep IsAnimating true across many ticks; do not stall the
+                    // entire combat loop on firstUpdate or the pet never reaches Movement()/Attack().
                 }
 
                 firstUpdate = false;

@@ -633,6 +633,12 @@ namespace ACE.Server.Entity
                     log.Debug($"[MonsterCapture] Captured {capturedItems.Count} equipped items: {capturedItemsString}");
                 }
             }
+
+            var equipDamageType = PetDevice.TryGetDamageTypeFromCreatureEquippedWeaponsOnly(creature);
+            if (equipDamageType.HasValue)
+                item.SetProperty(PropertyInt.CapturedSourceDamageType, (int)equipDamageType.Value);
+            else
+                item.RemoveProperty(PropertyInt.CapturedSourceDamageType);
             
             // Debug logging
             log.Debug($"[MonsterCapture] Created Siphoned Essence: BaseIcon={item.IconId:X}, OverlayIcon={item.IconOverlayId}, Creature={creature.Name}");
@@ -641,7 +647,10 @@ namespace ACE.Server.Entity
             // We target a consistent physical size (e.g. human height) rather than just scaling relative to the model
             var normalizedScale = NormalizeScaleForPet(creature, player);
             item.SetProperty(PropertyFloat.CapturedScale, normalizedScale);
-            
+
+            if (item is PetDevice petDevice)
+                petDevice.TryNotifySummonerNameProperty(player);
+
             return item;
         }
         
@@ -673,7 +682,8 @@ namespace ACE.Server.Entity
                 PropertyInt.CapturedCreatureWCID,
                 PropertyInt.CapturedCreatureType,
                 PropertyInt.CapturedCreatureVariant,
-                PropertyInt.CapturedPaletteTemplate
+                PropertyInt.CapturedPaletteTemplate,
+                PropertyInt.CapturedSourceDamageType
             };
 
             foreach (var prop in capturedProps)
@@ -819,6 +829,7 @@ namespace ACE.Server.Entity
             var capIconId = capturedItem.IconId;
             var capAttuned = capturedItem.Attuned;
             var capBonded = capturedItem.Bonded;
+            var capCapturedDamageType = capturedItem.GetProperty(PropertyInt.CapturedSourceDamageType);
 
             var nameBeforeApply = crate.Name;
 
@@ -877,6 +888,22 @@ namespace ACE.Server.Entity
             var rebuiltName = PetDevice.BuildDisplayNameAfterCaptureApply(crate.Name, previousCapturedCreatureName, crate.VisualOverrideName);
             if (!string.IsNullOrEmpty(rebuiltName))
                 crate.Name = rebuiltName;
+
+            if (crate.IsCombatPetDevice())
+            {
+                if (capCapturedDamageType.HasValue && capCapturedDamageType.Value != 0 && Enum.IsDefined(typeof(DamageType), capCapturedDamageType.Value))
+                    crate.SetProperty(PropertyInt.CapturedSourceDamageType, capCapturedDamageType.Value);
+                else
+                {
+                    var tmpl = PetDevice.TryGetTemplateEssenceDamageTypeFromWeenie(crate.WeenieClassId);
+                    if (tmpl.HasValue)
+                        crate.SetProperty(PropertyInt.CapturedSourceDamageType, (int)tmpl.Value);
+                    else
+                        crate.RemoveProperty(PropertyInt.CapturedSourceDamageType);
+                }
+
+                crate.RefreshCombatPetEssenceDisplayNameAfterSkinApply(player);
+            }
 
             SyncPetDeviceUseStringAfterSkinRename(crate, nameBeforeApply, crate.Name);
 
@@ -994,6 +1021,12 @@ namespace ACE.Server.Entity
 
             // Save the crate with updated icons
             crate.SaveBiotaToDatabase();
+
+            // SaveBiotaToDatabase(async) clears ChangesDetected before the shard write finishes. SavePlayerToDatabase
+            // only batches possessions where ChangesDetected is true — a fast relog can skip this item and load
+            // stale shard data. Keep the device dirty until a successful batch save clears it.
+            crate.ChangesDetected = true;
+            player.RushNextPlayerSave(0);
             
             player.SendMessage($"You have applied the siphoned essence to your {crate.Name}!");
             player.SendMessage("Resummon your pet to see the new appearance!");

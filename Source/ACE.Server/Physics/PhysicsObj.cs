@@ -436,16 +436,20 @@ namespace ACE.Server.Physics
             return TransitionState.OK;
         }
 
-        /// <summary>True when one collision participant is a <see cref="Pet"/> and the other is its <see cref="Pet.P_PetOwner"/>.</summary>
-        private static bool IsOwnedPetVsOwnerCollision(PhysicsObj self, PhysicsObj? other)
+        /// <summary>
+        /// True when one collision participant is a summon <see cref="Pet"/> (passive or <see cref="CombatPet"/>)
+        /// and the other is any <see cref="Player"/>. Pets stay solid vs doors and world geometry (<see cref="Pet"/> sets <c>Ethereal = false</c>);
+        /// this only relaxes movement obstruction vs players (including the owner and other clients).
+        /// </summary>
+        private static bool IsPetVsPlayerCollision(PhysicsObj self, PhysicsObj? other)
         {
             if (self?.WeenieObj?.WorldObject == null || other?.WeenieObj?.WorldObject == null)
                 return false;
             var a = self.WeenieObj.WorldObject;
             var b = other.WeenieObj.WorldObject;
-            if (a is Pet petA && b is Player plB && petA.P_PetOwner == plB)
+            if (a is Pet && b is Player)
                 return true;
-            if (b is Pet petB && a is Player plA && petB.P_PetOwner == plA)
+            if (b is Pet && a is Player)
                 return true;
             return false;
         }
@@ -460,7 +464,7 @@ namespace ACE.Server.Physics
                         transition.CollisionInfo.CollidedWithEnvironment = true;
                 }
                 else if (ethereal
-                    || IsOwnedPetVsOwnerCollision(this, transition.ObjectInfo.Object)
+                    || IsPetVsPlayerCollision(this, transition.ObjectInfo.Object)
                     || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
                 {
                     result = TransitionState.OK;
@@ -469,6 +473,16 @@ namespace ACE.Server.Physics
                 }
                 else
                     transition.CollisionInfo.AddObject(this, result);
+            }
+            else if (ethereal
+                     || IsPetVsPlayerCollision(this, transition.ObjectInfo.Object)
+                     || isCreature && transition.ObjectInfo.State.HasFlag(ObjectInfoState.IgnoreCreatures))
+            {
+                // StepDown transitions previously skipped the branch above, so pet-vs-player stayed "hard"
+                // collided — players could not walk through their combat pet on small vertical corrections.
+                result = TransitionState.OK;
+                transition.CollisionInfo.CollisionNormalValid = false;
+                transition.CollisionInfo.AddObject(this, TransitionState.OK);
             }
             transition.SpherePath.ObstructionEthereal = false;
             return result;

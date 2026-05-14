@@ -894,14 +894,30 @@ namespace ACE.Server.Entity
 
         private void HandleExtensiveDebugLogging(Creature attacker, Creature defender)
         {
-            if (!ServerConfig.damage_event_debug_server_log.Value || attacker == null || defender == null)
-                return;
-            if (ServerConfig.damage_event_debug_only_nonplayer_attackers.Value && attacker is Player)
-                return;
-            if (defender is not Player && defender is not CombatPet)
-                return;
+            if (ServerConfig.damage_event_debug_server_log.Value && attacker != null && defender != null)
+            {
+                if (!ServerConfig.damage_event_debug_only_nonplayer_attackers.Value || attacker is not Player)
+                {
+                    if (defender is Player || defender is CombatPet)
+                        log.Info(BuildExtensiveDebugLog(attacker, defender));
+                }
+            }
 
-            log.Info(BuildExtensiveDebugLog(attacker, defender));
+            if (ServerConfig.pet_combat_outgoing_damage_event_debug_log.Value
+                && attacker is CombatPet petAttacker
+                && defender != null)
+            {
+                log.Info(BuildCombatPetOutgoingDebugLine(petAttacker, defender));
+            }
+        }
+
+        private string BuildCombatPetOutgoingDebugLine(CombatPet pet, Creature defender)
+        {
+            var baseLine = BaseDamageMod != null
+                ? $"baseRolled={BaseDamage:F2} range={BaseDamageMod.Range} bonus={BaseDamageMod.DamageBonus} lumFlat={DebugLuminanceFlatDamageBonus}"
+                : $"baseRolled={BaseDamage:F2} lumFlat={DebugLuminanceFlatDamageBonus}";
+            return
+                $"[CombatPetOutgoing] pet={pet.Name} petWcid={pet.WeenieClassId} tgt={defender.Name} tgtWcid={defender.WeenieClassId} {CombatType} {DamageType} evade={Evaded} crit={IsCritical} {baseLine} preMit={DamageBeforeMitigation:F2} final={Damage:F2}";
         }
 
         private string BuildExtensiveDebugLog(Creature attacker, Creature defender)

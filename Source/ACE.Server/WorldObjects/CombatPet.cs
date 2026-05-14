@@ -23,6 +23,14 @@ namespace ACE.Server.WorldObjects
     {
         private static readonly ILog RecallBlockDbgLog = LogManager.GetLogger(typeof(CombatPet));
 
+        /// <summary>
+        /// Combat pets override <see cref="HandleFindTarget"/> and bypass the base 5s NextFindTarget gate.
+        /// Throttle idle acquisition scans so we do not fight monster MoveTo vs idle follow every tick.
+        /// </summary>
+        private double nextCombatPetIdleAcquireTargetTime;
+
+        private const double CombatPetIdleAcquireTargetCooldownSec = 0.75;
+
         private WeakReference<PetDevice> _summoningDevice;
         private ObjectGuid _summoningDeviceGuid = ObjectGuid.Invalid;
 
@@ -450,10 +458,10 @@ namespace ACE.Server.WorldObjects
 
             if (petDevice != null && ServerConfig.pet_apply_capture_source_damage_type.Value)
             {
-                var capDt = petDevice.GetProperty(PropertyInt.CapturedSourceDamageType);
-                if (capDt.HasValue && capDt.Value != 0 && Enum.IsDefined(typeof(DamageType), capDt.Value))
+                var capDtResolved = PetDevice.TryResolveCapturedSourceDamageTypeForCombatPet(petDevice);
+                if (capDtResolved.HasValue)
                 {
-                    var dt = (DamageType)capDt.Value;
+                    var dt = capDtResolved.Value;
                     var meleeWeapon = GetEquippedMeleeWeapon();
                     if (meleeWeapon != null)
                         meleeWeapon.SetProperty(PropertyInt.DamageType, (int)dt);
@@ -644,6 +652,15 @@ namespace ACE.Server.WorldObjects
             pet.TraceRecallBlock(stage, detail);
         }
 
+        /// <summary>Verbose stdout trace for idle follow + targeting when <see cref="ServerConfig.pet_combat_debug_follow_ai_console"/> is TRUE.</summary>
+        internal static void DebugFollowAiConsole(CombatPet pet, string detail)
+        {
+            if (pet == null || !ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                return;
+
+            Console.WriteLine($"[CombatPetAI] {pet.Name} (0x{pet.Guid.Full:X8}) {detail}");
+        }
+
         private void TraceRecallBlock(string sourceTag, string detail)
         {
             if (!ServerConfig.pet_combat_recall_block_debug.Value)
@@ -677,21 +694,102 @@ namespace ACE.Server.WorldObjects
             return dealt;
         }
 
+        public override void OnMoveComplete(WeenieError status)
+        {
+            if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                DebugFollowAiConsole(this, $"OnMoveComplete status={status} (before base; follow uses creature path)");
+
+            base.OnMoveComplete(status);
+        }
+
+        /// <summary>
+        /// When owner-recall is enabled, do not start or continue local targeting while the pet is still
+        /// farther from its owner than the recall distance (same band as <see cref="Monster_Tick"/> uses to drop combat).
+        /// Otherwise the pet ping-pongs between monster chase and idle follow every tick.
+        /// </summary>
+        private bool ShouldDeferCombatPetTargetAcquisitionForOwnerCatchup()
+        {
+            if (!ServerConfig.pet_combat_follow_owner_when_idle.Value)
+                return false;
+
+            var recall = ServerConfig.pet_combat_owner_recall_distance_m.Value;
+            if (recall <= 0 || P_PetOwner?.PhysicsObj == null)
+                return false;
+
+            return GetCylinderDistance(P_PetOwner) > (float)recall;
+        }
+
+        private void BumpCombatPetIdleAcquireCooldown()
+        {
+            nextCombatPetIdleAcquireTargetTime = Timers.RunningTime + CombatPetIdleAcquireTargetCooldownSec;
+        }
+
         public override void HandleFindTarget()
         {
             var creature = AttackTarget as Creature;
 
-            if (creature == null || creature.IsDead || !IsVisibleTarget(creature))
+            // Re-validate current target immediately (leash / visibility); do not throttle this path.
+            if (creature != null && !creature.IsDead && IsVisibleTarget(creature) && !GetNearbyMonsters().Contains(creature))
+            {
+                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                    DebugFollowAiConsole(this, $"HandleFindTarget current foe not in nearby/leash list -> FindNextTarget (was={creature.Name})");
+
                 FindNextTarget();
+                return;
+            }
+
+            if (creature == null || creature.IsDead || !IsVisibleTarget(creature))
+            {
+                if (ShouldDeferCombatPetTargetAcquisitionForOwnerCatchup())
+                {
+                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                        DebugFollowAiConsole(this, "HandleFindTarget defer_acquire (owner-recall catchup)");
+
+                    AttackTarget = null;
+                    BumpCombatPetIdleAcquireCooldown();
+                    return;
+                }
+
+                if (AttackTarget == null && Timers.RunningTime < nextCombatPetIdleAcquireTargetTime)
+                {
+                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                        DebugFollowAiConsole(this, $"HandleFindTarget throttle idle acquire until t>={nextCombatPetIdleAcquireTargetTime:F2} (now={Timers.RunningTime:F2})");
+                    return;
+                }
+
+                FindNextTarget();
+            }
         }
 
         public override bool FindNextTarget()
         {
+            var wasIdleAcquisition = AttackTarget == null;
+
+            if (ShouldDeferCombatPetTargetAcquisitionForOwnerCatchup())
+            {
+                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                    DebugFollowAiConsole(this, "FindNextTarget blocked by owner-recall defer");
+
+                AttackTarget = null;
+                BumpCombatPetIdleAcquireCooldown();
+                return false;
+            }
+
+            if (wasIdleAcquisition && Timers.RunningTime < nextCombatPetIdleAcquireTargetTime)
+            {
+                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                    DebugFollowAiConsole(this, $"FindNextTarget idle throttle skip (now={Timers.RunningTime:F2})");
+                return false;
+            }
+
             var nearbyMonsters = GetNearbyMonsters();
             if (nearbyMonsters.Count == 0)
             {
                 AttackTarget = null;
-                //Console.WriteLine($"{Name}.FindNextTarget(): empty");
+                if (wasIdleAcquisition)
+                    BumpCombatPetIdleAcquireCooldown();
+                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                    DebugFollowAiConsole(this, "FindNextTarget: no nearby monsters (after leash/faction filter)");
                 return false;
             }
 
@@ -701,13 +799,23 @@ namespace ACE.Server.WorldObjects
             if (nearest[0].Distance > VisualAwarenessRangeSq)
             {
                 AttackTarget = null;
-                //Console.WriteLine($"{Name}.FindNextTarget(): next object out-of-range (dist: {Math.Round(Math.Sqrt(nearest[0].Distance))})");
+                if (wasIdleAcquisition)
+                    BumpCombatPetIdleAcquireCooldown();
+                if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                {
+                    var d = Math.Sqrt(nearest[0].Distance);
+                    var lim = Math.Sqrt(VisualAwarenessRangeSq);
+                    DebugFollowAiConsole(this, $"FindNextTarget: nearest {nearest[0].Target.Name} dist={d:F1}m > visualAware={lim:F1}m");
+                }
                 return false;
             }
 
             AttackTarget = nearest[0].Target;
+            if (wasIdleAcquisition)
+                BumpCombatPetIdleAcquireCooldown();
 
-            //Console.WriteLine($"{Name}.FindNextTarget(): {AttackTarget.Name}");
+            if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                DebugFollowAiConsole(this, $"FindNextTarget ACQUIRED {AttackTarget.Name} distSq={nearest[0].Distance:F1} visualSq={VisualAwarenessRangeSq:F1}");
 
             return true;
         }
@@ -840,45 +948,59 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public override BaseDamageMod GetBaseDamage(PropertiesBodyPart attackPart)
         {
-            if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
-                return GetMissileDamage();
-
             BaseDamageMod baseDamageMod;
 
-            var weapon = GetEquippedMeleeWeapon();
-            // Capture-skin weapons are cosmetic: use body-part damage like unarmed (do not use item weapon stats).
-            if (weapon != null && (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
+            if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
             {
-                if (attackPart == null)
+                var launcher = GetEquippedMissileWeapon();
+                // Cosmetic capture-skin launcher: same rule as melee — use body-part damage, not stripped weapon/ammo DM.
+                if (launcher != null && (launcher.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
                 {
-                    var baseDamage = new BaseDamage(0, 0.0f);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
+                    if (attackPart == null)
+                        baseDamageMod = new BaseDamageMod(new BaseDamage(0, 0.0f));
+                    else
+                        baseDamageMod = new BaseDamageMod(new BaseDamage(attackPart.DVal, attackPart.DVar));
                 }
                 else
-                {
-                    var maxDamage = attackPart.DVal;
-                    var variance = attackPart.DVar;
-                    var baseDamage = new BaseDamage(maxDamage, variance);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
-                }
-            }
-            else if (weapon != null)
-            {
-                baseDamageMod = weapon.GetDamageMod(this);
+                    baseDamageMod = GetMissileDamage();
             }
             else
             {
-                if (attackPart == null)
+                var weapon = GetEquippedMeleeWeapon();
+                // Capture-skin weapons are cosmetic: use body-part damage like unarmed (do not use item weapon stats).
+                if (weapon != null && (weapon.GetProperty(PropertyBool.CombatPetCaptureSkinWeapon) ?? false))
                 {
-                    var baseDamage = new BaseDamage(0, 0.0f);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
+                    if (attackPart == null)
+                    {
+                        var baseDamage = new BaseDamage(0, 0.0f);
+                        baseDamageMod = new BaseDamageMod(baseDamage);
+                    }
+                    else
+                    {
+                        var maxDamage = attackPart.DVal;
+                        var variance = attackPart.DVar;
+                        var baseDamage = new BaseDamage(maxDamage, variance);
+                        baseDamageMod = new BaseDamageMod(baseDamage);
+                    }
+                }
+                else if (weapon != null)
+                {
+                    baseDamageMod = weapon.GetDamageMod(this);
                 }
                 else
                 {
-                    var maxDamage = attackPart.DVal;
-                    var variance = attackPart.DVar;
-                    var baseDamage = new BaseDamage(maxDamage, variance);
-                    baseDamageMod = new BaseDamageMod(baseDamage);
+                    if (attackPart == null)
+                    {
+                        var baseDamage = new BaseDamage(0, 0.0f);
+                        baseDamageMod = new BaseDamageMod(baseDamage);
+                    }
+                    else
+                    {
+                        var maxDamage = attackPart.DVal;
+                        var variance = attackPart.DVar;
+                        var baseDamage = new BaseDamage(maxDamage, variance);
+                        baseDamageMod = new BaseDamageMod(baseDamage);
+                    }
                 }
             }
 

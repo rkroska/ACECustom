@@ -105,6 +105,9 @@ namespace ACE.Server.WorldObjects
                             {
                                 targetPlayer.TakeDamage(sourceCreature, damageEvent);
 
+                                if (sourceCreature is CombatPet combatPetVsPlayer)
+                                    CombatPet.TryNotifyOwnerOutgoingPhysical(combatPetVsPlayer, targetPlayer, damageEvent.Damage, damageEvent.DamageType, "Missile");
+
                                 // blood splatter?
 
                                 if (damageEvent.ShieldMod != 1.0f)
@@ -122,17 +125,23 @@ namespace ACE.Server.WorldObjects
                         }
                         else
                         {
-                            // monster damage pet
+                            // creature-vs-creature (includes combat pet as attacker or defender)
                             if (damageEvent.HasDamage)
                             {
-                                targetCreature.TakeDamage(sourceCreature, damageEvent.DamageType, damageEvent.Damage);
+                                targetCreature.TakeDamage(sourceCreature, damageEvent.DamageType, damageEvent.Damage, damageEvent.IsCritical);
 
-                                // blood splatter?
+                                if (sourceCreature is CombatPet combatPetVsCreature)
+                                {
+                                    CombatPet.TryNotifyOwnerOutgoingPhysical(combatPetVsCreature, targetCreature, damageEvent.Damage, damageEvent.DamageType, "Missile");
+                                    sourceCreature.EmitSplatter(targetCreature, damageEvent.Damage);
+                                }
 
                                 // handle Dirty Fighting
                                 if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
                                     sourceCreature.FightDirty(targetCreature, damageEvent.Weapon);
                             }
+                            else
+                                targetCreature.OnEvade(sourceCreature, CombatType.Missile);
 
                             if (!(targetCreature is CombatPet))
                             {
@@ -140,6 +149,10 @@ namespace ACE.Server.WorldObjects
                                 sourceCreature.MonsterOnAttackMonster(targetCreature);
                             }
                         }
+
+                        // Mirror Monster_Melee: pets need retaliate / wake hooks on every attempted missile hit.
+                        if (sourceCreature is CombatPet combatPetAttacker)
+                            combatPetAttacker.PetOnAttackMonster(targetCreature);
                     }
                 }
 

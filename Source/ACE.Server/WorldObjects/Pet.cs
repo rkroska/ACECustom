@@ -249,7 +249,10 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name}.HeartbeatStatic({currentUnixTime})");
 
-            nextSlowTickTime += slowTickSeconds;
+            // Schedule from real time, not +=. Combat pets skip Pet.Tick while engaged; using += lets
+            // nextSlowTickTime lag far behind currentUnixTime so SlowTick (and StartFollowPetOwner) runs
+            // every monster tick until caught up — visible as stutter run/stop while catching the owner.
+            nextSlowTickTime = currentUnixTime + slowTickSeconds;
 
             if (TryDestroyIfBeyondOwnerMaxFollowDistance())
                 return;
@@ -260,9 +263,15 @@ namespace ACE.Server.WorldObjects
             {
                 if (this is CombatPet combatPet && combatPet.IsOwnerFollowRecallBlocked())
                 {
+                    if (ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                        CombatPet.DebugFollowAiConsole(combatPet, $"SlowTick skip StartFollowPetOwner (recall_block) dist={dist:F1}m");
+
                     CombatPet.TraceRecallBlockStatic(combatPet, "SlowTick.skip_StartFollowPetOwner", $"dist={dist:F1}m (>{PetFollowMinDistance})");
                     return;
                 }
+
+                if (this is CombatPet dcp && ServerConfig.pet_combat_debug_follow_ai_console.Value)
+                    CombatPet.DebugFollowAiConsole(dcp, $"SlowTick StartFollowPetOwner dist={dist:F1}m IsMoving={IsMoving}");
 
                 StartFollowPetOwner();
             }
