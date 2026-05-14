@@ -52,8 +52,12 @@ namespace ACE.Server.WorldObjects
 
             if (player.IsJumping)
             {
-                player.SendWeenieError(WeenieError.YouCantDoThatWhileInTheAir);
-                return;
+                player.TryRefreshPhysicsGroundingForConsumable();
+                if (player.IsJumping)
+                {
+                    player.SendWeenieError(WeenieError.YouCantDoThatWhileInTheAir);
+                    return;
+                }
             }
 
             var motionCommand = GetUseSound() == Sound.Eat1 ? MotionCommand.Eat : MotionCommand.Drink;

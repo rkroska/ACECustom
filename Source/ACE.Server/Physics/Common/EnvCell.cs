@@ -92,6 +92,8 @@ namespace ACE.Server.Physics.Common
                     10_000);
             }
             //NumSurfaces = envCell.Surfaces.Count;
+            // PostInit may skip before build_visible_cells runs; never leave VisibleCells null (GetVisible / add_visible_cell).
+            VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
         public void PostInit(int? variation)
@@ -400,6 +402,8 @@ namespace ACE.Server.Physics.Common
 
         public EnvCell GetVisible(uint cellID)
         {
+            if (VisibleCells == null)
+                return null;
             VisibleCells.TryGetValue(cellID, out EnvCell envCell);
             return envCell;
         }
@@ -423,6 +427,7 @@ namespace ACE.Server.Physics.Common
                     10_000);
                 return null;
             }
+            VisibleCells ??= new ConcurrentDictionary<uint, EnvCell>();
             VisibleCells.TryAdd(cellID, envCell);
             return envCell;
         }
@@ -436,11 +441,13 @@ namespace ACE.Server.Physics.Common
 
             foreach (var portal in Portals)
             {
-                var portalPoly = CellStructure.Polygons[portal.PolygonId];
+                if (portal == null || CellStructure.Polygons == null
+                    || !CellStructure.Polygons.TryGetValue(portal.PolygonId, out var portalPoly))
+                    continue;
 
                 foreach (var part in parts)
                 {
-                    if (part == null) continue;
+                    if (part == null || part.GfxObj == null) continue;
                     var sphere = part.GfxObj.PhysicsSphere;
                     if (sphere == null)
                         sphere = part.GfxObj.DrawingSphere;
@@ -483,6 +490,9 @@ namespace ACE.Server.Physics.Common
                         break;
                     }
 
+                    if (otherCell.CellStructure == null)
+                        continue;
+
                     var cellBox = new BBox();
                     cellBox.LocalToLocal(bbox, part.Pos, otherCell.Pos);
                     if (otherCell.CellStructure.box_intersects_cell(cellBox))
@@ -505,7 +515,9 @@ namespace ACE.Server.Physics.Common
 
             foreach (var portal in Portals)
             {
-                var portalPoly = CellStructure.Polygons[portal.PolygonId];
+                if (portal == null || CellStructure.Polygons == null
+                    || !CellStructure.Polygons.TryGetValue(portal.PolygonId, out var portalPoly))
+                    continue;
 
                 if (portal.OtherCellId == ushort.MaxValue)
                 {
@@ -525,7 +537,7 @@ namespace ACE.Server.Physics.Common
                 else
                 {
                     var otherCell = GetVisible(portal.OtherCellId);
-                    if (otherCell != null)
+                    if (otherCell != null && otherCell.CellStructure != null)
                     {
                         foreach (var sphere in spheres)
                         {

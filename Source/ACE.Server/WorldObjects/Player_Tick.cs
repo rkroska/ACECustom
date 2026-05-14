@@ -443,16 +443,20 @@ namespace ACE.Server.WorldObjects
 
             if (!Teleporting && Location.Landblock != newPosition.Cell >> 16)
             {
+                // ObjCellID >> 16 is not a reliable "same chunk" test for dungeons: adjacent rooms often
+                // differ there while PhysicsObj.GetBlockDist (landblock X/Y from the cell id) is still 1.
+                var blockDist = PhysicsObj.GetBlockDist(Location.Cell, newPosition.Cell);
+
                 if ((Location.Cell & 0xFFFF) >= 0x100 && (newPosition.Cell & 0xFFFF) >= 0x100)
                 {
-                    if (!buggedCells.Contains(Location.Cell) || !buggedCells.Contains(newPosition.Cell))
+                    if (blockDist > 1 && (!buggedCells.Contains(Location.Cell) || !buggedCells.Contains(newPosition.Cell)))
                         return false;
                 }
 
                 if (CurrentLandblock.IsDungeon)
                 {
                     var destBlock = LScape.get_landblock(newPosition.Cell, newPosition.Variation);
-                    if (destBlock != null && destBlock.IsDungeon)
+                    if (destBlock != null && destBlock.IsDungeon && blockDist > 1)
                         return false;
                 }
             }
