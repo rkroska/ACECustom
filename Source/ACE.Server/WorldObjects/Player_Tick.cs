@@ -308,6 +308,10 @@ namespace ACE.Server.WorldObjects
 
             var allowJump = MotionInterp.motion_allows_jump(minterp.InterpretedState.ForwardCommand) == WeenieError.None;
 
+            ApplyTeleportJumpGate(ref allowJump, "MoveToState",
+                $"StandingLongJump={moveToState.StandingLongJump} rawFwd=0x{moveToState.RawMotionState.ForwardCommand:X8} rawFlags={moveToState.RawMotionState.Flags} interpFwd=0x{minterp.InterpretedState.ForwardCommand:X8}",
+                throttleMotionLog: true);
+
             //PhysicsObj.cancel_moveto();
 
             minterp.apply_raw_movement(true, allowJump);
@@ -445,7 +449,9 @@ namespace ACE.Server.WorldObjects
             {
                 // ObjCellID >> 16 is not a reliable "same chunk" test for dungeons: adjacent rooms often
                 // differ there while PhysicsObj.GetBlockDist (landblock X/Y from the cell id) is still 1.
-                var blockDist = PhysicsObj.GetBlockDist(Location.Cell, newPosition.Cell);
+                var blockDist = PhysicsObj != null
+                    ? global::ACE.Server.Physics.PhysicsObj.GetBlockDist(Location.Cell, newPosition.Cell)
+                    : int.MaxValue;
 
                 if ((Location.Cell & 0xFFFF) >= 0x100 && (newPosition.Cell & 0xFFFF) >= 0x100)
                 {

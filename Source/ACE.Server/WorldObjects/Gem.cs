@@ -71,33 +71,8 @@ namespace ACE.Server.WorldObjects
 
             if (player.IsJumping)
             {
-                if (Player.LogConsumableGroundingTrace && player.PhysicsObj != null)
-                {
-                    var po = player.PhysicsObj;
-                    var ts = po.TransientState;
-                    Console.WriteLine($"[ConsumableGrounding] Gem gate (before refresh) player={player.Name} gem={Name} WCID={WeenieClassId} " +
-                        $"LocCell=0x{player.Location.Cell:X8} PhysPosCell=0x{po.Position.ObjCellID:X8} CurCell=0x{(po.CurCell?.ID ?? 0):X8} " +
-                        $"OnWalkable={ts.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts.HasFlag(TransientStateFlags.Contact)} " +
-                        $"VelLenSq={player.Velocity.LengthSquared():F6} — calling TryRefreshPhysicsGroundingForConsumable");
-                }
-
-                player.TryRefreshPhysicsGroundingForConsumable();
-
-                if (player.IsJumping)
-                {
-                    if (Player.LogConsumableGroundingTrace && player.PhysicsObj != null)
-                    {
-                        var po = player.PhysicsObj;
-                        var ts = po.TransientState;
-                        Console.WriteLine($"[ConsumableGrounding] Gem gate (after refresh STILL blocked) player={player.Name} gem={Name} " +
-                            $"LocCell=0x{player.Location.Cell:X8} PhysPosCell=0x{po.Position.ObjCellID:X8} " +
-                            $"OnWalkable={ts.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts.HasFlag(TransientStateFlags.Contact)} " +
-                            $"Vel=({po.Velocity.X:F4},{po.Velocity.Y:F4},{po.Velocity.Z:F4}) VelLenSq={player.Velocity.LengthSquared():F6}");
-                    }
-
-                    player.SendWeenieError(WeenieError.YouCantDoThatWhileInTheAir);
-                    return;
-                }
+                player.SendWeenieError(WeenieError.YouCantDoThatWhileInTheAir);
+                return;
             }
 
             if (!string.IsNullOrWhiteSpace(UseSendsSignal))

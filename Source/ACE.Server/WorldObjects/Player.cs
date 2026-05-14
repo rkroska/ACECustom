@@ -110,140 +110,46 @@ namespace ACE.Server.WorldObjects
             }
         }
 
-        /// <summary>When true, <see cref="TryRefreshPhysicsGroundingForConsumable"/> and gem use emit <c>[ConsumableGrounding]</c> lines to the console.</summary>
-        public static bool LogConsumableGroundingTrace = false;
+        public DateTime LastJumpTime;
 
         /// <summary>
-        /// Re-runs collision for the current <see cref="WorldObject.Location"/> so transient flags (e.g. OnWalkable)
-        /// and velocity can settle without a client motion packet — same general idea as nudging with a small jump.
-        /// Safe to call only when a consumable was about to fail <see cref="IsJumping"/>.
+        /// When true, rejected jumps and motion-path jump suppression while <see cref="WorldObject.Teleporting"/> emit <c>[PortalJumpSuppress]</c> lines to the console (for testing).
         /// </summary>
-        public void TryRefreshPhysicsGroundingForConsumable()
+        public static bool LogPortalJumpSuppressToConsole = true;
+
+        private long _portalJumpSuppressMotionLastLogTicks;
+
+        /// <summary>
+        /// While <see cref="WorldObject.Teleporting"/>, server-side jump from motion (<c>apply_raw_movement(..., allowJump)</c>) is disabled.
+        /// </summary>
+        public void ApplyTeleportJumpGate(ref bool allowJump, string channel, string detail, bool throttleMotionLog = true)
         {
-            var trace = LogConsumableGroundingTrace;
-
-            void Line(string msg)
-            {
-                if (trace)
-                    Console.WriteLine($"[ConsumableGrounding] {Name}: {msg}");
-            }
-
-            if (Teleporting || PhysicsObj == null || CurrentLandblock == null)
-            {
-                Line($"early-out Teleporting={Teleporting} PhysicsObj={(PhysicsObj == null ? "null" : "ok")} CurrentLandblock={(CurrentLandblock == null ? "null" : "ok")}");
+            if (!Teleporting)
                 return;
-            }
+
+            if (!allowJump)
+                return;
+
+            allowJump = false;
+
+            if (!LogPortalJumpSuppressToConsole)
+                return;
+
+            var now = DateTime.UtcNow.Ticks;
+            if (throttleMotionLog && (now - _portalJumpSuppressMotionLastLogTicks) < TimeSpan.FromMilliseconds(150).Ticks)
+                return;
+            _portalJumpSuppressMotionLastLogTicks = now;
 
             var po = PhysicsObj;
-            var ts = po.TransientState;
-            Line($"enter LocCell=0x{Location.Cell:X8} PhysPosCell=0x{po.Position.ObjCellID:X8} CurCell=0x{(po.CurCell?.ID ?? 0):X8} FastTick={FastTick} " +
-                 $"OnWalkable={ts.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts.HasFlag(TransientStateFlags.Contact)} Sliding={ts.HasFlag(TransientStateFlags.Sliding)} " +
-                 $"Vel=({po.Velocity.X:F4},{po.Velocity.Y:F4},{po.Velocity.Z:F4}) LenSq={po.Velocity.LengthSquared():F6} IsJumping={IsJumping}");
-
-            var curCell = LScape.get_landcell(Location.Cell, Location.Variation);
-            if (curCell == null)
-            {
-                Line($"early-out LScape.get_landcell null for LocCell=0x{Location.Cell:X8} var={Location.Variation}");
-                return;
-            }
-
-            // PhysicsObj.Position can lag authoritative Location after portal + jump; update_object_server_new bails when
-            // GetBlockDist(Position, RequestPos) > 1, so align Position, RequestPos, and CurCell before re-simulating.
-            var sync = new ACE.Server.Physics.Common.Position(Location);
-
-            var blockDistLoc = PhysicsObj.GetBlockDist(po.Position.ObjCellID, sync.ObjCellID);
-            var blockDistReq = PhysicsObj.GetBlockDist(po.Position.ObjCellID, po.RequestPos.ObjCellID);
-            Line($"syncCell=0x{sync.ObjCellID:X8} GetBlockDist(PhysPos,sync)={blockDistLoc} GetBlockDist(PhysPos,RequestPos)={blockDistReq} ReqCell=0x{po.RequestPos.ObjCellID:X8}");
-
-            if (blockDistLoc > 1)
-            {
-                Line($"early-out blockDist(PhysPos,Loc)={blockDistLoc} > 1 (will not snap physics to Location)");
-                return;
-            }
-
-            if (PhysicsObj.CurCell == null || PhysicsObj.CurCell.ID != sync.ObjCellID)
-            {
-                Line($"change_cell_server curCell=0x{curCell.ID:X8} (was CurCell=0x{(po.CurCell?.ID ?? 0):X8})");
-                PhysicsObj.change_cell_server(curCell);
-            }
-            else
-                Line($"CurCell already 0x{sync.ObjCellID:X8}, skip change_cell");
-
-            PhysicsObj.Position.ObjCellID = sync.ObjCellID;
-            PhysicsObj.Position.Variation = sync.Variation;
-            PhysicsObj.Position.Frame.Origin = sync.Frame.Origin;
-            PhysicsObj.Position.Frame.Orientation = sync.Frame.Orientation;
-
-            PhysicsObj.RequestPos.ObjCellID = sync.ObjCellID;
-            PhysicsObj.RequestPos.Variation = sync.Variation;
-            PhysicsObj.RequestPos.Frame.Origin = sync.Frame.Origin;
-            PhysicsObj.RequestPos.Frame.Orientation = sync.Frame.Orientation;
-
-            PhysicsObj.set_request_pos(Location.Pos, Location.Rotation, curCell, Location.LandblockId.Raw, Location.Variation);
-
-            Line($"after manual sync+set_request: GetBlockDist(PhysPos,ReqPos)={PhysicsObj.GetBlockDist(po.Position.ObjCellID, po.RequestPos.ObjCellID)}");
-
-            for (var pass = 0; pass < 2; pass++)
-            {
-                // Avoid update_object_server_new's "huge quantum" early-out when the player hasn't ticked physics recently.
-                PhysicsObj.StartTimer(PhysicsGlobals.MinQuantum);
-
-                bool ok;
-                if (FastTick)
-                    ok = PhysicsObj.update_object_server_new();
-                else
-                    ok = PhysicsObj.update_object_server();
-
-                ts = po.TransientState;
-                Line($"pass={pass} updateOk={ok} OnWalkable={ts.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts.HasFlag(TransientStateFlags.Contact)} " +
-                     $"Vel=({po.Velocity.X:F4},{po.Velocity.Y:F4},{po.Velocity.Z:F4}) LenSq={po.Velocity.LengthSquared():F6} IsJumping={IsJumping} PhysPosCell=0x{po.Position.ObjCellID:X8} ReqCell=0x{po.RequestPos.ObjCellID:X8}");
-
-                if (!IsJumping)
-                    break;
-            }
-
-            // Legacy update_object_server with Position == RequestPos often does not rebuild contact; velocity can
-            // stay large with Contact=false (logs: ~15,-10 free-fall while client is landed). Placement+Slide
-            // SetPosition re-queries BSP like teleport land / shift-move.
-            if (IsJumping)
-            {
-                Line($"fallback SetPosition(Placement|Slide): zeroing velocity first VelLenSq={po.Velocity.LengthSquared():F6}");
-                po.set_velocity(Vector3.Zero, false);
-                po.CachedVelocity = Vector3.Zero;
-
-                var settlePos = new ACE.Server.Physics.Common.Position(Location);
-                var sp = new SetPosition(settlePos, SetPositionFlags.Placement | SetPositionFlags.Slide);
-                var setErr = po.SetPosition(sp);
-                ts = po.TransientState;
-                Line($"fallback SetPosition err={setErr} Contact={ts.HasFlag(TransientStateFlags.Contact)} OnWalkable={ts.HasFlag(TransientStateFlags.OnWalkable)} " +
-                     $"VelLenSq={po.Velocity.LengthSquared():F6} IsJumping={IsJumping}");
-
-                PhysicsObj.StartTimer(PhysicsGlobals.MinQuantum);
-                if (FastTick)
-                    PhysicsObj.update_object_server_new();
-                else
-                    PhysicsObj.update_object_server();
-            }
-
-            // Kill residual slide from landing so IsJumping is not held by micro-velocity on a non-walkable contact.
-            const float velEpsSq = 0.15f * 0.15f;
-            var vls = po.Velocity.LengthSquared();
-            if (vls < velEpsSq)
-            {
-                Line($"damping velocity LenSq={vls:F6} < epsSq");
-                PhysicsObj.set_velocity(Vector3.Zero, false);
-            }
-            else
-                Line($"skip velocity damp LenSq={vls:F6}");
-
-            SyncLocation(Location.Variation ?? PhysicsObj.Position.Variation);
-
-            ts = po.TransientState;
-            Line($"exit LocCell=0x{Location.Cell:X8} PhysPosCell=0x{po.Position.ObjCellID:X8} OnWalkable={ts.HasFlag(TransientStateFlags.OnWalkable)} " +
-                 $"Vel=({po.Velocity.X:F4},{po.Velocity.Y:F4},{po.Velocity.Z:F4}) IsJumping={IsJumping}");
+            var ts = po?.TransientState;
+            Console.WriteLine(
+                $"[PortalJumpSuppress][{channel}] player={Name} guid=0x{Guid.Full:X8} Teleporting=true -> allowJump forced false. {detail} " +
+                $"LocCell=0x{Location?.Cell ?? 0:X8} var={Location?.Variation?.ToString() ?? "null"} FastTick={FastTick} " +
+                $"Hidden={Hidden} IgnoreCollisions={IgnoreCollisions} ReportCollisions={ReportCollisions} " +
+                $"PortalSpaceEnteredUtc={PortalSpaceEnteredUtc?.ToString("O") ?? "null"} " +
+                $"PhysVel=({po?.Velocity.X:F3},{po?.Velocity.Y:F3},{po?.Velocity.Z:F3}) " +
+                $"OnWalkable={ts?.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts?.HasFlag(TransientStateFlags.Contact)}");
         }
-
-        public DateTime LastJumpTime;
 
         public ACE.Entity.Position LastGroundPos;
         public ACE.Entity.Position SnapPos;
@@ -1097,6 +1003,25 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionJump(JumpPack jump)
         {
+            if (Teleporting)
+            {
+                if (LogPortalJumpSuppressToConsole)
+                {
+                    var po = PhysicsObj;
+                    var ts = po?.TransientState;
+                    Console.WriteLine(
+                        $"[PortalJumpSuppress][GameActionJump] REJECT player={Name} guid=0x{Guid.Full:X8} Teleporting=true (jump ignored; no stamina spent). " +
+                        $"jumpExtent={jump.Extent:F4} jumpVel=({jump.Velocity.X:F4},{jump.Velocity.Y:F4},{jump.Velocity.Z:F4}) " +
+                        $"LocCell=0x{Location?.Cell ?? 0:X8} var={Location?.Variation?.ToString() ?? "null"} FastTick={FastTick} " +
+                        $"Hidden={Hidden} IgnoreCollisions={IgnoreCollisions} ReportCollisions={ReportCollisions} " +
+                        $"PortalSpaceEnteredUtc={PortalSpaceEnteredUtc?.ToString("O") ?? "null"} LastTeleportTime={LastTeleportTime.ToUniversalTime():O} " +
+                        $"PhysVel=({po?.Velocity.X:F4},{po?.Velocity.Y:F4},{po?.Velocity.Z:F4}) VelLenSq={Velocity.LengthSquared():F6} " +
+                        $"OnWalkable={ts?.HasFlag(TransientStateFlags.OnWalkable)} Contact={ts?.HasFlag(TransientStateFlags.Contact)} " +
+                        $"IsJumping={IsJumping}");
+                }
+                return;
+            }
+
             StartJump = new ACE.Entity.Position(Location);
             //Console.WriteLine($"JumpPack: Velocity: {jump.Velocity}, Extent: {jump.Extent}");
 

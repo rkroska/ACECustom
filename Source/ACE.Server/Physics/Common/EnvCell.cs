@@ -552,7 +552,7 @@ namespace ACE.Server.Physics.Common
                             }
                         }
                     }
-                    else
+                    else if (otherCell == null)
                     {
                         foreach (var sphere in spheres)
                         {
