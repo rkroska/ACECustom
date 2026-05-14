@@ -111,10 +111,12 @@ namespace ACE.Server.Physics.Common
                     }
                     else
                     {
-                        var keySample = string.Join(", ", landblock.LandCells.Keys.Where(k => k.Variant == variantForCache).Select(k => $"{k.Landblock}:{k.Variant}").Take(10));
                         PhysicsLogGates.GetLandcellOutdoorMiss.Warn(
                             () =>
-                                $"[PHYSICS] get_landcell outdoor cache miss blockCell=0x{blockCellID:X8} landCellIdx={landCellIdx:X8} variantForCache={variantForCache?.ToString() ?? "null"} landblock=0x{landblock.ID:X8} sampleKeys=[{keySample}]",
+                            {
+                                var keySample = string.Join(", ", landblock.LandCells.Keys.Where(k => k.Variant == variantForCache).Select(k => $"{k.Landblock}:{k.Variant}").Take(10));
+                                return $"[PHYSICS] get_landcell outdoor cache miss blockCell=0x{blockCellID:X8} landCellIdx={landCellIdx:X8} variantForCache={variantForCache?.ToString() ?? "null"} landblock=0x{landblock.ID:X8} sampleKeys=[{keySample}]";
+                            },
                             5_000);
                     }
                 }

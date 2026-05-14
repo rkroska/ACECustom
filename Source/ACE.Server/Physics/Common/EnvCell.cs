@@ -413,7 +413,7 @@ namespace ACE.Server.Physics.Common
             VisibleCells = new ConcurrentDictionary<uint, EnvCell>();
         }
 
-        public EnvCell add_visible_cell(uint cellID, int? Variation)
+        public EnvCell? add_visible_cell(uint cellID, int? Variation)
         {
             var envCell = DBObj.GetEnvCell(cellID, Variation);
             if (envCell == null)

@@ -59,9 +59,9 @@ namespace ACE.Server.Physics.Common
         }
 
         /// <summary>
-        /// QualifiedDID Type 3
+        /// QualifiedDID Type 3. Returns null when the cell.dat read is missing or invalid (Id == 0).
         /// </summary>
-        public static EnvCell GetEnvCell(uint id, int? Variation)
+        public static EnvCell? GetEnvCell(uint id, int? Variation)
         {
             var envCell = DatManager.CellDat.ReadFromDat<DatLoader.FileTypes.EnvCell>(id);
             if (envCell.Id == 0)
